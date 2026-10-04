@@ -9,6 +9,8 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+from tests.hardening.owed_kit_fixtures import tmp_path  # noqa: F401
+
 from scripts.p9_owed import measure_edit as kit
 from scripts.p9_owed.funnel_counts import canonical, copy_record_path, manifest
 from tests.report.test_report_edit_sequence import sequence_library
@@ -766,7 +768,9 @@ def test_e18_remaining_deadline_shrinks_for_restore(sequence_library, tmp_path, 
     timeouts = []
     def run(command, **kwargs):
         timeouts.append(kwargs['timeout'])
-        return original(command, **kwargs)
+        # Assert the synthetic remaining budgets without imposing a one-second
+        # real CLI startup limit; actual timeout/reaping has separate tests.
+        return original(command, **(kwargs | {'timeout': 30}))
     monkeypatch.setattr(kit.subprocess, 'run', run)
     result = kit.round_trip(sequence_library['settings'].data_dir, tmp_path / 'out', deadline=3600)
     assert result['round_trip_equality']

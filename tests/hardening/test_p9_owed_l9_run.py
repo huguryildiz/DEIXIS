@@ -8,6 +8,8 @@ import subprocess
 import httpx
 import pytest
 
+from tests.hardening.owed_kit_fixtures import tmp_path  # noqa: F401
+
 from test_p6_measure_lineage import finished, G, db_path  # noqa: F401
 from test_lineage_flow import factory, lib  # noqa: F401
 

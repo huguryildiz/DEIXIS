@@ -8,6 +8,8 @@ import subprocess
 
 import pytest
 
+from tests.hardening.owed_kit_fixtures import tmp_path  # noqa: F401
+
 from deixis.storage import db
 from deixis.workflow.store import Store
 from scripts.p9_owed import funnel_counts as copies

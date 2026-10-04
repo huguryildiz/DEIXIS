@@ -10,6 +10,8 @@ import subprocess
 
 import pytest
 
+from tests.hardening.owed_kit_fixtures import tmp_path  # noqa: F401
+
 from deixis.storage import db
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.store import Store

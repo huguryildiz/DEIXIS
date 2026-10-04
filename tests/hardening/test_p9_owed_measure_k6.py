@@ -9,6 +9,8 @@ import subprocess
 import httpx
 import pytest
 
+from tests.hardening.owed_kit_fixtures import tmp_path  # noqa: F401
+
 from scripts.p9_owed import measure_k6 as k
 
 

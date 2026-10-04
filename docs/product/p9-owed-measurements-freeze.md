@@ -209,6 +209,8 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 |---|---|
 | `scripts/p9_owed/funnel_counts.py` | `ea3fc2ee9401a15134b3100904245cb9e95eb9de52f907338d0bb4cddb58de31` |
 | `scripts/p9_owed/prep_lookup.py` | `20c1785c95159a1d92b5845f13de2ab83e732f2b12c35094a87c066a6944bab6` |
+| `scripts/p9_owed/measure_k6.py` | `597f8f3da34f84c297cfc56f4eb0d4366c7e1a15c680fe49ec7f3a28ef819bdc` |
+| `tests/test_p9_owed_measure_k6.py` | `8fed61ff3c3e16d0907a3ba27106252da7f535283238d9e8cc88fb6154834a1c` |
 | `scripts/p6_eval/measure_lineage.py` | `a335b3835d571bb3643969510634ab7728e762d1e1c81e5f3b785b023dc40751` |
 | `scripts/p6_eval/measure_fill.py` | `8db4e90616eff3712c0d5a1ba1581358982ebf048b2456332afd9ee21512e7ad` |
 | `scripts/p6_eval/measure_report.py` | `80662aa18fb6e24ae507799754bf36fdc463c466d7201e857aa4537600fbcff9` |
@@ -220,6 +222,6 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 
 Runtime paket hash'i: `sha256:ccff02a169ea72690a594b3277c09c0975537f45ed20f9a6203a364d0c2b132c` (H9e'nin ölçtüğü paketle aynı önek `ccff02a1`).
 
-**Kitler (henüz yok, koşudan önce yazılır, Sol yazar / Claude inceler, hash'leri bu ekin güncellemesinde donar):** K6 ölçüm kiti (S1-S6; iddia oluşturma, kill-search, matris ve alıntı yeri sayımı), `measure_edit.py` (dilim 4), L9 için `measure_lineage.py`'ye envanter tabanlı `independence` yolu ve K0 envanterleri. Hazır olanlar: `funnel_counts.py` ve `prep_lookup.py` (Sol medium düzeltmelerinden sonra 99 test geçti).
+**Kitler (henüz yok, koşudan önce yazılır, Sol yazar / Claude inceler, hash'leri bu ekin güncellemesinde donar):** K6 ölçüm kiti YAZILDI (yukarıdaki tablo; Sol medium yazdı, Claude inceledi, 40 çevrimdışı test), `measure_edit.py` (dilim 4), L9 için `measure_lineage.py`'ye envanter tabanlı `independence` yolu ve K0 envanterleri. Hazır olanlar: `funnel_counts.py` ve `prep_lookup.py` (Sol medium düzeltmelerinden sonra 99 test geçti).
 
 **Hazırlık sağlayıcı istekleri:** toplam 13 / 60 (K6 9, L9 4; hepsi OpenAlex, anahtarsız, yeniden deneme yok); defter `.local/p9-owed/prep/ledger.jsonl`. Model oturumu 0; sunucu başlatılmadı; 8765'e dokunulmadı.

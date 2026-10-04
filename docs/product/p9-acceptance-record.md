@@ -223,3 +223,82 @@ Result: the model-free matrix passed in two of three complete runs with the sing
 ## 10. RR-B correction (3 October 2026)
 
 The closing claim of section 8 (matrix passed in two of three complete runs) was written before RR-B (D170). On the final RR-B code five more complete runs were made on a machine shared with other batches. Run 2 passed every mandatory row. Run 1 failed F04 (a real guard-process leak in a test, fixed) and then one a11y focus spec under load; runs 3 and 4 lost the Playwright ports to another batch; run 5 failed K02b (capacity under load) and cleanup (the other batch's listeners). No back-to-back pair passed, so the P9 exit condition (two clean runs in a row) is not met by these runs and the model-free close of P9 is not confirmed. Raw logs: `/tmp/rrb-matrix-run1` to `run5` (not in the repository).
+
+## Exit (4 October 2026)
+
+P9 exit is met (D218); the final matrix pair is below. This section updates the
+historical closing assessments in sections 8 and 10; it does not rewrite their
+results. The criteria come from [the hardening plan](p9-hardening-plan.md), H8's
+exit section and section 4 rules, and the P9 row of
+[implementation-plan.md](implementation-plan.md#9-uygulama-aşamaları-ve-çıkış-koşulları).
+The exit decision is D218 in [decisions.md](../decisions.md#d218--p9-exit).
+
+| Exit criterion | Met? | Evidence and limits |
+|---|---|---|
+| Repeatable install in the supported environment | Met on the developer's macOS arm64 machine | I01-I05 and I07 passed in the H1 committed-code run (`6fd7a49`, closing record `30ce8c8`, D161) and the H8 runs above. D210's pair on `be07c4c` passed every mandatory row, including install. I08 was not run; this establishes no second-user or second-machine install. |
+| Repeatable automatic acceptance matrix, with two consecutive runs giving the same pass/fail result | Met on `be07c4c` and on the final commit `0af3216` | D170 (`3215b3a`) did not obtain a clean pair. D210 fixed stale harness checks and recorded two consecutive green runs on `be07c4c` (result record `8ca2da6`), every mandatory row passed. RF6 (D211, `7188ec8`) landed afterwards. One full run on `181b232` then exited 0 with every mandatory row passed (coordination record, copied to `.local/archive/p9-evidence/`); one run is not a pair. Final pair on `0af3216`: two consecutive full runs green (see below). |
+| Every mandatory section 4 row passes; no known open data-loss, evidence-integrity, unenforced-security-limit or serious/critical accessibility defect | Met within the recorded mandatory test scope on `be07c4c` and on the final commit `0af3216` | The D210 pair and the single post-RF6 run passed the mandatory rows, including F09. D170 corrected the orphan guard and checks that could accept missing execution; D200 corrected the X05 focus race; D208 closed re-extraction's must-fix scope. No known blocker remains in these records. This is process/test evidence with synthetic records and scripted models, not proof of semantic support or absence of defects outside the tested scope. Final confirmation uses the pair above. |
+| Known bugs and unmeasured behavior are explicit | Met as a disclosure criterion | Sections 4 and 6 retain the original findings and measurement limits. D170, D200 and D208 record later corrections and remaining limits; D202 records the H9 chain, D212-D217 the owed batch. The carry-forward table below distinguishes measured failures from unmeasured behavior. A disclosed failed mandatory row would still block exit. |
+| Capacity limits are explicit, with frozen thresholds and measured values | Met within the synthetic, single-machine scope | Section 5 and D166 (`5df9b9e`) record K01-K07 and the 10,000-work measurement. D210's K rows and the single run on `181b232` passed under parallel load. These are threshold passes, not quiet-machine benchmarks; mixed real-PDF libraries, live-provider/model latency and loaded model concurrency remain unmeasured. |
+| H9/H10 results are recorded separately from the model-free exit | Met as a disposition criterion; R02 remains unmeasured | H9's result-and-decision exit is recorded in D202 and [p9r-report-results.md](p9r-report-results.md). H9e is the first assembly-accepted real-model report (`7188ec8`, result `09aa2cf`, verified text `181b232`); most quality conditions are out of range. H10 was closed as not run on 4 October by the Claude coordinator and gpt-6.1-sol medium, with 0 model sessions. R01/R02 are optional under section 4; neither establishes real-model reliability. |
+
+**Final matrix pair:** two consecutive full runs on `0af3216` (`c5129f4` plus the owed-kit test workspace fix) on 4 October 2026, 12:21 and 13:04 UTC; every mandatory row geçti in both (pytest 14,265 collected, 0 failed, 23 skipped; process 45/45; Playwright 212/212; capacity K rows passed, flagged as run under parallel load). Evidence: `.local/archive/p9-evidence/final-pair/` in the main checkout (not in Git). The earlier pair on `c5129f4` was not clean: 53 owed-kit tests wrote under the matrix's in-repository basetemp, which the kits refuse (fixed in `0af3216`, kits unchanged), and under machine load of about 28–38 three tests in its run 1 and the X05 keyboard spec in its run 2 failed once; none recurred in the `0af3216` pair.
+
+**H9 and owed measurements.** D202 preserves A's API-schema rejection, A2's empty
+VI stop, B's completed-but-rejected assembly, H9c's phrase-repair failure and
+H9d's input-identity failure. RF3-RF6 (D206, D207, D209, D211) address those
+recorded failure paths. H9e accepted all ten model sections and the assembled
+report, closing only report completion (R1c 1/1). Its readers found R2 outside
+both expectations: 4 wrong-link claims (maximum 3) and 18 partly supported claims
+(maximum 8). Their readings are model assessments, not human verification. The
+chain is closed under Ek G, with no H9f before P10.
+
+D217 (`378fa9f`) closes the D205 measurement batch, not every measurement debt:
+D129's repair exposure was counted, D141's funnel was counted in four corpora,
+K6 was measured (D212), slice 4 reached only E01-E05 (D215), and L9 preparation
+failed to produce an eligible corpus (D216). For slice 4 the rerun recorded R18
+0/5 invariant violations and R19 0/17 false positives and 0/17 false negatives;
+these denominators do not include the thirteen untested operations. The initial
+kit failure and the permitted rerun remain separate records (D213, D214).
+
+**H10 / R02:** not run; 0 model sessions. The named limit is
+"R02: post-RF6 real-Codex crash recovery unmeasured". The 4 October decision is
+recorded in the coordination log (copy in `.local/archive/p9-evidence/deixis-coordination.md`, not in Git) and carried here by D218. Scripted F01
+recovery and RF6's deterministic attempt checks do not measure a real Codex
+child's SIGKILL/EOF behavior, the resumed paid call, or provider-side completion
+and billing of the interrupted call.
+
+### Open debts carried past P9
+
+This table carries the remaining measurement and follow-up debts; the individual
+historical defect descriptions remain in section 4. Closing a bounded run or
+batch does not turn its unmeasured rows into passes.
+
+| Item | What is unmeasured or unresolved | Decision |
+|---|---|---|
+| H9 quality failures | H9e measured R1a, R2, R4b, R5, R7 duration, R8 mismatch/unframed conditions and R11 cut inputs/missing passages out of range. No successful follow-up or general reliability rate is established. | D202 Ek G, D205, D218 |
+| H9 R6, R9, R10 | R6 has no equation units; R9's seven pairs are not measurable under the display-math gate; R10 is not measured. Equation correctness and preservation are not established by assembly acceptance. | D202 Ek G, D218 |
+| Slice 4 E06-E18 | Cell-proposal acceptance and the remaining removal, check, second-edit, acknowledgement, restore, export-numbering, permanent-delete-refusal and backup/restore operations were not tested. R18/R19/R21 and round-trip equality remain incomplete beyond E01-E05. | D157, D213-D215, D217 |
+| L9 R12-R15 | No lineage measurement on any corpus; chain recall and the remaining frozen lineage rows are unmeasured. The new preparation included 1 of 1,542 works and did not meet the corpus condition; no second preparation is authorized. | D142, D205, D216, D217 |
+| Deferred K03 queue driver fix | The 2.19 MB, byte-unbounded packet failed `prompt_too_long`. A size budget with coverage/deferral records is deferred and untested; it needs a freeze amendment and review. This is a measurement-driver issue, not a packaging blocker. | D216, D217 |
+| K6 interpretation and S2 | K6 is measured; S2 has denominator 0 and is unmeasurable. S1/S6 do not isolate a causal effect of query shape; no compiler fix or independent post-fix measurement is established. | D154, D205, D212, D217 |
+| R02: post-RF6 real-Codex crash recovery unmeasured | H10 not run, 0 sessions; real interrupted-call recovery, child lifetime, resend/publication counts and provider billing are unknown. | 4 October Claude coordinator + gpt-6.1-sol medium decision; D218 |
+| I08 / second-user install | No clean-account second-user install; other machines, proxies and environments without the recorded tools are unmeasured. | D161, D168; plan S8 |
+| X07 / accessibility beyond the frozen screens | VoiceOver and other screen readers, heard labels/reading order, cognitive accessibility, text-only zoom, unscanned states and incomplete contrast nodes remain unmeasured; 400% layout is not a mandatory pass. | D167, D168 |
+| Quiet-machine and real-library capacity | No quiet-machine H5 rerun, mixed real-text/PDF library benchmark, live-provider/model latency or loaded-concurrency/limit measurement. K02c's N=100 health-overlap observation was incomplete in H8. | D166, D168, D170, D210 |
+| Daily-use evidence | No seven-day owner log; H7 findings came from tests and code reading, not recorded daily use. | D165, D168; plan S9 |
+| Re-extraction R5-F1 | T10 does not execute the D52 background reader and the fail-on-call case has no HTTP trap. | D208 |
+| Re-extraction R5-F2 | Candidate/lineage occurrence and freshness views and Turkish Zotero notes remain optional follow-ups. | D208 |
+| Re-extraction R5-F3 | Viewer/figure read locking or cache invalidation remains optional; no completed fix is recorded. | D208 |
+| Fault/process boundaries | Power loss, kernel panic, wider filesystem faults and APFS disk-full behavior are unmeasured. OCR/JATS late in-child stops, group-kill/guard interruption and installer process-identity limits remain as recorded. F02 has no upload-stream SIGKILL-mid-write case. | D159, D162-D164, D170, D210 |
+| Remaining historical minor findings | Section 4 retains provider/error-message, temporary-file, legacy-record and off-screen style findings. No new real-network arXiv diagnosis, contact-address decision or exhaustive error-path/child-process measurement is established by this exit. | D164, D165, D167; later corrections D170, D200, D208 |
+| Inherited TODO/test debt and CI | Remaining slice 31 coverage/short-title items and other deferred TODO work are not closed by the D205 batch. D175 closed its named subset only. Intermittent parallel-test failures and a CI decision are separate from a recorded matrix pass. | D119, D165, D175, D205; plan S12 |
+| Unsupported platforms and portability | Older macOS, Intel, Linux and Windows remain unsupported in P9; cross-machine restore and Windows locking/memory enforcement are not measured. OS packaging acceptance belongs to P10. | D161-D163, D170, D208; plan section 2 |
+
+**Repository housekeeping.** `b84bfa1` moved 286 flat test modules into 15 topic
+folders (collection remained 14,310: 14,263 passed, 2 skipped, and 45 process
+tests passed, as recorded in the commit). `c5129f4` cleaned closed-work documents
+and `.local` references/placement. Both are housekeeping, with no product change;
+they do not add scientific evidence. The final matrix pair is attached to the
+latter commit. This exit update changes documentation only and does not restart
+the live service.

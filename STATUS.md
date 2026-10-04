@@ -2,7 +2,7 @@
 
 Projenin genel durumu için tek kaynak bu dosya. Notion'daki "Plan durumu" sayfası bunun kopyası; ikisi her push'ta birlikte güncellenir. Ayrıntılı sayılar `docs/decisions.md` içindeki D kayıtlarında. ✅ bitti · 🟡 sürüyor · ❌ yapılmadı ya da ölçülmedi · ⏸ bekliyor.
 
-**Son güncelleme:** 4 Ekim 2026 · borç ölçümler kapandı (D217): D129 kapandı, D141 sayıldı, K6 ölçüldü (D212), dilim 4 yalnız E01-E05 (D215), L9 ölçülmedi (adlandırılmış borç); sırada test klasörleri ve `.local` düzenlemesi, son matris çifti, P9 çıkış kaydı
+**Son güncelleme:** 4 Ekim 2026 · **P9 kapandı, P10'a hazır** (D218): son matris çifti `0af3216` üzerinde (`c5129f4` + kit testlerinin geçici klasör düzeltmesi) 4 Ekim'de üst üste iki tam koşu, ikisinde de zorunlu satırların hepsi geçti (pytest 14.265, 0 başarısız; süreç 45/45; tarayıcı 212/212; kapasite satırları yük altında); test klasörleri (`b84bfa1`) ve docs/`.local` düzenlemesi (`c5129f4`), ürün değişmedi. Açık borçlar çıkış kaydındaki tabloda.
 
 ## Şu an çalışanlar
 
@@ -61,12 +61,9 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 
 ## Sıradaki
 
-1. Borç ölçümler (D205) kapandı (D217); açık kalanlar: dilim 4 E06-E18, L9 R12-R15, ertelenmiş K03 paket düzeltmesi
-2. İki yeniden düzenleme oturumu (`.local` sadeleştirme, test klasörleri)
-3. Son kodda tam matris çifti (iki temiz koşu üst üste)
-4. P9 çıkış kaydı (H10 yerine R02 sınırı) ve bu dosyada "P10'a hazır"
+1. P10: macOS paketi. İsteğe bağlı paralel iş: rapor kalitesi (kanıt kesilmesi, çok parçalı iddialar), sahip kararıyla
 
-Hedef: P10'dan önceki her şey. Kaba tahmin yaklaşık 1 gün.
+Borç ölçümler kümesi kapandı (D217); H9 kalite sınırları, dilim 4 E06-E18, L9 R12-R15, ertelenmiş K03 sürücü düzeltmesi ve R02, P9 çıkış kaydındaki açık borç tablosunda korunuyor.
 
 ## Aşamalar
 
@@ -78,7 +75,7 @@ Hedef: P10'dan önceki her şey. Kaba tahmin yaklaşık 1 gün.
 | P6 | Sentez ve rapor | ✅ beş dilim kapandı; gerçek model ölçümleri P9'a borç |
 | P7 | Bağlantı kapsamı | ✅ çıkış karşılandı (D201): D172, D173, G1 (D196, D201), P7-F2/F3 (D199); G10 canlı erişim gösterildi; canlı hata/kota biçimleri ölçülmedi, G12 yeniden üretilemedi |
 | P8 | Başka modelle inceleme, yayın takibi | ✅ çıkış koşullu karşılandı (D189): B1–B8b bitti (D181–D189); matris satırları T14/T16 geçti; borç: gerçek hedeflerde inceleme kalitesi ölçülmedi |
-| P9 | Web sağlamlaştırma | 🟡 H0–H8, RR-A, RR-B bitti; matris iki kez üst üste yeşil (D210, be07c4c), RF6 sonrası bir koşu yeşil (181b232); rapor düzeltmeleri RF2–RF6 (D206–D211); H9 zinciri kapandı: H9e rapor ilk kez tamamlandı ve kabul edildi, kalite satırlarının çoğu aralık dışı (D202); H10 koşulmadı, sınır R02; borç ölçümler kapandı (D217): D129, D141, K6 ölçüldü, dilim 4 kısmen, L9 borç; kalan: yeniden düzenlemeler, son matris çifti, çıkış kaydı |
+| P9 | Web sağlamlaştırma | ✅ çıkış karşılandı (D218): son matris çifti `0af3216` iki kez yeşil. D210: `be07c4c` iki kez yeşil; RF6 sonrası `181b232` bir kez yeşil. H9 zinciri kapandı, H9e ilk kabul edilen rapor; kalite koşullarının çoğu aralık dışı (D202). H10 koşulmadı, 0 oturum, R02 sınırı. D217 kümesi kapandı; E06-E18, L9 R12-R15 ve K03 sürücü düzeltmesi açık. Test/docs/`.local` düzenlemeleri bitti (`b84bfa1`, `c5129f4`), ürün değişmedi; Claude metin incelemesi bekleniyor |
 | P10 | macOS / Windows paketi | ❌ |
 
 ## Ölçülmemiş borçlar

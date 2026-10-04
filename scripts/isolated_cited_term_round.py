@@ -19,7 +19,7 @@ from deixis.config import load_dotenv
 from deixis.models.gemini import GeminiAdapter
 from deixis.providers import query_rules
 
-PROTOCOL = previous.ROOT / "docs/methods/quantum-cited-term-preflight-2026-09-18.md"
+PROTOCOL = previous.ROOT / ".local/docs/methods/quantum-cited-term-preflight-2026-09-18.md"
 TITLE_TOPIC = re.compile(r"\b(?:optimization|routing|resource allocation|scheduling)\b", re.I)
 TITLE_GENRE = re.compile(r"\b(?:survey|review|taxonomy)\b", re.I)
 TERM_SCHEMA = {"type": "object", "additionalProperties": False,

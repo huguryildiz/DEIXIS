@@ -9,7 +9,7 @@ before send (B3a, D179) and delegates query rendering/rules to registry declarat
 (B3b, D193), and application search dispatch now uses the facade (B4, D194). Admission and
 payload sanitization run after the equivalent adapter call; stored page revisions
 are checked before continuation. G1 is accepted with conditions for the search capability
-(B5, D196, [acceptance record](p7-acceptance-record.md)). G1-F1 binds existing DOI
+(B5, D196, [acceptance record](../../.local/docs/archive/p7/p7-acceptance-record.md)). G1-F1 binds existing DOI
 lookups (Crossref, Semantic Scholar, Scopus), OpenAlex ID lookup and citing reads,
 including the watch citing read. The implementation and equivalence evidence use
 synthetic fixtures (D201).

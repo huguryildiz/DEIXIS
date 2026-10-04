@@ -20,7 +20,7 @@ import isolated_query_branches as earlier
 from deixis.config import load_dotenv
 from deixis.providers import query_rules
 
-PROTOCOL = previous.ROOT / "docs/methods/quantum-openalex-keyword-lane-2026-09-18.md"
+PROTOCOL = previous.ROOT / ".local/docs/methods/quantum-openalex-keyword-lane-2026-09-18.md"
 DOMAIN_WORDS = {"quantum", "network", "networks", "routing", "entanglement", "fidelity", "memory", "optimization"}
 
 

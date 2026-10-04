@@ -23,7 +23,7 @@ from deixis.config import load_dotenv
 from deixis.models.gemini import GeminiAdapter
 from deixis.providers import query_rules
 
-PROTOCOL = previous.ROOT / "docs/methods/quantum-query-branches-isolated-2026-09-18.md"
+PROTOCOL = previous.ROOT / ".local/docs/methods/quantum-query-branches-isolated-2026-09-18.md"
 QUESTION = previous.QUESTION
 ROLES = ("core", "mechanism", "method", "operation", "constraint", "context")
 STOPWORDS = {

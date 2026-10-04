@@ -30,7 +30,7 @@ from deixis.providers import query_compiler, query_rules  # noqa: E402
 from deixis.providers.common import normalize_doi  # noqa: E402
 from isolated_pdf_prefetch import run_prefetch  # noqa: E402
 
-PROTOCOL = ROOT / "docs/methods/quantum-hybrid-500-1000-protocol-2026-09-18.md"
+PROTOCOL = ROOT / ".local/docs/methods/quantum-hybrid-500-1000-protocol-2026-09-18.md"
 QUESTION = ("Which mathematical optimization models have been proposed for end-to-end entanglement "
             "distribution in quantum networks? Compare their decision variables, objectives, constraints, "
             "and treatment of routing, scheduling, memory capacity, fidelity, and decoherence. For each "

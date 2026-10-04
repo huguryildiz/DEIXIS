@@ -3,7 +3,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
 
-// A–G acceptance cases (docs/product/first-slice-plan.md) in a real browser against the fixture server.
+// A–G acceptance cases (.local/docs/product/first-slice-plan.md) in a real browser against the fixture server.
 // Records are SYNTHETIC and the model is scripted: this checks application behavior, not model quality.
 
 const REPO = path.resolve(process.cwd(), '..', '..')

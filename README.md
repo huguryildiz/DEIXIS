@@ -57,19 +57,19 @@ Configure keys through the app's Connections settings or an untracked `.env` usi
 
 To check that a clean install works, run `python3 scripts/p9/install_check.py --port 8871`. It exports `HEAD` (not your working tree) to a temporary folder, installs and builds there with the commands above, starts the app on its own port with its own data directory, an isolated keychain and no model connection, opens the home screen in Chrome, tries a busy port, a missing UI build and an unwritable data directory, and stops everything it started. It uses its own port and data directory and refuses the ports of a running instance, so a running instance and your library are left alone. It needs an arm64 `python3` 3.9 or newer (with an x86_64 `python3`, use `/opt/homebrew/bin/python3.12` or another arm64 interpreter), `git`, `uv`, Node 22 with npm 10 and Chrome. Unless you pass `--uv-cache` and `--npm-cache` from an earlier run it starts with empty caches, downloads every dependency and can take many minutes.
 
-To run every automatic row of the P9 acceptance matrix in one go (install check, the default and process test suites, the production memory limit, build and lint, the browser suite and the capacity measurement), run `scripts/p9/run_matrix.sh`; it prints one result per row and exits 0 only when every mandatory row passed. It took 30 to 50 minutes in the recorded runs, needs `uv sync` and a built or installable `apps/web` first, refuses to start when an untracked `.env` exists, uses ports 8950 to 8970 and the Playwright fixture ports, and leaves the running instance and your library alone. The last recorded result is in the [P9 acceptance record](docs/product/p9-acceptance-record.md).
+To run every automatic row of the P9 acceptance matrix in one go (install check, the default and process test suites, the production memory limit, build and lint, the browser suite and the capacity measurement), run `scripts/p9/run_matrix.sh`; it prints one result per row and exits 0 only when every mandatory row passed. It took 30 to 50 minutes in the recorded runs, needs `uv sync` and a built or installable `apps/web` first, refuses to start when an untracked `.env` exists, uses ports 8950 to 8970 and the Playwright fixture ports, and leaves the running instance and your library alone. The last recorded result is in the P9 acceptance record.
 
 ## Architecture
 
 | Layer | In this repository |
 |---|---|
-| Local API, workflow, persistence, provider and model adapters | [`backend/deixis/`](backend/deixis/) |
-| React interface, served by the local backend after build | [`apps/web/`](apps/web/) |
-| Versioned model-step JSON Schemas and method instructions | [`contracts/research/`](contracts/research/) · [`methods/deixis-research/`](methods/deixis-research/) |
-| Deterministic/integration tests and synthetic browser fixtures | [`tests/`](tests/) · [`apps/web/e2e/`](apps/web/e2e/) |
-| Isolated evaluation utilities, not product features | [`scripts/`](scripts/) |
+| Local API, workflow, persistence, provider and model adapters | [`backend/deixis/`](backend/deixis) |
+| React interface, served by the local backend after build | [`apps/web/`](apps/web) |
+| Versioned model-step JSON Schemas and method instructions | [`contracts/research/`](contracts/research) · [`methods/deixis-research/`](methods/deixis-research) |
+| Deterministic/integration tests and synthetic browser fixtures | [`tests/`](tests) · [`apps/web/e2e/`](apps/web/e2e) |
+| Isolated evaluation utilities, not product features | [`scripts/`](scripts) |
 
-The application checks source identities, reading depth, passage IDs, and exact source-owned citation anchors before publishing a linked answer. It does not infer semantic support from a valid anchor. See [the documentation map](docs/README.md), [repository layout](docs/layout.md), and [durable decisions](docs/decisions.md) for the authority of design records versus implemented code.
+The application checks source identities, reading depth, passage IDs, and exact source-owned citation anchors before publishing a linked answer. It does not infer semantic support from a valid anchor. See the [repository layout](docs/layout.md) and [durable decisions](docs/decisions.md) for the authority of design records versus implemented code.
 
 ## Commands
 
@@ -90,8 +90,8 @@ The browser suite needs Google Chrome. It uses synthetic records, fixed PDFs, an
 - Search results are bounded by provider access, query choices, and budgets. Found, included, inspected, given-to-model, and cited sources are different counts; a missing result is not evidence of novelty.
 - Abstract-only evidence cannot establish full-text methods, equations, or results. PDF extraction and optional OCR/equation reading have their own failure and uncertainty states.
 - [P4](docs/decisions.md#d34--close-p4-on-the-packet-size-re-run-reviewed-by-claude-on-the-owners-delegation) and [P5](docs/decisions.md#d55--close-p5-on-a-two-question-real-model-measurement-reviewed-by-claude-on-the-owners-delegation) were closed on bounded evaluations. Their reviewer judgments were delegated to a model, not independently checked by a human; known-work recall and PDF-page use remained limitations. Do not read these gates as general performance claims.
-- P9 (hardening) closed its model-free part: its install, crash, restore, capacity and accessibility matrix passed in two of three complete runs (one browser spec failed once) on one macOS arm64 machine with a scripted model and synthetic records. It did not run a real model, a second user's install, a screen reader or any other OS; see the [acceptance record](docs/product/p9-acceptance-record.md) for the rows, the known issues and the limits.
-- The [report](docs/product/p6-report-design.md), Chain of Ideas, candidate questions, and claim-specific kill-search appear in design records. Do not treat a design or method proposal as an integrated runtime feature.
+- P9 (hardening) closed its model-free part: its install, crash, restore, capacity and accessibility matrix passed in two of three complete runs (one browser spec failed once) on one macOS arm64 machine with a scripted model and synthetic records. It did not run a real model, a second user's install, a screen reader or any other OS; see the acceptance record for the rows, the known issues and the limits.
+- The report, Chain of Ideas, candidate questions, and claim-specific kill-search appear in design records. Do not treat a design or method proposal as an integrated runtime feature.
 
 DEIXIS is licensed under [AGPL-3.0-or-later](LICENSE). It uses AGPL-licensed PyMuPDF for PDF text extraction. No CI result, published package, or hosted live site is represented by the badges above.
 
@@ -131,7 +131,7 @@ user checkpoints, candidate cards and claim-specific kill-search are product
 adaptations. Their usefulness and failure modes need separate evaluation. Record
 search scope and access limits, distinguish author statements from inference,
 and report an unsuccessful overlap search as **no match found within the searched
-scope**, not as a novelty verdict. See the [product evidence contract](docs/product/api-and-data.md#proposed-output-contract)
+scope**, not as a novelty verdict. See the product evidence contract
 and the existing [skill evidence register](../quaestio/references/evidence-base.md).
 
 ## AI research systems and evaluation references
@@ -203,12 +203,12 @@ Quaestio will adapt the method to its question-first workflow:
 
 This is Quaestio's adaptation of CoI, including its own provenance and kill-search
 requirements, not a verbatim reproduction of the paper. The existing modular
-skill remains the source-audit foundation. See the [continuation brief](docs/desktop/README.md#araştırma-yöntemi-kararı--chain-of-ideas)
+skill remains the source-audit foundation. See the continuation brief
 for the accepted product decision.
 
 ## Extended method comparison and product recommendations
 
-The [detailed research-methods document](docs/methods/research-methods.md)
+The detailed research-methods document
 records the focused 14 September 2026 review: established methods and books,
 AI systems, existing repository coverage, proposed additions, guardrail ownership,
 candidate/claim evidence structures, future evaluation and search/access limits.
@@ -239,7 +239,7 @@ The user also proposed an optional model-selected review: choose a candidate or
 report, select an available model and receive a separate evidence-linked assessment
 of a versioned snapshot. Findings may be fed back into the main work by the user;
 the reviewer does not automatically edit it. Existing evidence is the default,
-with extra retrieval explicitly selected. See the [review design](docs/methods/research-methods.md#isteğe-bağlı-başka-modelle-inceleme)
+with extra retrieval explicitly selected. See the review design
 for scope, provenance and budget boundaries. A browser-only UI prototype once demonstrated model/focus selection, a separate
 sample report and staged feedback; it was removed ([D10](docs/decisions.md)).
 Real model steps and the local SQLite library (see "How it works") are implemented. A narrower form of this review runs too: a research can name a reviewer model (or turn review off), which checks an answer's claims against the passages they cite and records its finding without changing the answer, and a report has its own review step. The review runs after an answer or report; no route lets a user pick a candidate, a snapshot or extra retrieval for it, so that part of the design is not implemented.

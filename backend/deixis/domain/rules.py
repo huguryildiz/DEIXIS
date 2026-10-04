@@ -120,7 +120,7 @@ FULLTEXT_QUOTE_MIN_CHARS = 12
 # Effort presets bound work; they are not paper-count or accuracy guarantees. Provider requests are
 # bounded per run; with several providers enabled, one query per relevant provider needs room. `core_depth` is
 # how many results OpenAlex's core-only query reads (0: no such query); standard's 250 candidates and 15 model calls were
-# chosen for it in docs/archive/search-2026-09/search-recall-depth-2026-09-17.md, detailed keeps more room than standard.
+# chosen for it in .local/docs/archive/search-2026-09/search-recall-depth-2026-09-17.md, detailed keeps more room than standard.
 # 2026-09-21 (D78): an sw discovery run is given CRITERION_CALLS on top of its preset for the criterion proposal it
 # makes before the first search (api/app.py), so its room for screening is what it was. The presets themselves are
 # unchanged for answer runs, which propose no criterion.

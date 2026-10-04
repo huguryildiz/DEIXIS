@@ -1,4 +1,4 @@
-# Known set for P5 slice 5 (docs/product/p5-slice5-measurement.md), frozen before any run.
+# Known set for P5 slice 5 (.local/docs/product/p5-slice5-measurement.md), frozen before any run.
 # Source: Kurt, Yildiz, Yigit, Tavli, Gungor, "Packet Size Optimization in Wireless Sensor Networks
 # for Smart Grid Applications", IEEE TIE 2017 (PDF sha256 2905d698...8224). Strata follow the paper's
 # own grouping on page 1: "terrestrial WSNs [12]-[20], underwater WSNs [21]-[24], underground WSNs [25],

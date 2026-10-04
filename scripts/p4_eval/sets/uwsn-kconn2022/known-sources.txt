@@ -1,4 +1,4 @@
-# Held-out known set for P5 slice 5 (docs/product/p5-slice5-measurement.md), frozen before any run.
+# Held-out known set for P5 slice 5 (.local/docs/product/p5-slice5-measurement.md), frozen before any run.
 # Source: Yildiz et al., "On the Tradeoff Between Network Lifetime and k-Connectivity-Based Reliability in UWSNs",
 # IEEE IoT Journal 2022 (DOI 10.1109/jiot.2022.3188558), co-authored by the owner. The reference list comes from
 # Crossref's deposited references (33 entries) on 2026-09-17; the PDF was not read (the article is closed access).

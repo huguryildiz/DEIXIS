@@ -14,7 +14,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen farklı şirketin modeli; Sol yazarsa 
 
 ## Açık borçlar
 
-Aşağıdaki borçlar [P9 çıkış kaydından](docs/product/p9-acceptance-record.md#open-debts-carried-past-p9) taşındı; geçmiş ölçümler ve partiler [ROADMAP](docs/ROADMAP.md) tablosunda.
+Aşağıdaki borçlar [P9 çıkış kaydından](.local/docs/archive/p9/p9-acceptance-record.md#open-debts-carried-past-p9) taşındı; geçmiş ölçümler ve partiler [ROADMAP](.local/docs/ROADMAP.md) tablosunda.
 
 - H9 kalite sınırları: H9e tamamlandı; R1a, R2, R4b, R5, R7 süre, R8 ve R11 koşulları aralık dışında. R2: dört yanlış atıf, 18 kısmi destek; iki model okuru, insan doğrulaması değil. [D202](docs/decisions.md#d202--p9-h9b-the-report-path-is-measured-again-on-a-real-model-after-rf-first-on-h9s-own-table-not-independent-and-then-on-a-fresh-corpus-for-q3) · [D205](docs/decisions.md#d205--p9-owed-real-model-measurements-before-p10-rules-for-five-debts-are-frozen-run-only-after-h9b-with-370-new-luna-sessions-at-most) · [D218](docs/decisions.md#d218--p9-exit)
 - H9 denklem, çift ve inceleme ölçümleri: R6’da denklem birimi yok; R9’un yedi çifti gösterimli matematik kapısında ölçülemedi; R10 ölçülmedi. [D202](docs/decisions.md#d202--p9-h9b-the-report-path-is-measured-again-on-a-real-model-after-rf-first-on-h9s-own-table-not-independent-and-then-on-a-fresh-corpus-for-q3) · [D218](docs/decisions.md#d218--p9-exit)
@@ -37,4 +37,4 @@ Aşağıdaki borçlar [P9 çıkış kaydından](docs/product/p9-acceptance-recor
 
 ## Ayrıntılı yol haritası
 
-[Bütün fazlar, partiler, tarihsel kayıtlar ve sınırlar](docs/ROADMAP.md).
+[Bütün fazlar, partiler, tarihsel kayıtlar ve sınırlar](.local/docs/ROADMAP.md).

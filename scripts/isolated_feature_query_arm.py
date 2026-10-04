@@ -18,7 +18,7 @@ import isolated_query_branches as earlier
 from deixis.config import load_dotenv
 from deixis.providers import query_rules
 
-PROTOCOL = previous.ROOT / "docs/methods/quantum-feature-filter-isolated-2026-09-18.md"
+PROTOCOL = previous.ROOT / ".local/docs/methods/quantum-feature-filter-isolated-2026-09-18.md"
 QUESTION = previous.QUESTION
 REPORTING_LABELS = ("decision variables", "objectives", "constraints")
 

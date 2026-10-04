@@ -20,7 +20,7 @@ import isolated_query_branches as earlier
 from deixis.config import load_dotenv
 from deixis.providers import query_rules
 
-PROTOCOL = previous.ROOT / "docs/methods/quantum-author-keyword-lane-2026-09-18.md"
+PROTOCOL = previous.ROOT / ".local/docs/methods/quantum-author-keyword-lane-2026-09-18.md"
 IEEE_URL = "https://ieeexploreapi.ieee.org/api/v1/search/articles"
 
 

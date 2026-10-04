@@ -774,7 +774,9 @@ export type QuickFindResult = {
 export type ActivityEvent ={ id: number; type: string; run_id: string | null; payload: Record<string, unknown>; created_at: string }
 export type ZoteroSource = 'local' | 'web'
 export type ZoteroCollection = { key: string; name: string }
-export type ZoteroImport = { items: number; pdfs_added: number; notes: { title: string; note: string }[] }
+// note is an English template keyed in i18n; vars fill its {placeholders}.
+export type ZoteroNote = { title: string; note: string; vars?: Record<string, string> }
+export type ZoteroImport = { items: number; pdfs_added: number; notes: ZoteroNote[] }
 
 // Evidence tables (P5, D37/D38). Types mirror backend/deixis/workflow/tables.py.
 export type AnswerFormat = 'choice' | 'number_unit' | 'yes_no' | 'text'
@@ -1178,7 +1180,7 @@ export const api = {
   },
   // Attaches PDFs from the user's Zotero library to included works that have no PDF text yet (D49).
   zoteroPdfs: (id: string, source: ZoteroSource) =>
-    request<ResearchView & { zotero_pdfs: { checked: number; added: number; notes: { title: string; note: string }[] } }>(`/api/researches/${id}/zotero-pdfs`, json('POST', { source })),
+    request<ResearchView & { zotero_pdfs: { checked: number; added: number; notes: ZoteroNote[] } }>(`/api/researches/${id}/zotero-pdfs`, json('POST', { source })),
   // Proposes the included source each PDF belongs to (DOI, arXiv id, or title); nothing is attached (D49).
   matchUploads: (id: string, files: File[]) => {
     const form = new FormData()

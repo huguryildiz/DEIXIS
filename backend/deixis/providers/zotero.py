@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlsplit
@@ -66,6 +66,7 @@ class ZoteroItem:
     pdf_key: str | None = None
     pdf_filename: str | None = None
     pdf_problem: str | None = None  # the item has a PDF attachment that this access path cannot read
+    pdf_problem_vars: dict[str, str] = field(default_factory=dict)  # filled into pdf_problem's {placeholders} by the UI
 
 
 def library(source: str) -> Library:
@@ -118,7 +119,8 @@ async def collection_items(client: httpx.AsyncClient, lib: Library, collection_k
             item.pdf_key, item.pdf_filename = readable[0]["key"], readable[0].get("filename")
         elif pdfs:
             item.pdf_problem = ("its PDF is a linked file, which zotero.org does not store" if lib.source == "web"
-                                else f"its PDF attachment has no file ({pdfs[0].get('linkMode')})")
+                                else "its PDF attachment has no file ({mode})")
+            item.pdf_problem_vars = {} if lib.source == "web" else {"mode": str(pdfs[0].get("linkMode"))}
         items.append(item)
     if len(items) > MAX_IMPORT_ITEMS:
         raise ZoteroError(f"This collection has {len(items)} items; DEIXIS imports at most {MAX_IMPORT_ITEMS} at a time.", 422)

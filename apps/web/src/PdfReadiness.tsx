@@ -190,7 +190,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
       const result = await api.zoteroPdfs(researchId, zoteroSource)
       const { added, checked, notes } = result.zotero_pdfs
       touch(result.sources.filter(s => before.has(s.source_version_id) && s.has_pdf_text).map(s => s.source_version_id))
-      toast(added < checked || notes.length ? 'warning' : 'success', [t('Zotero: {added} of {checked} PDFs added.', { added, checked }), ...notes.map(n => `${n.title}: ${n.note}.`)].join(' '))
+      toast(added < checked || notes.length ? 'warning' : 'success', [t('Zotero: {added} of {checked} PDFs added.', { added, checked }), ...notes.map(n => `${n.title}: ${t(n.note, n.vars)}.`)].join(' '))
     })
   }
   const onDrop = (event: DragEvent<HTMLDivElement>) => {

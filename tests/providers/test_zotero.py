@@ -127,7 +127,8 @@ def test_web_import_reads_pages_and_sends_the_key_only_to_zotero_org(tmp_path, m
         assert response.status_code == 201, response.text
         assert response.json()["zotero_import"] == {
             "items": 3, "pdfs_added": 2,
-            "notes": [{"title": "SYNTHETIC relay budget", "note": "its PDF is a linked file, which zotero.org does not store"}],
+            "notes": [{"title": "SYNTHETIC relay budget", "note": "its PDF is a linked file, which zotero.org does not store",
+                       "vars": {}}],
         }
         assert fetched == [storage, storage]
         assert all(r.url.host == "api.zotero.org" and r.url.path.startswith("/users/12345/") for r in seen)
@@ -212,7 +213,8 @@ def test_zotero_pdfs_attach_the_library_copy_to_included_works_without_pdf_text(
         assert body["zotero_pdfs"]["checked"] == 2 and body["zotero_pdfs"]["added"] == 1
         # The relay paper is found by DOI; its linked file is missing, and the note says so instead of failing the request.
         assert body["zotero_pdfs"]["notes"] == [{"title": "SYNTHETIC relay budget planning",
-                                                 "note": "PDF not added: Zotero did not return the file (HTTP 404)"}]
+                                                 "note": "PDF not added: {reason}",
+                                                 "vars": {"reason": "Zotero did not return the file (HTTP 404)"}}]
         article = next(s for s in body["sources"] if s["doi"] == "10.1/zot")
         assert article["has_pdf_text"] and article["access"]["assets"][0]["origin"] == "user_upload"
         assert all(r.method == "GET" for r in seen)  # nothing is written to Zotero

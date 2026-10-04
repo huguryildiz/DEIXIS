@@ -283,7 +283,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
         const imported = await api.zoteroImport(id, zotero.source, zotero.key)
         latestView = imported
         const { notes } = imported.zotero_import
-        if (notes.length) toast('warning', notes.map(n => `${n.title}: ${n.note}.`).join(' '))
+        if (notes.length) toast('warning', notes.map(n => `${n.title}: ${t(n.note, n.vars)}.`).join(' '))
       }
       if (scope === 'attached_and_academic' && chosenSeed) {
         step = 'Research saved, but the selected PDF could not guide the search: {message}. Choose a readable PDF on the research page.'

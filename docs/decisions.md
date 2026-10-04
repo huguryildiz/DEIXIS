@@ -2,6 +2,12 @@
 
 Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D222 — Zotero notes are English templates the UI translates
+Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed) · Date: 2026-10-04
+Context: R5 (D208) left the Zotero import and Zotero-PDF notes as fixed English sentences, so the Turkish UI showed them in English.
+Decision: Each note is a template with `vars` (`PDF not added: {reason}`, `its PDF attachment has no file ({mode})`); the UI calls `t(note, vars)` in its three toasts and `i18n.ts` has the Turkish entries. A test reads `app.py` and `zotero.py` and fails if a note is an f-string or lacks a Turkish key.
+Limits: `reason` is the exception text and stays English. The test checks keys, not what the screen shows.
+
 ## D221 — PRISMA-S marks every planned query sent, not sent or delivery unknown; the frozen protocol stays as it was
 Status: accepted (Claude wrote, gpt-6.1-sol medium reviewed in four rounds) · Date: 2026-10-04
 Context: The protocol freezes the compiled queries before the first provider request (SW14.1), so a stopped run left queries in it that were never sent, and the PRISMA-S export did not say which.

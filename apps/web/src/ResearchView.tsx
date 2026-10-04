@@ -350,7 +350,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const { items, pdfs_added: pdfs, notes } = (await api.zoteroImport(id, source, key)).zotero_import
     setZoteroOpen(false)
     const added = `${t(items === 1 ? '{n} Zotero item added and included;' : '{n} Zotero items added and included;', { n: items })} ${t(pdfs === 1 ? '{n} PDF read page by page (no OCR).' : '{n} PDFs read page by page (no OCR).', { n: pdfs })}`
-    if (notes.length) toast('warning', `${added} ${notes.map(n => `${n.title}: ${n.note}.`).join(' ')}`)
+    if (notes.length) toast('warning', `${added} ${notes.map(n => `${n.title}: ${t(n.note, n.vars)}.`).join(' ')}`)
     else toast('success', added)
   })
 

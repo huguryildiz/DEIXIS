@@ -1908,13 +1908,13 @@ def create_app(
                               "note": "Removed from this research earlier; not added back. Restore it to use it here."})
                 continue
             if item.pdf_problem:
-                notes.append({"title": item.record.title, "note": item.pdf_problem})
+                notes.append({"title": item.record.title, "note": item.pdf_problem, "vars": item.pdf_problem_vars})
             if item.pdf_key is None or store.has_asset(svid):
                 continue
             try:
                 data = await zotero.pdf_bytes(http, library, item.pdf_key, request.app.state.fetch_pdf)
             except zotero.ZoteroError as exc:
-                notes.append({"title": item.record.title, "note": f"PDF not added: {exc}"})
+                notes.append({"title": item.record.title, "note": "PDF not added: {reason}", "vars": {"reason": str(exc)}})
                 continue
             sha = hashlib.sha256(data).hexdigest()
             try:
@@ -1925,7 +1925,7 @@ def create_app(
                     read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
                         storage_path=placement.path.name, sha256=sha, byte_size=len(data), lock=True)
             except (text_retry.FileBusy, file_restore.FileRestoreRefused) as exc:
-                notes.append({"title": item.record.title, "note": f"PDF not added: {exc}"})
+                notes.append({"title": item.record.title, "note": "PDF not added: {reason}", "vars": {"reason": str(exc)}})
                 continue
             path = placement.path
             extraction = read.extraction
@@ -1956,12 +1956,12 @@ def create_app(
             if item is None:
                 continue
             if item.pdf_key is None:
-                notes.append({"title": source["title"], "note": item.pdf_problem})
+                notes.append({"title": source["title"], "note": item.pdf_problem, "vars": item.pdf_problem_vars})
                 continue
             try:
                 data = await zotero.pdf_bytes(http, library, item.pdf_key, request.app.state.fetch_pdf)
             except zotero.ZoteroError as exc:
-                notes.append({"title": source["title"], "note": f"PDF not added: {exc}"})
+                notes.append({"title": source["title"], "note": "PDF not added: {reason}", "vars": {"reason": str(exc)}})
                 continue
             sha = hashlib.sha256(data).hexdigest()
             try:
@@ -1972,7 +1972,7 @@ def create_app(
                     read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
                         storage_path=placement.path.name, sha256=sha, byte_size=len(data), lock=True)
             except (text_retry.FileBusy, file_restore.FileRestoreRefused) as exc:
-                notes.append({"title": source["title"], "note": f"PDF not added: {exc}"})
+                notes.append({"title": source["title"], "note": "PDF not added: {reason}", "vars": {"reason": str(exc)}})
                 continue
             path = placement.path
             extraction = read.extraction

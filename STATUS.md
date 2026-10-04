@@ -53,7 +53,7 @@ Bütün eksikler burada; ayrı TODO dosyası yok. Parantezdeki D numaraları [ka
 ### Kod düzeltmeleri
 
 - K03 sürücüsü: kuyruk geçişi prompt boyutunda düşüyor; bayt bütçesi eklenmedi. Paketleme engeli sayılmadı. (D216, D217)
-- Yeniden çıkarım R5: T10 arka plan okuyucuyu (D52) yürütmüyor; aday/soy güncellik görünümü ve Türkçe Zotero notları; görüntüleyici kilidi veya önbellek geçersizleştirme. (D208)
+- Yeniden çıkarım R5: T10 arka plan okuyucuyu (D52) yürütmüyor (T10 matris satırı yok); aday/soy güncellik görünümü (`recovery_view.py`, `TextRecovery.tsx`); PDF görüntüleyici önbelleği: varlık yanıtında ETag yok, `PdfViewer` değişen dosyayı yeniden yüklemiyor. Türkçe Zotero notları D222 ile kapandı. (D208)
 - İlk cevap taslağı atıf çapası kurallarını hep bozuyor (9/9); onarım turu düzeltiyor ama cevap başına 46–134 s ekliyor. Nedeni bulunmadı.
 - Scopus özet okuması DOI başına bir istek atıyor; `DOI(a) OR DOI(b)` ile 25'lik gruplar istek sayısını ~25 kat azaltabilir (`COMPLETE` görünümüyle denenmedi).
 - `detailed` süre: tam metin alma ve okuma tek başına 20 dakika hedefini aşıyor (23 Eylül ölçümü).

@@ -125,6 +125,7 @@ def test_descriptors_registry_and_module_policy():
             assert callable(binding.call) and binding.max_batch > 0
 
 
+@pytest.mark.provider_pacing
 def test_registry_retry_overrides_match_source_policy():
     assert registry.CONNECTORS["arxiv"].retry == {
         "rate_limit_statuses": arxiv.RATE_LIMIT_STATUSES,
@@ -329,6 +330,7 @@ def test_unreadable_body_shapes_are_required(case):
         baseline.coverage([other for other in FROZEN["cases"] if other["id"] != case["id"]])
 
 
+@pytest.mark.provider_pacing
 @pytest.mark.parametrize("case", FROZEN["cases"], ids=lambda case: case["id"])
 def test_baseline_equivalence(case):
     assert baseline.replay(case) == case["expected"]

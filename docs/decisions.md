@@ -2,6 +2,15 @@
 
 Accepted product decisions from the 14 September 2026 conversation are recorded in the [dated handoff](desktop/README.md). This file records subsequent durable decisions; an entry does not turn an unimplemented proposal into a working feature. New entries go above older ones. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
+## D217 — P9 owed batch closed: L9 stays an unmeasured named debt, and the queue-pass failure is a deferred driver fix, not a packaging blocker
+
+**Status:** accepted (measured, not pushed); decided by the Claude coordinator and gpt-6.1-sol medium on 2026-10-04.
+**Date:** 2026-10-04
+
+**Decision:** No second L9 preparation. L9 closes as a named debt: R12-R15 are unmeasured on any corpus. The `prompt_too_long` of the K03 queue pass (D216) came from the measurement driver, not the product: `scripts/p9_owed/l9_run.py` (~655-690) sends up to 30 works with all stored passages of each selected source version in one `claude -p` call with no byte budget (2.19 MB packet). The fix is deferred: a size budget with explicit coverage and deferral records. It changes a frozen driver, so it needs a freeze amendment and review, and the queue pass was not retried. Batch summary (D205): D129 closed, D141 counted in four corpora, K6 measured (D212), slice 4 measured for E01-E05 only (D213-D215), L9 not measured (D216).
+
+**Limits:** Nothing here measures chain recall or lineage. Slice 4 E06-E18 stay untested and D157 stays partly open; K6's S1/S6 do not show the query shape is the cause. The driver fix is untested.
+
 ## D216 — P9 owed L9: discovery on the diffusion topic included one of three chain works, the queue pass failed on prompt size, and the corpus condition was not met
 
 **Status:** accepted (measured, not pushed); drivers by gpt-6.1-sol medium, reviewed by Claude; run by Claude Opus 5.5 under Ek L3.

@@ -61,7 +61,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen her zaman farklı şirketin modeli. So
 
 ## Sıradaki
 
-1. Borç ölçümler (D205): K6 sonuç metninin Sol doğrulaması → dilim 4 koşusu (H9e raporunda, Ek S) → L9 koşusu (en çok 240 oturum)
+1. Borç ölçümler (D205) kapandı (D217); açık kalanlar: dilim 4 E06-E18, L9 R12-R15, ertelenmiş K03 paket düzeltmesi
 2. İki yeniden düzenleme oturumu (`.local` sadeleştirme, test klasörleri)
 3. Son kodda tam matris çifti (iki temiz koşu üst üste)
 4. P9 çıkış kaydı (H10 yerine R02 sınırı) ve bu dosyada "P10'a hazır"
@@ -86,6 +86,8 @@ Hedef: P10'dan önceki her şey. Kaba tahmin yaklaşık 1 gün.
 - ✅ Gerçek modelle ilk rapor H9e'de tamamlandı (D202; P16'daki üç deneme D124, D126, D128 tamamlanmamıştı); kalite satırlarının çoğu aralık dışı
 - ❌ Fikir zinciri gerçek korpusta ölçülmedi; keşif 99 işten 1'ini dahil etti (D141). Plan D205: huni modelsiz sayılacak, L9 yeni korpusta
 - 🟡 D141 hunisi: L9 NLP, H9 Q1 ve H9b B kopyalarında modelsiz sayıldı; L9 NLP: (99 eser: 79 özet okundu, 1 dahil, 69 beklemede, bunların 25'i kuyrukta; `docs/product/p9-owed-measurements-results.md`); H9 Q1 (3.167 eser, 7 dahil) ve H9b B (1.867 eser, 10 dahil) de sayıldı; yeni L9 korpusu da sayıldı (1.542 eser, 140 özet okundu, 1 dahil, kuyrukta 50; D216)
+- ❌ L9 adlandırılmış borç (D217): R12-R15 ölçülmedi; ikinci hazırlık yapılmayacak. Kuyruk geçişinin `prompt_too_long` hatası sürücünün bayt bütçesiz K03 paketinden (`l9_run.py` ~655-690), üründen değil; düzeltme (bütçe + kapsam/erteleme kaydı) ertelendi
+- ✅ D205 ölçüm borçları kümesi kapandı (D217): D129 kapandı, D141 sayıldı, K6 ölçüldü, dilim 4 yalnız E01-E05, L9 ölçülmedi; açıklar yukarıdaki satırlarda
 - ❌ L9 fikir zinciri hazırlığı (D216, 4 Ekim): keşif 1.542 eserden 1'ini dahil etti (iDDPM; DDPM dışlandı, DDIM bulunamadı), K0 kayıtlı envanterlerde örtüşme yok, K1 satır sayısı 1/6 (kapı tam yürütülmedi), kuyruk geçişi `prompt_too_long` ile başarısız (yeniden denenmedi); lineage koşulmadı, korpus koşulu karşılanmadı. İkinci hazırlık koordinatör kararı ister. Sonuç: `docs/product/p9-owed-measurements-results.md`
 - 🟡 Özgünlük araması K6 ölçüldü (D212, 4 Ekim): altı iddia tamamlandı (C1-C5 `undecided`, C6 `narrowed`; 44 oturum, 34 dk); yedi `N` eserinin yedisi de sonuçta hiç yoktu, hiçbir iddia `closed` olmadı (yanlış `closed` 0/2); alıntıların 72/72'si metinde, okuyucuya göre 20 hücrenin 1'i destekliyor, 11'i kısmen. Tek koşu, tek model; S1/S6'dan sorgu biçimi nedeni çıkarılmaz. Sonuç: `docs/product/p9-owed-measurements-results.md`
 - 🟡 Dilim 4 gerçek model raporla ölçüm (D157): H9e raporunda iki koşuldu (ilki kit hatasıyla E02'de durdu, D213; Ek S2 ile tek yeniden koşu, D215): E01-E05 ölçüldü (R18 ihlal 0/5, R19 yanlış pozitif 0/17 ve yanlış negatif 0/17, 3 oturum, 72 s); E06 öneri yapısal geçersiz olduğundan E06-E18 sınanmadı (kaldırma, denetim, geri yükleme, dışa aktarım, yedekle-geri yükle). Kod davranışı, tek rapor

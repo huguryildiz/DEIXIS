@@ -142,3 +142,15 @@ Yukarıdaki sayımlar kütüphanenin son durumunu bütün olarak verir; H9 Q1'in
 **Kuyruk geçişi (H9 K03 madde 2):** 09:30:56Z'de 30 eserlik paketle `claude-opus-5-5` medium'a tek istek gitti; istek 2,6 s'de `prompt_too_long` ile döndü (paket 2,19 MB; hata iletisi isteği ~1.003.778 belirteç, konuşmayı ~513.918 belirteç, sınırı 1.000.000 olarak bildiriyor, bunlar iletinin tahminidir, ayrıca ölçülmedi; `--tools ""`, `--strict-mcp-config` ve boş ayar kaynağıyla bile ileti ~490 bin belirteçlik ek yük gösterdi, nedeni araştırılmadı). Sürücü kuralı gereği yeniden denenmedi; 2 isteğin 1'i harcandı, karar yok. Kuyruk kararı olsaydı dahil sayısı değişebilirdi; kuyrukta 50 eser vardı ve bu denenmedi. Bu yüzden satır sayısı eksikliği “kuyruk kararı olmadan” okunmalıdır; kuyruğun dahil sayısına etkisi bilinmiyor.
 
 **Sınır ve sıradaki karar:** Tek hazırlık, tek konu, uygulama tarafında tek model (kuyruk isteği ayrı bir Claude isteğiydi). Satır sayısının 1/6 kalması otomatik hazırlıktan sonraki durumdur; kuyruk isteği başarısız olduğundan etkisi bilinmiyor ve nedensel bir pay yazılmaz. Tamamlanmış bir hazırlığın kapıyı geçememesi donuk kurala göre sonlandırıcıdır; ikinci hazırlık yalnız açık bir dondurma değişikliği ve koordinatör kararıyla (paket boyutu, yeni kütüphane) yapılır. Lineage için hiç oturum harcanmadı (0 / 60).
+
+## Kapanış: P9 ölçülmemiş borçları kümesi (D205, 4 Ekim 2026)
+
+**Kümenin sonucu, tek satır:** D129 kapandı, D141 hunisi dört korpusta sayıldı, K6 ölçüldü, dilim 4 yalnız E01-E05 için ölçüldü, L9 ölçülmedi.
+
+**L9, adlandırılmış borç (R12-R15 ölçülmedi).** Koordinatör ve `gpt-6.1-sol` medium (4 Ekim) ikinci L9 hazırlığını yapmamaya karar verdi; L9 bu hâliyle kapanır. Fikir zinciri soruları (R12-R15) hiçbir korpusta ölçülmüş değildir; D216'daki sayılar yalnız keşfin yeni konuda ne kadar eser dahil ettiğini gösterir.
+
+**Kuyruk geçişi hatasının yeri.** `prompt_too_long` ürün kodundan değil, ölçüm sürücüsünün kendi K03 kuyruk paketinden geldi: `scripts/p9_owed/l9_run.py` (~655-690) en çok 30 eseri, her birinin seçilen kaynak sürümünün saklı bütün pasajlarıyla, bayt bütçesi olmadan tek `claude -p` çağrısına koyuyor (paket 2,19 MB). Sınırsız paket doğrulanmıştır; iletinin bildirdiği ~490 bin belirteçlik ek yükün nedeni ise araştırılmadı ve kod incelemesiyle açıklanmadı. Bu bir sürücü hatasıdır, korpus hazırlığını engelleyen bir paketleme sorunu değildir.
+
+**Ertelenmiş sürücü düzeltmesi (yapılmadı).** Pasaj başına ve paket başına bayt bütçesi; bütçeyi aşan eserler için açık kapsam ve erteleme kayıtları (hangi eserin hangi pasajı okunmadı, hangi eser kuyrukta kaldı). Düzeltme sürücüyü değiştirdiği için yeni bir dondurma değişikliği ve inceleme ister; bu kümede yapılmadı ve kuyruk geçişi yeniden denenmedi.
+
+**Hâlâ açık olanlar:** dilim 4'ün E06-E18 işlemleri (D157 kısmen açık), K6'nın S1/S6'dan nedensel sonuç çıkmaması, L9'un R12-R15'i. Bu küme P10 öncesi ölçüm borçlarını kapatmaz; yukarıdaki satırlar neyin ölçüldüğünü, neyin ölçülmediğini ayırır.

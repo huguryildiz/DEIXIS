@@ -199,7 +199,7 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 
 **Karar (Claude + `gpt-6.1-sol` medium, review-b turunda AGREE, kapılar için bir değişiklik istedi ve alındı):** dilim 4 H9e'nin kabul edilmiş raporunda (`rpt_Rmd2soa3YuCZBBSyQJCF`; ürün `7188ec8`) ölçülür; borç adlandırılmış borç olarak ertelenmez. Gerekçe: §5 “B tamamladıysa B” der; H9e B'nin kendi korpusunda (Q3, `e/data` = `b/data`'nın doğrulanmış kopyası) tamamlanan tek rapordur ve ürün kodu RF6 sonrasıdır. §5'in B'yi adlandırması H9b'nin üç B koşusunu varsaydı; H9e Ek G ile eklendi, bu yüzden açık bir koordinatör değişikliği gerekir: **bu ek, koordinatör push edip onaylamadan geçerli değildir** (sahip kuralı: koordinatör iznini bu ekle birlikte alır; “go” ayrıca verilir).
 
-**Ek kapılar (§5'in üstüne):** (1) Ön koşul: H9e sonucu push edilmiş (`09aa2cf`) ✓, H9 zinciri kapalı ✓. (2) Ortam: `e/data` bayt kopyası (§1.10), H9e'nin son snapshot ve okurları bitmiş olarak; ürün worktree'si `7188ec8`'de ayrık. (3) Kit `measure_edit.py` henüz **yok**: Sol yazar, Claude inceler; deterministik testleri ve hash'leri bu ekin güncellemesinde, koşudan önce donar. (4) Ek E (belirleyici işlem listesi ve başlangıç hash'leri) rapor artık var olduğundan şimdi yazılabilir; koşudan (ilk düzenleme) önce donar ve Sol medium incelemesi alır. Kit ve Ek E tamamlanıp incelenmeden “go” istenmez. (5) En çok 10 yeni oturum / 60 dk, yalnız `cell_recheck`; R20 ve bölüm yeniden yazma ölçülmez. (6) Bu amendment'ın kendisi koşudan önce Sol incelemesinden (medium, sahibin 4 Ekim kuralı) “hazır” alır; Ek S, kit ve Ek E ayrı ayrı incelenir. (7) Koşu K6/L9 gibi koordinatörün “go”'sunu bekler; K6, L9 ve dilim 4 aynı anda koşmaz.
+**Ek kapılar (§5'in üstüne):** (1) Ön koşul: H9e sonucu push edilmiş (`09aa2cf`) ✓, H9 zinciri kapalı ✓. (2) Ortam: `e/data` bayt kopyası (§1.10), H9e'nin son snapshot ve okurları bitmiş olarak; ürün worktree'si `7188ec8`'de ayrık. (3) Kit `measure_edit.py` artık VAR (tablodaki hash'ler; Sol medium yazdı, Claude inceledi): Sol yazar, Claude inceler; deterministik testleri ve hash'leri bu ekin güncellemesinde, koşudan önce donar. (4) Ek E (belirleyici işlem listesi ve başlangıç hash'leri) rapor artık var olduğundan şimdi yazılabilir; koşudan (ilk düzenleme) önce donar ve Sol medium incelemesi alır. Kit ve Ek E tamamlanıp incelenmeden “go” istenmez. (5) En çok 10 yeni oturum / 60 dk, yalnız `cell_recheck`; R20 ve bölüm yeniden yazma ölçülmez. (6) Bu amendment'ın kendisi koşudan önce Sol incelemesinden (medium, sahibin 4 Ekim kuralı) “hazır” alır; Ek S, kit ve Ek E ayrı ayrı incelenir. (7) Koşu K6/L9 gibi koordinatörün “go”'sunu bekler; K6, L9 ve dilim 4 aynı anda koşmaz.
 
 **Sınır:** hâlâ tek rapor, tek korpus; kod davranışının gerçek rapordaki sınaması, anlam desteği iddiası değil.
 
@@ -209,6 +209,9 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 |---|---|
 | `scripts/p9_owed/funnel_counts.py` | `ea3fc2ee9401a15134b3100904245cb9e95eb9de52f907338d0bb4cddb58de31` |
 | `scripts/p9_owed/prep_lookup.py` | `20c1785c95159a1d92b5845f13de2ab83e732f2b12c35094a87c066a6944bab6` |
+| `scripts/p9_owed/measure_edit.py` | `0dd552d374b7e14009de1d39c6d14b43a02772e07fb3508ae6d2c8b4ae88bf1b` |
+| `tests/test_p9_owed_measure_edit.py` | `db43e6eac5f75f32e52f74f9dab44cbd2c4217621c68f85a749a1c4201ed8648` |
+| `docs/product/p9-owed-s4-ek-e.json` | `73d80b986b3690d59cb4424ce0900856f7db2472d168794a004959f28acf32fa` |
 | `scripts/p9_owed/measure_k6.py` | `597f8f3da34f84c297cfc56f4eb0d4366c7e1a15c680fe49ec7f3a28ef819bdc` |
 | `tests/test_p9_owed_measure_k6.py` | `8fed61ff3c3e16d0907a3ba27106252da7f535283238d9e8cc88fb6154834a1c` |
 | `scripts/p6_eval/measure_lineage.py` | `a335b3835d571bb3643969510634ab7728e762d1e1c81e5f3b785b023dc40751` |
@@ -222,6 +225,6 @@ Her kalem üç sondan birine varır: değerler (paydalarıyla) ölçüldü; donm
 
 Runtime paket hash'i: `sha256:ccff02a169ea72690a594b3277c09c0975537f45ed20f9a6203a364d0c2b132c` (H9e'nin ölçtüğü paketle aynı önek `ccff02a1`).
 
-**Kitler (henüz yok, koşudan önce yazılır, Sol yazar / Claude inceler, hash'leri bu ekin güncellemesinde donar):** K6 ölçüm kiti YAZILDI (yukarıdaki tablo; Sol medium yazdı, Claude inceledi, 40 çevrimdışı test), `measure_edit.py` (dilim 4), L9 için `measure_lineage.py`'ye envanter tabanlı `independence` yolu ve K0 envanterleri. Hazır olanlar: `funnel_counts.py` ve `prep_lookup.py` (Sol medium düzeltmelerinden sonra 99 test geçti).
+**Kitler (henüz yok, koşudan önce yazılır, Sol yazar / Claude inceler, hash'leri bu ekin güncellemesinde donar):** K6 ölçüm kiti YAZILDI (yukarıdaki tablo; Sol medium yazdı, Claude inceledi, 40 çevrimdışı test), `measure_edit.py` (dilim 4; YAZILDI, 38 çevrimdışı test, Ek E işlem listesi `docs/product/p9-owed-s4-ek-e.json` donduruldu: E01-E18, E18 yedekle-geri yükle ürünün CLI'siyle), L9 için `measure_lineage.py`'ye envanter tabanlı `independence` yolu ve K0 envanterleri. Hazır olanlar: `funnel_counts.py` ve `prep_lookup.py` (Sol medium düzeltmelerinden sonra 99 test geçti).
 
 **Hazırlık sağlayıcı istekleri:** toplam 13 / 60 (K6 9, L9 4; hepsi OpenAlex, anahtarsız, yeniden deneme yok); defter `.local/p9-owed/prep/ledger.jsonl`. Model oturumu 0; sunucu başlatılmadı; 8765'e dokunulmadı.

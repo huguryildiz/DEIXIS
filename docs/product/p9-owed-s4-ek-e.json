@@ -1,0 +1,2790 @@
+{
+  "version": 1,
+  "prepared_date": "2026-10-04",
+  "product_commit": "7188ec8",
+  "skill_package_hash": "sha256:ccff02a169ea72690a594b3277c09c0975537f45ed20f9a6203a364d0c2b132c",
+  "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+  "research_id": "res_khW4MevleljQIeXvHsyl",
+  "report_api_path": "/api/researches/res_khW4MevleljQIeXvHsyl/reports/rpt_Rmd2soa3YuCZBBSyQJCF",
+  "library_sqlite_sha256": "ff37c851b59d592013fc8410c1e19b07b74b5093d0396d2938eaa01c86d9b63a",
+  "base_sha256": "7ef1645966ae85a3635f2b7689e00b4a872960c9408700c058404d9e5eab96dc",
+  "edit_state_sha256": "a51dc1048f44bf6c44fe9d329af1acafd72eed5130ca75592ace38653a379e34",
+  "baseline_effective": {
+    "rcl_HLM4L93EZkcDUKPS8IRH": [],
+    "rcl_L2PclQdP3z3pTWB4bFh5": [],
+    "rcl_J2Peyv1dA7CnGGfafFjC": [],
+    "rcl_fIhaR9Ny4uI1Lcu3KMi6": [],
+    "rcl_PsuCbRZsb7EneJ5YZ5sV": [],
+    "rcl_gatJsBtfnsI6bqzO4eOK": [],
+    "rcl_s5EawSyIm0bgSd5S0O6G": [],
+    "rcl_toGKn3yChT728VyTouyX": [],
+    "rcl_rRMuDDnqHjcgKvFpuxe2": [],
+    "rcl_edYd6kM7sWXAIhij4kSK": [],
+    "rcl_Ydtu6infy3ZmY5hNisyo": [
+      "rln_XLHQVAVTpQbbFWRF8RF4"
+    ],
+    "rcl_dqH4DDNdngY5wMYnEfr7": [
+      "rln_GjLjj7QtmINDAb94R8xd"
+    ],
+    "rcl_aLEdRGSNwkdHtJwjIhOc": [
+      "rln_1YPknXDw7uTJVUpmOHqB",
+      "rln_5MdhkBLRbH3e0D1KzrTz"
+    ],
+    "rcl_o874GDthXDRTP0eZx9e9": [
+      "rln_v5MSg0FlLUoykph6g9E9",
+      "rln_4f5XAs6Zmj5eRSJxucPM",
+      "rln_TxOCwBXZy274VeOrmeY0",
+      "rln_O9nsyOlT2lRwJswr2AKt",
+      "rln_3yedDzblhvtxLNl19zUA"
+    ],
+    "rcl_FIJFloOkIeVWS1AwmkgG": [
+      "rln_nB26dVpdesNROmRUPDkU"
+    ],
+    "rcl_CvPbxwrsVmG8Yq9HWHsr": [
+      "rln_buaB4bnLT1lAYOKiPdUO"
+    ],
+    "rcl_8GTbKy57JQsn8JMk5t1M": [
+      "rln_42lOBr34DahdcJ54pfwz"
+    ],
+    "rcl_9jVNf8biB3KcvO3cPXum": [
+      "rln_ECdh5GY1PZlJxYzcmXEl"
+    ],
+    "rcl_aFNnva1xhs1HdrycQxzF": [
+      "rln_TQvXeN92vRxE72nnzOCo"
+    ],
+    "rcl_VDziFbfnkK3lKL9bIR1k": [
+      "rln_s5aQn3eZQk6Fleinm8P4",
+      "rln_xcheKwm3X0U7o0LoPMgV",
+      "rln_vmBvk5dOgYvyCVaSybfY"
+    ],
+    "rcl_nFR8BZEkf3nuGzTI6qKK": [
+      "rln_muVuipH2SnFZoOzEFthU"
+    ],
+    "rcl_hWJkYf63tlKRcRoVGpOr": [
+      "rln_zYSV7YbpssSTS27mw6jQ",
+      "rln_HXweAvX7W5B1pf2itytU"
+    ],
+    "rcl_LlUvSrNCNEsoA4nlDHw6": [
+      "rln_Ur6uBo4r7dQBfKe3mm8H",
+      "rln_rlkyD0gRYezV4T8Mg8ZO"
+    ],
+    "rcl_xdlroNMJBclsgXmQ0Kgy": [
+      "rln_YNrOlyzXU3Xcquj5V4KQ",
+      "rln_A9E0yQ07A8tcMfGQMHth",
+      "rln_T5ht4vMiUNwCGrKVyt14"
+    ],
+    "rcl_pLQRqye8nUqHHKHzuuNa": [
+      "rln_XcwAo2WsST8xrkIutrYL",
+      "rln_NMkAJBCdrwGmPWm9vahW",
+      "rln_JObilKBWRUMdi43WxTvV"
+    ],
+    "rcl_uPtrZU3AyPcy3XsDNe4V": [
+      "rln_LlFtZuiOEul1KBXLUkEE"
+    ],
+    "rcl_6DAjWcytDKZ8u1fZ0RQ1": [
+      "rln_FLKEcTkX0IocGC8FOtxr"
+    ],
+    "rcl_7DIQ0DZ4wMwkz6N0O5zW": [
+      "rln_2WSpvIkdOIBtSrjkX3Rc",
+      "rln_izo6PHlxxE7ewZuNDHvQ"
+    ],
+    "rcl_EzmVY1qSjloN0PIeiwZ2": [
+      "rln_KnICR7bKjoxuO00Azs5W"
+    ],
+    "rcl_nSHKMIvVzkBQ6IWh1fn3": [
+      "rln_B6oLNnYXmEg7E3gWUek7"
+    ],
+    "rcl_ZzLKpjrdTVM92uyuoOyG": [
+      "rln_OOVMSHbCsQeNbOvrKsO3"
+    ],
+    "rcl_vipJ5SJPnckAjAjnMDd4": [
+      "rln_GZfw0OsOyWqsWyDE2Z7n"
+    ],
+    "rcl_tAUvjw6mjrConMwG12bW": [
+      "rln_YShydwBq983mjukYNzZd"
+    ],
+    "rcl_TxiJB2uH5ILqQdwJKWwi": [
+      "rln_RJvytWD3t0b1WKizYdZW"
+    ],
+    "rcl_K0p1ww6PnXwSWkKGMh6A": [
+      "rln_iOMghhDJJnRSlPDo1jtZ"
+    ],
+    "rcl_zSWftVlwvx4ioWRf8kaM": [
+      "rln_SYbLU4aouMxGZKLQ0Mcn"
+    ],
+    "rcl_asM8GHHKt48T20HXXCC3": [
+      "rln_bvnmUJmRbWZ5lPRds486"
+    ],
+    "rcl_JJkFxjseS2CmfWkIfdeY": [
+      "rln_6jSbvnk560qNbJaHXV39"
+    ],
+    "rcl_CDfmQ1YqRlJiAkD5gq0O": [
+      "rln_o9nPydpEkzUhwnnbKlom"
+    ],
+    "rcl_uVuAnJFE8XmRLvEXDQ7Y": [
+      "rln_zNwhmO9z7SiyHT5xscfM"
+    ],
+    "rcl_BZijW2zQyq7TIFgczQ1o": [
+      "rln_Cwe6tL3khOCydrGU9uoh"
+    ],
+    "rcl_IrqT1Nxsps8clAxKJ4VC": [
+      "rln_LuEoco9peRohb8EsZEqL"
+    ],
+    "rcl_AsXq9UIRtpTTcSXgZxyr": [
+      "rln_IGTIEiKotQO1ohOw3JJX",
+      "rln_ehGma5w7euuMv1qIdUTe"
+    ],
+    "rcl_21mvenS37mKm5aTFVfbq": [
+      "rln_mguRGXt44lCblmKaUQPc"
+    ],
+    "rcl_KYXxnZ8M3Om2AIpnoqaX": [
+      "rln_4gpi2Ysz0ASHPT2R7uh8"
+    ],
+    "rcl_oavJ3smNxn1kcKTCEvdg": [
+      "rln_xp2y1nN6pZRKwdEkVc8h",
+      "rln_i5iGLdjvIyFtWcxBkQaa"
+    ],
+    "rcl_lPcGxwLl8RtHkWGhFM3Y": [
+      "rln_ENzuk2JptHqgrtrD0m9Y"
+    ],
+    "rcl_1NJcBDeyb2SQSKftfhap": [
+      "rln_4Qjs4btud0s80MNWVYk6",
+      "rln_cvTNu7sUy8aSVXHhOx0s"
+    ],
+    "rcl_1IlYLeE4m0FxyexQ07yp": [
+      "rln_lvGOgM1VKeGcZmEvaFLA",
+      "rln_PhlXUHbLV7RP3q5h0vzD"
+    ],
+    "rcl_QNp8zaujRKYoE6A44v80": [
+      "rln_ua7hToRLaY5XcaBcOOTg",
+      "rln_HlIXusQrdNkJ2oTs78mU"
+    ],
+    "rcl_6HXS8X1fRHrimHTKaClZ": [],
+    "rcl_AHFw20K76wj3WvacOoYA": [],
+    "rcl_iBuhwdmc7sSvc5hXtolQ": [],
+    "rcl_wEVHt0T0Ke7zXgeyUNt1": [],
+    "rcl_O7erbaYQnCOJmm7YnpNb": [],
+    "rcl_1qXYBXkE7MfcXRmpC1TT": [],
+    "rcl_8tOe8LdgR0IDFVWExAu9": [],
+    "rcl_SHKBCdgrPpXm91co4idB": [],
+    "rcl_xetRIui2y0gPHEO03j9q": [],
+    "rcl_iJ89bGVfK8CeT1P3tzwI": [],
+    "rcl_Lou3QP5wWsCvL4JEFEgT": []
+  },
+  "scope_sha256": "05e37f0ee52cacd01ae1f329eb6aad9d7df2c9ccfab1316c602221ed9348f184",
+  "operations": [
+    {
+      "id": "E01",
+      "kind": "edit",
+      "api_call": {
+        "method": "PUT",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/reports/rpt_Rmd2soa3YuCZBBSyQJCF/claims/rcl_AsXq9UIRtpTTcSXgZxyr",
+        "body": {
+          "text": "Değerlendirmelerde farklı koşullar ele alınmıştır: birinde dört durum karşılaştırılmış, diğerinde 24 saatlik ve 7 günlük ufuklar ile basınca bağlı kaçak ve farklı talep düzeyleri incelenmiştir. [D157 ölçüm düzenlemesi 1]",
+          "expected_version": "current"
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr"
+      },
+      "requires": [],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E01"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E01"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E01"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_IGTIEiKotQO1ohOw3JJX",
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ]
+    },
+    {
+      "id": "E02",
+      "kind": "edit",
+      "api_call": {
+        "method": "PUT",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/reports/rpt_Rmd2soa3YuCZBBSyQJCF/claims/rcl_AsXq9UIRtpTTcSXgZxyr",
+        "body": {
+          "link_ids": [
+            "rln_ehGma5w7euuMv1qIdUTe"
+          ],
+          "expected_version": "current"
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr"
+      },
+      "requires": [
+        "E01"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E02"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E02"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E02"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ]
+    },
+    {
+      "id": "E03",
+      "kind": "recheck",
+      "api_call": {
+        "method": "POST",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_EtW9BugJxdbJEJDwx2eW/recheck",
+        "body": {
+          "expected_version": "current"
+        },
+        "expected_status": 202
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr",
+        "table_id": "tbl_ACVZv04QYr9024IW57mF",
+        "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+        "source_version_id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "cell_id": "cel_CQ2xYgx6QxhjPoy75TqZ"
+      },
+      "requires": [
+        "E02"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E03"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E03"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E03"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ],
+      "cell_api_path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_EtW9BugJxdbJEJDwx2eW"
+    },
+    {
+      "id": "E04",
+      "kind": "accept",
+      "api_call": {
+        "method": "POST",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_EtW9BugJxdbJEJDwx2eW/proposals/{proposal_id}/accept",
+        "body": {
+          "expected_version": "current"
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr",
+        "table_id": "tbl_ACVZv04QYr9024IW57mF",
+        "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+        "source_version_id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "cell_id": "cel_CQ2xYgx6QxhjPoy75TqZ"
+      },
+      "requires": [
+        "E03"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E04"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E04"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E04"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ],
+          "operation": "E04"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ],
+      "cell_api_path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_EtW9BugJxdbJEJDwx2eW",
+      "proposal_from": "E03"
+    },
+    {
+      "id": "E05",
+      "kind": "recheck",
+      "api_call": {
+        "method": "POST",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_iscQmOBuPIJrbgx7n45H/recheck",
+        "body": {
+          "expected_version": "current"
+        },
+        "expected_status": 202
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr",
+        "table_id": "tbl_ACVZv04QYr9024IW57mF",
+        "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+        "source_version_id": "srv_iscQmOBuPIJrbgx7n45H",
+        "cell_id": "cel_ukq29zF6ViVoiHVm8S9b"
+      },
+      "requires": [
+        "E04"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E05"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E05"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E05"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ],
+          "operation": "E05"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ],
+      "cell_api_path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_iscQmOBuPIJrbgx7n45H"
+    },
+    {
+      "id": "E06",
+      "kind": "accept",
+      "api_call": {
+        "method": "POST",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_iscQmOBuPIJrbgx7n45H/proposals/{proposal_id}/accept",
+        "body": {
+          "expected_version": "current"
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr",
+        "table_id": "tbl_ACVZv04QYr9024IW57mF",
+        "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+        "source_version_id": "srv_iscQmOBuPIJrbgx7n45H",
+        "cell_id": "cel_ukq29zF6ViVoiHVm8S9b"
+      },
+      "requires": [
+        "E05"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E06"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E06"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E06"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E06"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E06"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ],
+          "operation": "E06"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E06"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E06"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ],
+      "cell_api_path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_iscQmOBuPIJrbgx7n45H",
+      "proposal_from": "E05"
+    },
+    {
+      "id": "E07",
+      "kind": "source_remove",
+      "api_call": {
+        "method": "DELETE",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/sources",
+        "body": {
+          "source_version_ids": [
+            "srv_EtW9BugJxdbJEJDwx2eW"
+          ],
+          "note": "Frozen D157 source exclusion"
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr",
+        "source_version_ids": [
+          "srv_EtW9BugJxdbJEJDwx2eW"
+        ]
+      },
+      "requires": [
+        "E06"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E07"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E07"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E07"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E07"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E07"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ],
+          "operation": "E07"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E07"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E07"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "source_removed",
+          "via": "citation",
+          "target_id": "srv_EtW9BugJxdbJEJDwx2eW",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ],
+          "operation": "E07"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ]
+    },
+    {
+      "id": "E08",
+      "kind": "check",
+      "api_call": {
+        "method": "POST",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/reports/rpt_Rmd2soa3YuCZBBSyQJCF/check-edits",
+        "body": {}
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr"
+      },
+      "requires": [
+        "E07"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E08"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E08"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E08"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E08"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E08"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ],
+          "operation": "E08"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E08"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E08"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "source_removed",
+          "via": "citation",
+          "target_id": "srv_EtW9BugJxdbJEJDwx2eW",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ],
+          "operation": "E08"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ]
+    },
+    {
+      "id": "E09",
+      "kind": "edit",
+      "api_call": {
+        "method": "PUT",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/reports/rpt_Rmd2soa3YuCZBBSyQJCF/claims/rcl_AsXq9UIRtpTTcSXgZxyr",
+        "body": {
+          "text": "Değerlendirmelerde farklı koşullar ele alınmıştır: birinde dört durum karşılaştırılmış, diğerinde 24 saatlik ve 7 günlük ufuklar ile basınca bağlı kaçak ve farklı talep düzeyleri incelenmiştir. [D157 ölçüm düzenlemesi 2]",
+          "expected_version": "current"
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr"
+      },
+      "requires": [
+        "E08"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E09"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E09"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E09"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E09"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E09"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ],
+          "operation": "E09"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E09"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E09"
+        },
+        {
+          "section_id": null,
+          "claim_id": null,
+          "reason_code": "edit_check_stale",
+          "via": "fingerprint",
+          "target_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+          "operation": "E09"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "source_removed",
+          "via": "citation",
+          "target_id": "srv_EtW9BugJxdbJEJDwx2eW",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ],
+          "operation": "E09"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ]
+    },
+    {
+      "id": "E10",
+      "kind": "acknowledge",
+      "api_call": {
+        "method": "POST",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/reports/rpt_Rmd2soa3YuCZBBSyQJCF/sections/V/acknowledge-changes",
+        "body": {
+          "change_keys": "keys for acknowledge_markers"
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "section_id": "V"
+      },
+      "requires": [
+        "E09"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E10"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E10"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E10"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E10"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E10"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E10"
+        },
+        {
+          "section_id": null,
+          "claim_id": null,
+          "reason_code": "edit_check_stale",
+          "via": "fingerprint",
+          "target_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+          "operation": "E10"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ],
+      "acknowledge_markers": [
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ]
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ]
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "source_removed",
+          "via": "citation",
+          "target_id": "srv_EtW9BugJxdbJEJDwx2eW",
+          "witness_claim_ids": [
+            "rcl_21mvenS37mKm5aTFVfbq",
+            "rcl_KYXxnZ8M3Om2AIpnoqaX"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "E11",
+      "kind": "recheck",
+      "api_call": {
+        "method": "POST",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_iscQmOBuPIJrbgx7n45H/recheck",
+        "body": {
+          "expected_version": "current"
+        },
+        "expected_status": 202
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr",
+        "table_id": "tbl_ACVZv04QYr9024IW57mF",
+        "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+        "source_version_id": "srv_iscQmOBuPIJrbgx7n45H",
+        "cell_id": "cel_ukq29zF6ViVoiHVm8S9b"
+      },
+      "requires": [
+        "E10"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E11"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E11"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E11"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E11"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E11"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E11"
+        },
+        {
+          "section_id": null,
+          "claim_id": null,
+          "reason_code": "edit_check_stale",
+          "via": "fingerprint",
+          "target_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+          "operation": "E11"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ],
+      "cell_api_path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_iscQmOBuPIJrbgx7n45H"
+    },
+    {
+      "id": "E12",
+      "kind": "accept",
+      "api_call": {
+        "method": "POST",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_iscQmOBuPIJrbgx7n45H/proposals/{proposal_id}/accept",
+        "body": {
+          "expected_version": "current"
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr",
+        "table_id": "tbl_ACVZv04QYr9024IW57mF",
+        "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+        "source_version_id": "srv_iscQmOBuPIJrbgx7n45H",
+        "cell_id": "cel_ukq29zF6ViVoiHVm8S9b"
+      },
+      "requires": [
+        "E11"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E12"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E12"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E12"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E12"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E12"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E12"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E12"
+        },
+        {
+          "section_id": null,
+          "claim_id": null,
+          "reason_code": "edit_check_stale",
+          "via": "fingerprint",
+          "target_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+          "operation": "E12"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys",
+        "acknowledge_new_change"
+      ],
+      "cell_api_path": "/api/researches/res_khW4MevleljQIeXvHsyl/tables/tbl_ACVZv04QYr9024IW57mF/cells/col_BgeweWrYR8zdKFUTPUoK/srv_iscQmOBuPIJrbgx7n45H",
+      "proposal_from": "E11"
+    },
+    {
+      "id": "E13",
+      "kind": "restore_revision",
+      "api_call": {
+        "method": "PUT",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/reports/rpt_Rmd2soa3YuCZBBSyQJCF/claims/rcl_AsXq9UIRtpTTcSXgZxyr",
+        "body": {
+          "restore_from": "model",
+          "expected_version": "current"
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr"
+      },
+      "requires": [
+        "E12"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E13"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E13"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E13"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E13"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E13"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E13"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E13"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E13"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E13"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E13"
+        },
+        {
+          "section_id": null,
+          "claim_id": null,
+          "reason_code": "edit_check_stale",
+          "via": "fingerprint",
+          "target_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+          "operation": "E13"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "source_removed",
+          "via": "body_ref",
+          "target_id": "srv_EtW9BugJxdbJEJDwx2eW",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E13"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "source_removed",
+          "via": "body_ref",
+          "target_id": "srv_EtW9BugJxdbJEJDwx2eW",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E13"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "source_removed",
+          "via": "body_ref",
+          "target_id": "srv_EtW9BugJxdbJEJDwx2eW",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E13"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_IGTIEiKotQO1ohOw3JJX",
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ]
+    },
+    {
+      "id": "E14",
+      "kind": "restore_revision",
+      "api_call": {
+        "method": "PUT",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/reports/rpt_Rmd2soa3YuCZBBSyQJCF/claims/rcl_AsXq9UIRtpTTcSXgZxyr",
+        "body": {
+          "restore_from": "{revision_id}",
+          "expected_version": "current"
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr"
+      },
+      "requires": [
+        "E13",
+        "E02"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E14"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E14"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E14"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E14"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E14"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E14"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E14"
+        },
+        {
+          "section_id": null,
+          "claim_id": null,
+          "reason_code": "edit_check_stale",
+          "via": "fingerprint",
+          "target_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+          "operation": "E14"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ],
+      "revision_from": "E02"
+    },
+    {
+      "id": "E15",
+      "kind": "purge_refusal",
+      "api_call": {
+        "method": "POST",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/sources/purge",
+        "body": {
+          "source_version_ids": [
+            "srv_EtW9BugJxdbJEJDwx2eW"
+          ]
+        },
+        "expected_status": 409
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr",
+        "source_version_ids": [
+          "srv_EtW9BugJxdbJEJDwx2eW"
+        ]
+      },
+      "requires": [
+        "E14"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E15"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E15"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E15"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E15"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E15"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E15"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E15"
+        },
+        {
+          "section_id": null,
+          "claim_id": null,
+          "reason_code": "edit_check_stale",
+          "via": "fingerprint",
+          "target_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+          "operation": "E15"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys",
+        "refusal_no_change"
+      ]
+    },
+    {
+      "id": "E16",
+      "kind": "source_restore",
+      "api_call": {
+        "method": "POST",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/sources/restore",
+        "body": {
+          "source_version_ids": [
+            "srv_EtW9BugJxdbJEJDwx2eW"
+          ]
+        }
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr",
+        "source_version_ids": [
+          "srv_EtW9BugJxdbJEJDwx2eW"
+        ]
+      },
+      "requires": [
+        "E15"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E16"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E16"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E16"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E16"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E16"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E16"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E16"
+        },
+        {
+          "section_id": null,
+          "claim_id": null,
+          "reason_code": "edit_check_stale",
+          "via": "fingerprint",
+          "target_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+          "operation": "E16"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ]
+    },
+    {
+      "id": "E17",
+      "kind": "export",
+      "api_call": {
+        "method": "GET",
+        "path": "/api/researches/res_khW4MevleljQIeXvHsyl/reports/rpt_Rmd2soa3YuCZBBSyQJCF/export",
+        "body": {}
+      },
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr"
+      },
+      "requires": [
+        "E16"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E17"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E17"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E17"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E17"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E17"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E17"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E17"
+        },
+        {
+          "section_id": null,
+          "claim_id": null,
+          "reason_code": "edit_check_stale",
+          "via": "fingerprint",
+          "target_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+          "operation": "E17"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/workflow/report/store.py:240-330",
+        "backend/deixis/workflow/report/store.py:348-366",
+        "backend/deixis/workflow/report/store.py:406-545",
+        "backend/deixis/workflow/views.py:319-364",
+        "backend/deixis/workflow/report/edit_check.py:131-144",
+        "backend/deixis/workflow/report/export.py:155-192",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2865-2882",
+        "backend/deixis/workflow/tables.py:563-590",
+        "backend/deixis/workflow/tables.py:702-720",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:1621-1643",
+        "backend/deixis/api/app.py:2793-2832",
+        "backend/deixis/api/app.py:2793-2832"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys"
+      ]
+    },
+    {
+      "id": "E18",
+      "kind": "backup_restore",
+      "api_call": null,
+      "target_ids": {
+        "report_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+        "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr"
+      },
+      "requires": [
+        "E17"
+      ],
+      "expected_stale_markers": [
+        {
+          "section_id": "I",
+          "claim_id": "rcl_edYd6kM7sWXAIhij4kSK",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E18"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": "rcl_fIhaR9Ny4uI1Lcu3KMi6",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E18"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": "rcl_iJ89bGVfK8CeT1P3tzwI",
+          "reason_code": "edited_basis",
+          "via": "claim_ref",
+          "target_id": "V.1",
+          "operation": "E18"
+        },
+        {
+          "section_id": "I",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_edYd6kM7sWXAIhij4kSK"
+          ],
+          "operation": "E18"
+        },
+        {
+          "section_id": "IX",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_iJ89bGVfK8CeT1P3tzwI"
+          ],
+          "operation": "E18"
+        },
+        {
+          "section_id": "V",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "citation",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_AsXq9UIRtpTTcSXgZxyr",
+            "rcl_oavJ3smNxn1kcKTCEvdg"
+          ],
+          "operation": "E18"
+        },
+        {
+          "section_id": "abstract",
+          "claim_id": null,
+          "reason_code": "cell_changed",
+          "via": "body_ref",
+          "target_id": "cel_ukq29zF6ViVoiHVm8S9b",
+          "witness_claim_ids": [
+            "rcl_fIhaR9Ny4uI1Lcu3KMi6"
+          ],
+          "operation": "E18"
+        },
+        {
+          "section_id": null,
+          "claim_id": null,
+          "reason_code": "edit_check_stale",
+          "via": "fingerprint",
+          "target_id": "rpt_Rmd2soa3YuCZBBSyQJCF",
+          "operation": "E18"
+        }
+      ],
+      "rule_basis": [
+        "backend/deixis/__main__.py:372-400",
+        "backend/deixis/storage/backup.py:95",
+        "tests/test_report_edit_sequence.py:471-498"
+      ],
+      "expected_target_link_ids": [
+        "rln_ehGma5w7euuMv1qIdUTe"
+      ],
+      "invariants": [
+        "active_citation_set",
+        "numbering",
+        "export",
+        "model_original_revision_bytes",
+        "foreign_keys",
+        "round_trip_equality"
+      ],
+      "reason": "cannot be expressed: no backup/restore API routes; product CLI only (backend/deixis/__main__.py:372-400). New empty isolated target, twelve report tables, linked records and foreign-key equality remain untested by this API kit.",
+      "round_trip_tables": [
+        "reports",
+        "report_sections",
+        "report_snapshot",
+        "report_claims",
+        "report_claim_refs",
+        "report_citation_links",
+        "report_gaps",
+        "report_claim_revisions",
+        "report_claim_revision_links",
+        "report_edit_checks",
+        "report_stale_acknowledgements",
+        "events"
+      ]
+    }
+  ],
+  "selection_rule": "First claim ordered by report_sections.ordinal, report_claims.ordinal with at least two distinct non-null cited cell ids. Remove its first cell link by report_citation_links.rowid; retain its first link to a different cell. Recheck removed cell, retained cell, then retained cell again after acknowledgement. Never select a replacement target.",
+  "targets": {
+    "claim_id": "rcl_AsXq9UIRtpTTcSXgZxyr",
+    "claim_key": "V.1",
+    "section_id": "V",
+    "original_text": "Değerlendirmelerde farklı koşullar ele alınmıştır: birinde dört durum karşılaştırılmış, diğerinde 24 saatlik ve 7 günlük ufuklar ile basınca bağlı kaçak ve farklı talep düzeyleri incelenmiştir.",
+    "original_link_ids": [
+      "rln_IGTIEiKotQO1ohOw3JJX",
+      "rln_ehGma5w7euuMv1qIdUTe"
+    ],
+    "removed_link_id": "rln_IGTIEiKotQO1ohOw3JJX",
+    "removed_cell": {
+      "id": "cel_CQ2xYgx6QxhjPoy75TqZ",
+      "table_id": "tbl_ACVZv04QYr9024IW57mF",
+      "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+      "source_version_id": "srv_EtW9BugJxdbJEJDwx2eW",
+      "current_revision_id": "crv_FfDopO4uc1vzN7UoZAF6",
+      "version": 1,
+      "created_at": "2026-10-03T13:44:53.179+00:00",
+      "updated_at": "2026-10-03T13:44:53.180+00:00"
+    },
+    "retained_cell": {
+      "id": "cel_ukq29zF6ViVoiHVm8S9b",
+      "table_id": "tbl_ACVZv04QYr9024IW57mF",
+      "column_id": "col_BgeweWrYR8zdKFUTPUoK",
+      "source_version_id": "srv_iscQmOBuPIJrbgx7n45H",
+      "current_revision_id": "crv_ylTNgGfoAXDf6i0FGELh",
+      "version": 1,
+      "created_at": "2026-10-03T13:44:21.636+00:00",
+      "updated_at": "2026-10-03T13:44:21.636+00:00"
+    },
+    "sources": [
+      {
+        "id": "srv_EtW9BugJxdbJEJDwx2eW",
+        "title": "Trading-off Constraints in the Pump Scheduling Optimization of Water Distribution Networks",
+        "doi": "10.4090/juee.2016.v10n1.135-143",
+        "year": 2016
+      },
+      {
+        "id": "srv_iscQmOBuPIJrbgx7n45H",
+        "title": "Pump schedules optimisation with pressure aspects in complex large-scale water distribution systems",
+        "doi": "10.5194/dwes-7-53-2014",
+        "year": 2014
+      }
+    ]
+  },
+  "marker_contract": {
+    "evidence_marks": "API observations are section-level, deduplicated by change key. claim_id=null; witness_claim_ids are frozen rule witnesses and never counted as independent observations.",
+    "edited_basis": "Claim-level dependence on a human revision; restore_from=model also makes a human_restore revision.",
+    "edit_check_stale": "Report-level fingerprint mismatch; claim_id=null.",
+    "identity": "section_id,claim_id,reason_code,via,target_id; new revision generation separately checked by acknowledge_new_change invariant.",
+    "expectations": "Derived offline from original links, body_ref/gap_ref rules and declared operation state. No expectations derived from run snapshots."
+  },
+  "limits": {
+    "sessions": 10,
+    "seconds": 3600,
+    "only_model_run_kind": "cell_recheck",
+    "model": [
+      "codex",
+      "gpt-5.6-luna",
+      "medium"
+    ],
+    "round_trip": "cannot be expressed through API; CLI-only case excluded, not a zero violation observation"
+  },
+  "bindings": {
+    "expected_version": "Read current target version before the request; never change frozen text, link ids or expectations.",
+    "proposal_id": "Use only the structurally_valid pending proposal from proposal_from run id; otherwise sinanmadi.",
+    "revision_id": "Bind to the human revision returned by revision_from, without changing its bytes.",
+    "change_keys": "Locate only prewritten acknowledge_markers by marker identity and send their stored keys; unexpected open marks are never acknowledged."
+  }
+}

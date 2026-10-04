@@ -6,37 +6,35 @@ Dondurma: [p9-owed-measurements-freeze.md](p9-owed-measurements-freeze.md) ([D20
 
 **Durum:** **Kaynak:** [p9r-report-results.md](p9r-report-results.md) H9b bölümleri (A, A2, B, H9c, H9d; [D202](../decisions.md)). Ayrı koşu yok, model çağrısı yok, sağlayıcı isteği yok. H9e (RF6 sonrası tek B koşusu; ölçülen ürün `7188ec8`, sonuç kaydı `09aa2cf`) sonradan eklendi (aşağıdaki son satır).
 
-**Kayıtlı maruziyet (hücre çapası onarımı, ürün sürümüne göre):**
+**Kayıtlı maruziyet (çapa sorunu olan bölümler; kaynak: kit P19 çıktıları `../DEIXIS-h9b-run/.local/p9r-h9b/evidence/<kol>/p19.json`, 4 Ekim'de salt okunur okundu, ve `p9r-report-results.md`):**
 
 | Koşu | Ürün | Bölüm | Yol | Kayıtlı sonuç |
 |---|---|---|---|---|
-| A | `682ba1f` | V | yama | canlı API isteği `invalid_json_schema` ile reddetti (şema ürün hatası); yama modeli çıktı vermedi |
-| A | `682ba1f` | III | tam onarım | iptalle kesildi (sonuç yok) |
-| A | `682ba1f` | IV | tam onarım | IV onarımdan sonra `valid` (p9r-report-results.md, kol A) |
+| A | `682ba1f` | V | yama | canlı API isteği `invalid_json_schema` ile reddetti (şema ürün hatası); yama modeli çıktı vermedi; onarım doğrulaması okunamadı (`not_readable`) |
+| A2 | `7cc1168` | V | tam onarım | onarım sonrası doğrulandı (c), bölüm sonraki koşuda geçerli; VI'da durdu |
 | A2 | `7cc1168` | IV | yama | API kabul etti, yama doğrulanıp uygulandı, IV `valid` |
-| A2 | `7cc1168` | V | tam onarım | kayıtta ayrıca geçerlilik sonucu yok; koşu VI'da durdu (V geçerli sayıldı: II-V `valid`) |
 | B | `b90583b` | IV | yama | API kabul etti, yama uygulandı, IV `valid` |
-| H9c | `2b185a8` | V | tam onarım | bölüm geçerli; koşu özette durdu (başka neden) |
+| H9c | `2b185a8` | V | tam onarım | doğrulandı; koşu özette durdu (başka neden) |
 | H9d | `1f4903f` | V | tam onarım | onarım çıktısı ilk denemenin `step_input_id` değerini taşıdı (`envelope_mismatch`); bölüm başarısız |
-| H9d | `1f4903f` | IV | tam onarım | IV `valid` |
+| H9d | `1f4903f` | IV | tam onarım | doğrulandı, IV `valid` |
 | H9e | `7188ec8` | V | yama | API kabul etti, yama uygulandı, V `valid`; rapor ilk kez birleştirmeden geçti |
 
-Çıkarılan iddia (`repair_dropped_*`) her koşuda 0. Yama doğruladığı bölüm sayısı: 3 (A2 IV, B IV, H9e V), hepsi RF2'den sonraki şemayla. Yönlendirme D198'in tam uygunluk koşuluna göre kodda yapılır; bu okuma yönlendirmeyi yeniden sınamaz.
+Çıkarılan iddia (`e_*.removed`) her koşuda boş; `a_missing_first_validation` ve `b_unsent` her kolda boş. Eksik/okunamayan: yalnız A'nın yama doğrulaması (`repair_validation_missing`, `e_patch: not_readable`). Not: A'daki III ve IV onarımları çapa sorunu değildi, P19'a girmedi ve bu tabloya alınmadı.
 
-**P19 sayımları (kol başına; kaynak `p9r-report-results.md`, tanımlar D202 Ek B.5):**
+**P19 a-e (kit çıktısından, kol başına):**
 
-| Kol | a | b | c | d | e (yama uyarlaması) | eksik/okunamayan |
-|---|---|---|---|---|---|---|
-| A | [V] | 1 | 0 | 0 | kayıtlı değil | kayıtlı değil |
-| A2 | [V, IV] | 2 (V tam, IV yama) | 2 | 0 | kayıtlı değil | kayıtlı değil |
-| B | [IV] | 1 | 1 | 0 | boş | kayıtlı değil |
-| H9c | [V] | 1 | 1 | 0 | kayıtlı değil | kayıtlı değil |
-| H9d | [V, IV] | [V, IV] (ikisi tam) | [IV] | boş | kayıtlı değil (`envelope_mismatch` V'te ayrıca) | kayıtlı değil |
-| H9e | [V] | [V] (yama) | [V] | boş | kayıtlı değil | kayıtlı değil |
+| Kol | a | b (tam/yama) | c | d | e_full / e_patch (çıkarılan, görünür) |
+|---|---|---|---|---|---|
+| A | [V] | V yama | boş | boş | yok / V `not_readable` |
+| A2 | [V, IV] | V tam, IV yama | [V, IV] | boş | V (çıkarılan boş, görünür boş, taslak var) / IV boş-boş |
+| B | [IV] | IV yama | [IV] | boş | yok / IV boş-boş |
+| H9c | [V] | V tam | [V] | boş | V boş-boş, taslak var / yok |
+| H9d | [V, IV] | V tam, IV tam | [IV] | boş | V (taslak yok), IV / yok; V `envelope_mismatch` |
+| H9e | [V] | V yama | [V] | boş | yok / V boş-boş |
 
-“Kayıtlı değil”: okuduğum sonuç metninde ayrıca bildirilmemiş; yoksa demek değildir, kaynak kit kayıtlarından yeniden üretilmedi (bu okuma yeni sayım yapmaz). P19'un eksik/okunamayan kategorilerinin kol başına tam dökümü bu yüzden eksik kalır; kalem bu noktada tam kapalı değil, ölçülen kısım yukarıdaki satırlarla sınırlıdır.
+Yama doğruladığı bölüm sayısı: 3 (A2 IV, B IV, H9e V), hepsi RF2'den sonraki şemayla; yama yolu 4 kez girildi (A'da şema reddi). Tam onarım 4 kez girildi (A2 V, H9c V, H9d V, H9d IV); üçü doğrulandı, biri (H9d V) girdi-kimliği hatasıyla başarısız. Yönlendirme D198'in tam uygunluk koşuluna göre kodda yapılır; bu okuma yönlendirmeyi yeniden sınamaz.
 
-**Sonuç.** Ölçüldü: RF2 şeması canlı API'de üç ayrı koşuda kabul edildi ve yama bir bölümü geçerli yayımladı; tam onarım yolu (A III iptalle kesildi, sonuçsuz; A IV geçerli) A2 V, H9c V ve H9d IV'te bölümü geçerli bıraktı, H9d V'te onarım çıktısının girdi kimliği hatası yüzünden başarısız oldu (çapa değil; RF6/D211 bunu kodla damgalar). İki korpus (H9 tablosu: A, A2; Q3 B tablosu: B, H9c, H9d, H9e yeniden kullanır), tek model, her kol bir koşu. P19 a-e ve eksik/okunamayan kategorilerinin kol başına tam dökümü bu belgede yok; kaynak sayımlar `p9r-report-results.md` ve H9b kitinin kayıtlarındadır, burada yeniden üretilmedi. Maruz kalma etkinlik kanıtı değildir: onarılan iddiaların anlam desteği ayrıca okunmadı ve H9b hiçbir kolda D129'un nedensel yararını göstermez. H9'un kayıtlı gözlemleri tarihsel kalır. D129'un hedefli onarım yolu gerçek modelde çalıştırıldı; başarı oranı ölçülmedi.
+**Sonuç.** Ölçüldü: RF2 şeması canlı API'de üç ayrı koşuda kabul edildi ve yama her seferinde bölümü geçerli yayımladı; tam onarım yolu A2 V, H9c V ve H9d IV'te bölümü geçerli bıraktı, H9d V'te onarım çıktısının girdi kimliği hatası yüzünden başarısız oldu (çapa değil; RF6/D211 bunu kodla damgalar). İki korpus (H9 tablosu: A, A2; Q3 B tablosu: B, H9c, H9d, H9e yeniden kullanır), tek model, her kol bir koşu. P19 a-e ve eksik/okunamayan kategorilerinin kol başına tam dökümü bu belgede yok; kaynak sayımlar `p9r-report-results.md` ve H9b kitinin kayıtlarındadır, burada yeniden üretilmedi. Maruz kalma etkinlik kanıtı değildir: onarılan iddiaların anlam desteği ayrıca okunmadı ve H9b hiçbir kolda D129'un nedensel yararını göstermez. H9'un kayıtlı gözlemleri tarihsel kalır. D129'un hedefli onarım yolu gerçek modelde çalıştırıldı; başarı oranı ölçülmedi.
 
 ## D141: keşif hunisinin sayımı (4 Ekim 2026, modelsiz)
 
@@ -76,6 +74,7 @@ Ham çıktılar (izlenmeyen, `.local/p9-owed/d141/`): `h9q1-count.json` (SHA-256
 | H9 Q1 | 1 | `run_gColv…` keşif, 2026-10-03 06:53Z | `paused`, kütüphanede kalan tamamlanmamış deneme |
 | H9 Q1 | 2 | `run_inu6W7…` keşif 06:57Z; sonra `fulltext_adjudication` 07:03Z ve `table_fill` 07:13Z | hepsi `completed` |
 | H9 Q1 | (hazırlık değil) | `report` koşusu 07:40Z | `paused` (H9'un durmuş rapor koşusu) |
+| L9 NLP | 1 | `run_VD5r…` keşif 2026-10-01 15:39Z, `run_FIZa…` tam metin 15:43Z, `run_Qbnz…` doldurma 15:51Z | hepsi `completed` |
 | H9b B Q3 | 1 | keşif 13:23Z, tam metin 13:33Z, doldurma 13:42Z | hepsi `completed` |
 
 Yukarıdaki sayımlar kütüphanenin son durumunu bütün olarak verir; H9 Q1'in iki keşif koşusu arasında ayrım yapmaz.

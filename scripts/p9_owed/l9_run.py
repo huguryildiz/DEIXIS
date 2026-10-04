@@ -10,6 +10,7 @@ Neither a gate nor a completed synthetic test establishes semantic support.
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import hashlib
 import importlib.util
 import json
@@ -503,7 +504,21 @@ class Driver:
             conn.execute("BEGIN")
             return Store(conn).included_works(self.current()["research_id"])
 
-    def columns_fill(self, k0_path, measurement_commit, returned=None):
+    def included_identity_records(self):
+        """Read current heads and all their work versions in one copy-free snapshot."""
+        from deixis.workflow.store import Store
+        p = k6.safe_db(self.db)
+        with closing(sqlite3.connect(p.as_uri() + "?mode=ro", uri=True)) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA query_only=ON")
+            conn.execute("BEGIN")
+            heads = Store(conn).included_works(self.current()["research_id"])
+            works = independence.work_inventory(conn)
+            by_version = {v["source_version_id"]: w for w in works for v in w["versions"]}
+            return [{**by_version[head], "head_source_version_id": head} for head in heads]
+
+    def columns_fill(self, k0_path, measurement_commit, returned=None, *, expected_manifests,
+                     new_copy_record):
         self.idle()
         a = self.current()
         if self.state["closed"] or not a.get("K1", {}).get("pass"):
@@ -514,7 +529,13 @@ class Driver:
         self.verify_rows(table)
         k0 = load(k0_path)
         k0_sha256 = file_hash(k0_path)
-        validate_k0_binding(k0, a, measurement_commit, self.included_heads())
+        expected = load(expected_manifests)
+        copy_record = load(new_copy_record)
+        binding_files = {str(Path(p).resolve()): file_hash(p)
+                         for p in (expected_manifests, new_copy_record)}
+        current = self.included_identity_records()
+        validate_k0_binding(k0, a, measurement_commit,
+                            [w["head_source_version_id"] for w in current], current, expected, copy_record)
         # Only this endpoint assigns the three lineage roles. Its frozen text
         # must equal Ek L1 before admitting the request and after the response.
         from deixis.workflow.tables import LINEAGE_ROLE_COLUMNS
@@ -539,7 +560,11 @@ class Driver:
             raise Refused("retry_failed preview forbidden")
         if file_hash(k0_path) != k0_sha256:
             raise Refused("K0 file changed during columns/fill")
-        validate_k0_binding(k0, a, measurement_commit, self.included_heads())
+        if any(file_hash(p) != sha for p, sha in binding_files.items()):
+            raise Refused("K0 manifest binding file changed during columns/fill")
+        current = self.included_identity_records()
+        validate_k0_binding(k0, a, measurement_commit,
+                            [w["head_source_version_id"] for w in current], current, expected, copy_record)
         a["preparation_complete"] = True
         a["preparation_completed_at"] = self.clock()
         self.save()
@@ -548,6 +573,7 @@ class Driver:
                  "gates": checks, "counts": preview["counts"], "preview_fingerprint": preview["preview_fingerprint"],
                  "max_model_calls": preview["max_model_calls"], "k0_file": str(Path(k0_path).resolve()),
                  "k0_sha256": k0_sha256, "measurement_commit": measurement_commit,
+                 "manifest_binding_files": binding_files,
                  "l1_sha256": self.state["l1_sha256"],
                  "table_response_hashes": {"rows": a["rows_table_sha256"], "filled": digest(table)}, "at": self.clock()}
         self.artifact("table-filled.json", table)
@@ -758,7 +784,8 @@ def reader_snapshot(db, attempt, run_id, view, g, out, state, stopped=None):
     write(out / "key.json", key)
 
 
-def validate_k0_binding(k0, attempt, measurement_commit, current_heads):
+def validate_k0_binding(k0, attempt, measurement_commit, current_heads, current_works,
+                        expected_manifests, new_copy_record):
     """Bind the recorded check projection; inventory summaries omit provenance."""
     def fixed_labels(labels, expected):
         return (isinstance(labels, list) and all(isinstance(label, str) for label in labels)
@@ -784,6 +811,21 @@ def validate_k0_binding(k0, attempt, measurement_commit, current_heads):
                        for label in required[1:])
                 or not recorded_hash(k0["provenance"]["manifest_sha256"])):
             raise Refused("K0 requires recorded copy-manifest hashes for all four libraries")
+        if (not isinstance(expected_manifests, dict)
+                or set(expected_manifests) != set(required[1:])
+                or any(not recorded_hash(expected_manifests[label]) for label in required[1:])):
+            raise Refused("K0 expected manifests must declare exactly L9 NLP, H9 Q1, H9b B Q3 SHA-256 hashes")
+        for label in required[1:]:
+            if references[label]["recorded_manifest_sha256"] != expected_manifests[label]:
+                raise Refused("K0 reference manifest differs from operator declaration: " + label)
+        if (not isinstance(new_copy_record, dict) or new_copy_record.get("usable") is not True
+                or not isinstance(new_copy_record.get("copy_manifest"), dict)
+                or not recorded_hash(new_copy_record["copy_manifest"].get("sha256"))
+                or new_copy_record.get("source_manifest") != new_copy_record["copy_manifest"]
+                or new_copy_record.get("source_after_manifest") != new_copy_record["copy_manifest"]):
+            raise Refused("K0 new copy record must be usable with equal source/source-after/copy manifests")
+        if k0["provenance"]["manifest_sha256"] != new_copy_record["copy_manifest"]["sha256"]:
+            raise Refused("K0 new library manifest differs from the usable copy record")
         exclusions = independence.L9_DOC_EXCLUSIONS
         if (not fixed_labels(k0["exclude_path_prefixes"], exclusions)
                 or not fixed_labels([r["path"] for r in k0["excluded_paths"]], exclusions)):
@@ -797,6 +839,18 @@ def validate_k0_binding(k0, attempt, measurement_commit, current_heads):
             raise Refused("K0 included work heads differ from the current attempt")
         if heads != current_heads:
             raise Refused("K0 included works changed since the check")
+        for work in works:
+            if (not isinstance(work.get("work_id"), str)
+                    or not isinstance(work.get("identifiers"), list)
+                    or not isinstance(work.get("versions"), list)
+                    or not work["versions"]
+                    or any(not isinstance(v, dict) or not isinstance(v.get("source_version_id"), str)
+                           or not isinstance(v.get("identifiers"), list) for v in work["versions"])):
+                raise Refused("K0 lacks per-work/per-version identity records; regenerate l9_independence.check output")
+        fields = ("head_source_version_id", "work_id", "identifiers", "versions")
+        if ([{key: w[key] for key in fields} for w in works]
+                != [{key: w[key] for key in fields} for w in current_works]):
+            raise Refused("K0 included work/version identity records changed since the check")
         if not works or any(w["matches"] or w["independence_unverified"] is not False for w in works):
             raise Refused("K0 included works have overlap or unverified independence")
     except (KeyError, TypeError, AttributeError) as exc:
@@ -835,6 +889,10 @@ def parser():
         if name == "columns-fill":
             command.add_argument("--k0", required=True, help="l9_independence check JSON")
             command.add_argument("--measurement-commit", required=True, help="full SHA recorded by K0")
+            command.add_argument("--expected-manifests", required=True,
+                                 help="operator JSON {label: sha256}: L9 NLP, H9 Q1, H9b B Q3")
+            command.add_argument("--new-copy-record", required=True,
+                                 help="usable new-library copy record with three equal manifests")
         if name == "lineage":
             command.add_argument("--l2", required=True, help="operator-written JSON equal to gates.json")
             command.add_argument("--l2-sha256", required=True)
@@ -860,7 +918,8 @@ def main(argv=None):
         elif args.command == "rows":
             driver.rows()
         elif args.command == "columns-fill":
-            driver.columns_fill(args.k0, args.measurement_commit, args.connection_returned)
+            driver.columns_fill(args.k0, args.measurement_commit, args.connection_returned,
+                                expected_manifests=args.expected_manifests, new_copy_record=args.new_copy_record)
         else:
             driver.lineage(args.l2, args.l2_sha256, args.connection_returned)
         return 0

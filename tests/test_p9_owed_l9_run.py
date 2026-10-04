@@ -93,7 +93,25 @@ def driver(tmp_path, api=None, data=None):
                              "rows_table_sha256": "rows-hash", "K1": {"pass": True, "pdf_text_rows": 6}}]
     d.save()
     d.included_heads = lambda: [f"s{i}" for i in range(6)]
+    d.included_identity_records = lambda: [identity_record(sid) for sid in d.included_heads()]
+    d.expected_manifests = tmp_path / "expected-manifests.json"
+    d.new_copy_record = tmp_path / "new-copy-record.json"
+    l9.write(d.expected_manifests, {label: "b" * 64 for label in l9.independence.REQUIRED_INVENTORIES[1:]})
+    manifest = {"sha256": "c" * 64, "files": []}
+    l9.write(d.new_copy_record, {"usable": True, "source_manifest": manifest,
+                               "source_after_manifest": manifest, "copy_manifest": manifest})
     return d
+
+
+def identity_record(sid):
+    return {"head_source_version_id": sid, "work_id": "work-" + sid,
+            "identifiers": ["doi:10.1234/" + sid], "versions": [
+                {"source_version_id": sid, "identifiers": ["doi:10.1234/" + sid]}]}
+
+
+def columns_fill(d, path, commit=COMMIT):
+    return d.columns_fill(path, commit, expected_manifests=d.expected_manifests,
+                          new_copy_record=d.new_copy_record)
 
 
 def k0(d):
@@ -108,7 +126,7 @@ def k0(d):
                                 "reason": l9.independence.L9_DOC_EXCLUSION_REASON}
                                for p in l9.independence.L9_DOC_EXCLUSIONS],
             "researches": [{"research_id": "res1", "included_works": [
-                {"head_source_version_id": sid, "matches": [], "independence_unverified": False} for sid in d.current()["rows"]]}]}
+                {**identity_record(sid), "matches": [], "independence_unverified": False} for sid in d.current()["rows"]]}]}
 
 
 @pytest.mark.parametrize("base", ["http://127.0.0.1:8765", "http://localhost:8765", "http://[::1]:8765", "http://example.org:8873", "http://127.0.0.1:8872"])
@@ -232,7 +250,7 @@ def test_k1_mismatch_no_columns_fill(tmp_path, monkeypatch):
         d.rows()
     assert [p[0] for p in api.posts] == ["/api/researches/res1/tables"]
     with pytest.raises(l9.Refused):
-        d.columns_fill(tmp_path / "absent", COMMIT)
+        columns_fill(d, tmp_path / "absent")
     assert d.state["closed"]
     assert l9.load(tmp_path / "outcome.json")["reason"] == "korpus koşulu karşılanmadı"
 
@@ -278,7 +296,7 @@ def test_columns_verbatim_rows_retained_and_l2_fields(tmp_path):
     d = driver(tmp_path)
     path = tmp_path / "k0.json"
     l9.write(path, k0(d))
-    gates = d.columns_fill(path, COMMIT)
+    gates = columns_fill(d, path)
     assert [c["instruction"] for c in d.api.table["columns"]] == [c["instruction"] for c in l9.load(l9.L1)["columns"]]
     assert [p[0] for p in d.api.posts] == [d.tp() + "/lineage/columns", d.tp() + "/fill"]
     assert gates["rows"] == [f"s{i}" for i in range(6)]
@@ -292,7 +310,7 @@ def test_no_manual_rows(tmp_path):
     d = driver(tmp_path)
     d.api.table["rows"].reverse()
     with pytest.raises(l9.Refused, match="rows"):
-        d.columns_fill("absent", COMMIT)
+        columns_fill(d, "absent")
     assert not d.api.posts
 
 
@@ -326,7 +344,7 @@ def test_columns_refuses_unbound_k0_before_posts(tmp_path, problem):
     path = tmp_path / "k0.json"
     l9.write(path, record)
     with pytest.raises(l9.Refused, match="K0"):
-        d.columns_fill(path, COMMIT)
+        columns_fill(d, path)
     assert not d.api.posts
     assert not d.current().get("preparation_complete")
 
@@ -340,7 +358,7 @@ def test_columns_rereads_included_heads_before_posts(tmp_path, heads):
     l9.write(path, k0(d))
     d.included_heads = lambda: heads
     with pytest.raises(l9.Refused, match="included works changed"):
-        d.columns_fill(path, COMMIT)
+        columns_fill(d, path)
     assert not d.api.posts
 
 
@@ -351,7 +369,7 @@ def test_columns_rereads_heads_after_fill(tmp_path):
     reads = iter([d.included_heads(), ["changed"]])
     d.included_heads = lambda: next(reads)
     with pytest.raises(l9.Refused, match="included works changed"):
-        d.columns_fill(path, COMMIT)
+        columns_fill(d, path)
     assert not (tmp_path / "gates.json").exists()
     assert not d.current().get("preparation_complete")
 
@@ -361,14 +379,124 @@ def test_columns_cli_requires_measurement_commit(tmp_path):
     with pytest.raises(SystemExit) as error:
         l9.parser().parse_args(args)
     assert error.value.code == 2
-    assert l9.parser().parse_args([*args, "--measurement-commit", COMMIT]).measurement_commit == COMMIT
+    complete = [*args, "--measurement-commit", COMMIT, "--expected-manifests", "expected.json",
+                "--new-copy-record", "copy.json"]
+    assert l9.parser().parse_args(complete).measurement_commit == COMMIT
+    for flag in ("--expected-manifests", "--new-copy-record"):
+        missing = complete[:]
+        index = missing.index(flag)
+        del missing[index:index + 2]
+        with pytest.raises(SystemExit):
+            l9.parser().parse_args(missing)
+
+
+@pytest.mark.parametrize("change", ["work", "identifier", "version", "version-identifier", "missing-versions"])
+def test_columns_identity_binding_before_posts(tmp_path, change):
+    d = driver(tmp_path)
+    record = k0(d)
+    work = record["researches"][0]["included_works"][0]
+    if change == "work":
+        work["work_id"] = "other"
+    elif change == "identifier":
+        work["identifiers"] = ["doi:10.1234/other"]
+    elif change == "version":
+        work["versions"].append({"source_version_id": "other", "identifiers": []})
+    elif change == "version-identifier":
+        work["versions"][0]["identifiers"] = ["doi:10.1234/other"]
+    else:
+        del work["versions"]
+    path = tmp_path / "k0.json"
+    l9.write(path, record)
+    with pytest.raises(l9.Refused, match="K0.*identit"):
+        columns_fill(d, path)
+    assert not d.api.posts
+    assert not d.current().get("preparation_complete")
+
+
+@pytest.mark.parametrize("label", l9.independence.REQUIRED_INVENTORIES[1:])
+def test_columns_exact_reference_manifest_before_posts(tmp_path, label):
+    d = driver(tmp_path)
+    record = k0(d)
+    record["reference_libraries"][label]["recorded_manifest_sha256"] = "e" * 64
+    path = tmp_path / "k0.json"
+    l9.write(path, record)
+    with pytest.raises(l9.Refused, match="K0.*manifest"):
+        columns_fill(d, path)
+    assert not d.api.posts
+
+
+@pytest.mark.parametrize("change", ["hash", "unusable", "source", "source-after", "missing", "malformed",
+                                     "missing-label", "extra-label", "invalid-expected"])
+def test_columns_manifest_declarations_fail_closed(tmp_path, change):
+    d = driver(tmp_path)
+    record = k0(d)
+    copy = l9.load(d.new_copy_record)
+    if change == "hash":
+        record["provenance"]["manifest_sha256"] = "e" * 64
+    elif change == "unusable":
+        copy["usable"] = False
+    elif change in {"source", "source-after"}:
+        copy["source_manifest" if change == "source" else "source_after_manifest"] = {"sha256": "c" * 64, "files": ["changed"]}
+    elif change == "missing":
+        del copy["copy_manifest"]
+    elif change == "malformed":
+        copy = []
+    else:
+        expected = l9.load(d.expected_manifests)
+        if change == "missing-label":
+            del expected["L9 NLP"]
+        elif change == "extra-label":
+            expected["other"] = "b" * 64
+        else:
+            expected["L9 NLP"] = "invalid"
+        l9.write(d.expected_manifests, expected)
+    l9.write(d.new_copy_record, copy)
+    path = tmp_path / "k0.json"
+    l9.write(path, record)
+    with pytest.raises(l9.Refused, match="K0"):
+        columns_fill(d, path)
+    assert not d.api.posts
+
+
+def test_columns_identity_reread_after_fill(tmp_path):
+    d = driver(tmp_path)
+    path = tmp_path / "k0.json"
+    l9.write(path, k0(d))
+    before = d.included_identity_records()
+    after = deepcopy(before)
+    after[0]["versions"][0]["identifiers"] = ["doi:10.1234/changed"]
+    reads = iter([before, after])
+    d.included_identity_records = lambda: next(reads)
+    with pytest.raises(l9.Refused, match="K0.*identit"):
+        columns_fill(d, path)
+    assert not (tmp_path / "gates.json").exists()
+    assert not d.current().get("preparation_complete")
+
+
+@pytest.mark.parametrize("file", ["expected_manifests", "new_copy_record"])
+def test_columns_manifest_file_change_after_fill(tmp_path, file):
+    d = driver(tmp_path)
+    path = tmp_path / "k0.json"
+    l9.write(path, k0(d))
+    post = d.api.post
+    def changing_post(endpoint, body, key):
+        response = post(endpoint, body, key)
+        if endpoint.endswith("/fill"):
+            changed = getattr(d, file)
+            changed.write_text(changed.read_text() + "\n")
+        return response
+    d.api.post = changing_post
+    with pytest.raises(l9.Refused, match="binding file changed"):
+        columns_fill(d, path)
+    assert not (tmp_path / "gates.json").exists()
+    assert not d.current().get("preparation_complete")
 
 
 def test_bad_l2_hash_blocks_post(tmp_path):
     d = driver(tmp_path)
     path = tmp_path / "k0.json"
     l9.write(path, k0(d))
-    d.columns_fill(path, COMMIT)
+    columns_fill(d, path)
     l2 = tmp_path / "l2.json"
     l9.write(l2, l9.load(tmp_path / "gates.json"))
     before = len(d.api.posts)
@@ -540,7 +668,7 @@ def test_gate_failure_after_completed_fill_blocks_second_attempt(tmp_path):
     d.api.view["status"]["nodes_complete"] = 3
     path = tmp_path / "k0.json"
     l9.write(path, k0(d))
-    gates = d.columns_fill(path, COMMIT)
+    gates = columns_fill(d, path)
     assert not gates["gates"]["K2"]["pass"]
     assert d.current()["preparation_complete"]
     with pytest.raises(l9.Refused, match="closed"):
@@ -567,7 +695,7 @@ def test_lineage_pass_uses_l2_fingerprint_and_kit_snapshot(tmp_path, monkeypatch
     d = driver(tmp_path)
     path = tmp_path / "k0.json"
     l9.write(path, k0(d))
-    d.columns_fill(path, COMMIT)
+    columns_fill(d, path)
     l2 = tmp_path / "l2.json"
     l9.write(l2, l9.load(tmp_path / "gates.json"))
     d.api.base = "http://127.0.0.1:8873"
@@ -588,7 +716,7 @@ def test_changed_preview_before_lineage_no_post(tmp_path):
     d = driver(tmp_path)
     path = tmp_path / "k0.json"
     l9.write(path, k0(d))
-    d.columns_fill(path, COMMIT)
+    columns_fill(d, path)
     l2 = tmp_path / "l2.json"
     l9.write(l2, l9.load(tmp_path / "gates.json"))
     d.api.preview["preview_fingerprint"] = "b" * 64

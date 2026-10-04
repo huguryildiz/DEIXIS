@@ -597,19 +597,87 @@ def test_check_projection_binds_to_columns_fill(lib, tmp_path, monkeypatch):
     copy = lib.seal()
     result = kit.check(copy, paths, COMMIT, expected_refs(paths))
     attempt = {"research_id": lib.rid, "included": [{"source_version_id": "known"}]}
-    l9_run.validate_k0_binding(result, attempt, COMMIT, ["known"])
     # check projects summaries, not full inventory provenance or a single research id.
     assert all("provenance" not in i for i in result["inventories"])
     assert "research_id" not in result
     assert result["provenance"]["manifest_sha256"] == copies.manifest(copy)["sha256"]
     driver = l9_run.Driver(object(), tmp_path / "driver", copy / "library.sqlite")
     driver.state["attempts"] = [attempt]
+    current = driver.included_identity_records()
+    expected = {label: body["manifest_sha256"] for label, body in expected_refs(paths).items()}
+    copy_record = json.loads(copies.copy_record_path(copy).read_text())
+    l9_run.validate_k0_binding(result, attempt, COMMIT, ["known"], current, expected, copy_record)
+    assert current[0]["versions"] == result["researches"][0]["included_works"][0]["versions"]
     assert driver.included_heads() == ["known"]
     with sqlite3.connect(copy / "library.sqlite") as conn:
         conn.execute("UPDATE selections SET state='excluded' WHERE research_id=?", (lib.rid,))
     assert driver.included_heads() == []
     with pytest.raises(l9_run.Refused, match="included works changed"):
-        l9_run.validate_k0_binding(result, attempt, COMMIT, driver.included_heads())
+        l9_run.validate_k0_binding(result, attempt, COMMIT, driver.included_heads(),
+                                   driver.included_identity_records(), expected, copy_record)
+
+
+@pytest.mark.parametrize("change", ["doi", "mapping", "added-version", "removed-version", "version-mapping",
+                                    "work-id", "unusable-mapping", "upload", "moved-identity", "equivalent-doi"])
+def test_current_identity_snapshot_refuses_stale_k0(lib, tmp_path, monkeypatch, change):
+    from scripts.p9_owed import l9_run
+
+    monkeypatch.setattr(l9_run.k6, "ROOT", tmp_path)
+    paths = references(tmp_path)
+    lib.source("head", work="work", included=True)
+    lib.identifier("head", "doi_field", "https://doi.org/10.1234/NEW")
+    lib.source("sibling", work="work", member=False)
+    lib.identifier("sibling", "arxiv", "https://arxiv.org/abs/2006.11239v2")
+    copy = lib.seal()
+    result = kit.check(copy, paths, COMMIT, expected_refs(paths))
+    attempt = {"research_id": lib.rid, "included": [{"source_version_id": "head"}]}
+    driver = l9_run.Driver(object(), tmp_path / "driver", copy / "library.sqlite")
+    driver.state["attempts"] = [attempt]
+    expected = {label: body["manifest_sha256"] for label, body in expected_refs(paths).items()}
+    record = json.loads(copies.copy_record_path(copy).read_text())
+    before = (copy / "library.sqlite").read_bytes()
+    current = driver.included_identity_records()
+    l9_run.validate_k0_binding(result, attempt, COMMIT, ["head"], current, expected, record)
+    assert (copy / "library.sqlite").read_bytes() == before
+    assert {v["source_version_id"] for v in current[0]["versions"]} == {"head", "sibling"}
+    assert current[0]["identifiers"] == ["arxiv:2006.11239", "doi:10.1234/new"]
+    # The driver must not open/copy the original source or
+    # require the isolated library to retain its pre-fill byte manifest.
+    monkeypatch.setattr(kit, "library_copy", lambda *_: pytest.fail("copy-based identity read forbidden"))
+    with sqlite3.connect(copy / "library.sqlite") as conn:
+        if change == "doi":
+            conn.execute("UPDATE source_versions SET doi='10.1234/changed' WHERE id='head'")
+        elif change in {"mapping", "version-mapping", "unusable-mapping"}:
+            sid = "sibling" if change == "version-mapping" else "head"
+            scheme = "unknown" if change == "unusable-mapping" else "pmid"
+            conn.execute("INSERT INTO identifier_mappings(source_version_id,scheme,value,provider,retrieved_at) VALUES(?,?,?,'synthetic','now')",
+                         (sid, scheme, "12345"))
+        elif change == "added-version":
+            conn.execute("INSERT INTO source_versions(id,work_id,title,origin,created_at) VALUES('new','work','Synthetic','provider','now')")
+        elif change == "removed-version":
+            conn.execute("DELETE FROM identifier_mappings WHERE source_version_id='sibling'")
+            conn.execute("DELETE FROM source_versions WHERE id='sibling'")
+        elif change == "work-id":
+            conn.execute("INSERT INTO works(id,created_at) VALUES('replacement','now')")
+            conn.execute("UPDATE source_versions SET work_id='replacement' WHERE work_id='work'")
+        elif change == "moved-identity":
+            conn.execute("UPDATE identifier_mappings SET source_version_id='head' WHERE source_version_id='sibling'")
+        elif change == "equivalent-doi":
+            conn.execute("UPDATE source_versions SET doi='doi:10.1234/new' WHERE id='head'")
+        else:
+            conn.execute("INSERT INTO source_assets(id,source_version_id,origin,sha256,byte_size,media_type,storage_path,retrieved_at,extraction_status) VALUES('upload','sibling','user_upload',?,0,'application/pdf','synthetic','now','pending')", ("f" * 64,))
+    conn.close()
+    modified = (copy / "library.sqlite").read_bytes()
+    current = driver.included_identity_records()
+    assert driver.included_heads() == ["head"]
+    assert (copy / "library.sqlite").read_bytes() == modified
+    if change == "equivalent-doi":
+        l9_run.validate_k0_binding(result, attempt, COMMIT, ["head"], current, expected, record)
+        return
+    if change == "moved-identity":
+        assert current[0]["identifiers"] == result["researches"][0]["included_works"][0]["identifiers"]
+    with pytest.raises(l9_run.Refused, match="identity records changed"):
+        l9_run.validate_k0_binding(result, attempt, COMMIT, ["head"], current, expected, record)
 
 
 def test_check_cli_requires_measurement_commit(tmp_path):

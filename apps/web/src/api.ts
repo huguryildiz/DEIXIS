@@ -145,6 +145,7 @@ export type Step = {
     // Citation chaining (D95): what its summary counted, with the seeds it froze.
     seed_list?: { source_version_id: string; kind: 'code' | 'user' }[]; new_works?: number; read_by_model?: number
     requests?: { sent?: number; failed?: number; not_reached_seeds?: number }
+    semantic_scholar?: { status?: string; reason?: string | null; seeds_without_doi?: number }
     // The full-text retrieval summary (D83), also written by a discovery run that fetched beside its screening (17a).
     fetched?: number
     // An embedding step (slice 21): the model it froze, what it read from the store, what it still misses, its 429 waits,
@@ -164,6 +165,7 @@ export type RunKind = 'discovery' | 'answer' | 'report' | 'review' | 'watch_chec
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
   target_kind?: ReviewTargetKind; target_id?: string
+  pipeline?: { id: string; rounds?: number; round?: number }
   table_id?: string; column_id?: string; source_version_id?: string; cell_version?: number
   candidate_id?: string; candidate_version_id?: string; expected_version?: number
   model?: CandidatePlan['model']; providers?: string[]; transport?: CandidatePlan['transport']; limits?: CandidatePlan['limits']
@@ -184,6 +186,8 @@ export type Run = {
   // Per round, what each source brought in this discovery run and how much of it no other source did (D93).
   // counted false: the run was searched before these were kept, which is not the same as zero.
   source_counts?: SourceCounts | null
+  // The phrases the second keyword round searched with; empty when it did not search.
+  expansion_terms?: string[]
   // Where the person's confirmed works stood in this discovery run's keyword ranking, descriptively (slice 19); null
   // for a legacy research, another run kind, or a run that ranked nothing.
   signals?: SignalTable | null
@@ -323,7 +327,7 @@ export type RunApproval = {
 // The chain rule and its limits as the run froze them (D95). The seeds themselves are known only after the search.
 export type CitationChaining = {
   enabled: boolean; seeds?: number; citing_cap?: number; request_limit?: number; abstract_read?: number
-  plan_room?: number; directions?: string[]
+  plan_room?: number; directions?: string[]; sources?: string[]
 }
 // The source routing of an sw run (D93): the field distribution of the gate query and the sources it chose.
 // status read: a distribution was read; unavailable: it could not be, so every source in scope is searched;
@@ -361,6 +365,8 @@ export type ApprovalSuggestions = {
 export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null } | null
+  // 1: the approved queries; 2: the term expansion's, searched with phrases the first round's records brought.
+  round?: number
 }
 export type Asset = {
   text_recovery?: TextRecoveryCapability | null
@@ -791,7 +797,7 @@ export type ColumnSpec = {
 }
 export type TableColumn = {
   lineage_role: 'problem' | 'change' | 'uncertainty' | null
-  id: string; position: number; revision: number; version: number; origin: 'user' | 'model_suggestion' | 'template'
+  id: string; position: number; revision: number; version: number; origin: 'user' | 'model_suggestion' | 'template'; accepted_by: 'automatic' | null
   name: string; instruction: string; answer_format: AnswerFormat; options: ColumnOption[] | null; allow_multiple: boolean; unit_hint: string | null
 }
 export type TableRow = {
@@ -827,7 +833,7 @@ export type TableView = {
   fill_estimate: { sources: number; sources_without_text: number; sources_beyond_limit: number; model_calls: number; max_model_calls: number }
   column_suggestions: { run_id: string; step_id: string; columns: ColumnSuggestion[]; notes: string } | null
 }
-export type TableSummary = { id: string; title: string; version: number; created_at: string; updated_at: string; rows: number; columns: number
+export type TableSummary = { id: string; title: string; version: number; created_at: string; updated_at: string; rows: number; columns: number; access: { pdf_available: number; abstract: number; metadata: number }; auto_columns: number
   report_ready: { ready: boolean; cells_left: number; cells_total: number; failed_rows: number; can_continue_with_failed: boolean; failed_cells: number; included_rows: number } }
 export type ReportSummary = { id: string; status: 'in_progress' | 'valid' | 'draft'; report_version: number | null; created_at: string }
 export type ReportLink = { link_id: string; passage_id: string | null; cell_id: string | null; source_version_id: string; ref_number: number; open_passage_id: string | null

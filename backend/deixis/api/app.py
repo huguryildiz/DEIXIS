@@ -64,6 +64,7 @@ from deixis.workflow.equations import EquationService, chunk_numbers, equation_s
 from deixis.workflow.local_embedding_service import EmbeddingService, ServiceError
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.report.store import ReportStore
+from deixis.workflow import report_pipeline
 from deixis.workflow.report import export as report_export
 from deixis.workflow.report import latex_export
 from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
@@ -2788,6 +2789,14 @@ def create_app(
     @app.get("/api/researches/{research_id}/reports/{report_id}/gaps")
     async def get_report_gaps(research_id: str, report_id: str, request: Request) -> list[dict[str, Any]]:
         return report_gaps_view(store_of(request), research_id, report_id)
+    @app.post("/api/researches/{research_id}/study-table", status_code=202)
+    async def start_study_table(research_id: str, request: Request,
+                                idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
+        """Manual rebuild of the study table: propose columns, add them and fill, as a chain of the usual runs."""
+        run = report_pipeline.start(store_of(request), research_id, idempotency_key)
+        request.app.state.worker.wake()
+        return run
+
 
     @app.get("/api/researches/{research_id}/reports/{report_id}")
     async def get_report(research_id: str, report_id: str, request: Request) -> dict[str, Any]:

@@ -60,9 +60,7 @@ const readyResearch = async (page: Page, server: ReportServer, question: string)
   await editor.getByLabel('Instruction').fill('Record the method named by the source.')
   await editor.getByRole('button', { name: 'Add column' }).click()
   await page.getByRole('button', { name: /^Fill empty cells/ }).click()
-  await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write report' })).toBeEnabled({ timeout: 60_000 })
-  await page.getByRole('tab', { name: 'Answer' }).click()
-  await expect(page.locator('.report-ready').getByRole('button', { name: 'Write report' })).toBeEnabled()
+  await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
   return researchId
 }
 
@@ -91,15 +89,13 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await editor.getByRole('button', { name: 'Add column' }).click()
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
     await expect(page.locator('.evidence-grid tbody tr .evidence-cell').first()).toContainText('Model', { timeout: 60_000 })
-    await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write report' })).toBeEnabled({ timeout: 60_000 })
+    await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
     const tables = await (await api.get(`/api/researches/${researchId}/tables`)).json() as { id: string }[]
     const tableId = tables[0].id
-    await page.getByRole('tab', { name: 'Answer' }).click()
-    await expect(page.locator('.report-ready').getByRole('button', { name: 'Write report' })).toBeEnabled()
     await toastsOff(page)
-    await page.locator('.report-ready').scrollIntoViewIfNeeded()
     await shot(page, 'report-readiness-desktop')
-    await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
+    await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
+    await page.getByRole('tab', { name: 'Answer' }).click()
     await expect(page.getByText(/Writing sections|Wrote the sections|Report sections/)).toBeVisible({ timeout: 60_000 })
     await expect(page.getByRole('button', { name: 'Open evidence report' })).toContainText('Evidence report · V1', { timeout: 60_000 })
     const summaries = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string }[]
@@ -310,9 +306,9 @@ test('a scripted report review finding appears as a model flag', async ({ browse
     await editor.getByLabel('Instruction').fill('Record the method named by the source.')
     await editor.getByRole('button', { name: 'Add column' }).click()
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
-    await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write report' })).toBeEnabled({ timeout: 60_000 })
+    await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
+    await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
     await page.getByRole('tab', { name: 'Answer' }).click()
-    await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
     await expect(page.getByRole('button', { name: 'Open evidence report' })).toContainText('Evidence report · V1', { timeout: 60_000 })
     const summaries = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string }[]
     const report = await (await api.get(`/api/researches/${researchId}/reports/${summaries[0].id}`)).json()
@@ -345,7 +341,8 @@ test('a banned word in a section pauses the report with the section failed and n
   const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
   try {
     const researchId = await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared? [report-banned-word]')
-    await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
+    await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
+    await page.getByRole('tab', { name: 'Answer' }).click()
     const researchPath = `/api/researches/${researchId}`
     await expect.poll(async () => {
       const view = await (await api.get(researchPath)).json()
@@ -408,7 +405,8 @@ test('an empty section pauses the report and can be cancelled', async ({ browser
   const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
   try {
     const researchId = await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared? [report-empty-section]')
-    await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
+    await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
+    await page.getByRole('tab', { name: 'Answer' }).click()
     const researchPath = `/api/researches/${researchId}`
     await expect.poll(async () => {
       const view = await (await api.get(researchPath)).json()
@@ -511,7 +509,8 @@ test('a bad cell anchor fails after one repair and displays only the stored reas
   const reason = 'a cited quote was not found in that table cell’s stored evidence'
   try {
     const researchId = await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared? [report-bad-anchor]')
-    await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
+    await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
+    await page.getByRole('tab', { name: 'Answer' }).click()
     const researchPath = `/api/researches/${researchId}`
     await expect.poll(async () => {
       const view = await (await api.get(researchPath)).json()

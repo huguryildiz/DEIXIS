@@ -343,12 +343,14 @@ class TableStore:
 
     # ---- columns ----------------------------------------------------------------------
     def _insert_column(self, table_id: str, position: int, spec: dict[str, Any], origin: str,
-                       suggestion_step_id: str | None, key: str | None) -> str:
+                       suggestion_step_id: str | None, key: str | None, accepted_by: str | None = None) -> str:
         cid, ts = new_id("col"), now()
         self.conn.execute(
             "INSERT INTO table_columns (id, table_id, position, origin, suggestion_step_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             (cid, table_id, position, origin, suggestion_step_id, ts),
         )
+        if accepted_by:
+            self.conn.execute("UPDATE table_columns SET accepted_by = ? WHERE id = ?", (accepted_by, cid))
         self._insert_column_revision(cid, 1, spec, key)
         return cid
 
@@ -361,7 +363,7 @@ class TableStore:
         )
 
     def add_column(self, research_id: str, table_id: str, spec: dict[str, Any], expected_version: int, idempotency_key: str | None,
-                   origin: str = "user", suggestion_step_id: str | None = None) -> str:
+                   origin: str = "user", suggestion_step_id: str | None = None, accepted_by: str | None = None) -> str:
         key = self._key(research_id, idempotency_key)
         with transaction(self.conn):
             if key and (existing := self.conn.execute("SELECT column_id FROM column_revisions WHERE idempotency_key = ?", (key,)).fetchone()):
@@ -374,7 +376,7 @@ class TableStore:
             ).fetchone():
                 raise InvalidTableInput("Not a column suggestion step of this table")
             position = self.conn.execute("SELECT COALESCE(MAX(position) + 1, 0) FROM table_columns WHERE table_id = ?", (table_id,)).fetchone()[0]
-            cid = self._insert_column(table_id, position, column_spec(**spec), origin, suggestion_step_id, key)
+            cid = self._insert_column(table_id, position, column_spec(**spec), origin, suggestion_step_id, key, accepted_by)
             self._touch(table_id, bump=True)
             self._changed(research_id, table_id)
         return cid
@@ -793,6 +795,19 @@ class TableStore:
         )]
         included_count = len(self.store.included_sources(research_id))
         for row in rows:
+            access = {"pdf_available": 0, "abstract": 0, "metadata": 0}
+            for r in self.conn.execute(
+                "SELECT EXISTS (SELECT 1 FROM passages p JOIN source_assets a ON a.id = p.asset_id"
+                "  WHERE p.source_version_id = t.source_version_id AND a.removed_at IS NULL) AS has_pdf_text,"
+                " EXISTS (SELECT 1 FROM passages p WHERE p.source_version_id = t.source_version_id AND p.kind = 'abstract') AS has_abstract"
+                f" FROM table_rows t JOIN source_versions v ON v.id = t.source_version_id WHERE t.table_id = ? AND t.removed_at IS NULL AND {SOURCE_ACTIVE_SQL}",
+                (row["id"],),
+            ):
+                access["pdf_available" if r["has_pdf_text"] else "abstract" if r["has_abstract"] else "metadata"] += 1
+            row["access"] = access
+            row["auto_columns"] = self.conn.execute(
+                "SELECT COUNT(*) FROM table_columns WHERE table_id = ? AND removed_at IS NULL AND accepted_by = 'automatic'",
+                (row["id"],)).fetchone()[0]
             readiness = report_ready(self.store, research_id, row["id"], continue_with_failed=True)
             row["report_ready"] = {"ready": bool(included_count and row["columns"]) and not readiness["missing"], "cells_left": len(readiness["missing"]),
                                    "cells_total": included_count * row["columns"],
@@ -874,7 +889,7 @@ class TableStore:
         return {
             "table": {k: table[k] for k in ("id", "research_id", "title", "template_id", "version", "created_at", "updated_at")},
             "columns": [{"id": c["id"], "position": c["position"], "revision": c["current_revision"], "version": c["version"],
-                         "origin": c["origin"], "lineage_role": c["lineage_role"], **{k: c[k] for k in ("name", "instruction", "answer_format", "options",
+                         "origin": c["origin"], "accepted_by": c["accepted_by"], "lineage_role": c["lineage_role"], **{k: c[k] for k in ("name", "instruction", "answer_format", "options",
                                                                      "allow_multiple", "unit_hint")}} for c in columns],
             "rows": [r for r in rows if r["removed_at"] is None],
             "removed_rows": [r for r in rows if r["removed_at"] is not None],

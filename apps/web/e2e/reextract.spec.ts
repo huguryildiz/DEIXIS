@@ -131,12 +131,12 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     const tableId = summaries[0].id
     expect((await get<TableView>(client, `${researchPath}/tables/${tableId}`)).columns).toHaveLength(1)
     await ui.getByRole('button', { name: /^Fill empty cells/ }).click()
-    await expect(ui.locator('.evidence-toolbar').getByRole('button', { name: 'Write report' })).toBeEnabled({ timeout: 60_000 })
+    await expect(ui.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
     const table = await get<TableView>(client, `${researchPath}/tables/${tableId}`)
     expect(table.rows.map(r => r.source_version_id)).toEqual([s2])
     const cellPassageId = table.cells[0].current!.evidence[0].passage_id
     step('2c: write report and freeze cited passage IDs')
-    await ui.locator('.evidence-toolbar').getByRole('button', { name: 'Write report' }).click()
+    await ui.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
     await expect.poll(async () => (await view()).reportRuns[0]?.status, { timeout: 60_000 }).toBe('valid')
     const reportId = (await view()).reportRuns[0].id
     const reportPath = `${researchPath}/reports/${reportId}`

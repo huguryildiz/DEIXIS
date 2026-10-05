@@ -74,6 +74,11 @@
 .research-tabs [data-slot=tabs-trigger]:is([data-active],[data-state=active]) .research-tab-count{background:color-mix(in srgb,var(--accent),transparent 88%);color:var(--accent)}
 .answer-section h3{margin:28px 0 12px;color:var(--ink);font-size:17px;font-weight:600}
 .answer-section:first-of-type h3{margin-top:14px}
+.answer-paragraph{margin:0 0 18px;line-height:1.7}
+.report-content .answer-paragraph{font-family:'Newsreader Variable',serif;font-size:18px;line-height:1.72;color:var(--ink)}
+.answer-paragraph .answer-lead{font-weight:650;color:var(--ink);margin-right:.35em}
+.answer-paragraph .claim+.claim::before{content:' '}
+.answer-paragraph .review-reason{display:block}
 .math-display{display:block;margin:10px 0;overflow-x:auto;overflow-y:hidden}
 .phrasing-note summary{cursor:pointer}
 .phrasing-note ul{margin:6px 0 0}

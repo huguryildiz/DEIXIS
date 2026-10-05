@@ -91,9 +91,9 @@ async function reportFixture(page: Page, held = false): Promise<Target> {
   await editor.getByLabel('Instruction').fill('Record the method named by the source.')
   await editor.getByRole('button', { name: 'Add column' }).click()
   await page.getByRole('button', { name: /^Fill empty cells/ }).click()
-  await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write report' })).toBeEnabled({ timeout: 60_000 })
+  await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
+  await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
   await page.getByRole('tab', { name: 'Answer' }).click()
-  await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
   await expect.poll(async () => (await view(page, rid)).runs.find(r => r.kind === 'report')?.status, { timeout: 60_000 }).toBe('completed')
   const reports: { id: string }[] = await (await page.request.get(`${server.url}/api/researches/${rid}/reports`)).json()
   const id = reports[0].id

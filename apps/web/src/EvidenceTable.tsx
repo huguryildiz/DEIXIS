@@ -402,7 +402,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
         <Button variant="ghost" disabled={busy || Boolean(activeRun)} onClick={suggestColumns} title={t('{model} · 1–2 calls', { model })}><Sparkles size={15} aria-hidden />{t('Suggest columns')}</Button></>}
       <span className="evidence-toolbar-end">
         <Button variant="outline" className={continueWithFailed ? 'max-w-full h-auto min-h-9 whitespace-normal text-left' : undefined} disabled={busy || Boolean(reportReason)} title={reportReason || undefined} aria-describedby={reportReason ? 'evidence-report-reason' : undefined}
-          onClick={() => act(async () => { await api.startReport(researchId, tableId, newKey(), continueWithFailed ? { continueWithFailed: true } : undefined); onRunStarted() })}><FileText size={15} aria-hidden />{t(continueWithFailed ? 'Write the report with missing rows' : 'Write report')}</Button>
+          onClick={() => act(async () => { await api.startReport(researchId, tableId, newKey(), continueWithFailed ? { continueWithFailed: true } : undefined); onRunStarted() })}><FileText size={15} aria-hidden />{t(continueWithFailed ? 'Write the report with missing rows' : 'Write a manuscript draft')}</Button>
         <Button variant="ghost" disabled={!columns.length || !rows.length} title={t('Current values and their quotes as a CSV file; proposals waiting for a decision are left out.')} onClick={() => downloadTableCsv(table, view.sources)}><Download size={15} aria-hidden />{t('Export CSV')}</Button>
         <Button variant="ghost" disabled={busy || !columns.length} aria-expanded={templateName !== null} onClick={() => setTemplateName(name => (name === null ? table.table.title : null))}><Save size={15} aria-hidden />{t('Save as template')}</Button>
         <Button variant={fillable ? 'default' : 'outline'} disabled={busy || !fillable} onClick={fillEmptyCells}>
@@ -429,6 +429,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
     {addRowsOpen && <AddRows sources={view.sources} table={table} busy={busy} onClose={() => setAddRowsOpen(false)}
       onAdd={ids => act(async () => { await api.addTableRows(researchId, tableId, ids, table.table.version); setAddRowsOpen(false) }, t('Rows added.'))} />}
 
+    {table.columns.some(c => c.accepted_by === 'automatic') && <p className="pdf-ready-lede">{t('The app added these columns from the model’s proposal after the answer. No person reviewed them.')}</p>}
     {suggestionRun && suggestions.length > 0 && <section className="evidence-suggestions" aria-labelledby="evidence-suggestions-title">
       <h3 id="evidence-suggestions-title">{t('Suggested columns')}<small>{t('Model suggestions; none joins the table until you add it.')}</small></h3>
       <ul>{suggestions.map(({ s, key }) => <li key={key}>

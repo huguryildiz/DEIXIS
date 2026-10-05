@@ -15,7 +15,6 @@ import { Elapsed, EvidenceTab, TABLE_RUN_KINDS } from './EvidenceTable'
 import { MathText } from './MathText'
 import { Transcript } from './Transcript'
 import { PdfReadiness } from './PdfReadiness'
-import { ReportReadiness } from './report/ReportReadiness'
 import { ReportView } from './report/ReportView'
 import { ReviewPane } from './review/ReviewPane'
 import { ReviewSummary } from './review/ReviewSummary'
@@ -192,9 +191,31 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
   useEffect(() => {
     if (!loaded) return
+    // A running discovery records several events a second and one reload of a large research takes about a second, so reloads
+    // are throttled: never two at once, at least 1.5 s apart, and the last event always gets one.
     let timer: ReturnType<typeof setTimeout> | undefined
-    const stop = subscribe(id, firstEvent.current ?? 0, () => { clearTimeout(timer); timer = setTimeout(() => { void load(); onChanged() }, 250) })
-    return () => { stop(); clearTimeout(timer) }
+    let running = false
+    let pending = false
+    let last = 0
+    let stopped = false
+    const reload = async () => {
+      timer = undefined
+      running = true
+      pending = false
+      await load()
+      if (stopped) return
+      onChanged()
+      last = Date.now()
+      running = false
+      if (pending) schedule()
+    }
+    const schedule = () => {
+      if (running) { pending = true; return }
+      if (timer) return
+      timer = setTimeout(() => { void reload() }, Math.max(250, 1500 - (Date.now() - last)))
+    }
+    const stop = subscribe(id, firstEvent.current ?? 0, schedule)
+    return () => { stopped = true; stop(); clearTimeout(timer) }
   }, [id, loaded, load, onChanged])
 
   // The local Tesseract is asked once a PDF has pages without text, so its rows can offer OCR or say why it is off (D51).
@@ -476,7 +497,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the tab that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
       {/* A count is shown once it has something to say; a row of zeroes while the run works is noise, not a boundary. */}
-      {([['found', 'Found', 'all'], ['unique', 'Unique works', 'all'], ['included', 'Included', 'included'], ['inspected', 'Given to the model', 'all'], ['cited', 'Cited', null]] as const)
+      {([['unique', 'Unique works', 'all'], ['included', 'Included', 'included'], ['inspected', 'Given to the model', 'all'], ['cited', 'Cited', null]] as const)
         .filter(([key]) => view.counts[key] > 0)
         .map(([key, label, filter]) => <button key={key} type="button" onClick={() => (filter ? showSources(filter) : showAnswer())}><strong>{view.counts[key]}</strong><span>{t(label)}</span></button>)}
       <span title={t('Where DEIXIS looks for sources')}><ScopeIcon size={13} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
@@ -551,14 +572,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady && !discoveryReadOnly} act={async (action, success) => { await act(action, success) }} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={hasQueue ? dropForWaiting : undefined} /> :
         /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
            While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */
-        active ? null : <><div className="answer-actions">
+        active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
           <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
           {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
           {hasAcademic && !discoveryReadOnly && (view.search_runs.length
             ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
             : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
         </div><UploadedTextNote semantic={view.semantic} /></>}
-        {tables && <ReportReadiness researchId={id} view={view} tables={tables} onTable={openTable} onChanged={async () => { await load(); onChanged() }} />}
       </TabsContent>
 
       <TabsContent value="sources">
@@ -673,6 +693,8 @@ function TableCard({ table, onOpen }: { table: TableSummary; onOpen: () => void 
     <span className="report-artifact-copy">
       <span className="report-artifact-meta"><Table2 size={13} strokeWidth={1.8} aria-hidden />{tableFacts(table)}</span>
       <strong>{table.title}</strong>
+      <small className="table-artifact-access">{[table.access.pdf_available && t('{n} full text', { n: table.access.pdf_available }), table.access.abstract && t('{n} abstract only', { n: table.access.abstract }), table.access.metadata && t('{n} metadata only', { n: table.access.metadata })].filter(Boolean).join(' · ')}</small>
+      {table.auto_columns > 0 && <small className="table-artifact-note">{t('Columns added automatically, no person reviewed them.')}</small>}
     </span>
     <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
   </button>
@@ -789,15 +811,16 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
     {answer.applicability === 'stale_selection' && <Notice tone="attention">{t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}</Notice>}
     {answer.source_text_changed && <Notice tone="attention">{t('A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.')}</Notice>}
     {answer.capability_notice && <Notice tone="info">{answer.capability_notice}</Notice>}
-    {sections.map(({ heading, claims }, index) => <section className="answer-section" key={index}>
-      {heading && <h3>{heading}</h3>}
-      {claims.map(claim => <p className="claim" key={claim.id}>
+    {/* A section is one paragraph led by its main point in bold, as the answer method asks (D230); its label names a topic, not a finding. */}
+    {sections.map(({ heading, claims }, index) => <section className="answer-section" key={index}><p className="answer-paragraph">
+      {heading && <strong className="answer-lead">{heading}</strong>}
+      {claims.map(claim => <span className="claim" key={claim.id}>
         <MathText text={claim.text} />{claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}
         {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{e.source_key ? citeLabel(claim, e) : `[${refs.get(e.passage_id)?.n}]`}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>)}
         {claim.review && <span className={`review-badge is-${claim.review.verdict}`} title={t('Reviewer: {reason}', { reason: claim.review.reason })}><ShieldCheck size={11} aria-hidden />{t(verdictLabels[claim.review.verdict])}</span>}
         {claim.review && claim.review.verdict !== 'supported' && <small className="review-reason">{t('Reviewer: {reason}', { reason: claim.review.reason })}</small>}
-      </p>)}
-    </section>)}
+      </span>)}
+    </p></section>)}
     {!answer.claims.length && <p>{t('No claim could be linked to the passages given to the model.')}</p>}
     {answer.unanswered_aspects.length > 0 && <><h3>{t('Not answered by the inspected passages')}</h3><ul className="plain-list">{answer.unanswered_aspects.map(a => <li key={a}><MathText text={a} /></li>)}</ul></>}
     {limits.length > 0 && <><h3>{t('Limits')}</h3><ul className="plain-list">{limits.map((l, i) => <li key={i}><em>{t(l.kind.replace('_', ' '))}:</em> <MathText text={l.text} /></li>)}</ul></>}

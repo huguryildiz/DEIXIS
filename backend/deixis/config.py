@@ -36,6 +36,9 @@ class Settings:
     # product's behavior; `off` leaves the corpus where the discovery run left it, for a measurement or a test that
     # needs no second run.
     fulltext_fetch: str = "auto"
+    # Whether a valid `sw` answer is followed by the study table (proposed columns added without review, then filled).
+    # The dataclass default is `off` so a test that builds Settings by hand sees no extra runs; `load_settings` defaults to `auto`.
+    study_table: str = "off"
     # Whether a completed `sw` full-text retrieval run is followed by a full-text reading run (D85, slice 12).
     # `auto` is the product's behavior; `off` leaves the fetched works at `not_read_yet`, for a measurement or a
     # test that needs no second model run.
@@ -125,6 +128,9 @@ def load_settings() -> Settings:
     fulltext_fetch = os.environ.get("DEIXIS_FULLTEXT_FETCH", "auto")
     if fulltext_fetch not in ("auto", "off"):
         raise ValueError("DEIXIS_FULLTEXT_FETCH must be auto or off")
+    study_table = os.environ.get("DEIXIS_STUDY_TABLE", "auto")
+    if study_table not in ("auto", "off"):
+        raise ValueError("DEIXIS_STUDY_TABLE must be auto or off")
     fulltext_adjudication = os.environ.get("DEIXIS_FULLTEXT_ADJUDICATION", "auto")
     if fulltext_adjudication not in ("auto", "off"):
         raise ValueError("DEIXIS_FULLTEXT_ADJUDICATION must be auto or off")
@@ -145,6 +151,7 @@ def load_settings() -> Settings:
         query_strategy=query_strategy,
         protocol_approval=protocol_approval,
         fulltext_fetch=fulltext_fetch,
+        study_table=study_table,
         fulltext_adjudication=fulltext_adjudication,
         search_query=search_query,
         citation_chaining=citation_chaining,

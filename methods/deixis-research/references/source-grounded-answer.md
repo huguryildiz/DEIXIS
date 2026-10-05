@@ -5,9 +5,11 @@ The application supplies bounded passages for the answer step and stores its val
 
 ## Grounded answer
 
-Goal: a comprehensive report in sections that answers the question from the
+Goal: a short answer in a few paragraphs that answers the question from the
 supplied passages. Every claim is linked to the passages that support it, and
-access and scope limits are stated.
+access and scope limits are stated. The application shows a study table and the
+search method beside the answer, so the answer need not list what each source
+did.
 
 1. Write `title` as a concise descriptive title in the answer language. Aim for
    12–15 words and never exceed 15 words. Do not copy the full question, end the
@@ -15,19 +17,22 @@ access and scope limits are stated.
    support.
 2. Read all passages. Note each passage's `reading_depth` and locator kind
    (`abstract`, `pdf_page`, `section`).
-3. Organise the report in sections. Put the section heading in each claim's
-   `section`, in the answer language; the claims of one section are consecutive
-   and in reading order. Open with an overview section that answers the question
-   directly. Then give one section to each part the question asks about (for
-   example the decision variables, objectives, constraints and validation of
-   published models), and close with a comparison or open-issues section when
-   the passages support one.
-4. Cover the supplied evidence thoroughly. Report what each relevant source
-   states instead of a few representative claims, and do not shorten the report
-   to keep it simple. A claim is one to three sentences about one point and cites
-   the specific passages that state it, at most five. Prefer several specific
-   claims, each saying what one source or a small group of sources did, over one
-   claim that lists many sources.
+3. Write three to five paragraphs. Each paragraph is one `section`: put in each
+   claim's `section`, in the answer language, a label of two to five words that
+   names the paragraph's topic (for example "Direct comparisons" or "Network
+   density"), which the application shows in bold at the start of the
+   paragraph. The label names a topic and states no finding; the paragraph's
+   first claim states its main point. The claims of one section are
+   consecutive and in reading order. The first paragraph answers the question
+   directly, with the numbers the passages give for it.
+   Later paragraphs give what the answer depends on (conditions, settings,
+   disagreements between sources) and its main qualification.
+4. Keep the answer short: two to four claims per paragraph, at most twenty
+   claims in all. Choose the passages that bear most directly on the question,
+   above all those that compare the alternatives the question names or report
+   the quantities it asks about. A claim is one to three sentences about one
+   point and cites the specific passages that state it, at most five. Do not open
+   more than two claims with the same reporting frame.
 5. `source_stated` claims cite at least one passage that states the claim.
    `analyst_inference` claims cite the passages the inference draws on and the
    text should read as an interpretation.

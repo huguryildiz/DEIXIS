@@ -79,9 +79,7 @@ async function readyResearch(page: Page, question: string) {
   await editor.getByLabel('Instruction').fill('Record the method named by the source.')
   await editor.getByRole('button', { name: 'Add column' }).click()
   await page.getByRole('button', { name: /^Fill empty cells/ }).click()
-  await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write report' })).toBeEnabled({ timeout: 60_000 })
-  await page.getByRole('tab', { name: 'Answer' }).click()
-  await expect(page.locator('.report-ready').getByRole('button', { name: 'Write report' })).toBeEnabled()
+  await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
   return rid
 }
 type Fixture = { rid: string; url: string; headers: Record<string, string>; read: () => Promise<ReportDetail> }
@@ -95,7 +93,8 @@ async function fixture(page: Page): Promise<Fixture> {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await watchToasts(page)
   const rid = await readyResearch(page, 'SYNTHETIC: How are molecule release schedules compared? [report-two-citations]')
-  await page.locator('.report-ready').getByRole('button', { name: 'Write report' }).click()
+  await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
+  await page.getByRole('tab', { name: 'Answer' }).click()
   await expect.poll(async () => {
     const view: ResearchView = await (await page.request.get(`${server.url()}/api/researches/${rid}`)).json()
     return view.runs.find(r => r.kind === 'report')?.status

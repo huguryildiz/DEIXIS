@@ -58,6 +58,7 @@ from deixis.workflow import probes as probe_rules
 from deixis.workflow import protocol
 from deixis.workflow import queue as human_queue
 from deixis.workflow import ranking as ranking_rules
+from deixis.workflow import report_pipeline
 from deixis.workflow import routing as routing_rules
 from deixis.workflow import search_query as search_query_rules
 from deixis.workflow import suggestions as suggestion_rules
@@ -417,6 +418,10 @@ class ResearchFlow:
             elif run["kind"] == "fulltext_fetch":
                 # The reading run is queued in this same turn, with no await between the two (D85).
                 self._queue_fulltext_adjudication(run, scope)
+            elif run["kind"] == "answer" and self.deps.settings.study_table == "auto":
+                report_pipeline.after_answer(self.store, run)  # the study table follows a valid answer, once per answer
+            elif run["kind"] in ("table_columns", "table_fill"):
+                report_pipeline.continue_after(self.store, run)  # the study table's chain; other runs pass
 
     # ---- run control ---------------------------------------------------------------
     def _checkpoint(self, run_id: str, scope_revision: int | None = None) -> None:

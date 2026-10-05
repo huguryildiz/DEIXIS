@@ -106,6 +106,10 @@ CHAIN_SEEDS = 15
 CHAIN_CITING_CAP = 400
 CHAIN_CITING_PAGE = 200
 CHAIN_BACKWARD_BATCH = 100
+# Semantic Scholar's chain arm (D229): one seed is one request per direction. `/references` and `/citations` page by
+# `offset` and `limit` with limit <= 1000 (API description read 2026-10-05); a seed's references are read in one page of
+# that size, its citing works up to CHAIN_CITING_CAP in one page, so the arm spends at most two requests per seed.
+CHAIN_S2_BACKWARD_LIMIT = 1000
 CHAIN_ABSTRACT_READ = {"quick": 20, "standard": 50, "detailed": 50}
 # Plan room 25 -> 12 in standard and detailed on 2026-09-23, after the first acceptance (D95): the chain's own time was
 # 3.50 / 3.81 / 3.30 min against 3.0 with 25; 12 is the smallest room that kept the three chained verified works

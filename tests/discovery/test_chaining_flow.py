@@ -183,7 +183,9 @@ def test_an_sw_run_chains_after_the_abstract_stage(tmp_path, monkeypatch):
     assert counts["chain"] == {"works": 3, "only": 3}
     # The run view carries the chain's summary, with its seeds, for the transcript's chain line.
     shown = next(s for r in view["runs"] if r["id"] == run_id for s in r["steps"] if s["kind"] == "code:chain_summary")
-    assert shown["output"]["new_works"] == 3 and shown["output"]["requests"]["sent"] == 6  # five citing requests, one reference batch
+    assert shown["output"]["new_works"] == 3 and shown["output"]["requests"]["sent"] == 6 + 10
+    # OpenAlex: five citing requests and one reference batch. Semantic Scholar (D229) is asked about each of the five
+    # seeds, both ways; this mock answers it 404, which is an empty answer, so it adds ten requests and no work.
     assert [seed["kind"] for seed in shown["output"]["seed_list"]] == ["code"] * 5
 
 

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert } from 'lucide-react'
-import { api, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind } from './api'
+import { api, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
@@ -620,14 +620,36 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
             </li>)}
           </ul>}
           {hasQueries && detailsOpen && <ul className="chat-list">
-            {searches.map(s => {
-              const ok = s.status === 'completed' || s.status === 'zero_results'
+            {/* A query read page by page has one search row per page; the list shows it once, with its pages summed. */}
+            {/* When the term expansion searched too, a heading in plain words marks where each round's queries begin. */}
+            {[...searches.reduce((byQuery, s) => byQuery.set(`${s.provider}\n${s.query_text}`, [...(byQuery.get(`${s.provider}\n${s.query_text}`) ?? []), s]), new Map<string, SearchRun[]>()).values()].map((pages, i, all) => {
+              const s = pages[0]
+              const round = s.round ?? 1
+              const heading = all.some(p => (p[0].round ?? 1) > 1) && (i === 0 || (all[i - 1][0].round ?? 1) !== round)
+                ? <li key={`round-${round}`} className="chat-list-round">
+                  <b>{t(round > 1 ? 'Second search' : 'First search')}</b>
+                  <span>{round > 1
+                    ? run.expansion_terms?.length
+                      ? t('Also searched with terms that came up in the first results: {terms}', { terms: run.expansion_terms.map(term => `“${term}”`).join(', ') })
+                      : t('New terms that came up in the first results were searched as well')
+                    : t('The searches planned from your question')}</span>
+                </li> : null
+              const failed = pages.find(p => p.status !== 'completed' && p.status !== 'zero_results')
+              const count = pages.reduce((sum, p) => sum + p.result_count, 0)
+              const total = pages.find(p => p.provider_total !== null)?.provider_total ?? null
               const why = rationaleOf(s.provider, s.query_text)
-              return <li key={s.id} className={ok ? undefined : 'is-attention'}>
+              return <Fragment key={s.id}>{heading}<li className={failed ? 'is-attention' : undefined}>
                 <span className="chat-list-text"><code>{s.query_text}</code>{why && <small>{why}</small>}</span>
-                <span className="chat-list-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · <b>{ok ? t('{count} / {total}', { count: s.result_count, total: s.provider_total === null ? '?' : compact(s.provider_total) }) : t(s.status.replace('_', ' '))}</b></span>
-              </li>
+                <span className="chat-list-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · <b>{failed && count === 0 ? t(failed.status.replace('_', ' ')) : t('{count} / {total}', { count, total: total === null ? '?' : compact(total) })}</b>{pages.length > 1 && <> · {plural(pages.length, '{n} page', '{n} pages')}</>}{failed && count > 0 && <> · {t(failed.status.replace('_', ' '))}</>}</span>
+              </li></Fragment>
             })}
+            {/* The citation chain is not a search round (D95); one line says it follows, so all three steps read in one place. */}
+            {(chain || run.approval?.chaining?.enabled) && <li className="chat-list-round">
+              <b>{t('Then: citation chaining')}</b>
+              <span>{chain?.output?.seed_list
+                ? t('The reference lists and citing papers of {seeds} papers were checked · {works} new works', { seeds: chain.output.seed_list.length, works: chain.output.new_works ?? 0 })
+                : t('After screening, the reference lists and citing papers of the best matches are checked')}</span>
+            </li>}
             {runningSearch && active && <li className="is-running">
               <span className="chat-list-text shimmer-text">{t('Searching')}</span>
               <span className="chat-list-meta"><LoaderCircle size={13} className="chat-spin" aria-hidden /><ConnectionIcon id={runningSearch.kind.split(':')[1] ?? ''} />{providerName(runningSearch.kind.split(':')[1] ?? '')}</span>
@@ -687,6 +709,7 @@ function ChainReport({ steps, view }: { steps: Step[]; view: ResearchView }) {
   const ends = present(chainSteps.map(s => s.finished_at))
   const seconds = starts.length && ends.length ? secondsBetween(starts[0], Date.parse(ends[ends.length - 1])) : null
   const requests = summary.requests ?? {}
+  const s2 = summary.semantic_scholar
   const titleOf = (svid: string) => view.sources.find(s => s.source_version_id === svid)?.title ?? svid
   const line = [
     plural(seeds.length, 'Citation chaining: {n} seed', 'Citation chaining: {n} seeds'),
@@ -695,6 +718,8 @@ function ChainReport({ steps, view }: { steps: Step[]; view: ResearchView }) {
     plural(summary.read_by_model ?? 0, '{n} read by the model', '{n} read by the model'),
     requests.failed ? plural(requests.failed, '{n} request did not complete', '{n} requests did not complete') : '',
     requests.not_reached_seeds ? plural(requests.not_reached_seeds, '{n} seed not reached (request limit)', '{n} seeds not reached (request limit)') : '',
+    s2?.status === 'skipped' ? t('Semantic Scholar skipped ({reason})', { reason: t(s2.reason === 'not_configured' ? 'not configured' : 'not in the research sources') }) : '',
+    s2?.seeds_without_doi ? plural(s2.seeds_without_doi, '{n} seed without a DOI skipped for Semantic Scholar', '{n} seeds without a DOI skipped for Semantic Scholar') : '',
   ].filter(Boolean).join(' · ')
   return <>
     <p className="chat-report-line">

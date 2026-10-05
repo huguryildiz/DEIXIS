@@ -18,6 +18,7 @@ from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_R
 from deixis.workflow.abstract_stage import model_calls
 from deixis.models.adapter import ModelStepResult
 from deixis.workflow.criterion import PROPOSAL_RUNS
+from deixis.workflow.vocabulary import LABEL_RUNS
 from deixis.workflow.decisions import CRITERION_FIELDS
 from fakes import FakeAdapter, envelope, valid_response
 from test_criterion_proposal import three_runs
@@ -173,6 +174,21 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     presets = {preset.max_model_calls for preset in TEST_EFFORT_BUDGETS.values()}
     abstract_calls = model_calls(ABSTRACT_READ_LIMIT["quick"], ABSTRACT_BATCH, ABSTRACT_RUNS)
     assert body["budget"]["max_model_calls"] - CRITERION_CALLS - SUGGESTION_CALLS - abstract_calls in presets
+
+
+def test_the_repeated_labelling_and_proposal_calls_go_out_together(tmp_path, monkeypatch):
+    """The three labelling calls and the three proposals are each sent at once, through the run's limiter; the
+    vote reads them in step order, so the criterion is the one the sequential calls built."""
+    openalex, adapter = CountingOpenAlex(), proposing()
+    adapter.delay = 0.05
+    with TestClient(app_for(tmp_path, monkeypatch, openalex, adapter)) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        rid, run_id = start(client, EXERCISE)
+        view, run = wait(client, rid, run_id)
+    assert adapter.max_concurrent == PROPOSAL_RUNS == LABEL_RUNS
+    stored = store_at(tmp_path).latest_step_output(rid, "criterion", 1)
+    assert stored["criterion"]["runs_ok"] == [1, 2, 3]
+    assert body_of(tmp_path, rid, 1)["inclusion_criterion"] == RUNS[1]["criterion"]
 
 
 def test_the_criterion_decides_nothing_and_selects_nothing_in_this_slice(tmp_path, monkeypatch):

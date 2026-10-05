@@ -356,6 +356,7 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'model:abstract_screening') return t('Abstract screening proposal (model)')
   if (kind === 'code:chain_abstract_stage') return t('Abstract screening of chained works (code)')
   if (kind === 'provider_chain:openalex') return t('Citation chaining request, {direction}', { direction: t(key.split(':')[1] === 'backward' ? 'references' : 'citing works') })
+  if (kind === 'provider_chain:semantic_scholar') return t('Citation chaining request to Semantic Scholar, {direction}', { direction: t(key.split(':')[2] === 'backward' ? 'references' : 'citing works') })
   if (kind.startsWith('code:chain_')) return t('Citation chaining (code)')
   if (kind === 'model:grounded_answer') return t('Source-linked answer (model)')
   if (kind === 'model:answer_review') return t('Claim review (reviewer model)')

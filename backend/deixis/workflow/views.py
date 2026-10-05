@@ -12,6 +12,7 @@ from deixis.domain.contracts import locate_anchor
 from deixis.domain.rules import SUGGESTION_CALLS, effective_reviewer, result_applicability
 from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
+from deixis.workflow import expansion as expansion_rules
 from deixis.workflow import flow_counts as flow_rules
 from deixis.workflow import overrides as override_rules
 from deixis.workflow import probes as probe_rules
@@ -172,6 +173,18 @@ def _card_routing(side: dict[str, Any], proposal: dict[str, Any]) -> dict[str, A
     return routing | {"queried": [p for p in routing["providers"] if p in queried]}
 
 
+def _first_round_size(store: Store, run_id: str) -> int | None:
+    """How many queries the approval closed on: the first round. What the second round added is numbered after them."""
+    card = store.existing_step(run_id, "protocol_approval")
+    return len((((card or {}).get("output") or {}).get("approved") or {}).get("queries") or []) or None
+
+
+def _search_round(operation_key: str, first: int | None) -> int:
+    """The keyword round a search step belongs to: 2 for the term expansion's queries, otherwise 1."""
+    index = re.match(r"search:(\d+)", operation_key)
+    return 2 if first is not None and index and int(index.group(1)) >= first else 1
+
+
 def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None) -> dict[str, Any] | None:
     """Per round, what each source brought in this run: how many works, and how many no other source brought (D93).
 
@@ -198,9 +211,8 @@ def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None
         works.setdefault(row["search_run_id"], set()).add(row["work_id"])
     if any(s["result_count"] and s["status"] == "completed" and s["id"] not in works for s in searches):
         return {"counted": False, "rounds": []}
-    # The first round is the queries the approval closed on; what the second round added is numbered after them.
     card = store.existing_step(run_id, "protocol_approval")
-    first = len((((card or {}).get("output") or {}).get("approved") or {}).get("queries") or []) or None
+    first = _first_round_size(store, run_id)
     by_round: dict[int, dict[str, set[str]]] = {}
     everywhere: dict[str, set[str]] = {}
     # Citation chaining is not a round of a source's searches (D95): its works are counted apart, with the works no
@@ -210,8 +222,7 @@ def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None
         if search["operation_key"].startswith(CHAIN_PREFIX):
             chained |= works.get(search["id"], set())
             continue
-        index = re.match(r"search:(\d+)", search["operation_key"])
-        number = 2 if first is not None and index and int(index.group(1)) >= first else 1
+        number = _search_round(search["operation_key"], first)
         found = works.get(search["id"], set())
         by_round.setdefault(number, {}).setdefault(search["provider"], set()).update(found)
         everywhere.setdefault(search["provider"], set()).update(found)
@@ -487,6 +498,10 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         run["source_counts"] = source_counts(store, run["id"], probe) if run["kind"] == "discovery" else None
         if run["source_counts"] and run["source_counts"]["counted"] and probe is None:
             run["source_counts"]["arms"] = None  # a legacy research has no probe set
+        # The phrases the second round searched with, so the timeline can name them under its heading.
+        expansion = (store.existing_step(run["id"], "vocabulary_expansion") or {}).get("output") if run["kind"] == "discovery" else None
+        run["expansion_terms"] = [term for block in expansion_rules.expansion_blocks(expansion.get("expansion"), expansion.get("queries")).values()
+                                  for term in block] if expansion else []
         # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).
         run["signals"] = probe_rules.signal_table(store, run["id"], probe) if probe and run["kind"] == "discovery" else None
         run["screening_notes"] = [
@@ -497,11 +512,15 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         ]
         runs.append(run)
 
+    first_rounds: dict[str, int | None] = {}
     search_runs = [
         {**{k: r[k] for k in ("id", "run_id", "scope_revision", "provider", "query_text", "access_mode", "status", "result_count", "provider_total", "page_limit", "retrieved_at",
                               "page_number", "read_limit", "read_total", "stop_reason", "unread_count")},
-         "error": _json(r["error_json"])}
-        for r in conn.execute("SELECT * FROM search_runs WHERE research_id = ? ORDER BY retrieved_at", (research_id,))
+         "error": _json(r["error_json"]),
+         # Which keyword round the query belongs to, so the timeline can mark where the term expansion begins.
+         "round": _search_round(r["operation_key"] or "", first_rounds.setdefault(r["run_id"], _first_round_size(store, r["run_id"])))}
+        for r in conn.execute("SELECT sr.*, st.operation_key FROM search_runs sr LEFT JOIN run_steps st ON st.id = sr.step_id"
+                              " WHERE sr.research_id = ? ORDER BY sr.retrieved_at", (research_id,))
     ]
     # What a paged query left unread is the count on its last stopped page; a page read again replaces the earlier
     # row rather than adding to it, and an unknown provider total is skipped instead of counted as zero (slice 04c).

@@ -32,12 +32,12 @@ from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTR
                                  FULLTEXT_RUNS, MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES,
                                  PROVIDER_WAIT, SCREENING_BATCH, SEARCH_PARALLEL_HOSTS, SW_READ_LIMIT,
                                  after_invalid_output, effective_reviewer, schema_repairs, step_model)
-from deixis.domain.rules import RevisionConflict
+from deixis.domain.rules import CHAIN_S2_BACKWARD_LIMIT, RevisionConflict
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
-from deixis.providers import openalex, query_compiler, facade, contract
+from deixis.providers import openalex, query_compiler, facade, contract, semantic_scholar
 from deixis.providers.common import FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi
 from deixis.providers.registry import CONNECTORS, Connector, endpoint_options, reading, search_providers
 from deixis.storage.db import dumps, new_id, now, transaction
@@ -747,6 +747,28 @@ class ResearchFlow:
             return built, queries
         return self._searchable(run_id, built, queries)
 
+    async def _optional_calls(self, run: dict[str, Any], keys: list[str],
+                              call: Callable[[str], Awaitable[dict[str, Any]]]) -> list[dict[str, Any] | OptionalStepFailed]:
+        """Send the repeated runs of one optional step at once, through the run's limiter, and return them in key order.
+
+        A run that failed comes back as its OptionalStepFailed. A pause, cancel or newer revision is checked before the
+        calls go out and by each call before it sends; the first such stop is raised once every call has returned.
+        """
+        self._checkpoint(run["id"], run["scope_revision"])
+
+        async def one(key: str) -> dict[str, Any] | OptionalStepFailed:
+            try:
+                return await self.deps.limiter.run(f"{run['id']}:{key}", lambda: call(key))
+            except OptionalStepFailed as failure:
+                return failure
+
+        results = await asyncio.gather(*(one(key) for key in keys), return_exceptions=True)
+        stop = next((result for result in results if isinstance(result, BaseException)
+                     and not isinstance(result, OptionalStepFailed)), None)
+        if stop is not None:
+            raise stop
+        return results
+
     async def _vocabulary_labels(self, run: dict[str, Any], scope: dict[str, Any],
                                  extraction: Extraction) -> tuple[Extraction, dict[str, Any]]:
         """Ask a model which block each extracted phrase belongs to, and keep the rule wherever it does not answer (SW17).
@@ -766,13 +788,12 @@ class ResearchFlow:
         target = {"question_text": scope["question"], "language": extraction.language, "phrases": phrases}
         runs: list[dict[str, str]] = []
         failures: list[dict[str, Any]] = []
-        for index in range(vocabulary_rules.LABEL_RUNS):
-            self._checkpoint(run_id, revision)  # a pause or cancel is honoured between the calls, not only after them
-            key = f"vocabulary_labels_{index + 1}"
-            try:
-                output = await self._model_step(run, scope, key, "vocabulary_labels", optional=True, vocabulary_target=target)
-            except OptionalStepFailed as failure:
-                failures.append({"step": key, "reason": failure.reason})
+        keys = [f"vocabulary_labels_{index + 1}" for index in range(vocabulary_rules.LABEL_RUNS)]
+        outputs = await self._optional_calls(run, keys, lambda key: self._model_step(
+            run, scope, key, "vocabulary_labels", optional=True, vocabulary_target=target))
+        for key, output in zip(keys, outputs):
+            if isinstance(output, OptionalStepFailed):
+                failures.append({"step": key, "reason": output.reason})
                 continue
             if output.get("invalid"):
                 # An invented, missing or repeated phrase drops this run; it is not repaired and not half-applied.
@@ -811,13 +832,12 @@ class ResearchFlow:
         else:
             runs: dict[int, dict[str, Any]] = {}
             failures: list[dict[str, Any]] = []
-            for index in range(criterion_rules.PROPOSAL_RUNS):
-                self._checkpoint(run_id, revision)  # a pause or cancel is honoured between the calls
-                key = f"criterion_proposal_{index + 1}"
-                try:
-                    proposal = await self._model_step(run, scope, key, "criterion_proposal", optional=True)
-                except OptionalStepFailed as failure:
-                    failures.append({"step": key, "reason": failure.reason})
+            keys = [f"criterion_proposal_{index + 1}" for index in range(criterion_rules.PROPOSAL_RUNS)]
+            proposals = await self._optional_calls(run, keys, lambda key: self._model_step(
+                run, scope, key, "criterion_proposal", optional=True))
+            for index, (key, proposal) in enumerate(zip(keys, proposals)):
+                if isinstance(proposal, OptionalStepFailed):
+                    failures.append({"step": key, "reason": proposal.reason})
                     continue
                 if proposal.get("invalid"):
                     # A proposal that broke a bound of the contract is dropped whole; a half-used one would enter
@@ -1702,6 +1722,107 @@ class ResearchFlow:
                 if done is None:
                     break
                 cursor, read, page = done.get("next_cursor"), read + done.get("returned", 0), page + 1
+        # Semantic Scholar goes second, with whatever room OpenAlex left under the same limit (D229).
+        if chaining.s2_planned(run["budget"]):
+            await self._chain_requests_s2(run, scope, forms)
+
+    def _chain_s2_plan(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+        """Freeze whether Semantic Scholar is asked and about which seeds: those with a DOI (D229).
+
+        Skipped, with the reason stored, when the research's sources do not include it or it has no access it needs. A
+        seed without a DOI is not asked about and is counted, so the summary can say how many the arm could not use.
+        """
+        run_id = run["id"]
+        step = self.store.step(run_id, "chain_s2_plan", "code:chain_s2_plan")
+        if step["status"] == "succeeded":
+            return step["output"]
+        self.store.start_step(step["id"])
+        seeds = (self.store.step(run_id, "chain_seeds", "code:chain_seeds")["output"] or {}).get("seeds") or []
+        connector = CONNECTORS[chaining.S2_SOURCE]
+        reason = ("not_in_scope" if chaining.S2_SOURCE not in scope["providers"]
+                  else "not_configured" if connector.access_mode() == "not_configured" else None)
+        dois: dict[str, str | None] = {}
+        for seed in seeds:
+            svid = seed["source_version_id"]
+            row = self.store.conn.execute(
+                "SELECT doi FROM source_versions WHERE doi IS NOT NULL AND work_id ="
+                " (SELECT work_id FROM source_versions WHERE id = ?) ORDER BY id = ? DESC, id LIMIT 1",
+                (svid, svid)).fetchone()
+            dois[svid] = normalize_doi(row["doi"]) if row else None
+        asked, without_doi = chaining.s2_seed_links(seeds, dois)
+        output = {"status": "skipped" if reason else "planned", "reason": reason,
+                  "seeds": [] if reason else asked, "with_doi": len(asked), "without_doi": without_doi}
+        self.store.finish_step(step["id"], "succeeded", output=output)
+        return output
+
+    async def _chain_requests_s2(self, run: dict[str, Any], scope: dict[str, Any], forms: dict[str, list[str]]) -> None:
+        """Each seed's references, then each seed's citing works, from Semantic Scholar, one request at a time.
+
+        A rate-limited answer ends this arm (the pacer and the bounded retries already waited), recorded as a failed
+        request; the run and the OpenAlex arm are untouched.
+        """
+        plan = self._chain_s2_plan(run, scope)
+        seeds = plan["seeds"]
+        for direction in chaining.DIRECTIONS:
+            for seed in seeds:
+                svid, doi = seed["source_version_id"], seed["doi"]
+                # One page a seed and direction: its references up to 1,000, its citing works up to the 400 cap.
+                cap = CHAIN_S2_BACKWARD_LIMIT if direction == "backward" else CHAIN_CITING_CAP
+                key = f"{chaining.S2_KEY}{direction}:{svid}" + (":1" if direction == "forward" else "")
+                done = await self._chain_request_s2(run, scope, key, direction, forms, svid, doi, 0, 1, cap)
+                if done is not None and done.get("status") == "rate_limited":
+                    return
+
+    async def _chain_request_s2(self, run: dict[str, Any], scope: dict[str, Any], key: str, direction: str,
+                                forms: dict[str, list[str]], seed: str, doi: str, offset: int, page: int,
+                                per_page: int) -> dict[str, Any] | None:
+        """One Semantic Scholar chain request, sent once as a step of its own and recorded as a search row whose
+        query text starts `chain:`. Returns the step's output, or None when nothing more should follow it. A rate-limited
+        answer is returned too, so the caller can end the arm."""
+        run_id = run["id"]
+        step = self.store.step(run_id, key, chaining.STEP_KIND_S2)
+        if step["status"] == "succeeded":
+            return step["output"]
+        if step["status"] == "failed" and step["error_code"] == "rate_limited":
+            return {"status": "rate_limited"}  # a resumed run ends the arm where the first pass did
+        if step["status"] != "pending":
+            return None  # failed, or unknown after a crash: recorded, and not sent a second time (D18)
+        self._checkpoint(run_id, run["scope_revision"])
+        connector = CONNECTORS[chaining.S2_SOURCE]
+        if direction == "forward" and page > 1:
+            previous = self.store.existing_step(run_id, key.rpartition(":")[0] + f":{page - 1}")
+            refusal = self._continuation_error(previous or {"id": ""}, connector)
+            if refusal:
+                self.store.finish_step(step["id"], "failed", error_code=refusal, delivery_class="before_send")
+                return None
+        if not self._chain_requests_left(run):
+            return None  # counted `not_reached` by the summary
+        self.store.start_step(step["id"])
+        attempts = 0
+        while True:
+            api_key = connector.api_key()
+            left = run["budget"]["max_chain_requests"] - self.store.run(run_id)["usage"].get("chain_requests", 0)
+            retries = max(0, min(PROVIDER_WAIT[scope["effort"]], left - 1))
+            reserved = 1 + retries
+            self.store.add_usage(run_id, "chain_requests", reserved)
+            async with fetch_module.host_gate(semantic_scholar.SEARCH_URL):
+                dispatched = await facade.dispatch_s2_chain(self.deps.http, doi, direction, per_page, offset, api_key,
+                                                            retries)
+            lookups.settle_dispatch(self.store, run_id, step, dispatched, reserved, "chain_requests", "chain_sends")
+            outcome = dispatched.outcome
+            if (outcome.status == "failed" and outcome.delivery_class == "before_send"
+                    and attempts < MAX_TRANSIENT_NETWORK_RETRIES and self._chain_requests_left(run)):
+                attempts += 1
+                await asyncio.sleep(1.5 * attempts)
+                continue
+            break
+        self._record_chain(run, step, key, direction, dispatched, forms, [seed], cites=None, page=page,
+                           per_page=per_page, provider=chaining.S2_SOURCE,
+                           query_text=key.rpartition(":")[0] if direction == "forward" else key)
+        if outcome.status == "rate_limited":
+            return {"status": "rate_limited"}
+        return (self.store.step(run_id, key, chaining.STEP_KIND_S2)["output"]
+                if outcome.status in ("completed", "zero_results") else None)
 
     async def _chain_request(self, run: dict[str, Any], scope: dict[str, Any], key: str, direction: str,
                              forms: dict[str, list[str]], links: list[Any], *, batch: list[str] | None = None,
@@ -1757,7 +1878,8 @@ class ResearchFlow:
     def _record_chain(self, run: dict[str, Any], step: dict[str, Any], key: str, direction: str,
                       outcome: SearchOutcome | facade.Dispatched | facade.DispatchedLookup,
                       forms: dict[str, list[str]], links: list[Any], *, cites: str | None, page: int | None,
-                      batch: list[str] | None = None, per_page: int = CHAIN_CITING_PAGE) -> None:
+                      batch: list[str] | None = None, per_page: int = CHAIN_CITING_PAGE,
+                      provider: str = "openalex", query_text: str | None = None) -> None:
         """Write one answered chain request: the filter runs first, and only the records that pass are written, as a
         search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is kept, passing
         or not, in `chain_links`."""
@@ -1775,8 +1897,8 @@ class ResearchFlow:
         passed = [record for record in outcome.records if chaining.passes(forms, record.title, record.abstract)]
         ok = outcome.status in ("completed", "zero_results")
         search_fields = dict(
-            research_id=rid, run_id=run_id, step_id=step["id"], scope_revision=revision, provider="openalex",
-            query_text=key.rpartition(":")[0] if cites is not None else key,
+            research_id=rid, run_id=run_id, step_id=step["id"], scope_revision=revision, provider=provider,
+            query_text=query_text or (key.rpartition(":")[0] if cites is not None else key),
             request_description=f"citation chaining, {direction}: {outcome.request_description}",
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
             result_count=len(passed), provider_total=outcome.provider_total, page_limit=per_page,
@@ -1788,12 +1910,13 @@ class ResearchFlow:
             **({"page_number": page} if page is not None else {}),
         )
         output = {"status": outcome.status, "direction": direction, "returned": returned_count,
-                  "passed_filter": len(passed), "next_cursor": outcome.next_cursor if cites is not None else None,
+                  "passed_filter": len(passed),
+                  "next_cursor": outcome.next_cursor if cites is not None or provider != "openalex" else None,
                   "provider_total": outcome.provider_total}
         output = lookups.transport_output(self.store, step, output)
         if dispatched is not None and dispatched.dropped_records:
             output["dropped_records"] = dispatched.dropped_records
-        if cites is None:
+        if cites is None and provider == "openalex":
             # A reference OpenAlex did not return has no record to link and no title to filter: it is named here, and
             # the summary counts it, rather than stored as a link that failed the filter.
             answered = {record.provider_record_id for record in outcome.records}
@@ -1802,21 +1925,24 @@ class ResearchFlow:
             if ok:
                 # A chained record ranks after every keyword record: a record a keyword query already found keeps the
                 # rank and the search its candidate row names, and only gains a hit (D93's `candidate_hits`).
-                self.store.record_search(search_fields, "openalex", passed, payload_path, step["id"], "succeeded",
+                self.store.record_search(search_fields, provider, passed, payload_path, step["id"], "succeeded",
                                          step_output=output, first_rank=CHAIN_RANK_BASE)
             else:
                 final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
-                self.store.record_search(search_fields, "openalex", [], payload_path, step["id"], final,
+                self.store.record_search(search_fields, provider, [], payload_path, step["id"], final,
                                          step_output=output,
                                          error_code=outcome.status,
                                          error={"error": outcome.error, "http_status": outcome.http_status}
                                          | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {}),
                                          delivery_class=outcome.delivery_class)
                 return
-            became = {record.provider_record_id: self.store.find_source_by_identifier("openalex", record.provider_record_id)
+            # A Semantic Scholar paper id is kept apart from OpenAlex's in `chain_links` by its `s2:` front.
+            front = "" if provider == "openalex" else chaining.S2_PREFIX
+            became = {front + record.provider_record_id: self.store.find_source_by_identifier(provider, record.provider_record_id)
                       for record in passed}
-            returned = {record.provider_record_id for record in outcome.records}
-            pairs = ([(seed, linked) for seed, linked in links if linked in returned] if direction == "backward"
+            returned = {front + record.provider_record_id for record in outcome.records}
+            pairs = ([(seed, linked) for seed, linked in links if linked in returned]
+                     if direction == "backward" and provider == "openalex"
                      else [(seed, linked) for seed in links for linked in sorted(returned)])
             self.store.conn.executemany(
                 "INSERT OR IGNORE INTO chain_links (research_id, scope_revision, run_id, seed_source_version_id,"
@@ -1833,7 +1959,8 @@ class ResearchFlow:
             return step["output"]["chained"]
         self.store.start_step(step["id"])
         linked = [dict(row) for row in self.store.conn.execute(
-            "SELECT linked_openalex_id, direction, passed_filter, source_version_id FROM chain_links WHERE run_id = ?",
+            "SELECT seed_source_version_id, linked_openalex_id, direction, passed_filter, source_version_id"
+            " FROM chain_links WHERE run_id = ?",
             (run_id,))]
         written = sorted({row["source_version_id"] for row in linked if row["source_version_id"]})
         heads = self.store.work_heads(rid)
@@ -1844,12 +1971,20 @@ class ResearchFlow:
         keyword_pool = set(self._current_heads(rid, ranked))
         linked_heads = {heads[work_of[svid]] for svid in written if work_of.get(svid) in heads}
         chained = chaining.chained_heads(linked_heads, keyword_pool)
+        # A run whose chain asked Semantic Scholar too counts by work: a link both sources found is one link, and a
+        # work both brought is one work (they merged by DOI into one record). Without it the count is by identifier.
+        both = any(row["linked_openalex_id"].startswith(chaining.S2_PREFIX) for row in linked)
+        work_key = (lambda row: work_of.get(row["source_version_id"]) or row["source_version_id"]
+                    or row["linked_openalex_id"]) if both \
+            else (lambda row: row["linked_openalex_id"])
         output = {"chained": chained,
-                  "links": {direction: sum(row["direction"] == direction for row in linked)
+                  "links": {direction: (len({(row["seed_source_version_id"], work_key(row)) for row in linked
+                                             if row["direction"] == direction}) if both
+                                        else sum(row["direction"] == direction for row in linked))
                             for direction in chaining.DIRECTIONS},
-                  "linked_works": len({row["linked_openalex_id"] for row in linked}),
-                  "passed_filter": len({row["linked_openalex_id"] for row in linked if row["passed_filter"]}),
-                  "failed_filter": len({row["linked_openalex_id"] for row in linked if not row["passed_filter"]}),
+                  "linked_works": len({work_key(row) for row in linked}),
+                  "passed_filter": len({work_key(row) for row in linked if row["passed_filter"]}),
+                  "failed_filter": len({work_key(row) for row in linked if not row["passed_filter"]}),
                   "records": len(written), "in_keyword_pool": len(linked_heads & keyword_pool),
                   "new_works": len(chained)}
         self.store.finish_step(step["id"], "succeeded", output=output)
@@ -1908,6 +2043,7 @@ class ResearchFlow:
         sent = [s for s in steps if s["status"] != "pending" and s not in refused]
         forward_seeds = {work_id for seed in seeds.get("seeds") or [] for work_id in seed["openalex_ids"]}
         reached = {s["operation_key"].split(":")[2] for s in sent if s["operation_key"].startswith("chain:forward:")}
+        s2 = self._chain_s2_summary(run) if chaining.s2_planned(run["budget"]) else None
         chained = filtered.get("chained") or []
         decisions = DecisionStore(self.store)
         facts = decisions.facts(rid)
@@ -1922,7 +2058,8 @@ class ResearchFlow:
                           for seed in seeds.get("seeds") or []],
             "requests": {"backward": sum(s["operation_key"].startswith("chain:backward:") for s in sent),
                          "forward": sum(s["operation_key"].startswith("chain:forward:") for s in sent),
-                         "failed": sum(s["status"] in ("failed", "outcome_unknown") for s in sent),
+                         "failed": sum(s["status"] in ("failed", "outcome_unknown") for s in sent)
+                         + (s2["requests"]["failed"] if s2 else 0),
                          "sent": self.store.run(run_id)["usage"].get("chain_requests", 0),
                          "continuation_refused": len(refused),
                          "limit": run["budget"].get("max_chain_requests"),
@@ -1939,7 +2076,25 @@ class ResearchFlow:
             "not_read": plan.get("not_read", 0),
             "outcomes": dict(sorted(outcomes.items())),
         }
+        if s2 is not None:
+            summary["semantic_scholar"] = s2  # absent for a run queued before D229: its summary is what it was
         self.store.finish_step(step["id"], "succeeded", output=summary)
+
+    def _chain_s2_summary(self, run: dict[str, Any]) -> dict[str, Any]:
+        """What the Semantic Scholar arm did, from its stored plan and steps (D229)."""
+        plan = self.store.existing_step(run["id"], "chain_s2_plan")
+        plan = (plan or {}).get("output") or {}
+        steps = [x for x in self.store.run_steps(run["id"]) if x["kind"] == chaining.STEP_KIND_S2]
+        sent = [x for x in steps if x["status"] != "pending"]
+        count = lambda direction: sum(f"{chaining.S2_KEY}{direction}:" in x["operation_key"] for x in sent)
+        asked = {x["operation_key"].split(":")[3] for x in sent if x["operation_key"].startswith(chaining.S2_KEY)}
+        planned = {seed["source_version_id"] for seed in plan.get("seeds") or []}
+        return {"status": plan.get("status", "not_planned"), "reason": plan.get("reason"),
+                "seeds_with_doi": plan.get("with_doi", 0), "seeds_without_doi": plan.get("without_doi", 0),
+                "requests": {"backward": count("backward"), "forward": count("forward"),
+                             "failed": sum(x["status"] in ("failed", "outcome_unknown") for x in sent),
+                             "rate_limited": sum(x["error_code"] == "rate_limited" for x in sent)},
+                "not_reached_seeds": len(planned - asked)}
 
     async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]]) -> None:
         """Score sources by the similarity of their title and abstract to the question (D30, D79, D103).

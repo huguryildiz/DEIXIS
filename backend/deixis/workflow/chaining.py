@@ -24,14 +24,23 @@ from deixis.domain.rules import (CHAIN_ABSTRACT_READ, CHAIN_BACKWARD_BATCH, CHAI
                                  CHAIN_SEEDS)
 from deixis.workflow.ranking import blocks_in
 
-RULE_VERSION = "deixis.citation_chaining.v1"
+# v2 (2026-10-05, D229): Semantic Scholar is a second chain source. A run queued before that froze `v1` in its budget
+# and keeps it: its policy block, requests and counts are what they were.
+RULE_VERSION = "deixis.citation_chaining.v2"
+RULE_VERSION_V1 = "deixis.citation_chaining.v1"
 DIRECTIONS = ("backward", "forward")
 SOURCE = "openalex"
+S2_SOURCE = "semantic_scholar"
+SOURCES = (SOURCE, S2_SOURCE)
 FILTER = "gate_block_form_in_title_or_abstract"
 # The query text a chain request's search run carries: which direction, and which seed or batch (slice 15, Task 3).
 # `search_runs` has no kind column, so this is how a row says it was a chain request and not a keyword query.
 QUERY_PREFIX = "chain:"
 STEP_KIND = "provider_chain:openalex"
+STEP_KIND_S2 = "provider_chain:semantic_scholar"
+STEP_KINDS = (STEP_KIND, STEP_KIND_S2)
+S2_PREFIX = "s2:"  # the front of a Semantic Scholar paper id in `chain_links.linked_openalex_id`
+S2_KEY = "chain:s2:"  # the front of a Semantic Scholar chain request's operation key
 
 
 def policy(budget: dict[str, Any], effort: str) -> dict[str, Any] | None:
@@ -45,16 +54,35 @@ def policy(budget: dict[str, Any], effort: str) -> dict[str, Any] | None:
         return None
     if setting != "auto":
         return {"enabled": False}
-    return {"enabled": True, "rule_version": RULE_VERSION, "seeds": CHAIN_SEEDS, "user_seeds": "every_verified",
-            "seed_order": "bm25_blocks_fused", "directions": list(DIRECTIONS), "source": SOURCE,
-            "citing_cap": CHAIN_CITING_CAP, "backward_batch": CHAIN_BACKWARD_BATCH,
-            "request_limit": budget["max_chain_requests"], "filter": FILTER,
-            "abstract_read": budget.get("chain_abstract_read", CHAIN_ABSTRACT_READ[effort]),
-            "plan_room": budget.get("chain_plan_room", CHAIN_PLAN_ROOM[effort])}
+    block = {"enabled": True, "rule_version": budget.get("chain_rule_version", RULE_VERSION_V1), "seeds": CHAIN_SEEDS,
+             "user_seeds": "every_verified", "seed_order": "bm25_blocks_fused", "directions": list(DIRECTIONS),
+             "source": SOURCE, "citing_cap": CHAIN_CITING_CAP, "backward_batch": CHAIN_BACKWARD_BATCH,
+             "request_limit": budget["max_chain_requests"], "filter": FILTER,
+             "abstract_read": budget.get("chain_abstract_read", CHAIN_ABSTRACT_READ[effort]),
+             "plan_room": budget.get("chain_plan_room", CHAIN_PLAN_ROOM[effort])}
+    if "chain_sources" in budget:
+        block["sources"] = list(budget["chain_sources"])  # absent for a run queued before v2: OpenAlex alone
+    return block
 
 
 def enabled(budget: dict[str, Any]) -> bool:
     return budget.get("citation_chaining") == "auto"
+
+
+def s2_planned(budget: dict[str, Any]) -> bool:
+    """Whether the budget froze Semantic Scholar as a chain source (v2). A run queued before that never asks it."""
+    return enabled(budget) and S2_SOURCE in (budget.get("chain_sources") or ())
+
+
+def s2_seed_links(seeds: list[dict[str, Any]], dois: dict[str, str | None]) -> tuple[list[dict[str, str]], int]:
+    """The seeds Semantic Scholar can be asked about (those with a DOI, in seed order) and how many it cannot.
+
+    `dois` is the DOI of each seed's work by source version id. A seed without one is skipped for this source and
+    counted, never hidden: the OpenAlex arm still chains it.
+    """
+    asked = [{"source_version_id": seed["source_version_id"], "doi": dois[seed["source_version_id"]]}
+             for seed in seeds if dois.get(seed["source_version_id"])]
+    return asked, len(seeds) - len(asked)
 
 
 def norm_title(title: str | None) -> str:

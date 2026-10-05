@@ -1271,3 +1271,6 @@ button.chat-step-title svg{color:var(--muted)}
 .text-recovery-identifiers { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 .text-recovery-identifiers div { margin-block: 6px; }
 .text-recovery-identifiers dd { margin-inline-start: 0; color: var(--ink); }
+.chat-list>li.chat-list-round{display:block;padding:12px 2px 6px;border-bottom:none;font-size:12px}
+.chat-list>li.chat-list-round b{font-weight:600;color:var(--ink);margin-right:8px}
+.chat-list>li.chat-list-round:not(:first-child){padding-top:18px}

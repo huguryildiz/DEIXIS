@@ -30,7 +30,7 @@ from dataclasses import dataclass, replace
 from copy import deepcopy
 from inspect import signature
 
-from deixis.providers import registry, query_rules, query_compiler, contract
+from deixis.providers import registry, query_rules, query_compiler, contract, semantic_scholar
 from deixis.providers.lookup import LookupAnswer
 
 
@@ -187,6 +187,17 @@ async def dispatch_citing(provider_id, http, work_id, cursor, limit, api_key, co
     outcome, dropped = _admit(outcome, api_key)
     # send already redacts error text. Repeating it would change watch rows for
     # keys occurring in the redaction marker (O7).
+    return Dispatched(outcome, dropped, _provenance(connector.descriptor, outcome, dropped), tuple(transport))
+
+
+async def dispatch_s2_chain(http, doi, direction, limit, offset, api_key,
+                            max_rate_limit_retries=None) -> Dispatched:
+    """One Semantic Scholar chain request (D229), admitted and recorded like a citing-works page."""
+    connector = CompatibilityConnector(registry.CONNECTORS[semantic_scholar.PROVIDER_ID])
+    kwargs = {} if max_rate_limit_retries is None else {"max_rate_limit_retries": max_rate_limit_retries}
+    with registry.common.collect_transport() as transport:
+        outcome = await semantic_scholar.chain_page(http, doi, direction, limit, offset, api_key, **kwargs)
+    outcome, dropped = _admit(outcome, api_key)
     return Dispatched(outcome, dropped, _provenance(connector.descriptor, outcome, dropped), tuple(transport))
 
 

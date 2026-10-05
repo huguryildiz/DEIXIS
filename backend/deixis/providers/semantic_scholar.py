@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -31,6 +32,8 @@ from deixis.providers.common import (FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, Provide
 PROVIDER_ID = "semantic_scholar"
 SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
+GRAPH_URL = "https://api.semanticscholar.org/graph/v1/paper"
+CHAIN_MAX_LIMIT = 1000  # `limit` of /references and /citations (API description, read 2026-10-05)
 BULK_ENDPOINT = "bulk"
 BULK_MAX_RESULTS = 1000  # papers one bulk call returns
 BULK_SORT = "citationCount:desc"  # chosen by slice 14's Task 1 (D93)
@@ -152,6 +155,60 @@ async def search_bulk(client: httpx.AsyncClient, query: str, limit: int, api_key
         outcome.next_cursor = CUT if len(papers) > limit else (token if isinstance(token, str) and token else None)
     except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as exc:
         outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
+        return outcome
+    outcome.status = "zero_results" if not outcome.records else "completed"
+    outcome.raw_payload = payload
+    return outcome
+
+
+async def chain_page(client: httpx.AsyncClient, doi: str, direction: str, limit: int, offset: int = 0,
+                     api_key: str | None = None, max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
+    """One page of the works a paper cites (`/references`, backward) or is cited by (`/citations`, forward) (D229).
+
+    The paper is named `DOI:<doi>`. An item is `{"citedPaper": {...}}` or `{"citingPaper": {...}}`; the paper maps with
+    the same `_record` as a search record. An item whose paper has no `paperId` (Semantic Scholar lists a reference it
+    could not resolve that way) has no record and is left out. The answer's `next` names the next offset and is left
+    out on the last page. A paper Semantic Scholar does not know answers 404; that is an empty answer, not a failure.
+    Sent through `send`, so the shared pacer (D67) and the bounded 429 retries apply.
+    """
+    if direction not in ("backward", "forward"):
+        raise ValueError(f"unknown chain direction: {direction!r}")
+    count = min(limit, CHAIN_MAX_LIMIT)
+    path, field = ("references", "citedPaper") if direction == "backward" else ("citations", "citingPaper")
+    safe_doi = quote(doi, safe="")  # path data: `/` too, so `a/../b` keeps its identity and nothing ends or bends the path
+    url = f"{GRAPH_URL}/DOI:{safe_doi}/{path}"
+    params: dict[str, Any] = {"fields": FIELDS, "limit": count, "offset": offset}
+    headers = {"x-api-key": api_key} if api_key else {}
+    access_mode = "api_key" if api_key else "keyless"
+    description = f"GET {GRAPH_URL}/DOI:{safe_doi}/{path} limit={count} offset={offset} access={access_mode}"
+    response, outcome = await send(client, url, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,),
+                                   unstated_wait=UNSTATED_RATE_LIMIT_WAIT,
+                                   max_rate_limit_retries=max_rate_limit_retries)
+    if response is None:
+        if outcome.http_status == 404:
+            outcome.status, outcome.delivery_class, outcome.error = "zero_results", None, None
+        return outcome
+    try:
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise TypeError("Semantic Scholar root must be an object")
+        items = payload.get("data") or []
+        if not isinstance(items, list) or any(not isinstance(i, dict) for i in items):
+            raise TypeError("Semantic Scholar data must be a list of objects")
+        papers = [i[field] for i in items if isinstance(i.get(field), dict) and i[field].get("paperId")]
+        outcome.records = [_record(p) for p in papers]
+        nxt = payload.get("next") if direction == "forward" else None  # a seed's references are one page
+        if nxt is not None:
+            # Only a whole number is an offset: a float, a bool or any other text is a parse_error below.
+            if isinstance(nxt, bool) or not (isinstance(nxt, int) or (isinstance(nxt, str) and nxt.isdigit())):
+                raise ValueError(f"Semantic Scholar next is not an offset: {nxt!r}")
+            nxt = int(nxt)
+            outcome.next_cursor = str(nxt) if nxt > offset else None  # a repeated or falling offset ends paging
+        # The endpoint states no total; the page is the whole list only when no `next` follows it, in either direction.
+        outcome.provider_total = len(items) if payload.get("next") is None else None
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError) as exc:
+        outcome.status, outcome.error, outcome.records = "parse_error", str(exc)[:300], []
+        outcome.next_cursor = None
         return outcome
     outcome.status = "zero_results" if not outcome.records else "completed"
     outcome.raw_payload = payload

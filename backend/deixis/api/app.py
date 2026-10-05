@@ -36,6 +36,7 @@ from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
+from deixis.workflow import chaining
 from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
                                  CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
@@ -63,8 +64,8 @@ from deixis.workflow import english_question
 from deixis.workflow.equations import EquationService, chunk_numbers, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.local_embedding_service import EmbeddingService, ServiceError
 from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.report.store import ReportStore
 from deixis.workflow import report_pipeline
+from deixis.workflow.report.store import ReportStore
 from deixis.workflow.report import export as report_export
 from deixis.workflow.report import latex_export
 from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
@@ -1395,7 +1396,9 @@ def create_app(
                 # The chain's read and plan room are frozen with it, so a run keeps the policy it was queued with.
                 chain |= {"max_chain_requests": CHAIN_REQUEST_LIMIT,
                           "chain_abstract_read": CHAIN_ABSTRACT_READ[scope["effort"]],
-                          "chain_plan_room": CHAIN_PLAN_ROOM[scope["effort"]]}
+                          "chain_plan_room": CHAIN_PLAN_ROOM[scope["effort"]],
+                          # D229: the rule version and the sources are frozen too; a run queued without them is v1, OpenAlex alone.
+                          "chain_rule_version": chaining.RULE_VERSION, "chain_sources": list(chaining.SOURCES)}
             budget = budget | {"max_model_calls": budget["max_model_calls"] + extra} | chain
             if settings.fulltext_fetch == "auto":
                 # The full text is fetched inside this run, beside its screening, with the room a retrieval run
@@ -1627,9 +1630,6 @@ def create_app(
                             headers={"Content-Disposition": f'attachment; filename="{name}.md"'})
         return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="{name}.json"'})
 
-    @app.get("/api/effort-limits")
-    async def effort_limits_view() -> dict[str, Any]:
-        return effort_limits()
     @app.get("/api/researches/{research_id}/answers/{answer_id}/method")
     async def answer_method(research_id: str, answer_id: str, request: Request) -> dict[str, Any]:
         """The Method box under an answer: searches, selection, extraction, limits and evidence base, from stored rows."""
@@ -1641,6 +1641,9 @@ def create_app(
         except method_summary.UnknownAnswer:
             raise HTTPException(404, "Answer not found") from None
 
+    @app.get("/api/effort-limits")
+    async def effort_limits_view() -> dict[str, Any]:
+        return effort_limits()
 
     @app.delete("/api/researches/{research_id}/sources")
     async def remove_sources(research_id: str, body: SourceRemoval, request: Request) -> dict[str, Any]:
@@ -2807,9 +2810,6 @@ def create_app(
         request.app.state.worker.wake()
         return run
 
-    @app.get("/api/researches/{research_id}/reports/{report_id}/gaps")
-    async def get_report_gaps(research_id: str, report_id: str, request: Request) -> list[dict[str, Any]]:
-        return report_gaps_view(store_of(request), research_id, report_id)
     @app.post("/api/researches/{research_id}/study-table", status_code=202)
     async def start_study_table(research_id: str, request: Request,
                                 idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
@@ -2818,6 +2818,9 @@ def create_app(
         request.app.state.worker.wake()
         return run
 
+    @app.get("/api/researches/{research_id}/reports/{report_id}/gaps")
+    async def get_report_gaps(research_id: str, report_id: str, request: Request) -> list[dict[str, Any]]:
+        return report_gaps_view(store_of(request), research_id, report_id)
 
     @app.get("/api/researches/{research_id}/reports/{report_id}")
     async def get_report(research_id: str, report_id: str, request: Request) -> dict[str, Any]:

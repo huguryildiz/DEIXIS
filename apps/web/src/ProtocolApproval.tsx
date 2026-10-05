@@ -393,6 +393,7 @@ function ChainingSection({ chaining }: { chaining: CitationChaining }) {
         ? t('After the abstracts are read, OpenAlex is asked for the works that the first {seeds} works of the ranking and every work you verified cite, and for the works that cite them. A new work is kept when a setting or task term stands in its title or abstract; the list of seeds is shown in the run once the search is done.', { seeds: chaining.seeds ?? 0 })
         : t('Citation chaining is turned off in the settings; this run follows no citation.')}</small>
     </div>
+    {chaining.enabled && chaining.sources?.includes('semantic_scholar') && <p className="approval-hint">{t('Semantic Scholar is asked too, for the seeds that have a DOI, inside the same request limit.')}</p>}
     {chaining.enabled && <p className="approval-hint">{t('Up to {cap} citing works per seed · at most {requests} requests · the model reads up to {read} new works · up to {room} of them join the full-text plan, beside its own limit', { cap: chaining.citing_cap ?? 0, requests: chaining.request_limit ?? 0, read: chaining.abstract_read ?? 0, room: chaining.plan_room ?? 0 })}</p>}
   </div>
 }

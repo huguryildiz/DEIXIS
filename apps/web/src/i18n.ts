@@ -1660,6 +1660,8 @@ const tr: Record<string, string> = {
   'Equations could not be read': 'Denklemler okunamadı',
   'Reading the equations of a PDF failed. Resume to answer from that PDF’s text layer.': 'Bir PDF’in denklemleri okunamadı. Devam ederseniz cevap o PDF’in metin katmanından yazılır.',
   'A PDF’s equations could not be stored while another run uses the same source. Resume when that run ends.': 'Aynı kaynağı kullanan başka bir çalışma sürdüğü için bir PDF’in denklemleri kaydedilemedi. O çalışma bitince devam edin.',
+  'Answer now with PDF text': 'PDF metniyle şimdi cevapla',
+  'Answered now with PDF text; equations of {skipped} PDFs were not read ({read} were read).': 'PDF metniyle hemen cevaplandı; {skipped} PDF dosyasının denklemleri okunmadı ({read} dosya okundu).',
   'The equation reader (Marker) could not start. Resume to answer from the PDFs’ text layer.': 'Denklem okuyucu (Marker) başlatılamadı. Devam ederseniz cevap PDF’lerin metin katmanından yazılır.',
   'Page read from the page image (Marker). Equations are LaTeX and tables are rebuilt as tables; check them against the PDF page.': 'Sayfa, sayfa görüntüsünden okundu (Marker). Denklemler LaTeX’tir, tablolar yeniden tablo olarak kuruldu; PDF sayfasıyla karşılaştırın.',
   'Equations read (LaTeX) · {n} to check against the page': 'Denklemler okundu (LaTeX) · {n} tanesi sayfayla karşılaştırılmalı',

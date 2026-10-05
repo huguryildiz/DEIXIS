@@ -2800,9 +2800,13 @@ class ResearchFlow:
         run_id = run["id"]
         assets = [r[0] for svid in svids for r in self.store.conn.execute(
             "SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,))]
+        skipped = 0
         for asset_id in assets:
             step = self.store.step(run_id, f"equations:{asset_id}", "read_equations")
             if step["status"] in ("succeeded", "failed") or equation_state(self.store, asset_id)["state"] in ("read", "no_math"):
+                continue
+            if self.store.equation_skip_requested(run_id):  # "Answer now with PDF text": the rest keep their text layer
+                skipped += 1
                 continue
             self._checkpoint(run_id)
             self.store.start_step(step["id"])
@@ -2818,6 +2822,11 @@ class ResearchFlow:
                 self.store.finish_step(step["id"], "failed", error_code="equations_failed", error={"asset_id": asset_id, **state})
                 self._pause(run_id, "equations_failed", {"asset_id": asset_id, **state})
             self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, **state})
+        if skipped:
+            summary = self.store.step(run_id, "equations_skipped", "equations_skipped")
+            if summary["status"] != "succeeded":
+                self.store.start_step(summary["id"])
+                self.store.finish_step(summary["id"], "succeeded", output={"pdfs_read": len(assets) - skipped, "pdfs_skipped": skipped})
 
     async def _read_source_equations(self, run: dict[str, Any], svids: list[str]) -> None:
         """The arXiv source route's step per PDF (D104): tried at most once per run, never pausing it."""

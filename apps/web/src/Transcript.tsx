@@ -573,6 +573,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         <time>{durationText(secondsBetween(started, clock))}</time>
       </button>
       {expanded && <>
+        {run.kind === 'answer' && active && run.stage === 'inspection' && steps.some(step => step.kind === 'read_equations' && step.status === 'running') && !steps.some(step => step.kind === 'equations_skip') && <p className="chat-report-line"><button type="button" className="chat-steps-toggle" onClick={() => { api.skipEquations(run.id).catch(() => undefined) }}>{t('Answer now with PDF text')}</button></p>}
+        {steps.filter(step => step.kind === 'equations_skipped' && step.status === 'succeeded').map(step => <p key={step.id} className="chat-report-line">{t('Answered now with PDF text; equations of {skipped} PDFs were not read ({read} were read).', { skipped: step.output?.pdfs_skipped ?? 0, read: step.output?.pdfs_read ?? 0 })}</p>)}
         {busyEquationPdfs > 0 && <p className="chat-report-line">{t(busyEquationPdfs === 1 ? 'PDF busy; equations of {n} PDF were not read in this run.' : 'PDF busy; equations of {n} PDFs were not read in this run.', { n: busyEquationPdfs })}</p>}
         {(run.kind === 'review' || (latest && active && !collapsed)) && <div className="chat-run-plan" role="note">
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />

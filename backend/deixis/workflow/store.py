@@ -34,7 +34,7 @@ TEXT_RETRY_INTERRUPTIONS = ("storage_full", "storage_unavailable", "cancelled", 
 MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too little to suspect a duplicate
 ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
-STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze", "read_equations",
+STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze", "read_equations", "equations_skipped",
                      "code:fulltext_plan", "code:fulltext_work", "code:fulltext_summary", "code:criterion_phrases",
                      "code:adjudication_plan", "code:adjudication_summary", "code:chain_summary")
 STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
@@ -147,6 +147,8 @@ def provisional_title(question: str) -> str:
     words = question.split()
     return " ".join(words[:15]) + ("…" if len(words) > 15 else "")
 
+
+EQUATION_SKIP_KEY = "equations_skip"
 
 class Store:
     def __init__(self, conn: sqlite3.Connection):
@@ -956,6 +958,21 @@ class Store:
         step = dict(row)
         step["output"] = json.loads(step.pop("output_json")) if step["output_json"] else None
         return step
+
+    def request_equation_skip(self, run_id: str) -> bool:
+        """Record that the person chose to answer now with the PDFs' text layer: the run reads no more equations (once).
+
+        A step row carries the choice, so a paused or resumed run keeps it. Returns False when it was already recorded.
+        """
+        if self.existing_step(run_id, EQUATION_SKIP_KEY) is not None:
+            return False
+        step = self.step(run_id, EQUATION_SKIP_KEY, "equations_skip")
+        self.start_step(step["id"])
+        self.finish_step(step["id"], "succeeded", output={"requested_at": now()})
+        return True
+
+    def equation_skip_requested(self, run_id: str) -> bool:
+        return self.existing_step(run_id, EQUATION_SKIP_KEY) is not None
 
     def existing_step(self, run_id: str, operation_key: str) -> dict[str, Any] | None:
         """The step with this key, or None; unlike `step`, nothing is written when there is none."""

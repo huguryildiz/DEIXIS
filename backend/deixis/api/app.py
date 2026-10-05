@@ -1497,6 +1497,16 @@ def create_app(
         request.app.state.worker.wake()
         return run
 
+    @app.post("/api/runs/{run_id}/skip-equations")
+    async def skip_equation_reading(run_id: str, request: Request) -> dict[str, Any]:
+        """"Answer now with PDF text": the answer run reads no further PDF's equations; its text layer is used."""
+        store = store_of(request)
+        run = store.run(run_id)
+        if run["kind"] != "answer" or run["status"] not in ("running", "pause_requested") or run["stage"] != "inspection":
+            raise HTTPException(409, "This run is not reading PDFs or equations now.")
+        store.request_equation_skip(run_id)
+        return store.run(run_id)
+
     @app.post("/api/runs/{run_id}/{action}")
     async def control_run(run_id: str, action: Literal["pause", "resume", "cancel", "retry_failed"], request: Request) -> dict[str, Any]:
         store = store_of(request)

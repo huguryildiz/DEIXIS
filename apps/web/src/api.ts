@@ -139,7 +139,7 @@ export type Step = {
   id: string; operation_key: string; kind: string; status: string; attempt: number; delivery_class: string | null
   error_code: string | null; error: unknown; started_at: string | null; finished_at: string | null
   // Only small counting/provenance outputs carry through this view; model prose remains in its own artifact view.
-  output: { page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number
+  output: { pdfs_read?: number; pdfs_skipped?: number; page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number
     // A pdf_ocr run (D51): the pages without text it found, and whether the merged OCR text was taken into use.
     image_pages?: number[]; blank_pages?: number[]; asset_id?: string; outcome?: 'current' | 'rejected' | 'unchanged' | 'file_busy'; rejection_reason?: string | null
     // Citation chaining (D95): what its summary counted, with the seeds it froze.
@@ -1274,6 +1274,7 @@ export const api = {
     request<Run>(`/api/runs/${runId}/protocol-approval`, json('POST', edits)),
   // Ask the model for other names of the terms on the card. Nothing it proposes is searched until the user adds
   // it in their correction (D82).
+  skipEquations: (runId: string) => request<Run>(`/api/runs/${runId}/skip-equations`, { method: 'POST' }),
   suggestTerms: (runId: string) => request<Run>(`/api/runs/${runId}/term-suggestions`, { method: 'POST' }),
   // After the model could not write the query: search with the code's query alone (D92).
   chooseCodeQuery: (runId: string) => request<Run>(`/api/runs/${runId}/search-query-choice`, { method: 'POST' }),

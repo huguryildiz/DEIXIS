@@ -152,7 +152,11 @@ export type Step = {
     // the person's uploaded files whose text it sent, and why the built-in model skipped it.
     provider?: string; stored_model?: string; from_store?: number; missing?: number; query_origin?: string
     rate_limited_waits?: number; waited_seconds?: number; uploaded_files_attempted?: number; uploaded_passages_attempted?: number; uploaded_files_confirmed?: number; uploaded_passages_confirmed?: number; uploaded_files_unknown?: number; uploaded_passages_unknown?: number; stored_other_dimension?: number; model_installed?: boolean
-    skipped?: boolean; reason?: string } | null
+    skipped?: boolean; reason?: string
+    // Abstract screening: the batch sizes the code queued, and the works one model read covered (never the model's prose).
+    batch_sizes?: number[]; candidate_ids?: string[]
+    // The full-text reading plan: the works it froze.
+    works?: unknown[] } | null
 }
 // What the search plan step reported, as the model wrote it.
 export type SearchPlan = {

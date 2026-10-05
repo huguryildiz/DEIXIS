@@ -42,6 +42,21 @@ MAX_SEED_PASSAGES = 4
 MAX_SEED_CHARS = 5600
 
 
+def _step_view_output(row: Any) -> dict[str, Any] | None:
+    """The part of a step's output the research view carries: small counts, plus two slim lists of works for the
+    abstract-reading counter (how many the code queued, which ones the model has read), never the model's prose."""
+    if not row["output_json"]:
+        return None
+    if row["kind"] in STEP_OUTPUT_KINDS or row["operation_key"] in STEP_OUTPUT_KEYS:
+        return json.loads(row["output_json"])
+    if row["kind"] in ("code:abstract_stage", "code:chain_abstract_stage"):
+        return {"batch_sizes": [len(batch) for batch in json.loads(row["output_json"]).get("batches", [])]}
+    if row["kind"] == "model:abstract_screening" and row["status"] == "succeeded":
+        records = (json.loads(row["output_json"]).get("result") or {}).get("records") or []
+        return {"candidate_ids": [r["candidate_id"] for r in records if isinstance(r, dict) and "candidate_id" in r]}
+    return None
+
+
 def _output_digest(raw_output: str) -> str:
     """Digest of a model's answer, over the parsed value when it is JSON and over its text when it is not.
 
@@ -1173,7 +1188,7 @@ class Store:
         return [{**{k: r[k] for k in r.keys() if k != "output_json"},
                  "error": json.loads(r["error_json"]) if r["error_json"] else None,
                  # Only small counting/provenance outputs are carried here; model prose is read through its own view.
-                 "output": json.loads(r["output_json"]) if r["output_json"] and (r["kind"] in STEP_OUTPUT_KINDS or r["operation_key"] in STEP_OUTPUT_KEYS) else None}
+                 "output": _step_view_output(r)}
                 for r in rows]
 
     # ---- model step records ---------------------------------------------------------

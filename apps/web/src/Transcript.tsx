@@ -66,6 +66,8 @@ function phaseOf(kind: string): PhaseKey | null {
   // Citation chaining follows the abstract stage and reads its new works the same way, so it is part of screening (D95).
   if (kind.startsWith('code:chain_') || kind.startsWith('provider_chain:')) return 'screen'
   if (kind === 'fetch_pdf' || kind === 'pdf_other_copy') return 'pdf'
+  // An answer run reads equations out of its PDFs before it answers; the PDF phase shows that work under its own title.
+  if (kind === 'read_equations') return 'pdf'
   // A full-text retrieval run plans, fetches and totals in code; all three belong to the run's one PDF phase.
   if (kind.startsWith('code:fulltext_') || kind === 'code:fetch_baseline') return 'pdf'
   if (kind === 'code:adjudication_plan' || kind === 'model:fulltext_adjudication' || kind === 'code:adjudication_summary') return 'pdf'
@@ -102,13 +104,6 @@ const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unk
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-// Each connection reports its token counts under its own key; the figure is left out when neither is there.
-function totalTokens(usage: unknown): number | null {
-  const counts = usage as { total_tokens?: unknown; totalTokenCount?: unknown } | null
-  const total = counts?.total_tokens ?? counts?.totalTokenCount
-  return typeof total === 'number' ? total : null
-}
-
 export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
@@ -291,15 +286,55 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   // A research of attached files alone reads PDFs it already has; nothing is downloaded, so the PDF phase says so.
   const attachedOnly = view.scope.source_scope === 'attached'
 
+  // One outcome per source: a copy found after its link refused counts as downloaded, not as a failure. Equation and
+  // reading steps are other work in the same phase and never count as a download.
+  const pdfOutcomes = (group: Step[]) => {
+    const outcomes = new Map<string, Step>()
+    group.filter(s => s.kind === 'fetch_pdf' || s.kind === 'pdf_other_copy').forEach(s => { const svid = s.operation_key.split(':')[1]; if (outcomes.get(svid)?.status !== 'succeeded') outcomes.set(svid, s) })
+    // A work step succeeds even when no full text was found, so only a work with a stored file counts; elsewhere one success per source.
+    const works = group.filter(s => s.kind === 'code:fulltext_work')
+    const ok = works.length ? works.filter(s => s.status === 'succeeded' && s.output?.asset_id) : [...outcomes.values()].filter(s => s.status === 'succeeded')
+    return { outcomes, works, ok }
+  }
+  // The full-text reading counts works, not model calls: each work is read twice, under keys naming the work and the pass.
+  const readingWorks = (group: Step[]) => {
+    const passes = new Map<string, Step[]>()
+    group.filter(s => s.kind === 'model:fulltext_adjudication').forEach(s => {
+      const work = s.operation_key.replace(/^fulltext_adjudication:/, '').replace(/:[^:]*$/, '')
+      passes.set(work, [...(passes.get(work) ?? []), s])
+    })
+    const settled = [...passes.values()].filter(steps => steps.filter(s => s.status === 'succeeded' || troubled(s)).length >= 2).length
+    const planned = group.find(s => s.kind === 'code:adjudication_plan')?.output?.works?.length ?? 0
+    return { done: settled, total: Math.max(planned, passes.size) }
+  }
+  const equationPdfs = (group: Step[]) => new Set(group.filter(s => s.kind === 'read_equations').map(s => s.operation_key)).size
+
   const title = (key: PhaseKey, state: PhaseState, group: Step[]) => {
     if (run.kind === 'review') return t('Review by another model')
     if (run.kind === 'report' && key === 'plan') return t(state === 'running' ? 'Planning the report' : state === 'done' ? 'Planned the report' : 'Report plan')
     const finished = searches.filter(s => s.status === 'completed' || s.status === 'zero_results').length
     if ((state === 'done' || state === 'attention') && key === 'search' && finished) return plural(finished, 'Conducted {n} search', 'Conducted {n} searches')
     // The fetch inside a discovery run counts works, not files: N of the M works it has claimed so far are settled.
-    if (overlap && key === 'pdf' && state === 'running' && fetchWorks.length) return t('Retrieving the full text: {done} of {total}', { done: fetchWorks.filter(s => s.status === 'succeeded' || s.status === 'failed').length, total: fetchWorks.length })
+    // The works are claimed as screening goes on, so a total would keep growing: the line says how many were checked so far.
+    if (overlap && key === 'pdf' && state === 'running' && fetchWorks.length) return plural(fetchWorks.filter(s => s.status === 'succeeded' || s.status === 'failed').length, 'Checked {n} work for full text so far', 'Checked {n} works for full text so far')
     if (overlap && key === 'pdf' && state === 'done' && fetchSummary) return plural(fetchSummary.fetched ?? 0, 'Retrieved the full text of {n} work', 'Retrieved the full text of {n} works')
-    if (state === 'done' && key === 'pdf') return plural(group.filter(s => s.status === 'succeeded').length, attachedOnly ? 'Read {n} attached PDF' : 'Downloaded {n} open-access PDF', attachedOnly ? 'Read {n} attached PDFs' : 'Downloaded {n} open-access PDFs')
+    if (key === 'pdf' && group.some(s => s.kind === 'model:fulltext_adjudication' || s.kind === 'code:adjudication_plan')) {
+      const { done, total } = readingWorks(group)
+      if (state === 'running') return t('Reading the full texts: {done} of {total} works', { done, total })
+      if (state === 'done') return plural(done, 'Read the full text of {n} work', 'Read the full text of {n} works')
+      return t('Full-text reading')
+    }
+    // Equations are read from PDFs already held, after any download of the phase has finished.
+    const equations = equationPdfs(group)
+    const downloading = group.some(s => s.kind === 'fetch_pdf' || s.kind === 'pdf_other_copy')
+    const readingEquations = group.some(s => s.kind === 'read_equations' && s.status === 'running')
+    if (key === 'pdf' && equations && (!downloading || readingEquations)) {
+      // Only finished reads count: the answer can be written while equations of some PDFs are still waiting.
+      const read = new Set(group.filter(s => s.kind === 'read_equations' && s.status === 'succeeded').map(s => s.operation_key)).size
+      if (state === 'running') return t('Reading equations: {read} of {n} PDFs', { read, n: equations })
+      return read === equations ? plural(equations, 'Read equations in {n} PDF', 'Read equations in {n} PDFs') : t('Equations read in {read} of {n} PDFs', { read, n: equations })
+    }
+    if (state === 'done' && key === 'pdf') return plural(pdfOutcomes(group).ok.length, attachedOnly ? 'Read {n} attached PDF' : 'Downloaded {n} open-access PDF', attachedOnly ? 'Read {n} attached PDFs' : 'Downloaded {n} open-access PDFs')
     if (state === 'done' && key === 'ocr' && ocrPages) return plural(ocrPages.length, 'Read {n} scanned page with OCR', 'Read {n} scanned pages with OCR')
     if (state === 'done' && key === 'review' && answer?.review?.status === 'completed') return plural(answer.review.reviews.length, 'Reviewed {n} claim', 'Reviewed {n} claims')
     const [running, done, idle] = key === 'pdf' && attachedOnly ? attachedTitles(included.length) : titles[key]
@@ -325,19 +360,26 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         return plural(found, '{n} record', '{n} records')
       }
       case 'screen': {
-        const done = group.filter(s => s.status === 'succeeded').length
-        if (state === 'running') return done ? plural(done, '{n} batch done', '{n} batches done') : ''
+        if (state === 'running') {
+          // Abstracts the model has read: each batch is read twice, so a work counts once however many reads of it are done.
+          const read = new Set(group.flatMap(s => s.kind === 'model:abstract_screening' && s.status === 'succeeded' ? s.output?.candidate_ids ?? [] : [])).size
+          const stages = group.filter(s => (s.kind === 'code:abstract_stage' || s.kind === 'code:chain_abstract_stage') && s.output?.batch_sizes)
+          const chainRead = group.some(s => s.operation_key.startsWith('abstract_screening:chain:'))
+          const total = stages.reduce((sum, s) => sum + (s.output?.batch_sizes ?? []).reduce((a, b) => a + b, 0), 0)
+          // Without the code's list of what it queued (an older run) or with a chain stage not listed yet, no total is claimed.
+          if (!stages.length || (chainRead && !stages.some(s => s.kind === 'code:chain_abstract_stage'))) return read ? plural(read, '{n} abstract read', '{n} abstracts read') : ''
+          return t('{read} of {total} abstracts read', { read, total })
+        }
         return t('{included} included · {excluded} excluded · {pending} undecided', { included: view.counts.included, excluded: view.counts.excluded, pending: view.counts.pending })
       }
       case 'pdf': {
         // One outcome per source: a copy found after its link refused counts as downloaded, not as a failure.
-        const outcomes = new Map<string, Step>()
-        group.forEach(s => { const svid = s.operation_key.split(':')[1]; if (outcomes.get(svid)?.status !== 'succeeded') outcomes.set(svid, s) })
+        if (group.some(s => s.kind === 'model:fulltext_adjudication' || s.kind === 'code:adjudication_plan')) return attemptText
+        const { outcomes, works, ok } = pdfOutcomes(group)
         const reasons = tally([...outcomes.values()].filter(troubled).map(s => fetchReasonText(s.error_code, (s.error as { http_status?: number } | null)?.http_status)))
         const failed = reasons.reduce((sum, [, n]) => sum + n, 0)
-        const ok = group.filter(s => s.status === 'succeeded')
         const pages = ok.reduce((sum, s) => sum + (s.output?.page_count ?? 0), 0)
-        const parts = [state === 'running' && group.length ? plural(ok.length, attachedOnly ? '{n} read' : '{n} downloaded', attachedOnly ? '{n} read' : '{n} downloaded') : '',
+        const parts = [works.length ? plural(ok.length, '{n} full text found', '{n} full texts found') : state === 'running' && group.length ? plural(ok.length, attachedOnly ? '{n} read' : '{n} downloaded', attachedOnly ? '{n} read' : '{n} downloaded') : '',
           state === 'done' && pages ? t('{pages} pages · {passages} passages', { pages, passages: ok.reduce((sum, s) => sum + (s.output?.passage_count ?? 0), 0) }) : '',
           failed ? t('{n} not downloaded ({reasons})', { n: failed, reasons: reasons.map(([reason, n]) => `${n} ${reason}`).join(', ') }) : '']
         return parts.filter(Boolean).join(' · ')
@@ -349,7 +391,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         const last = ocrAsset?.ocr?.last_read
         return [ocrSource?.title ?? '', ocrPages && state !== 'done' ? t('{done} of {total} pages read', { done: read, total: ocrPages.length }) : '',
           failed ? plural(failed, '{n} page not read', '{n} pages not read') : '',
-          merged && last ? plural(last.pages_with_text, '{n} with text', '{n} with text') : '',
+          merged && last ? plural(last.pages_with_text, '{n} page with text', '{n} pages with text') : '',
           merged && last?.blank_pages ? plural(last.blank_pages, '{n} blank page skipped', '{n} blank pages skipped') : '',
           merged ? (merged.outcome === 'current' ? t('in use') : t('not used: {reason}', { reason: merged.rejection_reason ?? '' })) : '',
           run.target?.languages ? ocrLanguages(run.target.languages) : ''].filter(Boolean).join(' · ')
@@ -372,8 +414,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         if (output?.skipped) return t(output.reason === 'column_not_english' ? 'Not used: the column is not in English' : 'Not used: no English sentence for the built-in model')
         if (output?.passages === undefined || output.embedded === undefined) return ''
         return [step?.status === 'partial'
-          ? t('{n} of {m} passages ranked by similarity · the rest by keyword search', { n: (output.from_store ?? 0) + output.embedded, m: output.passages })
-          : t('{passages} passages ranked · {embedded} newly embedded', { passages: output.passages, embedded: output.embedded }),
+          ? t('{n} of {m} passages ranked by meaning · the rest by keyword search', { n: (output.from_store ?? 0) + output.embedded, m: output.passages })
+          : t('{passages} passages ranked by meaning', { passages: output.passages }),
         waitedText(output),
         ...uploads,
         ].filter(Boolean).join(' · ')
@@ -480,11 +522,11 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
           similarity.status === 'succeeded'
             ? simOut?.embedded === 0 && fromStore > 0
               ? builtinSim && simOut?.model_installed === false  // what the step recorded when it ran, not today's setting
-                ? plural(fromStore, '{n} similarity from an earlier run; the built-in model was not installed when this step ran', '{n} similarities from an earlier run; the built-in model was not installed when this step ran')
-                : plural(fromStore, '{n} similarity from an earlier run', '{n} similarities from an earlier run')
-              : plural(simTotal || (simOut?.sources ?? 0), 'Similarity to the question: {n} source scored', 'Similarity to the question: {n} sources scored')
-            : scoredCount > 0 ? t('{n} of {m} records scored', { n: scoredCount, m: simTotal })
-              : builtinSim ? t('The built-in model was not available; the records were ordered without the embedding')
+                ? plural(fromStore, '{n} record compared with the question earlier; the built-in model was not installed when this step ran', '{n} records compared with the question earlier; the built-in model was not installed when this step ran')
+                : plural(fromStore, '{n} record compared with the question earlier', '{n} records compared with the question earlier')
+              : plural(simTotal || (simOut?.sources ?? 0), '{n} record compared with the question', '{n} records compared with the question')
+            : scoredCount > 0 ? t('{n} of {m} records compared with the question', { n: scoredCount, m: simTotal })
+              : builtinSim ? t('The built-in model was not available; the records were ordered without comparing them with the question')
                 : t('Similarity unavailable; ordered by search position'),
           waitedText(simOut),
         ].filter(Boolean).join(' · ')
@@ -508,7 +550,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         const abstractOnly = included.filter(s => !s.access.assets.length && s.access.abstract_passage_id).length
         const lines = [
           candidates.length ? t('PDF candidates: {list}', { list: tally(candidates.map(c => c.provider)).map(([id, n]) => `${providerName(id)} ${n}`).join(' · ') }) : '',
-          verified ? t('{n} identity verified', { n: verified }) : '',
+          verified ? plural(verified, '{n} PDF candidate confirmed as the right paper', '{n} PDF candidates confirmed as the right paper') : '',
           abstractOnly ? plural(abstractOnly, '{n} source read from abstract only', '{n} sources read from abstract only') : '',
         ].filter(Boolean)
         return lines.length ? <p>{lines.join(' · ')}</p> : null
@@ -560,12 +602,13 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const reviewFailure = ownerReview?.card.failure_reason ?? null
   const label = run.kind === 'review' ? [t('Review by another model'), t(reviewState === 'partial' ? 'Partial' : runStatusLabels[reviewState]), ...(reviewState === 'failed' ? [pauseReasonText(reviewFailure) || t('The run failed.')] : [])].join(' · ') : t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : run.kind === 'fulltext_fetch' ? fulltextHeadings : run.kind === 'fulltext_adjudication' ? readingHeadings : run.kind === 'pdf_ocr' ? ocrHeadings : run.kind === 'report' ? reportHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
   const olderRevision = run.scope_revision !== view.research.current_scope_revision
-  const tokens = totalTokens(answer?.model?.token_usage)
-  // What the run spent against what it was allowed; the token figure is the answer step's own, and no cost is estimated.
-  const spend = [t('Model calls {calls}/{limit}', { calls: run.usage.model_calls ?? 0, limit: run.budget.max_model_calls ?? 0 }),
-    t('provider requests {requests}/{limit}', { requests: run.usage.provider_requests ?? 0, limit: run.budget.max_provider_requests ?? 0 }),
-    ...(tokens === null ? [] : [t('{n} answer tokens', { n: compact(tokens) })])].join(' · ')
-  const callLimitReached = (run.budget.max_model_calls ?? 0) > 0 && (run.usage.model_calls ?? 0) >= (run.budget.max_model_calls ?? 0)
+  // What the run asked of the model against what it was allowed; the limit is left out once the count passes it.
+  const calls = run.usage.model_calls ?? 0
+  const callLimit = run.budget.max_model_calls ?? 0
+  const spend = callLimit && calls <= callLimit
+    ? t(calls === 1 ? 'The model was asked once (limit {limit})' : 'The model was asked {calls} times (limit {limit})', { calls, limit: callLimit })
+    : t(calls === 1 ? 'The model was asked once' : 'The model was asked {calls} times', { calls })
+  const callLimitReached = callLimit > 0 && calls >= callLimit
   // Which model ran each model phase of this run, listed once here rather than on every step line.
   const models = order.filter((key, i) => agents[key]?.model && stateOf(i) !== 'skipped').map(key => agents[key]!)
     .filter((agent, i, all) => all.findIndex(a => a.role === agent.role) === i)  // the literature model plans and screens; name it once
@@ -624,7 +667,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
           {key === 'plan' && adviceLines}
           {collapsed && state === 'running' && <div className="chat-step-progress">
             <span className="chat-step-progress-bar"><span style={{ width: `${Math.round(((i + 0.5) / order.length) * 100)}%` }} /></span>
-            <small>{t('step {n} of {total}', { n: i + 1, total: order.length })}</small>
+            <small>{t('stage {n} of {total}', { n: i + 1, total: order.length })}</small>
           </div>}
           {note && detailsOpen && <div className="chat-step-note">{note}</div>}
           {hasConcepts && detailsOpen && <ul className="chat-list">
@@ -654,7 +697,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
               const why = rationaleOf(s.provider, s.query_text)
               return <Fragment key={s.id}>{heading}<li className={failed ? 'is-attention' : undefined}>
                 <span className="chat-list-text"><code>{s.query_text}</code>{why && <small>{why}</small>}</span>
-                <span className="chat-list-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · <b>{failed && count === 0 ? t(failed.status.replace('_', ' ')) : t('{count} / {total}', { count, total: total === null ? '?' : compact(total) })}</b>{pages.length > 1 && <> · {plural(pages.length, '{n} page', '{n} pages')}</>}{failed && count > 0 && <> · {t(failed.status.replace('_', ' '))}</>}</span>
+                <span className="chat-list-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · <b>{failed && count === 0 ? t(failed.status.replace('_', ' ')) : total === null ? plural(count, '{n} result taken', '{n} results taken') : t('{count} of {total} results taken', { count, total: compact(total) })}</b>{pages.length > 1 && <> · {plural(pages.length, '{n} page', '{n} pages')}</>}{failed && count > 0 && <> · {t(failed.status.replace('_', ' '))}</>}</span>
               </li></Fragment>
             })}
             {/* The citation chain is not a search round (D95); one line says it follows, so all three steps read in one place. */}
@@ -729,14 +772,14 @@ function ChainReport({ steps, view }: { steps: Step[]; view: ResearchView }) {
   const s2 = summary.semantic_scholar
   const titleOf = (svid: string) => view.sources.find(s => s.source_version_id === svid)?.title ?? svid
   const line = [
-    plural(seeds.length, 'Citation chaining: {n} seed', 'Citation chaining: {n} seeds'),
-    plural(requests.sent ?? 0, '{n} request', '{n} requests'),
+    plural(seeds.length, 'Checked the reference lists and citing papers of {n} paper', 'Checked the reference lists and citing papers of {n} papers'),
+    plural(requests.sent ?? 0, '{n} lookup', '{n} lookups'),
     plural(summary.new_works ?? 0, '{n} new work', '{n} new works'),
-    plural(summary.read_by_model ?? 0, '{n} read by the model', '{n} read by the model'),
-    requests.failed ? plural(requests.failed, '{n} request did not complete', '{n} requests did not complete') : '',
-    requests.not_reached_seeds ? plural(requests.not_reached_seeds, '{n} seed not reached (request limit)', '{n} seeds not reached (request limit)') : '',
+    plural(summary.read_by_model ?? 0, '{n} abstract read by the model', '{n} abstracts read by the model'),
+    requests.failed ? plural(requests.failed, '{n} lookup did not complete', '{n} lookups did not complete') : '',
+    requests.not_reached_seeds ? plural(requests.not_reached_seeds, '{n} paper not reached (request limit)', '{n} papers not reached (request limit)') : '',
     s2?.status === 'skipped' ? t('Semantic Scholar skipped ({reason})', { reason: t(s2.reason === 'not_configured' ? 'not configured' : 'not in the research sources') }) : '',
-    s2?.seeds_without_doi ? plural(s2.seeds_without_doi, '{n} seed without a DOI skipped for Semantic Scholar', '{n} seeds without a DOI skipped for Semantic Scholar') : '',
+    s2?.seeds_without_doi ? plural(s2.seeds_without_doi, '{n} paper without a DOI was not looked up in Semantic Scholar', '{n} papers without a DOI were not looked up in Semantic Scholar') : '',
   ].filter(Boolean).join(' · ')
   return <>
     <p className="chat-report-line">

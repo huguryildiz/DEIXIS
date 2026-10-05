@@ -3,11 +3,12 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // Synthetic sources and the fixture's scripted adapter only; no cell-quality measurement.
 const REPO = path.resolve(process.cwd(), '..', '..')
 const OUT = path.resolve(process.env.DEIXIS_ACCEPTANCE_DIR ?? 'test-results/acceptance')
-const PORT = 8805 // Unused by the other e2e fixture servers.
+const PORT = nextPort()
 const URL = `http://127.0.0.1:${PORT}`
 const NAMES = ['Problem addressed', 'Established or changed', 'Uncertainty left']
 const HINT = 'This column feeds the development lines and stays a text column.'

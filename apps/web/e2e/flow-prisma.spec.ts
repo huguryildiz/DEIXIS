@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // Case M: where every work of an sw research stands (slice 20, D102). The Sources tab's flow line, the PRISMA-S search
 // report in both formats, the line under an answer that says where the flow stood when the answer started, and the
@@ -59,7 +60,7 @@ const viewOf = async (api: Api, rid: string) => (await (await api.context.get(`/
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled', fullPage: true })
 
 test.describe.serial('M: the flow of an sw research and its search report', () => {
-  const server = new FlowServer(8783, { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
+  const server = new FlowServer(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
   let api: Api
   let rid = ''
   let page: Page

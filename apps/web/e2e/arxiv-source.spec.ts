@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // Case O: the arXiv source route (slice 22, D104). With DEIXIS_ARXIV_SOURCE=auto and Marker not installed, a PDF that
 // is an arXiv version gets the numbered display equations of the authors' LaTeX source of that version placed into
@@ -63,7 +64,7 @@ async function startResearch(page: Page, server: ArxivSourceServer, question: st
 }
 
 test.describe.serial('O: the arXiv source route', () => {
-  const server = new ArxivSourceServer(8799)
+  const server = new ArxivSourceServer(nextPort())
   let page: Page
 
   test.beforeAll(async ({ browser }) => {

@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // Case I: a model writes the sw discovery run's search query, the approval card shows it with the query built from
 // the question's words beside it, and a failed model stops the run until the user says what to search with (D92).
@@ -60,7 +61,7 @@ async function startResearch(page: Page, server: ModelQueryServer, question: str
 }
 
 test.describe.serial('I: the model-written search query of an sw discovery run', () => {
-  const server = new ModelQueryServer(8790)
+  const server = new ModelQueryServer(nextPort())
   let page: Page
 
   test.beforeAll(async ({ browser }) => {

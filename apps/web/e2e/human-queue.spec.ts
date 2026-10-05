@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // Case J: the human queue of an sw research (slice 17, D97). A person sees the works the reading could not settle,
 // opens a row's page, and answers; an answer can be taken back, a row that moved is refused, and the list follows the
@@ -90,8 +91,8 @@ async function openQueue(page: Page, server: QueueServer, rid: string) {
 test.describe.serial('J: the human queue of an sw research', () => {
   // DEIXIS_FIXTURE_AUDIT adds one work both reading runs include (slice 20): it is no queue row, and the audit sample's
   // group of agreeing includes shows it.
-  const server = new QueueServer(8781, { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
-  const legacy = new QueueServer(8782, { DEIXIS_FIXTURE_STORED_LEGACY: 'on' })
+  const server = new QueueServer(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
+  const legacy = new QueueServer(nextPort(), { DEIXIS_FIXTURE_STORED_LEGACY: 'on' })
   let api: Api
   let rid = ''
   let page: Page

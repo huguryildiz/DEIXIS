@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { failedSectionReasonText, reportAssemblyDraftText } from '../src/labels'
 import { setUiLanguage } from '../src/i18n'
+import { nextPort } from './ports'
 
 // SYNTHETIC records and a scripted report model exercise the UI, not the quality of a research report.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -16,7 +17,7 @@ mkdirSync(OUT, { recursive: true })
 class ReportServer {
   private proc?: ChildProcess
   readonly dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-report-'))
-  constructor(readonly port = 8801) {}
+  constructor(readonly port = nextPort()) {}
   async start() {
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], {
       cwd: REPO, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend') }, stdio: 'inherit',
@@ -335,7 +336,7 @@ test('a scripted report review finding appears as a model flag', async ({ browse
 })
 
 test('a banned word in a section pauses the report with the section failed and no draft or version', async ({ browser }) => {
-  const server = new ReportServer(8802)
+  const server = new ReportServer(nextPort())
   await server.start()
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
@@ -399,7 +400,7 @@ test('a banned word in a section pauses the report with the section failed and n
 })
 
 test('an empty section pauses the report and can be cancelled', async ({ browser }) => {
-  const server = new ReportServer(8803)
+  const server = new ReportServer(nextPort())
   await server.start()
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
@@ -502,7 +503,7 @@ test('report failure labels use codes only in English and Turkish, with bounded 
 })
 
 test('a bad cell anchor fails after one repair and displays only the stored reason code', async ({ browser }) => {
-  const server = new ReportServer(8804)
+  const server = new ReportServer(nextPort())
   await server.start()
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })

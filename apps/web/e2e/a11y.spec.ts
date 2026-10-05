@@ -3,6 +3,7 @@ import { expect, request as apiRequest, test, type Browser, type Locator, type P
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // P9 H6 accessibility audit (plan X01 to X06). Synthetic records and a scripted model: this measures the interface,
 // not research quality. Part 1 scans a frozen screen list with axe in four states (X01 to X04); part 2 walks the A to G
@@ -13,7 +14,7 @@ import path from 'node:path'
 // layout equivalent, not Chrome's own zoom.
 //
 // Rerun: DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance-h6 npx playwright test e2e/a11y.spec.ts
-// Ports 8820 to 8824 are used by this file only (8765 and 8858 to 8864 belong to the live service and other work).
+// Ports come from nextPort() (e2e/ports.ts), unique per worker.
 
 const REPO = path.resolve(process.cwd(), '..', '..')
 const PYTHON = process.env.DEIXIS_TEST_PYTHON ?? path.join(REPO, '.venv', 'bin', 'python')
@@ -65,11 +66,11 @@ class Fixture {
   url(hash = '') { return `http://127.0.0.1:${this.port}/${hash}` }
 }
 
-const main = new Fixture(8820)  // scan and keyboard walk do not share a server: the scan leaves a Trash item and error toasts behind
-const queue = new Fixture(8821, { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
-const keys = new Fixture(8822)
-const motion = new Fixture(8823)
-const zoom = new Fixture(8824)
+const main = new Fixture(nextPort())  // scan and keyboard walk do not share a server: the scan leaves a Trash item and error toasts behind
+const queue = new Fixture(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
+const keys = new Fixture(nextPort())
+const motion = new Fixture(nextPort())
+const zoom = new Fixture(nextPort())
 const all = [main, queue, keys, motion, zoom]
 test.afterAll(async () => { await Promise.all(all.map(server => server.stop())) })
 

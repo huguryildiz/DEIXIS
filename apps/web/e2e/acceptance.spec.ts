@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Locator, type Page } from '@playwright
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // A–G acceptance cases (.local/docs/product/first-slice-plan.md) in a real browser against the fixture server.
 // Records are SYNTHETIC and the model is scripted: this checks application behavior, not model quality.
@@ -58,7 +59,7 @@ const row = (page: Page, title: string, other = false) =>
   page.locator(other ? '.source-row.is-other-version' : '.source-row:not(.is-other-version)', { has: page.getByText(title, { exact: true }) })
 
 test('stored legacy research opens with its plan and notes, and discovery controls stay closed', async ({ browser }) => {
-  const server = new FixtureServer(8777, { DEIXIS_FIXTURE_STORED_LEGACY: 'on' })
+  const server = new FixtureServer(nextPort(), { DEIXIS_FIXTURE_STORED_LEGACY: 'on' })
   await server.start()
   const page = await browser.newPage()
   try {
@@ -84,7 +85,7 @@ test('stored legacy research opens with its plan and notes, and discovery contro
 })
 
 test('connections separate planned models from configured scholarly access', async ({ browser }) => {
-  const server = new FixtureServer(8795)
+  const server = new FixtureServer(nextPort())
   await server.start()
   const page = await browser.newPage()
   try {
@@ -136,7 +137,7 @@ test('connections separate planned models from configured scholarly access', asy
 })
 
 test('recent research moves to Trash, restores, then can be permanently deleted', async ({ browser }) => {
-  const server = new FixtureServer(8794)
+  const server = new FixtureServer(nextPort())
   await server.start()
   const page = await browser.newPage()
   try {
@@ -168,7 +169,7 @@ test('recent research moves to Trash, restores, then can be permanently deleted'
 })
 
 test('mixed search asks which PDF guides it when several are attached', async ({ browser }) => {
-  const server = new FixtureServer(8793)
+  const server = new FixtureServer(nextPort())
   await server.start()
   const page = await browser.newPage()
   try {
@@ -188,7 +189,7 @@ test('mixed search asks which PDF guides it when several are attached', async ({
 })
 
 test('a research title is renamed in place and from its sidebar row', async ({ browser }) => {
-  const server = new FixtureServer(8788)
+  const server = new FixtureServer(nextPort())
   await server.start()
   const page = await browser.newPage()
   try {
@@ -300,7 +301,7 @@ async function startResearch(page: Page, server: FixtureServer, question: string
 async function openTab(page: Page, name: RegExp) { await page.getByRole('tab', { name }).click() }
 
 test.describe.serial('Main flow: A, B, C, D, F, G', () => {
-  const server = new FixtureServer(8791)
+  const server = new FixtureServer(nextPort())
   let page: Page
   let claimsBefore: string[] = []
 
@@ -523,7 +524,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
 })
 
 test.describe.serial('Failures: E and B (code check)', () => {
-  const server = new FixtureServer(8792)
+  const server = new FixtureServer(nextPort())
   let page: Page
   test.beforeAll(async ({ browser }: { browser: Browser }) => { await server.start(); page = await browser.newPage() })
   test.afterAll(async () => { await server.stop() })
@@ -572,7 +573,7 @@ test.describe.serial('Failures: E and B (code check)', () => {
 })
 
 test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
-  const server = new FixtureServer(8796)
+  const server = new FixtureServer(nextPort())
   let page: Page
   const toastsOff = async (target: Page) => { const dismiss = target.getByRole('button', { name: 'Dismiss notification' }); if (await dismiss.isVisible()) await dismiss.click() }
   test.beforeAll(async ({ browser }: { browser: Browser }) => { await server.start(); page = await browser.newPage() })
@@ -731,7 +732,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
 })
 
 test.describe.serial('Evidence table runs and templates', () => {
-  const server = new FixtureServer(8793)
+  const server = new FixtureServer(nextPort())
   let page: Page
   const toastsOff = async () => { const dismiss = page.getByRole('button', { name: 'Dismiss notification' }); if (await dismiss.isVisible()) await dismiss.click() }
   const written = () => page.locator('.evidence-cell', { hasText: 'Model' })
@@ -818,7 +819,7 @@ test.describe.serial('Evidence table runs and templates', () => {
 })
 
 test.describe.serial('Replacing a source PDF (P5 slice 2, D45)', () => {
-  const server = new FixtureServer(8797)
+  const server = new FixtureServer(nextPort())
   let page: Page
   const title = 'SYNTHETIC molecule release scheduling with bisection'
   test.beforeAll(async ({ browser }: { browser: Browser }) => { await server.start(); page = await browser.newPage() })
@@ -870,7 +871,7 @@ test.describe.serial('Replacing a source PDF (P5 slice 2, D45)', () => {
 })
 
 test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)', () => {
-  const server = new FixtureServer(8798)
+  const server = new FixtureServer(nextPort())
   let page: Page
   let researchUrl = ''
   const relay = 'SYNTHETIC relay budget allocation'

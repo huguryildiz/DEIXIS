@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { ActivityEvent, Asset, AssetText, Passage, RecoveryHistory, ReportDetail, ResearchSummary, ResearchView, Source, TableSummary, TableView, TextRetryOperation } from '../src/api'
 import { setUiLanguage, t } from '../src/i18n'
+import { nextPort } from './ports'
 
 // SYNTHETIC stored inputs and scripted model output. Mocked failures/races do not create backend evidence.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -18,7 +19,7 @@ class ReextractServer {
   private proc?: ChildProcess
   readonly dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-reextract-r4-'))
   readonly pdfDir = path.join(this.dataDir, 'originals')
-  readonly port = 8870
+  readonly port = nextPort()
   url() { return `http://127.0.0.1:${this.port}` }
   async start() {
     const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${path.join(REPO, 'backend')}:${REPO}`, DEIXIS_FIXTURE_REEXTRACT: 'on' }

@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // Case P (slice 25, SW21, D106): works whose own PDF is withheld get their text from Europe PMC's open-access XML,
 // drawn as a PDF by DEIXIS. Every surface that names one of its pages says "Europe PMC text, rendered p. n", never
@@ -80,7 +81,7 @@ const sheet = (page: Page) => page.locator('.source-sheet')
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
 
 test.describe.serial('P: pages of Europe PMC’s drawn text say "rendered" on every surface', () => {
-  const server = new Slice25Server(8785, {
+  const server = new Slice25Server(nextPort(), {
     DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on',
     DEIXIS_FIXTURE_EUROPEPMC: 'on',
   })
@@ -161,7 +162,7 @@ test.describe.serial('P: pages of Europe PMC’s drawn text say "rendered" on ev
 
 test.describe.serial('Q: an sw research with nothing included ends with an answer that says so', () => {
   // Retrieval and reading are off here, so the search finishes with no work included (the fixture's smallest case).
-  const server = new Slice25Server(8780, { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed' })
+  const server = new Slice25Server(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed' })
   let api: Api
   let rid = ''
 

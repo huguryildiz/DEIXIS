@@ -4,8 +4,9 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { EditCheck, ReportClaim, ReportDetail, ResearchView } from '../src/api'
+import { nextPort } from './ports'
 
-// Synthetic records, scripted model and mocked OpenAlex only. Port 8808 was absent from e2e and acceptance.
+// Synthetic records, scripted model and mocked OpenAlex only.
 const REPO = path.resolve(process.cwd(), '..', '..')
 const PYTHON = process.env.DEIXIS_TEST_PYTHON ?? path.join(REPO, '.venv/bin/python')
 const OUT = path.resolve(process.env.DEIXIS_ACCEPTANCE_DIR ?? 'test-results/acceptance')
@@ -14,7 +15,7 @@ mkdirSync(OUT, { recursive: true })
 class ReportServer {
   private proc?: ChildProcess
   readonly dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-report-edit-'))
-  readonly port = 8808
+  readonly port = nextPort()
   async start() {
     this.proc = spawn(PYTHON, [path.join(REPO, 'tests/acceptance/fixture_server.py'), '--data-dir', this.dataDir, '--port', String(this.port)], {
       cwd: REPO, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${REPO}/backend:${REPO}` }, stdio: 'inherit',

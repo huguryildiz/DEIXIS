@@ -8,7 +8,7 @@ export default defineConfig({
   outputDir: `${out}/artifacts`,
   timeout: 120_000,
   expect: { timeout: 30_000 },
-  workers: 1,
+  workers: 4,
   reporter: [['list'], ['json', { outputFile: `${out}/results.json` }]],
   use: { channel: 'chrome', headless: true, viewport: { width: 1280, height: 900 }, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
 })

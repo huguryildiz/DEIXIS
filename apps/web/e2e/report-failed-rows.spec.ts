@@ -3,11 +3,12 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // Synthetic records and one fixed extraction failure; this tests the report boundary, not model quality.
 const REPO = path.resolve(process.cwd(), '..', '..')
 const OUT = path.resolve(process.env.DEIXIS_ACCEPTANCE_DIR ?? 'test-results/acceptance')
-const PORT = 8804 // Existing specs use 8777–8799 and 8801–8803; P17 has its own server and library.
+const PORT = nextPort() // P17 has its own server and library.
 const URL = `http://127.0.0.1:${PORT}`
 const FAILED = 'SYNTHETIC molecule release scheduling with bisection'
 const NOTE = '1 of 2 sources did not complete the table (missing cells: 1).'

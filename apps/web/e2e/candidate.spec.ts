@@ -7,10 +7,11 @@ import type { CandidateCard, CandidateComputed, CandidateEdit, CandidateEvidence
 import { reasonLabels, relationLabels, alignmentLabels, statusLabels, assessmentLabels, depthLabels, kindLabels, outcomeLabels, refusalLabels, runReasonLabels, warningLabels, stepStateLabels, label, reasonText } from '../src/candidate/labels'
 import { setUiLanguage } from '../src/i18n'
 import { stepLabel } from '../src/labels'
+import { nextPort } from './ports'
 
-// 8807 is unused in e2e/*.spec.ts and tests/ (checked including constructor arguments and --port).
+// Port from nextPort().
 // This suite exercises synthetic application behavior only; it makes no real model/provider request.
-const PORT = 8807
+const PORT = nextPort()
 const REPO = path.resolve(process.cwd(), '..', '..')
 const SERVER_URL = `http://127.0.0.1:${PORT}`
 const PYTHON = process.env.DEIXIS_TEST_PYTHON ?? path.join(REPO, '.venv/bin/python')

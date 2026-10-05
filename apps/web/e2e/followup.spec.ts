@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Connections, ResearchSummary, ResearchView, Run, Watch, WatchCheck, WatchItem, WatchPreview } from '../src/api'
+import { nextPort } from './ports'
 
 // SYNTHETIC records, future dates and the scripted model only. These cases test screen behavior,
 // not scientific correctness, coverage or provider recall. Chrome runs outside the writer's sandbox.
@@ -16,9 +17,10 @@ const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHON
 class FollowUpServer {
   private proc?: ChildProcess
   readonly dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-followup-'))
-  readonly url = 'http://127.0.0.1:8838'
+  readonly port = nextPort()
+  readonly url = `http://127.0.0.1:${this.port}`
   async start() {
-    this.proc = spawn(PYTHON, [path.join(REPO, 'tests/acceptance/followup_fixture.py'), '--data-dir', this.dataDir, '--port', '8838'], { cwd: REPO, env, stdio: 'inherit' })
+    this.proc = spawn(PYTHON, [path.join(REPO, 'tests/acceptance/followup_fixture.py'), '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     await expect.poll(async () => {
       if (this.proc?.exitCode !== null) throw new Error('SYNTHETIC follow-up server exited before health')
       try { return (await fetch(`${this.url}/api/health`)).ok } catch { return false }

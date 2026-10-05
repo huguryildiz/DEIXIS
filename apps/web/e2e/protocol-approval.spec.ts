@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // Case H: an sw discovery run stops before its first search until the user has approved or corrected the search
 // terms and the inclusion criterion (D80, slice 08b).
@@ -66,7 +67,7 @@ async function startResearch(page: Page, server: SwFixtureServer, question: stri
 }
 
 test.describe.serial('H: the protocol approval of an sw discovery run', () => {
-  const server = new SwFixtureServer(8789)
+  const server = new SwFixtureServer(nextPort())
   let page: Page
 
   test.beforeAll(async ({ browser }) => {

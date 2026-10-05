@@ -3,6 +3,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // Case N: the built-in embedding model in Settings (slice 21). Order of the choices, the download confirmation with
 // disk sizes, the install's steps, ready with the file check, choosing it; Gemini's free-key path and free-tier
@@ -83,7 +84,7 @@ async function startResearch(page: Page, server: BuiltinServer, question: string
 }
 
 test.describe.serial('N: the built-in embedding model', () => {
-  const server = new BuiltinServer(8786)
+  const server = new BuiltinServer(nextPort())
   let page: Page
 
   test.beforeAll(async ({ browser }) => {
@@ -169,7 +170,7 @@ test.describe.serial('N: the built-in embedding model', () => {
 })
 
 test.describe.serial('N: Gemini’s free tier and the uploaded-PDF line', () => {
-  const server = new BuiltinServer(8787, true)
+  const server = new BuiltinServer(nextPort(), true)
   let page: Page
 
   test.beforeAll(async ({ browser }) => {
@@ -204,7 +205,7 @@ test.describe.serial('N: Gemini’s free tier and the uploaded-PDF line', () => 
 })
 
 test.describe.serial('N: a failed passage ranking still says where uploaded text went', () => {
-  const server = new BuiltinServer(8779, true)
+  const server = new BuiltinServer(nextPort(), true)
   let page: Page
 
   test.beforeAll(async ({ browser }) => {

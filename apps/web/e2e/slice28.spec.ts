@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { nextPort } from './ports'
 
 // Case S (slice 28, SW27, D109): the criterion names a comparator and both reading runs find no part of a work, so code
 // does not exclude it. The queue shows it as a `confirm_absent` row whose reason is `comparator_exclusion_withheld`:
@@ -71,7 +72,7 @@ async function openQueue(page: Page, server: Slice28Server, rid: string) {
 }
 
 test.describe.serial('S: a work both runs find no part of, on a comparator criterion, is a queue row, not an exclusion', () => {
-  const server = new Slice28Server(8792, { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_COMPARATOR: 'on' })
+  const server = new Slice28Server(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_COMPARATOR: 'on' })
   let api: Api
   let rid = ''
 

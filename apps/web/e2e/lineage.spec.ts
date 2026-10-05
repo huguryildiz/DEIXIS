@@ -4,11 +4,12 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { LineageBaseline, LineageLink, LineagePlan, LineageReason, LineageStepOutcome, LineageView, ResearchView, TableView } from '../src/api'
+import { nextPort } from './ports'
 
-// Synthetic application behavior only. 8806 is unused by the other fixture specs (including L1's 8805).
+// Synthetic application behavior only. Port from nextPort().
 const REPO = path.resolve(process.cwd(), '..', '..')
 const OUT = path.resolve(process.env.DEIXIS_ACCEPTANCE_DIR ?? 'test-results/acceptance')
-const PORT = 8806
+const PORT = nextPort()
 const URL = `http://127.0.0.1:${PORT}`
 const TITLES = [
   'SYNTHETIC A foundational release model with fixed pulse spacing', 'SYNTHETIC B adaptive timing for release experiments',

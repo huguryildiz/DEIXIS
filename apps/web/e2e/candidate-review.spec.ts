@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { CandidateCard, CandidateEdit, CandidateListItem, CandidatePlan, Connections, ResearchView, ReviewCard, ReviewDetail, ReviewPreview, ReviewRequest, Run } from '../src/api'
+import { nextPort } from './ports'
 
 // SYNTHETIC records and the scripted model only; a separate process, port and data directory.
 // These cases check workflow behavior, not scientific review quality. Browser execution is external to the sandbox.
@@ -15,10 +16,11 @@ mkdirSync(OUT, { recursive: true })
 class CandidateReviewServer {
   private proc?: ChildProcess
   readonly dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-candidate-review-'))
-  readonly url = 'http://127.0.0.1:8837'
+  readonly port = nextPort()
+  readonly url = `http://127.0.0.1:${this.port}`
   readonly releaseFile = path.join(this.dataDir, 'review-release')
   async start() {
-    this.proc = spawn(PYTHON, [path.join(REPO, 'tests/acceptance/fixture_server.py'), '--data-dir', this.dataDir, '--port', '8837'], {
+    this.proc = spawn(PYTHON, [path.join(REPO, 'tests/acceptance/fixture_server.py'), '--data-dir', this.dataDir, '--port', String(this.port)], {
       cwd: REPO, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${REPO}/backend:${REPO}` }, stdio: 'inherit',
     })
     await expect.poll(async () => {

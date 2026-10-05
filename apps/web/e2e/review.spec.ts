@@ -5,8 +5,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Connections, ReportDetail, ResearchView, ReviewCard, ReviewDetail, ReviewPreview, ReviewRequest } from '../src/api'
+import { nextPort } from './ports'
 
-// SYNTHETIC records and the scripted model only. No live providers, models or library; own process on 8836.
+// SYNTHETIC records and the scripted model only. No live providers, models or library; own process.
 const REPO = path.resolve(process.cwd(), '..', '..')
 const PYTHON = process.env.DEIXIS_TEST_PYTHON ?? path.join(REPO, '.venv/bin/python')
 const OUT = path.resolve(process.env.DEIXIS_ACCEPTANCE_DIR ?? 'test-results/acceptance')
@@ -15,9 +16,10 @@ class ReviewServer {
   private proc?: ChildProcess
   readonly dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-review-b3-'))
   readonly releaseFile = path.join(this.dataDir, 'review-release')
-  readonly url = 'http://127.0.0.1:8836'
+  readonly port = nextPort()
+  readonly url = `http://127.0.0.1:${this.port}`
   async start() {
-    this.proc = spawn(PYTHON, [path.join(REPO, 'tests/acceptance/fixture_server.py'), '--data-dir', this.dataDir, '--port', '8836'], {
+    this.proc = spawn(PYTHON, [path.join(REPO, 'tests/acceptance/fixture_server.py'), '--data-dir', this.dataDir, '--port', String(this.port)], {
       cwd: REPO, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${REPO}/backend:${REPO}` }, stdio: 'inherit',
     })
     await expect.poll(async () => {

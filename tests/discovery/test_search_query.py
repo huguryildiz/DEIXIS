@@ -688,8 +688,14 @@ def test_a_term_that_multiplies_the_matches_is_found_with_the_count_without_it()
     assert asyncio.run(run({GATE: 900, WITHOUT_BROAD: 5, WITHOUT_NARROW: 5}))[0] == []
 
 
+def advice_down():
+    """The model answers everything but the term advice, so a warning still opens the card (D232)."""
+    return FakeAdapter(two_setting_terms, fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
+                       if si["task_type"] == "term_advice" else None)
+
+
 def test_without_a_warning_the_run_freezes_its_protocol_and_says_nobody_was_asked(tmp_path, monkeypatch):
-    client = client_for(tmp_path, monkeypatch, OpenAlex({GATE: 600}), FakeAdapter(two_setting_terms), approval="warn")
+    client = client_for(tmp_path, monkeypatch, OpenAlex({GATE: 600}), advice_down(), approval="warn")
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)
     assert run["status"] == "completed", run
@@ -703,7 +709,7 @@ def test_without_a_warning_the_run_freezes_its_protocol_and_says_nobody_was_aske
 
 def test_a_term_that_inflates_the_matches_stops_the_run_with_the_warning_and_the_count_without_it(tmp_path, monkeypatch):
     openalex = OpenAlex({GATE: 18_369, WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_500})
-    client = client_for(tmp_path, monkeypatch, openalex, FakeAdapter(two_setting_terms), approval="warn")
+    client = client_for(tmp_path, monkeypatch, openalex, advice_down(), approval="warn")
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)
     assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed")
@@ -730,7 +736,7 @@ def set_stored(client, run_id, key, change):
 
 def test_a_run_that_went_on_without_a_warning_is_not_an_earlier_approval_for_a_later_run(tmp_path, monkeypatch):
     openalex = OpenAlex({GATE: 600})
-    client = client_for(tmp_path, monkeypatch, openalex, FakeAdapter(two_setting_terms), approval="warn")
+    client = client_for(tmp_path, monkeypatch, openalex, advice_down(), approval="warn")
     rid, first = start(client)
     wait(client, rid, first)
     assert step_output(client, first, "protocol_approval")["approval"]["approved_by"] == "no_warning"
@@ -749,7 +755,7 @@ def test_a_run_that_went_on_without_a_warning_is_not_an_earlier_approval_for_a_l
 
 def test_a_card_stored_before_the_check_existed_is_checked_once_and_not_closed_as_no_warning(tmp_path, monkeypatch):
     openalex = OpenAlex({GATE: 18_369, WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_500})
-    client = client_for(tmp_path, monkeypatch, openalex, FakeAdapter(two_setting_terms), approval="warn")
+    client = client_for(tmp_path, monkeypatch, openalex, advice_down(), approval="warn")
     rid, run_id = start(client)
     wait(client, rid, run_id)
     stored = step_output(client, run_id, "protocol_approval")

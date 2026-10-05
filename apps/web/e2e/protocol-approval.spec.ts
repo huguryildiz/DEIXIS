@@ -23,12 +23,12 @@ const QUESTION = 'How is SYNTHETIC molecule release scheduling optimised in rela
 class SwFixtureServer {
   private proc?: ChildProcess
   readonly dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-sw-approval-'))
-  constructor(readonly port: number) {}
+  constructor(readonly port: number, readonly approval: 'ask' | 'warn' = 'ask') {}
 
   async start() {
     const env = {  // no provider keys or user data directory reach the fixture
       PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'),
-      DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'ask',
+      DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: this.approval,
     }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {
@@ -268,6 +268,55 @@ test.describe.serial('H: the protocol approval of an sw discovery run', () => {
     } finally { await narrow.close() }
   })
 
+  test('a term that widens the search comes with the model\'s advice and the advised button is the filled one', async ({ browser }) => {
+    const wide = await browser.newPage()
+    try {
+      await startResearch(wide, server, `${QUESTION} [wide] [advice-keep] A fourth SYNTHETIC research.`)
+      await expect(card(wide)).toBeVisible({ timeout: 60_000 })
+      const box = card(wide).locator('.approval-warning')
+      await expect(box).toHaveCount(1)
+      // The model advised keeping the term: the title softens, the generic "remove it" sentence gives way to the
+      // advice, and the model is named beside it with its icon.
+      await expect(box.locator('strong')).toHaveText('“wide” widens the search')
+      await expect(box).not.toContainText('We suggest removing it.')
+      const advice = box.locator('.approval-advice')
+      await expect(advice).toContainText('suggests keeping it: SYNTHETIC: the question uses this word itself')
+      await expect(advice.locator('.model-name')).toContainText('fixture-model')
+      await expect(box).toContainText('20,000')
+      await expect(box).toContainText('535')
+      const filled = /(^| )bg-primary( |$)/
+      await expect(box.getByRole('button', { name: 'Keep it' })).toHaveClass(filled)
+      await expect(box.getByRole('button', { name: 'Remove it' })).not.toHaveClass(filled)
+      await shot(wide, 'H-advice-desktop')
+      await box.screenshot({ path: path.join(OUT, 'H-advice-box-light.png'), animations: 'disabled' })
+      await wide.getByRole('button', { name: 'Use dark theme' }).click()
+      await box.screenshot({ path: path.join(OUT, 'H-advice-box-dark.png'), animations: 'disabled' })
+      await wide.setViewportSize({ width: 390, height: 844 })
+      await box.screenshot({ path: path.join(OUT, 'H-advice-box-390-dark.png'), animations: 'disabled' })
+      await wide.getByRole('button', { name: 'Use light theme' }).click()
+      await box.screenshot({ path: path.join(OUT, 'H-advice-box-390-light.png'), animations: 'disabled' })
+      // The advice decides nothing: removing the term is still the user's to do.
+      await box.getByRole('button', { name: 'Remove it' }).click()
+      await expect(card(wide).locator('.approval-warned-removed')).toContainText('“wide” is removed from the search.')
+    } finally { await wide.close() }
+  })
+
+  test('without advice the warning reads as it did and "Remove it" is the filled button', async ({ browser }) => {
+    const wide = await browser.newPage()
+    try {
+      await startResearch(wide, server, `${QUESTION} [wide] [advice-down] A fifth SYNTHETIC research.`)
+      await expect(card(wide)).toBeVisible({ timeout: 60_000 })
+      const box = card(wide).locator('.approval-warning')
+      await expect(box.locator('strong')).toHaveText('“wide” makes the search far too wide')
+      await expect(box).toContainText('We suggest removing it.')
+      await expect(box.locator('.approval-advice')).toHaveCount(0)
+      const filled = /(^| )bg-primary( |$)/
+      await expect(box.getByRole('button', { name: 'Remove it' })).toHaveClass(filled)
+      await expect(box.getByRole('button', { name: 'Keep it' })).not.toHaveClass(filled)
+      await shot(wide, 'H-advice-failed-desktop')
+    } finally { await wide.close() }
+  })
+
   test('an approval with no correction goes on in one click', async ({ browser }) => {
     const other = await browser.newPage()
     try {
@@ -280,5 +329,64 @@ test.describe.serial('H: the protocol approval of an sw discovery run', () => {
       await expect(other.locator('.approval-toggle')).toContainText('approved as proposed')
       await expect(other.locator('.chat-step', { hasText: 'Conducted' })).toBeVisible({ timeout: 60_000 })
     } finally { await other.close() }
+  })
+})
+
+// Under the default `warn` mode the model's advice is applied and the run goes on without a card or a pause (D232).
+test.describe.serial('H2: the model advice is applied without asking', () => {
+  const server = new SwFixtureServer(nextPort(), 'warn')
+  test.beforeAll(async () => { await server.start() })
+  test.afterAll(async () => { await server.stop() })
+  const lines = (page: Page) => page.locator('.chat-advice-lines')
+
+  test('a remove recommendation is applied, the run does not pause and the transcript says what was removed', async ({ browser }) => {
+    const page = await browser.newPage()
+    try {
+      await startResearch(page, server, `${QUESTION} [wide] A sixth SYNTHETIC research.`)
+      await expect(page.locator('.approval-card.is-approved')).toBeVisible({ timeout: 60_000 })
+      await expect(page.locator('.approval-card.is-pending')).toHaveCount(0)
+      await expect(page.locator('.approval-toggle')).toContainText('not reviewed, the model advised')
+      await expect(lines(page)).toContainText('removed “wide” from the search (20,000 → 535 papers): SYNTHETIC: a general word')
+      await expect(lines(page).locator('.model-name')).toContainText('fixture-model')
+      await expect(page.locator('.chat-step', { hasText: 'Conducted' })).toBeVisible({ timeout: 60_000 })
+      await expect(page.locator('[role="status"]', { hasText: 'paused' })).toHaveCount(0)
+      const line = lines(page)
+      await line.screenshot({ path: path.join(OUT, 'H2-advice-line-light.png'), animations: 'disabled' })
+      await page.getByRole('button', { name: 'Use dark theme' }).click()
+      await line.screenshot({ path: path.join(OUT, 'H2-advice-line-dark.png'), animations: 'disabled' })
+      await page.setViewportSize({ width: 390, height: 844 })
+      await line.screenshot({ path: path.join(OUT, 'H2-advice-line-390-dark.png'), animations: 'disabled' })
+      await page.getByRole('button', { name: 'Use light theme' }).click()
+      await line.screenshot({ path: path.join(OUT, 'H2-advice-line-390-light.png'), animations: 'disabled' })
+      await shot(page, 'H2-advice-transcript')
+    } finally { await page.close() }
+  })
+
+  test('a keep recommendation is applied as no change and the line says it was kept', async ({ browser }) => {
+    const page = await browser.newPage()
+    try {
+      await startResearch(page, server, `${QUESTION} [wide] [advice-keep] A seventh SYNTHETIC research.`)
+      await expect(page.locator('.approval-card.is-approved')).toBeVisible({ timeout: 60_000 })
+      await expect(lines(page)).toContainText('kept “wide”: SYNTHETIC: the question uses this word itself')
+    } finally { await page.close() }
+  })
+
+  test('without advice the card opens as before', async ({ browser }) => {
+    const page = await browser.newPage()
+    try {
+      await startResearch(page, server, `${QUESTION} [wide] [advice-down] An eighth SYNTHETIC research.`)
+      await expect(card(page).locator('.approval-warning')).toHaveCount(1, { timeout: 60_000 })
+      await expect(card(page).locator('.approval-advice')).toHaveCount(0)
+      await expect(lines(page)).toHaveCount(0)
+    } finally { await page.close() }
+  })
+
+  test('a question nobody warned about runs through with no advice line', async ({ browser }) => {
+    const page = await browser.newPage()
+    try {
+      await startResearch(page, server, `${QUESTION} A ninth SYNTHETIC research.`)
+      await expect(page.locator('.chat-step', { hasText: 'Conducted' })).toBeVisible({ timeout: 60_000 })
+      await expect(lines(page)).toHaveCount(0)
+    } finally { await page.close() }
   })
 })

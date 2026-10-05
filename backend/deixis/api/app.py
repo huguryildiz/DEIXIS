@@ -40,7 +40,7 @@ from deixis.workflow import chaining
 from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
                                  CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
-                                 SUGGESTION_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict, effort_limits)
+                                 SUGGESTION_CALLS, ADVICE_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict, effort_limits)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
 from deixis.models.deepseek import DeepSeekAdapter
@@ -1384,7 +1384,7 @@ def create_app(
             # legacy run and an answer run read — is what it always was (slice 06 review).
             # SUGGESTION_CALLS is the one term-suggestion call the user may ask for on the approval card (D82); a
             # run that never asks spends none of it.
-            extra = CRITERION_CALLS + SUGGESTION_CALLS + abstract_stage.model_calls(
+            extra = CRITERION_CALLS + SUGGESTION_CALLS + ADVICE_CALLS + abstract_stage.model_calls(
                 ABSTRACT_READ_LIMIT[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
             # The model-written query and its repair and retry (D92); a run on the code's query alone makes no call.
             extra += SEARCH_QUERY_CALLS if settings.search_query == "model" else 0

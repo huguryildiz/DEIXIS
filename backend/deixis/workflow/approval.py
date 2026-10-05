@@ -208,6 +208,47 @@ def _criterion_errors(edited: Any) -> list[str]:
     return errors
 
 
+def advice_target(question: str, vocabulary: dict[str, Any], warnings: list[dict[str, Any]]) -> dict[str, Any]:
+    """What the term-advice step is shown: the question, the searched terms and the warned ones with their counts."""
+    return {
+        "question_text": question,
+        "searched_terms": [{"phrase": t["phrase"], "block": t["block"]} for t in vocabulary["terms"]
+                           if not t["dropped"] and t["block"] in ("setting", "task")],
+        "warnings": [{"phrase": w["phrase"], "block": w["block"], "matches": w["matches"],
+                      "matches_without_term": w["matches_without_term"]} for w in warnings],
+    }
+
+
+def apply_advice(vocabulary: dict[str, Any], warnings: list[dict[str, Any]],
+                 advice: dict[str, dict[str, str]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The model's advice turned into the user's own remove operations, and a row per warning saying what came of it.
+
+    A `remove` becomes `{"op": "remove", "phrase": ...}`, the operation `check_edits` takes from a person. The one
+    guard is the same one a person meets: a searched group is never left without a term, so a removal that would empty
+    its group is not applied and the row says why. `keep`, and a warning the model gave no advice on, change nothing.
+    """
+    left: dict[str, int] = {}
+    for term in vocabulary["terms"]:
+        if not term["dropped"] and term["block"] in ("setting", "task"):
+            left[term["block"]] = left.get(term["block"], 0) + 1
+    edits: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
+    for warning in warnings:
+        given = advice.get(warning["phrase"])
+        row = {"phrase": warning["phrase"], "block": warning["block"],
+               "recommendation": given["recommendation"] if given else None, "reason": given["reason"] if given else None,
+               "matches": warning["matches"], "matches_without_term": warning["matches_without_term"], "applied": False}
+        if given and given["recommendation"] == "remove":
+            if left.get(warning["block"], 0) > 1:
+                left[warning["block"]] -= 1
+                edits.append({"op": "remove", "phrase": norm(warning["phrase"])})
+                row["applied"] = True
+            else:
+                row["not_applied"] = "last_term_of_group"
+        rows.append(row)
+    return edits, rows
+
+
 # ---- applying a correction --------------------------------------------------------------
 def canonical_edits(term_edits: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The operations written one way round: by phrase, which is unique across them (SW14.6)."""

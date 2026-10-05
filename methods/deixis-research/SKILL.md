@@ -74,6 +74,11 @@ For `term_suggestions`, read
 names of the search phrases the application already holds; you propose a term
 list, never a query, and you choose no block.
 
+For `term_advice`, read
+[term advice](references/term-advice.md): the approval card warns about search
+terms that multiply the matches; you say for each whether to remove or keep it,
+in one plain sentence, and you propose no term and write no query.
+
 For `search_query`, read
 [search query](references/search-query.md): you choose the terms of the two
 blocks the keyword search is built from, with backups; the application counts

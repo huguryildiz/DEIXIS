@@ -394,6 +394,7 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
                             "approval": {key: approval.get(key) for key in (
                                 "mode", "approved_by", "edited", "term_edits", "criterion_edited")},
                             "model_term_suggestions": approval.get("suggestions"),
+                            "model_advice": approval.get("advice"),
                             "concept_blocks": body.get("concept_blocks")}, protocol_trace))
     else:
         items.append(_item(8, "incomplete" if unsent else "not_recorded",
@@ -418,7 +419,12 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
     items.append(_item(10, "not_performed",
                        "DEIXIS has no published search filter; the queries are compiled from the "
                        + ("vocabulary, which no person reviewed because the application raised no warning."
-                          if approval.get("approved_by") == "no_warning" else "approved vocabulary."),
+                          if approval.get("approved_by") == "no_warning" else
+                          "vocabulary, which no person reviewed: the model advised on the application's warnings and "
+                          + (("the model removed " + ", ".join(f"“{r['phrase']}”" for r in approval["advice"] if r["applied"]))
+                             if any(r["applied"] for r in approval.get("advice") or []) else "the model removed no term")
+                          + "."
+                          if approval.get("approved_by") == "model_advice" else "approved vocabulary."),
                        {"query_compiler": body.get("code_version")},
                        code_source=_code_source("filters", compiler_versions=[
                            query_compiler.VERSION, query_compiler.COMPACT_VERSION, query_compiler.BLOCKS_VERSION])))

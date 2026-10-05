@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/term-advice.schema.json",
+  "title": "TermAdvice",
+  "description": "The model's advice on each search term the approval card warns about (D232). The card warns when one term multiplies the matches of the search; the model says, for each warned term, whether to remove it or keep it, and gives one plain sentence for a reader who is not an expert. Asked once per approval that has a warning, with no repair. The advice is shown beside the warning and decides nothing: the user's choice stands and the search is unchanged until they make it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "advice"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "deixis.term_advice.v1" },
+    "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
+    "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
+    "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
+    "advice": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 12,
+      "description": "One entry per warned term, at most one each.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["phrase", "recommendation", "reason"],
+        "properties": {
+          "phrase": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "One of the warned terms, copied exactly."
+          },
+          "recommendation": {
+            "type": "string",
+            "enum": ["remove", "keep"],
+            "description": "remove: the term pulls in papers outside the question. keep: the term is part of what the question asks, so taking it out would lose relevant papers."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "One plain sentence in English for a reader who is not an expert."
+          }
+        }
+      }
+    }
+  }
+}

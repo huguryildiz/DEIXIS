@@ -147,7 +147,12 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
         "approved": _approval_side(approved["vocabulary"], approved["criterion"], approved["queries"]) if approved else None,
         "skipped_edits": output.get("skipped_edits") or [],
         # What made the run stop for the person, or an empty list (`approval.inflating_terms`).
-        "warnings": output.get("warnings") or [],
+        "warnings": [w | {"advice": (output.get("advice") or {}).get(w["phrase"])}
+                     for w in output.get("warnings") or []],
+        # The model that advised on the warnings, or None when it was not asked or gave nothing (D232).
+        "advice_model": output.get("advice_model") if output.get("advice") else None,
+        # What the model's advice did when the run went on without asking anyone: a row per warned term (D232).
+        "advice_applied": record.get("advice") if record.get("approved_by") == "model_advice" else None,
         "suggestions": _suggestions_side(store, run_id, step, output),
         # Which sources the queries were compiled for and why (D93): the approved routing once a correction routed
         # again, else the proposal's. None for a card shown before routing existed.

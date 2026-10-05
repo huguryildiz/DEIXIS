@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert } from 'lucide-react'
+import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, ListPlus, LoaderCircle, Minus, RotateCw, Search, Sparkles, TriangleAlert, Waypoints } from 'lucide-react'
 import { api, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
@@ -166,6 +166,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const [openPhases, setOpenPhases] = useState<Partial<Record<PhaseKey, boolean>>>({})
   // While the run works, the phases it has not reached collapse into one "Next:" line; the full ladder stays one click away.
   const [allSteps, setAllSteps] = useState(false)
+  const [usageOpen, setUsageOpen] = useState(false)
   const [ownerReview, setOwnerReview] = useState<{ card: ReviewCard; kind: ReviewTargetKind } | null>(null)
   const reviewLookup = useRef<{
     identity: string
@@ -231,6 +232,17 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const overlap = run.kind === 'discovery' && (run.budget.fulltext_fetch as unknown as { mode?: string } | undefined)?.mode === 'overlap'
   const order: PhaseKey[] = run.kind === 'review' ? ['review'] : run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? ['plan', 'search', 'screen', ...(overlap ? ['pdf' as const] : [])] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
+  // When a model's advice on the warned terms was applied and the run went on without asking (D232), one plain line per
+  // advised term says what the model did and why. Nothing warned, nothing advised: no line.
+  const advised = (run.approval?.advice_applied ?? []).filter(row => row.recommendation !== null)
+  const adviceModel = run.approval?.advice_model
+  const adviceLines = advised.length > 0 && <ul className="chat-advice-lines">{advised.map(row => <li key={row.phrase}>
+    {adviceModel && <><ModelName connection={adviceModel.connection} text={modelText(adviceModel.model)} />{' '}</>}
+    <span dir="auto">{row.applied
+      ? t('removed “{phrase}” from the search ({from} → {to} papers):', { phrase: row.phrase, from: row.matches.toLocaleString(uiLocale()), to: row.matches_without_term.toLocaleString(uiLocale()) })
+      : row.not_applied ? t('advised removing “{phrase}”, but it is the last word of its group, so it stayed:', { phrase: row.phrase })
+      : t('kept “{phrase}”:', { phrase: row.phrase })} {row.reason}</span>
+  </li>)}</ul>
   const reached = run.kind === 'report' && !active ? 2 : Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   // A citation chain's requests are not searches of the question; the screening phase reports them (D95).
   const searches = view.search_runs.filter(s => s.run_id === run.id && !s.query_text.startsWith('chain:'))
@@ -553,6 +565,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const spend = [t('Model calls {calls}/{limit}', { calls: run.usage.model_calls ?? 0, limit: run.budget.max_model_calls ?? 0 }),
     t('provider requests {requests}/{limit}', { requests: run.usage.provider_requests ?? 0, limit: run.budget.max_provider_requests ?? 0 }),
     ...(tokens === null ? [] : [t('{n} answer tokens', { n: compact(tokens) })])].join(' · ')
+  const callLimitReached = (run.budget.max_model_calls ?? 0) > 0 && (run.usage.model_calls ?? 0) >= (run.budget.max_model_calls ?? 0)
   // Which model ran each model phase of this run, listed once here rather than on every step line.
   const models = order.filter((key, i) => agents[key]?.model && stateOf(i) !== 'skipped').map(key => agents[key]!)
     .filter((agent, i, all) => all.findIndex(a => a.role === agent.role) === i)  // the literature model plans and screens; name it once
@@ -608,6 +621,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
             </span>
             <time>{seconds === null ? '' : durationText(seconds)}</time>
           </div>
+          {key === 'plan' && adviceLines}
           {collapsed && state === 'running' && <div className="chat-step-progress">
             <span className="chat-step-progress-bar"><span style={{ width: `${Math.round(((i + 0.5) / order.length) * 100)}%` }} /></span>
             <small>{t('step {n} of {total}', { n: i + 1, total: order.length })}</small>
@@ -627,7 +641,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
               const round = s.round ?? 1
               const heading = all.some(p => (p[0].round ?? 1) > 1) && (i === 0 || (all[i - 1][0].round ?? 1) !== round)
                 ? <li key={`round-${round}`} className="chat-list-round">
-                  <b>{t(round > 1 ? 'Second search' : 'First search')}</b>
+                  <b>{round > 1 ? <ListPlus size={13} aria-hidden /> : <Search size={13} aria-hidden />}{t(round > 1 ? 'Second search' : 'First search')}</b>
                   <span>{round > 1
                     ? run.expansion_terms?.length
                       ? t('Also searched with terms that came up in the first results: {terms}', { terms: run.expansion_terms.map(term => `“${term}”`).join(', ') })
@@ -645,7 +659,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
             })}
             {/* The citation chain is not a search round (D95); one line says it follows, so all three steps read in one place. */}
             {(chain || run.approval?.chaining?.enabled) && <li className="chat-list-round">
-              <b>{t('Then: citation chaining')}</b>
+              <b><Waypoints size={13} aria-hidden />{t('Then: citation chaining')}</b>
               <span>{chain?.output?.seed_list
                 ? t('The reference lists and citing papers of {seeds} papers were checked · {works} new works', { seeds: chain.output.seed_list.length, works: chain.output.new_works ?? 0 })
                 : t('After screening, the reference lists and citing papers of the best matches are checked')}</span>
@@ -664,8 +678,11 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
           {/* What ran this run and what it spent: one quiet line under the phases, not a disclosure. */}
           {(run.status !== 'queued' || run.kind === 'review') && run.kind !== 'pdf_collection' && run.kind !== 'pdf_ocr' && run.kind !== 'fulltext_fetch' && <p className="chat-run-meta">
             {models.length > 0 && <span className="chat-run-models">{models}</span>}
-            <span>{spend}</span>
+            {/* What the run spent sits behind one quiet toggle; the limit itself speaks only once it is reached. */}
+            <button type="button" className="chat-usage-toggle" aria-expanded={usageOpen} onClick={() => setUsageOpen(!usageOpen)}>{t('Usage')}</button>
+            {usageOpen && <span>{spend}</span>}
           </p>}
+          {callLimitReached && <p className="chat-run-limit"><TriangleAlert size={13} aria-hidden />{t('The model call limit for this run was reached.')}</p>}
           {/* Pause, resume and cancel ride with the tabs, where every tab reaches them; the foot only opens the full ladder. */}
           {active && order.length > 1 && <button type="button" className="chat-steps-toggle" onClick={() => setAllSteps(!allSteps)}>{t(allSteps ? 'Show fewer steps' : 'Show every step')}</button>}
           {retrying && onRetryFailedSearches && <Button variant="outline" size="sm" onClick={() => void onRetryFailedSearches(run)}>

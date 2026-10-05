@@ -401,7 +401,8 @@
    "step_input": "C_report_section_VII",
    "expect_ok": false,
    "expect_codes": [
-    "unknown_gap_ref", "vii_claim_without_basis"
+    "unknown_gap_ref",
+    "vii_claim_without_basis"
    ],
    "output": {
     "schema_version": "deixis.report_section_draft.v2",
@@ -1367,6 +1368,90 @@
      {
       "phrase": "damping ratio",
       "synonym_of": "subsynchronous oscillation damping"
+     }
+    ]
+   }
+  },
+  {
+   "name": "term_advice_valid",
+   "step_input": "G_term_advice",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.term_advice.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "advice": [
+     {
+      "phrase": "subsynchronous oscillation damping",
+      "recommendation": "keep",
+      "reason": "SYNTHETIC: this is what the question is about, so papers that answer it would say it."
+     },
+     {
+      "phrase": "supplementary damping controller",
+      "recommendation": "remove",
+      "reason": "SYNTHETIC: this is a general word that pulls in papers from other fields."
+     }
+    ]
+   }
+  },
+  {
+   "name": "term_advice_empty",
+   "step_input": "G_term_advice",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.term_advice.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "advice": []
+   }
+  },
+  {
+   "name": "term_advice_unknown_phrase",
+   "step_input": "G_term_advice",
+   "expect_ok": false,
+   "expect_codes": [
+    "phrase_not_in_allowlist"
+   ],
+   "output": {
+    "schema_version": "deixis.term_advice.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "advice": [
+     {
+      "phrase": "series compensated line",
+      "recommendation": "remove",
+      "reason": "SYNTHETIC: not a warned phrase."
+     }
+    ]
+   }
+  },
+  {
+   "name": "term_advice_duplicate_phrase",
+   "step_input": "G_term_advice",
+   "expect_ok": false,
+   "expect_codes": [
+    "duplicate_advice_phrase"
+   ],
+   "output": {
+    "schema_version": "deixis.term_advice.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "advice": [
+     {
+      "phrase": "subsynchronous oscillation damping",
+      "recommendation": "keep",
+      "reason": "SYNTHETIC: first."
+     },
+     {
+      "phrase": "subsynchronous oscillation damping",
+      "recommendation": "remove",
+      "reason": "SYNTHETIC: second."
      }
     ]
    }

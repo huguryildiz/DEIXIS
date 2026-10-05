@@ -875,10 +875,11 @@ class ResearchFlow:
                      "key_terms": scope.get("key_terms")}
         # The newest approval this research closed for the same question, steering and key terms. It is both what a
         # correction is reapplied from and what a re-asked card takes its suggestions back from.
-        # A run that went on because nothing was wrong (`no_warning`) asked nobody: it is no approval to take back.
+        # A run that went on because nothing was wrong (`no_warning`), or on a model's advice (`model_advice`, D232),
+        # asked nobody: it is no approval to take back.
         earlier = next((row for row in self.store.approvals_of(rid)
                         if row["output"]["asked_for"] == asked_for
-                        and (row["output"].get("approval") or {}).get("approved_by") != "no_warning"), None)
+                        and (row["output"].get("approval") or {}).get("approved_by") not in ("no_warning", "model_advice")), None)
         output = step["output"]
         if output is None:
             failures = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("failures", [])
@@ -908,6 +909,12 @@ class ResearchFlow:
             output = output | {"warnings": found, "warning_checks": checks}
             self.store.set_step_output(step["id"], output)
 
+        if output.get("warnings") and "advice" not in output and output["submitted"] is None and earlier is None:
+            connection, requested, _ = step_model(scope, "term_advice")
+            output = output | {"advice": await self._term_advice(run, scope, output),
+                               "advice_model": {"connection": connection, "model": requested}}
+            self.store.set_step_output(step["id"], output)
+
         requests = output.get("suggestion_requests") or 0
         if requests and self.store.step(run_id, f"term_suggestions:{requests}",
                                         "code:term_suggestions")["status"] != "succeeded":
@@ -933,6 +940,13 @@ class ResearchFlow:
             # A run nobody attends: the proposal is approved as it stands and the protocol says so by name, so a body
             # approved by a setting is never read as a body a user approved.
             edits, source, by = {"terms": [], "criterion": None, "note": None}, "setting", "setting"
+        elif self.deps.settings.protocol_approval == "warn" and output.get("warnings") and output.get("advice"):
+            # The model's advice is applied as the user's own remove operations and the run goes on (D232): nobody is
+            # asked, and the protocol says a model, not a person, took the terms out. No advice, no change here: the
+            # card opens as it does for a warning nobody advised on.
+            removes, advice_rows = approval_rules.apply_advice(
+                output["proposal"]["vocabulary"], output["warnings"], output["advice"])
+            edits, source, by = {"terms": removes, "criterion": None, "note": None}, "model_advice", "model_advice"
         elif self.deps.settings.protocol_approval == "warn" and not output.get("warnings"):
             # Nothing the application can see is wrong with the proposal, so the run does not stop. The protocol says
             # that nobody was asked, so this body is never read as one a person approved.
@@ -966,6 +980,8 @@ class ResearchFlow:
             "criterion_edited": edits.get("criterion") is not None,
             "exclusion_word_in_question": approval_rules.exclusion_words_in_question(scope["question"], agreed),
             **({"asked": False, "reason": "no_warning"} if source == "no_warning" else {}),
+            **({"asked": False, "reason": "model_advice", "advice": advice_rows,
+                "advice_model": output.get("advice_model")} if source == "model_advice" else {}),
             **({"warnings": output["warnings"]} if output.get("warnings") else {}),
             **({"note": edits["note"]} if edits.get("note") else {}),
             **({"earlier_approval_step_id": earlier["id"]} if source == "earlier" else {}),
@@ -996,6 +1012,26 @@ class ResearchFlow:
             "suggestions": proposals if from_step or output.get("carried_suggestions") else None,
             "approval": record, "skipped_edits": skipped})
         return built, compiled, agreed, record
+
+    async def _term_advice(self, run: dict[str, Any], scope: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
+        """Ask a model whether to remove or keep each warned term, once, and never block the card on it (D232).
+
+        Returns `{phrase: {recommendation, reason}}`, empty when the model is down, the call budget is spent or the
+        answer names a phrase it was not given. One call with no repair: a failure is stored as no advice, so a
+        resumed run does not call again, and the card is shown as it was before the step existed.
+        """
+        self._checkpoint(run["id"], run["scope_revision"])
+        try:
+            answer = await self._model_step(
+                run, scope, "term_advice:1", "term_advice", optional=True,
+                advice_target=approval_rules.advice_target(scope["question"], output["proposal"]["vocabulary"],
+                                                           output["warnings"]))
+        except OptionalStepFailed:
+            return {}
+        if answer.get("invalid"):
+            return {}
+        return {entry["phrase"]: {"recommendation": entry["recommendation"], "reason": entry["reason"].strip()}
+                for entry in answer["result"]["advice"]}
 
     def _suggested(self, run_id: str, output: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
         """This approval's own proposed names, and the StepInput they came from (slice 08c).
@@ -5564,7 +5600,8 @@ class ResearchFlow:
                     suggestion_target: dict[str, Any] | None = None,
                     adjudication_target: dict[str, Any] | None = None,
                     lineage_target: dict[str, Any] | None = None,
-                    candidate_target: dict[str, Any] | None = None) -> dict[str, Any]:
+                    candidate_target: dict[str, Any] | None = None,
+                    advice_target: dict[str, Any] | None = None) -> dict[str, Any]:
         candidates = []
         for c in candidate_rows:
             source = self.store.source(c["source_version_id"])
@@ -5608,6 +5645,8 @@ class ResearchFlow:
             target["lineage_target"] = lineage_target
         if candidate_target is not None:
             target["candidate_target"] = candidate_target
+        if advice_target is not None:
+            target["advice_target"] = advice_target
         allowlist = {"candidate_ids": [c["candidate_id"] for c in candidates], "source_ids": [s["source_id"] for s in sources],
                      "passage_ids": [p["passage_id"] for p in passages]}
         if task_type == "claim_assessment" and candidate_target is not None and candidate_target["version"] is not None:
@@ -5619,6 +5658,9 @@ class ResearchFlow:
             # The same rule for the suggestion step: a proposed name may be another name for one of these phrases
             # and for no other phrase (slice 08c).
             allowlist["phrases"] = [entry["phrase"] for entry in suggestion_target["phrases"]]
+        if advice_target is not None:
+            # Advice may name a warned phrase and no other (D232).
+            allowlist["phrases"] = [entry["phrase"] for entry in advice_target["warnings"]]
         if task_type in contracts.REPORT_TASKS:
             report = report_target or {}
             cells, gaps = report.get("cells", []), report.get("gap_candidates", [])
@@ -5722,6 +5764,7 @@ class ResearchFlow:
                           candidate_target: dict[str, Any] | None = None,
                           step_input_builder: Callable[[str], dict] | None = None,
                           max_request_chars: int | None = None,
+                          advice_target: dict[str, Any] | None = None,
                           ) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
@@ -5834,7 +5877,8 @@ class ResearchFlow:
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = step_input_builder(step["id"]) if step_input_builder is not None else self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
                                        claims or [], model, extraction_target, report_target, vocabulary_target,
-                                       screening_target, suggestion_target, adjudication_target, lineage_target, candidate_target)
+                                       screening_target, suggestion_target, adjudication_target, lineage_target, candidate_target,
+                                       advice_target)
             if attempt_record is not None:
                 extra = (step_output_extra or {}) | attempt_record(payload)
             if issues := contracts.check_step_input(payload):

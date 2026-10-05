@@ -255,7 +255,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         else toast('warning', t('The answer failed validation; it is kept as an unverified draft.'))
         break
       }
-      case 'paused': toast(current.pause_reason === 'user_requested' ? 'success' : 'warning', t('{label} paused. {reason}', { label, reason })); break
+      case 'paused': if (current.pause_reason === 'protocol_approval_needed') break  // the approval card says it itself
+        toast(current.pause_reason === 'user_requested' ? 'success' : 'warning', t('{label} paused. {reason}', { label, reason })); break
       case 'failed': toast('error', t('{label} failed. {reason}', { label, reason })); break
       case 'cancelled': toast('success', t('{label} cancelled.', { label })); break
       case 'pause_requested': toast('success', t('Pause requested: the run stops after the current call.')); break

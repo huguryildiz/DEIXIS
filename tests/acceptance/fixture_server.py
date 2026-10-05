@@ -393,6 +393,12 @@ PROBE_COUNT = 800
 SUGGESTED = "synthetic release timing"
 UNHELD_SUGGESTION = "synthetic unheld name"
 RATE_LIMIT_MODE = False
+# "[wide]" in the question makes the code query's gate, `(relay) and (... wide ...)`, match 20,000 records and the same
+# gate without the term "wide" (the marker is itself a word of the question) only 535, the live DBR/VBF shape. The
+# approval card then warns about "wide" and, in the same run, the scripted model advises on it (D232). Without the
+# marker every count stays PROBE_COUNT.
+WIDE_MODE = False
+WIDE_GATE, WIDE_WITHOUT = 20_000, 535
 
 
 def openalex(request: httpx.Request) -> httpx.Response:
@@ -414,6 +420,10 @@ def openalex(request: httpx.Request) -> httpx.Response:
             {"key": "https://openalex.org/fields/17", "key_display_name": "Computer Science", "count": 80},
             {"key": "https://openalex.org/fields/22", "key_display_name": "Engineering", "count": 15},
             {"key": "https://openalex.org/fields/27", "key_display_name": "Medicine", "count": 5}]})
+    if (WIDE_MODE and params.get("per_page") == "1" and params.get("select") == "id"
+            and candidate_query.startswith(('(relay) and (', '("relay networks") and ('))):
+        count = WIDE_GATE if "wide" in candidate_query else WIDE_WITHOUT
+        return httpx.Response(200, json={"meta": {"count": count}, "results": []})
     if params.get("per_page") == "1" and params.get("select") == "id":
         # A count-only request reads `meta.count` and no record; answering it with the whole fixture list would
         # make every phrase worth the same handful of works (slice 04a).
@@ -480,6 +490,8 @@ class ScriptedCodex:
             else:
                 return ModelStepResult("failed", error="SYNTHETIC hold timed out")
         RATE_LIMIT_MODE = "[rate-limit]" in question
+        global WIDE_MODE
+        WIDE_MODE = "[wide]" in question
         global LINEAGE_MODE, LINEAGE_REJECT_MODE
         LINEAGE_REJECT_MODE = '[lineage-reject]' in question
         LINEAGE_MODE = '[lineage]' in question or LINEAGE_REJECT_MODE
@@ -487,6 +499,8 @@ class ScriptedCodex:
             self.failed_once.add(si["research_id"])
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[suggest-down]" in question and task == "term_suggestions":
+            return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
+        if "[advice-down]" in question and task == "term_advice":
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[query-down]" in question and task == "search_query":
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
@@ -640,6 +654,13 @@ class ScriptedCodex:
             anchor = si["suggestion_target"]["phrases"][0]["phrase"]
             output["terms"] = [{"phrase": phrase, "synonym_of": anchor}
                                for phrase in (SUGGESTED, UNHELD_SUGGESTION, anchor)]
+        elif si["task_type"] == "term_advice":
+            # Remove the warned term, or under "[advice-keep]" keep it as the question's own subject (D232).
+            keep = "[advice-keep]" in question
+            output["advice"] = [{"phrase": w["phrase"], "recommendation": "keep" if keep else "remove",
+                                 "reason": "SYNTHETIC: the question uses this word itself, so relevant papers say it."
+                                 if keep else "SYNTHETIC: a general word that pulls in papers from other fields."}
+                                for w in si["advice_target"]["warnings"]]
         elif si["task_type"] == "search_query":
             # A query in the fixture's own words (D92): two topic terms and a method term, one backup per block.
             output |= {"setting": [{"term": "relay networks", "kind": "topic", "why": "SYNTHETIC: where the work happens"}],

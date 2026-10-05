@@ -307,6 +307,7 @@ const approvedByNames: Record<string, string> = {
   setting: 'Approved as proposed by the unattended setting, not by a person.',
   earlier_approval: 'Approved with the correction you made earlier for this question.',
   no_warning: 'No warning, so the search went ahead without asking you.',
+  model_advice: 'A model advised on the warnings and the search went ahead without asking you.',
 }
 export const approvedByText = (by: string | null) => (by ? t(approvedByNames[by] ?? by) : '')
 

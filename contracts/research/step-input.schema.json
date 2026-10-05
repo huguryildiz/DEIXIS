@@ -925,6 +925,7 @@
         "vocabulary_labels",
         "criterion_proposal",
         "term_suggestions",
+        "term_advice",
         "search_query",
         "abstract_screening",
         "fulltext_adjudication",
@@ -1479,6 +1480,45 @@
                   "exclusion"
                 ]
               }
+            }
+          }
+        }
+      }
+    },
+    "advice_target": {
+      "type": "object",
+      "description": "term_advice steps only: the question, the searched terms of the approval's proposal, and the terms the card warns about with the matches the search has with and without each. The step advises on the warned terms and may name no other phrase.",
+      "additionalProperties": false,
+      "required": ["question_text", "searched_terms", "warnings"],
+      "properties": {
+        "question_text": { "type": "string" },
+        "searched_terms": {
+          "type": "array",
+          "maxItems": 40,
+          "description": "Every searched term of the two blocks, in the order the vocabulary was built in.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phrase", "block"],
+            "properties": {
+              "phrase": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "block": { "type": "string", "enum": ["setting", "task"] }
+            }
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["phrase", "block", "matches", "matches_without_term"],
+            "properties": {
+              "phrase": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "block": { "type": "string", "enum": ["setting", "task"] },
+              "matches": { "type": "integer", "minimum": 0, "description": "Indexed records the search matches as it stands." },
+              "matches_without_term": { "type": "integer", "minimum": 0, "description": "Indexed records it would match with this one term taken out." }
             }
           }
         }

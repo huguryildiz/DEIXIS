@@ -131,6 +131,12 @@ def valid_response(si: dict[str, Any]) -> str:
         given = si["suggestion_target"]["phrases"]
         return json.dumps(envelope(si, "deixis.term_suggestions.v1") | {
             "terms": [{"phrase": "synthetic other name", "synonym_of": given[0]["phrase"]}] if given else []})
+    if task == "term_advice":
+        # SYNTHETIC and field-independent: keep the first warned phrase and remove the rest, one plain sentence each.
+        warned = si["advice_target"]["warnings"]
+        return json.dumps(envelope(si, "deixis.term_advice.v1") | {"advice": [
+            {"phrase": w["phrase"], "recommendation": "keep" if index == 0 else "remove",
+             "reason": "SYNTHETIC: a stand-in sentence about this term."} for index, w in enumerate(warned)]})
     if task == "search_query":
         # SYNTHETIC and field-independent: one term per block and one backup each, so a flow test gets a model-written
         # query whose words say nothing about any field and nothing about model behavior.

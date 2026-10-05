@@ -531,7 +531,7 @@ def test_the_sw_protocol_names_the_read_limit_of_its_own_effort(tmp_path, monkey
 
 @pytest.mark.parametrize("effort, calls", [("quick", 4), ("standard", 10), ("detailed", 30)])
 def test_the_run_budget_holds_the_abstract_stage_s_calls_on_top_of_the_preset(tmp_path, monkeypatch, effort, calls):
-    from deixis.domain.rules import CRITERION_CALLS, SUGGESTION_CALLS, TEST_EFFORT_BUDGETS
+    from deixis.domain.rules import ADVICE_CALLS, CRITERION_CALLS, SUGGESTION_CALLS, TEST_EFFORT_BUDGETS
 
     app = app_for(tmp_path, monkeypatch, Pool([work(1)]))
     client = client_of(app)
@@ -544,7 +544,7 @@ def test_the_run_budget_holds_the_abstract_stage_s_calls_on_top_of_the_preset(tm
         client.__exit__(None, None, None)
     preset = TEST_EFFORT_BUDGETS[effort].max_model_calls
     # Slice 08c adds the one term-suggestion call the user may ask for; the preset itself is still untouched.
-    assert run["budget"]["max_model_calls"] == preset + CRITERION_CALLS + SUGGESTION_CALLS + calls
+    assert run["budget"]["max_model_calls"] == preset + CRITERION_CALLS + SUGGESTION_CALLS + ADVICE_CALLS + calls
 
 
 # ---- slice 13d: the reads behind the stage are batched and the rows it writes do not move ---------

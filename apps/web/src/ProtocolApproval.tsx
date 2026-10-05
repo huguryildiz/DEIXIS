@@ -4,6 +4,8 @@ import { ApiError, api, type ApprovalBlock, type ApprovalCriterion, type Approva
 import { approvedByText, blockLabels, blockNotes, blockOriginText, dropReasonText, pauseReasonText, providerName, queryWarningText, routeReasonText, suggestionBlockerText, termKindText, termOriginText } from './labels'
 import { t, uiLocale } from './i18n'
 import { Notice } from './Notice'
+import { ModelName } from './ModelName'
+import { useModelText, type ModelText } from './modelText'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
@@ -70,11 +72,44 @@ export function ProtocolApproval({ run, approval, onApproved }: {
     onApproved={onApproved} />
 }
 
+// One warning about a term that makes the search far too wide, with the model's advice when it gave any (D232). The
+// advice moves the filled button to the recommended choice and decides nothing: both buttons stay.
+function WarningBox({ warning, model, modelText, locale, editable, onRemove, onKeep }: {
+  warning: NonNullable<RunApproval['warnings']>[number]; model: RunApproval['advice_model'] | null
+  modelText: ModelText; locale: string; editable: boolean; onRemove: () => void; onKeep: () => void
+}) {
+  const advice = warning.advice ?? null
+  const keepAdvised = advice?.recommendation === 'keep'
+  const title = keepAdvised ? t('“{phrase}” widens the search', { phrase: warning.phrase }) : t('“{phrase}” makes the search far too wide', { phrase: warning.phrase })
+  return <div className="approval-warning" role="group" aria-label={title}>
+    <div className="approval-warning-head">
+      <TriangleAlert size={20} aria-hidden />
+      <div>
+        <strong>{title}</strong>
+        {!keepAdvised && <p>{t('It brings in many papers the other words don’t need. We suggest removing it.')}</p>}
+        {advice && <p className="approval-advice">
+          {model && <><ModelName connection={model.connection} text={modelText(model.model)} />{' '}</>}
+          <span dir="auto">{advice.recommendation === 'keep' ? t('suggests keeping it:') : t('suggests removing it:')} {advice.reason}</span>
+        </p>}
+      </div>
+    </div>
+    <div className="approval-stats">
+      <div className="approval-stat"><b>{warning.matches.toLocaleString(locale)}</b><span>{t('papers with it')}</span></div>
+      <div className="approval-stat is-better"><b>{warning.matches_without_term.toLocaleString(locale)}</b><span>{t('papers without it')}</span></div>
+    </div>
+    <div className="approval-warning-actions">
+      <Button variant={keepAdvised ? 'outline' : 'default'} className="approval-btn" disabled={!editable} onClick={onRemove}>{t('Remove it')}</Button>
+      <Button variant={keepAdvised ? 'default' : 'outline'} className="approval-btn" disabled={!editable} onClick={onKeep}>{t('Keep it')}</Button>
+    </div>
+  </div>
+}
+
 function PendingCard({ run, approval, editable, checking, working, onApproved }: {
   run: Run; approval: RunApproval; editable: boolean; checking: boolean; working: boolean
   onApproved: () => void | Promise<void>
 }) {
   const proposal = approval.proposal
+  const modelText = useModelText()
   const [ops, setOps] = useState<TermEdit[]>([])
   const [criterion, setCriterion] = useState<CriterionDraft | null>(null)
   const [note, setNote] = useState('')
@@ -271,23 +306,9 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
             <span>{t('“{phrase}” is removed from the search.', { phrase: warning.phrase })}</span>
             {editable && <Button variant="ghost" size="sm" onClick={() => setOp(warning.phrase, null)}><CornerUpLeft size={13} />{t('Undo')}</Button>}
           </div>
-        : <div key={warning.phrase} className="approval-warning" role="group" aria-label={t('“{phrase}” makes the search far too wide', { phrase: warning.phrase })}>
-            <div className="approval-warning-head">
-              <TriangleAlert size={20} aria-hidden />
-              <div>
-                <strong>{t('“{phrase}” makes the search far too wide', { phrase: warning.phrase })}</strong>
-                <p>{t('It brings in many papers the other words don’t need. We suggest removing it.')}</p>
-              </div>
-            </div>
-            <div className="approval-stats">
-              <div className="approval-stat"><b>{warning.matches.toLocaleString(locale)}</b><span>{t('papers with it')}</span></div>
-              <div className="approval-stat is-better"><b>{warning.matches_without_term.toLocaleString(locale)}</b><span>{t('papers without it')}</span></div>
-            </div>
-            <div className="approval-warning-actions">
-              <Button variant="default" className="approval-btn" disabled={!editable} onClick={() => setOp(warning.phrase, { op: 'remove', phrase: norm(warning.phrase) })}>{t('Remove it')}</Button>
-              <Button variant="outline" className="approval-btn" disabled={!editable} onClick={() => setKept(new Set([...kept, norm(warning.phrase)]))}>{t('Keep it')}</Button>
-            </div>
-          </div>)}
+        : <WarningBox key={warning.phrase} warning={warning} model={approval.advice_model ?? null} modelText={modelText} locale={locale} editable={editable}
+            onRemove={() => setOp(warning.phrase, { op: 'remove', phrase: norm(warning.phrase) })}
+            onKeep={() => setKept(new Set([...kept, norm(warning.phrase)]))} />)}
       {proposal.search_query?.status === 'failed' && <Notice tone="attention">{t('The model could not write the search query. You chose the query DEIXIS built from the question’s words.')}</Notice>}
       {proposal.too_broad && <Notice tone="attention">{t('Every term that would be searched is too frequent to stand alone. You can still approve; the run will stop again and say so.')}</Notice>}
       {!proposal.terms.some(term => !term.dropped) && <Notice tone="attention">{t('No term is left to build a provider query from. Add one under “Change the words”.')}</Notice>}
@@ -733,7 +754,7 @@ function ApprovedSummary({ approval }: { approval: RunApproval }) {
     <button type="button" className="approval-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
       {open ? <ChevronDown size={15} aria-hidden /> : <ChevronRight size={15} aria-hidden />}
       <span>{approvedByText(approval.approved_by)}</span>
-      <small>{approval.edited ? t('corrected before searching') : approval.approved_by === 'no_warning' ? t('not reviewed, no warning') : t('approved as proposed')}</small>
+      <small>{approval.approved_by === 'model_advice' ? t('not reviewed, the model advised') : approval.edited ? t('corrected before searching') : approval.approved_by === 'no_warning' ? t('not reviewed, no warning') : t('approved as proposed')}</small>
     </button>
     {open && <div className="approval-diff">
       <DiffList title={t('Removed terms')} rows={gone} />

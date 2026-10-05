@@ -61,7 +61,7 @@ export function MethodBox({ researchId, answerId }: { researchId: string; answer
         {!selection.snapshot && <p className="flow-note">{t('This answer kept no snapshot of the flow when it started, so the flow counts are not shown.')}</p>}
         {selection.criterion && <p className="flow-note">{t('Criterion: {text}', { text: selection.criterion })}</p>}
         <p className="flow-note">{review.approved_by === 'user' ? t(review.edited ? 'You reviewed and edited the search vocabulary.' : 'You reviewed the search vocabulary.')
-          : review.approved_by === 'no_warning' ? t('Nobody reviewed the search vocabulary: the application raised no warning and went on.') : t('Who approved the search vocabulary is not recorded.')}</p>
+          : review.approved_by === 'no_warning' ? t('Nobody reviewed the search vocabulary: the application raised no warning and went on.') : review.approved_by === 'model_advice' ? t('Nobody reviewed the search vocabulary: a model advised on the application’s warnings and the application removed the terms it advised removing.') : t('Who approved the search vocabulary is not recorded.')}</p>
       </section>
       <section>
         <p className="flow-head">{t('Extraction')}</p>

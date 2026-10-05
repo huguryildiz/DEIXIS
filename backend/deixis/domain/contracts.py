@@ -36,6 +36,7 @@ SCHEMA_FILES = {
     "VocabularyLabels": "vocabulary-labels.schema.json",
     "CriterionProposal": "criterion-proposal.schema.json",
     "TermSuggestions": "term-suggestions.schema.json",
+    "TermAdvice": "term-advice.schema.json",
     "SearchQuery": "search-query.schema.json",
     "AbstractScreening": "abstract-screening.schema.json",
     "FulltextAdjudication": "fulltext-adjudication.schema.json",
@@ -60,6 +61,7 @@ SCHEMA_VERSIONS = {
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
     "CriterionProposal": "deixis.criterion_proposal.v2",
     "TermSuggestions": "deixis.term_suggestions.v1",
+    "TermAdvice": "deixis.term_advice.v1",
     "SearchQuery": "deixis.search_query.v1",
     "AbstractScreening": "deixis.abstract_screening.v1",
     "FulltextAdjudication": "deixis.fulltext_adjudication.v1",
@@ -85,6 +87,7 @@ TASK_OUTPUTS = {
     "vocabulary_labels": ("VocabularyLabels",),
     "criterion_proposal": ("CriterionProposal",),
     "term_suggestions": ("TermSuggestions",),
+    "term_advice": ("TermAdvice",),
     "search_query": ("SearchQuery",),
     "abstract_screening": ("AbstractScreening",),
     "fulltext_adjudication": ("FulltextAdjudication",),
@@ -103,6 +106,9 @@ VOCABULARY_TASKS = ("vocabulary_labels",)
 # The term-suggestion step is given the searched phrases of the approval's proposal and proposes other names for
 # them; it carries a suggestion_target (SW2.5, slice 08c).
 SUGGESTION_TASKS = ("term_suggestions",)
+# The term-advice step is given the terms the approval card warns about and says remove or keep for each; it
+# carries an advice_target (D232).
+ADVICE_TASKS = ("term_advice",)
 # The abstract stage asks the same batch twice and tells each call which of the two runs it is (slice 09, K3).
 SCREENING_TARGET_TASKS = ("abstract_screening",)
 # The full-text reading step is given one work, the criterion parts, and which of the two runs this call is (D85).
@@ -526,6 +532,16 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
             issues.append(Issue("duplicate_vocabulary_phrase", "/suggestion_target/phrases", "phrase must be unique"))
         if sorted(set(allow.get("phrases", []))) != sorted(set(anchors)):
             issues.append(Issue("phrase_allowlist_mismatch", "/allowlist/phrases", "the allowlist is the phrase list"))
+    advice_target = step_input.get("advice_target")
+    if (advice_target is not None) != (step_input["task_type"] in ADVICE_TASKS):
+        issues.append(Issue("advice_target_mismatch", "/advice_target", step_input["task_type"]))
+    elif advice_target is not None:
+        # The allowlist is the warned phrases: the advice may name those and no other phrase.
+        warned = [entry["phrase"] for entry in advice_target["warnings"]]
+        if len(set(warned)) != len(warned):
+            issues.append(Issue("duplicate_vocabulary_phrase", "/advice_target/warnings", "phrase must be unique"))
+        if sorted(set(allow.get("phrases", []))) != sorted(set(warned)):
+            issues.append(Issue("phrase_allowlist_mismatch", "/allowlist/phrases", "the allowlist is the warned phrases"))
     screening_target = step_input.get("screening_target")
     if (screening_target is not None) != (step_input["task_type"] in SCREENING_TARGET_TASKS):
         issues.append(Issue("screening_target_mismatch", "/screening_target", step_input["task_type"]))
@@ -774,7 +790,8 @@ def _check_lineage_target(step_input: dict[str, Any], records: dict[str, set[str
     if (target is not None) != lineage or (lineage and (
         step_input["candidates"] or allow["candidate_ids"] or any(
             field in step_input for field in ("extraction_target", "report_target", "vocabulary_target",
-                                              "screening_target", "suggestion_target", "adjudication_target")))):
+                                              "screening_target", "suggestion_target", "adjudication_target",
+                                              "advice_target")))):
         issues.append(Issue("lineage_target_mismatch", "/lineage_target", step_input["task_type"]))
     if lineage:
         for key in sorted(set(allow) - {"candidate_ids", "source_ids", "passage_ids"}):
@@ -842,7 +859,7 @@ def _check_candidate_target(step_input: dict[str, Any], records: dict[str, set[s
         step_input["candidates"] or allow["candidate_ids"] or any(
             field in step_input for field in ("extraction_target", "report_target", "vocabulary_target",
                                               "screening_target", "suggestion_target", "adjudication_target",
-                                              "lineage_target")))):
+                                              "lineage_target", "advice_target")))):
         issues.append(Issue("candidate_target_mismatch", "/candidate_target", task))
     if not candidate:
         return issues
@@ -1054,6 +1071,8 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_criterion_proposal(step_input, result, report)
     elif output_type == "TermSuggestions":
         _check_term_suggestions(allow, result, report)
+    elif output_type == "TermAdvice":
+        _check_term_advice(allow, result, report)
     elif output_type in ("SearchQuery", "KillSearchQuery"):
         _check_search_query(result, report)
     elif output_type == "AbstractScreening":
@@ -1804,6 +1823,21 @@ def _check_term_suggestions(allow: dict[str, set[str]], draft: dict[str, Any], r
     for index, term in enumerate(draft["terms"]):
         if term["synonym_of"] not in allow.get("phrases", set()):
             report.issues.append(Issue("phrase_not_in_allowlist", f"/terms/{index}/synonym_of", term["synonym_of"]))
+
+
+def _check_term_advice(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
+    """Advice must name a warned phrase, and one phrase at most once (D232).
+
+    An entry outside the allowlist has no warning to sit under, and two entries for one phrase would leave the card
+    to choose between them; each is an error and the whole output is not used.
+    """
+    seen: set[str] = set()
+    for index, entry in enumerate(draft["advice"]):
+        if entry["phrase"] not in allow.get("phrases", set()):
+            report.issues.append(Issue("phrase_not_in_allowlist", f"/advice/{index}/phrase", entry["phrase"]))
+        elif entry["phrase"] in seen:
+            report.issues.append(Issue("duplicate_advice_phrase", f"/advice/{index}/phrase", entry["phrase"]))
+        seen.add(entry["phrase"])
 
 
 SEARCH_QUERY_MAX_TERMS = 6  # chosen terms of both blocks together (D92)

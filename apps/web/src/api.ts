@@ -310,12 +310,17 @@ export type ProtocolEdits = {
 export type RunApproval = {
   // waiting: the card is editable. submitted: the correction was sent and is being applied. approved: it is frozen.
   status: 'waiting' | 'submitted' | 'approved'
-  approved_by: 'user' | 'setting' | 'earlier_approval' | 'no_warning' | null; edited: boolean | null; proposal_hash: string
+  approved_by: 'user' | 'setting' | 'earlier_approval' | 'no_warning' | 'model_advice' | null; edited: boolean | null; proposal_hash: string
   proposal: ApprovalSide; approved: ApprovalSide | null
   // Operations of an earlier approval this run could not apply, because the phrase is no longer in the proposal.
   skipped_edits: { op: string; phrase: string; block?: string; reason?: string }[]
   // Why the run stopped for the person: a term that alone inflates the matches, with the count without it.
-  warnings?: { warning: string; phrase: string; block: string; matches: number; matches_without_term: number }[]
+  // `advice` is the model's remove-or-keep suggestion for the term and one plain sentence why (D232); null when none was asked or given.
+  warnings?: { warning: string; phrase: string; block: string; matches: number; matches_without_term: number; advice?: { recommendation: 'remove' | 'keep'; reason: string } | null }[]
+  // The model that gave that advice; null when it gave none.
+  advice_model?: { connection: string; model: string | null } | null
+  // When the run went on without asking (`approved_by` model_advice): what each warned term's advice did (D232).
+  advice_applied?: { phrase: string; recommendation: 'remove' | 'keep' | null; reason: string | null; matches: number; matches_without_term: number; applied: boolean; not_applied?: string }[] | null
   // Other names the user asked a model for, and what came of it (D82).
   suggestions: ApprovalSuggestions
   // Which sources the queries were compiled for and why (D93); null for a card shown before routing existed.

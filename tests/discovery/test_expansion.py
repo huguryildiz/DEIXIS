@@ -13,8 +13,10 @@ import pytest
 from deixis.domain.expansion import MAX_PROBED_PHRASES, MIN_DOCUMENT_FREQUENCY, Candidate, candidates
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow.expansion import (MAX_EXPANSION_TERMS, MIN_FIELD_COUNT, count_yields, expand,
-                                       second_round_vocabulary, term_yields)
+from deixis.workflow.expansion import (MAX_ABBREVIATIONS, MAX_EXPANSION_TERMS, MIN_FIELD_COUNT, abbreviation_candidates,
+                                       abbreviation_vocabulary,
+                                       count_yields, expand, expand_abbreviations, second_round_vocabulary,
+                                       term_yields)
 from deixis.workflow.store import Store
 
 # Two fields: sensor networks and molecular communication. The phrases are the ones the rules are read against.
@@ -461,3 +463,81 @@ def test_an_expansion_stored_before_its_searched_phrases_reads_them_from_its_sto
     queries = [{"provider_id": "openalex", "dropped_terms": ["SYNTHETIC swap budget"]},
                {"provider_id": "semantic_scholar", "dropped_terms": []}]
     assert expansion_blocks(stored, queries) == {"setting": ["quantum internet"], "task": ["remote entanglement"]}
+
+
+# ---- abbreviations the first round's abstracts define (D231) -------------------------------------------------
+# SYNTHETIC abstracts. "Vector-based forwarding (VBF)" is defined for the term "vector-based routing": the task terms
+# share their last word, so the form looked for is "vector based" (`ranking.joint_forms`).
+DBR = "We study depth-based routing (DBR) for underwater sensor networks."
+VBF = "Vector-based forwarding (VBF) sends packets along a routing pipe."
+TASK = ["depth-based routing", "vector-based routing"]
+
+
+def abstracts(*texts):
+    return [{"work_id": f"wrk_{i}", "title": "t", "abstract": text, "author_keywords": []} for i, text in enumerate(texts)]
+
+
+def test_an_abbreviation_two_abstracts_define_for_a_task_term_is_a_candidate():
+    found = abbreviation_candidates(abstracts(DBR, DBR, VBF, VBF, VBF, None), TASK)
+    assert found == [{"abbreviation": "VBF", "form": "vector based", "records": 3},
+                     {"abbreviation": "DBR", "form": "depth based routing", "records": 2}]
+
+
+def test_an_abbreviation_one_abstract_defines_or_whose_letters_are_not_the_initials_is_not():
+    wrong = "We study depth-based routing (VBF) here."
+    assert abbreviation_candidates(abstracts(DBR, wrong, wrong), TASK) == []
+
+
+def test_one_word_of_a_task_term_does_not_take_an_abbreviation():
+    """The code query's task terms "depth-based" and "vector-based" share "based"; "vector" alone is no form."""
+    svm = "A support vector machine (SVM) classifies the nodes."
+    assert abbreviation_candidates(abstracts(svm, svm, VBF, VBF), ["depth-based", "vector-based", *TASK]) == [
+        {"abbreviation": "VBF", "form": "vector based", "records": 2}]
+
+
+def test_an_abbreviation_of_a_word_outside_the_task_terms_is_not_a_candidate():
+    other = "The packet delivery ratio (PDR) is measured."
+    assert abbreviation_candidates(abstracts(other, other), TASK) == []
+
+
+def test_an_abbreviation_is_accepted_on_its_field_count_alone():
+    """No share rule: "DBR" is mostly a Bragg reflector elsewhere, and searched beside the setting it is still this field's."""
+    found = [{"abbreviation": "DBR", "form": "depth based", "records": 5},
+             {"abbreviation": "VBF", "form": "vector based", "records": 3}]
+    seen = []
+    result = asyncio.run(expand_abbreviations(vocabulary(), found, counter(
+        {'DBR AND ("sensor network")': 100, 'VBF AND ("sensor network")': MIN_FIELD_COUNT - 1}, seen)))
+    assert result["terms"] == ["DBR"]
+    assert [row["reason"] for row in result["candidates"]] == [None, "below_field_count"]
+    assert seen == ['DBR AND ("sensor network")', 'VBF AND ("sensor network")']  # never counted alone
+
+
+def test_abbreviations_past_the_limit_are_not_probed():
+    found = [{"abbreviation": f"A{chr(65 + i)}", "form": "x", "records": 2} for i in range(MAX_ABBREVIATIONS + 1)]
+    result = asyncio.run(expand_abbreviations(vocabulary(), found, lambda query: asyncio.sleep(0, result=50)))
+    assert len(result["terms"]) == MAX_ABBREVIATIONS
+    assert result["candidates"][-1]["reason"] == "not_probed"
+
+
+def test_a_vocabulary_with_one_block_probes_no_abbreviation():
+    one_block = vocabulary(task=())
+    result = asyncio.run(expand_abbreviations(one_block, [{"abbreviation": "DBR", "form": "x", "records": 2}],
+                                              counter({})))
+    assert result == {"candidates": [], "terms": [], "probes": []}
+
+
+def test_the_abbreviations_are_searched_beside_the_code_querys_setting_where_it_was_searched():
+    """The model's one qualified setting phrase found 0 of the DBR/VBF benchmark's 6 papers with the abbreviations;
+    the code query's root word found all 6 (D231)."""
+    model = vocabulary(setting=("underwater acoustic sensor networks",), task=("depth-based routing",))
+    code = vocabulary(setting=("underwater",), task=("depth-based",))
+    model["code_query"] = {"vocabulary": code, "queries": [], "searched": True}
+    model["block_assignment"] = "search_query"
+    seen = []
+    result = asyncio.run(expand_abbreviations(model, [{"abbreviation": "DBR", "form": "depth based routing", "records": 2}],
+                                              counter({'DBR AND (underwater)': 103}, seen)))
+    assert seen == ['DBR AND (underwater)'] and result["terms"] == ["DBR"]
+    assert [t["phrase"] for t in abbreviation_vocabulary(model, ["DBR"])["terms"]] == ["underwater", "DBR"]
+    model["code_query"]["searched"] = False  # switched off on the approval card: the model's setting
+    assert [t["phrase"] for t in abbreviation_vocabulary(model, ["DBR"])["terms"]] == [
+        "underwater acoustic sensor networks", "DBR"]

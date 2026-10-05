@@ -18,6 +18,7 @@ paying for them again, and the terms a research searched stay the terms its prot
 from __future__ import annotations
 
 import json
+from collections import Counter
 from typing import Any, Awaitable, Callable
 
 from deixis.domain.expansion import MAX_PROBED_PHRASES, MIN_DOCUMENT_FREQUENCY, Candidate, stem
@@ -29,12 +30,16 @@ from deixis.workflow.vocabulary import GATE_BLOCKS, _or_group
 MIN_FIELD_COUNT = 20  # records that hold the phrase together with the setting block
 MIN_FIELD_SHARE = 0.2  # and that must be at least this share of all records holding the phrase
 MAX_EXPANSION_TERMS = 8  # accepted phrases that enter the second round, in probe order
+MIN_ABBREVIATION_RECORDS = 2  # first-round abstracts that must define the same abbreviation for a task term
+MAX_ABBREVIATIONS = 4  # accepted abbreviations that enter the second round, ahead of the phrases
 THRESHOLDS = {
     "min_document_frequency": MIN_DOCUMENT_FREQUENCY,
     "max_probed_phrases": MAX_PROBED_PHRASES,
     "min_field_count": MIN_FIELD_COUNT,
     "min_field_share": MIN_FIELD_SHARE,
     "max_expansion_terms": MAX_EXPANSION_TERMS,
+    "min_abbreviation_records": MIN_ABBREVIATION_RECORDS,
+    "max_abbreviations": MAX_ABBREVIATIONS,
 }
 SETTING_BLOCK, TASK_BLOCK = GATE_BLOCKS
 
@@ -101,6 +106,106 @@ async def expand(vocabulary: dict[str, Any], found: list[Candidate],
             row["accepted"] = True
             accepted.append(candidate.phrase)
     return {"skipped": None, "candidates": rows, "terms": accepted, "probes": probes}
+
+
+def _abbreviation_forms(task_terms: list[str]) -> list[str]:
+    """Each task term as `ranking._abbreviations` looks for it, hyphens read as spaces, and without its last word when
+    it has three words or more ("vector based" for "vector-based routing"). Forms of one word are left out."""
+    forms: list[str] = []
+    for term in task_terms:
+        split = term.lower().replace("-", " ").split()
+        for form in (split, split[:-1] if len(split) >= 3 else []):
+            if len(form) >= 2 and (padded := " " + " ".join(form)) not in forms:
+                forms.append(padded)
+    return forms
+
+
+def abbreviation_candidates(records: list[dict[str, Any]], task_terms: list[str]) -> list[dict[str, Any]]:
+    """The abbreviations the first round's abstracts define for the task terms, most defined first (D231).
+
+    An abstract defines one where its letters are the initials of the words before the parenthesis and those words
+    hold a task term of two words or more, or a term of three words or more without its last word: "vector-based
+    forwarding (VBF)" for the term "vector-based routing" (`ranking._abbreviations`, the reading D226 ranks with). A
+    single word is not enough: "vector" alone takes "support vector machine (SVM)". Authors who name a method by its abbreviation alone are found by no spelled-out
+    term. An abbreviation at least `MIN_ABBREVIATION_RECORDS` abstracts define is a candidate; one that is already a
+    word of a task term is not.
+    """
+    from deixis.workflow.ranking import _abbreviations  # ranking reads this module's terms
+
+    forms = _abbreviation_forms(task_terms)
+    defined: dict[str, Counter[str]] = {}
+    for record in records:
+        # One count per abstract and abbreviation, under the longest form it was defined for.
+        by_short: dict[str, str] = {}
+        for form, short in _abbreviations(record.get("abstract") or "", forms).items():
+            if len(form) > len(by_short.get(short, "")):
+                by_short[short] = form
+        for short, form in by_short.items():
+            defined.setdefault(short, Counter())[form] += 1
+    taken = {word for term in task_terms for word in words(term)}
+    rows = [{"abbreviation": short, "form": by_form.most_common(1)[0][0].strip(), "records": sum(by_form.values())}
+            for short, by_form in defined.items() if short.lower() not in taken]
+    return sorted((row for row in rows if row["records"] >= MIN_ABBREVIATION_RECORDS),
+                  key=lambda row: (-row["records"], row["abbreviation"]))
+
+
+def abbreviation_setting(vocabulary: dict[str, Any]) -> list[dict[str, Any]]:
+    """The setting terms an abbreviation is searched beside: the code query's where it was searched, the model's
+    otherwise (D231). The code query's setting is its root words ("underwater"), as wide as authors write the field;
+    the model's is often one qualified phrase ("underwater acoustic sensor networks"), and the papers that name a
+    method by its abbreviation alone often name the field another way too. On the DBR/VBF benchmark the model's
+    setting found 0 of the 6 reference papers with the abbreviations and the code's found all 6."""
+    from deixis.workflow.search_query import code_searched  # search_query compiles through query_compiler, not here
+
+    if "code_query" in vocabulary and code_searched(vocabulary):
+        return queried_terms(vocabulary["code_query"]["vocabulary"], SETTING_BLOCK)
+    return queried_terms(vocabulary, SETTING_BLOCK)
+
+
+def abbreviation_vocabulary(vocabulary: dict[str, Any], abbreviations: list[str]) -> dict[str, Any]:
+    """The vocabulary the abbreviation queries are compiled from: `abbreviation_setting` AND the abbreviations alone.
+
+    Its own query beside the second round's, so the phrases the field probe accepted keep the model's setting as
+    they were measured, and the abbreviations get the wider one."""
+    if not abbreviations:
+        return {"terms": []}
+    added = [{"phrase": short, "block": TASK_BLOCK, "origin": "data", "root": short, "in_query": "phrase",
+              "phrase_count": None, "root_count": None, "and_only": False, "dropped": None} for short in abbreviations]
+    return {"terms": [dict(term) for term in abbreviation_setting(vocabulary)] + added}
+
+
+async def expand_abbreviations(vocabulary: dict[str, Any], found: list[dict[str, Any]],
+                               count: Callable[[str], Awaitable[int | None]]) -> dict[str, Any]:
+    """Probe each abbreviation candidate against the setting block; return the ones the second round searches (D231).
+
+    The setting block is the code query's where that query was searched (`abbreviation_setting`). Only the field
+    count decides. The share rule of `expand` is not applied: an abbreviation is short and means other
+    things in other fields ("DBR" is also a Bragg reflector), so most records holding it are elsewhere by nature. That
+    the field's own abstracts spell it out as a task term, and that it is searched only together with the setting
+    block, is what ties it to the question.
+    """
+    setting = [queried_form(term) for term in abbreviation_setting(vocabulary)]
+    if not setting or not queried_terms(vocabulary, TASK_BLOCK) or not found:
+        return {"candidates": [], "terms": [], "probes": []}
+    group = _or_group([quoted(form) for form in setting])
+    rows, accepted, probes = [], [], []
+    for candidate in found:
+        row = candidate | {"field_count": None, "accepted": False, "reason": None}
+        rows.append(row)
+        if len(accepted) >= MAX_ABBREVIATIONS:
+            row["reason"] = "not_probed"
+            continue
+        query = f"{quoted(candidate['abbreviation'])} AND {group}"
+        row["field_count"] = await count(query)
+        probes.append({"query": query, "count": row["field_count"]})
+        if row["field_count"] is None:
+            row["reason"] = "count_unknown"
+        elif row["field_count"] < MIN_FIELD_COUNT:
+            row["reason"] = "below_field_count"
+        else:
+            row["accepted"] = True
+            accepted.append(candidate["abbreviation"])
+    return {"candidates": rows, "terms": accepted, "probes": probes}
 
 
 def _stems(text: str) -> set[str]:
@@ -270,11 +375,13 @@ def first_round_records(store: Any, research_id: str, scope_revision: int,
         return any(pair not in second_round and not (pair[1] or "").startswith("chain:")
                    and (only is None or pair in only) for pair in found)
 
-    return [{"work_id": row["work_id"], "title": row["title"],
+    return [{"work_id": row["work_id"], "title": row["title"], "abstract": row["abstract"],
              "author_keywords": json.loads(row["keywords"] or "[]")}
             for row in store.conn.execute(
                 "SELECT c.source_version_id AS svid, v.work_id AS work_id, v.title AS title,"
-                " v.author_keywords_json AS keywords, sr.provider AS provider, sr.query_text AS query_text"
+                " v.author_keywords_json AS keywords, sr.provider AS provider, sr.query_text AS query_text,"
+                " (SELECT group_concat(p.text, ' ') FROM passages p WHERE p.source_version_id = v.id"
+                "  AND p.kind = 'abstract') AS abstract"
                 " FROM candidates c JOIN source_versions v ON v.id = c.source_version_id"
                 " LEFT JOIN search_runs sr ON sr.id = c.search_run_id"
                 " WHERE c.research_id = ? AND c.scope_revision = ? ORDER BY c.rank, c.created_at",

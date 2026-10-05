@@ -2457,22 +2457,44 @@ class ResearchFlow:
             # code's query beside it has no second round, and its records are not what the candidates are read from
             # (D92). A vocabulary with no origin marks reads every first-round record, as before.
             own = search_query_rules.model_queries(queries)
+            records = expansion_rules.first_round_records(
+                self.store, rid, revision,
+                {(q["provider_id"], q["query_text"]) for q in own} if len(own) < len(queries) else None)
             found = phrase_candidates.candidates(
-                expansion_rules.first_round_records(
-                    self.store, rid, revision,
-                    {(q["provider_id"], q["query_text"]) for q in own} if len(own) < len(queries) else None),
-                [expansion_rules.queried_form(term) for term in expansion_rules.queried_terms(vocabulary)],
+                records, [expansion_rules.queried_form(term) for term in expansion_rules.queried_terms(vocabulary)],
                 [*vocabulary["claim_words"], *vocabulary["exclusion_words"]])
             self.store.start_step(step["id"])
             result = await expansion_rules.expand(vocabulary, found, self._count_probe(scope, run_id))
+            # Abbreviations the first round's abstracts define for the task terms (D231): every first-round record is
+            # read, the code query's too, since a paper naming a method only by its abbreviation is often one the
+            # model's query did not find.
+            task_terms = [term["phrase"] for term in expansion_rules.searched_terms(vocabulary, expansion_rules.TASK_BLOCK)]
+            short = await expansion_rules.expand_abbreviations(
+                vocabulary, expansion_rules.abbreviation_candidates(
+                    expansion_rules.first_round_records(self.store, rid, revision), task_terms),
+                self._count_probe(scope, run_id))
+            result["abbreviations"] = short
             second = expansion_rules.second_round_vocabulary(vocabulary, result["terms"], own)
             # Where each accepted phrase went (D90); the protocol body keeps the compiled queries, not this.
             result["second_round"] = {key: second[key] for key in ("setting_synonyms", "task_additions", "setting_width")}
+            # One query allowance for the whole second round. The abbreviation queries take theirs first: they were
+            # measured on the benchmark (D231), the phrase arm's thresholds on one topic only (`expansion` module).
             # A run from before D93 compiles its second round as its first was (review of slice 14, 2026-09-23).
+            limit, routed = budget["max_provider_requests"], self._routing(run_id) is not None
+            shorts = expansion_rules.abbreviation_vocabulary(vocabulary, short["terms"])
+            short_queries = [query | {"origin": "abbreviation"} for query in query_compiler.compile_block_queries(
+                shorts, self._providers(run_id, scope), limit, routed=routed)] if shorts["terms"] else []
+            room = limit - len(short_queries)
             more = query_compiler.compile_block_queries(
-                second, self._providers(run_id, scope), budget["max_provider_requests"],
-                routed=self._routing(run_id) is not None) if second["terms"] else []
+                second, self._providers(run_id, scope), room, routed=routed) if second["terms"] and room > 0 else []
             result["searched"] = expansion_rules.searched_additions(result, more)
+            # An abbreviation counts as searched where one of its queries kept it, as an accepted phrase does.
+            result["searched"][expansion_rules.TASK_BLOCK] += [
+                term for term in short["terms"]
+                if any(term not in (query.get("dropped_terms") or []) for query in short_queries)
+                and term not in result["searched"][expansion_rules.TASK_BLOCK]]
+            more += [query for query in short_queries
+                     if (query["provider_id"], query["query_text"]) not in {(q["provider_id"], q["query_text"]) for q in more}]
             # What each term had brought in by the time the expansion ended: one dated photograph, never a number
             # the research keeps as its own (the live figure is derived by `term_yields`).
             result["yield_at_expansion"] = expansion_rules.count_yields(

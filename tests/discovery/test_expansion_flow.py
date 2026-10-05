@@ -7,6 +7,7 @@ literature. A `legacy` research is exercised too, because nothing about it may c
 """
 
 import json
+import re
 import time
 from dataclasses import replace
 
@@ -348,3 +349,36 @@ def test_a_setting_synonym_takes_the_setting_blocks_place_and_the_task_block_sta
     (second,) = [q["query_text"] for q in stored["queries"] if q["provider_id"] == "openalex"]
     assert second == f'"{synonym}" AND (packet OR "{ACCEPTED}")'
     assert second not in [q["query_text"] for q in first["queries"]]
+
+
+def abstract_work(number, title, text):
+    words = text.split()
+    return work(number, title) | {"abstract_inverted_index": {w: [i for i, x in enumerate(words) if x == w] for w in set(words)}}
+
+
+def test_an_abbreviation_the_first_rounds_abstracts_define_gets_its_own_second_round_query(tmp_path, monkeypatch):
+    """D231: "packet size (PS)" spelled out in the first-round abstracts; the second round searches PS beside the setting
+    block in a query of its own, on its field count alone, and the ranking reads it as a task term."""
+    field = Field(counts={PHRASE_PROBE: 100, FIELD_PROBE: 40, "PS AND (energy OR wireless)": 30})
+    field.first = [abstract_work(index, FIRST_TITLE, "We vary the packet size (PS) of each node.") for index in range(4)]
+    app = app_for(tmp_path, monkeypatch, field)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        expansion = step_output(app.state.store, run_id, "vocabulary_expansion")
+    finally:
+        client.__exit__(None, None, None)
+    short = expansion["expansion"]["abbreviations"]
+    assert short["terms"] == ["PS"], short
+    row = short["candidates"][0]
+    assert (row["abbreviation"], row["records"], row["field_count"], row["accepted"]) == ("PS", 4, 30, True)
+    assert "PS AND (energy OR wireless)" in field.probes and "PS" not in field.probes  # never counted alone
+    assert expansion["expansion"]["terms"] == [ACCEPTED]  # accepted by the phrase arm as before
+    own = [q for q in expansion["queries"] if q.get("origin") == "abbreviation" and q["provider_id"] == "openalex"]
+    assert [q["query_text"] for q in own] == ["(energy OR wireless) AND PS"], expansion["queries"]
+    assert any(row["query_text"] == own[0]["query_text"] for row in openalex_rows(view))  # and it was searched
+    # One allowance for the whole second round, the abbreviation queries first: at the quick effort's allowance they
+    # take all of it, so the accepted phrase is not searched and the ranking reads PS alone.
+    limit = run["budget"]["max_provider_requests"]
+    assert [q.get("origin") for q in expansion["queries"]] == ["abbreviation"] * limit
+    assert expansion["expansion"]["searched"]["task"] == ["PS"]

@@ -12,7 +12,8 @@ Python 3.12 via `uv` (the venv must be native arm64 on Apple Silicon). Run from 
 
 ```sh
 uv sync
-PYTHONPATH=backend uv run pytest                                   # all deterministic tests (parallel by default, ~1–2 min; -n 0 for serial)
+PYTHONPATH=backend uv run pytest                                   # quick run: slow tests (tests/slow_tests.txt) left out, 6 workers, ~1.5 min
+PYTHONPATH=backend uv run pytest -m "slow or not slow"            # everything, ~3.5 min; run before a push
 PYTHONPATH=backend uv run pytest tests/contracts/test_contracts.py -k anchor # one file / one test
 PYTHONPATH=backend uv run python -m deixis serve                   # http://127.0.0.1:8765, serves apps/web/dist
 PYTHONPATH=backend uv run python -m deixis serve --dev --no-browser   # + (cd apps/web && npm run dev) → Vite on :5178 proxies /api

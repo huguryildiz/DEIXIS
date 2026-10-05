@@ -824,7 +824,7 @@ def run_stages(args: argparse.Namespace, run: Run, meta: dict[str, Any], out: Pa
         run.stage("install", [(cmd, env, REPO)])
     if run.wanted("pytest"):
         print("stage pytest ...", flush=True)
-        run.stage("pytest", [(run.pytest_cmd(out / "pytest.xml"), run.env(), REPO)])
+        run.stage("pytest", [(run.pytest_cmd(out / "pytest.xml", "-m", "slow or not slow"), run.env(), REPO)])
     if run.wanted("web"):
         print("stage web ...", flush=True)
         cmds = []

@@ -32,9 +32,10 @@ packages = ["backend/deixis"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# One worker per core (pytest-xdist): every test builds its own library under tmp_path, so the suite parallelises
-# cleanly. Measured 2026-09-22 on a 10-core Apple Silicon machine: 8 min 42 s serial, 1 min 13 s with -n auto.
-addopts = "-n auto"
+# Six workers (pytest-xdist): every test builds its own library under tmp_path, so the suite parallelises cleanly.
+# Measured 2026-10-05 on a 10-core Apple Silicon machine under load from other work: the default run (slow tests left
+# out, see tests/conftest.py) took 81 s with 6 workers and with 10; 6 used 15% less CPU and 20% less memory.
+addopts = "-n 6"
 # Explicit path: in synced Documents folders the venv's .pth files can receive the
 # macOS hidden flag, which Python's site module skips.
 pythonpath = ["backend", ".", "tests", "tests/app", "tests/candidates", "tests/contracts", "tests/discovery", "tests/documents", "tests/hardening", "tests/lineage", "tests/measurement", "tests/models", "tests/providers", "tests/reextract", "tests/report", "tests/review", "tests/storage", "tests/watch"]

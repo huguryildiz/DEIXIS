@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import keyring
 import pytest
 from keyring.backend import KeyringBackend
@@ -24,6 +26,31 @@ class MemoryKeyring(KeyringBackend):
             raise PasswordDeleteError(username)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def migrated_template(tmp_path_factory):
+    """Running all 71 migrations costs about 0.1 s per new library and was close to half of the suite's time. Each
+    worker migrates one template library once; an empty library migrated from the real migrations folder is then a
+    page copy of it (sqlite backup). A test that points MIGRATIONS_DIR elsewhere, or a library that already has
+    tables, goes through the real migrate."""
+    from deixis.storage import db
+
+    real_migrate, real_dir = db.migrate, db.MIGRATIONS_DIR
+    template = db.connect(tmp_path_factory.mktemp("template") / "library.sqlite")
+    versions = real_migrate(template)
+
+    def migrate(conn):
+        if db.MIGRATIONS_DIR != real_dir or conn.in_transaction or conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone():
+            return real_migrate(conn)
+        template.backup(conn)
+        return list(versions)
+
+    patch = pytest.MonkeyPatch()
+    patch.setattr(db, "migrate", migrate)
+    yield
+    patch.undo()
+    template.close()
+
+
 @pytest.fixture(autouse=True)
 def no_model_api_keys(monkeypatch):
     """Tests never use real model API keys; a test that needs one sets a fake key."""
@@ -48,12 +75,31 @@ def memory_keychain(monkeypatch):
 def pytest_configure(config):
     config.addinivalue_line("markers", "field_distribution: the test's own transport answers the routing request (D93)")
     config.addinivalue_line("markers", "process: starts and kills real processes (P9 H2); run with -m process -n 0")
+    config.addinivalue_line("markers", "slow: listed in tests/slow_tests.txt; left out of a run with no -m and no path")
     config.addinivalue_line("markers", "provider_pacing: the test keeps the real arXiv and Semantic Scholar request gaps")
 
 
+SLOW_TESTS = Path(__file__).with_name("slow_tests.txt")
+
+
 def pytest_collection_modifyitems(config, items):
-    """Process tests (tests/process) are wall-clock and start real servers: they run only when -m names `process`."""
-    if "process" in (config.getoption("-m") or ""):
+    """Process tests (tests/process) are wall-clock and start real servers: they run only when -m names `process`.
+
+    Tests listed in slow_tests.txt (0.5 s or more each, about 960 of them) are marked `slow` and left out of a run that
+    names no `-m` and no path, so the default run stays near a minute and a half. Naming a file or test, or any `-m`
+    expression, runs them too; run everything before a push with `pytest -m "slow or not slow"`. To regenerate the list,
+    run that with `--durations=0 --durations-min=0.3`, sum call + setup + teardown per test id, keep those at 0.5 s or more."""
+    marker = config.getoption("-m") or ""
+    slow = set(line for line in SLOW_TESTS.read_text().splitlines() if line and not line.startswith("#"))
+    for item in items:
+        if item.nodeid in slow:
+            item.add_marker(pytest.mark.slow)
+    if not marker and not config.getoption("file_or_dir"):
+        slow_items = [item for item in items if item.get_closest_marker("slow")]
+        if slow_items:
+            config.hook.pytest_deselected(items=slow_items)
+            items[:] = [item for item in items if not item.get_closest_marker("slow")]
+    if "process" in marker:
         return
     skipped = [item for item in items if item.get_closest_marker("process")]
     if skipped:

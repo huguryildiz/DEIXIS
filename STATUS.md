@@ -1,6 +1,6 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 4 Ekim 2026.
+**Son güncelleme:** 5 Ekim 2026.
 
 ## Şu an
 
@@ -75,7 +75,7 @@ Tek soru, GPT-5.6 Luna, Standard derinlik, üniversite VPN'i açık (`res_qqOHHl
 - Hangi sorgu buldu (sağlayıcı yüklerinden): Maulana 2019'u yalnız sorunun kelimelerinden kurulan geniş sorgu buldu; modelin `"underwater acoustic" AND …` sorgusu getirmedi (makale "underwater wireless sensor network" diyor). Hakim 2018'i iki sorgu da buldu; genişletme ve atıf zinciri ikisini de getirmedi. Geniş sorgu gürültülü ama kapatılmamalı; modelin tek tam ifadesi fazla dar.
 - Ölçüm dersi: adımlar hatasız bitti, alıntılar bulundu, ikinci model 16/17 "destekli" dedi, yine de cevap soruyu cevaplamadı. Bugünkü ölçütler cevabın dürüstlüğünü ölçüyor, işe yararlığını ölçmüyor.
 
-**İlerleme (5 Eki):** (1) kıyas testi `scripts/benchmark/check.py` (2b6e0d7); eski koşuda geçmiyor. (2) özet adayları cevaba giriyor (D225): yeniden koşulan cevapta Maulana 2019 sayılarıyla atıf aldı, Hakim 2018 girmedi, kapı (a) hâlâ geçmiyor. Sahip adım 3'e geçilmesini seçti. (3) karşılaştırma sorusunda task terimlerini birlikte anan kayıtlar sıralamada yükseliyor (D226): çevrimdışı Maulana 105 → 51, Hakim 233 → 73; ilk 50 hedefi tutmadı, yeni keşif koşusu yapılmadı. Adım 4 sahip kararını bekliyor.
+**İlerleme (5 Eki):** (1) kıyas testi `scripts/benchmark/check.py` (2b6e0d7); eski koşuda geçmiyor. (2) özet adayları cevaba giriyor (D225): yeniden koşulan cevapta Maulana 2019 sayılarıyla atıf aldı, Hakim 2018 girmedi, kapı (a) hâlâ geçmiyor. Sahip adım 3'e geçilmesini seçti. (3) karşılaştırma sorusunda task terimlerini birlikte anan kayıtlar sıralamada yükseliyor (D226): çevrimdışı Maulana 105 → 51, Hakim 233 → 73; ilk 50 hedefi tutmadı, yeni keşif koşusu yapılmadı. Adım 4 sahip kararını bekliyor. (4) Memon 2018'i hiçbir sorgu bulmuyordu, çünkü protokolleri yalnız "DBR" ve "VBF" diye anıyor. İkinci tur artık birinci turun özetlerinin tanımladığı kısaltmaları kodun geniş ortam terimiyle arıyor (D231): bugünkü koşunun kopyasında `underwater AND (DBR OR VBF)` 6 makalenin 6'sını buldu, önce 5/6'ydı. Gerçek bir keşif koşusunda denenmedi.
 
 **Sahip kararı (5 Eki), sırayla:** (1) bu soru + Elicit'in 6 makalesi kıyas testi olsun; geçme: Maulana 2019 ve Hakim 2018 cevaba girer, cevap DBR–VBF yönünü sayıyla söyler; (2) tam metni olmayan adaylar özetiyle cevaba girsin, iddiada "yalnız özet" yazsın; (3) iki aileyi birlikte anan doğrudan karşılaştırmalar sıralamada öne çıksın; (4) 2–3 testi geçince akışı sadeleştir: onay ve karar ekranları yalnız uyarıda, kanıt tablosu beklemeden Özet/Bulgular/Yorum raporu, Marker cevabı bekletmesin; (5) kalan ekranlarda sayaç ve etiket düzeltmesi; (6) sahibin vereceği 2–3 soru daha kıyas testine. Baştan yazım ve katı rapor formatı şimdilik yok. Plan: `.local/docs/product/elicit-convergence-plan.md` (yerel, git dışında).
 

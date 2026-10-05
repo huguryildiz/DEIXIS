@@ -675,7 +675,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
       </>}
     </div>
 
-    {run.status === 'paused' && <div className="chat-note is-warning">
+    {run.status === 'paused' && run.pause_reason !== 'protocol_approval_needed' && <div className="chat-note is-warning">
       <p>{pauseReasonText(run.pause_reason)}</p>
       {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
       {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}

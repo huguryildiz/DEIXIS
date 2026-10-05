@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ChevronDown, ChevronRight, CornerUpLeft, Plus, RotateCcw, X } from 'lucide-react'
+import { Fragment, useState } from 'react'
+import { ChevronDown, ChevronRight, CornerUpLeft, Plus, RotateCcw, TriangleAlert, X } from 'lucide-react'
 import { ApiError, api, type ApprovalBlock, type ApprovalCriterion, type ApprovalSide, type ApprovalSuggestions, type ApprovalTerm, type CitationChaining, type ProtocolEdits, type Run, type RunApproval, type SearchQuerySide, type SourceRouting, type SuggestedTerm, type TermEdit } from './api'
 import { approvedByText, blockLabels, blockNotes, blockOriginText, dropReasonText, pauseReasonText, providerName, queryWarningText, routeReasonText, suggestionBlockerText, termKindText, termOriginText } from './labels'
 import { t, uiLocale } from './i18n'
@@ -15,10 +15,18 @@ import { Textarea } from '@/components/ui/textarea'
 // being checked locks the card, and "approved" appears when the view says so and not when the request returned.
 // Draft corrections live in this component alone: they are not evidence and must not become a second source of
 // truth beside the stored proposal, so a page reload drops them (slice 08b).
+//
+// The main view is one sentence, the warnings about it, the criterion and one button. Everything else the card used
+// to show sits behind "Change the words" (the two searched groups) and "Advanced" (the rest), so nothing is dropped.
 
 const BLOCKS: ApprovalBlock[] = ['setting', 'task', 'outcome', 'claim', 'exclusion']
+const SENTENCE_BLOCKS: ApprovalBlock[] = ['setting', 'task']
+const SIDE_BLOCKS: ApprovalBlock[] = ['outcome', 'claim', 'exclusion']
 const MAX_PARTS = 5
 const MIN_PARTS = 2
+
+// The two searched groups in plain words: the first must be mentioned, and so must one of the second.
+const groupLabel = (block: ApprovalBlock) => t(block === 'setting' ? 'Must mention one of' : block === 'task' ? 'And one of' : blockLabels[block])
 
 // The same phrase shape the backend compares with: lower case, single spaces, no punctuation at either end.
 const norm = (text: string) => text.toLowerCase().split(/\s+/).filter(Boolean).join(' ').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
@@ -73,6 +81,10 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
   const [errors, setErrors] = useState<string[]>([])
   const [addError, setAddError] = useState<{ block: ApprovalBlock; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [wordsOpen, setWordsOpen] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  // "Keep it": the warnings the user looked at and chose to leave. Only this approval hides them; nothing is stored.
+  const [kept, setKept] = useState<Set<string>>(new Set())
   // The code's query beside a model-written one (D92): null keeps the proposal's choice, a boolean is the user's.
   const [codeQuery, setCodeQuery] = useState<boolean | null>(null)
   const written = proposal.search_query?.status === 'ready' ? proposal.search_query : null
@@ -102,6 +114,15 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
   const criterionEdited = criterion !== null
   const changed = ops.length > 0 || criterionEdited || codeChanged
 
+  // The phrases the sentence names: what would be searched, after the draft. A dropped term is not searched.
+  const sentenceOf = (block: ApprovalBlock) => [
+    ...shown(block).filter(row => !row.term?.dropped && opOf(row.phrase)?.op !== 'remove').map(row => row.phrase),
+    ...added(block).map(op => op.phrase),
+  ]
+  const [first, second] = [sentenceOf('setting'), sentenceOf('task')]
+  const warnings = (approval.warnings ?? []).filter(warning => !kept.has(norm(warning.phrase)))
+  const warned = new Set(warnings.filter(warning => opOf(warning.phrase)?.op !== 'remove').map(warning => norm(warning.phrase)))
+
   function addTerm(block: ApprovalBlock, text: string) {
     const phrase = norm(text)
     if (!phrase) return
@@ -120,6 +141,7 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
     setNote('')
     setErrors([])
     setAddError(null)
+    setKept(new Set())
   }
 
   async function ask() {
@@ -163,135 +185,210 @@ function PendingCard({ run, approval, editable, checking, working, onApproved }:
   const criterionNow = criterion ?? draftOf(proposal.criterion)
   const editCriterion = (change: Partial<CriterionDraft>) => setCriterion({ ...criterionNow, ...change })
 
-  return <section className="approval-card" aria-labelledby={`approval-${run.id}`}>
-    {/* A div, not a <header>: the shell's bare `header` rule fixes a height and a flex row on every one of them. */}
-    <div className="approval-head">
-      <h3 id={`approval-${run.id}`}>{t('Before searching: the search terms and the inclusion criterion')}</h3>
-      <p>{t('Nothing has been sent to a provider yet, except counts of how many records hold each term. Correct what is wrong, then approve.')}</p>
-    </div>
+  const pill = (phrase: string) => <span className={`approval-pill${warned.has(norm(phrase)) ? ' is-warn' : ''}`} dir="auto">{phrase}</span>
+  const locale = uiLocale()
+  const headId = `approval-${run.id}`
+  const wordsId = `approval-words-${run.id}`
+  const advancedId = `approval-advanced-${run.id}`
 
-    {written && <Notice tone="info">{t('A model wrote these search terms from the question. The counts, the backups and the warnings are the application’s own checks; the query built from the question’s words is offered below.')}</Notice>}
-    {proposal.search_query?.status === 'failed' && <Notice tone="attention">{t('The model could not write the search query. You chose the query DEIXIS built from the question’s words.')}</Notice>}
-    {(approval.warnings ?? []).map(warning => <Notice key={warning.phrase} tone="attention">{t('“{phrase}”: {n} matches with this term, {without} without it. You can remove it below, or approve as it is.', { phrase: warning.phrase, n: warning.matches.toLocaleString(uiLocale()), without: warning.matches_without_term.toLocaleString(uiLocale()) })}</Notice>)}
-    {proposal.too_broad && <Notice tone="attention">{t('Every term that would be searched is too frequent to stand alone. You can still approve; the run will stop again and say so.')}</Notice>}
-    {!proposal.terms.some(term => !term.dropped) && <Notice tone="attention">{t('No term is left to build a provider query from. Add one below, or move one back into the setting or task block.')}</Notice>}
-
-    <div className="approval-blocks">
-      {BLOCKS.map(block => <div key={block} className="approval-block">
-        <div className="approval-block-head">
-          <strong>{t(blockLabels[block])}</strong>
-          <small>{t(blockNotes[block])}</small>
-        </div>
-        <ul className="approval-terms">
-          {shown(block).map(row => {
-            const op = opOf(row.phrase)
-            const rowErrors = errorsFor(row.phrase)
-            return <li key={`${row.block}:${row.phrase}`} className={`approval-term${op?.op === 'remove' ? ' is-removed' : ''}${row.term?.dropped ? ' is-dropped' : ''}`}>
-              <div className="approval-term-main">
-                <span className="approval-phrase" dir="auto">{row.phrase}</span>
-                <span className="approval-term-facts">
-                  <TermFacts term={row.term} block={row.block} />
-                  {row.term && written && <WrittenFacts side={written} phrase={row.phrase} />}
-                  {/* The view records an origin only for the two searched blocks; a side-list phrase claims none. */}
-                  {row.term && <span className="approval-badge">{termOriginText(row.term.origin)}</span>}
-                  {(row.term || op?.op === 'move') && <span className="approval-badge">{blockOriginText(op?.op === 'move' ? 'user' : row.term!.block_origin)}</span>}
-                  {op?.op === 'move' && <span className="approval-badge is-changed">{t('moved by you')}</span>}
-                  {op?.op === 'remove' && <span className="approval-badge is-changed">{t('removed by you')}</span>}
-                </span>
-              </div>
-              {editable && <div className="approval-term-actions">
-                {op ? <Button variant="ghost" size="sm" onClick={() => setOp(row.phrase, null)}><CornerUpLeft size={13} />{t('Undo')}</Button> : <>
-                  <Select value={block} onValueChange={value => setOp(row.phrase, String(value) === row.block ? null : { op: 'move', phrase: norm(row.phrase), block: String(value) as ApprovalBlock })}>
-                    <SelectTrigger size="sm" aria-label={t('Block of “{phrase}”', { phrase: row.phrase })}>
-                      <SelectValue>{value => t(blockLabels[value as ApprovalBlock])}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>{BLOCKS.map(target => <SelectItem key={target} value={target}>{t(blockLabels[target])}</SelectItem>)}</SelectContent>
-                  </Select>
-                  <Button variant="ghost" size="sm" onClick={() => setOp(row.phrase, { op: 'remove', phrase: norm(row.phrase) })}><X size={13} />{t('Remove')}</Button>
-                </>}
-              </div>}
-              {rowErrors.length > 0 && <p className="approval-row-error">{rowErrors.join(' ')}</p>}
-            </li>
-          })}
-          {added(block).map(op => <li key={`add:${op.phrase}`} className="approval-term is-added">
+  // One group of terms with its editing: the searched groups under "Change the words" and the three side lists
+  // under "Advanced". `targets` are the groups a term can be moved to from here.
+  const renderBlock = (block: ApprovalBlock, targets: ApprovalBlock[], labelOf: (block: ApprovalBlock) => string, blockNote?: string) =>
+    <div key={block} className="approval-block">
+      <div className="approval-block-head">
+        <strong>{labelOf(block)}</strong>
+        {blockNote && <small>{blockNote}</small>}
+      </div>
+      <ul className="approval-terms">
+        {shown(block).map(row => {
+          const op = opOf(row.phrase)
+          const rowErrors = errorsFor(row.phrase)
+          return <li key={`${row.block}:${row.phrase}`} className={`approval-term${op?.op === 'remove' ? ' is-removed' : ''}${row.term?.dropped ? ' is-dropped' : ''}`}>
             <div className="approval-term-main">
-              <span className="approval-phrase" dir="auto">{op.phrase}</span>
+              <span className="approval-phrase" dir="auto">{row.phrase}</span>
               <span className="approval-term-facts">
-                {/* A proposal the model made was already counted; a phrase the user typed is counted on approval. */}
-                <span className="approval-count">{suggested.has(op.phrase)
-                  ? <Records count={suggested.get(op.phrase)!.phrase_count} />
-                  : t('will be counted after approval')}</span>
-                <span className="approval-badge">{termOriginText(suggested.has(op.phrase) ? 'model' : 'user')}</span>
-                <span className="approval-badge">{blockOriginText('user')}</span>
+                <TermFacts term={row.term} block={row.block} brief />
+                {op?.op === 'move' && <span className="approval-badge is-changed">{t('moved by you')}</span>}
+                {op?.op === 'remove' && <span className="approval-badge is-changed">{t('removed by you')}</span>}
               </span>
             </div>
             {editable && <div className="approval-term-actions">
-              <Button variant="ghost" size="sm" onClick={() => setOp(op.phrase, null)}><CornerUpLeft size={13} />{t('Undo')}</Button>
+              {op ? <Button variant="ghost" size="sm" onClick={() => setOp(row.phrase, null)}><CornerUpLeft size={13} />{t('Undo')}</Button> : <>
+                <Select value={block} onValueChange={value => setOp(row.phrase, String(value) === row.block ? null : { op: 'move', phrase: norm(row.phrase), block: String(value) as ApprovalBlock })}>
+                  <SelectTrigger size="sm" aria-label={t('Block of “{phrase}”', { phrase: row.phrase })}>
+                    <SelectValue>{value => labelOf(value as ApprovalBlock)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>{targets.map(target => <SelectItem key={target} value={target}>{labelOf(target)}</SelectItem>)}</SelectContent>
+                </Select>
+                <Button variant="ghost" size="sm" onClick={() => setOp(row.phrase, { op: 'remove', phrase: norm(row.phrase) })}><X size={13} />{t('Remove')}</Button>
+              </>}
             </div>}
-            {errorsFor(op.phrase).length > 0 && <p className="approval-row-error">{errorsFor(op.phrase).join(' ')}</p>}
-          </li>)}
-          {!shown(block).length && !added(block).length && <li className="approval-term is-empty"><span>{t('No term.')}</span></li>}
-        </ul>
-        {editable && <AddTerm block={block} onAdd={text => addTerm(block, text)} error={addError?.block === block ? addError.text : null} />}
-      </div>)}
+            {rowErrors.length > 0 && <p className="approval-row-error">{rowErrors.join(' ')}</p>}
+          </li>
+        })}
+        {added(block).map(op => <li key={`add:${op.phrase}`} className="approval-term is-added">
+          <div className="approval-term-main">
+            <span className="approval-phrase" dir="auto">{op.phrase}</span>
+            <span className="approval-term-facts">
+              {/* A proposal the model made was already counted; a phrase the user typed is counted on approval. */}
+              <span className="approval-count">{suggested.has(op.phrase)
+                ? <Records count={suggested.get(op.phrase)!.phrase_count} />
+                : t('will be counted after approval')}</span>
+              <span className="approval-badge">{termOriginText(suggested.has(op.phrase) ? 'model' : 'user')}</span>
+              <span className="approval-badge">{blockOriginText('user')}</span>
+            </span>
+          </div>
+          {editable && <div className="approval-term-actions">
+            <Button variant="ghost" size="sm" onClick={() => setOp(op.phrase, null)}><CornerUpLeft size={13} />{t('Undo')}</Button>
+          </div>}
+          {errorsFor(op.phrase).length > 0 && <p className="approval-row-error">{errorsFor(op.phrase).join(' ')}</p>}
+        </li>)}
+        {!shown(block).length && !added(block).length && <li className="approval-term is-empty"><span>{t('No term.')}</span></li>}
+      </ul>
+      {editable && <AddTerm block={block} label={t('Add a word to “{group}”', { group: labelOf(block) })} onAdd={text => addTerm(block, text)} error={addError?.block === block ? addError.text : null} />}
     </div>
 
-    {written && <QuerySection side={written} queries={proposal.queries ?? []} on={codeOn} editable={editable}
-      onChange={on => setCodeQuery(on === written.code_query.searched ? null : on)} />}
+  return <section className="approval-card is-pending" aria-labelledby={headId}>
+    {/* A div, not a <header>: the shell's bare `header` rule fixes a height and a flex row on every one of them. */}
+    <div className="approval-head">
+      <h3 id={headId}>{warnings.length > 0 ? t('One thing to check before searching') : t('Check what will be searched')}</h3>
+      <p>{t('Nothing has been searched yet. Check the words below, then start.')}</p>
+    </div>
 
-    {approval.routing && <RoutingSection routing={approval.routing} />}
+    <div className="approval-main">
+      <div className="approval-sentence-block">
+        <span className="approval-label">{t('We will look for papers about')}</span>
+        <p className="approval-sentence">
+          {first.map((phrase, i) => <Fragment key={`a:${phrase}`}>{i > 0 && ' '}{pill(phrase)}</Fragment>)}
+          {first.length > 0 && second.length > 0 && <> {t('and')} </>}
+          {second.map((phrase, i) => <Fragment key={`b:${phrase}`}>{i > 0 && (i === second.length - 1 ? ` ${t('or')} ` : ', ')}{pill(phrase)}</Fragment>)}
+          {!first.length && !second.length && <span className="approval-none">{t('No term is left.')}</span>}
+        </p>
+      </div>
 
-    {approval.chaining && <ChainingSection chaining={approval.chaining} />}
+      {warnings.map(warning => opOf(warning.phrase)?.op === 'remove'
+        ? <div key={warning.phrase} className="approval-warned-removed">
+            <span>{t('“{phrase}” is removed from the search.', { phrase: warning.phrase })}</span>
+            {editable && <Button variant="ghost" size="sm" onClick={() => setOp(warning.phrase, null)}><CornerUpLeft size={13} />{t('Undo')}</Button>}
+          </div>
+        : <div key={warning.phrase} className="approval-warning" role="group" aria-label={t('“{phrase}” makes the search far too wide', { phrase: warning.phrase })}>
+            <div className="approval-warning-head">
+              <TriangleAlert size={20} aria-hidden />
+              <div>
+                <strong>{t('“{phrase}” makes the search far too wide', { phrase: warning.phrase })}</strong>
+                <p>{t('It brings in many papers the other words don’t need. We suggest removing it.')}</p>
+              </div>
+            </div>
+            <div className="approval-stats">
+              <div className="approval-stat"><b>{warning.matches.toLocaleString(locale)}</b><span>{t('papers with it')}</span></div>
+              <div className="approval-stat is-better"><b>{warning.matches_without_term.toLocaleString(locale)}</b><span>{t('papers without it')}</span></div>
+            </div>
+            <div className="approval-warning-actions">
+              <Button variant="default" className="approval-btn" disabled={!editable} onClick={() => setOp(warning.phrase, { op: 'remove', phrase: norm(warning.phrase) })}>{t('Remove it')}</Button>
+              <Button variant="outline" className="approval-btn" disabled={!editable} onClick={() => setKept(new Set([...kept, norm(warning.phrase)]))}>{t('Keep it')}</Button>
+            </div>
+          </div>)}
+      {proposal.search_query?.status === 'failed' && <Notice tone="attention">{t('The model could not write the search query. You chose the query DEIXIS built from the question’s words.')}</Notice>}
+      {proposal.too_broad && <Notice tone="attention">{t('Every term that would be searched is too frequent to stand alone. You can still approve; the run will stop again and say so.')}</Notice>}
+      {!proposal.terms.some(term => !term.dropped) && <Notice tone="attention">{t('No term is left to build a provider query from. Add one under “Change the words”.')}</Notice>}
+    </div>
 
-    <SuggestionSection suggestions={approval.suggestions} editable={editable} working={working} busy={busy}
-      drafted={new Set(ops.filter(op => op.op === 'add').map(op => op.phrase))}
-      onAdd={row => setOps([...without(row.phrase), { op: 'add', phrase: row.phrase, block: row.block }])}
-      onUndo={phrase => setOp(phrase, null)} onAsk={() => void ask()} />
-
-    <CriterionSection criterion={proposal.criterion} available={proposal.criterion_available}
+    <CriterionMain id={`approval-criterion-${run.id}`} available={proposal.criterion_available}
       sought={proposal.sought_term_in_criterion} draft={criterion} now={criterionNow} editable={editable}
-      onEdit={editCriterion} onWriteOwn={() => setCriterion(draftOf(null))} onUndo={() => setCriterion(null)} />
+      onEdit={editCriterion} onWriteOwn={() => setCriterion(draftOf(null))} />
+
+    {changed && <p className="approval-summary" role="status">
+      <span>{[removed && t(removed === 1 ? '{n} term removed' : '{n} terms removed', { n: removed }),
+        addedCount && t(addedCount === 1 ? '{n} term added' : '{n} terms added', { n: addedCount }),
+        // Counted apart: how many of the added terms are names the model proposed.
+        addedProposals && t(addedProposals === 1 ? '{n} of them proposed by the model' : '{n} of them proposed by the model', { n: addedProposals }),
+        moved && t(moved === 1 ? '{n} term moved' : '{n} terms moved', { n: moved }),
+        codeChanged && t(codeOn ? 'the code’s query switched on' : 'the code’s query switched off'),
+        criterionEdited && t('criterion corrected')].filter(Boolean).join(' · ')}</span>
+      {editable && <Button variant="ghost" size="sm" disabled={busy} onClick={undoAll}>{t('Undo changes')}</Button>}
+    </p>}
+    {checking && <p className="approval-checking" role="status">{t('Your correction was sent. The terms you added are being counted against the literature; this card opens again if they cannot be searched.')}</p>}
+    {working && <p className="approval-checking" role="status">{t('The model is proposing other names and each one is being counted. Your draft corrections are kept.')}</p>}
+    {/* Announced whenever anything was refused, so a fault shown only beside its row is still spoken once. */}
+    {errors.length > 0 && <div className="approval-errors" role="alert">
+      <p>{t('The correction was not applied. Nothing was sent to a provider.')}</p>
+      {generalErrors.length > 0 && <ul>{generalErrors.map(error => <li key={error}>{error}</li>)}</ul>}
+    </div>}
 
     <div className="approval-foot">
-      {editable && <label className="approval-note">
-        <span>{t('Note for the record (optional)')}</span>
-        <Textarea value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={1000}
-          placeholder={t('Why you corrected this. It is kept with the protocol.')} />
-      </label>}
-      <p className="approval-summary" role="status">{changed
-        ? [removed && t(removed === 1 ? '{n} term removed' : '{n} terms removed', { n: removed }),
-           addedCount && t(addedCount === 1 ? '{n} term added' : '{n} terms added', { n: addedCount }),
-           // Counted apart: how many of the added terms are names the model proposed.
-           addedProposals && t(addedProposals === 1 ? '{n} of them proposed by the model' : '{n} of them proposed by the model', { n: addedProposals }),
-           moved && t(moved === 1 ? '{n} term moved' : '{n} terms moved', { n: moved }),
-           codeChanged && t(codeOn ? 'the code’s query switched on' : 'the code’s query switched off'),
-           criterionEdited && t('criterion corrected')].filter(Boolean).join(' · ')
-        : t('No change: the proposal is approved as it stands.')}</p>
-      {checking && <p className="approval-checking" role="status">{t('Your correction was sent. The terms you added are being counted against the literature; this card opens again if they cannot be searched.')}</p>}
-      {working && <p className="approval-checking" role="status">{t('The model is proposing other names and each one is being counted. Your draft corrections are kept.')}</p>}
-      {/* Announced whenever anything was refused, so a fault shown only beside its row is still spoken once. */}
-      {errors.length > 0 && <div className="approval-errors" role="alert">
-        <p>{t('The correction was not applied. Nothing was sent to a provider.')}</p>
-        {generalErrors.length > 0 && <ul>{generalErrors.map(error => <li key={error}>{error}</li>)}</ul>}
-      </div>}
-      {editable && <div className="approval-actions">
-        <Button variant="default" disabled={busy} onClick={() => void submit()}>{t('Approve and search')}</Button>
-        <Button variant="ghost" disabled={busy || !changed} onClick={undoAll}>{t('Undo changes')}</Button>
-      </div>}
+      <div className="approval-links">
+        <button type="button" className="approval-link" aria-expanded={wordsOpen} aria-controls={wordsId} onClick={() => setWordsOpen(!wordsOpen)}>{t('Change the words')}</button>
+        <button type="button" className="approval-link" aria-expanded={advancedOpen} aria-controls={advancedId} onClick={() => setAdvancedOpen(!advancedOpen)}>{t('Advanced')}</button>
+      </div>
+      {editable && <Button variant="default" className="approval-start" disabled={busy} onClick={() => void submit()}>{t('Start searching')}</Button>}
     </div>
+
+    {wordsOpen && <div className="approval-panel" id={wordsId}>
+      {SENTENCE_BLOCKS.map(block => renderBlock(block, SENTENCE_BLOCKS, groupLabel))}
+    </div>}
+
+    {advancedOpen && <div className="approval-panel" id={advancedId}>
+      {written && <div className="approval-provenance"><Notice tone="info">{t('A model wrote these search terms from the question. The counts, the backups and the warnings are the application’s own checks; the query built from the question’s words is offered below.')}</Notice></div>}
+
+      <div className="approval-block">
+        <div className="approval-block-head">
+          <strong>{t('How each search term was chosen')}</strong>
+          <small>{t('Who wrote it, how it enters the query and how many records hold it.')}</small>
+        </div>
+        <ul className="approval-terms">
+          {rows.filter(row => row.term).map(row => <li key={`${row.block}:${row.phrase}`} className={`approval-term is-detail${row.term?.dropped ? ' is-dropped' : ''}`}>
+            <div className="approval-term-main">
+              <span className="approval-phrase" dir="auto">{row.phrase}</span>
+              <span className="approval-term-facts">
+                <TermFacts term={row.term} block={row.block} />
+                {written && <WrittenFacts side={written} phrase={row.phrase} />}
+                <span className="approval-badge">{termOriginText(row.term!.origin)}</span>
+                <span className="approval-badge">{blockOriginText(row.term!.block_origin)}</span>
+                <span className="approval-badge">{t(blockLabels[row.block])}</span>
+              </span>
+            </div>
+          </li>)}
+        </ul>
+      </div>
+
+      {SIDE_BLOCKS.map(block => renderBlock(block, BLOCKS, target => t(blockLabels[target]), t(blockNotes[block])))}
+
+      {written && <QuerySection side={written} queries={proposal.queries ?? []} on={codeOn} editable={editable}
+        onChange={on => setCodeQuery(on === written.code_query.searched ? null : on)} />}
+
+      {approval.routing && <RoutingSection routing={approval.routing} />}
+
+      {approval.chaining && <ChainingSection chaining={approval.chaining} />}
+
+      <SuggestionSection suggestions={approval.suggestions} editable={editable} working={working} busy={busy}
+        drafted={new Set(ops.filter(op => op.op === 'add').map(op => op.phrase))}
+        onAdd={row => setOps([...without(row.phrase), { op: 'add', phrase: row.phrase, block: row.block }])}
+        onUndo={phrase => setOp(phrase, null)} onAsk={() => void ask()} />
+
+      <CriterionAdvanced criterion={proposal.criterion} available={proposal.criterion_available}
+        draft={criterion} now={criterionNow} editable={editable} onEdit={editCriterion} onUndo={() => setCriterion(null)} />
+
+      {editable && <div className="approval-block">
+        <label className="approval-note">
+          <span>{t('Note for the record (optional)')}</span>
+          <Textarea value={note} onChange={e => setNote(e.target.value)} rows={2} maxLength={1000}
+            placeholder={t('Why you corrected this. It is kept with the protocol.')} />
+        </label>
+      </div>}
+    </div>}
   </section>
 }
 
 // What the literature holds for a term, and the form it enters the query in. A count that was not read says so;
-// it is never shown as 0, which would mean the opposite.
-function TermFacts({ term, block }: { term: ApprovalTerm | null; block: ApprovalBlock }) {
+// it is never shown as 0, which would mean the opposite. `brief` is the editing row: the count and why it is out.
+function TermFacts({ term, block, brief = false }: { term: ApprovalTerm | null; block: ApprovalBlock; brief?: boolean }) {
   if (!term) return <span className="approval-count">{block === 'outcome' ? t('not searched; orders the records') : t('not searched')}</span>
   const count = term.in_query === 'root' ? term.root_count : term.phrase_count
   return <>
     <span className="approval-count">{count === null ? t('not counted')
       : t('{n} records', { n: count.toLocaleString(uiLocale()) })}</span>
-    <span className="approval-badge">{term.in_query === 'root' ? t('enters as the word “{root}”', { root: term.root }) : t('enters as the whole phrase')}</span>
-    {term.and_only && <span className="approval-badge">{t('too frequent alone; only combined')}</span>}
+    {!brief && <span className="approval-badge">{term.in_query === 'root' ? t('enters as the word “{root}”', { root: term.root }) : t('enters as the whole phrase')}</span>}
+    {!brief && term.and_only && <span className="approval-badge">{t('too frequent alone; only combined')}</span>}
     {term.dropped && <span className="approval-badge is-dropped">{t('dropped: {reason}', { reason: dropReasonText(term.dropped) })}</span>}
   </>
 }
@@ -478,11 +575,11 @@ function SuggestionSection({ suggestions, editable, working, busy, drafted, onAd
   </div>
 }
 
-function AddTerm({ block, onAdd, error }: { block: ApprovalBlock; onAdd: (text: string) => void; error: string | null }) {
+function AddTerm({ block, label, onAdd, error }: { block: ApprovalBlock; label: string; onAdd: (text: string) => void; error: string | null }) {
   const [text, setText] = useState('')
   const id = `approval-add-${block}`
   return <form className="approval-add" onSubmit={e => { e.preventDefault(); onAdd(text); setText('') }}>
-    <label htmlFor={id}>{t('Add a term to {block}', { block: t(blockLabels[block]) })}</label>
+    <label htmlFor={id}>{label}</label>
     <div>
       <input id={id} value={text} onChange={e => setText(e.target.value)} maxLength={80} dir="auto" />
       <Button type="submit" variant="outline" size="sm" disabled={!text.trim()}><Plus size={13} />{t('Add')}</Button>
@@ -491,11 +588,36 @@ function AddTerm({ block, onAdd, error }: { block: ApprovalBlock; onAdd: (text: 
   </form>
 }
 
-function CriterionSection({ criterion, available, sought, draft, now, editable, onEdit, onWriteOwn, onUndo }: {
-  criterion: ApprovalCriterion | null; available: boolean; sought: boolean | null
+// The criterion as the main view shows it: one sentence the user can read and correct. The parts, cue phrases and
+// excluded words that belong to it are in CriterionAdvanced.
+function CriterionMain({ id, available, sought, draft, now, editable, onEdit, onWriteOwn }: {
+  id: string; available: boolean; sought: boolean | null
   draft: CriterionDraft | null; now: CriterionDraft; editable: boolean
-  onEdit: (change: Partial<CriterionDraft>) => void; onWriteOwn: () => void; onUndo: () => void
+  onEdit: (change: Partial<CriterionDraft>) => void; onWriteOwn: () => void
 }) {
+  return <div className="approval-criterion-main">
+    {!available && draft === null && <div className="approval-criterion-empty">
+      <Notice tone="attention">{t('No criterion was proposed: the model was not reachable while this run worked. You can go on without one, or write one yourself.')}</Notice>
+      {editable && <div className="approval-actions">
+        <Button variant="outline" className="approval-btn" onClick={onWriteOwn}>{t('Write a criterion')}</Button>
+        <span className="approval-hint">{t('Approving without one searches with the terms above and records no criterion.')}</span>
+      </div>}
+    </div>}
+    {(available || draft !== null) && <>
+      <label htmlFor={id} className="approval-label">{t('A paper is used as a source when it')}</label>
+      {editable ? <Textarea id={id} className="approval-criterion-text" value={now.criterion} maxLength={600} rows={2} onChange={e => onEdit({ criterion: e.target.value })} />
+        : <p id={id} className="approval-readonly">{now.criterion}</p>}
+      {sought === false && <Notice tone="attention">{t('What the question looks for is not named in the criterion. Check that the criterion includes the right records.')}</Notice>}
+    </>}
+  </div>
+}
+
+function CriterionAdvanced({ criterion, available, draft, now, editable, onEdit, onUndo }: {
+  criterion: ApprovalCriterion | null; available: boolean
+  draft: CriterionDraft | null; now: CriterionDraft; editable: boolean
+  onEdit: (change: Partial<CriterionDraft>) => void; onUndo: () => void
+}) {
+  if (!available && draft === null) return null
   const parts = now.parts
   const grouped = [...parts.map(part => ({ name: part.name, cues: now.cue_phrases.filter(cue => cue.part === part.name) })),
     { name: null, cues: now.cue_phrases.filter(cue => cue.part === null || !parts.some(part => part.name === cue.part)) }]
@@ -507,70 +629,55 @@ function CriterionSection({ criterion, available, sought, draft, now, editable, 
       <strong>{t('Inclusion criterion')}</strong>
       <small>{t('Read at the full-text stage. In this version it orders nothing and decides nothing on its own.')}</small>
     </div>
-    {!available && draft === null && <div className="approval-criterion-empty">
-      <Notice tone="attention">{t('No criterion was proposed: the model was not reachable while this run worked. You can go on without one, or write one yourself.')}</Notice>
-      {editable && <div className="approval-actions">
-        <Button variant="outline" size="sm" onClick={onWriteOwn}>{t('Write a criterion')}</Button>
-        <span className="approval-hint">{t('Approving without one searches with the terms above and records no criterion.')}</span>
-      </div>}
-    </div>}
-    {(available || draft !== null) && <>
-      {sought === false && <Notice tone="attention">{t('What the question looks for is not named in the criterion. Check that the criterion includes the right records.')}</Notice>}
-      <label className="approval-field">
-        <span>{t('Criterion')}</span>
-        {editable ? <Textarea value={now.criterion} maxLength={600} rows={2} onChange={e => onEdit({ criterion: e.target.value })} />
-          : <p className="approval-readonly">{now.criterion}</p>}
-      </label>
-      <div className="approval-parts">
-        <span className="approval-field-label">{t('Parts ({min}–{max})', { min: MIN_PARTS, max: MAX_PARTS })}</span>
-        {parts.map((part, i) => <div key={i} className="approval-part">
-          {editable ? <>
-            <input aria-label={t('Part {n} name', { n: i + 1 })} value={part.name} maxLength={60}
-              onChange={e => onEdit({ parts: parts.map((p, j) => (i === j ? { ...p, name: e.target.value } : p)) })} />
-            {/* A definition is a sentence the user has to read before deciding; it is not cut to one line. */}
-            <Textarea aria-label={t('Part {n} definition', { n: i + 1 })} value={part.definition} maxLength={400} rows={2}
-              onChange={e => onEdit({ parts: parts.map((p, j) => (i === j ? { ...p, definition: e.target.value } : p)) })} />
-            <Button variant="ghost" size="sm" disabled={parts.length <= MIN_PARTS}
-              onClick={() => onEdit({ parts: parts.filter((_, j) => j !== i) })}><X size={13} />{t('Remove')}</Button>
-          </> : <p className="approval-readonly"><b>{part.name}</b> — {part.definition}</p>}
-        </div>)}
-        {editable && <Button variant="outline" size="sm" disabled={parts.length >= MAX_PARTS}
-          onClick={() => onEdit({ parts: [...parts, { name: '', definition: '' }] })}><Plus size={13} />{t('Add a part')}</Button>}
-      </div>
-      <div className="approval-cues">
-        <span className="approval-field-label">{t('Phrases that show a part is met')}</span>
-        {grouped.filter(group => group.cues.length || group.name !== null).map(group => <div key={group.name ?? '—'} className="approval-cue-group">
-          <small>{group.name ?? t('Not tied to a part')}</small>
-          <ul>
-            {group.cues.map(cue => {
-              const index = now.cue_phrases.indexOf(cue)
-              return <li key={index}>
-                <span dir="auto">{cue.phrase}</span>
-                {editable && <>
-                  <Select value={cue.part} onValueChange={value => setCue(index, { part: value === null ? null : String(value) })}>
-                    <SelectTrigger size="sm" aria-label={t('Part of “{phrase}”', { phrase: cue.phrase })}>
-                      <SelectValue>{value => (value === null ? t('Not tied to a part') : String(value))}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={null}>{t('Not tied to a part')}</SelectItem>
-                      {parts.filter(part => part.name.trim()).map(part => <SelectItem key={part.name} value={part.name}>{part.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                  <Button variant="ghost" size="sm" onClick={() => onEdit({ cue_phrases: now.cue_phrases.filter((_, i) => i !== index) })}><X size={13} />{t('Remove')}</Button>
-                </>}
-              </li>
-            })}
-            {!group.cues.length && <li className="is-empty"><span>{t('No phrase.')}</span></li>}
-          </ul>
-          {editable && <AddCue label={group.name} onAdd={phrase => onEdit({ cue_phrases: [...now.cue_phrases, { phrase, part: group.name }] })} />}
-        </div>)}
-      </div>
-      <WordList label={t('Title words of records that are not this kind of study (kept with the protocol; not used yet)')} words={now.exclusion_title_words} editable={editable}
-        onChange={words => onEdit({ exclusion_title_words: words })} />
-      {criterion?.dropped_exclusion_title_words?.length ? <p className="approval-hint">
-        {t('Dropped as words of the question itself: {words}', { words: criterion.dropped_exclusion_title_words.join(', ') })}</p> : null}
-      {editable && draft !== null && <Button variant="ghost" size="sm" onClick={onUndo}><CornerUpLeft size={13} />{t('Undo the criterion changes')}</Button>}
-    </>}
+    <div className="approval-parts">
+      <span className="approval-field-label">{t('Parts ({min}–{max})', { min: MIN_PARTS, max: MAX_PARTS })}</span>
+      {parts.map((part, i) => <div key={i} className="approval-part">
+        {editable ? <>
+          <input aria-label={t('Part {n} name', { n: i + 1 })} value={part.name} maxLength={60}
+            onChange={e => onEdit({ parts: parts.map((p, j) => (i === j ? { ...p, name: e.target.value } : p)) })} />
+          {/* A definition is a sentence the user has to read before deciding; it is not cut to one line. */}
+          <Textarea aria-label={t('Part {n} definition', { n: i + 1 })} value={part.definition} maxLength={400} rows={2}
+            onChange={e => onEdit({ parts: parts.map((p, j) => (i === j ? { ...p, definition: e.target.value } : p)) })} />
+          <Button variant="ghost" size="sm" disabled={parts.length <= MIN_PARTS}
+            onClick={() => onEdit({ parts: parts.filter((_, j) => j !== i) })}><X size={13} />{t('Remove')}</Button>
+        </> : <p className="approval-readonly"><b>{part.name}</b> — {part.definition}</p>}
+      </div>)}
+      {editable && <Button variant="outline" size="sm" disabled={parts.length >= MAX_PARTS}
+        onClick={() => onEdit({ parts: [...parts, { name: '', definition: '' }] })}><Plus size={13} />{t('Add a part')}</Button>}
+    </div>
+    <div className="approval-cues">
+      <span className="approval-field-label">{t('Phrases that show a part is met')}</span>
+      {grouped.filter(group => group.cues.length || group.name !== null).map(group => <div key={group.name ?? '—'} className="approval-cue-group">
+        <small>{group.name ?? t('Not tied to a part')}</small>
+        <ul>
+          {group.cues.map(cue => {
+            const index = now.cue_phrases.indexOf(cue)
+            return <li key={index}>
+              <span dir="auto">{cue.phrase}</span>
+              {editable && <>
+                <Select value={cue.part} onValueChange={value => setCue(index, { part: value === null ? null : String(value) })}>
+                  <SelectTrigger size="sm" aria-label={t('Part of “{phrase}”', { phrase: cue.phrase })}>
+                    <SelectValue>{value => (value === null ? t('Not tied to a part') : String(value))}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={null}>{t('Not tied to a part')}</SelectItem>
+                    {parts.filter(part => part.name.trim()).map(part => <SelectItem key={part.name} value={part.name}>{part.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Button variant="ghost" size="sm" onClick={() => onEdit({ cue_phrases: now.cue_phrases.filter((_, i) => i !== index) })}><X size={13} />{t('Remove')}</Button>
+              </>}
+            </li>
+          })}
+          {!group.cues.length && <li className="is-empty"><span>{t('No phrase.')}</span></li>}
+        </ul>
+        {editable && <AddCue label={group.name} onAdd={phrase => onEdit({ cue_phrases: [...now.cue_phrases, { phrase, part: group.name }] })} />}
+      </div>)}
+    </div>
+    <WordList label={t('Title words of records that are not this kind of study (kept with the protocol; not used yet)')} words={now.exclusion_title_words} editable={editable}
+      onChange={words => onEdit({ exclusion_title_words: words })} />
+    {criterion?.dropped_exclusion_title_words?.length ? <p className="approval-hint">
+      {t('Dropped as words of the question itself: {words}', { words: criterion.dropped_exclusion_title_words.join(', ') })}</p> : null}
+    {editable && draft !== null && <Button variant="ghost" size="sm" onClick={onUndo}><CornerUpLeft size={13} />{t('Undo the criterion changes')}</Button>}
   </div>
 }
 

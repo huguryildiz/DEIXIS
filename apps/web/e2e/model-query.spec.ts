@@ -50,7 +50,8 @@ class ModelQueryServer {
 
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled', fullPage: true })
 const card = (page: Page) => page.locator('.approval-card')
-const termRow = (page: Page, phrase: string) => page.locator('.approval-term', { has: page.locator('.approval-phrase', { hasText: phrase }) })
+// A searched term's facts (who wrote it, what the model said of it) sit under Advanced.
+const termRow = (page: Page, phrase: string) => page.locator('.approval-term.is-detail', { has: page.locator('.approval-phrase', { hasText: phrase }) })
 
 async function startResearch(page: Page, server: ModelQueryServer, question: string) {
   await page.goto(server.url())
@@ -73,6 +74,7 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
   test('the card shows the model query, what the model said of each term, and the code query beside it', async () => {
     await startResearch(page, server, QUESTION)
     await expect(card(page)).toBeVisible({ timeout: 60_000 })
+    await card(page).getByRole('button', { name: 'Advanced' }).click()
     await expect(card(page)).toContainText('A model wrote these search terms from the question.')
     await expect(termRow(page, 'molecule release')).toContainText('written by the model')
     await expect(termRow(page, 'molecule release')).toContainText('topic')
@@ -87,7 +89,7 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
   test('switching the code query off is a correction, and only the model query is searched', async () => {
     await card(page).locator('.approval-queries').getByRole('checkbox').uncheck()
     await expect(page.locator('.approval-summary')).toContainText('the code’s query switched off')
-    await card(page).getByRole('button', { name: 'Approve and search' }).click()
+    await card(page).getByRole('button', { name: 'Start searching' }).click()
     await expect(page.locator('.approval-card.is-approved')).toBeVisible({ timeout: 60_000 })
     await expect(page.locator('.approval-card.is-approved')).toContainText('corrected before searching')
     await page.locator('.approval-toggle').click()
@@ -147,6 +149,7 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
     await note.getByRole('button', { name: 'Search with the query built from the question’s words' }).click()
     await expect(card(page)).toBeVisible({ timeout: 60_000 })
     await expect(card(page)).toContainText('You chose the query DEIXIS built from the question’s words.')
+    await card(page).getByRole('button', { name: 'Advanced' }).click()
     await expect(termRow(page, 'relay networks')).toContainText('from the question')
     await expect(card(page).locator('.approval-queries')).toHaveCount(0)
     await shot(page, 'I-model-query-code-only-desktop')

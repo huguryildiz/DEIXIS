@@ -1312,6 +1312,7 @@ export const api = {
   saveEnglishQuestion: (id: string, body: { text: string; expected_version: number } | { use_question: true; expected_version: number }) =>
     request<ResearchView>(`/api/researches/${id}/english-question`, json('PUT', body)),
   tables: (id: string) => request<TableSummary[]>(`/api/researches/${id}/tables`),
+  answerMethod: (id: string, answerId: string) => request<AnswerMethod>(`/api/researches/${id}/answers/${answerId}/method`),
   startReport: (id: string, tableId: string, key: string, options?: { continueWithFailed?: boolean }) => request<Run>(`/api/researches/${id}/reports`, json('POST', { table_id: tableId, ...(options?.continueWithFailed ? { continue_with_failed: true } : {}) }, { 'Idempotency-Key': key })),
   report: (id: string, reportId: string) => request<ReportDetail>(`/api/researches/${id}/reports/${reportId}`),
   reportGaps: (id: string, reportId: string) => request<ReportGap[]>(`/api/researches/${id}/reports/${reportId}/gaps`),
@@ -1390,6 +1391,20 @@ export const api = {
     request<TableTemplate>('/api/table-templates', json('POST', { name, research_id: researchId, table_id: tableId }, { 'Idempotency-Key': idempotencyKey })),
   restoreTemplate: (templateId: string) => request<{ restored: boolean }>(`/api/table-templates/${templateId}/restore`, { method: 'POST' }),
   purgeTemplate: (templateId: string) => request<{ deleted: boolean; tables_unlinked: number }>(`/api/trash/templates/${templateId}`, { method: 'DELETE' }),
+}
+
+// The Method box under an answer (workflow/method_summary.py): stored counts only; null means the rows do not say.
+export type AnswerMethod = {
+  answer_id: string; scope_revision: number
+  search: { queries: { provider: string; query: string; records_read: number; provider_total: number | null; date: string; complete: boolean; origin: string | null; round: number | null }[]
+    records_read: number; planned: number; planned_not_sent: number; chaining: { ran: boolean; requests: number; records_read: number } }
+  selection: { snapshot: boolean; works_found: number | null; screened: number; abstract_read: number; full_text_attempted: number; full_text_read: number; person_decisions: number; included: number | null; not_met: number | null
+    waiting_for_pdf: number | null; not_read: number | null; criterion: string | null
+    vocabulary_review: { reviewed_by_person: boolean | null; approved_by: string | null; edited: boolean | null } }
+  extraction: { table: boolean; columns: string[]; columns_accepted_automatically: number }
+  limitations: { access: { given: number; full_text: number; abstract_only: number; no_passage: number } | null; answer_limitations: number; access_limitations: number }
+  evidence_base: { cited_sources: number; year_min: number | null; year_max: number | null }
+  not_measured: string[]
 }
 
 export const prismaSUrl = (researchId: string, format: 'md' | 'json') =>

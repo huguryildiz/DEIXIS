@@ -40,6 +40,7 @@ import { scrollBehavior } from './motion'
 import { Notice } from './Notice'
 import { HumanQueue } from './HumanQueue'
 import { AnswerFlowNote, FlowBlock } from './FlowReport'
+import { MethodBox } from './MethodBox'
 import { WaitingForPdf } from './WaitingForPdf'
 import { EnglishQuestion, UploadedTextNote } from './SemanticNotes'
 
@@ -853,6 +854,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
         </button></li>
       })}</ol>
     </>}
+    {answer.status === 'structurally_valid' && answer.start_snapshot !== undefined && <MethodBox key={answer.id} researchId={researchId} answerId={answer.id} />}
     <p className="legacy-mini-note">{t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.')} {answer.model && <>{t('Model')}: <ModelName connection={answer.model.connection} text={modelText(answer.model.resolved_model ?? answer.model.requested_model ?? t('unknown'))} />.</>} {answer.inputs_given ? t('{passages} passages from {sources} sources were provided.', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }) : ''}</p>
     <AnswerFlowNote answer={answer} />
     <ReviewNote review={answer.review} />

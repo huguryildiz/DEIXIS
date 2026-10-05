@@ -1,0 +1,11 @@
+.method-box{margin:18px 0 6px}
+.method-detail{columns:280px 2;column-gap:32px;padding:4px 0 14px 24px}
+.method-detail>section{break-inside:avoid;margin-bottom:12px}
+.method-box:not([open]) .method-detail{display:none}
+.method-text{margin:2px 0 6px;color:var(--ink);font-size:12px;line-height:1.55}
+.method-queries li{align-items:flex-start}
+.method-queries li>span{min-width:0;overflow-wrap:anywhere}
+.method-queries code{font-size:11px;color:var(--ink)}
+.method-queries small{display:block;color:var(--muted);font-size:11px}
+.method-queries strong{white-space:nowrap}
+.method-unmeasured{margin:8px 0 0;padding-left:16px;color:var(--muted);font-size:11px;line-height:1.5}

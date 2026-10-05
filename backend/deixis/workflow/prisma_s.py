@@ -107,14 +107,17 @@ def _request_parts(description: str | None) -> dict[str, Any]:
             "endpoint": method[1] if len(method) > 1 else None, **found}
 
 
-def _groups(store: Store, research_id: str, revision: int) -> list[dict[str, Any]]:
-    """The revision's search groups in the order their first page was read, keyword groups before chain groups."""
+def _groups(store: Store, research_id: str, revision: int, until: str | None = None) -> list[dict[str, Any]]:
+    """The revision's search groups in the order their first page was read, keyword groups before chain groups.
+
+    `until`: only pages stored at or before this stamp (the Method box of an earlier answer)."""
     rows = [dict(row) for row in store.conn.execute(
         "SELECT sr.id, sr.run_id, sr.provider, sr.query_text, sr.request_description, sr.status, sr.result_count,"
         " sr.provider_total, sr.read_limit, sr.read_total, sr.unread_count, sr.stop_reason, sr.retrieved_at,"
         " sr.page_number, sr.rowid AS row_order, st.operation_key FROM search_runs sr"
-        " JOIN run_steps st ON st.id = sr.step_id WHERE sr.research_id = ? AND sr.scope_revision = ?",
-        (research_id, revision))]
+        " JOIN run_steps st ON st.id = sr.step_id WHERE sr.research_id = ? AND sr.scope_revision = ?"
+        + (" AND sr.retrieved_at <= ?" if until else ""),
+        (research_id, revision, *((until,) if until else ())))]
     # A group's pages in page order: its end state is its highest page's, whatever the clock said when each page was
     # stored; the first and last read are the earliest and latest stamps, taken apart.
     rows.sort(key=lambda r: (r["page_number"] or 0, r["retrieved_at"], r["row_order"]))

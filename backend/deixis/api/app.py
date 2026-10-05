@@ -1620,6 +1620,17 @@ def create_app(
     @app.get("/api/effort-limits")
     async def effort_limits_view() -> dict[str, Any]:
         return effort_limits()
+    @app.get("/api/researches/{research_id}/answers/{answer_id}/method")
+    async def answer_method(research_id: str, answer_id: str, request: Request) -> dict[str, Any]:
+        """The Method box under an answer: searches, selection, extraction, limits and evidence base, from stored rows."""
+        from deixis.workflow import method_summary
+        store = store_of(request)
+        store.research(research_id)
+        try:
+            return method_summary.method_summary(store, research_id, answer_id)
+        except method_summary.UnknownAnswer:
+            raise HTTPException(404, "Answer not found") from None
+
 
     @app.delete("/api/researches/{research_id}/sources")
     async def remove_sources(research_id: str, body: SourceRemoval, request: Request) -> dict[str, Any]:

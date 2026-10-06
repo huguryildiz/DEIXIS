@@ -248,6 +248,27 @@ class DecisionStore:
         ).fetchone()
         return None if row is None else self.ranking_order(row["id"])
 
+    def answer_abstract_order(self, research_id: str, scope_revision: int) -> tuple[list[str], dict[str, Any]]:
+        """Interleave the latest keyword ranking and its own run's chain ranking (D236).
+
+        These are separate local orders, not comparable global ranks. Alternating gives each arm access to
+        the bounded candidate pool; eligibility and work-head deduplication remain the caller's responsibility.
+        """
+        keyword = self.conn.execute(
+            "SELECT s.id, s.run_id FROM run_steps s JOIN runs r ON r.id=s.run_id"
+            " WHERE r.research_id=? AND r.scope_revision=? AND s.kind='code:ranking'"
+            " AND s.operation_key='ranking' AND s.status='succeeded' ORDER BY s.finished_at DESC, s.id DESC LIMIT 1",
+            (research_id, scope_revision)).fetchone()
+        chain = None if keyword is None else self.conn.execute(
+            "SELECT id FROM run_steps WHERE run_id=? AND kind='code:chain_ranking'"
+            " AND operation_key='chain_ranking' AND status='succeeded' ORDER BY finished_at DESC, id DESC LIMIT 1",
+            (keyword['run_id'],)).fetchone()
+        arms = [self.ranking_order(row['id']) if row else [] for row in (keyword, chain)]
+        order = [arm[i] for i in range(max(map(len, arms))) for arm in arms if i < len(arm)]
+        return order, {'keyword_ranking_step_id': keyword['id'] if keyword else None,
+                       'chain_ranking_step_id': chain['id'] if chain else None,
+                       'order_rule': 'alternating_keyword_chain'}
+
     # ---- from the decisions of a work's versions to one selection ----------------------
     def facts(self, research_id: str, work_id: str | None = None) -> dict[str, Any]:
         """Everything `work_outcome` reads, for one work or for the whole research, in three statements.

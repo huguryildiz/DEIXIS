@@ -2807,12 +2807,12 @@ class ResearchFlow:
             "included_without_answer_text": sum(1 for head in heads if self.store.answer_version(rid, head) is None)})
 
     def _abstract_sources(self, run: dict[str, Any], heads: list[str]) -> list[str]:
-        """Works an sw answer reads from their abstracts alone, best ranked first, frozen in a code step (D225).
+        """Works an sw answer reads from abstracts, alternating keyword and chain orders (D225, D236).
 
         A work counts when the abstract stage kept it as a candidate and the full-text stage either never decided it
         or found no open text for it (`no_fulltext`), under this question revision; its selection is still pending
         (nothing excluded it, no person decided it) and it has an abstract and no PDF text. The pool is the run's
-        `max_candidates` best ranked such works; `_retrieve` gives them a quarter of a mixed input's passage budget,
+        `max_candidates` eligible works from those orders; `_retrieve` gives them a quarter of a mixed input's passage budget,
         or the whole budget when no included answer version is available (D234). A resumed run keeps the list its
         first pass stored, less any work a person has decided since.
         """
@@ -2833,11 +2833,12 @@ class ResearchFlow:
         limit = run["budget"]["max_candidates"]
         facts = decisions.facts(rid)
         work_heads = facts["heads"]
+        order, ranking_context = decisions.answer_abstract_order(rid, revision)
         head_of = {svid: work_heads[wid] for svid, wid in
-                   self.store.work_ids(decisions.latest_ranking(rid, revision) or []).items()
+                   self.store.work_ids(order).items()
                    if wid in work_heads}
         taken, sources, reasons = set(heads), [], Counter()
-        for svid in decisions.latest_ranking(rid, run["scope_revision"]) or []:
+        for svid in order:
             head = head_of.get(svid)
             if head is None or head in taken or len(sources) >= limit:
                 continue
@@ -2857,7 +2858,7 @@ class ResearchFlow:
                 sources.append(head)
                 reasons[f"{outcome['stage']}/{outcome['reason_code']}"] += 1
         self.store.finish_step(step["id"], "succeeded", output={"sources": sources, "limit": limit,
-                                                                "by_decision": dict(reasons)})
+                                                                "by_decision": dict(reasons), **ranking_context})
         return sources
 
     def _criterion_phrases(self, run: dict[str, Any], scope: dict[str, Any]) -> list[tuple[str, re.Pattern[str]]]:

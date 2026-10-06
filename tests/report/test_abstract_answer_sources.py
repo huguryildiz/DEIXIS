@@ -7,6 +7,7 @@ answer input and how much room they get; it says nothing about whether the answe
 from __future__ import annotations
 
 from dataclasses import asdict
+import pytest
 
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.providers.common import ProviderRecord
@@ -125,6 +126,58 @@ def test_zero_includes_still_obeys_max_candidates(tmp_path):
     run = answer_run(store, rid)
     run["budget"]["max_candidates"] = 1
     assert flow_of(store)._abstract_sources(run, []) == [works["never_read"]]
+
+
+@pytest.mark.parametrize('excluded', [False, True])
+def test_chain_no_fulltext_candidate_reaches_abstract_input_unless_user_excluded(tmp_path, excluded):
+    store, rid, included, works = setup(tmp_path)
+    chained = candidate(store, rid, 'chain_only', 'SYNTHETIC exercise lowered fatigue in a trial.',
+                        'runs_agree_candidate', 'no_fulltext')
+    keyword = store.conn.execute("SELECT id, run_id FROM run_steps WHERE kind='code:ranking'").fetchone()
+    step = store.step(keyword['run_id'], 'chain_ranking', 'code:chain_ranking')
+    store.finish_step(step['id'], 'succeeded', output={})
+    DecisionStore(store).save_ranks(step['id'], rid, [
+        {'source_version_id': chained, 'signal': 'inspection', 'rank': 1, 'available': 1}])
+    if excluded:
+        version = store.conn.execute('SELECT version FROM selections WHERE source_version_id=?', (chained,)).fetchone()[0]
+        store.set_user_selection(rid, chained, 'excluded', version, 'SYNTHETIC excluded chain work')
+    run = answer_run(store, rid)
+    run['budget']['max_candidates'] = 1
+    flow = flow_of(store)
+    sources = flow._abstract_sources(run, [included])
+    # The included keyword head uses no candidate slot; chain rank 1 precedes keyword rank 2.
+    assert sources == [works['never_read'] if excluded else chained]
+    passages = flow._retrieve(rid, store.scope(rid), sources, 4, abstract_only=set(sources))
+    assert (chained in {p['source_version_id'] for p in passages}) is (not excluded)
+    assert all(p['kind'] == 'abstract' for p in passages)
+    assert store.existing_step(run['id'], 'answer_abstract_sources')['output']['chain_ranking_step_id'] == step['id']
+
+
+def test_new_keyword_run_does_not_reuse_an_older_chain_ranking(tmp_path):
+    store, rid, included, works = setup(tmp_path)
+    old_run = store.conn.execute("SELECT run_id FROM run_steps WHERE kind='code:ranking'").fetchone()[0]
+    step = store.step(old_run, 'chain_ranking', 'code:chain_ranking')
+    store.finish_step(step['id'], 'succeeded', output={})
+    DecisionStore(store).save_ranks(step['id'], rid, [
+        {'source_version_id': works['no_text'], 'signal': 'inspection', 'rank': 1, 'available': 1}])
+    ranked(store, rid, [works['never_read']])
+    assert flow_of(store)._abstract_sources(answer_run(store, rid), []) == [works['never_read']]
+
+
+def test_bounded_pool_alternates_eligible_arms_and_deduplicates_works(tmp_path):
+    store, rid, included, works = setup(tmp_path)
+    chained = candidate(store, rid, 'chain_only', 'SYNTHETIC exercise reduced fatigue.',
+                        'runs_agree_candidate', 'no_fulltext')
+    keyword = store.conn.execute("SELECT run_id FROM run_steps WHERE kind='code:ranking'").fetchone()[0]
+    step = store.step(keyword, 'chain_ranking', 'code:chain_ranking')
+    store.finish_step(step['id'], 'succeeded', output={})
+    # SYNTHETIC overlapping arm: head deduplication must not consume another slot.
+    DecisionStore(store).save_ranks(step['id'], rid, [
+        {'source_version_id': sid, 'signal': 'inspection', 'rank': i + 1, 'available': 1}
+        for i, sid in enumerate([works['never_read'], chained])])
+    run = answer_run(store, rid)
+    run['budget']['max_candidates'] = 2
+    assert flow_of(store)._abstract_sources(run, [included]) == [works['never_read'], chained]
 
 
 def test_zero_includes_does_not_use_an_older_revisions_candidate(tmp_path):

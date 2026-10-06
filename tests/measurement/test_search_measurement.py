@@ -194,6 +194,42 @@ def test_unavailable_telemetry_never_zero_and_future_ranking_rejected(library):
         check.measure(conn,rid,'a1',bench)
 
 
+def test_chain_only_rank_has_separate_scope_binding_and_coverage(library):
+    conn,rid,bench,_,insert = library
+    run_id = conn.execute("SELECT run_id FROM run_steps WHERE id='old_rank'").fetchone()[0]
+    conn.execute("DELETE FROM record_signal_ranks WHERE ranking_step_id='old_rank' AND source_version_id='v2'")
+    insert('run_steps', id='chain_rank', run_id=run_id, operation_key='chain_ranking', kind='code:chain_ranking',
+           status='succeeded', started_at='2026-10-06T00:00:08+00:00', finished_at='2026-10-06T00:00:09+00:00')
+    insert('record_signal_ranks', ranking_step_id='chain_rank', research_id=rid, source_version_id='v2',
+           signal='inspection', rank=1, available=1)
+    result = check.measure(conn,rid,'a1',bench)
+    paper = result['papers'][1]
+    assert (paper['keyword_rank'], paper['chain_rank'], paper['rank_state']) == (None, 1, 'ranked_in_chain')
+    assert paper['chain_ranking_step_id'] == 'chain_rank'
+    assert paper['chain_ranking_binding'] == 'keyword_run_and_time'
+    counts = result['coverage']['keys']['counts']
+    assert counts['keyword_top_20'] == counts['keyword_top_50'] == 1
+    assert counts['chain_top_20'] == counts['chain_top_50'] == 1
+    conn.execute("UPDATE run_steps SET finished_at='2026-10-06T00:00:11+00:00' WHERE id='chain_rank'")
+    result = check.measure(conn,rid,'a1',bench)
+    assert result['papers'][1]['chain_rank'] is None
+    assert result['coverage']['keys']['counts']['chain_top_20'] is None
+
+
+def test_chain_ranking_from_another_run_is_not_bound_to_keyword_step(library):
+    conn,rid,bench,_,insert = library
+    other = Store(conn).create_run(rid, 'discovery', {}, None)
+    insert('run_steps', id='other_chain', run_id=other['id'], operation_key='chain_ranking', kind='code:chain_ranking',
+           status='succeeded', started_at='2026-10-06T00:00:08+00:00', finished_at='2026-10-06T00:00:09+00:00')
+    assert check.measure(conn,rid,'a1',bench)['chain_ranking_step_id'] is None
+    payload = json.loads(conn.execute("SELECT payload_json FROM step_inputs WHERE id='input'").fetchone()[0])
+    payload['chain_ranking_step_id'] = 'other_chain'
+    answer = {'research_id':rid, 'scope_revision':1, 'input_created_at':'2026-10-06T00:00:10+00:00'}
+    with pytest.raises(ValueError, match='pre-answer'):
+        check.selected_ranking(conn, answer, payload, keyword_step={'run_id':
+            conn.execute("SELECT run_id FROM run_steps WHERE id='old_rank'").fetchone()[0]}, chain=True)
+
+
 def test_draft_or_unlocated_anchor_does_not_count_as_cited(library):
     conn,rid,bench,_,_ = library
     conn.execute("UPDATE evidence_links SET anchor_text='SYNTHETIC invented anchor'")

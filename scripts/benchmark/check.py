@@ -95,26 +95,33 @@ def raw_count(conn, search):
     return UNMEASURABLE, 'unreadable_or_unsupported_payload'
 
 
-def selected_ranking(conn, answer, payload, explicit=None):
-    reference = payload.get('ranking_step_id')
+def selected_ranking(conn, answer, payload, explicit=None, *, keyword_step=None, chain=False):
+    kind = 'code:chain_ranking' if chain else 'code:ranking'
+    reference = payload.get('chain_ranking_step_id' if chain else 'ranking_step_id')
     step_id = explicit or reference
     binding = 'operator_pinned' if explicit else 'recorded_step_input'
     if step_id is None:
+        if chain and keyword_step is None:
+            return None, 'keyword_run_unresolved', []
         candidates = rows(conn, "SELECT s.* FROM run_steps s JOIN runs r ON r.id=s.run_id"
                           " WHERE r.research_id=? AND r.scope_revision=?"
-                          " AND s.kind='code:ranking' AND s.status='succeeded'"
+                          " AND s.kind=? AND s.status='succeeded'"
+                          " AND (? IS NULL OR s.run_id=?)"
                           " AND s.finished_at IS NOT NULL AND julianday(s.finished_at)<=julianday(?)"
                           " ORDER BY julianday(s.finished_at) DESC, s.id DESC LIMIT 1",
-                          (answer['research_id'], answer['scope_revision'], answer['input_created_at']))
+                          (answer['research_id'], answer['scope_revision'], kind,
+                           keyword_step['run_id'] if chain else None,
+                           keyword_step['run_id'] if chain else None, answer['input_created_at']))
         if candidates:
-            step_id, binding = candidates[0]['id'], 'inferred_by_time'
+            step_id, binding = candidates[0]['id'], 'keyword_run_and_time' if chain else 'inferred_by_time'
         else:
             return None, 'not_recorded_require_ranking_step', []
     steps = rows(conn, 'SELECT s.*, r.research_id, r.scope_revision FROM run_steps s JOIN runs r ON r.id=s.run_id'
                  ' WHERE s.id=?', (step_id,))
     if (not steps or steps[0]['research_id'] != answer['research_id'] or
             steps[0]['scope_revision'] != answer['scope_revision'] or
-            steps[0]['kind'] != 'code:ranking' or steps[0]['status'] != 'succeeded' or
+            steps[0]['kind'] != kind or steps[0]['status'] != 'succeeded' or
+            (chain and keyword_step is not None and steps[0]['run_id'] != keyword_step['run_id']) or
             seconds(steps[0]['finished_at'], answer['input_created_at']) == UNMEASURABLE):
         raise ValueError('ranking step is not a successful pre-answer inspection ranking in this scope')
     return steps[0], binding, rows(conn,
@@ -153,6 +160,13 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
             seen.add(v['work_id'])
             ranking.append(v)
     place = {v['work_id']:i+1 for i,v in enumerate(ranking)}
+    chain_step, chain_binding, raw_chain = selected_ranking(conn, answer, payload, keyword_step=step, chain=True)
+    chain_ranking, chain_seen = [], set()
+    for v in raw_chain:
+        if v['work_id'] not in chain_seen:
+            chain_seen.add(v['work_id'])
+            chain_ranking.append(v)
+    chain_place = {v['work_id']:i+1 for i,v in enumerate(chain_ranking)}
     given_sources = {s['source_id'] for s in payload.get('sources', [])}
     given, given_by_id = {}, {}
     for p in payload.get('passages', []):
@@ -198,14 +212,20 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
         attempts = [p for p in pdfs if p['source_version_id'] in ids and p['attempted_at'] and p['attempted_at']<=cutoff]
         claims = sorted({l['label'] for l in valid_links if l['source_version_id'] in ids})
         rank = min((place[w] for w in works if w in place), default=None)
+        chain_rank = min((chain_place[w] for w in works if w in chain_place), default=None)
         items.append({'target_key':paper['key'], 'doi':paper.get('doi'), 'title':paper.get('title'),
             'label':paper.get('label'), 'stratum':paper.get('stratum','unstratified'), 'anchor':paper.get('anchor',False),
             'identity_status':'resolved' if svids else 'title_match_requires_adjudication' if possible else 'not_found',
             'possible_title_versions':possible, 'source_versions':[version_of[s] for s in svids],
             'found':bool(ids & pool_ids), 'search_origins':origins,
             'origins_complete':(ids & pool_ids)<= {h['source_version_id'] for h in target_hits} if ids & pool_ids else None,
-            'rank':rank, 'rank_state':'ranking_unmeasurable' if step is None else
-                'ranked' if rank else 'found_not_ranked' if ids & pool_ids else 'not_found',
+            'rank':rank, 'keyword_rank':rank, 'chain_rank':chain_rank,
+            'keyword_ranking_step_id':step['id'] if step else None,
+            'chain_ranking_step_id':chain_step['id'] if chain_step else None,
+            'keyword_ranking_binding':binding, 'chain_ranking_binding':chain_binding,
+            'rank_state':'ranked_in_both' if rank and chain_rank else 'ranked_in_keyword' if rank else
+                'ranked_in_chain' if chain_rank else 'ranking_unmeasurable' if step is None else
+                'found_not_ranked_in_recorded_scopes' if ids & pool_ids else 'not_found',
             'abstract':[d for d in decisions if d['source_version_id'] in ids and d['stage']=='abstract'],
             'fulltext':[d for d in decisions if d['source_version_id'] in ids and d['stage']=='fulltext'],
             'fulltext_decision_state':'recorded' if any(d['source_version_id'] in ids and d['stage']=='fulltext'
@@ -231,6 +251,9 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
                   ('found','given_to_model','passage_given_to_model','cited_in')}
         counts.update({f'top_{k}':sum(r['rank'] is not None and r['rank']<=k for r in group)
                       if step else None for k in (20,50)})
+        for name, selected in (('keyword', step), ('chain', chain_step)):
+            counts.update({f'{name}_top_{k}':sum(r[f'{name}_rank'] is not None and r[f'{name}_rank']<=k
+                                              for r in group) if selected else None for k in (20,50)})
         layers[layer] = {'denominator':len(group), 'counts':counts,
                          'ratios':{k:v/len(group) if group and v is not None else None for k,v in counts.items()}}
     runs = rows(conn, 'SELECT * FROM runs WHERE research_id=? AND scope_revision=? AND created_at<=?'
@@ -297,6 +320,8 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
         'raw_all_http_responses':UNMEASURABLE, 'cache_records':sum(s['result_count'] for s in cache) if cache else UNMEASURABLE,
         'network_records':UNMEASURABLE if any(s['access_mode']!='cache' for s in searches) else 0,
         'unique_works':len(pool_works), 'source_versions':len(pool_ids), 'ranked_unique_works':len(ranking),
+        'keyword_ranked_unique_works':len(ranking) if step else None,
+        'chain_ranked_unique_works':len(chain_ranking) if chain_step else None,
         'sources_given':len(given_sources), 'sources_with_passages':len(given), 'passages_given':len(given_by_id),
         'cited_works':len({version_of[l['source_version_id']]['work_id'] for l in valid_links}),
         'abstract_decided_works':len({version_of[d['source_version_id']]['work_id'] for d in decisions if d['stage']=='abstract'}),
@@ -308,7 +333,11 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
         'selection_revision':answer.get('selection_revision'), 'step_input_id':answer['step_input_id'],
         'answer_run_id':answer['run_id'], 'run_ids':[r['id'] for r in runs],
         'skill_package_hash':answer['skill_package_hash'], 'question_sha256':bench['question_sha256'],
-        'ranking_step_id':step['id'] if step else None, 'ranking_binding':binding, 'totals':totals,
+        'ranking_step_id':step['id'] if step else None, 'ranking_binding':binding,
+        'keyword_ranking_step_id':step['id'] if step else None, 'keyword_ranking_binding':binding,
+        'chain_ranking_step_id':chain_step['id'] if chain_step else None, 'chain_ranking_binding':chain_binding,
+        'ranking_scopes':{'keyword':'keyword inspection work order', 'chain':'chain-only inspection work order',
+                          'legacy':'rank, top_20, top_50 and ranked_unique_works measure keyword only'}, 'totals':totals,
         'frozen_pool':{'format':'frozen-search-pool-v1', 'question_sha256':bench['question_sha256'],
             'research_id':rid, 'answer_id':answer_id, 'scope_revision':revision,
             'order_rule':'pinned inspection work order, then first recorded search time and version ID',
@@ -358,7 +387,7 @@ def main():
     parser.add_argument('research_id')
     parser.add_argument('--benchmark', default=ROOT / 'scripts/benchmark/dbr_vbf.json', type=Path)
     parser.add_argument('--answer', required=True, help='pinned answer ID; never defaults to latest')
-    parser.add_argument('--ranking-step', help='audited inspection ranking pin overriding automatic binding')
+    parser.add_argument('--ranking-step', help='audited keyword inspection ranking pin overriding automatic binding')
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--force', action='store_true', help='allow replacing an existing output file')
     args = parser.parse_args()
@@ -374,7 +403,8 @@ def main():
         result['git_status'] = subprocess.check_output(['git','status','--short'],cwd=ROOT,text=True)
         with args.output.open('w' if args.force else 'x') as output:
             output.write(json.dumps(result,indent=2,ensure_ascii=False))
-        print(f"{args.answer}: {result['totals']['unique_works']} unique works; ranking {result['ranking_step_id']}")
+        print(f"{args.answer}: {result['totals']['unique_works']} unique works; "
+              f"keyword ranking {result['ranking_step_id']}; chain ranking {result.get('chain_ranking_step_id')}")
         print(f'written {args.output}')
         return 0
     except (ValueError,sqlite3.Error,OSError) as error:

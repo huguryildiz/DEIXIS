@@ -28,12 +28,19 @@ def test_fused_order_and_manifest_are_exactly_replayable():
     assert len(set(item["work_id"] for item in stored["items"])) == 61
 
 
-@pytest.mark.parametrize("n,sizes", [(0, []), (29, [29]), (49, [30, 19]), (50, [30, 20]),
-                                     (59, [30, 29]), (60, [30, 30]), (61, [30, 30, 1])])
+@pytest.mark.parametrize("n,sizes", [(0, []), (29, [29]), (40, [40]), (49, [40, 9]), (50, [40, 10]),
+                                     (59, [40, 19]), (60, [40, 20]), (81, [40, 40, 1])])
 def test_batch_boundaries(n, sizes):
     listing = small_batch.build_list(manifest(n))
     plans = [small_batch.next_batch(listing, i) for i in range(len(sizes))]
     assert [len(plan["work_ids"]) for plan in plans] == sizes
+    assert [head for plan in plans for head in plan["order"]] == listing["order"]
+
+
+def test_legacy_budget_keeps_30_work_boundaries():
+    listing = small_batch.build_list(manifest(61))
+    plans = [small_batch.next_batch(listing, i, 30) for i in range(3)]
+    assert [len(plan["work_ids"]) for plan in plans] == [30, 30, 1]
     assert [head for plan in plans for head in plan["order"]] == listing["order"]
 
 

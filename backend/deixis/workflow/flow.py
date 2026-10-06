@@ -1327,7 +1327,8 @@ class ResearchFlow:
     # ---- the abstract stage of an sw run (slice 09, SW9, SW1, SW11) ----------------------
     async def _abstract_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                               order: list[str], chain: list[str] | None = None, *,
-                              batch_key: str | None = None, read_limit: int | None = None) -> None:
+                              batch_key: str | None = None, read_limit: int | None = None,
+                              frozen_plan: dict[str, Any] | None = None) -> None:
         """Classify every record by code, then ask the model twice about the works code left open (K3, D81).
 
         Nothing is included here: the abstract stage has no `include` outcome (SW1.2). A work is included only by
@@ -1351,8 +1352,8 @@ class ResearchFlow:
         prefix = "abstract_screening:chain" if chain is not None else "abstract_screening"
         if batch_key:
             prefix = f"{batch_key}:abstract_screening"
-        plan = self._abstract_code_stage(run, scope, vocabulary, order, chain,
-                                         batch_key=batch_key, read_limit=read_limit)
+        plan = frozen_plan if frozen_plan is not None else self._abstract_code_stage(
+            run, scope, vocabulary, order, chain, batch_key=batch_key, read_limit=read_limit)
         self._wake_fetch(run_id)  # the code's decisions are written: more works may be certain now (slice 17a)
         batches, runs = plan["batches"], plan["runs"]
         by_svid = {c["source_version_id"]: c for c in self.store.candidates(run["research_id"])}
@@ -1442,6 +1443,9 @@ class ResearchFlow:
                 key = f"{batch_key}:abstract_stage"
             step_id = self.store.step(run_id, key, f"code:{key}")["id"]
             self._write_abstract_codes(run, step_id, [(svid, "abstract_not_read") for svid in unread])
+            if frozen_plan is not None:
+                # The owning batch already reserves these sources against the abstract limit.
+                self.store.finish_step(step_id, "succeeded", output={"abstract_not_read": unread})
         if stop is not None:
             raise stop
 
@@ -2925,7 +2929,7 @@ class ResearchFlow:
     def _small_batch_answer_passages(self, run: dict[str, Any], scope: dict[str, Any], included: list[str],
                                      extra: list[str], semantic: list[dict[str, Any]] | None,
                                      patterns: list[tuple[str, re.Pattern[str]]] | None) -> list[dict[str, Any]]:
-        """D238: retain frozen work order; rank passages only within each eligible work."""
+        """D238: retain order within evidence layers; rank passages only within each eligible work."""
         rid = run["research_id"]
         listing = small_batch.answer_listing(self.store, run)
         saved = self.store.existing_step(run["id"], "small_batch:v1:answer_input")
@@ -2970,17 +2974,35 @@ class ResearchFlow:
                 queue = list({p["id"]: p for p in [*ranked, *pages, *passages]}.values())[:MAX_PASSAGES_PER_SOURCE]
             if queue:
                 queues.append(queue)
-                items.append(item | {"source_version_id": svid})
+                items.append(item | {"source_version_id": svid,
+                                     "evidence_layer": "included_fulltext" if svid in included
+                                     and self.store.has_pdf_text(svid) else "abstract_only"})
         limit = run["budget"]["max_answer_passages"]
-        passages = small_batch.allocate(queues, limit, MAX_PASSAGES_PER_SOURCE)
+        # Keep the former breadth prefix when room permits, while giving included PDF evidence
+        # representation before depth. A fixed 24-work cap would lose early D225 sources at DBR.
+        original_prefix = {item["source_version_id"] for item in items[:max(1, limit // 2)]}
+        layered = run["budget"]["inspection"].get("answer_allocation_version", 1) >= 2
+        breadth = max(1, limit // 2)
+        if layered:
+            pairs = sorted(zip(items, queues), key=lambda pair: (
+                not (pair[0]["user_priority"] or pair[0]["work_id"] in user_works),
+                pair[0]["evidence_layer"] != "included_fulltext"))
+            items = [item for item, _ in pairs]
+            queues = [queue for _, queue in pairs]
+            breadth = min(limit, sum(item["evidence_layer"] == "included_fulltext"
+                                     or item["source_version_id"] in original_prefix for item in items))
+        passages = small_batch.allocate(queues, limit, MAX_PASSAGES_PER_SOURCE, breadth=breadth)
         represented = {p["source_version_id"] for p in passages}
         selection_revision = self.store.selection_revision(rid)
         small_batch.save_code(self, run, "small_batch:v1:answer_input", "code:small_batch_answer_input", lambda: {
             "policy": small_batch.POLICY, "manifest_hash": listing["manifest_hash"],
+            "allocation_rule": "user_priority_then_included_fulltext_v2" if layered else "frozen_work_order_v1",
+            "representation_limit": breadth,
             "selection_revision": selection_revision, "limit": limit,
             "items": [{"work_id": item["work_id"], "source_version_id": item["source_version_id"],
                        "position": item["position"],
                        "ordering_reason": item["ordering_reason"],
+                       "evidence_layer": item["evidence_layer"],
                        "reason": None if item["source_version_id"] in represented else "answer_budget_deferred"}
                       for item in items], "passage_ids": [p["id"] for p in passages]})
         return passages

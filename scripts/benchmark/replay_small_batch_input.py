@@ -17,27 +17,45 @@ from pathlib import Path
 from deixis.workflow import ranking, small_batch
 from deixis.workflow.flow import ResearchFlow
 from deixis.workflow.store import Store
-from replay_ranking import snapshot_path
+try:
+    from .replay_ranking import snapshot_path
+except ImportError:
+    from replay_ranking import snapshot_path
 
 
-def measure(database: Path, replay_path: Path, check_path: Path) -> dict:
-    replay = json.loads(replay_path.read_text())
+def measure(database: Path, replay_path: Path | None, check_path: Path) -> dict:
+    replay = json.loads(replay_path.read_text()) if replay_path else None
     checks = json.loads(check_path.read_text())
     before = hashlib.sha256(database.read_bytes()).hexdigest()
-    if before != replay["snapshot_sha256"]:
+    if replay and before != replay["snapshot_sha256"]:
         raise ValueError("Snapshot hash differs from the pinned ranking replay")
     with tempfile.TemporaryDirectory(prefix="deixis-slice3-") as temporary:
         original = sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True)
+        original.execute("PRAGMA query_only=ON")
+        original.execute("BEGIN")
         conn = sqlite3.connect(Path(temporary) / "library.sqlite", isolation_level=None)
         original.backup(conn)
         original.close()
         conn.row_factory = sqlite3.Row
         store = Store(conn)
-        rid = replay["provenance"]["research_id"]
+        rid = replay["provenance"]["research_id"] if replay else checks["research_id"]
         scope = store.scope(rid)
         versions = ranking._versions(store, rid)
         heads = store.work_heads(rid)
-        order = replay["replay"]["orders"]["C"]
+        stored_list_step = None
+        if replay is None:
+            held = conn.execute(
+                "SELECT s.id, s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id"
+                " WHERE r.research_id = ? AND r.scope_revision = ? AND r.kind = 'discovery'"
+                " AND r.status = 'completed' AND s.operation_key = ? AND s.status = 'succeeded'"
+                " ORDER BY r.created_at DESC, r.id DESC LIMIT 1", (rid, scope["revision"], small_batch.LIST_KEY)).fetchone()
+            if held is None:
+                raise ValueError("No completed frozen list in snapshot")
+            stored_list_step = held["id"]
+            stored_listing = json.loads(held["output_json"])
+            order = stored_listing["order"]
+        else:
+            order = replay["replay"]["orders"]["C"]
         priority = sorted(row[0] for row in conn.execute(
             "SELECT source_version_id FROM selections WHERE research_id = ? AND origin = 'user'"
             " AND state = 'included'", (rid,)))
@@ -52,6 +70,9 @@ def measure(database: Path, replay_path: Path, check_path: Path) -> dict:
                        {"head": svid, "work_id": versions[svid]["work_id"],
                         "versions": by_work[versions[svid]["work_id"]], "position": i + 1,
                         "user_priority": svid in priority_heads} for i, svid in enumerate(order)]}
+        if replay is None:
+            listing = stored_listing
+            order = listing["order"]
         discovery = store.create_run(rid, "discovery", {"inspection": {"policy": small_batch.POLICY}}, None)
         step = store.step(discovery["id"], small_batch.LIST_KEY, "code:small_batch_list")
         store.finish_step(step["id"], "succeeded", output=small_batch.json_value(listing))
@@ -83,7 +104,8 @@ def measure(database: Path, replay_path: Path, check_path: Path) -> dict:
                             "list_position": min((positions[w] for w in works if w in positions), default=None),
                             "eligible_position": min((eligible[w] for w in works if w in eligible), default=None)})
         result = {"snapshot": str(database), "snapshot_sha256": before,
-                  "replay": str(replay_path), "research_id": rid,
+                  "replay": str(replay_path) if replay_path else None, "stored_list_step": stored_list_step,
+                  "research_id": rid,
                   "answer_id": checks["answer_id"], "decision_basis": "existing snapshot decisions",
                   "passages": len(passages), "passage_limit": budget["max_answer_passages"], "represented_works": len(given),
                   "eligible_works": len(eligible), "user_priority_works": len(priority_heads),
@@ -101,22 +123,30 @@ def measure(database: Path, replay_path: Path, check_path: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--snapshot-root", type=Path, required=True)
-    parser.add_argument("--replay-dir", type=Path, required=True)
+    parser.add_argument("--replay-dir", type=Path)
+    parser.add_argument("--stored-list", action="store_true", help="Use the snapshot's actual frozen list, not a reconstructed C order")
+    parser.add_argument("--cases", nargs="+", choices=("dbr_vbf", "kurt2017", "uwsn_kconn2022", "irs2021"),
+                        default=("dbr_vbf", "kurt2017", "uwsn_kconn2022", "irs2021"))
     parser.add_argument("--check-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    results = {case: measure(snapshot_path(args.snapshot_root / case), args.replay_dir / f"r2-{case}.json",
+    if not args.stored_list and args.replay_dir is None:
+        parser.error("--replay-dir is required unless --stored-list is used")
+    results = {case: measure(snapshot_path(args.snapshot_root / case),
+                             None if args.stored_list else args.replay_dir / f"r2-{case}.json",
                              args.check_dir / f"{case}-check.json")
-               for case in ("dbr_vbf", "kurt2017", "uwsn_kconn2022", "irs2021")}
+               for case in args.cases}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.with_suffix(".json").write_text(json.dumps(results, ensure_ascii=False, indent=2) + "\n")
-    lines = ["# Dilim 3: tur 2 cevap girdisi replay'i", "",
+    lines = ["# D238 cevap girdisi replay'i", "",
              "Model, ağ ve yeni embedding çağrısı yok. C sırası ve snapshot'taki mevcut kararlar sabit tutuldu; "
              "kullanıcı dahil seçimleri öncelik bölümüne alındı. Ürün uygunluk ve pasaj dağıtım kodu geçici "
-             "SQLite kopyalarında çalıştırıldı. Orijinal snapshot hashleri önceki replay ile eşleşti ve değişmedi.", "",
-             "İlk temsil turu en çok 24 işi kapsar; kalan yerler aynı işler içinde tur tur dağıtılır. "
+             "SQLite kopyalarında çalıştırıldı. Orijinal snapshot hashleri değişmedi; --stored-list gerçek donmuş listeyi kullanır.", "",
+             "Kullanıcı önceliği korunur; dahil tam metinli işler sonra abstract-only işler katman içi liste sırasıyla gelir. "
+             "İlk temsil turu dahil tam metinleri ve eski yarım bütçelik prefix'i bütçe elverdiğince kapsar; "
+             "kalan yerler bu işler içinde tur tur dağıtılır. "
              "Abstract-only iş en çok bir, tam metinli iş en çok altı pasaj alır. Derinlik dağıtımı bittikten sonra "
-             "yer kalırsa, aynı liste sırasıyla 25. ve sonraki uygun işlere birer pasaj verilir. "
+             "yer kalırsa, katman içi liste sırasıyla sonraki uygun işlere birer pasaj verilir. "
              "Yalnız kapasite dolduğu için girdiye alınamayan işler ertelenir.", "",
              "| Soru | Uygun iş | Girdide iş | Pasaj / bütçe | Ertelenen iş | Tam metinli iş başına pasaj (girdide / tüm uygun) |", "|---|---:|---:|---:|---:|---:|"]
     for case, result in results.items():
@@ -127,17 +157,23 @@ def main() -> None:
               "ilk payda girdide temsil edilen, ikinci payda ertelenenler dahil tüm uygun tam metinli işlerdir.", "",
               "| Hedef | C + kullanıcı önceliği yeri | Uygun işler içindeki yeri | Girdide mi? | Pasaj |",
               "|---|---:|---:|---|---:|"]
-    for case, key in (("dbr_vbf", "hakim2018"), ("kurt2017", "kurt2017_17")):
+    for case, key in (("dbr_vbf", "hakim2018"), ("dbr_vbf", "maulana2019"), ("kurt2017", "kurt2017_17"),
+                      *(("irs2021", f"irs2021_{i:02}") for i in (4, 5, 7, 11, 17))):
+        if case not in results:
+            continue
         target = next(t for t in results[case]["targets"] if t["key"] == key)
         lines.append(f"| {key} | {target['list_position']} | {target['eligible_position']} | "
                      f"{'Evet' if target['in_input'] else 'Hayır'} | {target['passages']} |")
     lines += ["", "Bu bir semantik doğruluk testi değildir. Yeni runner ile keşif/abstract/tam metin "
               "kararları yürütülmedi; eski kararların yeni dağıtımda hangi işleri girdiye taşıdığı ölçüldü. "
               "Pasaj içi sıralama konu/criterion ile yapıldı; mevcut passage embedding sıralaması yeniden "
-              "hesaplanmadı. Kaynak sinyalleri önceki replay'dendir ve sıralama anından sonra zenginleşmiş "
-              "metadata içerebilir. Modelin bu girdiden doğru iddia üretmesi veya atıf yapması ölçülmedi.", "",
+              "hesaplanmadı. --stored-list saklı listeyi ve manifesti kullanır; diğer moddaki yeniden hesaplanan "
+              "sinyaller sıralama anından sonra zenginleşmiş metadata içerebilir. "
+              "Modelin bu girdiden doğru iddia üretmesi veya atıf yapması ölçülmedi.", "",
               f"Komut: `PYTHONPATH=backend uv run python scripts/benchmark/replay_small_batch_input.py "
-              f"--snapshot-root {args.snapshot_root} --replay-dir {args.replay_dir} "
+              f"--snapshot-root {args.snapshot_root} "
+              f"{'--stored-list' if args.stored_list else '--replay-dir ' + str(args.replay_dir)} "
+              f"--cases {' '.join(args.cases)} "
               f"--check-dir {args.check_dir} --output {args.output}`"]
     args.output.write_text("\n".join(lines) + "\n")
     print(json.dumps({case: {t["key"]: t["in_input"] for t in result["targets"]

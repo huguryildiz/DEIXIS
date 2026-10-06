@@ -8,7 +8,7 @@ from test_criterion_passage_flow import library, page_source, TOPIC_PAGE, CRITER
 from deixis.workflow.criterion_passages import compile_phrases
 
 
-def bind(store, rid, sources):
+def bind(store, rid, sources, *, priority=True):
     run = store.create_run(rid, "discovery", {"inspection": {"policy": small_batch.POLICY}}, None)
     versions = {svid: store.source(svid) for svid in sources}
     # The guard compares the stored abstract text, as freeze_list does.
@@ -16,7 +16,7 @@ def bind(store, rid, sources):
         version["abstract"] = " ".join(p["text"] for p in store.passages_for(svid) if p["kind"] == "abstract") or None
     listing = {"manifest_hash": "synthetic", "manifest": {"scope_revision": run["scope_revision"], "versions": versions}, "items": [
         {"head": svid, "work_id": versions[svid]["work_id"], "versions": [svid],
-         "position": i + 1, "user_priority": i == 0} for i, svid in enumerate(sources)]}
+         "position": i + 1, "user_priority": priority and i == 0} for i, svid in enumerate(sources)]}
     step = store.step(run["id"], small_batch.LIST_KEY, "code:small_batch_list")
     store.finish_step(step["id"], "succeeded", output=listing)
     store.update_run(run["id"], status="completed")
@@ -41,12 +41,82 @@ def test_frozen_order_and_complete_first_round_before_second_passage(tmp_path):
     run["budget"]["max_answer_passages"] = 48
     patterns = compile_phrases([{"phrase": "intention to treat"}])["patterns"]
     passages = retrieve(store, rid, run, [a, b], [c], patterns)
-    assert [p["source_version_id"] for p in passages[:3]] == [b, c, a]
+    assert [p["source_version_id"] for p in passages[:3]] == [b, a, c]
     assert [p["source_version_id"] for p in passages[3:5]] == [b, a]
     assert sum(p["source_version_id"] == c for p in passages) == 1
     assert sum(p["source_version_id"] == b for p in passages) == 6
-    assert passages[0]["kind"] == passages[2]["kind"] == "pdf_page"
-    assert passages[2]["text"] in (TOPIC_PAGE, CRITERION_PAGE)
+    assert passages[0]["kind"] == passages[1]["kind"] == "pdf_page"
+    assert passages[1]["text"] in (TOPIC_PAGE, CRITERION_PAGE)
+
+
+def test_late_included_pdfs_precede_automatic_abstracts_without_rewriting_list(tmp_path):
+    store, rid = library(tmp_path)
+    abstracts = [candidate(store, rid, str(i), "SYNTHETIC exercise.", "runs_agree_candidate") for i in range(30)]
+    pdfs = [page_source(store, rid, f"pdf{i}", [TOPIC_PAGE] * 8, "SYNTHETIC abstract.") for i in range(5)]
+    store.conn.execute("UPDATE selections SET origin = 'code_rule' WHERE research_id = ?", (rid,))
+    run = bind(store, rid, [*abstracts, *pdfs], priority=False)
+    discovery_id = run["budget"]["inspection"]["list_run_id"]
+    listing = store.existing_step(discovery_id, small_batch.LIST_KEY)["output"]
+    run["budget"]["max_answer_passages"] = 48
+    passages = retrieve(store, rid, run, pdfs, abstracts)
+    assert [p["source_version_id"] for p in passages[:29]] == [*pdfs, *abstracts[:24]]
+    assert all(sum(p["source_version_id"] == svid for p in passages) >= 4 for svid in pdfs)
+    assert len(passages) == 48
+    allocation = store.existing_step(run["id"], "small_batch:v1:answer_input")["output"]
+    assert [item["position"] for item in allocation["items"][:5]] == [31, 32, 33, 34, 35]
+    assert all(item["evidence_layer"] == "included_fulltext" and item["reason"] is None
+               for item in allocation["items"][:5])
+    assert store.existing_step(discovery_id, small_batch.LIST_KEY)["output"] == listing
+
+
+def test_explicit_user_included_abstract_still_leads_fulltext_layer(tmp_path):
+    store, rid = library(tmp_path)
+    abstract = page_source(store, rid, "user", [], "SYNTHETIC abstract.")
+    pdf = page_source(store, rid, "pdf", [TOPIC_PAGE] * 8, "SYNTHETIC abstract.")
+    store.conn.execute("UPDATE selections SET origin = 'code_rule' WHERE source_version_id = ?", (pdf,))
+    run = bind(store, rid, [pdf, abstract], priority=False)
+    run["budget"]["max_answer_passages"] = 2
+    passages = retrieve(store, rid, run, [abstract, pdf], [])
+    assert [p["source_version_id"] for p in passages] == [abstract, pdf]
+
+
+@pytest.mark.parametrize("version", [None, 1, 2])
+def test_unsaved_answer_uses_frozen_allocation_version(tmp_path, version):
+    store, rid = library(tmp_path)
+    abstracts = [candidate(store, rid, str(i), "SYNTHETIC exercise.", "runs_agree_candidate") for i in range(6)]
+    pdf = page_source(store, rid, "late pdf", [TOPIC_PAGE] * 8, "SYNTHETIC abstract.")
+    store.conn.execute("UPDATE selections SET origin = 'code_rule' WHERE research_id = ?", (rid,))
+    run = bind(store, rid, [*abstracts, pdf], priority=False)
+    assert run["budget"]["inspection"]["answer_allocation_version"] == 2
+    if version is None:
+        run["budget"]["inspection"].pop("answer_allocation_version")
+    else:
+        run["budget"]["inspection"]["answer_allocation_version"] = version
+    run["budget"]["max_answer_passages"] = 8
+    import json
+    store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?", (json.dumps(run["budget"]), run["id"]))
+    run = store.run(run["id"])
+    assert store.existing_step(run["id"], "small_batch:v1:answer_input") is None
+    passages = retrieve(store, rid, run, [pdf], abstracts)
+    expected = [pdf, *abstracts[:4], pdf, pdf, pdf] if version == 2 else [*abstracts, pdf]
+    assert [p["source_version_id"] for p in passages] == expected
+    allocation = store.existing_step(run["id"], "small_batch:v1:answer_input")["output"]
+    assert allocation["allocation_rule"] == ("user_priority_then_included_fulltext_v2"
+                                             if version == 2 else "frozen_work_order_v1")
+
+
+def test_more_included_pdfs_than_budget_remain_bounded_in_frozen_order(tmp_path):
+    store, rid = library(tmp_path)
+    abstract = candidate(store, rid, "first", "SYNTHETIC exercise.", "runs_agree_candidate")
+    pdfs = [page_source(store, rid, str(i), [TOPIC_PAGE] * 3, "SYNTHETIC abstract.") for i in range(50)]
+    store.conn.execute("UPDATE selections SET origin = 'code_rule' WHERE research_id = ?", (rid,))
+    run = bind(store, rid, [abstract, *pdfs], priority=False)
+    run["budget"]["max_answer_passages"] = 48
+    passages = retrieve(store, rid, run, pdfs, [abstract])
+    assert [p["source_version_id"] for p in passages] == pdfs[:48]
+    allocation = store.existing_step(run["id"], "small_batch:v1:answer_input")["output"]
+    assert allocation["representation_limit"] == 48
+    assert [item["source_version_id"] for item in allocation["items"] if item["reason"]] == [*pdfs[48:], abstract]
     assert len({p["id"] for p in passages}) == len(passages)
 
 
@@ -170,6 +240,13 @@ def test_resume_reuses_exact_stored_passage_order_without_reranking(tmp_path, mo
     source = page_source(store, rid, "pages", [TOPIC_PAGE, CRITERION_PAGE, OFF_PAGE], "SYNTHETIC abstract.")
     run = bind(store, rid, [source])
     first = retrieve(store, rid, run, [source], [])
+    saved_step = store.existing_step(run["id"], "small_batch:v1:answer_input")
+    legacy = saved_step["output"]
+    legacy.pop("allocation_rule")
+    legacy.pop("representation_limit")
+    for item in legacy["items"]:
+        item.pop("evidence_layer")
+    store.finish_step(saved_step["id"], "succeeded", output=legacy)
     monkeypatch.setattr(store, "search_passages", lambda *args: pytest.fail("Resume must not rank again"))
     resumed = retrieve(store, rid, run, [source], [], compile_phrases([{"phrase": "bakery"}])["patterns"])
     saved = store.existing_step(run["id"], "small_batch:v1:answer_input")["output"]

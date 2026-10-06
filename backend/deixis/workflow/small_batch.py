@@ -14,9 +14,10 @@ from deixis.workflow import adjudication, chaining, fulltext, ranking
 from deixis.workflow.decisions import DecisionStore
 
 POLICY = "small_batch_fused_v1"
-BATCH_SIZE = 30
+BATCH_SIZE = 40
 MINIMUM = 50
 LIST_KEY = "small_batch:v1:list"
+ANSWER_ALLOCATION_VERSION = 2
 
 
 def steps(store: Any, run_id: str) -> list[dict[str, Any]]:
@@ -43,8 +44,10 @@ def answer_budget(store: Any, rid: str, revision: int, budget: dict[str, Any]) -
     step = store.existing_step(row["id"], LIST_KEY)
     if step is None or step["status"] != "succeeded":
         return budget | {"inspection": {"policy": POLICY, "list_run_id": row["id"],
+                                        "answer_allocation_version": ANSWER_ALLOCATION_VERSION,
                                         "binding_error": "answer_frozen_list_missing"}}
     return budget | {"inspection": {"policy": POLICY, "list_run_id": row["id"],
+                                    "answer_allocation_version": ANSWER_ALLOCATION_VERSION,
                                     "manifest_hash": step["output"]["manifest_hash"]}}
 
 
@@ -59,12 +62,13 @@ def answer_listing(store: Any, run: dict[str, Any]) -> dict[str, Any]:
     return step["output"]
 
 
-def allocate(queues: list[list[dict[str, Any]]], limit: int, per_source: int) -> list[dict[str, Any]]:
-    """Represent a half-budget prefix, fill its depth, then widen with unused room."""
+def allocate(queues: list[list[dict[str, Any]]], limit: int, per_source: int,
+             breadth: int | None = None) -> list[dict[str, Any]]:
+    """Represent the bounded breadth prefix, fill its depth, then widen with unused room."""
     selected = []
     if limit <= 0 or per_source <= 0:
         return selected
-    prefix_size = max(1, limit // 2)
+    prefix_size = max(1, limit // 2) if breadth is None else min(limit, max(1, breadth))
     prefix = queues[:prefix_size]
     for depth in range(per_source):
         for queue in prefix:
@@ -88,7 +92,7 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
     body["max_model_calls"] += reads.get("max_model_calls", 0)
     body["max_fulltext_reads"] = reads.get("max_fulltext_reads", 0)
     body["inspection"] = {
-        "policy": POLICY, "runner_version": 1, "batch_size": BATCH_SIZE, "minimum_processed_works": MINIMUM,
+        "policy": POLICY, "runner_version": 3, "batch_size": BATCH_SIZE, "minimum_processed_works": MINIMUM,
         "abstract_limit": ABSTRACT_READ_LIMIT[effort] + (
             budget.get("chain_abstract_read", CHAIN_ABSTRACT_READ[effort]) if chaining.enabled(budget) else 0),
         "fetch_limit": fetch.get("max_fulltext_works", 0) + fetch.get("chain_room", 0),
@@ -137,8 +141,8 @@ def build_list(manifest: dict[str, Any]) -> dict[str, Any]:
             "items": items, "ranks": json_value(ranked["ranks"]), "signal_reasons": ranked["reasons"]}
 
 
-def next_batch(listing: dict[str, Any], number: int) -> dict[str, Any]:
-    items = listing["items"][number * BATCH_SIZE:(number + 1) * BATCH_SIZE]
+def next_batch(listing: dict[str, Any], number: int, size: int = BATCH_SIZE) -> dict[str, Any]:
+    items = listing["items"][number * size:(number + 1) * size]
     body = {"number": number, "manifest_hash": listing["manifest_hash"], "order_hash": listing["order_hash"],
             "items": items, "work_ids": [item["work_id"] for item in items],
             "order": [item["head"] for item in items]}
@@ -377,7 +381,9 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             await flow._source_similarity(run, scope, [{"source_version_id": head} for head in chained],
                                           key="small_batch:v1:chain_similarity", identity_step="source_similarity")
     listing = freeze_list(flow, run, scope, vocabulary)
-    for number in range((len(listing["items"]) + BATCH_SIZE - 1) // BATCH_SIZE):
+    # Resume must retain the boundaries frozen by the run, including v1's 30-work plans.
+    batch_size = run["budget"]["inspection"].get("batch_size", 30)
+    for number in range((len(listing["items"]) + batch_size - 1) // batch_size):
         flow._checkpoint(run["id"], run["scope_revision"])
         key = f"small_batch:v1:{listing['manifest_hash']}:{number}"
         closed = flow.store.existing_step(run["id"], f"{key}:close")
@@ -388,12 +394,13 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                             if s["operation_key"].endswith(":abstract_stage") and s["status"] == "succeeded")
         # An existing plan may still owe fetches/reading after a restart; finish it before deferring new work.
         if (flow.store.existing_step(run["id"], f"{key}:plan") is None
-                and (abstract_used >= run["budget"]["inspection"]["abstract_limit"]
+                and ((flow.store.existing_step(run["id"], f"{key}:abstract_stage") is None
+                      and abstract_used >= run["budget"]["inspection"]["abstract_limit"])
                      or flow.store.run(run["id"])["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"])):
             save_code(flow, run, "small_batch:v1:deferred", "code:small_batch_deferred", lambda: {
-                "reason": "budget_deferred", "items": listing["items"][number * BATCH_SIZE:]})
+                "reason": "budget_deferred", "items": listing["items"][number * batch_size:]})
             break
-        plan = save_code(flow, run, f"{key}:plan", "code:small_batch_plan", lambda: next_batch(listing, number))
+        plan = save_code(flow, run, f"{key}:plan", "code:small_batch_plan", lambda: next_batch(listing, number, batch_size))
         flow._small_batch_guard = {"run_id": run["id"], "rid": run["research_id"],
                                    "user_signature": user_signature(flow.store, run["research_id"])}
         valid = unchanged_heads(flow.store, run["research_id"], listing, plan["items"])
@@ -433,6 +440,9 @@ async def execute_batch(flow: Any, run: dict[str, Any], scope: dict[str, Any], v
                         and s["operation_key"] != f"{key}:abstract_stage")
     flow._abstract_code_stage(run, scope, vocabulary, order, batch_key=key,
                               read_limit=max(0, room["abstract_limit"] - abstract_used))
+    groups = None
+    if room.get("runner_version", 1) >= 3:
+        groups = prepare_abstract_groups(flow, run, scope, vocabulary, listing, plan, key)
     def corpus() -> list[dict[str, Any]]:
         return [work for work in flow._fulltext_works(rid) if work["head"] in order]
     baseline = save_code(flow, run, f"{key}:baseline", "code:small_batch_baseline", lambda:
@@ -453,6 +463,11 @@ async def execute_batch(flow: Any, run: dict[str, Any], scope: dict[str, Any], v
                 pending = {wid for n, batch in enumerate(stage["batches"])
                            if n not in held.closed.get(prefix, set()) and not held.model_done
                            for wid in store.work_ids(batch).values()}
+                if groups is not None:
+                    pending = {wid for group in groups["groups"]
+                               if 0 not in held.closed.get(f"{group['key']}:abstract_screening", set())
+                               and not held.model_done
+                               for wid in store.work_ids(group["sources"]).values()}
                 safe = fulltext.safe_to_fetch(works, order, baseline["limit"], (), 0, pending, baseline,
                                               preserve_order=True)
                 claims = flow._claims(run["id"])
@@ -491,8 +506,27 @@ async def execute_batch(flow: Any, run: dict[str, Any], scope: dict[str, Any], v
 
     async def model_arm() -> None:
         try:
-            await flow._abstract_stage(run, scope, vocabulary, order, batch_key=key,
-                                       read_limit=max(0, room["abstract_limit"] - abstract_used))
+            if groups is None:
+                await flow._abstract_stage(run, scope, vocabulary, order, batch_key=key,
+                                           read_limit=max(0, room["abstract_limit"] - abstract_used))
+            else:
+                # Complete both readings of each ordered group before submitting the next.
+                for index, group in enumerate(groups["groups"]):
+                    await flow._abstract_stage(run, scope, vocabulary, order,
+                        batch_key=group["key"], frozen_plan={"batches": [group["sources"]], "runs": 2})
+                    if set(group["sources"]) <= flow._human_decided_records(rid, group["sources"]):
+                        continue
+                    calls = [store.existing_step(run["id"], f"{group['key']}:abstract_screening:0:{n}")
+                             for n in (1, 2)]
+                    if any(call is None or (call["status"] != "succeeded"
+                           and call.get("error_code") != "invalid_model_output") for call in calls):
+                        unread = [svid for later in groups["groups"][index + 1:] for svid in later["sources"]
+                                  if svid not in flow._human_decided_records(rid, later["sources"])]
+                        if unread:
+                            step = store.existing_step(run["id"], f"{group['key']}:abstract_stage")
+                            flow._write_abstract_codes(run, step["id"],
+                                                      [(svid, "abstract_not_read") for svid in unread])
+                        break
         except BaseException:
             # Publish the stop before waking fetch: unscreened work must never become safe on an error.
             held.halted = True
@@ -529,3 +563,60 @@ async def execute_batch(flow: Any, run: dict[str, Any], scope: dict[str, Any], v
         used -= len(own["output"]["works"])
     await flow._fulltext_adjudication(run, scope, batch_key=key, order=order,
                                      read_limit=max(0, room["read_limit"] - used))
+
+
+def prepare_abstract_groups(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                            listing: dict[str, Any], plan: dict[str, Any], key: str) -> dict[str, Any]:
+    """Freeze ordered groups, looking ahead only far enough to fill the current tail.
+
+    Lookahead performs code screening, never fetch or adjudication. Persisted ownership
+    prevents a resumed/later batch from regrouping sources whose readings already began.
+    """
+    saved = flow.store.existing_step(run["id"], f"{key}:abstract_groups")
+    room = run["budget"]["inspection"]
+    size = room["batch_size"]
+
+    def stage_key(number):
+        return f"small_batch:v1:{listing['manifest_hash']}:{number}"
+
+    def build():
+        records = steps(flow.store, run["id"])
+        assigned = {svid for step in records if step["operation_key"].endswith(":abstract_groups")
+                    and step["status"] == "succeeded"
+                    for group in step["output"]["groups"] for svid in group["sources"]}
+        pending = []
+        number = plan["number"]
+        while True:
+            stage = flow.store.existing_step(run["id"], f"{stage_key(number)}:abstract_stage")
+            if stage is None:
+                used = sum(len(batch) for step in steps(flow.store, run["id"])
+                           if step["operation_key"].endswith(":abstract_stage") and step["status"] == "succeeded"
+                           for batch in step["output"]["batches"])
+                if used >= room["abstract_limit"]:
+                    break
+                items = listing["items"][number * size:(number + 1) * size]
+                heads = unchanged_heads(flow.store, run["research_id"], listing, items)
+                output = flow._abstract_code_stage(run, scope, vocabulary, heads,
+                    batch_key=stage_key(number), read_limit=room["abstract_limit"] - used)
+            else:
+                output = stage["output"]
+            sources = [svid for batch in output["batches"] for svid in batch if svid not in assigned]
+            if number == plan["number"]:
+                pending.extend(sources)
+                target = ((len(pending) + 19) // 20) * 20
+            else:
+                pending.extend(sources[:target - len(pending)])
+            number += 1
+            if len(pending) >= target or number * size >= len(listing["items"]):
+                break
+        return {"groups": [{"sources": pending[i:i + 20],
+                            "key": f"small_batch:v1:abstract_group:{canonical.sha256_hex(pending[i:i + 20])}"}
+                           for i in range(0, len(pending), 20)]}
+
+    result = saved["output"] if saved and saved["status"] == "succeeded" else save_code(
+        flow, run, f"{key}:abstract_groups", "code:small_batch_abstract_groups", build)
+    # Source/selection changes in the carried portion must stop publication too.
+    sources = {svid for group in result["groups"] for svid in group["sources"]}
+    flow._small_batch_guard["versions"].update({svid: listing["manifest"]["versions"][svid]
+                                               for svid in sources})
+    return result

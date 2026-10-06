@@ -46,8 +46,8 @@ def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, flag="on", adapter=None, 
     return app, fetcher
 
 
-@pytest.mark.parametrize("n,expected,minimum", [(29, [29], False), (49, [30, 19], False),
-                                             (50, [30, 20], True), (59, [30, 29], True), (60, [30, 30], True)])
+@pytest.mark.parametrize("n,expected,minimum", [(29, [29], False), (49, [40, 9], False),
+                                             (50, [40, 10], True), (59, [40, 19], True), (60, [40, 20], True)])
 def test_batch_runs_and_counts(tmp_path, monkeypatch, n, expected, minimum):
     app, fetcher = app_for(tmp_path, monkeypatch, n)
     with client_of(app) as client:
@@ -76,21 +76,23 @@ def test_read_limit_and_whole_pipeline_budget_are_shared(tmp_path, monkeypatch):
         store = app.state.store
         assert len(fetcher.calls) == 60
         reading = [s["output"] for s in small_batch.steps(store, run_id) if s["kind"] == "code:adjudication_plan"]
-        assert [len(p["works"]) for p in reading] == [30, 20]
+        assert [len(p["works"]) for p in reading] == [40, 10]
         assert run["usage"]["model_calls"] <= run["budget"]["max_model_calls"]
         assert run["inspection_progress"]["counts"]["blocked"] >= 10
         assert sum(len(p["works"]) for p in reading) == run["budget"]["inspection"]["read_limit"]
 
 
-def test_model_abstracts_use_20_plus_10_twice_before_next_batch(tmp_path, monkeypatch):
+def test_model_abstracts_fill_twenty_candidate_calls(tmp_path, monkeypatch):
     app, _ = app_for(tmp_path, monkeypatch, 60, model_works=True)
     with client_of(app) as client:
         _, run_id, _, run = discover(client, effort="standard")
         assert run["status"] == "completed", run
         steps = small_batch.steps(app.state.store, run_id)
         stages = [s["output"] for s in steps if s["operation_key"].endswith(":abstract_stage")]
-        assert [[len(b) for b in stage["batches"]] for stage in stages] == [[20, 10], [20, 10]]
-        assert len([s for s in steps if s["kind"] == "model:abstract_screening"]) == 8
+        assert [[len(b) for b in stage["batches"]] for stage in stages] == [[20, 20], [20]]
+        assert len([s for s in steps if s["kind"] == "model:abstract_screening"]) == 6
+        assert run["budget"]["inspection"]["runner_version"] == 3
+        assert run["budget"]["inspection"]["batch_size"] == 40
 
 
 def test_abstract_exclusions_count_without_pdf_calls(tmp_path, monkeypatch):
@@ -140,8 +142,27 @@ def test_abstract_budget_defers_tail_in_one_step_without_more_batch_scans(tmp_pa
         steps = small_batch.steps(app.state.store, run_id)
         assert sum(s["kind"] == "code:small_batch_plan" for s in steps) == 1
         deferred = [s for s in steps if s["kind"] == "code:small_batch_deferred"]
-        assert len(deferred) == 1 and len(deferred[0]["output"]["items"]) == 60
-        assert sum(i["blocker"] == "budget_deferred" for i in run["inspection_progress"]["items"]) == 60
+        assert len(deferred) == 1 and len(deferred[0]["output"]["items"]) == 50
+        assert sum(i["blocker"] == "budget_deferred" for i in run["inspection_progress"]["items"]) == 50
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_old_frozen_run_budget_still_executes_thirty_work_plans(tmp_path, monkeypatch, version):
+    original = small_batch.freeze_budget
+
+    def legacy(*args):
+        budget = original(*args)
+        budget["inspection"].update(runner_version=version, batch_size=30)
+        return budget
+
+    monkeypatch.setattr(small_batch, "freeze_budget", legacy)
+    app, _ = app_for(tmp_path, monkeypatch, 60, model_works=True)
+    with client_of(app) as client:
+        _, run_id, _, run = discover(client, effort="standard")
+        assert run["status"] == "completed"
+        stages = [s["output"] for s in small_batch.steps(app.state.store, run_id)
+                  if s["operation_key"].endswith(":abstract_stage")]
+        assert [[len(b) for b in s["batches"]] for s in stages] == [[20, 10], [20, 10]]
 
 
 def test_unexpected_model_error_does_not_fetch_unscreened_work(tmp_path, monkeypatch):
@@ -174,7 +195,65 @@ def test_total_model_budget_defers_new_batches_even_with_abstract_room(tmp_path,
         assert run["status"] == "completed", run
         steps = small_batch.steps(app.state.store, run_id)
         assert sum(s["kind"] == "code:small_batch_plan" for s in steps) == 1
-        assert len(output(app.state.store, run_id, "small_batch:v1:deferred")["items"]) == 60
+        assert len(output(app.state.store, run_id, "small_batch:v1:deferred")["items"]) == 50
+
+
+@pytest.mark.parametrize("batch_size", [30, 40])
+@pytest.mark.parametrize("read_groups", [0, 1])
+def test_group_budget_stop_marks_all_unread_closes_step_and_defers_lookahead(tmp_path, monkeypatch, batch_size, read_groups):
+    freeze = small_batch.freeze_budget
+    prepare = small_batch.prepare_abstract_groups
+    abstract = ResearchFlow._abstract_stage
+
+    def budget(*args):
+        result = freeze(*args)
+        result["inspection"]["batch_size"] = batch_size
+        return result
+
+    def spend(flow, run):
+        flow.store.conn.execute("UPDATE runs SET usage_json = ? WHERE id = ?",
+                                (json.dumps({"model_calls": run["budget"]["max_model_calls"]}), run["id"]))
+
+    def exhaust(flow, run, *args):
+        result = prepare(flow, run, *args)
+        if read_groups == 0:
+            spend(flow, run)
+        return result
+
+    async def exhaust_after_group(flow, run, *args, **kwargs):
+        await abstract(flow, run, *args, **kwargs)
+        spend(flow, run)
+
+    monkeypatch.setattr(small_batch, "freeze_budget", budget)
+    monkeypatch.setattr(small_batch, "prepare_abstract_groups", exhaust)
+    if read_groups:
+        monkeypatch.setattr(ResearchFlow, "_abstract_stage", exhaust_after_group)
+    app, fetcher = app_for(tmp_path, monkeypatch, 60, model_works=True, pdf=True,
+                           adapter=FakeAdapter(responder("out_of_scope")))
+    with client_of(app) as client:
+        _, run_id, _, run = discover(client, effort="standard")
+        assert run["status"] == "completed", run
+        store = app.state.store
+        records = small_batch.steps(store, run_id)
+        groups = next(s["output"]["groups"] for s in records if s["kind"] == "code:small_batch_abstract_groups")
+        assert [len(g["sources"]) for g in groups] == [20, 20]
+        for group in groups[read_groups:]:
+            for svid in group["sources"]:
+                row = store.conn.execute("SELECT reason_code FROM stage_decisions WHERE source_version_id = ?"
+                                         " AND stage = 'abstract' AND superseded_at IS NULL", (svid,)).fetchone()
+                assert row[0] == "abstract_not_read"
+        stop = store.existing_step(run_id, f"{groups[read_groups]['key']}:abstract_stage")
+        assert stop["status"] == "succeeded"
+        assert stop["output"] == {"abstract_not_read": groups[read_groups]["sources"]}
+        assert not [s for s in records if s["status"] == "pending"]
+        assert sum(s["kind"] == "code:small_batch_plan" for s in records) == 1
+        assert len(output(store, run_id, "small_batch:v1:deferred")["items"]) == 60 - batch_size
+        if batch_size == 30:
+            listing = output(store, run_id, small_batch.LIST_KEY)
+            assert store.existing_step(run_id, f"small_batch:v1:{listing['manifest_hash']}:1:abstract_stage")
+            assert not [s for s in records if ':1:adjudication_plan' in s['operation_key']]
+        assert not fetcher.calls
+        assert sum(s["kind"] == "model:abstract_screening" for s in records) == 2 * read_groups
 
 
 @pytest.mark.parametrize("flag", ["on", "off"])

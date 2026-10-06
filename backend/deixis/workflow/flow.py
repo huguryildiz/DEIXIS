@@ -445,11 +445,13 @@ class ResearchFlow:
         if run["status"] == "pause_requested":
             self.store.update_run(run_id, event="run_paused", status="paused", pause_reason="user_requested")
             raise RunStopped
-        if run["status"] == "cancelled":
+        if run["status"] in ("cancelled", "paused", "failed"):
             raise RunStopped
         if scope_revision is not None and self.store.research(run["research_id"])["current_scope_revision"] != scope_revision:
             # Results of an older question revision stay recorded under this run but are not applied.
             self.store.update_run(run_id, event="run_cancelled", status="cancelled", pause_reason="scope_revised")
+            raise RunStopped
+        if guard and guard["run_id"] == run_id and guard.get("halted"):
             raise RunStopped
 
     def _pause(self, run_id: str, reason: str, detail: Any = None) -> None:
@@ -1391,7 +1393,8 @@ class ResearchFlow:
                 # answers unused and later batches unread while the budget still held them.
                 owed = [run_no for run_no in range(1, runs + 1)
                         if f"{prefix}:{number}:{run_no}" not in answered]
-                if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
+                if owed and not self._reserve_model_pair(run,
+                        [f"{prefix}:{number}:{n}" for n in owed], submitted, spent_before):
                     # The budget stopped short of this batch. Its records are unread, which is a state the workflow
                     # already has, so the run finishes rather than pausing on something a later run will pick up.
                     unread.extend(svid for later in batches[number:] for svid in later
@@ -1495,6 +1498,19 @@ class ResearchFlow:
         if before is not None:
             spent = before + max(spent - before, submitted)
         return spent + wanted <= run["budget"]["max_model_calls"]
+
+    def _reserve_model_pair(self, run: dict[str, Any], keys: list[str], submitted: int,
+                            before: int) -> bool:
+        guard = getattr(self, "_small_batch_guard", None)
+        if not guard or guard["run_id"] != run["id"] or "reserved_calls" not in guard:
+            return self._model_calls_left(run, len(keys), submitted, before)
+        reserved = guard["reserved_calls"]
+        wanted = set(keys) - reserved
+        if not self._model_calls_left(run, len(reserved) + len(wanted)):
+            return False
+        # Both senders run on the same event loop; reserve the whole pair without yielding.
+        reserved.update(wanted)
+        return True
 
     async def _abstract_call(self, run: dict[str, Any], scope: dict[str, Any], number: int, run_no: int,
                              rows: list[dict[str, Any]], limiter: ModelCallLimiter | None = None,
@@ -3404,7 +3420,9 @@ class ResearchFlow:
         if held is not None and held.halted:
             return True
         run = self.store.run(run_id)
-        return (run["status"] in ("pause_requested", "cancelled")
+        guard = getattr(self, "_small_batch_guard", None)
+        return (bool(guard and guard["run_id"] == run_id and guard.get("halted"))
+                or run["status"] in ("pause_requested", "cancelled", "paused", "failed")
                 or self.store.research(run["research_id"])["current_scope_revision"] != revision)
 
     def _stop_work_if_requested(self, run: dict[str, Any]) -> None:
@@ -4113,11 +4131,14 @@ class ResearchFlow:
                     continue  # the file the plan froze is no longer in use as it was: not read here (slice 18b)
                 owed = [run_no for run_no in range(1, FULLTEXT_RUNS + 1)
                         if f"fulltext_adjudication:{head}:{run_no}" not in answered]
-                if owed and not self._model_calls_left(run, len(owed), submitted, spent_before):
+                if owed and not self._reserve_model_pair(run,
+                        [f"fulltext_adjudication:{head}:{n}" for n in owed], submitted, spent_before):
                     return
                 for run_no in range(1, FULLTEXT_RUNS + 1):
                     still_owed = run_no in owed
-                    if still_owed and not self._model_calls_left(run, 1, submitted, spent_before):
+                    guard = getattr(self, "_small_batch_guard", None)
+                    reserved = guard.get("reserved_calls") if guard and guard["run_id"] == run_id else None
+                    if still_owed and reserved is None and not self._model_calls_left(run, 1, submitted, spent_before):
                         # A repair on an earlier call of this work used the room this call needed. The run
                         # finishes; this work is not given a decision from one run.
                         return
@@ -4143,6 +4164,8 @@ class ResearchFlow:
             except RunStopped:
                 raise
             except Exception:
+                if (run["budget"].get("inspection") or {}).get("runner_version", 1) >= 4:
+                    raise
                 # One work's unexpected failure is recorded by not deciding it. The rest of the run continues (D18).
                 return None
 
@@ -4165,6 +4188,8 @@ class ResearchFlow:
                 except RunStopped:
                     raise
                 except Exception:
+                    if (run["budget"].get("inspection") or {}).get("runner_version", 1) >= 4:
+                        raise
                     pass
                 closed.add(head)
 
@@ -5013,6 +5038,17 @@ class ResearchFlow:
         stop: RunStopped | None = None
         failure: Exception | None = None
 
+        async def guarded_call(job: Any) -> Any:
+            try:
+                return await call(job)
+            except BaseException:
+                small_batch.halt_pipeline(self, run)
+                raise
+            finally:
+                guard = getattr(self, "_small_batch_guard", None)
+                if guard and guard["run_id"] == run_id:
+                    guard.get("reserved_calls", set()).discard(job.key)
+
         def submit_more() -> None:
             nonlocal stop
             while stop is None and failure is None and len(pending) < limiter.limit:
@@ -5024,7 +5060,7 @@ class ResearchFlow:
                     return
                 if job is None:
                     return
-                pending[asyncio.ensure_future(limiter.run(job.key, lambda job=job: call(job)))] = job
+                pending[asyncio.ensure_future(limiter.run(job.key, lambda job=job: guarded_call(job)))] = job
 
         submit_more()
         while pending:
@@ -5045,6 +5081,9 @@ class ResearchFlow:
                     applied(completed)
                 except RunStopped as exc:
                     stop = exc
+                except Exception as exc:
+                    failure = exc
+                    small_batch.halt_pipeline(self, run)
             submit_more()
         if failure is not None:
             raise failure
@@ -5911,6 +5950,11 @@ class ResearchFlow:
             await limiter.reduce()
             self._checkpoint(run_id)
             await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * attempts)
+            self._checkpoint(run_id)
+            guard = getattr(self, "_small_batch_guard", None)
+            if guard and guard["run_id"] == run_id and not self._model_calls_left(
+                    self.store.run(run_id), len(guard.get("reserved_calls", set())) + 1):
+                return session, result
             if resend is not None and not resend():
                 return None, result
 
@@ -6028,7 +6072,10 @@ class ResearchFlow:
                     self.store.finish_step(step["id"], "cancelled", error_code="human_decided", **sent_output())
                     return {"invalid": True, "issues": [], "step_input_id": None, "human_decided": True}
                 candidate_rows = wanted if candidate_rows is not None else candidate_rows
-            if self.store.run(run_id)["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"]:
+            guard = getattr(self, "_small_batch_guard", None)
+            reserved = guard.get("reserved_calls", set()) if guard and guard["run_id"] == run_id else set()
+            if (self.store.run(run_id)["usage"].get("model_calls", 0)
+                    + len(reserved - {operation_key}) >= run["budget"]["max_model_calls"]):
                 if repair_issues is not None and budget_short == "skip":
                     # A repair the budget no longer holds is skipped (D86): the invalid answer stands for this run,
                     # as an unrepaired one does, and the run goes on to what it can still afford.
@@ -6118,6 +6165,7 @@ class ResearchFlow:
                 self.store.set_step_output(step["id"], sent_output()["output"])
             sent_extra, sent_input = extra, payload["step_input_id"]
             step_attempt = self.store.conn.execute("SELECT attempt FROM run_steps WHERE id = ?", (step["id"],)).fetchone()[0]
+            reserved.discard(operation_key)
             session, result = await self._call_adapter(
                 run_id, rid, step["id"], payload["step_input_id"], connection, requested_model, adapter, base, developer,
                 message, schema, reasoning_effort, limiter,

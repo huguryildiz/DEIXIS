@@ -1,5 +1,6 @@
 """Synthetic end-to-end D237 runs with isolated tmp_path data and mocked providers/PDFs."""
 
+import asyncio
 import json
 from contextlib import contextmanager
 
@@ -91,7 +92,7 @@ def test_model_abstracts_fill_twenty_candidate_calls(tmp_path, monkeypatch):
         stages = [s["output"] for s in steps if s["operation_key"].endswith(":abstract_stage")]
         assert [[len(b) for b in stage["batches"]] for stage in stages] == [[20, 20], [20]]
         assert len([s for s in steps if s["kind"] == "model:abstract_screening"]) == 6
-        assert run["budget"]["inspection"]["runner_version"] == 3
+        assert run["budget"]["inspection"]["runner_version"] == 4
         assert run["budget"]["inspection"]["batch_size"] == 40
 
 
@@ -368,3 +369,75 @@ def test_code_candidates_fetch_before_abstract_models_finish_with_four_in_flight
         assert early
         assert maximum <= 4 and active == 0
         assert len(fetcher.calls) == len(set(fetcher.calls)) == 30
+
+
+def test_next_batch_abstract_and_fetch_overlap_previous_reading(tmp_path, monkeypatch):
+    original_read = ResearchFlow._adjudication_call
+    original_prepare = small_batch.execute_batch
+    original_fetch = SlowFetcher.__call__
+    release = started = None
+    reading = next_started = False
+    overlap = []
+    active_fetch = peak_fetch = 0
+
+    async def read(self, *args, **kwargs):
+        nonlocal release, reading
+        if release is None:
+            release = asyncio.Event()
+            reading = True
+            started.set()
+            try:
+                # One real reading holds a model slot while the remaining slots
+                # can finish this batch and screen the next one.
+                await asyncio.wait_for(release.wait(), 5)
+                return await original_read(self, *args, **kwargs)
+            finally:
+                reading = False
+        return await original_read(self, *args, **kwargs)
+
+    async def prepare(flow, run, scope, vocabulary, listing, plan, key, **kwargs):
+        nonlocal next_started, started
+        if plan["number"] == 0:
+            started = asyncio.Event()
+        if plan["number"] == 1:
+            await asyncio.wait_for(started.wait(), 5)
+            next_started = True
+            assert reading
+        return await original_prepare(flow, run, scope, vocabulary, listing, plan, key, **kwargs)
+
+    async def fetch(self, url):
+        nonlocal active_fetch, peak_fetch
+        active_fetch += 1
+        peak_fetch = max(peak_fetch, active_fetch)
+        if next_started and reading:
+            overlap.append("fetch")
+            release.set()
+        try:
+            return await original_fetch(self, url)
+        finally:
+            active_fetch -= 1
+
+    def before(si):
+        if si["task_type"] == "abstract_screening" and next_started and reading:
+            overlap.append("abstract")
+
+    monkeypatch.setattr(ResearchFlow, "_adjudication_call", read)
+    monkeypatch.setattr(small_batch, "execute_batch", prepare)
+    monkeypatch.setattr(SlowFetcher, "__call__", fetch)
+    adapter = FakeAdapter(valid_response, delay=0.002, before=before)
+    app, fetcher = app_for(tmp_path, monkeypatch, 60, pdf=True, model_works=True, adapter=adapter)
+    with client_of(app) as client:
+        _, run_id, _, run = discover(client, effort="standard")
+        assert run["status"] == "completed", run
+        assert set(overlap) == {"abstract", "fetch"}
+        assert peak_fetch <= 4 and active_fetch == 0
+        assert adapter.max_concurrent <= 6
+        assert run["usage"]["model_calls"] <= run["budget"]["max_model_calls"]
+        records = small_batch.steps(app.state.store, run_id)
+        plans = sorted((s for s in records if s["kind"] == "code:small_batch_plan"),
+                       key=lambda s: s["output"]["number"])
+        assert [s["output"]["number"] for s in plans] == [0, 1]
+        closes = [app.state.store.existing_step(run_id, s["operation_key"].removesuffix(":plan") + ":close")
+                  for s in plans]
+        assert plans[1]["started_at"] < closes[0]["finished_at"] < closes[1]["finished_at"]
+        assert len(fetcher.calls) == len(set(fetcher.calls)) == 60

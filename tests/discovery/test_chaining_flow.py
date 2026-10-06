@@ -620,7 +620,27 @@ def test_a_queued_run_keeps_the_chain_read_and_room_it_was_queued_with(tmp_path,
 # ---- fix check findings (Sol high, 2026-09-24) ---------------------------------------------------
 
 def test_a_failed_chain_read_is_not_sent_again_on_resume(tmp_path, monkeypatch):
+    import asyncio
+    from fakes import parse_step_input
+
     sent: list[int] = []
+
+    class ConcurrentChainAdapter(FakeAdapter):
+        chain_started = 0
+        both_started = None
+
+        async def run_step(self, *args, **kwargs):
+            si = parse_step_input(args[2])
+            if si["task_type"] == "abstract_screening" and any(
+                    CHAINED in c["title"] for c in si.get("candidates") or []):
+                if self.both_started is None:
+                    self.both_started = asyncio.Event()
+                self.chain_started += 1
+                if self.chain_started == 2:
+                    self.both_started.set()
+                # Both sessions must already be open before the first response requests pause.
+                await asyncio.wait_for(self.both_started.wait(), 5)
+            return await super().run_step(*args, **kwargs)
 
     def fail_the_chain_read_then_pause(si):
         if si["task_type"] == "abstract_screening" and any(CHAINED in c["title"] for c in si.get("candidates") or []):
@@ -633,7 +653,8 @@ def test_a_failed_chain_read_is_not_sent_again_on_resume(tmp_path, monkeypatch):
         return None
 
     transport = OpenAlex(keyword_pool(), citing={"W1": [work(700, CHAINED)]})
-    app = app_for(tmp_path, monkeypatch, transport, adapter=FakeAdapter(responder(), fail=fail_the_chain_read_then_pause))
+    app = app_for(tmp_path, monkeypatch, transport,
+                  adapter=ConcurrentChainAdapter(responder(), fail=fail_the_chain_read_then_pause))
     client = client_of(app)
     try:
         rid, run_id, view, paused = discover(client)

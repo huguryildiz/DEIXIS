@@ -1,6 +1,6 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 5 Ekim 2026.
+**Son güncelleme:** 6 Ekim 2026.
 
 ## Şu an
 
@@ -10,6 +10,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen farklı şirketin modeli; Sol yazarsa 
 
 ## Sıradaki
 
+0. Arama ölçümü (6 Eki, Sol + Claude): protokol ve dondurulmuş hedefler `.local/docs/product/search-measurement-{protocol,freeze}-2026-10-06.md`; ölçüm araçları `scripts/benchmark/` (14579dc). Sıradaki: izole A serisi (DBR/VBF → kurt2017 → uwsn-kconn2022 → irs2021), sonra survey A/B/C/N ve sahibin ilk 20 kör değerlendirmesi. Ardından Sol'un öncelik listesi: kilit kaynağın cevaba ulaşması, küçük partili arama, hedefli chaining.
 1. P10: macOS paketi. Rapor kalitesi çalışması (kanıt kesilmesi, çok parçalı iddialar) isteğe bağlı ve sahip kararıyla.
 
 ## Tamamlanan fazlar

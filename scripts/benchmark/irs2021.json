@@ -1,0 +1,450 @@
+{
+  "name": "irs2021",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-10-06",
+  "label_authority": "freeze §3 + §8 + §9; model agreement/delegated decision, not human verification",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "untuned_validation_not_unseen",
+  "question": "How have reflection coefficients (passive beamforming) been optimized in intelligent reflecting surface (IRS/RIS)-assisted wireless communications, which algorithms (SDR, alternating optimization, and deep reinforcement learning) have been used in single-user and multi-user systems, systems with discrete phase shifts, OFDM systems, and MIMO systems, and by which methods has the channel estimation required for this optimization been performed?",
+  "question_sha256": "bebe3ef51afcceeab21778f14ac865584ad0ce0e2c6118574c6d1d5a12b05a75",
+  "answer_elements": [
+    {
+      "id": "I1",
+      "question": "IRS/RIS destekli haberleşmede yansıtma katsayıları, yani pasif hüzmeleme, nasıl optimize edilmiş?"
+    },
+    {
+      "id": "I2",
+      "question": "Tek ve çok kullanıcılı sistemlerde hangi algoritmalar kullanılmış?",
+      "required_subitems": ["single_user", "multi_user"]
+    },
+    {
+      "id": "I3",
+      "question": "Ayrık faz kaydırmalı, OFDM ve MIMO sistemlerinin her birinde hangi algoritmalar kullanılmış?",
+      "required_subitems": ["discrete_phase_shifts", "OFDM", "MIMO"]
+    },
+    {
+      "id": "I4",
+      "question": "SDR, alternatif optimizasyon ve derin pekiştirmeli öğrenme nasıl kullanılmış?",
+      "required_subitems": ["SDR", "alternating_optimization", "deep_reinforcement_learning"]
+    },
+    {
+      "id": "I5",
+      "question": "Bu optimizasyonun gerektirdiği kanal kestirimi hangi yöntemlerle yapılmış?"
+    }
+  ],
+  "papers": [
+    {
+      "key": "irs2021_01",
+      "doi": "10.1109/tcomm.2021.3051897",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Intelligent Reflecting Surface-Aided Wireless Communications: A Tutorial",
+      "stratum": "self",
+      "label": "arka plan",
+      "label_reason": "başlık+özet: IRS haberleşmesi tutorial’ı; optimizasyon ve kestirim konularını genel bağlam olarak tanıtıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_02",
+      "doi": "10.1109/tcomm.2020.3001125",
+      "alternate_dois": [
+        "10.1109/icc40277.2020.9148961"
+      ],
+      "alternate_identity_status": "unverified",
+      "title": null,
+      "stratum": "reflection_optimization",
+      "label": "karar verilemedi",
+      "label_reason": "yalnız başlık: JSON’daki dergi kaydında başlık null, özet yok ve eşlenmiş konferans DOI’si için kayıt yok; mevcut hedefte de başlık bulunmuyor.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_03",
+      "doi": "10.1109/twc.2020.2986438",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Asymptotic Max-Min SINR Analysis of Reconfigurable Intelligent Surface Assisted MISO Systems",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I2: çok kullanıcılı RIS-MISO’da sabit RIS fazları için max-min SINR doğrusal önkodlayıcı analizini sunuyor; pasif faz optimizasyonu kesitte görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_04",
+      "doi": "10.1109/tcomm.2019.2958916",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Beamforming Optimization for Wireless Network Aided by Intelligent Reflecting Surface With Discrete Phase Shifts",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I2/I3: çok kullanıcılı IRS ağında sonlu ayrık fazlarla hüzmeleme optimizasyonunu ele alıyor; algoritma kesitte görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_05",
+      "doi": "10.1109/jsac.2020.3000807",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Joint Active and Passive Beamforming Optimization for Intelligent Reflecting Surface Assisted SWIPT Under QoS Constraints",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I2: çok kullanıcılı SWIPT’de QoS altında aktif/pasif hüzmeleme optimizasyonunu ele alıyor; haberleşme ve enerji aktarımı birlikte.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_06",
+      "doi": "10.1109/lwc.2019.2961656",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Weighted Sum Power Maximization for Intelligent Reflecting Surface Aided SWIPT",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1: IRS destekli SWIPT’de ağırlıklı toplam güç ençoklaması ve ayarlanabilir yansıma fazlarını ele alıyor; belirli algoritma kesitte yok.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_07",
+      "doi": "10.1109/tcomm.2020.2981458",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Intelligent Reflecting Surface Meets OFDM: Protocol Design and Rate Maximization",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I3/I5: OFDM’de kanal kestirimli protokol ve kestirim yükünü azaltan IRS eleman gruplaması sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_08",
+      "doi": "10.1109/spawc48557.2020.9154337",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimal Beamforming for MISO Communications via Intelligent Reflecting Surfaces",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I2: tek kullanıcılı MISO’da aktif/pasif hüzmeleyiciler için dal-sınır yöntemi sunuyor; optimalite iddiası burada doğrulanmadı.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_09",
+      "doi": "10.1109/lwc.2020.2969167",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Deep Reinforcement Learning Based Intelligent Reflecting Surface Optimization for MISO Communication Systems",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I4: MISO’da alınan SNR’yi ençoklamak için pasif faz optimizasyonunu DRL çerçevesiyle yapıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_10",
+      "doi": "10.1109/jsac.2020.3000814",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Capacity Characterization for Intelligent Reflecting Surface Aided MIMO Communication",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I3/I4: noktadan noktaya MIMO’da yansıma katsayıları ve iletim kovaryansını alternatif optimizasyonla birlikte ele alıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "I1",
+          "I3",
+          "I4"
+        ],
+        "contribution": "I1/I3/I4: MIMO yansıma katsayıları/iletim kovaryansı ve alternatif optimizasyon.",
+        "limitation": "başlık+özet: noktadan noktaya MIMO için ortak tasarım ve alternatif optimizasyon açık; algoritmanın ayrıntıları ve yakınsama garantileri okunmadı."
+      }
+    },
+    {
+      "key": "irs2021_11",
+      "doi": "10.1109/lwc.2020.2968303",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "IRS-Enhanced OFDMA: Joint Resource Allocation and Passive Beamforming Optimization",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I2/I3: çok kullanıcılı OFDMA’da yansıma katsayıları, zaman-frekans kaynakları ve gücü ortak optimize ediyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_12",
+      "doi": "10.1109/twc.2020.3022297",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Intelligent Reflecting Surface Enhanced Wireless Networks: Two-Timescale Beamforming Optimization",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I5: iki zaman ölçekli hüzmeleme yaklaşımını anlık CSI edinme güçlüğüyle ilişkilendiriyor; CSI yöntemi ayrıntısı kesitte yok.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_13",
+      "doi": "10.1109/jsac.2020.3000813",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Hybrid Beamforming for Reconfigurable Intelligent Surface based Multi-User Communications: Achievable Rates With Limited Discrete Phase Shifts",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I2/I3: çok kullanıcılı RIS’de sınırlı ayrık fazlarla hibrit hüzmeleme ve toplam hız optimizasyonunu ele alıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_14",
+      "doi": "10.1109/tvt.2020.2973073",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Reconfigurable Intelligent Surfaces Assisted Communications With Limited Phase Shifts: How Many Phase Shifts Are Enough?",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I3: sınırlı fazların hız etkisini analiz edip hız kaybı kısıtı altında gerekli faz sayısını türetiyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_15",
+      "doi": "10.1109/pacrim47961.2019.8985103",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Discrete Phase Shift Design for Practical Large Intelligent Surface Communication",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I3: LIS için CSI olmadan B-bit ayrık faz tasarımı ve asimptotik hız alt sınırı sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_16",
+      "doi": "10.1109/glocomw.2018.8644519",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Energy Efficient Multi-User MISO Communication Using Low Resolution Large Intelligent Surfaces",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I2/I3: çok kullanıcılı MISO’da düşük çözünürlüklü, hatta 1-bit faz elemanlarının enerji verimliliğini ele alıyor; algoritma kesitte yok.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_17",
+      "doi": "10.1109/twc.2020.2990766",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Multicell MIMO Communications Relying on Intelligent Reflecting Surfaces",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I2/I3: çok hücreli MIMO’da ağırlıklı toplam hız için BS önkodlayıcıları ve IRS fazlarını ortak optimize ediyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_18",
+      "doi": "10.1109/twc.2019.2922609",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Reconfigurable Intelligent Surfaces for Energy Efficiency in Wireless Communication",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I2/I4: çok kullanıcılı RIS’de güç/faz tasarımını alternatif ençoklama, gradyan araması ve kesirli programlamayla ele alıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_19",
+      "doi": "10.1109/lwc.2019.2919685",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Secure Wireless Communication via Intelligent Reflecting Surface",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I2: tek kullanıcılı güvenli haberleşmede gizlilik hızı için AP hüzmelemesi ve IRS tasarımını birlikte ele alıyor; algoritma kesitte yok.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_20",
+      "doi": "10.1109/jsac.2020.3000835",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Reconfigurable Intelligent Surface Assisted Multiuser MISO Systems Exploiting Deep Reinforcement Learning",
+      "stratum": "reflection_optimization",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I2/I4: çok kullanıcılı MISO’da BS hüzmeleme ve RIS faz matrisinin ortak tasarımı var; DRL yöntemi başlıkta açık.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "I1",
+          "I2",
+          "I4"
+        ],
+        "contribution": "I1/I2/I4: çok kullanıcılı MISO’da ortak BS/RIS tasarımı ve DRL.",
+        "limitation": "başlık+özet: ortak matris tasarımı kesitte, DRL başlıkta açık; belirli DRL algoritması veya sayısal performans sonucu kesitte yok."
+      }
+    },
+    {
+      "key": "irs2021_21",
+      "doi": "10.1109/lwc.2019.2961357",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Intelligent Reflecting Surface-Enhanced OFDM: Channel Estimation and Reflection Optimization",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I1/I3/I5: OFDM’de kanal kestirimi ve yansıma optimizasyonunu ardışık yürüten protokol ve kestirim için yansıma örüntüsü sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "I1",
+          "I3",
+          "I5"
+        ],
+        "contribution": "I1/I3/I5: OFDM’de kestirim ile yansıma optimizasyonunu bağlayan protokol.",
+        "limitation": "başlık+özet: ardışık kanal kestirimi/yansıma optimizasyonu ve birim-modül altında kestirim örüntüsü açık; kestiricinin devamı kesilmiş, özgül kestirici türü atanmadı."
+      }
+    },
+    {
+      "key": "irs2021_22",
+      "doi": "10.1109/twc.2020.3021434",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Intelligent Reflecting Surface Assisted Multi-User OFDMA: Channel Estimation and Training Design",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I2/I3/I5: çok kullanıcılı OFDMA için iki kanal kestirim şeması ve eğitim tasarımı sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_23",
+      "doi": "10.1109/icassp40776.2020.9053976",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A Hardware Architecture For Reconfigurable Intelligent Surfaces with Minimal Active Elements for Explicit Channel Estimation",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I5: kanal kestirimi için az sayıda aktif eleman kullanan özel RIS donanım tasarımını başlık adlandırıyor; genel mimari survey’i değil.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_24",
+      "doi": "10.1109/icassp.2019.8683663",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Channel Estimation and Low-complexity Beamforming Design for Passive Intelligent Surface Assisted MISO Wireless Energy Transfer",
+      "stratum": "channel_estimation",
+      "label": "arka plan",
+      "label_reason": "Kestirim yöntemi aktarılabilir; soru haberleşme optimizasyonu; §9 kararı.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_25",
+      "doi": "10.1109/icassp40776.2020.9053695",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "An Optimal Channel Estimation Scheme for Intelligent Reflecting Surfaces Based on a Minimum Variance Unbiased Estimator",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I5: minimum varyanslı yansız kestirime dayalı aktivasyon örüntüleri ve DFT benzeri IRS ayarı sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_26",
+      "doi": "10.1109/lsp.2020.2998357",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Compressed Channel Estimation for Intelligent Reflecting Surface-Assisted Millimeter Wave Systems",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I5: mmWave kaskat kanalını seyrek sinyal geri kazanımı olarak kurup eğitim yükünü azaltıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_27",
+      "doi": "10.1109/lwc.2019.2948632",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Cascaded Channel Estimation for Large Intelligent Metasurface Assisted Massive MIMO",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I3/I5: massive MIMO kaskat kanal kestirimi için seyrek matris çarpanlarına ayırma ve matris tamamlama aşamaları sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_28",
+      "doi": "10.1109/sam48682.2020.9104260",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "PARAFAC-Based Channel Estimation for Intelligent Reflective Surface Assisted MIMO System",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I3/I5: MIMO’da yapılandırılmış pilot/faz örüntüleriyle iki kestirim yöntemi sunuyor; PARAFAC başlıkta adlandırılıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_29",
+      "doi": "10.1109/jsac.2020.3007057",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Matrix-Calibration-Based Cascaded Channel Estimation for Reconfigurable Intelligent Surface Assisted Multiuser MIMO",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I2/I3/I5: çok kullanıcılı MIMO kaskat kestiriminde eğitim uzunluğu sorununu ele alıyor; matris kalibrasyonu yöntemi başlıkta.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_30",
+      "doi": "10.1109/sam48682.2020.9104305",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Parallel Factor Decomposition Channel Estimation in RIS-Assisted Multi-User MISO Communication",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I2/I5: çok kullanıcılı MISO kaskat kanal modeli için PARAFAC ayrıştırmasına dayalı kestirim sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_31",
+      "doi": "10.1109/icc40277.2020.9149146",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Broadband Channel Estimation for Intelligent Reflecting Surface Aided mmWave Massive MIMO Systems",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I3/I5: geniş bant mmWave massive MIMO’da açısal seyreklik kullanan sıkıştırılmış algılama ve pilot tasarımı sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "irs2021_32",
+      "doi": "10.1109/lwc.2020.2993699",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Deep Channel Learning for Large Intelligent Surfaces Aided mm-Wave Massive MIMO Systems",
+      "stratum": "channel_estimation",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: I2/I3/I5: twin CNN ile pilotlardan doğrudan/kaskat kanal kestirimi ve çok kullanıcılı yerel kestirim sunuyor; bu DRL değildir.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    }
+  ]
+}

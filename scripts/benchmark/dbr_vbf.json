@@ -3,13 +3,126 @@
   "question": "How do depth-based and vector-based routing protocols for underwater acoustic sensor networks compare in packet delivery ratio and energy consumption?",
   "reference": "Elicit 'Draft report' run, 5 Oct 2026 (six cited papers)",
   "expected_direction": "In direct comparisons DBR uses less energy and delivers more packets than VBF (Maulana 2019: 33.6% more energy efficient, 19.8% better PDR; Hakim 2018 same direction). Caveat: VBF suits dense networks, HH-VBF was designed for sparse ones.",
-  "direction_terms": [["dbr", "depth-based", "depth based"], ["vbf", "vector-based", "vector based"]],
+  "direction_terms": [
+    [
+      "dbr",
+      "depth-based",
+      "depth based"
+    ],
+    [
+      "vbf",
+      "vector-based",
+      "vector based"
+    ]
+  ],
   "papers": [
-    {"key": "maulana2019", "doi": "10.1109/icimcis48181.2019.8985348", "title": "Analysis of VBF and DBR Performance in Environmental Monitoring System Using Aquasim at NS-3", "anchor": true},
-    {"key": "hakim2018", "doi": "10.20895/infotel.v10i4.394", "title": "Energy Consumption Analysis of DBR and VBF Protocols in Underwater Sensor Networks Using Aqua-Sim at NS-2", "anchor": true},
-    {"key": "memon2018", "doi": null, "title": "Performance Comparison of Routing Protocols for Underwater Sensor Networks", "anchor": false},
-    {"key": "xie2010", "doi": "10.1155/2010/195910", "title": "Efficient Vector-Based Forwarding for Underwater Sensor Networks", "anchor": false},
-    {"key": "yan2008", "doi": "10.1007/978-3-540-79549-0_7", "title": "DBR: Depth-Based Routing for Underwater Sensor Networks", "anchor": false},
-    {"key": "nicolaou2007", "doi": "10.1109/oceanse.2007.4302470", "title": "Improving the Robustness of Location-Based Routing for Underwater Sensor Networks", "anchor": false}
+    {
+      "key": "maulana2019",
+      "doi": "10.1109/icimcis48181.2019.8985348",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Analysis of VBF and DBR Performance in Environmental Monitoring System Using Aquasim at NS-3",
+      "stratum": "katman yok",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: DBR/VBF karşılaştırmasını NS-3/AquaSim simülasyonuyla inceliyor; PDR ve enerji sonuçları kesitte görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "D1",
+          "D2",
+          "D3"
+        ],
+        "limitation": "Human passage assessment required"
+      }
+    },
+    {
+      "key": "hakim2018",
+      "doi": "10.20895/infotel.v10i4.394",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Energy Consumption Analysis of DBR and VBF Protocols in Underwater Sensor Networks Using Aqua-Sim at Network Simulator 2",
+      "stratum": "katman yok",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: Başlık DBR/VBF enerji tüketimi karşılaştırmasını açıkça taşıyor; kesit PDR sonucunu vermiyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "D1",
+          "D2",
+          "D3"
+        ],
+        "limitation": "Human passage assessment required"
+      }
+    },
+    {
+      "key": "memon2018",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Performance Comparison of Routing Protocols for Underwater Sensor Networks",
+      "stratum": "katman yok",
+      "label": "karar verilemedi",
+      "label_reason": "yalnız başlık: JSON’da kayıt yok; genel yönlendirme karşılaştırması başlığı DBR/VBF veya PDR/enerji katkısını belirlemiyor.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "xie2010",
+      "doi": "10.1155/2010/195910",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Efficient Vector-Based Forwarding for Underwater Sensor Networks",
+      "stratum": "katman yok",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: VBF için enerji verimli yönlendirme yöntemi ve sınırlı düğüm katılımı sunuyor; doğrudan DBR karşılaştırması görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "yan2008",
+      "doi": "10.1007/978-3-540-79549-0_7",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "DBR: Depth-Based Routing for Underwater Sensor Networks",
+      "stratum": "katman yok",
+      "label": "ilgili",
+      "label_reason": "DBR özgün tanımı ve simülasyon değerlendirmesi; §9 kararı.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "nicolaou2007",
+      "doi": "10.1109/oceanse.2007.4302470",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Improving the Robustness of Location-Based Routing for Underwater Sensor Networks",
+      "stratum": "katman yok",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: HH-VBF yöntemini VBF ile ilişkilendirerek enerji verimli yönlendirmeyi ele alıyor; DBR karşılaştırması ve sayısal ölçütler görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    }
+  ],
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-10-06",
+  "label_authority": "freeze §3 + §8 + §9; model agreement/delegated decision, not human verification",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "development",
+  "question_sha256": "73f1bdad12a18530599f23226f139fe155bd354c05830827ef71858e3b4ba592",
+  "answer_elements": [
+    {
+      "id": "D1",
+      "question": "Packet delivery ratio comparison"
+    },
+    {
+      "id": "D2",
+      "question": "Energy consumption comparison"
+    },
+    {
+      "id": "D3",
+      "question": "Numerical direction, percent interpretation and simulation conditions; human assessment"
+    }
   ]
 }

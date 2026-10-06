@@ -1,0 +1,336 @@
+{
+  "name": "uwsn_kconn2022",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-10-06",
+  "label_authority": "freeze §3 + §8 + §9; model agreement/delegated decision, not human verification",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "development",
+  "question": "How has the relationship between k-connectivity-based reliability, network lifetime, and energy consumption been modeled in wireless sensor networks, particularly underwater sensor networks, by which methods (node placement, topology control, detection, repair, and mathematical programming) has k-connectivity been achieved or maintained, and how has its cost in network lifetime been measured?",
+  "question_sha256": "ef8b7843f191055fb5bc5962b87ddda165a78d9eb5810e9986c20cc239686684",
+  "answer_elements": [
+    {
+      "id": "U1",
+      "question": "WSN'lerde, özellikle su altı ağlarında, k-bağlantılılığa dayalı güvenilirlik ile ağ ömrünün ilişkisi nasıl modellenmiş?"
+    },
+    {
+      "id": "U2",
+      "question": "Aynı güvenilirliğin enerji tüketimiyle ilişkisi nasıl modellenmiş?"
+    },
+    {
+      "id": "U3",
+      "question": "Düğüm yerleşimi ve topoloji kontrolüyle k-bağlantılılık nasıl sağlanmış veya korunmuş?",
+      "required_subitems": ["node_placement", "topology_control"]
+    },
+    {
+      "id": "U4",
+      "question": "Tespit, onarım ve matematiksel programlamayla k-bağlantılılık nasıl sağlanmış veya korunmuş?",
+      "required_subitems": ["detection", "repair", "mathematical_programming"]
+    },
+    {
+      "id": "U5",
+      "question": "k-bağlantılılığı sağlamanın veya korumanın ağ ömrüne maliyeti nasıl ölçülmüş?"
+    }
+  ],
+  "papers": [
+    {
+      "key": "uwsn_kconn2022_01",
+      "doi": "10.1109/jiot.2022.3188558",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On the Tradeoff Between Network Lifetime and k-Connectivity-Based Reliability in UWSNs",
+      "stratum": "self",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: U1/U2/U5: su altı ağında k ayrık yolun ek enerji tüketimi ve ömür azalmasıyla ilişkisini optimizasyon çerçevesinde ele alıyor; formülasyon kesitte tamamlanmıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "U1",
+          "U2",
+          "U5"
+        ],
+        "contribution": "U1/U2/U5: su altı k-bağlantılılık, ek enerji ve ömür kaybı ilişkisi.",
+        "limitation": "başlık+özet: k ayrık yolun ömür maliyetini doğrudan problemleştirip optimizasyon çerçevesi sunuyor; program türü ve maliyet ölçümünün ayrıntıları kesitte yok."
+      }
+    },
+    {
+      "key": "uwsn_kconn2022_02",
+      "doi": "10.1109/telfor.2018.8611852",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Analysis of the Tradeoff Between Network Lifetime and $\\mathbf{k}$-Connectivity in WSNs",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: U1/U2/U5: k artışı, iletim gücü ve ömür azalması arasındaki güvenilirlik/ömür ödünleşimini inceliyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_03",
+      "doi": "10.1007/11776178_26",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Lifetime Maximization of Sensor Networks Under Connectivity and k-Coverage Constraints",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "Bağlantılılık kısıtı altında ömür modeli U1/U5; §9 kararı.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_04",
+      "doi": "10.1007/s11277-021-08613-x",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "k-Connected Relay Node Deployment in Heterogeneous Wireless Sensor Networks",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "yalnız başlık: U3: heterojen WSN’de k-bağlantılı röle düğümü yerleşimi yöntemini başlık açıkça tanımlıyor; enerji/ömür maliyeti bilinmiyor.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_05",
+      "doi": "10.1109/tnet.2010.2040191",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimal Deployment Patterns for Full Coverage and $k$-Connectivity $(k \\leq 6)$ Wireless Sensor Networks",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: U3: tam kapsama ve k≤6 bağlantılılık için yerleşim örüntüleri ve yerleşim çokgenine dayalı yöntem sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_06",
+      "doi": "10.1007/s11277-021-08881-7",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A New Approach of WSN Deployment, K-Coverage and Connectivity in Border Area",
+      "stratum": "k_connectivity",
+      "label": "arka plan",
+      "label_reason": "k-bağlantılılık değil k-kapsama yerleşimi; §9 kararı.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_07",
+      "doi": "10.1109/access.2018.2833632",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Coverage and Connectivity in WSNs: A Survey, Research Issues and Challenges",
+      "stratum": "k_connectivity",
+      "label": "arka plan",
+      "label_reason": "başlık+özet: Kapsama ve bağlantılılık için survey; özgün k-bağlantılılık/ömür modeli olarak sınıflandırılmadı.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_08",
+      "doi": "10.1007/978-3-319-04483-5_14",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Minimum Range Assignment Problem for Two Connectivity in Wireless Sensor Networks",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "yalnız başlık: U3: iki-bağlantılılık için minimum menzil atama problemi topoloji kontrolüne doğrudan karşılık geliyor; çözüm ayrıntısı başlıkta yok.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_09",
+      "doi": "10.1109/tpds.2014.2316142",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A Distributed Fault-Tolerant Topology Control Algorithm for Heterogeneous Wireless Sensor Networks",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: U2/U3: DPV, her sensörden süperdüğümlere k düğüm-ayrık yol sağlarken toplam gücü azaltan menzil atama algoritması sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "U2",
+          "U3"
+        ],
+        "contribution": "U2/U3: güç tüketimi ile k ayrık yol şartını birleştiren topoloji kontrolü.",
+        "limitation": "başlık+özet: DPV menzil ataması, sensörden süperdüğümlere k düğüm-ayrık yol ve toplam güç amacı taşıyor; bu kök bağlantılılık şartı tüm sensör çiftleri için k-bağlantılılıkla eş tutulmadı."
+      }
+    },
+    {
+      "key": "uwsn_kconn2022_10",
+      "doi": "10.1109/tnet.2021.3104356",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A Coverage-Aware Distributed k -Connectivity Maintenance Algorithm for Arbitrarily Large k in Mobile Sensor Networks",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: U4: düğüm arızası sonrası kapsama korunumu altında minimum maliyetli hareketlerle k-bağlantılılığı onarıyor; bu maliyet ömür ölçümü sayılmadı.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_11",
+      "doi": "10.1016/j.comcom.2017.11.005",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "DECK: A distributed, asynchronous and exact k-connectivity detection algorithm for Wireless Sensor Networks",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "yalnız başlık: U4: DECK dağıtık, asenkron k-bağlantılılık tespit algoritmasını başlık açıkça tanımlıyor.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_12",
+      "doi": "10.1016/j.adhoc.2017.06.005",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "PACK: Path coloring based k -connectivity detection algorithm for wireless sensor networks",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "yalnız başlık: U4: PACK yol renklendirmesine dayalı k-bağlantılılık tespit algoritmasını başlık açıkça tanımlıyor.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_13",
+      "doi": "10.1109/icccn.2007.4317793",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Localized detection of k-connectivity in wireless ad hoc, actuator and sensor networks",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: U4: yerel komşuluk bilgisiyle k-bağlantılılık sınayan LND ve LCND algoritmaları sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_14",
+      "doi": "10.1109/tr.2018.2873917",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Design and Evaluation of Algorithms for Energy Efficient and Complete Determination of Critical Nodes for Wireless Sensor Network Reliability",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: U4: bağlantıyı koparan kritik düğümlerin yerel/dağıtık tespitini sunuyor; k=2 için engelleri belirlemeye katkı analist çıkarımıdır, genel k veya ömür sonucu yok.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_15",
+      "doi": "10.1016/j.adhoc.2014.07.012",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Connectivity restoration in a partitioned wireless sensor network with assured fault tolerance",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "Onarım yöntemi U4; §9 kararı.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_16",
+      "doi": "10.1109/tr.2020.2970268",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Distributed $k$-Connectivity Restoration for Fault Tolerant Wireless Sensor and Actuator Networks: Algorithm Design and Experimental Evaluations",
+      "stratum": "k_connectivity",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: U4: heterojen sabit/hareketli WSAN’da dağıtık k-bağlantılılık onarımı sunuyor; başlık deneysel değerlendirmeyi de adlandırıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "U4"
+        ],
+        "contribution": "U4: dağıtık k-bağlantılılık onarımı.",
+        "limitation": "başlık+özet: heterojen sabit/hareketli WSAN’da onarım yaklaşımı sunuyor; deneyler başlıkta adlandırılıyor, ömür maliyeti kesitte verilmemiş."
+      }
+    },
+    {
+      "key": "uwsn_kconn2022_17",
+      "doi": "10.1109/tii.2019.2946618",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Underwater Internet of Things in Smart Ocean: System Architecture and Open Issues",
+      "stratum": "uwsn_context",
+      "label": "arka plan",
+      "label_reason": "başlık+özet: Su altı IoT için genel mimari, uygulamalar ve açık sorunlar özeti; belirli k-bağlantılılık yöntemi görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_18",
+      "doi": "10.1109/comst.2020.3048190",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A Survey of Routing Protocols for Underwater Wireless Sensor Networks",
+      "stratum": "uwsn_context",
+      "label": "arka plan",
+      "label_reason": "başlık+özet: Su altı yönlendirme protokolleri survey’i; özgün k-bağlantılılık/ömür modeli olarak sınıflandırılmadı.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_19",
+      "doi": "10.1109/comst.2021.3134955",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Reliable Data Collection Techniques in Underwater Wireless Sensor Networks: A Survey",
+      "stratum": "uwsn_context",
+      "label": "arka plan",
+      "label_reason": "başlık+özet: Su altı güvenilir veri toplama survey’i; güvenilirliğin k-bağlantılılıkla modellenmesi kesitte görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_20",
+      "doi": "10.1109/tii.2018.2841830",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Packet Size Optimization for Lifetime Maximization in Underwater Acoustic Sensor Networks",
+      "stratum": "uwsn_context",
+      "label": "arka plan",
+      "label_reason": "başlık+özet: Su altı paket boyutu/güç ve ömür bağlamı sunuyor; k-bağlantılılığa dayalı güvenilirlik veya yöntem katkısı görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_21",
+      "doi": "10.1109/joe.2013.2291135",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Underwater Optical Wireless Networks: A $k$ -Connectivity Analysis",
+      "stratum": "uwsn_context",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: U3: su altı optik ağda düğüm derinliği/yerleşimi ve yol kaybını k-bağlantılılık analiziyle ilişkilendiriyor; enerji/ömür maliyeti kesitte yok.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_22",
+      "doi": "10.3390/s130607454",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A Proposal for Modeling Real Hardware, Weather and Marine Conditions for Underwater Sensor Networks",
+      "stratum": "uwsn_context",
+      "label": "arka plan",
+      "label_reason": "başlık+özet: Gerçek donanım, enerji hasadı ve deniz koşullarıyla ns-3 su altı modelleme bağlamı sunuyor; k-bağlantılılık katkısı görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "uwsn_kconn2022_23",
+      "doi": "10.1109/waina.2016.156",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Dual Sink Efficient Balanced Energy Technique for Underwater Acoustic Sensor Networks",
+      "stratum": "uwsn_context",
+      "label": "arka plan",
+      "label_reason": "başlık+özet: Çift sink ile enerji dengeleme/ömür yöntemi sunuyor; k-bağlantılılık bağlantısı kesitte görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    }
+  ]
+}

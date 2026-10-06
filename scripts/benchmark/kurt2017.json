@@ -1,0 +1,286 @@
+{
+  "name": "kurt2017",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-10-06",
+  "label_authority": "freeze §3 + §8 + §9; model agreement/delegated decision, not human verification",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "development",
+  "question": "How has data packet size optimization in wireless sensor networks been modeled for network lifetime and energy efficiency, how have joint optimization with transmission power and assumptions about ACKs and retransmissions been handled, and in which environments (terrestrial, underwater, underground, body area, and smart grid) and with which methods (analytical models, MIP/LP, simulation, and experiments) has it been studied?",
+  "question_sha256": "28240c1b518c84458c86adaab0ff6707067bde58a4c91c21ea1cc3f7de6c849b",
+  "answer_elements": [
+    {
+      "id": "K1",
+      "question": "WSN veri paketi boyutu optimizasyonu ağ ömrü için nasıl modellenmiş?"
+    },
+    {
+      "id": "K2",
+      "question": "Aynı optimizasyon enerji verimliliği için nasıl modellenmiş?"
+    },
+    {
+      "id": "K3",
+      "question": "Paket boyutu ile iletim gücünün ortak optimizasyonu nasıl ele alınmış?"
+    },
+    {
+      "id": "K4",
+      "question": "ACK ve yeniden iletim varsayımları nasıl ele alınmış?"
+    },
+    {
+      "id": "K5",
+      "question": "Karasal, su altı, yer altı, vücut alanı ve akıllı şebeke ortamlarının her birinde hangi çalışmalar var?",
+      "required_subitems": ["terrestrial", "underwater", "underground", "body_area", "smart_grid"]
+    },
+    {
+      "id": "K6",
+      "question": "Analitik model, MIP/LP, simülasyon ve deney yöntemlerinin her biri nasıl kullanılmış?",
+      "required_subitems": ["analytical_model", "MIP/LP", "simulation", "experiment"]
+    }
+  ],
+  "papers": [
+    {
+      "key": "kurt2017_01",
+      "doi": "10.1109/tie.2016.2619319",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Packet Size Optimization in Wireless Sensor Networks for Smart Grid Applications",
+      "stratum": "self",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K1/K2/K5: akıllı şebekede paket boyutu ve güç kontrolünü ömür/enerjiyle ilişkilendiriyor; K3 ortak çözüm ve K4 kesitte görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_02",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Survey On Packet Size Optimization Techniques In Wireless Sensor Networks",
+      "stratum": "terrestrial",
+      "label": "arka plan",
+      "label_reason": "yalnız başlık: JSON’da kayıt yok; başlık WSN paket boyutu optimizasyon tekniklerinin survey’ini tanımlıyor.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_03",
+      "doi": "10.1109/snpa.2003.1203351",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Energy efficiency based packet size optimization in wireless sensor networks",
+      "stratum": "terrestrial",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K2/K4/K6: enerji metriğine göre sabit paket boyutu seçimi ve hata kontrolü/yeniden iletim etkilerini inceliyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_04",
+      "doi": "10.1109/infcom.2010.5462063",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "DPLC: Dynamic Packet Length Control in Wireless Sensor Networks",
+      "stratum": "terrestrial",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K5/K6: WSN’de dinamik paket uzunluğu kontrolü, TinyOS uygulaması ve gerçek kapalı ortam testbed deneyi sunuyor; ömür/enerji sonucu kesitte yok.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_05",
+      "doi": "10.1145/1921621.1921622",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimizing physical-layer parameters for wireless sensor networks",
+      "stratum": "terrestrial",
+      "label": "karar verilemedi",
+      "label_reason": "başlık+özet: Enerji/başarıyla alınan bit metriği ve analitik fiziksel katman modeli var; paket boyutunun karar değişkeni veya K3 ortak optimizasyonu olduğu görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_06",
+      "doi": "10.1109/twc.2012.021412.021512.111398",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Energy-Efficient Packet Size Optimization for Cognitive Radio Sensor Networks",
+      "stratum": "terrestrial",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K2: bilişsel radyo sensör ağlarında enerji verimliliğini ençoklayan paket boyutu optimizasyonunu ele alıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_07",
+      "doi": "10.1109/tpds.2012.264",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Communication Energy Modeling and Optimization through Joint Packet Size Analysis of BSN and WiFi Networks",
+      "stratum": "terrestrial",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K2/K5/K6: BSN-WiFi paket boyutlarını enerji, gecikme ve throughput kısıtlarıyla geometrik programlama kullanarak optimize ediyor; katman etiketi ortam kanıtı sayılmadı.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_08",
+      "doi": "10.1109/sahcn.2013.6644980",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On packet size and error correction optimisations in low-power wireless networks",
+      "stratum": "terrestrial",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K2/K6: düşük güçlü ağlarda paket boyutu ve hata düzeltme yükünü dinamik spektrum kullanımına göre optimize ediyor; ACK/ARQ kesitte yok.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_09",
+      "doi": "10.1109/iccomm.2014.6866706",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Data packet length optimization for Wireless Sensor Network lifetime maximization",
+      "stratum": "terrestrial",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K1/K3/K4/K6: paket uzunluğunun ömre etkisini veri ve ACK iletim güçlerini seçen MIP çerçevesiyle inceliyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "K1",
+          "K3",
+          "K4",
+          "K6"
+        ],
+        "contribution": "K1: ömür; K3: paket uzunluğu/güç ilişkisi; K4: veri/ACK el sıkışması; K6: MIP.",
+        "limitation": "başlık+özet: veri ve ACK güçlerini seçen MIP ile paket uzunluğunun ömre etkisini inceliyor; paket boyutunun güçle tek ortak karar vektöründe çözülüp çözülmediği kesitten kesinleşmiyor."
+      }
+    },
+    {
+      "key": "kurt2017_10",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Impact of IEEE 802.11 MAC packet size on performance of wireless sensor networks",
+      "stratum": "terrestrial",
+      "label": "karar verilemedi",
+      "label_reason": "yalnız başlık: JSON’da kayıt yok; IEEE 802.11 MAC paket boyutu/performans başlığı ömür, enerji veya ACK katkısını belirlemiyor.",
+      "reading_depth": "title_only",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_11",
+      "doi": "10.1109/joe.2012.2197271",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimized Packet Size Selection in Underwater Wireless Sensor Network Communications",
+      "stratum": "underwater",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K2/K5/K6: su altı CSMA/DACAP paket boyutlarını ns-2’de BER/girişim ve başarıyla teslim edilen bitin enerjisi üzerinden karşılaştırıyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_12",
+      "doi": "10.1016/j.jksuci.2011.09.001",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Reliable data deliveries using packet optimization in multi-hop underwater sensor networks",
+      "stratum": "underwater",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K5/K6: çok atlamalı su altı ağlarında paket optimizasyonuyla güvenilir teslim modeli sunuyor; enerji/ömür amaçları kesitte görünmüyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_13",
+      "doi": "10.1109/oceanse.2005.1511686",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimization of a data link protocol for an underwater acoustic channel",
+      "stratum": "underwater",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K4/K5/K6: su altı linkinde gruplu gönderim/seçici ACK ve paket boyutuna bağlı Stop-and-Wait throughput analizini sunuyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_14",
+      "doi": "10.1109/inecce.2011.5953871",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Underwater wireless network Energy efficiency and optimal data packet size",
+      "stratum": "underwater",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K2/K5/K6: sığ su akustik kanalında enerjiye göre paket boyutu seçimini ns-2/MIRACLE simülasyonuyla inceliyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_15",
+      "doi": "10.1109/infocom.2008.54",
+      "alternate_dois": [
+        "10.1109/infocom.2007.54"
+      ],
+      "alternate_identity_status": "unverified",
+      "title": "Cross-Layer Packet Size Optimization for Wireless Terrestrial, Underwater, and Underground Sensor Networks",
+      "stratum": "underground",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K2/K5/K6: karasal/su altı/yer altı için çapraz katman paket optimizasyonunda enerji amacı, hata kontrolü ve gecikme/güvenilirlik kısıtları var; kanıt 2008 DOI’sine ait.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "K2",
+          "K5",
+          "K6"
+        ],
+        "contribution": "K2: enerji amaç fonksiyonu; K5: karasal/su altı/yer altı; K6: çapraz katman formülasyonu.",
+        "limitation": "başlık+özet: üç ortamı, üç amaç fonksiyonunu ve gecikme/güvenilirlik kısıtlarını birleştiriyor; ortamlar başlıkta, model kesitte; genel hata kontrolünden ACK/yeniden iletim varsayımı çıkarılmadı ve 2007 DOI’sinin eşdeğerliği doğrulanmadı."
+      }
+    },
+    {
+      "key": "kurt2017_16",
+      "doi": "10.1109/itab.2010.5687687",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Packet size optimization for congestion control in pervasive healthcare monitoring",
+      "stratum": "body_area",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K4/K5: vücut sensör ağında paket boyutunu yeniden iletim girişimleri ve ek yük açısından optimize ediyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    },
+    {
+      "key": "kurt2017_17",
+      "doi": "10.4218/etrij.11.0110.0270",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Packet Size Optimization for Improving the Energy Efficiency in Body Sensor Networks",
+      "stratum": "body_area",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K2/K4/K5: vücut sensör ağında paket boyutunun enerji verimliliğini ARQ ve FEC seçenekleriyle inceliyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "K2",
+          "K4",
+          "K5"
+        ],
+        "contribution": "K2: enerji verimliliği; K4: ARQ/FEC; K5: vücut sensör ağı.",
+        "limitation": "başlık+özet: vücut içi/üzeri kanal farklarıyla ARQ, blok ve konvolüsyonel FEC seçeneklerini enerji açısından analiz ediyor; ACK ayrıntıları kesitte yok."
+      }
+    },
+    {
+      "key": "kurt2017_18",
+      "doi": "10.1109/lwc.2014.2321765",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimal Frame Length to Maximize Energy Efficiency in IEEE 802.15.6 UWB Body Area Networks",
+      "stratum": "body_area",
+      "label": "ilgili",
+      "label_reason": "başlık+özet: K2/K4/K5/K6: IEEE 802.15.6 UWB vücut alanı ağında çerçeve uzunluğunu enerjiye göre optimize edip FEC/hibrit ARQ başarı olasılıklarını modelliyor.",
+      "reading_depth": "title_abstract_excerpt",
+      "anchor": false
+    }
+  ]
+}

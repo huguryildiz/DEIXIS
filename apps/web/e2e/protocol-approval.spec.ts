@@ -275,9 +275,9 @@ test.describe.serial('H: the protocol approval of an sw discovery run', () => {
       await expect(card(wide)).toBeVisible({ timeout: 60_000 })
       const box = card(wide).locator('.approval-warning')
       await expect(box).toHaveCount(1)
-      // The model advised keeping the term: the title softens, the generic "remove it" sentence gives way to the
-      // advice, and the model is named beside it with its icon.
-      await expect(box.locator('strong')).toHaveText('“wide” widens the search')
+      // The title says the term multiplies the matches, not that the search is too broad; the generic sentence gives
+      // way to the advice, and the model is named beside it with its icon.
+      await expect(box.locator('strong')).toHaveText('“wide” multiplies the matches')
       await expect(box).not.toContainText('We suggest removing it.')
       const advice = box.locator('.approval-advice')
       await expect(advice).toContainText('suggests keeping it: SYNTHETIC: the question uses this word itself')
@@ -307,8 +307,9 @@ test.describe.serial('H: the protocol approval of an sw discovery run', () => {
       await startResearch(wide, server, `${QUESTION} [wide] [advice-down] A fifth SYNTHETIC research.`)
       await expect(card(wide)).toBeVisible({ timeout: 60_000 })
       const box = card(wide).locator('.approval-warning')
-      await expect(box.locator('strong')).toHaveText('“wide” makes the search far too wide')
-      await expect(box).toContainText('We suggest removing it.')
+      await expect(box.locator('strong')).toHaveText('“wide” multiplies the matches')
+      await expect(box).toContainText('The numbers do not say whether those papers are wanted.')
+      await expect(box).not.toContainText('We suggest removing it.')
       await expect(box.locator('.approval-advice')).toHaveCount(0)
       const filled = /(^| )bg-primary( |$)/
       await expect(box.getByRole('button', { name: 'Remove it' })).toHaveClass(filled)
@@ -332,21 +333,22 @@ test.describe.serial('H: the protocol approval of an sw discovery run', () => {
   })
 })
 
-// Under the default `warn` mode the model's advice is applied and the run goes on without a card or a pause (D232).
-test.describe.serial('H2: the model advice is applied without asking', () => {
+// Under the default `warn` mode the model's advice is information only: every warned term is kept and the run goes on
+// without a card or a pause (D233).
+test.describe.serial('H2: the model advice is shown and every term is kept', () => {
   const server = new SwFixtureServer(nextPort(), 'warn')
   test.beforeAll(async () => { await server.start() })
   test.afterAll(async () => { await server.stop() })
   const lines = (page: Page) => page.locator('.chat-advice-lines')
 
-  test('a remove recommendation is applied, the run does not pause and the transcript says what was removed', async ({ browser }) => {
+  test('a remove recommendation is shown as advice, the term is kept, the run does not pause', async ({ browser }) => {
     const page = await browser.newPage()
     try {
       await startResearch(page, server, `${QUESTION} [wide] A sixth SYNTHETIC research.`)
       await expect(page.locator('.approval-card.is-approved')).toBeVisible({ timeout: 60_000 })
       await expect(page.locator('.approval-card.is-pending')).toHaveCount(0)
-      await expect(page.locator('.approval-toggle')).toContainText('not reviewed, the model advised')
-      await expect(lines(page)).toContainText('removed “wide” from the search (20,000 → 535 papers): SYNTHETIC: a general word')
+      await expect(page.locator('.approval-toggle')).toContainText('not reviewed, warned terms kept')
+      await expect(lines(page)).toContainText('advised removing “wide” (20,000 with it, 535 without); kept: SYNTHETIC: a general word')
       await expect(lines(page).locator('.model-name')).toContainText('fixture-model')
       await expect(page.locator('.chat-step', { hasText: 'Conducted' })).toBeVisible({ timeout: 60_000 })
       await expect(page.locator('[role="status"]', { hasText: 'paused' })).toHaveCount(0)
@@ -362,22 +364,23 @@ test.describe.serial('H2: the model advice is applied without asking', () => {
     } finally { await page.close() }
   })
 
-  test('a keep recommendation is applied as no change and the line says it was kept', async ({ browser }) => {
+  test('a keep recommendation is shown as advice and the line says the term was kept', async ({ browser }) => {
     const page = await browser.newPage()
     try {
       await startResearch(page, server, `${QUESTION} [wide] [advice-keep] A seventh SYNTHETIC research.`)
       await expect(page.locator('.approval-card.is-approved')).toBeVisible({ timeout: 60_000 })
-      await expect(lines(page)).toContainText('kept “wide”: SYNTHETIC: the question uses this word itself')
+      await expect(lines(page)).toContainText('advised keeping “wide” (20,000 with it, 535 without); kept: SYNTHETIC: the question uses this word itself')
     } finally { await page.close() }
   })
 
-  test('without advice the card opens as before', async ({ browser }) => {
+  test('without advice the run still goes on, every term kept, and the line says there was no advice', async ({ browser }) => {
     const page = await browser.newPage()
     try {
       await startResearch(page, server, `${QUESTION} [wide] [advice-down] An eighth SYNTHETIC research.`)
-      await expect(card(page).locator('.approval-warning')).toHaveCount(1, { timeout: 60_000 })
-      await expect(card(page).locator('.approval-advice')).toHaveCount(0)
-      await expect(lines(page)).toHaveCount(0)
+      await expect(page.locator('.approval-card.is-approved')).toBeVisible({ timeout: 60_000 })
+      await expect(page.locator('.approval-card.is-pending')).toHaveCount(0)
+      await expect(lines(page)).toContainText('no advice on “wide” (20,000 with it, 535 without); kept')
+      await expect(page.locator('.chat-step', { hasText: 'Conducted' })).toBeVisible({ timeout: 60_000 })
     } finally { await page.close() }
   })
 

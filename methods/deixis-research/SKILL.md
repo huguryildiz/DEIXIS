@@ -77,7 +77,7 @@ list, never a query, and you choose no block.
 For `term_advice`, read
 [term advice](references/term-advice.md): the approval card warns about search
 terms that multiply the matches; you say for each whether to remove or keep it,
-in one plain sentence, and you propose no term and write no query.
+in one plain sentence, as information only (no term is removed because of it), and you propose no term and write no query.
 
 For `search_query`, read
 [search query](references/search-query.md): you choose the terms of the two

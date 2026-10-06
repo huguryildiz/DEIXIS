@@ -2,8 +2,10 @@
 
 Goal: the approval card warns that one search term multiplies the number of
 matches. For each warned term, say whether the user should remove it or keep it,
-and give one plain sentence why. You advise; the user decides, and you write no
-query.
+and give one plain sentence why. Your advice is shown as information. Nothing
+is removed because of it: under the default mode every term is kept and the
+search runs as proposed, and a person who is asked decides for themselves. You
+write no query.
 
 1. Read `advice_target.question_text`, `advice_target.searched_terms` and
    `advice_target.warnings`. Each warning gives a `phrase`, its `block`,
@@ -11,8 +13,9 @@ query.
    `matches_without_term` (the records it would match with that one term taken
    out). The two blocks are both required in a paper: a record must match at
    least one term of each.
-2. Return `advice`: at most one entry per warned term, none for a phrase that is
-   not in `warnings`. Each entry has `phrase`, copied exactly, `recommendation`
+2. Return `advice`: exactly one entry for every warned term, none twice and none
+   for a phrase that is not in `warnings`; if one warned phrase is missing, the
+   whole answer is not used. Each entry has `phrase`, copied exactly, `recommendation`
    and `reason`.
 3. Recommend `remove` when the term is broad and stands for something the
    question does not ask about, so papers from other fields match only because

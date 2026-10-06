@@ -129,6 +129,24 @@ def flow_counts(ctx: Any, probe: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, Any]:
+    """The search step's funnel of the current revision (D233), one pool of works from the unique works down.
+
+    `retrieved` is the rows the keyword searches returned; `chained` is the works only citation chaining found, so
+    the keyword searches brought `unique - chained` works and every later stage is a subset of `unique`. None of the
+    counts is "found" or "relevant". `abstracts_read` counts works a model read, not the ones queued. `candidates` are
+    works with a current, not stale abstract-stage decision `candidate`, whatever a person or the full text did with them
+    afterwards. `included` is the works whose head record's selection is included, the same count the lists show."""
+    box = {row["key"]: row["count"] for row in boxes["boxes"]}
+    heads = ctx.facts["heads"]
+    candidates = sum(1 for work_id in heads if any(
+        d["stage"] == "abstract" and d["outcome"] == "candidate" and not ctx.decisions.is_stale(d, ctx.facts["stale_key"])
+        for d in ctx.facts["decisions"].get(work_id, [])))
+    included = sum(1 for work_id, head in heads.items() if (ctx.selections.get(head) or {}).get("state") == "included")
+    return {"retrieved": box["rows_returned"], "chained": len(ctx.chained & set(heads)), "unique": box["works"],
+            "abstracts_read": box["abstract_read_by_model"], "candidates": candidates, "included": included}
+
+
 def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
     """PRISMA 2020-style boxes for the current revision, each marked incomplete; they are counts, not a diagram."""
     store, rid, revision = ctx.store, ctx.rid, ctx.revision

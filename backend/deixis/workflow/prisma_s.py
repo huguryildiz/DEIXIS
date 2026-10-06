@@ -54,6 +54,13 @@ THROUGH = {"biorxiv": "openalex"}
 REGISTRY_WORDS = ("clinicaltrials", "ictrp", "registry", "trials")
 
 
+def _advice_given(approval: dict[str, Any]) -> bool:
+    """Whether a model's advice was stored: the record's own flag, else read from the stored advice rows."""
+    if "advice_given" in approval:
+        return bool(approval["advice_given"])
+    return any(row.get("recommendation") for row in approval.get("advice") or [])
+
+
 def _root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -420,9 +427,15 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
                        "DEIXIS has no published search filter; the queries are compiled from the "
                        + ("vocabulary, which no person reviewed because the application raised no warning."
                           if approval.get("approved_by") == "no_warning" else
+                          "vocabulary, which no person reviewed: the application warned that "
+                          + ", ".join(f"“{r['phrase']}”" for r in approval.get("advice") or [])
+                          + " made the matches far more numerous, and every warned term was kept"
+                          + (" (a model's advice on them is stored, as information only)."
+                             if _advice_given(approval) else " (no model advice was available).")
+                          if approval.get("approved_by") == "warn_kept" else
                           "vocabulary, which no person reviewed: the model advised on the application's warnings and "
-                          + (("the model removed " + ", ".join(f"“{r['phrase']}”" for r in approval["advice"] if r["applied"]))
-                             if any(r["applied"] for r in approval.get("advice") or []) else "the model removed no term")
+                          + (("the model removed " + ", ".join(f"“{r['phrase']}”" for r in approval["advice"] if r.get("applied")))
+                             if any(r.get("applied") for r in approval.get("advice") or []) else "the model removed no term")
                           + "."
                           if approval.get("approved_by") == "model_advice" else "approved vocabulary."),
                        {"query_compiler": body.get("code_version")},

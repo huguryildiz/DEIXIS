@@ -396,3 +396,50 @@ def test_not_sure_and_pdf_wrong_of_this_revision_are_counted_apart(store):
     ctx, probe = context(lib)
     shown = overrides.overrides_view(ctx, probe)
     assert shown["decisions"] == 0 and shown["apart"] == {"not_sure": 1, "pdf_wrong": 1, "look_again": 0}
+
+
+# ---- the search step's funnel (D233) -------------------------------------------------------------------------------
+
+
+def funnel_of(lib):
+    ctx, probe = context(lib)
+    flow = flow_counts.flow_counts(ctx, probe)
+    return flow_counts.funnel(ctx, flow, flow_counts.flow_boxes(ctx, flow))
+
+
+def test_the_funnel_keeps_keyword_rows_apart_from_chained_works_and_every_stage_inside_the_unique_works(store):
+    lib = Probe(store)
+    lib.keyed("search:0", lib.records(3))
+    lib.keyed("chain:backward:0", lib.records(2), query="chain:backward:W1")
+    funnel = funnel_of(lib)
+    assert (funnel["retrieved"], funnel["chained"], funnel["unique"]) == (3, 2, 5)
+    assert funnel["abstracts_read"] <= funnel["unique"] and funnel["candidates"] <= funnel["unique"]
+
+
+def test_a_candidate_is_a_work_with_a_current_abstract_candidate_decision_even_when_a_person_excluded_it_later(store):
+    lib = Probe(store)
+    (kept,), (out,) = lib.keyed("search:0", lib.records(1)), lib.keyed("search:1", lib.records(1))
+    (left,) = lib.keyed("search:2", lib.records(1))
+    lib.ds.record(lib.rid, kept, "runs_agree_candidate")
+    lib.ds.record(lib.rid, out, "runs_agree_out_of_scope")
+    lib.ds.record(lib.rid, left, "runs_agree_candidate")
+    person(lib, left, "human_criterion_not_met")  # a person excluded it afterwards: it still passed the abstract stage
+    assert funnel_of(lib)["candidates"] == 2
+
+
+def test_included_follows_the_selection_so_a_stale_decision_still_included_is_not_undercounted(store):
+    lib = Probe(store)
+    included = answered(lib, "include")
+    lib.revise()
+    assert placed(lib)[lib.work_of(included)][0] == "look_again"
+    assert flow_of(lib)["five"]["included"] == 0  # the flow buckets move it to look_again
+    assert funnel_of(lib)["included"] == 1  # its selection is still included
+
+
+def test_an_abstract_candidate_from_an_earlier_revision_is_stale_and_not_a_candidate(store):
+    lib = Probe(store)
+    (work,) = lib.keyed("search:0", lib.records(1))
+    lib.ds.record(lib.rid, work, "runs_agree_candidate")
+    assert funnel_of(lib)["candidates"] == 1
+    lib.revise()
+    assert funnel_of(lib)["candidates"] == 0

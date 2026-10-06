@@ -314,7 +314,7 @@ export type ProtocolEdits = {
 export type RunApproval = {
   // waiting: the card is editable. submitted: the correction was sent and is being applied. approved: it is frozen.
   status: 'waiting' | 'submitted' | 'approved'
-  approved_by: 'user' | 'setting' | 'earlier_approval' | 'no_warning' | 'model_advice' | null; edited: boolean | null; proposal_hash: string
+  approved_by: 'user' | 'setting' | 'earlier_approval' | 'no_warning' | 'model_advice' | 'warn_kept' | null; edited: boolean | null; proposal_hash: string
   proposal: ApprovalSide; approved: ApprovalSide | null
   // Operations of an earlier approval this run could not apply, because the phrase is no longer in the proposal.
   skipped_edits: { op: string; phrase: string; block?: string; reason?: string }[]
@@ -323,8 +323,10 @@ export type RunApproval = {
   warnings?: { warning: string; phrase: string; block: string; matches: number; matches_without_term: number; advice?: { recommendation: 'remove' | 'keep'; reason: string } | null }[]
   // The model that gave that advice; null when it gave none.
   advice_model?: { connection: string; model: string | null } | null
-  // When the run went on without asking (`approved_by` model_advice): what each warned term's advice did (D232).
-  advice_applied?: { phrase: string; recommendation: 'remove' | 'keep' | null; reason: string | null; matches: number; matches_without_term: number; applied: boolean; not_applied?: string }[] | null
+  // When the run went on without asking (`approved_by` warn_kept; model_advice on a run before D233): the advice per warned term.
+  // Information only: every warned term was kept (D233). `advice_given` is false when the call failed or its output was not used.
+  advice_applied?: { phrase: string; recommendation: 'remove' | 'keep' | null; reason: string | null; matches: number; matches_without_term: number; applied?: boolean; not_applied?: string }[] | null
+  advice_given?: boolean | null
   // Other names the user asked a model for, and what came of it (D82).
   suggestions: ApprovalSuggestions
   // Which sources the queries were compiled for and why (D93); null for a card shown before routing existed.
@@ -584,6 +586,8 @@ export type Counts = {
   waiting_for_pdf?: number
   // Slice 20: the flow buckets, the PRISMA 2020-style boxes and the override count; null in legacy.
   flow?: FlowCounts | null; flow_boxes?: FlowBoxes | null; overrides?: Overrides | null
+  // The search step's funnel for the current revision (D233); null in legacy. A candidate passed the abstract stage; nothing here is "relevant".
+  funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; included: number } | null
 }
 // The audit sample of an sw research (slice 20, decisions 5–7): F1 / F2 answered here, A1 / A2 for viewing only.
 export type AuditAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong'

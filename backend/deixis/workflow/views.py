@@ -151,8 +151,12 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
                      for w in output.get("warnings") or []],
         # The model that advised on the warnings, or None when it was not asked or gave nothing (D232).
         "advice_model": output.get("advice_model") if output.get("advice") else None,
-        # What the model's advice did when the run went on without asking anyone: a row per warned term (D232).
-        "advice_applied": record.get("advice") if record.get("approved_by") == "model_advice" else None,
+        # The model's advice per warned term when the run went on without asking anyone (D233): information only, every
+        # term was kept. `advice_given` is False when the call failed or its output was not used.
+        "advice_applied": record.get("advice") if record.get("approved_by") in ("warn_kept", "model_advice") else None,
+        "advice_given": (record["advice_given"] if "advice_given" in record else
+                         any(row.get("recommendation") for row in record.get("advice") or []))
+        if record.get("approved_by") in ("warn_kept", "model_advice") else None,
         "suggestions": _suggestions_side(store, run_id, step, output),
         # Which sources the queries were compiled for and why (D93): the approved routing once a correction routed
         # again, else the proposal's. None for a card shown before routing existed.
@@ -766,6 +770,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     flow = flow_rules.flow_counts(ctx, probe) if ctx is not None and probe is not None else None
     counts["flow"] = flow
     counts["flow_boxes"] = flow_rules.flow_boxes(ctx, flow) if flow is not None else None
+    # Provider rows → unique works → abstracts read → candidates → included, for the search step's headline (D233).
+    counts["funnel"] = flow_rules.funnel(ctx, flow, counts["flow_boxes"]) if flow is not None else None
     counts["overrides"] = override_rules.overrides_view(ctx, probe) if ctx is not None and probe is not None else None
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
     reviewer = effective_reviewer(scope, store.setting("reviewer"))

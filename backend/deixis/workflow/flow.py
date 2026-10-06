@@ -875,11 +875,11 @@ class ResearchFlow:
                      "key_terms": scope.get("key_terms")}
         # The newest approval this research closed for the same question, steering and key terms. It is both what a
         # correction is reapplied from and what a re-asked card takes its suggestions back from.
-        # A run that went on because nothing was wrong (`no_warning`), or on a model's advice (`model_advice`, D232),
-        # asked nobody: it is no approval to take back.
+        # A run that went on because nothing was wrong (`no_warning`), or kept every warned term (`warn_kept`, D233;
+        # `model_advice` is the same run before D233), asked nobody: it is no approval to take back.
         earlier = next((row for row in self.store.approvals_of(rid)
                         if row["output"]["asked_for"] == asked_for
-                        and (row["output"].get("approval") or {}).get("approved_by") not in ("no_warning", "model_advice")), None)
+                        and (row["output"].get("approval") or {}).get("approved_by") not in ("no_warning", "warn_kept", "model_advice")), None)
         output = step["output"]
         if output is None:
             failures = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("failures", [])
@@ -940,13 +940,12 @@ class ResearchFlow:
             # A run nobody attends: the proposal is approved as it stands and the protocol says so by name, so a body
             # approved by a setting is never read as a body a user approved.
             edits, source, by = {"terms": [], "criterion": None, "note": None}, "setting", "setting"
-        elif self.deps.settings.protocol_approval == "warn" and output.get("warnings") and output.get("advice"):
-            # The model's advice is applied as the user's own remove operations and the run goes on (D232): nobody is
-            # asked, and the protocol says a model, not a person, took the terms out. No advice, no change here: the
-            # card opens as it does for a warning nobody advised on.
-            removes, advice_rows = approval_rules.apply_advice(
-                output["proposal"]["vocabulary"], output["warnings"], output["advice"])
-            edits, source, by = {"terms": removes, "criterion": None, "note": None}, "model_advice", "model_advice"
+        elif self.deps.settings.protocol_approval == "warn" and output.get("warnings"):
+            # The model's advice, when it gave any, is information only (D233): every warned term is kept and the run
+            # goes on, with no card and no pause, also when the advice call failed. Nobody is asked, and the protocol
+            # says so, so this body is never read as one a person approved.
+            advice_rows = approval_rules.advice_rows(output["warnings"], output.get("advice") or {})
+            edits, source, by = {"terms": [], "criterion": None, "note": None}, "warn_kept", "warn_kept"
         elif self.deps.settings.protocol_approval == "warn" and not output.get("warnings"):
             # Nothing the application can see is wrong with the proposal, so the run does not stop. The protocol says
             # that nobody was asked, so this body is never read as one a person approved.
@@ -980,8 +979,10 @@ class ResearchFlow:
             "criterion_edited": edits.get("criterion") is not None,
             "exclusion_word_in_question": approval_rules.exclusion_words_in_question(scope["question"], agreed),
             **({"asked": False, "reason": "no_warning"} if source == "no_warning" else {}),
-            **({"asked": False, "reason": "model_advice", "advice": advice_rows,
-                "advice_model": output.get("advice_model")} if source == "model_advice" else {}),
+            **({"asked": False, "reason": "warn_kept", "advice": advice_rows,
+                "advice_given": bool(output.get("advice")),
+                "advice_model": output.get("advice_model") if output.get("advice") else None}
+               if source == "warn_kept" else {}),
             **({"warnings": output["warnings"]} if output.get("warnings") else {}),
             **({"note": edits["note"]} if edits.get("note") else {}),
             **({"earlier_approval_step_id": earlier["id"]} if source == "earlier" else {}),
@@ -1014,11 +1015,11 @@ class ResearchFlow:
         return built, compiled, agreed, record
 
     async def _term_advice(self, run: dict[str, Any], scope: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
-        """Ask a model whether to remove or keep each warned term, once, and never block the card on it (D232).
+        """Ask a model whether to remove or keep each warned term, once, and never block the run on it (D232, D233).
 
         Returns `{phrase: {recommendation, reason}}`, empty when the model is down, the call budget is spent or the
-        answer names a phrase it was not given. One call with no repair: a failure is stored as no advice, so a
-        resumed run does not call again, and the card is shown as it was before the step existed.
+        answer does not name exactly the warned phrases. One call with no repair: a failure is stored as no advice, so
+        a resumed run does not call again. The advice is shown as information; under `warn` every term is kept.
         """
         self._checkpoint(run["id"], run["scope_revision"])
         try:

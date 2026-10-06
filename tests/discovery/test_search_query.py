@@ -707,9 +707,9 @@ def test_without_a_warning_the_run_freezes_its_protocol_and_says_nobody_was_aske
     assert approval["asked"] is False and approval["reason"] == "no_warning"
 
 
-def test_a_term_that_inflates_the_matches_stops_the_run_with_the_warning_and_the_count_without_it(tmp_path, monkeypatch):
+def test_a_term_that_inflates_the_matches_under_ask_stops_the_run_with_the_warning_and_the_count_without_it(tmp_path, monkeypatch):
     openalex = OpenAlex({GATE: 18_369, WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_500})
-    client = client_for(tmp_path, monkeypatch, openalex, advice_down(), approval="warn")
+    client = client_for(tmp_path, monkeypatch, openalex, advice_down(), approval="ask")
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)
     assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed")
@@ -748,14 +748,17 @@ def test_a_run_that_went_on_without_a_warning_is_not_an_earlier_approval_for_a_l
         return output
     set_stored(client, first, "search_query", inflate)
     second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
-    _, run = wait(client, rid, second)
-    assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed")
-    assert step_output(client, second, "protocol_approval")["warnings"][0]["phrase"] == "broad setting"
+    _, run = wait(client, rid, second, ("completed", "failed"))
+    # Under warn the second run asks nobody either (D233): every warned term is kept, and the record is its own.
+    assert run["status"] == "completed", run
+    approval = step_output(client, second, "protocol_approval")
+    assert approval["warnings"][0]["phrase"] == "broad setting"
+    assert approval["approval"]["approved_by"] == "warn_kept"
 
 
 def test_a_card_stored_before_the_check_existed_is_checked_once_and_not_closed_as_no_warning(tmp_path, monkeypatch):
     openalex = OpenAlex({GATE: 18_369, WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_500})
-    client = client_for(tmp_path, monkeypatch, openalex, advice_down(), approval="warn")
+    client = client_for(tmp_path, monkeypatch, openalex, advice_down(), approval="ask")
     rid, run_id = start(client)
     wait(client, rid, run_id)
     stored = step_output(client, run_id, "protocol_approval")

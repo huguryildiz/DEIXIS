@@ -421,3 +421,40 @@ def test_a_sent_query_without_its_search_record_makes_item_8_incomplete(store):
                       output={"transport": {"sends": 1, "attempts": 1, "dispatches": [{}]}})
     assert item(none.export(), 8)["status"] == "incomplete"
     assert "1 sent queries have no stored search record" in item(none.export(), 8)["text"]
+
+
+# ---- item 10 and the vocabulary nobody reviewed (D233) ----------------------------------------------------------
+
+def item_ten(store, approval):
+    lib = Search(store, "irrigation")
+    searched(lib)
+    store.freeze_protocol(lib.rid, 1, body(lib.field) | {"approval": approval}, reason="SYNTHETIC")
+    return item(lib.export(), 10)["text"]
+
+
+ROW = {"phrase": "broad word", "block": "setting", "matches": 18_369, "matches_without_term": 535}
+
+
+def test_item_10_says_warned_terms_were_kept_and_whether_advice_was_stored(store):
+    text = item_ten(store, {"approved_by": "warn_kept", "advice_given": True,
+                            "advice": [ROW | {"recommendation": "remove", "reason": "SYNTHETIC"}]})
+    assert "no person reviewed" in text and "every warned term was kept" in text and "“broad word”" in text
+    assert "information only" in text and "model removed" not in text
+    assert "no model advice was available" in item_ten(store, {"approved_by": "warn_kept", "advice_given": False,
+                                                              "advice": [ROW | {"recommendation": None, "reason": None}]})
+
+
+def test_item_10_of_a_record_without_the_advice_flag_reads_it_from_the_stored_advice(store):
+    given = item_ten(store, {"approved_by": "warn_kept", "advice": [ROW | {"recommendation": "keep", "reason": "S"}]})
+    assert "stored, as information only" in given
+    none = item_ten(store, {"approved_by": "warn_kept", "advice": [ROW | {"recommendation": None, "reason": None}]})
+    assert "no model advice was available" in none
+
+
+def test_item_10_of_a_run_before_d233_still_says_the_model_removed_the_term(store):
+    text = item_ten(store, {"approved_by": "model_advice",
+                            "advice": [ROW | {"recommendation": "remove", "reason": "S", "applied": True}]})
+    assert "the model removed “broad word”" in text and "kept" not in text
+    text = item_ten(store, {"approved_by": "model_advice",
+                            "advice": [ROW | {"recommendation": "keep", "reason": "S", "applied": False}]})
+    assert "the model removed no term" in text

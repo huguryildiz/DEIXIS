@@ -227,19 +227,29 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const overlap = run.kind === 'discovery' && (run.budget.fulltext_fetch as unknown as { mode?: string } | undefined)?.mode === 'overlap'
   const order: PhaseKey[] = run.kind === 'review' ? ['review'] : run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? ['plan', 'search', 'screen', ...(overlap ? ['pdf' as const] : [])] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
-  // When a model's advice on the warned terms was applied and the run went on without asking (D232), one plain line per
-  // advised term says what the model did and why. Nothing warned, nothing advised: no line.
-  const advised = (run.approval?.advice_applied ?? []).filter(row => row.recommendation !== null)
+  // When the run went on without asking about the warned terms, one plain line per term says what the model advised. Since
+  // D233 advice is information and every term is kept; a run from before it (`model_advice`) really removed the terms the
+  // model advised removing, and says so. A term with no advice says so.
+  const legacyAdvice = run.approval?.approved_by === 'model_advice'
+  const advised = (run.approval?.advice_applied ?? []).filter(row => !legacyAdvice || row.recommendation !== null)
   const adviceModel = run.approval?.advice_model
-  const adviceLines = advised.length > 0 && <ul className="chat-advice-lines">{advised.map(row => <li key={row.phrase}>
-    {adviceModel && <><ModelName connection={adviceModel.connection} text={modelText(adviceModel.model)} />{' '}</>}
-    <span dir="auto">{row.applied
-      ? t('removed “{phrase}” from the search ({from} → {to} papers):', { phrase: row.phrase, from: row.matches.toLocaleString(uiLocale()), to: row.matches_without_term.toLocaleString(uiLocale()) })
-      : row.not_applied ? t('advised removing “{phrase}”, but it is the last word of its group, so it stayed:', { phrase: row.phrase })
-      : t('kept “{phrase}”:', { phrase: row.phrase })} {row.reason}</span>
-  </li>)}</ul>
+  const adviceLines = advised.length > 0 && <ul className="chat-advice-lines">{advised.map(row => {
+    const counts = { phrase: row.phrase, from: row.matches.toLocaleString(uiLocale()), to: row.matches_without_term.toLocaleString(uiLocale()) }
+    return <li key={row.phrase}>
+      {adviceModel && row.recommendation !== null && <><ModelName connection={adviceModel.connection} text={modelText(adviceModel.model)} />{' '}</>}
+      <span dir="auto">{legacyAdvice
+        ? (row.applied ? t('removed “{phrase}” from the search ({from} → {to} papers):', counts)
+          : row.not_applied ? t('advised removing “{phrase}”, but it is the last word of its group, so it stayed:', counts)
+          : t('kept “{phrase}”:', counts))
+        : row.recommendation === 'remove' ? t('advised removing “{phrase}” ({from} with it, {to} without); kept:', counts)
+        : row.recommendation === 'keep' ? t('advised keeping “{phrase}” ({from} with it, {to} without); kept:', counts)
+        : t('no advice on “{phrase}” ({from} with it, {to} without); kept', counts)}{row.reason ? ` ${row.reason}` : ''}</span>
+    </li>
+  })}</ul>
   const reached = run.kind === 'report' && !active ? 2 : Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   // A citation chain's requests are not searches of the question; the screening phase reports them (D95).
+  // The funnel counts belong to the current question revision; only its latest discovery run may show them (D233).
+  const latestDiscovery = run.kind === 'discovery' && view.runs.find(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision)?.id === run.id
   const searches = view.search_runs.filter(s => s.run_id === run.id && !s.query_text.startsWith('chain:'))
   const answer = view.answers.find(a => a.run_id === run.id)
   const started = present(steps.map(s => s.started_at))[0] ?? run.created_at
@@ -356,8 +366,13 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         if (!searches.length) return ''
         // The line keeps the totals only; the per-provider figures are in the phase details, on the query rows.
         const found = searches.reduce((sum, s) => sum + (s.status === 'completed' ? s.result_count : 0), 0)
-        // Unique works are counted per question revision, not per run, so the line keeps only what this run's searches returned.
-        return plural(found, '{n} record', '{n} records')
+        // Unique works are counted per question revision, not per run, so they are named only on the latest discovery run
+        // of the current revision (D233). These are rows the providers returned, not sources found.
+        const funnel = latestDiscovery ? view.counts.funnel : null
+        if (funnel) return [t('{retrieved} records retrieved by search', { retrieved: funnel.retrieved.toLocaleString(uiLocale()) }),
+          ...(funnel.chained ? [t('{chained} works added by citation chaining', { chained: funnel.chained.toLocaleString(uiLocale()) })] : []),
+          t('{unique} unique works', { unique: funnel.unique.toLocaleString(uiLocale()) })].join(' · ')
+        return plural(found, '{n} record retrieved', '{n} records retrieved')
       }
       case 'screen': {
         if (state === 'running') {
@@ -370,7 +385,11 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
           if (!stages.length || (chainRead && !stages.some(s => s.kind === 'code:chain_abstract_stage'))) return read ? plural(read, '{n} abstract read', '{n} abstracts read') : ''
           return t('{read} of {total} abstracts read', { read, total })
         }
-        return t('{included} included · {excluded} excluded · {pending} undecided', { included: view.counts.included, excluded: view.counts.excluded, pending: view.counts.pending })
+        const outcome = t('{included} included · {excluded} excluded · {pending} undecided', { included: view.counts.included, excluded: view.counts.excluded, pending: view.counts.pending })
+        // The funnel, from the provider rows down to the included works (D233). A candidate passed the abstract stage; it is not called relevant.
+        const funnel = latestDiscovery ? view.counts.funnel : null
+        return funnel ? [outcome, t('{read} abstracts read · {candidates} candidates', { read: funnel.abstracts_read.toLocaleString(uiLocale()), candidates: funnel.candidates.toLocaleString(uiLocale()) }),
+          t('out of {unique} unique works', { unique: funnel.unique.toLocaleString(uiLocale()) })].join(' · ') : outcome
       }
       case 'pdf': {
         // One outcome per source: a copy found after its link refused counts as downloaded, not as a failure.

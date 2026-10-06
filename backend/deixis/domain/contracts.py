@@ -1826,10 +1826,11 @@ def _check_term_suggestions(allow: dict[str, set[str]], draft: dict[str, Any], r
 
 
 def _check_term_advice(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
-    """Advice must name a warned phrase, and one phrase at most once (D232).
+    """Advice must name exactly the warned phrases, each once (D232, D233).
 
-    An entry outside the allowlist has no warning to sit under, and two entries for one phrase would leave the card
-    to choose between them; each is an error and the whole output is not used.
+    An entry outside the allowlist has no warning to sit under, two entries for one phrase would leave the reader to
+    choose between them, and a warned phrase without an entry is advice that is not complete; each is an error and the
+    whole output is not used.
     """
     seen: set[str] = set()
     for index, entry in enumerate(draft["advice"]):
@@ -1838,6 +1839,8 @@ def _check_term_advice(allow: dict[str, set[str]], draft: dict[str, Any], report
         elif entry["phrase"] in seen:
             report.issues.append(Issue("duplicate_advice_phrase", f"/advice/{index}/phrase", entry["phrase"]))
         seen.add(entry["phrase"])
+    for phrase in sorted(allow.get("phrases", set()) - seen):
+        report.issues.append(Issue("missing_advice_phrase", "/advice", phrase))
 
 
 SEARCH_QUERY_MAX_TERMS = 6  # chosen terms of both blocks together (D92)

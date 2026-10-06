@@ -1,7 +1,7 @@
-"""The model's advice on each term-inflation warning of the approval card (D232).
+"""The model's advice on each term-inflation warning of the approval card (D232, D233: information only).
 
 Every question, term and count here is SYNTHETIC, OpenAlex is mocked and the model is the fake adapter, so passing
-shows workflow behavior: when the call is made, what is stored and shown, and that the card never waits on it. It
+shows workflow behavior: when the call is made, what is stored and shown, and that no run waits on it or acts on it. It
 says nothing about whether a model advises well; no real model was asked.
 """
 
@@ -103,11 +103,11 @@ def test_a_run_without_a_warning_makes_no_advice_call(tmp_path, monkeypatch):
     assert run["status"] == "completed" and asked(adapter) == []
 
 
-def test_a_failed_call_leaves_the_card_without_advice_and_does_not_block_it(tmp_path, monkeypatch):
+def test_a_failed_call_under_ask_leaves_the_card_without_advice(tmp_path, monkeypatch):
     adapter = FakeAdapter(two_setting_terms,
                           fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
                           if si["task_type"] == "term_advice" else None)
-    client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), adapter, approval="warn")
+    client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), adapter, approval="ask")
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)
     assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed")
@@ -116,17 +116,37 @@ def test_a_failed_call_leaves_the_card_without_advice_and_does_not_block_it(tmp_
     assert step_output(client, run_id, "protocol_approval")["advice"] == {}
 
 
+def not_warned(si):
+    if si["task_type"] != "term_advice":
+        return two_setting_terms(si)
+    return json.dumps(envelope(si, "deixis.term_advice.v1") | {"advice": [
+        {"phrase": "narrow setting", "recommendation": "remove", "reason": "SYNTHETIC: not warned."}]})
+
+
+def missing(si):
+    if si["task_type"] != "term_advice":
+        return two_setting_terms(si)
+    return json.dumps(envelope(si, "deixis.term_advice.v1") | {"advice": []})
+
+
 def test_advice_for_a_phrase_that_was_not_warned_is_not_used(tmp_path, monkeypatch):
-    def responder(si):
-        if si["task_type"] != "term_advice":
-            return two_setting_terms(si)
-        return json.dumps(envelope(si, "deixis.term_advice.v1") | {"advice": [
-            {"phrase": "narrow setting", "recommendation": "remove", "reason": "SYNTHETIC: not warned."}]})
-    client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), FakeAdapter(responder), approval="warn")
+    client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), FakeAdapter(not_warned), approval="ask")
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id)
     assert run["pause_reason"] == "protocol_approval_needed"
     assert waiting_card(client, rid, run_id)["warnings"][0]["advice"] is None
+
+
+def test_advice_that_misses_a_warned_phrase_is_not_used_and_warn_goes_on(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), FakeAdapter(missing), approval="warn")
+    rid, run_id = start(client)
+    _, run = wait(client, rid, run_id, ("completed", "failed"))
+    assert run["status"] == "completed", run
+    stored = step_output(client, run_id, "protocol_approval")
+    assert stored["advice"] == {}
+    record = stored["approval"]
+    assert (record["approved_by"], record["asked"], record["advice_given"]) == ("warn_kept", False, False)
+    assert [r["recommendation"] for r in record["advice"]] == [None]
 
 
 def test_a_resumed_run_returns_the_stored_advice_and_does_not_call_again(tmp_path, monkeypatch):
@@ -149,7 +169,7 @@ def test_a_resumed_run_returns_the_stored_advice_and_does_not_call_again(tmp_pat
     assert step_output(client, run_id, "protocol_approval")["advice"] == stored
 
 
-def test_a_spent_call_budget_leaves_the_card_without_advice(tmp_path, monkeypatch):
+def test_a_spent_call_budget_leaves_the_run_going_with_every_term_kept(tmp_path, monkeypatch):
     holder = {}
 
     class Spending(OpenAlex):
@@ -169,11 +189,14 @@ def test_a_spent_call_budget_leaves_the_card_without_advice(tmp_path, monkeypatc
     holder["run_id"] = run_id
     _, run = wait(client, rid, run_id)
     assert asked(adapter) == []
-    assert run["pause_reason"] == "protocol_approval_needed"
-    assert waiting_card(client, rid, run_id)["warnings"][0]["advice"] is None
+    assert run["pause_reason"] != "protocol_approval_needed"
+    _, run = wait(client, rid, run_id, ("completed", "failed"))
+    assert run["status"] == "completed", run
+    record = step_output(client, run_id, "protocol_approval")["approval"]
+    assert (record["approved_by"], record["advice_given"], record["term_edits"]) == ("warn_kept", False, 0)
 
 
-# ---- the advice applied: the run goes on without asking anyone ----------------------------------------------
+# ---- the advice shown: the run goes on without asking anyone and keeps every term -----------------------------
 
 def removing(si):
     if si["task_type"] != "term_advice":
@@ -183,7 +206,7 @@ def removing(si):
         for w in si["advice_target"]["warnings"]]})
 
 
-def test_a_remove_recommendation_is_applied_as_the_users_own_removal_and_the_run_goes_on(tmp_path, monkeypatch):
+def test_a_remove_recommendation_is_shown_and_not_applied_and_the_run_goes_on(tmp_path, monkeypatch):
     adapter = FakeAdapter(removing)
     client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), adapter, approval="warn")
     rid, run_id = start(client)
@@ -191,57 +214,94 @@ def test_a_remove_recommendation_is_applied_as_the_users_own_removal_and_the_run
     assert run["status"] == "completed", run
     stored = step_output(client, run_id, "protocol_approval")
     record = stored["approval"]
-    assert (record["approved_by"], record["asked"], record["reason"], record["edited"]) == ("model_advice", False, "model_advice", True)
-    assert record["term_edits"] == 1
+    assert (record["approved_by"], record["asked"], record["reason"], record["edited"]) == ("warn_kept", False, "warn_kept", False)
+    assert record["term_edits"] == 0 and record["advice_given"] is True
     (row,) = record["advice"]
     assert row == {"phrase": "broad setting", "block": "setting", "recommendation": "remove",
-                   "reason": "SYNTHETIC: a general word.", "matches": 18_369, "matches_without_term": 535, "applied": True}
+                   "reason": "SYNTHETIC: a general word.", "matches": 18_369, "matches_without_term": 535}
     assert record["advice_model"] == {"connection": "fake", "model": "fake-model"}
-    assert [t["phrase"] for t in stored["approved"]["vocabulary"]["terms"] if t["block"] == "setting"] == ["narrow setting"]
+    assert [t["phrase"] for t in stored["approved"]["vocabulary"]["terms"] if t["block"] == "setting"] == [
+        "narrow setting", "broad setting"]
     card = next(r for r in client.get(f"/api/researches/{rid}").json()["runs"] if r["id"] == run_id)["approval"]
-    assert card["status"] == "approved" and card["approved_by"] == "model_advice"
-    assert card["advice_applied"][0]["applied"] is True
+    assert card["status"] == "approved" and card["approved_by"] == "warn_kept" and card["advice_given"] is True
+    assert card["advice_applied"][0]["recommendation"] == "remove"
     assert len(asked(adapter)) == 1
 
 
-def test_a_keep_recommendation_changes_nothing_and_is_recorded(tmp_path, monkeypatch):
+def test_a_keep_recommendation_is_recorded_and_changes_nothing(tmp_path, monkeypatch):
     client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), FakeAdapter(two_setting_terms), approval="warn")
     rid, run_id = start(client)
     _, run = wait(client, rid, run_id, ("completed", "failed"))
     assert run["status"] == "completed", run
     record = step_output(client, run_id, "protocol_approval")["approval"]
-    assert record["approved_by"] == "model_advice" and record["edited"] is False and record["term_edits"] == 0
-    assert [(r["recommendation"], r["applied"]) for r in record["advice"]] == [("keep", False)]
+    assert record["approved_by"] == "warn_kept" and record["edited"] is False and record["term_edits"] == 0
+    assert [r["recommendation"] for r in record["advice"]] == ["keep"]
 
 
-def test_a_removal_that_would_empty_a_group_is_not_applied_and_says_why():
-    from deixis.workflow import approval
-    vocabulary = {"terms": [{"phrase": "alpha", "block": "setting", "dropped": None},
-                            {"phrase": "beta", "block": "setting", "dropped": None},
-                            {"phrase": "gamma", "block": "task", "dropped": None}]}
-    warnings = [{"phrase": p, "block": "setting", "matches": 5000, "matches_without_term": 100} for p in ("alpha", "beta")]
-    advice = {p: {"recommendation": "remove", "reason": "SYNTHETIC."} for p in ("alpha", "beta")}
-    edits, rows = approval.apply_advice(vocabulary, warnings, advice)
-    assert edits == [{"op": "remove", "phrase": "alpha"}]
-    assert [(r["phrase"], r["applied"], r.get("not_applied")) for r in rows] == [
-        ("alpha", True, None), ("beta", False, "last_term_of_group")]
-
-
-def test_a_run_whose_advice_failed_opens_the_card_under_warn(tmp_path, monkeypatch):
+def test_a_run_whose_advice_failed_goes_on_under_warn_with_every_term_kept(tmp_path, monkeypatch):
     adapter = FakeAdapter(two_setting_terms, fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
                           if si["task_type"] == "term_advice" else None)
     client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), adapter, approval="warn")
     rid, run_id = start(client)
-    _, run = wait(client, rid, run_id)
-    assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed")
+    _, run = wait(client, rid, run_id, ("completed", "failed"))
+    assert run["status"] == "completed", run
+    record = step_output(client, run_id, "protocol_approval")["approval"]
+    assert (record["approved_by"], record["asked"], record["advice_given"], record["advice_model"]) == (
+        "warn_kept", False, False, None)
+    assert record["advice"][0]["recommendation"] is None and record["term_edits"] == 0
 
 
-def test_a_model_advised_run_is_not_an_earlier_approval_for_the_next_run(tmp_path, monkeypatch):
+def test_a_warn_kept_run_is_not_an_earlier_approval_for_the_next_run(tmp_path, monkeypatch):
     adapter = FakeAdapter(removing)
     client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), adapter, approval="warn")
     rid, first = start(client)
     wait(client, rid, first, ("completed", "failed"))
     second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
     wait(client, rid, second, ("completed", "failed"))
-    assert step_output(client, second, "protocol_approval")["approval"]["approved_by"] == "model_advice"
-    assert len(asked(adapter)) == 2  # the second run asked again; the first run's advice was nobody's approval
+    assert step_output(client, second, "protocol_approval")["approval"]["approved_by"] == "warn_kept"
+    assert len(asked(adapter)) == 2  # the second run asked again; the first run's record was nobody's approval
+
+
+def test_a_warn_run_resumed_after_failed_advice_asks_nobody_again_and_keeps_every_term(tmp_path, monkeypatch):
+    adapter = FakeAdapter(two_setting_terms, fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
+                          if si["task_type"] == "term_advice" else None)
+    client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), adapter, approval="warn")
+    rid, run_id = start(client)
+    _, run = wait(client, rid, run_id, ("completed", "failed"))
+    assert run["status"] == "completed", run
+    before = len(asked(adapter))
+    assert before == 1
+
+    def reopen(output):
+        for key in ("approved", "approval", "edits", "skipped_edits", "suggestions"):
+            output.pop(key, None)
+        return output
+    set_stored(client, run_id, "protocol_approval", reopen)
+    store = client.app.state.store
+    store.conn.execute("UPDATE run_steps SET status = 'pending' WHERE run_id = ? AND operation_key = 'protocol_approval'",
+                       (run_id,))
+    store.conn.execute("UPDATE runs SET status = 'paused', pause_reason = 'protocol_approval_needed' WHERE id = ?", (run_id,))
+    store.resume_run(run_id)
+    client.app.state.worker.wake()
+    _, run = wait(client, rid, run_id, ("completed", "failed"))
+    assert run["status"] == "completed", run
+    assert len(asked(adapter)) == before  # the failed model step is stored: nothing is asked a second time
+    record = step_output(client, run_id, "protocol_approval")["approval"]
+    assert (record["approved_by"], record["advice_given"], record["term_edits"]) == ("warn_kept", False, 0)
+
+
+def test_a_run_recorded_before_d233_as_model_advice_is_shown_as_what_it_did(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch, OpenAlex(COUNTS), FakeAdapter(removing), approval="warn")
+    rid, run_id = start(client)
+    wait(client, rid, run_id, ("completed", "failed"))
+
+    def old(output):
+        record = output["approval"]
+        record["approved_by"] = record["reason"] = "model_advice"
+        record.pop("advice_given")
+        record["advice"] = [row | {"applied": True} for row in record["advice"]]
+        return output
+    set_stored(client, run_id, "protocol_approval", old)
+    card = next(r for r in client.get(f"/api/researches/{rid}").json()["runs"] if r["id"] == run_id)["approval"]
+    assert card["approved_by"] == "model_advice" and card["advice_given"] is True
+    assert card["advice_applied"][0]["recommendation"] == "remove" and card["advice_applied"][0]["applied"] is True

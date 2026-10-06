@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://deixis.local/contracts/research/term-advice.schema.json",
   "title": "TermAdvice",
-  "description": "The model's advice on each search term the approval card warns about (D232). The card warns when one term multiplies the matches of the search; the model says, for each warned term, whether to remove it or keep it, and gives one plain sentence for a reader who is not an expert. Asked once per approval that has a warning, with no repair. The advice is shown beside the warning and decides nothing: the user's choice stands and the search is unchanged until they make it.",
+  "description": "The model's advice on each search term the approval card warns about (D232). The card warns when one term multiplies the matches of the search; the model says, for each warned term, whether to remove it or keep it, and gives one plain sentence for a reader who is not an expert. Asked once per approval that has a warning, with no repair. The advice is shown as information beside the warning and changes nothing: under the default warn mode every term is kept and the search runs as proposed; only a person who is asked (ask mode) can remove a term.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,7 +21,7 @@
       "type": "array",
       "minItems": 0,
       "maxItems": 12,
-      "description": "One entry per warned term, at most one each.",
+      "description": "Exactly one entry per warned term: every warned term, none twice, none that was not warned. Otherwise the whole output is not used.",
       "items": {
         "type": "object",
         "additionalProperties": false,

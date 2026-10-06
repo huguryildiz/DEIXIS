@@ -1397,10 +1397,12 @@
    }
   },
   {
-   "name": "term_advice_empty",
+   "name": "term_advice_empty_misses_every_phrase",
    "step_input": "G_term_advice",
-   "expect_ok": true,
-   "expect_codes": [],
+   "expect_ok": false,
+   "expect_codes": [
+    "missing_advice_phrase"
+   ],
    "output": {
     "schema_version": "deixis.term_advice.v1",
     "step_input_id": "sti_SYNTHE0001",
@@ -1414,6 +1416,7 @@
    "step_input": "G_term_advice",
    "expect_ok": false,
    "expect_codes": [
+    "missing_advice_phrase",
     "phrase_not_in_allowlist"
    ],
    "output": {
@@ -1435,7 +1438,8 @@
    "step_input": "G_term_advice",
    "expect_ok": false,
    "expect_codes": [
-    "duplicate_advice_phrase"
+    "duplicate_advice_phrase",
+    "missing_advice_phrase"
    ],
    "output": {
     "schema_version": "deixis.term_advice.v1",
@@ -1452,6 +1456,27 @@
       "phrase": "subsynchronous oscillation damping",
       "recommendation": "remove",
       "reason": "SYNTHETIC: second."
+     }
+    ]
+   }
+  },
+  {
+   "name": "term_advice_missing_phrase",
+   "step_input": "G_term_advice",
+   "expect_ok": false,
+   "expect_codes": [
+    "missing_advice_phrase"
+   ],
+   "output": {
+    "schema_version": "deixis.term_advice.v1",
+    "step_input_id": "sti_SYNTHE0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "advice": [
+     {
+      "phrase": "subsynchronous oscillation damping",
+      "recommendation": "keep",
+      "reason": "SYNTHETIC: this is what the question is about, so papers that answer it would say it."
      }
     ]
    }

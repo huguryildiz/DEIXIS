@@ -94,7 +94,7 @@
   {
    "deixis_file": "references/term-advice.md",
    "derived_from": [],
-   "change": "Written for DEIXIS on 2026-10-05 (D232), not adapted from upstream text. One job: for each search term the approval card warns about because it multiplies the matches, say remove or keep and give one plain sentence for a non-expert; keep when the term is the question's own subject, remove when it is a general word the other terms already narrow. No term is proposed and no query is written. Loaded into term_advice steps only. No real-model measurement."
+   "change": "Written for DEIXIS on 2026-10-05 (D232), not adapted from upstream text. One job: for each search term the approval card warns about because it multiplies the matches, say remove or keep and give one plain sentence for a non-expert; keep when the term is the question's own subject, remove when it is a general word the other terms already narrow. No term is proposed and no query is written. Loaded into term_advice steps only. No real-model measurement. Revised 2026-10-06 (D233): the advice is information only and nothing is removed because of it; exactly one entry per warned term is required."
   },
   {
    "deixis_file": "references/report.md",

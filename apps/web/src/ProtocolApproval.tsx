@@ -72,21 +72,22 @@ export function ProtocolApproval({ run, approval, onApproved }: {
     onApproved={onApproved} />
 }
 
-// One warning about a term that makes the search far too wide, with the model's advice when it gave any (D232). The
-// advice moves the filled button to the recommended choice and decides nothing: both buttons stay.
+// One warning about a term that multiplies the matches, with the model's advice when it gave any (D232). The counts do not
+// say whether the extra papers are wanted. The advice moves the filled button to the recommended choice and decides
+// nothing: both buttons stay.
 function WarningBox({ warning, model, modelText, locale, editable, onRemove, onKeep }: {
   warning: NonNullable<RunApproval['warnings']>[number]; model: RunApproval['advice_model'] | null
   modelText: ModelText; locale: string; editable: boolean; onRemove: () => void; onKeep: () => void
 }) {
   const advice = warning.advice ?? null
   const keepAdvised = advice?.recommendation === 'keep'
-  const title = keepAdvised ? t('“{phrase}” widens the search', { phrase: warning.phrase }) : t('“{phrase}” makes the search far too wide', { phrase: warning.phrase })
+  const title = t('“{phrase}” multiplies the matches', { phrase: warning.phrase })
   return <div className="approval-warning" role="group" aria-label={title}>
     <div className="approval-warning-head">
       <TriangleAlert size={20} aria-hidden />
       <div>
         <strong>{title}</strong>
-        {!keepAdvised && <p>{t('It brings in many papers the other words don’t need. We suggest removing it.')}</p>}
+        {!advice && <p>{t('With it the search matches many more papers. The numbers do not say whether those papers are wanted.')}</p>}
         {advice && <p className="approval-advice">
           {model && <><ModelName connection={model.connection} text={modelText(model.model)} />{' '}</>}
           <span dir="auto">{advice.recommendation === 'keep' ? t('suggests keeping it:') : t('suggests removing it:')} {advice.reason}</span>
@@ -754,7 +755,7 @@ function ApprovedSummary({ approval }: { approval: RunApproval }) {
     <button type="button" className="approval-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
       {open ? <ChevronDown size={15} aria-hidden /> : <ChevronRight size={15} aria-hidden />}
       <span>{approvedByText(approval.approved_by)}</span>
-      <small>{approval.approved_by === 'model_advice' ? t('not reviewed, the model advised') : approval.edited ? t('corrected before searching') : approval.approved_by === 'no_warning' ? t('not reviewed, no warning') : t('approved as proposed')}</small>
+      <small>{approval.approved_by === 'warn_kept' ? t('not reviewed, warned terms kept') : approval.approved_by === 'model_advice' ? t('not reviewed, the model advised') : approval.edited ? t('corrected before searching') : approval.approved_by === 'no_warning' ? t('not reviewed, no warning') : t('approved as proposed')}</small>
     </button>
     {open && <div className="approval-diff">
       <DiffList title={t('Removed terms')} rows={gone} />

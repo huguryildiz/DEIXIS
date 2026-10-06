@@ -52,6 +52,8 @@ class Settings:
     # or a script that builds its own settings sends no chain request unless it asks for one. The setting is written
     # into a discovery run's budget when the run is queued and is frozen there for that run.
     citation_chaining: str = "off"
+    # D237 remains opt-in until slice 4's isolated live acceptance.
+    small_batch_inspection: str = "off"
     # Whether PDFs that are arXiv versions get the numbered display equations of their authors' LaTeX source while the
     # equation reader (Marker) is not installed (D104, slice 22). `off` in this dataclass and in `load_settings` until
     # slice 24 measures it; `auto` turns the route on (POSIX only). With `off` no source is requested and no PDF
@@ -141,6 +143,9 @@ def load_settings() -> Settings:
     if citation_chaining not in ("auto", "off"):
         raise ValueError("DEIXIS_CITATION_CHAINING must be auto or off")
     arxiv_source = os.environ.get("DEIXIS_ARXIV_SOURCE", "off")
+    small_batch_inspection = os.environ.get("DEIXIS_SMALL_BATCH_INSPECTION", "off")
+    if small_batch_inspection not in ("on", "off"):
+        raise ValueError("DEIXIS_SMALL_BATCH_INSPECTION must be on or off")
     if arxiv_source not in ("auto", "off"):
         raise ValueError("DEIXIS_ARXIV_SOURCE must be auto or off")
     return Settings(
@@ -155,5 +160,6 @@ def load_settings() -> Settings:
         fulltext_adjudication=fulltext_adjudication,
         search_query=search_query,
         citation_chaining=citation_chaining,
+        small_batch_inspection=small_batch_inspection,
         arxiv_source=arxiv_source,
     )

@@ -133,6 +133,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     compiler_version = query_compiler.BLOCKS_VERSION
     return {
         "schema": PROTOCOL_SCHEMA,
+        **({"inspection": budget["inspection"]} if "inspection" in budget else {}),
         "search_workflow": "sw",
         "question": scope["question"],
         "steering": scope.get("steering"),
@@ -196,7 +197,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                      {"signal": "tfidf", "seeds": "verified"},
                      {"signal": "graph", "seeds": "verified_then_code"},
                      {"signal": "joint", "runs": "comparison_question_with_two_task_terms"},
-                     {"signal": "embedding", "model": embedding_model, "rescue": True}],
+                     {"signal": "embedding", "model": embedding_model,
+                      "rescue": budget.get("inspection", {}).get("policy") != "small_batch_fused_v1"}],
         "thresholds": {
             "screening_batch": SCREENING_BATCH,
             "max_abstract_chars": MAX_ABSTRACT_CHARS,

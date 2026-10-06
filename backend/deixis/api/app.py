@@ -36,7 +36,7 @@ from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
-from deixis.workflow import chaining
+from deixis.workflow import chaining, small_batch
 from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
                                  CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
@@ -1404,6 +1404,8 @@ def create_app(
                 # The full text is fetched inside this run, beside its screening, with the room a retrieval run
                 # would have had (slice 17a); the mode is frozen here, so a run keeps the path it was queued with.
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
+            if settings.small_batch_inspection == "on" and scope.get("search_workflow") == "sw":
+                budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}
@@ -1417,6 +1419,8 @@ def create_app(
         elif body.kind == "fulltext_adjudication":
             # Two model calls per work the read limit reaches (D85). The same function the flow's auto-queue calls.
             budget = adjudication.read_budget(scope["effort"])
+        elif body.kind == "answer" and scope.get("search_workflow") == "sw":
+            budget = small_batch.answer_budget(store, research_id, scope["revision"], budget)
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
         run = store.create_run(research_id, body.kind, budget, key)
         request.app.state.worker.wake()

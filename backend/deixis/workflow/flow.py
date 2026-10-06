@@ -43,6 +43,7 @@ from deixis.providers.registry import CONNECTORS, Connector, endpoint_options, r
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import abstract_stage
+from deixis.workflow import small_batch
 from deixis.workflow import adjudication
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import chaining
@@ -397,7 +398,10 @@ class ResearchFlow:
                 self._fail(run_id, "unknown_run_kind", {"kind": run["kind"]})
         except RunStopped:
             return
-        if self.store.run(run_id)["status"] in ("running", "pause_requested") and run["kind"] == "discovery" and self._overlaps(run):
+        if (self.store.run(run_id)["status"] in ("running", "pause_requested")
+                and run["kind"] == "discovery" and small_batch.enabled(run["budget"])):
+            self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
+        elif self.store.run(run_id)["status"] in ("running", "pause_requested") and run["kind"] == "discovery" and self._overlaps(run):
             # The fetch ran inside this run (slice 17a): the reading run is queued from here, once, only when the fetch
             # wrote its summary, and in the transaction that completes the run, so no crash can come between the two
             # and leave a completed run whose reading never opens (decision 5).
@@ -425,6 +429,11 @@ class ResearchFlow:
 
     # ---- run control ---------------------------------------------------------------
     def _checkpoint(self, run_id: str, scope_revision: int | None = None) -> None:
+        guard = getattr(self, "_small_batch_guard", None)
+        if guard and guard["run_id"] == run_id:
+            changed = small_batch.guard_reason(self.store, guard)
+            if changed:
+                self._pause(run_id, changed)
         # getattr: existing tests build the flow with object.__new__ and call the embedding steps, which now checkpoint.
         held = getattr(self, "_held", {}).get(run_id)
         if held is not None:
@@ -531,7 +540,9 @@ class ResearchFlow:
         await self._source_similarity(run, scope, pool)
         order = await self._ranking(run, scope, vocabulary)
         self.store.update_run(run_id, stage="screening")
-        if self._overlaps(run):
+        if small_batch.enabled(run["budget"]):
+            await small_batch.execute(self, run, scope, vocabulary)
+        elif self._overlaps(run):
             await self._overlap(run, scope, vocabulary, order)
         else:
             await self._screening(run, scope, vocabulary, order)
@@ -1315,7 +1326,8 @@ class ResearchFlow:
 
     # ---- the abstract stage of an sw run (slice 09, SW9, SW1, SW11) ----------------------
     async def _abstract_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                              order: list[str], chain: list[str] | None = None) -> None:
+                              order: list[str], chain: list[str] | None = None, *,
+                              batch_key: str | None = None, read_limit: int | None = None) -> None:
         """Classify every record by code, then ask the model twice about the works code left open (K3, D81).
 
         Nothing is included here: the abstract stage has no `include` outcome (SW1.2). A work is included only by
@@ -1337,7 +1349,10 @@ class ResearchFlow:
         """
         run_id, revision = run["id"], run["scope_revision"]
         prefix = "abstract_screening:chain" if chain is not None else "abstract_screening"
-        plan = self._abstract_code_stage(run, scope, vocabulary, order, chain)
+        if batch_key:
+            prefix = f"{batch_key}:abstract_screening"
+        plan = self._abstract_code_stage(run, scope, vocabulary, order, chain,
+                                         batch_key=batch_key, read_limit=read_limit)
         self._wake_fetch(run_id)  # the code's decisions are written: more works may be certain now (slice 17a)
         batches, runs = plan["batches"], plan["runs"]
         by_svid = {c["source_version_id"]: c for c in self.store.candidates(run["research_id"])}
@@ -1423,6 +1438,8 @@ class ResearchFlow:
         stop = await self._send_through_limiter(run, jobs(), call, close_ready)
         if unread and stop is None:
             key = "chain_abstract_stage" if chain is not None else "abstract_stage"
+            if batch_key:
+                key = f"{batch_key}:abstract_stage"
             step_id = self.store.step(run_id, key, f"code:{key}")["id"]
             self._write_abstract_codes(run, step_id, [(svid, "abstract_not_read") for svid in unread])
         if stop is not None:
@@ -1487,7 +1504,7 @@ class ResearchFlow:
         `_extraction` uses), so an unusable answer is paid for once.
         """
         key = f"{prefix}:{number}:{run_no}"
-        optional = prefix != "abstract_screening"
+        optional = prefix == "abstract_screening:chain"
         step = self.store.step(run["id"], key, "model:abstract_screening")
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
             return None
@@ -1507,13 +1524,16 @@ class ResearchFlow:
         return None if output.get("invalid") else output
 
     def _abstract_code_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                             order: list[str], chain: list[str] | None = None) -> dict[str, Any]:
+                             order: list[str], chain: list[str] | None = None, *,
+                             batch_key: str | None = None, read_limit: int | None = None) -> dict[str, Any]:
         """Write what code decides about every record, then freeze the read plan in this step's output.
 
         With `chain`, only the chained works are classified and planned, with the chain's own read limit (D95).
         """
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         key = "chain_abstract_stage" if chain is not None else "abstract_stage"
+        if batch_key:
+            key = f"{batch_key}:abstract_stage"
         step = self.store.step(run_id, key, f"code:{key}")
         if step["status"] == "succeeded":
             return step["output"]
@@ -1543,11 +1563,13 @@ class ResearchFlow:
         chain_only = self.store.chain_only_works(rid, revision) if chain is None else set()
         for candidate in self.store.candidates(rid, revision):
             svid = candidate["source_version_id"]
+            if batch_key and svid not in order:
+                continue
             if candidate["origin"] == "user" or svid not in versions or heads.get(versions[svid]["work_id"]) != svid:
                 continue
             if chained is not None and svid not in chained:
                 continue
-            if versions[svid]["work_id"] in chain_only:
+            if not batch_key and versions[svid]["work_id"] in chain_only:
                 continue
             rows = []
             for version in sorted(by_work[versions[svid]["work_id"]], key=lambda v: v["id"]):
@@ -1555,6 +1577,16 @@ class ResearchFlow:
                 record = dict(version, decision=held["reason_code"] if held else None)
                 code = abstract_stage.code_outcome(record, blocks, links)
                 stale = bool(held) and decisions.is_stale(held, stale_key)
+                if batch_key and held and held["decided_by"] != "human" and not stale:
+                    changed = (held["reason_code"] in abstract_stage.MODEL_CODES
+                               and not small_batch.abstract_reusable(self.store, held, candidates[version["id"]]["candidate_id"],
+                                                                     version, MAX_ABSTRACT_CHARS))
+                    changed = changed or (held["reason_code"] in abstract_stage.OWNED_CODES
+                                          and held["reason_code"] not in abstract_stage.MODEL_CODES + abstract_stage.UNREAD_CODES
+                                          and code != held["reason_code"])
+                    if changed:
+                        writes.append((version["id"], "abstract_not_read"))
+                        held, stale = {"reason_code": "abstract_not_read", "decided_by": "code"}, True
                 if code and (held is None or held["decided_by"] != "human") and abstract_stage.should_write(held, code, stale):
                     writes.append((version["id"], code))
                     held, stale = {"reason_code": code, "decided_by": "code"}, False
@@ -1568,6 +1600,8 @@ class ResearchFlow:
 
         limit = (run["budget"].get("chain_abstract_read", CHAIN_ABSTRACT_READ[scope["effort"]]) if chain is not None
                  else ABSTRACT_READ_LIMIT[scope["effort"]])
+        if read_limit is not None:
+            limit = read_limit
         plan = abstract_stage.read_plan(order, works, limit, ABSTRACT_BATCH)
         writes += [(svid, "abstract_not_read") for svid in plan["not_read"]]
         written = self._write_abstract_codes(run, step["id"], writes)
@@ -2133,7 +2167,8 @@ class ResearchFlow:
                              "rate_limited": sum(x["error_code"] == "rate_limited" for x in sent)},
                 "not_reached_seeds": len(planned - asked)}
 
-    async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]]) -> None:
+    async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]], *,
+                                 key: str = "source_similarity", identity_step: str | None = None) -> None:
         """Score sources by the similarity of their title and abstract to the question (D30, D79, D103).
 
         Uses the semantic search provider (D29), frozen in the step when it opens (decision 4a): a resumed run reads it
@@ -2144,14 +2179,24 @@ class ResearchFlow:
         (earlier batches stay) or `failed`; either way the run goes on and the four code signals rank the same.
         """
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-        step, embedder, identity_from = self._embedding_choice(run_id, "source_similarity")
+        step, embedder, identity_from = self._embedding_choice(run_id, key)
+        if identity_step and step is None:
+            frozen = self.store.existing_step(run_id, identity_step)
+            if not frozen:
+                return
+            identity = frozen.get("output") or {}
+            if not identity.get("provider") or not identity.get("stored_model"):
+                return
+            embedder = embeddings.Embedder.from_identity(identity["provider"], identity["stored_model"],
+                                                         getattr(self.deps, "local_embedder", None))
+            identity_from = identity_step
         if embedder is None or (step is not None and step["status"] == "succeeded"):
             return
         query = self._embedding_query(scope, embedder)
         if query is None:
             return  # the built-in model without an English sentence: the arm is off and the ranking says why
         identity = self._identity(embedder, identity_from)
-        step = self.store.step(run_id, "source_similarity", f"similarity:{embedder.stored_model}", output=identity)
+        step = self.store.step(run_id, key, f"similarity:{embedder.stored_model}", output=identity)
         if identity_from:
             self._merge_step_output(step["id"], {}, identity)
         self.store.start_step(step["id"])
@@ -2727,6 +2772,12 @@ class ResearchFlow:
     # ---- answer ---------------------------------------------------------------------
     async def _answer(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
         run_id, rid = run["id"], run["research_id"]
+        if small_batch.enabled(run["budget"]):
+            inspection = run["budget"]["inspection"]
+            if inspection.get("binding_error"):
+                self._fail(run_id, inspection["binding_error"], {
+                    "list_run_id": inspection["list_run_id"],
+                    "note": "The completed discovery has no successful frozen list; run discovery again."})
         heads = self.store.included_works(rid)  # one per included work
         selection_revision = self.store.selection_revision(rid)  # read together with the included set it describes
         if scope.get("search_workflow") == "sw":
@@ -2756,8 +2807,11 @@ class ResearchFlow:
         # An sw research fills part of the input from the cue phrases its criterion was approved with (D84); a
         # legacy research passes nothing and keeps the hand-written formulation quota it had.
         patterns = self._criterion_phrases(run, scope) if scope.get("search_workflow") == "sw" else None
-        passages = self._retrieve(rid, scope, included + extra, run["budget"]["max_answer_passages"], semantic, patterns,
-                                  abstract_only=set(extra))
+        if small_batch.enabled(run["budget"]):
+            passages = self._small_batch_answer_passages(run, scope, included, extra, semantic, patterns)
+        else:
+            passages = self._retrieve(rid, scope, included + extra, run["budget"]["max_answer_passages"], semantic, patterns,
+                                      abstract_only=set(extra))
         if not passages:
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                    {"ok": True, "issues": [], "note": "No accessible passages for the included sources."},
@@ -2815,6 +2869,8 @@ class ResearchFlow:
         `max_candidates` eligible works from those orders; `_retrieve` gives them a quarter of a mixed input's passage budget,
         or the whole budget when no included answer version is available (D234). A resumed run keeps the list its
         first pass stored, less any work a person has decided since.
+        D238 flagged answers use their bound frozen work list instead of D236 alternation; eligibility and the
+        candidate limit remain the same, while passage allocation is handled by `_small_batch_answer_passages`.
         """
         rid, revision = run["research_id"], run["scope_revision"]
         pending = {r[0] for r in self.store.conn.execute(
@@ -2833,7 +2889,12 @@ class ResearchFlow:
         limit = run["budget"]["max_candidates"]
         facts = decisions.facts(rid)
         work_heads = facts["heads"]
-        order, ranking_context = decisions.answer_abstract_order(rid, revision)
+        if small_batch.enabled(run["budget"]):
+            listing = small_batch.answer_listing(self.store, run)
+            order = small_batch.unchanged_heads(self.store, rid, listing, listing["items"])
+            ranking_context = {"ordering_rule": small_batch.POLICY, "manifest_hash": listing["manifest_hash"]}
+        else:
+            order, ranking_context = decisions.answer_abstract_order(rid, revision)
         head_of = {svid: work_heads[wid] for svid, wid in
                    self.store.work_ids(order).items()
                    if wid in work_heads}
@@ -2860,6 +2921,69 @@ class ResearchFlow:
         self.store.finish_step(step["id"], "succeeded", output={"sources": sources, "limit": limit,
                                                                 "by_decision": dict(reasons), **ranking_context})
         return sources
+
+    def _small_batch_answer_passages(self, run: dict[str, Any], scope: dict[str, Any], included: list[str],
+                                     extra: list[str], semantic: list[dict[str, Any]] | None,
+                                     patterns: list[tuple[str, re.Pattern[str]]] | None) -> list[dict[str, Any]]:
+        """D238: retain frozen work order; rank passages only within each eligible work."""
+        rid = run["research_id"]
+        listing = small_batch.answer_listing(self.store, run)
+        saved = self.store.existing_step(run["id"], "small_batch:v1:answer_input")
+        if saved is not None and saved["status"] == "succeeded":
+            plan = saved["output"]
+            if plan["selection_revision"] != self.store.selection_revision(rid):
+                self._fail(run["id"], "selection_changed", {"note": "The frozen answer input is stale."})
+            return [self.store.passage(pid) for pid in plan["passage_ids"]]
+        valid = set(small_batch.unchanged_heads(self.store, rid, listing, listing["items"]))
+        eligible = {wid: svid for svid, wid in self.store.work_ids(included + extra).items()}
+        user_works = set(self.store.work_ids([row[0] for row in self.store.conn.execute(
+            "SELECT source_version_id FROM selections WHERE research_id = ? AND state = 'included'"
+            " AND origin = 'user'", (rid,))]).values())
+        ordered = [item | {"ordering_reason": "frozen_list"} for item in listing["items"]
+                   if item["work_id"] in eligible and item["head"] in valid]
+        present = {item["work_id"] for item in ordered}
+        additions = [{"work_id": wid, "head": eligible[wid], "position": None,
+                      "user_priority": wid in user_works,
+                      "ordering_reason": "user_included_outside_frozen_list" if wid in user_works
+                      else "included_outside_frozen_list"}
+                     for wid in sorted(eligible.keys() - present)]
+        ordered = ([item for item in additions if item["user_priority"]]
+                   + [item for item in ordered if item["user_priority"] or item["work_id"] in user_works]
+                   + [item for item in ordered if not item["user_priority"] and item["work_id"] not in user_works]
+                   + [item for item in additions if not item["user_priority"]])
+        fts = " OR ".join(f'"{term}"' for term in self._topic_terms(rid, scope))
+        queues, items = [], []
+        for item in ordered:
+            svid = eligible.get(item["work_id"])
+            passages = self.store.passages_for(svid)
+            if svid in extra:
+                queue = [p for p in passages if p["kind"] == "abstract"][:1]
+            else:
+                # PDF text leads; the abstract may follow, but cannot displace the best question/criterion page.
+                pages = [p for p in passages if p["kind"] == "pdf_page"]
+                ids = {p["id"] for p in pages}
+                topic = [p for p in self.store.search_passages([svid], fts, len(passages)) if p["id"] in ids]
+                if semantic is not None:
+                    topic = fuse_rankings(topic, [p for p in semantic if p["id"] in ids])
+                criterion = criterion_passages.criterion_order(pages, patterns or [])
+                ranked = fuse_rankings(topic, criterion) if criterion else topic
+                queue = list({p["id"]: p for p in [*ranked, *pages, *passages]}.values())[:MAX_PASSAGES_PER_SOURCE]
+            if queue:
+                queues.append(queue)
+                items.append(item | {"source_version_id": svid})
+        limit = run["budget"]["max_answer_passages"]
+        passages = small_batch.allocate(queues, limit, MAX_PASSAGES_PER_SOURCE)
+        represented = {p["source_version_id"] for p in passages}
+        selection_revision = self.store.selection_revision(rid)
+        small_batch.save_code(self, run, "small_batch:v1:answer_input", "code:small_batch_answer_input", lambda: {
+            "policy": small_batch.POLICY, "manifest_hash": listing["manifest_hash"],
+            "selection_revision": selection_revision, "limit": limit,
+            "items": [{"work_id": item["work_id"], "source_version_id": item["source_version_id"],
+                       "position": item["position"],
+                       "ordering_reason": item["ordering_reason"],
+                       "reason": None if item["source_version_id"] in represented else "answer_budget_deferred"}
+                      for item in items], "passage_ids": [p["id"] for p in passages]})
+        return passages
 
     def _criterion_phrases(self, run: dict[str, Any], scope: dict[str, Any]) -> list[tuple[str, re.Pattern[str]]]:
         """The approved cue phrases this answer run orders criterion passages with, compiled (D84, SW12.3).
@@ -3922,7 +4046,9 @@ class ResearchFlow:
                 "code": output["code"] if output["code_written"] else None, "asset_id": output["asset_id"],
                 "step_id": step["id"]}, run_id)
 
-    async def _fulltext_adjudication(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+    async def _fulltext_adjudication(self, run: dict[str, Any], scope: dict[str, Any], *,
+                                    batch_key: str | None = None, order: list[str] | None = None,
+                                    read_limit: int | None = None) -> None:
         """Two model runs per work, then a code decision from the pair (D85).
 
         The plan is frozen before any call. A work is sent only when every call it still owes fits in the run's
@@ -3937,10 +4063,10 @@ class ResearchFlow:
         guaranteed to be the part left unread.
         """
         run_id, revision = run["id"], run["scope_revision"]
-        plan = self._adjudication_plan(run, scope)
+        plan = self._adjudication_plan(run, scope, batch_key=batch_key, order=order, read_limit=read_limit)
         works = plan["works"]
         if plan.get("reason") == "no_criterion" or not works:
-            self._adjudication_summary(run, plan)
+            self._adjudication_summary(run, plan, batch_key=batch_key)
             return
         spent_before = self.store.run(run_id)["usage"].get("model_calls", 0)
         submitted = 0
@@ -3955,6 +4081,8 @@ class ResearchFlow:
             nonlocal submitted
             for item in works:
                 head, read_version = item["head"], item["read_version"]
+                if batch_key and head not in (order or []):
+                    continue
                 if not self._adjudication_member(run["research_id"], head, read_version):
                     continue
                 if self._human_decided_fulltext(run["research_id"], head, read_version):
@@ -4021,7 +4149,7 @@ class ResearchFlow:
         stop = await self._send_through_limiter(run, jobs(), call, close_ready)
         if stop is not None:
             raise stop
-        self._adjudication_summary(run, plan)
+        self._adjudication_summary(run, plan, batch_key=batch_key)
 
     def _human_decided_fulltext(self, research_id: str, head: str, read_version: str | None = None) -> bool:
         """Whether a person decided the full-text stage of this head's work, on any version of it (slice 16).
@@ -4047,7 +4175,9 @@ class ResearchFlow:
         """Whether both records are still in this research. A purged member is skipped, not crashed on."""
         return self.store.is_active_member(research_id, head) and self.store.is_active_member(research_id, read_version)
 
-    def _adjudication_plan(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+    def _adjudication_plan(self, run: dict[str, Any], scope: dict[str, Any], *,
+                           batch_key: str | None = None, order: list[str] | None = None,
+                           read_limit: int | None = None) -> dict[str, Any]:
         """Freeze which works are read, on which version, and which PDFs are not confirmed as the work's own.
 
         Identity is computed here, from the text and the work's versions, never from a retrieval run's step.
@@ -4055,11 +4185,14 @@ class ResearchFlow:
         read limit. A file the user supplied is confirmed without that check.
         """
         run_id, rid = run["id"], run["research_id"]
-        step = self.store.step(run_id, "adjudication_plan", "code:adjudication_plan")
+        key = f"{batch_key}:adjudication_plan" if batch_key else "adjudication_plan"
+        step = self.store.step(run_id, key, "code:adjudication_plan")
         if step["status"] == "succeeded":
             return step["output"]
         self.store.start_step(step["id"])
         limit = run["budget"]["max_fulltext_reads"]
+        if read_limit is not None:
+            limit = read_limit
         frozen = self.store.frozen_criterion(rid, scope["question"], scope.get("steering"))
         if frozen is None:
             plan = {"limit": limit, "criterion": None, "works": [], "not_reached": 0,
@@ -4077,11 +4210,15 @@ class ResearchFlow:
         criterion = {"criterion": frozen["criterion"], "parts": sent, "cue_phrases": frozen["cue_phrases"],
                      "protocol_revision": frozen["protocol_revision"]}
         # Chained works are read after the keyword order, in the chain's own order (D95); the limit is the same.
-        chained, order, chain_order = self._chain_state(rid, run["scope_revision"])
-        order = order + chain_order
+        chained, legacy_order, chain_order = self._chain_state(rid, run["scope_revision"])
+        order = order if batch_key else legacy_order + chain_order
         corpus = self._fulltext_works(rid, chained)
+        if batch_key:
+            corpus = [work for work in corpus if work["head"] in (order or [])]
         by_head = {work["head"]: work for work in corpus}
         eligible = adjudication.read_plan(corpus, order, len(corpus))
+        if batch_key:
+            eligible["works"] = [head for head in order if head in eligible["works"]]
         readable: list[dict[str, Any]] = []
         unconfirmed: list[tuple[str, str]] = []
         for head in eligible["works"]:
@@ -4266,16 +4403,21 @@ class ResearchFlow:
         for work_id in sorted(touched):
             decisions.derive_selection(rid, work_id)
 
-    def _adjudication_summary(self, run: dict[str, Any], plan: dict[str, Any]) -> None:
+    def _adjudication_summary(self, run: dict[str, Any], plan: dict[str, Any], *,
+                              batch_key: str | None = None) -> None:
         """What this run decided, totalled from its stored steps and decisions so a resumed run matches."""
         run_id = run["id"]
-        step = self.store.step(run_id, "adjudication_summary", "code:adjudication_summary")
+        key = f"{batch_key}:adjudication_summary" if batch_key else "adjudication_summary"
+        step = self.store.step(run_id, key, "code:adjudication_summary")
         if step["status"] == "succeeded":
             return
         self.store.start_step(step["id"])
         steps = self.store.run_steps(run_id)
-        step_ids = [row["id"] for row in steps]
         planned = {item["head"]: item["read_version"] for item in plan["works"]}
+        if batch_key:
+            steps = [row for row in steps if row["operation_key"].startswith(f"{batch_key}:adjudication_")
+                     or any(row["operation_key"].startswith(f"fulltext_adjudication:{head}:") for head in planned)]
+        step_ids = [row["id"] for row in steps]
         model_heads: set[str] = set()
         for row in steps:
             if row["kind"] != "model:fulltext_adjudication":

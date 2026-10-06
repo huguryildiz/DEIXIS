@@ -140,7 +140,7 @@ def _settled(work: dict[str, Any]) -> bool:
 
 
 def fetch_plan(works: list[dict[str, Any]], order: list[str], limit: int, chain_order: list[str] | tuple[str, ...] = (),
-               chain_room: int = 0) -> dict[str, Any]:
+               chain_room: int = 0, *, preserve_order: bool = False) -> dict[str, Any]:
     """The works this run fetches, the works its limit did not reach, and the works whose text is already here.
 
     The unit is the work (SW10.1). Each work is `{"work_id", "head", "versions": [...], "selection"}`, and each
@@ -165,7 +165,10 @@ def fetch_plan(works: list[dict[str, Any]], order: list[str], limit: int, chain_
         if group is None:
             continue
         where = chain_place if group == "chain" else place
-        wanted.append((GROUPS.index(group), where.get(work["head"], len(where)), work["head"], work))
+        if preserve_order:
+            wanted.append((0, place.get(work["head"], len(place)), work["head"], work))
+        else:
+            wanted.append((GROUPS.index(group), where.get(work["head"], len(where)), work["head"], work))
     wanted.sort(key=lambda row: row[:3])
 
     already_text, pending, chained = [], [], []
@@ -229,7 +232,8 @@ def as_of_baseline(works: list[dict[str, Any]], baseline: dict[str, Any],
 
 
 def safe_to_fetch(works: list[dict[str, Any]], order: list[str], limit: int, chain_order: list[str] | tuple[str, ...],
-                  room: int, pending: set[str] | frozenset[str], baseline: dict[str, Any]) -> list[str]:
+                  room: int, pending: set[str] | frozenset[str], baseline: dict[str, Any], *,
+                  preserve_order: bool = False) -> list[str]:
     """The works that may be fetched now, by `work_id` in plan order, while the abstract stage is still deciding others.
 
     A work is safe when its own abstract decision is final (it is not `pending`) and it is inside the plan in which
@@ -237,7 +241,8 @@ def safe_to_fetch(works: list[dict[str, Any]], order: list[str], limit: int, cha
     one that ends out of scope leaves the plan, and one that ends unresolved moves to a later group, so the works
     behind it only move up (slice 17a, decision 2).
     """
-    plan = fetch_plan(as_of_baseline(works, baseline, pending), order, limit, chain_order, room)
+    plan = fetch_plan(as_of_baseline(works, baseline, pending), order, limit, chain_order, room,
+                      preserve_order=preserve_order)
     work_of = {work["head"]: work["work_id"] for work in works}
     return [work_of[head] for head in plan["works"] if work_of[head] not in pending]
 

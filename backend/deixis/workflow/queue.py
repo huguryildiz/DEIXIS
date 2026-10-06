@@ -76,6 +76,12 @@ class QueueConflict(RevisionConflict):
 # ---- reading ----------------------------------------------------------------------------------------------------
 
 
+def inspection_progress(store: Store, run: dict[str, Any]) -> dict[str, Any] | None:
+    from deixis.workflow.small_batch import stored_progress
+
+    return stored_progress(store, run)
+
+
 @contextmanager
 def _snapshot(conn: Any) -> Iterator[None]:
     """One read transaction, so every row is derived from the same state. Nothing is written inside it."""

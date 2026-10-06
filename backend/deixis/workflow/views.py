@@ -20,7 +20,7 @@ from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as cha
 from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import chunk_numbers, equation_state, equations_to_check, latex_numbers
-from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts
+from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts, inspection_progress
 from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
 from deixis.workflow import waiting as waiting_rules
 from deixis.providers.registry import search_providers
@@ -492,6 +492,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     for row in conn.execute("SELECT id FROM runs WHERE research_id = ? ORDER BY created_at DESC LIMIT 10", (research_id,)):
         run = store.run(row["id"])
         run["steps"] = store.run_steps(run["id"])
+        if (run["budget"].get("inspection") or {}).get("policy") == "small_batch_fused_v1":
+            run["inspection_progress"] = inspection_progress(store, run)
         # The protocol this run froze; a run that froze none (an answer run) ran under the revision's latest one.
         own = next((s["output"] for s in run["steps"] if s["operation_key"] == "protocol" and s["output"]), None)
         frozen = own or store.current_protocol(research_id, run["scope_revision"])

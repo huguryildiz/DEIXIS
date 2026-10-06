@@ -77,12 +77,12 @@ CAPABILITIES = {
     "unsupported_tasks": ["synthesis", "candidate_development", "claim_check", "experiment"],
 }
 MAX_DOWNLOADS_PER_RUN = 8
-# The reason an sw answer records when no work was included at full text as it started (SW22, D106).
+# The reason an sw answer records when neither included works nor eligible abstracts are available (D234).
 NO_INCLUDABLE_SOURCE = "no_includable_source"
 MAX_ABSTRACT_CHARS = 2500
 MAX_PASSAGES_PER_SOURCE = 6  # passages one included source may contribute to an answer step
 PDF_PAGES_PER_SOURCE = 2  # PDF passages a source adds to its abstract when the included sources outnumber the passage limit
-ABSTRACT_ROOM_DIVISOR = 4  # an answer gives at most limit // 4 passages to candidates read from their abstracts (D225)
+ABSTRACT_ROOM_DIVISOR = 4  # mixed inputs reserve limit // 4 passages for abstract candidates (D225, D234)
 MAX_SMALL_PDF_CHARS = 60_000  # bounded full extracted text for a single attached PDF
 MAX_SMALL_PDF_PAGES = 12
 # Passages of its one source a cell extraction call reads. A source within MAX_CELL_PASSAGES and MAX_SMALL_PDF_CHARS is
@@ -2732,16 +2732,17 @@ class ResearchFlow:
         if scope.get("search_workflow") == "sw":
             # No await between the two reads above and this step's write: the snapshot is the state they describe.
             self._answer_start_snapshot(run, heads, selection_revision)
-            if not heads:
-                # Nothing was included at full text when this answer started (SW22, D106): the answer says so with
-                # the snapshot's counts and asks no model. It is a record of that moment, not a finding about sources.
+            if not heads and not self._abstract_sources(run, heads):
+                # Neither evidence route is available (D234). Keep D106's recorded no-evidence result;
+                # the snapshot describes inclusion, not a finding about the literature.
                 self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                        {"ok": True, "issues": [], "reason": NO_INCLUDABLE_SOURCE,
                                         "note": "No work was included at full text when this answer started;"
                                                 " no model was asked."},
                                        selection_revision=selection_revision)
                 return
-        await self._inspect(run, limit=MAX_DOWNLOADS_PER_RUN)
+        if heads or scope.get("search_workflow") != "sw":
+            await self._inspect(run, limit=MAX_DOWNLOADS_PER_RUN)
         # A work whose only PDF text is a person's file not read under this criterion, with no abstract-only version
         # to give instead, gives the answer nothing (slice 18b, decision 8).
         included = [read for head in heads if (read := self.store.answer_version(rid, head)) is not None]
@@ -2810,8 +2811,9 @@ class ResearchFlow:
 
         A work counts when the abstract stage kept it as a candidate and the full-text stage either never decided it
         or found no open text for it (`no_fulltext`), under this question revision; its selection is still pending
-        (nothing excluded it, no person decided it) and it has an abstract and no PDF text. The pool is the run's `max_candidates` best ranked such works; `_retrieve` gives a quarter
-        of the answer input to the best of them by the answer's own source order. A resumed run keeps the list its
+        (nothing excluded it, no person decided it) and it has an abstract and no PDF text. The pool is the run's
+        `max_candidates` best ranked such works; `_retrieve` gives them a quarter of a mixed input's passage budget,
+        or the whole budget when no included answer version is available (D234). A resumed run keeps the list its
         first pass stored, less any work a person has decided since.
         """
         rid, revision = run["research_id"], run["scope_revision"]
@@ -4638,13 +4640,13 @@ class ResearchFlow:
         of the room is filled from the criterion order instead, and an empty list means the whole input comes from
         the topic order — an sw research never falls back to the topic-specific formulation list.
 
-        A source in `abstract_only` gives its abstract and nothing else, from a room of its own: at most a quarter of
-        the limit, in the answer's source order among those sources; the other sources share the rest as before (D225).
+        A source in `abstract_only` gives its abstract and nothing else: at most a quarter of a mixed input's limit
+        (D225), or the whole limit when there are no other sources (D234). Other sources share the rest as before.
         """
         if abstract_only:
             main = [svid for svid in included if svid not in abstract_only]
             extra = [svid for svid in included if svid in abstract_only]
-            room = min(len(extra), limit // ABSTRACT_ROOM_DIVISOR)
+            room = min(len(extra), limit // ABSTRACT_ROOM_DIVISOR if main else limit)
             in_main = set(main)
             selected = self._retrieve(research_id, scope, main, limit - room,
                                       None if semantic is None else [p for p in semantic if p["source_version_id"] in in_main],

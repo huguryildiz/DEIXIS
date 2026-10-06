@@ -110,6 +110,31 @@ def test_without_abstract_sources_the_input_is_what_it_was(tmp_path):
         flow._retrieve(rid, store.scope(rid), [included], 6)
 
 
+def test_abstract_only_input_can_fill_the_whole_budget_even_below_the_mixed_quota(tmp_path):
+    store, rid, included, works = setup(tmp_path)
+    extra = [works["never_read"], works["no_text"]]
+    for limit in (1, 2, 4):
+        passages = flow_of(store)._retrieve(rid, store.scope(rid), extra, limit, abstract_only=set(extra))
+        assert len(passages) == min(len(extra), limit)
+        assert all(p["kind"] == "abstract" for p in passages)
+        assert {p["source_version_id"] for p in passages} <= set(extra)
+
+
+def test_zero_includes_still_obeys_max_candidates(tmp_path):
+    store, rid, included, works = setup(tmp_path)
+    run = answer_run(store, rid)
+    run["budget"]["max_candidates"] = 1
+    assert flow_of(store)._abstract_sources(run, []) == [works["never_read"]]
+
+
+def test_zero_includes_does_not_use_an_older_revisions_candidate(tmp_path):
+    store, rid, included, works = setup(tmp_path)
+    # SYNTHETIC stale decision: ranking remains current, the candidate decision belongs to an older question.
+    store.conn.execute("UPDATE stage_decisions SET scope_revision = 0 WHERE source_version_id = ?",
+                       (works["never_read"],))
+    assert flow_of(store)._abstract_sources(answer_run(store, rid), []) == [works["no_text"]]
+
+
 def test_a_work_a_person_excludes_after_the_list_was_stored_leaves_the_resumed_run(tmp_path):
     store, rid, included, works = setup(tmp_path)
     run = answer_run(store, rid)

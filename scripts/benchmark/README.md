@@ -60,6 +60,51 @@ The fixed request allocation is B ≤ 10, C including B ≤ 20, and N ≤ 20; `a
 
 ## Verification
 
+### Offline small-batch ranking replay
+
+```sh
+UV_CACHE_DIR=.local/uv-cache PYTHONPATH=backend uv run python scripts/benchmark/replay_ranking.py \
+  --data-dir /tmp/deixis-measure-2026-10-06-r2/snap/dbr_vbf \
+  --benchmark scripts/benchmark/dbr_vbf.json \
+  --output .local/benchmark/2026-10-06-replay/r2-dbr_vbf.json
+```
+
+An explicit isolated path (or `DEIXIS_DATA_DIR`) is required; the live application-data path is rejected,
+including symlinks resolving into it. SQLite uses `mode=ro`, `query_only` and a read transaction. The script
+does not send network requests, invoke models or compute new embeddings. It writes JSON and a short Markdown table.
+If matching answers are ambiguous, pin `--answer`; an audited baseline may also be pinned with `--ranking-step`.
+The `no_evidence` path without an answer StepInput uses the stored scope question and answer creation time.
+
+A preserves the recorded keyword inspection work order. B recomputes the existing rank fusion and embedding
+rescue on one keyword/chain work pool; C uses its unrescued fused order. The rescue promotes measured embedding
+top-50 records outside code-fusion top-200. Missing signals and per-record availability remain explicit.
+A0 recomputes `rank_pool(...)["order"]` on precisely A's recorded work membership; C0 uses that pool's `fused`.
+Both controls reuse the same snapshot work representatives and metadata as B/C. Origin labels do not select
+membership. A0 versus A reports target rank deltas, exact-order equality, top-50 intersection and Jaccard.
+The tolerance gate requires at least 90% overlap, no loss of A top-50 relevant targets and at most five places
+of drift for A top-50 anchors. This gate does not verify historical metadata reconstruction. C−C0 isolates
+pool expansion under fusion, C0−A0 removes rescue on the keyword pool, and C−B removes it on the combined pool.
+Evaluation separately reports rescued target identities and B/C ranks; a relevant rescued target lost from
+B top-50 in C triggers measurement of rescue as a separate RRF signal before choosing a replacement policy.
+Add `--rescue-signal` to measure E: equal-weight RRF of C's ordinal order and the embedding order among
+rescued works; unrescued works receive the unavailable mean tail rank. The rule is `RESCUE_SIGNAL` in the
+script. Selection requires no loss of C top-50 anchors or relevant-target counts in any development snapshot,
+and a strict target-count gain in at least one; otherwise C remains the candidate. Freeze that choice before
+reading E's IRS results. The supplemental 6 October evaluation reused frozen replay ranks; its input hashes,
+orders and selection lock are retained beside the original reports. Historical IRS results were already known.
+D freezes B's first 30 works and fuses the remaining B rank with graph proximity to positive first-batch works,
+using equal-weight RRF with `k=60`. Graph proximity is the existing bibliographic coupling plus direct citations.
+Full-text include/exclude decisions override abstract candidates; candidates remain provisional positives.
+Unresolved access does not mean exclusion. Negative decisions are retained without a penalty. Question-source
+embedding scalars are used by B/C but cannot substitute for source-source embedding feedback in D.
+
+Targets enter scoring only after orders freeze. Top-K counts cover frozen relevant targets, not precision over
+all K records. Two computations must produce the same replay hash. Snapshot decisions are retrospective at the
+answer cutoff; this does not simulate when decisions would finish in a new first batch. Titles, abstracts and
+reference lists may reflect later enrichment because historical ranking text is not stored. Acceptance requires
+D top-50 improvement and preservation of every A top-50 key on each development question; IRS is opened after
+the fixed rule is recorded. The 6 October replay's lock and reports are in `.local/benchmark/2026-10-06-replay/`.
+
 ```sh
 PYTHONPATH=backend uv run pytest tests/measurement/test_search_measurement.py
 PYTHONPATH=backend uv run pytest

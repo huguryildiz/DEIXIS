@@ -304,6 +304,41 @@ def test_verdict_reads_the_parts():
     assert adjudication.verdict(["unclear", "unclear"]) == "unclear"
 
 
+@pytest.mark.parametrize("aspect", ["absent", "unclear", "present"])
+def test_aspects_do_not_gate_inclusion_even_with_unverified_aspect_quotes(aspect):
+    parts = [{"name": "central concept", "inclusion_role": "core"},
+             {"name": "cost", "inclusion_role": "aspect"}]
+    proposals = {"central concept": {"label": "present", "quote_verified": True},
+                 "cost": {"label": aspect, "quote_verified": False}}
+    view = adjudication.run_view(proposals, parts)
+    assert adjudication.combine(view, view) == "all_parts_verified"
+    # Historical criteria have no roles and retain the all-parts AND.
+    legacy = [{"name": p["name"]} for p in parts]
+    assert adjudication.combine(adjudication.run_view(proposals, legacy),
+                                adjudication.run_view(proposals, legacy)) != "all_parts_verified"
+
+
+@pytest.mark.parametrize(("label", "verified"), [("absent", False), ("unclear", False), ("present", False)])
+def test_each_core_still_requires_two_present_verified_readings(label, verified):
+    parts = [{"name": "family A", "inclusion_role": "core"},
+             {"name": "family B", "inclusion_role": "core"},
+             {"name": "cost", "inclusion_role": "aspect"}]
+    proposals = {p["name"]: {"label": "present", "quote_verified": True} for p in parts}
+    first = adjudication.run_view(proposals, parts)
+    proposals["family B"] = {"label": label, "quote_verified": verified}
+    second = adjudication.run_view(proposals, parts)
+    assert adjudication.combine(first, second) != "all_parts_verified"
+    assert adjudication.combine(second, second) != "all_parts_verified"
+
+
+def test_no_core_cannot_include_and_comparator_marker_preserves_inclusion_role():
+    assert adjudication.run_view({"cost": {"label": "present", "quote_verified": True}},
+                                 [{"name": "cost", "inclusion_role": "aspect"}])["verdict"] == "unclear"
+    parts = [{"name": "control", "definition": "SYNTHETIC control", "inclusion_role": "core"}]
+    marked = adjudication.mark_comparator(parts, [{"role": "comparator", "part": "control"}], ["comparator"])
+    assert marked[0]["inclusion_role"] == "core" and marked[0]["role"] == "comparator"
+
+
 def test_an_exact_or_normalized_quote_verifies_and_a_fuzzy_one_does_not():
     pages = {1: PAGE}
     assert adjudication.verify(PAGE, pages, 1, 12) == {"verified": True, "page": 1, "kind": "exact"}

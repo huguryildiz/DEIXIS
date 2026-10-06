@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://deixis.local/contracts/research/fulltext-adjudication.schema.json",
   "title": "FulltextAdjudication",
-  "description": "Whether the shown passages state that the paper itself contains each part of one inclusion criterion. This is a proposal: the application decides, from two independent runs of this step, and only after it has found every quote on the page it showed. One entry per given part, by its name.",
+  "description": "Whether the shown passages state that the paper itself contains each core requirement or aspect contribution. This is a proposal: the application requires two present readings and verified quotes for every core before inclusion. Aspects receive the same quote checks but do not gate inclusion. Parts without an inclusion role retain the all-parts gate. One entry per given part, by its name.",
   "type": "object",
   "additionalProperties": false,
   "required": [

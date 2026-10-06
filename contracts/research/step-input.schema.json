@@ -1421,6 +1421,8 @@
             "properties": {
               "name": { "type": "string", "minLength": 1, "maxLength": 200 },
               "definition": { "type": "string", "minLength": 1 },
+              "inclusion_role": { "type": "string", "enum": ["core", "aspect"],
+                                  "description": "Core gates inclusion; aspect records contribution only. Absent on legacy plans, where every part gates inclusion." },
               "role": {
                 "type": "string",
                 "enum": ["comparator"],

@@ -639,6 +639,7 @@ export type QueueDecided = {
 }
 export type QueueView = { rows: QueueRow[]; counts: QueueCounts; order: 'fused_rank'; decided: QueueDecided[] }
 export type QueuePart = {
+  inclusion_role?: 'core' | 'aspect'
   part: string; label: 'present' | 'absent' | 'unclear'; quote: string | null; quote_verified: boolean | null
   page: number | null; passage: string | null; rationale: string | null
   // The passage that opens this quote's page, and the page's own text a verified quote was found as: the only span
@@ -658,7 +659,7 @@ export type QueueDetail = {
   identity?: { first_page: string | null; work_title: string; work_doi: string | null; asset_id: string | null; retrieved_from: string | null; page_count: number | null }
 }
 export type QueueDecision = { id: string; reason_code: string; decided_by: 'code' | 'model_agreement' | 'human'; stale: boolean; undoable: boolean }
-export type QueueRowView = { row: QueueRow | null; decision: QueueDecision | null; undo_token: string; detail?: QueueDetail }
+export type QueueRowView = { row: QueueRow | null; decision: QueueDecision | null; undo_token: string; detail?: QueueDetail; coverage?: QueueRun[] }
 export type QueueAnswerResult = {
   row: QueueRow | null; decision: QueueDecision | null; undo_token: string
   selection: { source_version_id: string; state: Source['selection']['state']; origin: Source['selection']['origin']; version: number } | null

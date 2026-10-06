@@ -5,10 +5,11 @@ the limit. A quote is verified only when `locate_anchor` finds it `exact` or `no
 shown. A label writes nothing by itself.
 
 The model is shown a selection of passages, so `criterion_absent` means "absent from the passages shown", and code
-may exclude on that. A work is included without the user only when both runs label every part `present`, every
-quote verifies and its read version's title names no study protocol; a work whose title names one is neither included
+may exclude on that. A work is included without the user only when both runs label every core part `present`, every
+core quote verifies and its read version's title names no study protocol; a work whose title names one is neither included
 nor excluded by code, it goes to the queue (`protocol_title`, slice 26). On a criterion with a comparator part code
 never excludes: two all-negative runs go to the queue (`comparator_exclusion_withheld`, slice 28).
+Aspects record per-source contribution with the same quote checks but do not gate inclusion (D235).
 """
 
 from __future__ import annotations
@@ -279,14 +280,19 @@ def verdict(labels: list[str]) -> str:
     return "unclear"
 
 
-def run_view(proposals: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def run_view(proposals: dict[str, dict[str, Any]], parts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """`{"verdict", "quotes_verified"}` for one run's usable proposals.
 
-    `quotes_verified` is true when every `present` quote was found. A run with no `present` part has nothing to
-    fail that check.
+    Only core parts gate inclusion and quote verification. Every aspect still
+    has its independently checked proposal. Without roles all parts are core.
     """
-    labels = [row["label"] for row in proposals.values()]
-    present = [row for row in proposals.values() if row["label"] == "present"]
+    # Missing roles retain the historical AND rule; comparator is a separate
+    # study-design marker. Only explicit aspects are outside the inclusion gate.
+    required = (list(proposals.values()) if parts is None else
+                [proposals.get(part["name"], {"label": "unclear", "quote_verified": False})
+                 for part in parts if part.get("inclusion_role", part.get("role")) != "aspect"])
+    labels = [row["label"] for row in required]
+    present = [row for row in required if row["label"] == "present"]
     return {"verdict": verdict(labels), "quotes_verified": all(row["quote_verified"] for row in present)}
 
 

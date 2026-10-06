@@ -11,6 +11,10 @@ base run, so the criterion never rests on a run that left out what most runs fou
 role the base run is chosen as before and every output field but the two new ones is what it was. A stored v1
 proposal has no `question_elements` and reads as naming none.
 
+A v3 part records core or aspect. Only a base aspect backed by two proposals
+with the same normalized part name stays aspect; every other part remains an
+inclusion requirement. Legacy parts without roles keep their stored shape.
+
 `consensus` is pure: no clock, no randomness, no store. The order the runs arrive in, and the order phrases and
 exclusion words arrive in, never reach the result (SW14.6).
 """
@@ -72,6 +76,21 @@ def consensus(question: str, runs: dict[int, dict[str, Any]],
     base = min(eligible, key=lambda number: (-len(phrases[number] & kept), number))
     proposal = runs[base]
 
+    # Free-text parts keep the base run's meaning (D78). Only explicit agreement
+    # on the same named aspect may remove an inclusion requirement (D235).
+    aspect_votes = Counter(name for number in ordered for name in {
+        norm(part["name"]) for part in runs[number]["parts"] if part.get("role") == "aspect"
+    })
+    protected = {norm(e["part"]) for e in elements[base]}
+    parts = []
+    for part in proposal["parts"]:
+        row = {"name": part["name"], "definition": part["definition"]}
+        if "role" in part:
+            row["role"] = ("aspect" if part["role"] == "aspect"
+                           and aspect_votes[norm(part["name"])] >= PROPOSAL_MAJORITY
+                           and norm(part["name"]) not in protected else "core")
+        parts.append(row)
+
     part_of: dict[str, str] = {}
     for part in proposal["parts"]:
         for phrase in part["phrases"]:
@@ -86,7 +105,7 @@ def consensus(question: str, runs: dict[int, dict[str, Any]],
     dropped = [word for word in voted if all(holds(part, asked) for part in word.split())]
     return {
         "criterion": proposal["criterion"],
-        "parts": [{"name": part["name"], "definition": part["definition"]} for part in proposal["parts"]],
+        "parts": parts,
         # A phrase the base run does not hold keeps no part: it was agreed on, but not by the run the parts come from.
         "cue_phrases": [{"phrase": phrase, "part": part_of.get(phrase),
                          "runs": [number for number in ordered if phrase in phrases[number]]}

@@ -4067,7 +4067,9 @@ class ResearchFlow:
             return plan
         parts = frozen["parts"] or []
         sent = ([{"name": "criterion", "definition": frozen["criterion"]}] if not parts
-                else [{"name": part["name"], "definition": part["definition"]} for part in parts])
+                else [{"name": part["name"], "definition": part["definition"],
+                       **({"inclusion_role": part["role"]} if part.get("role") in ("core", "aspect") else {})}
+                      for part in parts])
         # The part the question names as the comparator is marked, so the reading applies its comparator line to it
         # (slice 28). A criterion without that required role is sent exactly as before.
         sent = adjudication.mark_comparator(sent, frozen["question_elements"], frozen["required_roles"])
@@ -4212,7 +4214,7 @@ class ResearchFlow:
                                        criterion_part=name, quote=row["quote"] or None,
                                        quote_verified=row["quote_verified"], quote_passage_id=row["passage_id"],
                                        quote_page=row["page"])
-            views.append(adjudication.run_view(proposals))
+            views.append(adjudication.run_view(proposals, parts))
         code = adjudication.combine(views[0] if views else None, views[1] if len(views) > 1 else None)
         # On a criterion with a comparator part, two all-negative runs exclude nothing by themselves (slice 28).
         code, comparator_note = adjudication.with_comparator(code, adjudication.comparator_part(parts))

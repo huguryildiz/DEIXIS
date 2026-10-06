@@ -59,7 +59,7 @@ SCHEMA_VERSIONS = {
     "TableColumnProposal": "deixis.table_column_proposal.v1",
     "ResearchTitle": "deixis.research_title.v1",
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
-    "CriterionProposal": "deixis.criterion_proposal.v2",
+    "CriterionProposal": "deixis.criterion_proposal.v3",
     "TermSuggestions": "deixis.term_suggestions.v1",
     "TermAdvice": "deixis.term_advice.v1",
     "SearchQuery": "deixis.search_query.v1",
@@ -1763,6 +1763,13 @@ def _check_criterion_proposal(step_input: dict[str, Any], draft: dict[str, Any],
     question or the user's steering holds: an element the model worded itself is not the question's.
     """
     _check_question_elements(step_input, draft, report)
+    if not any(part.get("role", "core") == "core" for part in draft["parts"]):
+        report.issues.append(Issue("criterion_core_missing", "/parts", "at least one core part is required"))
+    protected = {normalize_phrase(e["part"]) for e in draft.get("question_elements", [])}
+    for index, part in enumerate(draft["parts"]):
+        if part.get("role") == "aspect" and normalize_phrase(part["name"]) in protected:
+            report.issues.append(Issue("question_element_not_core", f"/parts/{index}/role",
+                                       "population and study-level comparator must be core"))
     low, high = PARTS_PER_PROPOSAL
     if not low <= len(draft["parts"]) <= high:
         report.issues.append(Issue("criterion_part_count", "/parts", f"expected {low} to {high}, got {len(draft['parts'])}"))

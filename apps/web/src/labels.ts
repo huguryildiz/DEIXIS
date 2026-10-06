@@ -499,7 +499,7 @@ export const queueKindLabels: Record<Exclude<QueueKind, 'look_again'>, string> =
 }
 // Why a work is in the queue, by the reason code the backend stored. The code itself is shown only beside this, small.
 const queueReasons: Record<string, string> = {
-  include_quote_unverified: 'Both runs found every part, but a quote was not found on the page it was taken from.',
+  include_quote_unverified: 'Both runs found every required part, but a quote was not found on the page it was taken from.',
   fulltext_runs_disagree: 'The two reading runs came to different readings of the text.',
   versions_disagree: 'Two versions of this work were read, and their decisions are opposite.',
   pdf_identity_unconfirmed: 'The first page of the PDF does not name this work, so the model has not read it.',
@@ -525,7 +525,7 @@ export const waitingReasonText = (code: string) => t(waitingReasons[code] ?? 'No
 const personFileStates: Record<PersonFileState, string> = {
   waiting: 'Waiting to be read.',
   reading: 'The model is reading it…',
-  included: 'Included: both readings found every part of the criterion, and code found each quote on its page.',
+  included: 'Included: both readings found every required part of the criterion, and code found each required quote on its page.',
   criterion_not_met: 'Does not meet the criterion: the parts of the criterion were not found in the passages shown.',
   your_decision: 'Awaiting your decision: the two readings did not settle it.',
   unread: 'Not read.',

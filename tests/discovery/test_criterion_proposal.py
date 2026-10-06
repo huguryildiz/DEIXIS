@@ -42,7 +42,7 @@ def proposal(criterion, parts, exclusion=(), elements=()):
 
 def test_the_new_task_is_registered_with_its_schema_its_method_files_and_its_repair():
     assert contracts.TASK_OUTPUTS["criterion_proposal"] == ("CriterionProposal",)
-    assert contracts.SCHEMA_VERSIONS["CriterionProposal"] == "deixis.criterion_proposal.v2"
+    assert contracts.SCHEMA_VERSIONS["CriterionProposal"] == "deixis.criterion_proposal.v3"
     assert RUNTIME_FILES["criterion_proposal"] == ("SKILL.md", "references/criterion-proposal.md")
     assert "criterion_proposal" in LITERATURE_TASKS  # the literature model proposes it, as it screens
     # Nothing in the output is an identifier a repair could invent, so the one repair attempt stays open.
@@ -57,13 +57,49 @@ def test_the_strict_schema_carries_the_bounds_the_check_enforces():
     assert (phrases["minItems"], phrases["maxItems"]) == PHRASES_PER_PART
     assert contracts.strict_compatibility_issues(schema) == []
     # No strength mark and no rationale: neither would be checked, so neither is asked for (SW15.7).
-    assert set(parts["items"]["properties"]) == {"name", "definition", "phrases"}
+    assert set(parts["items"]["properties"]) == {"name", "definition", "phrases", "role"}
 
 
 def test_the_fake_adapter_answers_the_new_task_with_a_valid_proposal():
     report = contracts.validate_model_output(STEP_INPUT, valid_response(STEP_INPUT))
     assert report.ok, [vars(i) for i in report.issues]
     assert report.output_type == "CriterionProposal"
+
+
+def test_roles_are_required_and_at_least_one_core_is_enforced():
+    output = json.loads(valid_response(STEP_INPUT))
+    for part in output["parts"]:
+        part["role"] = "aspect"
+    assert "criterion_core_missing" in contracts.validate_model_output(STEP_INPUT, output).codes()
+    del output["parts"][0]["role"]
+    assert "schema_invalid" in contracts.validate_model_output(STEP_INPUT, output).codes()
+
+
+def test_consensus_requires_two_named_aspect_votes_and_preserves_multiple_cores():
+    import copy
+
+    runs = {n: copy.deepcopy(three_runs()[1]) for n in (1, 2, 3)}
+    for run in runs.values():
+        for part in run["parts"]:
+            part["role"] = "core"
+    runs[1]["parts"][1]["role"] = "aspect"
+    assert [p["role"] for p in consensus(FATIGUE, runs)["parts"]] == ["core", "core"]
+    runs[2]["parts"][1]["role"] = "aspect"
+    assert [p["role"] for p in consensus(FATIGUE, runs)["parts"]] == ["core", "aspect"]
+    runs[2]["parts"][1]["name"] = "different wording"
+    assert [p["role"] for p in consensus(FATIGUE, runs)["parts"]] == ["core", "core"]
+
+
+def test_population_and_comparator_cannot_be_aspects():
+    output = json.loads(valid_response(STEP_INPUT))
+    output["parts"][1]["role"] = "aspect"
+    output["question_elements"] = [{"role": "comparator", "words": "SYNTHETIC",
+                                     "part": output["parts"][1]["name"]}]
+    report = contracts.ValidationReport()
+    contracts._check_criterion_proposal(STEP_INPUT, output, report)
+    assert "question_element_not_core" in report.codes()
+    runs = {n: output for n in (1, 2, 3)}
+    assert consensus(FATIGUE, runs)["parts"][1]["role"] == "core"
 
 
 @pytest.mark.parametrize(("name", "codes"), [
@@ -115,7 +151,7 @@ def test_the_method_package_still_passes_its_integrity_check_and_loads_the_new_f
     assert integrity_issues() == []
     text = load_skill_package().runtime_text("criterion_proposal")
     assert '<method-file path="references/criterion-proposal.md">' in text
-    assert "deixis.criterion_proposal.v2" in text  # the envelope line the DeepSeek adapter needs (slice 04d)
+    assert "deixis.criterion_proposal.v3" in text  # the envelope line the DeepSeek adapter needs (slice 04d)
 
 
 def test_the_method_file_names_no_topic_and_carries_no_worked_example():

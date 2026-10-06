@@ -1532,7 +1532,7 @@
    "references/criterion-proposal.md"
   ],
   "output_schema_versions": [
-   "deixis.criterion_proposal.v2"
+   "deixis.criterion_proposal.v3"
   ],
   "question": {
    "text": "SYNTHETIC: which supervised exercise programmes have been tested for reducing fatigue in adults after chemotherapy, and which fatigue scale did each one report?",
@@ -1586,7 +1586,7 @@
    "references/criterion-proposal.md"
   ],
   "output_schema_versions": [
-   "deixis.criterion_proposal.v2"
+   "deixis.criterion_proposal.v3"
   ],
   "question": {
    "text": "SYNTHETIC: which supervised exercise programmes have been tested for reducing fatigue in adults after chemotherapy, and which fatigue scale did each one report?",

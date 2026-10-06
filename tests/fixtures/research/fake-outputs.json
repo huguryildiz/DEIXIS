@@ -580,7 +580,7 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v2",
+    "schema_version": "deixis.criterion_proposal.v3",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -596,7 +596,8 @@
        "resistance training",
        "training sessions",
        "supervised sessions"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "fatigue outcome",
@@ -608,7 +609,8 @@
        "validated scale",
        "fatigue outcome",
        "we measured fatigue"
-      ]
+      ],
+      "role": "core"
      }
     ],
     "question_elements": [],
@@ -627,7 +629,7 @@
     "schema_invalid"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v2",
+    "schema_version": "deixis.criterion_proposal.v3",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -643,7 +645,8 @@
        "resistance training",
        "training sessions",
        "supervised sessions"
-      ]
+      ],
+      "role": "core"
      }
     ],
     "question_elements": [],
@@ -658,7 +661,7 @@
     "schema_invalid"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v2",
+    "schema_version": "deixis.criterion_proposal.v3",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -684,7 +687,8 @@
        "exercise arm",
        "training load",
        "weekly sessions"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "fatigue outcome",
@@ -696,7 +700,8 @@
        "validated scale",
        "fatigue outcome",
        "we measured fatigue"
-      ]
+      ],
+      "role": "core"
      }
     ],
     "question_elements": [],
@@ -711,7 +716,7 @@
     "criterion_phrase_too_long"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v2",
+    "schema_version": "deixis.criterion_proposal.v3",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -727,7 +732,8 @@
        "resistance training",
        "training sessions",
        "the participants attended supervised sessions"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "fatigue outcome",
@@ -739,7 +745,8 @@
        "validated scale",
        "fatigue outcome",
        "we measured fatigue"
-      ]
+      ],
+      "role": "core"
      }
     ],
     "question_elements": [],
@@ -754,7 +761,7 @@
     "duplicate_criterion_part"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v2",
+    "schema_version": "deixis.criterion_proposal.v3",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -770,7 +777,8 @@
        "resistance training",
        "training sessions",
        "supervised sessions"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "fatigue outcome",
@@ -782,7 +790,8 @@
        "validated scale",
        "fatigue outcome",
        "we measured fatigue"
-      ]
+      ],
+      "role": "core"
      }
     ],
     "question_elements": [],
@@ -795,7 +804,7 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v2",
+    "schema_version": "deixis.criterion_proposal.v3",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -811,7 +820,8 @@
        "adult participants",
        "post-treatment",
        "adult survivors"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "supervised exercise programme",
@@ -823,7 +833,8 @@
        "resistance training",
        "training sessions",
        "supervised sessions"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "usual care comparison",
@@ -835,7 +846,8 @@
        "wait-list control",
        "no exercise",
        "care as usual"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "fatigue outcome",
@@ -847,7 +859,8 @@
        "validated scale",
        "fatigue outcome",
        "we measured fatigue"
-      ]
+      ],
+      "role": "core"
      }
     ],
     "question_elements": [
@@ -877,7 +890,7 @@
     "question_element_unknown_part"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v2",
+    "schema_version": "deixis.criterion_proposal.v3",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -893,7 +906,8 @@
        "adult participants",
        "post-treatment",
        "adult survivors"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "supervised exercise programme",
@@ -905,7 +919,8 @@
        "resistance training",
        "training sessions",
        "supervised sessions"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "usual care comparison",
@@ -917,7 +932,8 @@
        "wait-list control",
        "no exercise",
        "care as usual"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "fatigue outcome",
@@ -929,7 +945,8 @@
        "validated scale",
        "fatigue outcome",
        "we measured fatigue"
-      ]
+      ],
+      "role": "core"
      }
     ],
     "question_elements": [
@@ -959,7 +976,7 @@
     "question_element_not_in_question"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v2",
+    "schema_version": "deixis.criterion_proposal.v3",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -975,7 +992,8 @@
        "adult participants",
        "post-treatment",
        "adult survivors"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "supervised exercise programme",
@@ -987,7 +1005,8 @@
        "resistance training",
        "training sessions",
        "supervised sessions"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "usual care comparison",
@@ -999,7 +1018,8 @@
        "wait-list control",
        "no exercise",
        "care as usual"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "fatigue outcome",
@@ -1011,7 +1031,8 @@
        "validated scale",
        "fatigue outcome",
        "we measured fatigue"
-      ]
+      ],
+      "role": "core"
      }
     ],
     "question_elements": [
@@ -1041,7 +1062,7 @@
     "duplicate_question_element"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v2",
+    "schema_version": "deixis.criterion_proposal.v3",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -1057,7 +1078,8 @@
        "adult participants",
        "post-treatment",
        "adult survivors"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "supervised exercise programme",
@@ -1069,7 +1091,8 @@
        "resistance training",
        "training sessions",
        "supervised sessions"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "usual care comparison",
@@ -1081,7 +1104,8 @@
        "wait-list control",
        "no exercise",
        "care as usual"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "fatigue outcome",
@@ -1093,7 +1117,8 @@
        "validated scale",
        "fatigue outcome",
        "we measured fatigue"
-      ]
+      ],
+      "role": "core"
      }
     ],
     "question_elements": [
@@ -1123,7 +1148,7 @@
     "question_elements_share_part"
    ],
    "output": {
-    "schema_version": "deixis.criterion_proposal.v2",
+    "schema_version": "deixis.criterion_proposal.v3",
     "step_input_id": "sti_SYNTHE0001",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -1139,7 +1164,8 @@
        "adult participants",
        "post-treatment",
        "adult survivors"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "supervised exercise programme",
@@ -1151,7 +1177,8 @@
        "resistance training",
        "training sessions",
        "supervised sessions"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "usual care comparison",
@@ -1163,7 +1190,8 @@
        "wait-list control",
        "no exercise",
        "care as usual"
-      ]
+      ],
+      "role": "core"
      },
      {
       "name": "fatigue outcome",
@@ -1175,7 +1203,8 @@
        "validated scale",
        "fatigue outcome",
        "we measured fatigue"
-      ]
+      ],
+      "role": "core"
      }
     ],
     "question_elements": [

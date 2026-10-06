@@ -110,14 +110,14 @@ def valid_response(si: dict[str, Any]) -> str:
         })
     if task == "criterion_proposal":
         # SYNTHETIC and field-independent: three identical runs, so the consensus keeps every phrase.
-        return json.dumps(envelope(si, "deixis.criterion_proposal.v2") | {
+        return json.dumps(envelope(si, "deixis.criterion_proposal.v3") | {
             "criterion": "SYNTHETIC: the paper puts forward a method of its own and reports a measured outcome.",
             "parts": [
-                {"name": "method of its own",
+                {"name": "method of its own", "role": "core",
                  "definition": "SYNTHETIC: the paper specifies the method it applies rather than citing one.",
                  "phrases": ["we propose", "our method", "proposed scheme", "we formulate", "the algorithm",
                              "our approach"]},
-                {"name": "measured outcome",
+                {"name": "measured outcome", "role": "core",
                  "definition": "SYNTHETIC: the paper reports a value it measured.",
                  "phrases": ["we measure", "results show", "measured value", "reported outcome",
                              "experimental results", "we evaluate"]},

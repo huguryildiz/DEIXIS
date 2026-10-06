@@ -40,7 +40,9 @@ def proposing():
     def responder(si):
         if si["task_type"] != "criterion_proposal":
             return valid_response(si)
-        return json.dumps(envelope(si, "deixis.criterion_proposal.v2") | RUNS[number(si)])
+        body = RUNS[number(si)]
+        body = body | {"parts": [part | {"role": "core"} for part in body["parts"]]}
+        return json.dumps(envelope(si, "deixis.criterion_proposal.v3") | body)
 
     return FakeAdapter(responder)
 

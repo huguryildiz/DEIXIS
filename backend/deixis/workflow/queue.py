@@ -125,7 +125,9 @@ class _Context:
         frozen = store.frozen_criterion(research_id, scope["question"], scope.get("steering"))
         parts = (frozen or {}).get("parts") or []
         self.criterion = frozen
-        self.parts = ([{"name": part["name"], "definition": part["definition"]} for part in parts] if parts
+        self.parts = ([{"name": part["name"], "definition": part["definition"],
+                        **({"inclusion_role": part["role"]} if part.get("role") in ("core", "aspect") else {})}
+                       for part in parts] if parts
                       else [{"name": "criterion", "definition": frozen["criterion"]}] if frozen else [])
         # The part the reading marked as the comparator (slice 28), named by a `comparator_exclusion_withheld` row.
         self.comparator = adjudication.comparator_part(adjudication.mark_comparator(
@@ -213,6 +215,8 @@ def _question(ctx: _Context, kind: str, proposals: dict[str, dict[int, dict[str,
     if reason_code == "comparator_exclusion_withheld" and ctx.comparator is not None:
         return {"part": ctx.comparator, "definition": ctx.definition(ctx.comparator)}
     for name in ctx.part_names(proposals):
+        if any(p["name"] == name and p.get("inclusion_role") == "aspect" for p in ctx.parts):
+            continue
         runs = proposals.get(name, {})
         if kind == "confirm_quote":
             if any(row["label"] == "present" and not row["quote_verified"] for row in runs.values()):
@@ -272,7 +276,9 @@ def _row(ctx: _Context, work_id: str, found: dict[str, Any]) -> dict[str, Any]:
     svid = decision["source_version_id"]
     run_id = ctx.run_of_step().get(decision["step_id"] or "")
     proposals = ctx.proposals(svid, run_id)
-    kind = LOOK_AGAIN if found["state"] == LOOK_AGAIN else _kind(found["reason_code"], proposals)
+    aspects = {p["name"] for p in ctx.parts if p.get("inclusion_role") == "aspect"}
+    core_proposals = {name: runs for name, runs in proposals.items() if name not in aspects}
+    kind = LOOK_AGAIN if found["state"] == LOOK_AGAIN else _kind(found["reason_code"], core_proposals)
     source = ctx.store.source(svid)
     return {
         "source_version_id": svid, "head": head, "work_id": work_id, "title": source["title"],
@@ -465,6 +471,11 @@ def row_detail(store: Store, research_id: str, source_version_id: str) -> dict[s
                                 "undo_token": state["token"]}
         if state["row"] is not None:
             view["detail"] = _detail(ctx, state["row"])
+        # Included sources also expose their recorded subquestion coverage.
+        # Read roles from that reading's input, never from today's criterion.
+        if state["current"] is not None:
+            pages, opens = store.page_texts(source_version_id), _page_passages(store, source_version_id)
+            view["coverage"] = _runs(ctx, source_version_id, state["current"], pages, opens)
     return view
 
 
@@ -539,6 +550,13 @@ def _runs(ctx: _Context, svid: str, decision: dict[str, Any], pages: dict[int, s
     run_id = ctx.run_of_step().get(decision["step_id"] or "")
     proposals = ctx.proposals(svid, run_id)
     steps = {n: r["step_id"] for runs in proposals.values() for n, r in runs.items()}
+    roles = {}
+    for n, step_id in steps.items():
+        payload = store.conn.execute(
+            "SELECT payload_json FROM step_inputs WHERE step_id = ? ORDER BY rowid DESC LIMIT 1", (step_id,)
+        ).fetchone()
+        target = (json.loads(payload[0]).get("adjudication_target") or {}) if payload else {}
+        roles[n] = {p["name"]: p.get("inclusion_role", "core") for p in target.get("parts", [])}
     shown = {n: _shown_pages(store, step_id) for n, step_id in steps.items()}
     rationale = {n: {p.get("part"): p.get("rationale") for p in ((_step_output(store, step_id).get("result") or {})
                                                                   .get("parts") or [])}
@@ -555,7 +573,8 @@ def _runs(ctx: _Context, svid: str, decision: dict[str, Any], pages: dict[int, s
             unverified = found["label"] == "present" and not found["quote_verified"] and found["quote"]
             closest = _closest(store, found["quote"], pages, shown[run_no], opens) if unverified else None
             verified = bool(found["quote_verified"]) and found["quote_page"] is not None
-            parts.append({"part": name, "label": found["label"], "quote": found["quote"],
+            parts.append({"part": name, "inclusion_role": roles[run_no].get(name, "core"),
+                          "label": found["label"], "quote": found["quote"],
                           "quote_verified": None if found["quote_verified"] is None else bool(found["quote_verified"]),
                           "page": found["quote_page"], "passage": passage[0] if passage else None,
                           # The page names the file it is a page of: a quote read on Europe PMC's drawn text says so.

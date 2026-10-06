@@ -55,7 +55,8 @@ def proposing(fail_steps=(), invalid_steps=(), elements=None):
         if number(si) in invalid_steps:
             body = body | {"parts": body["parts"][:1]}  # one part: below the contract's floor, so the run is dropped
         body = body | {"question_elements": (elements or {}).get(number(si), [])}
-        return json.dumps(envelope(si, "deixis.criterion_proposal.v2") | body)
+        body = body | {"parts": [part | {"role": "core"} for part in body["parts"]]}
+        return json.dumps(envelope(si, "deixis.criterion_proposal.v3") | body)
 
     return FakeAdapter(responder, fail=fail)
 

@@ -190,6 +190,80 @@ def test_a_completed_retrieval_run_is_followed_by_a_reading_run_that_includes_on
     assert summary["include"] == 1 and summary["whole_text"] == 1 and summary["model_calls"] == 2
     assert len(adj_calls(adapter, reading["id"])) == 2
     assert pending == [] and before == after
+
+
+@pytest.mark.parametrize(("mode", "expected"), [
+    ("aspect_missing", "all_parts_verified"),
+    ("core_missing", "criterion_absent"),
+    ("core_unverified", "include_quote_unverified"),
+    ("legacy", "part_without_evidence"),
+])
+def test_core_gate_and_recorded_source_coverage_through_the_api(tmp_path, monkeypatch, mode, expected):
+    """SYNTHETIC model readings exercise persistence and API coverage, not relevance quality."""
+    from deixis.workflow.store import Store
+
+    def response(si):
+        body = json.loads(valid_response(si))
+        if si["task_type"] == "criterion_proposal":
+            body["parts"][1]["role"] = "aspect"
+        if si["task_type"] == "fulltext_adjudication":
+            core, aspect = body["parts"]
+            aspect.update(label="absent" if si["adjudication_target"]["run"] == 1 else "unclear",
+                          quote="", passage_id=None)
+            if mode == "core_missing":
+                core.update(label="absent", quote="", passage_id=None)
+            elif mode == "core_unverified":
+                core["quote"] = "SYNTHETIC this invented quote is absent from the shown page."
+        return json.dumps(body)
+
+    if mode == "legacy":
+        original = Store.frozen_criterion
+
+        def legacy(self, *args, **kwargs):
+            frozen = original(self, *args, **kwargs)
+            if frozen:
+                frozen["parts"] = [{k: v for k, v in part.items() if k != "role"} for part in frozen["parts"]]
+            return frozen
+
+        monkeypatch.setattr(Store, "frozen_criterion", legacy)
+    works, fetcher = papers(1)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=FakeAdapter(response))
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        wait_fetch(client, rid)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        head = records_of(store, rid)["W1"]
+        assert reading["status"] == "completed"
+        assert fulltext_code(store, rid, head) == expected
+        assert (selection(store, rid, head)[0] == "included") is (mode == "aspect_missing")
+        coverage = client.get(f"/api/researches/{rid}/queue/{head}").json()["coverage"]
+        assert len(coverage) == 2
+        assert [r["parts"][1]["label"] for r in coverage] == ["absent", "unclear"]
+        assert all(r["parts"][0]["inclusion_role"] == "core" for r in coverage)
+        assert all(r["parts"][1]["inclusion_role"] == ("core" if mode == "legacy" else "aspect")
+                   for r in coverage)
+        if mode == "aspect_missing":
+            assert all(r["parts"][0]["quote_verified"] for r in coverage)
+            assert all(r["parts"][0]["anchor_text"] for r in coverage)
+            frozen = Store.frozen_criterion
+
+            def revised_roles(self, *args, **kwargs):
+                criterion = frozen(self, *args, **kwargs)
+                if criterion:
+                    criterion["parts"] = [p | {"role": "core"} for p in criterion["parts"]]
+                return criterion
+
+            monkeypatch.setattr(Store, "frozen_criterion", revised_roles)
+            historical = client.get(f"/api/researches/{rid}/queue/{head}").json()["coverage"]
+            assert all(r["parts"][1]["inclusion_role"] == "aspect" for r in historical)
+        elif mode == "core_unverified":
+            row = client.get(f"/api/researches/{rid}/queue/{head}").json()["row"]
+            assert row["question"]["part"] == "method of its own"
+    finally:
+        client.__exit__(None, None, None)
+
 def test_an_unverified_quote_does_not_include(tmp_path, monkeypatch):
     works, fetcher = papers(1)
     app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=FakeAdapter(unverified_response))
@@ -984,7 +1058,8 @@ def test_the_reading_marks_the_comparator_part_only_and_a_plain_criterion_is_sen
     marked = read_with_targets(tmp_path / "marked", monkeypatch, FakeAdapter(valid_response))
     assert len(plain["targets"]) == len(marked["targets"]) == 2
     for parts in plain["targets"]:
-        assert [set(part) for part in parts] == [{"name", "definition"}, {"name", "definition"}]
+        assert [set(part) for part in parts] == [{"name", "definition", "inclusion_role"}] * 2
+        assert all(part["inclusion_role"] == "core" for part in parts)
     for before, after in zip(plain["targets"], marked["targets"]):
         assert after == [before[0], before[1] | {"role": "comparator"}]
     assert plain["code"] == marked["code"] == "all_parts_verified"

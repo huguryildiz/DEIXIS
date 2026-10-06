@@ -16,7 +16,7 @@
     "exclusion_title_words"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.criterion_proposal.v2" },
+    "schema_version": { "type": "string", "const": "deixis.criterion_proposal.v3" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -30,12 +30,14 @@
       "type": "array",
       "minItems": 2,
       "maxItems": 5,
-      "description": "What the paper itself must do or state, one entry per part. The setting (system, domain, material, environment) is not a part: the search blocks hold it. A population of participants and a comparator the question names are parts, listed in `question_elements`.",
+      "description": "Core inclusion requirements and aspect contributions to answer subquestions. At least one core is required; multiple cores are conjunctive. The setting is not a part. A required population or study-level comparator is core and listed in question_elements.",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "definition", "phrases"],
+        "required": ["name", "definition", "phrases", "role"],
         "properties": {
+          "role": { "type": "string", "enum": ["core", "aspect"],
+                    "description": "core: required for inclusion; aspect: per-source contribution to an answer subquestion, never an inclusion requirement. At least one part must be core." },
           "name": { "type": "string", "minLength": 1, "maxLength": 60 },
           "definition": { "type": "string", "minLength": 1, "maxLength": 400,
                           "description": "What must be present in the paper for this part to be met." },

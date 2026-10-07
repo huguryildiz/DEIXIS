@@ -59,7 +59,8 @@ def test_a_question_asking_for_no_comparison_keeps_its_order_and_says_why():
     ranks = plain["ranks"]
     assert plain["fused_code"] == ranking.fuse(ranks, ("bm25", "blocks", "tfidf", "graph"))
     assert plain["fused"] == ranking.fuse(ranks, ("bm25", "blocks", "tfidf", "graph", "embedding"))
-    assert (plain["order"], plain["rescued"]) == (plain["fused"], [])
+    assert plain["order"] == plain["fused"]
+    assert "rescued" not in plain
     compared = ranking.rank_pool(POOL, [], words, TASK, None, {}, compared_terms=TASK["task"])
     assert "joint" in compared["ranks"]
     assert compared["fused"].index("both_abbreviated") <= plain["fused"].index("both_abbreviated")

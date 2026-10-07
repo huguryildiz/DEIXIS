@@ -132,7 +132,7 @@ def json_value(value: Any) -> Any:
 
 
 def replay(manifest: dict[str, Any]) -> dict[str, Any]:
-    """Compute C (and the rescue controls) exclusively from the stored ranking input."""
+    """Compute the fused order C exclusively from the stored ranking input."""
     def row(stored: dict[str, Any]) -> dict[str, Any]:
         return stored | {"own_ids": set(stored["own_ids"]),
                          "references": set(stored["references"]) if stored["references"] is not None else None}

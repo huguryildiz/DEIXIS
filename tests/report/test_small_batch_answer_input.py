@@ -3,26 +3,9 @@
 import pytest
 
 from deixis.workflow import small_batch
-from test_abstract_answer_sources import answer_run, candidate, flow_of, setup
+from test_abstract_answer_sources import answer_run, bind, candidate, flow_of, setup
 from test_criterion_passage_flow import library, page_source, TOPIC_PAGE, CRITERION_PAGE, OFF_PAGE
 from deixis.workflow.criterion_passages import compile_phrases
-
-
-def bind(store, rid, sources, *, priority=True):
-    run = store.create_run(rid, "discovery", {"inspection": {"policy": small_batch.POLICY}}, None)
-    versions = {svid: store.source(svid) for svid in sources}
-    # The guard compares the stored abstract text, as freeze_list does.
-    for svid, version in versions.items():
-        version["abstract"] = " ".join(p["text"] for p in store.passages_for(svid) if p["kind"] == "abstract") or None
-    listing = {"manifest_hash": "synthetic", "manifest": {"scope_revision": run["scope_revision"], "versions": versions}, "items": [
-        {"head": svid, "work_id": versions[svid]["work_id"], "versions": [svid],
-         "position": i + 1, "user_priority": priority and i == 0} for i, svid in enumerate(sources)]}
-    step = store.step(run["id"], small_batch.LIST_KEY, "code:small_batch_list")
-    store.finish_step(step["id"], "succeeded", output=listing)
-    store.update_run(run["id"], status="completed")
-    answer = answer_run(store, rid)
-    answer["budget"] = small_batch.answer_budget(store, rid, answer["scope_revision"], answer["budget"])
-    return answer
 
 
 def retrieve(store, rid, run, included, extra, patterns=None, semantic=None):
@@ -164,18 +147,17 @@ def test_abstract_heavy_prefix_fills_depth_then_widens_to_48(tmp_path):
             if item["reason"] == "answer_budget_deferred"] == extra[42:]
 
 
-def test_unflagged_answer_keeps_d236_order_and_mixed_quarter_quota(tmp_path):
-    store, rid, included, works = setup(tmp_path)
+def test_old_policy_answer_is_refused_before_any_answer_input(tmp_path):
+    store, rid = library(tmp_path)
+    discovery = store.create_run(rid, "discovery", {}, None)
+    store.update_run(discovery["id"], status="completed")
     run = answer_run(store, rid)
     from deixis.workflow.store import LegacyInspectionPolicyRemoved
     with pytest.raises(LegacyInspectionPolicyRemoved):
         small_batch.answer_budget(store, rid, run["scope_revision"], run["budget"])
-    flow = flow_of(store)
-    extra = flow._abstract_sources(run, [included])
-    assert extra == [works["never_read"], works["no_text"]]
-    passages = flow._retrieve(rid, store.scope(rid), [included, *extra], 4, abstract_only=set(extra))
-    assert sum(p["source_version_id"] in extra for p in passages) == 1
-    assert store.existing_step(run["id"], "small_batch:v1:answer_input") is None
+    with pytest.raises(LegacyInspectionPolicyRemoved):
+        store._guard_legacy_run(run)
+    assert store.run_steps(run["id"]) == []
 
 
 def test_mixed_input_has_no_abstract_quarter_quota(tmp_path):

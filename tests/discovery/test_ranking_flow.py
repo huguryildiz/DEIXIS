@@ -324,11 +324,11 @@ def test_the_four_code_signals_rank_the_same_with_the_embedding_off_failing_or_o
     assert broken_output["signals"]["embedding"] == {"ran": False, "reason": "no_stored_similarity", "available": 0}
     assert on_output["signals"]["embedding"]["ran"] is True
     assert (off_output["embedding_model"], on_output["embedding_model"]) == (None, "gemini-embedding-2")
-    assert off_output["rescued"] == broken_output["rescued"] == []
+    assert all("rescued" not in output for output in (off_output, broken_output, on_output))
 
 
-def test_the_embedding_arm_lifts_a_record_the_code_signals_left_behind(tmp_path, monkeypatch):
-    """SW8.1, with the arm's two limits lowered so the fixture stays small; the real 200 and 50 are unit-tested."""
+def test_embedding_contributes_to_fused_order_without_rescue_promotion(tmp_path, monkeypatch):
+    """Embedding participates in fusion; historical rescue stays in the benchmark."""
     # The embedder puts one bakery record first; the code signals cannot tell it from the other bakery records.
     lifted = f"{BAKERY} 7"
     app = app_for(tmp_path, monkeypatch, Pool(embedding=lifted), adapter=DeadAdapter(), embedding=True)
@@ -337,15 +337,12 @@ def test_the_embedding_arm_lifts_a_record_the_code_signals_left_behind(tmp_path,
         rid, run_id, view, run = discover(client)
         store = app.state.store
         output = step_output(store, run_id, "ranking")
-        titles = ordered_titles(store, rid)
-        rescued = [store.source(svid)["title"] for svid in output["rescued"]]
         fused = ranking.fuse(DecisionStore(store).signal_ranks(store.existing_step(run_id, "ranking")["id"], ranking.SIGNALS), ranking.SIGNALS)
         stored_order = DecisionStore(store).ranking_order(store.existing_step(run_id, "ranking")["id"])
     finally:
         client.__exit__(None, None, None)
-    assert rescued == []
+    assert "rescued" not in output
     assert stored_order == fused
-    # It was lifted, not included: the record is still `pending` and no decision was written for it.
     assert output["signals"]["embedding"]["ran"] is True
 
 

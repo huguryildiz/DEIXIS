@@ -475,8 +475,7 @@ def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_
              for name, score in scores.items()}
     fused_code = fuse(ranks, CODE_SIGNALS)
     fused = fuse(ranks, SIGNALS)
-    order, rescued = list(fused), []
-    return {"ranks": ranks, "fused_code": fused_code, "fused": fused, "order": order, "rescued": rescued,
+    return {"ranks": ranks, "fused_code": fused_code, "fused": fused, "order": list(fused),
             "reasons": reasons, "graph_seeds": graph_seeds}
 
 
@@ -530,5 +529,4 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         "no_reference_list_share": round(len(no_references) / len(pool), 4) if pool else None,
         "no_abstract": sum(not row["abstract"] for row in pool),
         "embedding_model": embedding_model,
-        "rescued": sorted(ranked["rescued"]),
     }

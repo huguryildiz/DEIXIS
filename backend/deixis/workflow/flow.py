@@ -83,7 +83,6 @@ NO_INCLUDABLE_SOURCE = "no_includable_source"
 MAX_ABSTRACT_CHARS = 2500
 MAX_PASSAGES_PER_SOURCE = 6  # passages one included source may contribute to an answer step
 PDF_PAGES_PER_SOURCE = 2  # PDF passages a source adds to its abstract when the included sources outnumber the passage limit
-ABSTRACT_ROOM_DIVISOR = 4  # mixed inputs reserve limit // 4 passages for abstract candidates (D225, D234)
 MAX_SMALL_PDF_CHARS = 60_000  # bounded full extracted text for a single attached PDF
 MAX_SMALL_PDF_PAGES = 12
 # Passages of its one source a cell extraction call reads. A source within MAX_CELL_PASSAGES and MAX_SMALL_PDF_CHARS is
@@ -2772,8 +2771,7 @@ class ResearchFlow:
         if small_batch.enabled(run["budget"]):
             passages = self._small_batch_answer_passages(run, scope, included, extra, semantic, patterns)
         else:
-            passages = self._retrieve(rid, scope, included + extra, run["budget"]["max_answer_passages"], semantic, patterns,
-                                      abstract_only=set(extra))
+            passages = self._retrieve(rid, scope, included, run["budget"]["max_answer_passages"], semantic, patterns)
         if not passages:
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                    {"ok": True, "issues": [], "note": "No accessible passages for the included sources."},
@@ -2823,17 +2821,19 @@ class ResearchFlow:
             "included_without_answer_text": sum(1 for head in heads if self.store.answer_version(rid, head) is None)})
 
     def _abstract_sources(self, run: dict[str, Any], heads: list[str]) -> list[str]:
-        """Works an sw answer reads from abstracts, alternating keyword and chain orders (D225, D236).
+        """Eligible abstract-only works in the answer's bound frozen list (D225, D238).
 
         A work counts when the abstract stage kept it as a candidate and the full-text stage either never decided it
         or found no open text for it (`no_fulltext`), under this question revision; its selection is still pending
         (nothing excluded it, no person decided it) and it has an abstract and no PDF text. The pool is the run's
-        `max_candidates` eligible works from those orders; `_retrieve` gives them a quarter of a mixed input's passage budget,
-        or the whole budget when no included answer version is available (D234). A resumed run keeps the list its
+        `max_candidates` eligible works from that list. A resumed run keeps the list its
         first pass stored, less any work a person has decided since.
-        D238 flagged answers use their bound frozen work list instead of D236 alternation; eligibility and the
-        candidate limit remain the same, while passage allocation is handled by `_small_batch_answer_passages`.
+        Passage allocation is handled by `_small_batch_answer_passages`.
         """
+        # Unbound answers (attached scope, or mixed without a completed small-batch discovery) have no
+        # automatic abstract candidate route. D119 answers do not call this helper; old sw answers cannot execute.
+        if not small_batch.enabled(run["budget"]):
+            return []
         rid, revision = run["research_id"], run["scope_revision"]
         pending = {r[0] for r in self.store.conn.execute(
             "SELECT source_version_id FROM selections WHERE research_id = ? AND state = 'pending' AND origin != 'user'",
@@ -2851,12 +2851,9 @@ class ResearchFlow:
         limit = run["budget"]["max_candidates"]
         facts = decisions.facts(rid)
         work_heads = facts["heads"]
-        if small_batch.enabled(run["budget"]):
-            listing = small_batch.answer_listing(self.store, run)
-            order = small_batch.unchanged_heads(self.store, rid, listing, listing["items"])
-            ranking_context = {"ordering_rule": small_batch.POLICY, "manifest_hash": listing["manifest_hash"]}
-        else:
-            order, ranking_context = decisions.answer_abstract_order(rid, revision)
+        listing = small_batch.answer_listing(self.store, run)
+        order = small_batch.unchanged_heads(self.store, rid, listing, listing["items"])
+        ranking_context = {"ordering_rule": small_batch.POLICY, "manifest_hash": listing["manifest_hash"]}
         head_of = {svid: work_heads[wid] for svid, wid in
                    self.store.work_ids(order).items()
                    if wid in work_heads}
@@ -4308,26 +4305,16 @@ class ResearchFlow:
 
     def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int,
                   semantic: list[dict[str, Any]] | None = None,
-                  patterns: list[tuple[str, re.Pattern[str]]] | None = None,
-                  abstract_only: set[str] = frozenset()) -> list[dict[str, Any]]:
+                  patterns: list[tuple[str, re.Pattern[str]]] | None = None) -> list[dict[str, Any]]:
         """Passages for the answer step. `patterns` is given by an sw run alone and may be empty (D84).
 
         Without it the selection is what it was before slice 11: the hand-written formulation quota. With it, part
         of the room is filled from the criterion order instead, and an empty list means the whole input comes from
         the topic order — an sw research never falls back to the topic-specific formulation list.
 
-        A source in `abstract_only` gives its abstract and nothing else: at most a quarter of a mixed input's limit
-        (D225), or the whole limit when there are no other sources (D234). Other sources share the rest as before.
+        Attached-source and D119 answers use this shared selector. Academic small-batch answers use
+        `_small_batch_answer_passages` with their stored allocation policy.
         """
-        if abstract_only:
-            main = [svid for svid in included if svid not in abstract_only]
-            extra = [svid for svid in included if svid in abstract_only]
-            room = min(len(extra), limit // ABSTRACT_ROOM_DIVISOR if main else limit)
-            in_main = set(main)
-            selected = self._retrieve(research_id, scope, main, limit - room,
-                                      None if semantic is None else [p for p in semantic if p["source_version_id"] in in_main],
-                                      patterns) if main else []
-            return selected + self._abstract_passages(research_id, scope, extra, room, semantic)
         # A short attached document can fit in the answer input in its entirety. Do not discard relevant later pages
         # merely because the multi-source six-passage cap was reached; keep that cap for larger or mixed corpora.
         if len(included) == 1 and scope.get("source_scope") in ("attached", "attached_and_academic"):
@@ -4444,23 +4431,6 @@ class ResearchFlow:
                 selected[p["id"]] = p
                 taken[p["source_version_id"]] = taken.get(p["source_version_id"], 0) + 1
         return list(selected.values())
-
-    def _abstract_passages(self, research_id: str, scope: dict[str, Any], sources: list[str], room: int,
-                           semantic: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-        """The abstracts of `room` of these sources, best matching the question first (D225)."""
-        abstracts = {svid: next((p for p in self.store.passages_for(svid) if p["kind"] == "abstract"), None) for svid in sources}
-        texts = {svid: " ".join([self.store.source(svid)["title"], abstracts[svid]["text"] if abstracts[svid] else ""])
-                 for svid in sources}
-        semantic_rank = None
-        if semantic is not None:
-            semantic_rank = {}
-            for p in semantic:
-                if p["source_version_id"] in abstracts:
-                    semantic_rank.setdefault(p["source_version_id"], len(semantic_rank))
-        # Relevance alone orders them: none was chosen by a person, and how many providers indexed a paper says
-        # little about whether its abstract answers the question (measured on the DBR/VBF benchmark, D225).
-        order = answer_source_order(sources, {}, texts, self._topic_terms(research_id, scope), semantic_rank)
-        return [abstracts[svid] for svid in order if abstracts[svid]][:room]
 
     @staticmethod
     def _two_quota_pages(topic: list[dict[str, Any]], criterion: list[dict[str, Any]]) -> list[dict[str, Any]]:

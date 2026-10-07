@@ -16,7 +16,7 @@ from deixis.storage.db import new_id, now
 from fakes import FakeAdapter, valid_response
 from deixis.workflow.flow import NO_INCLUDABLE_SOURCE
 from test_criterion_passage_flow import QUESTION, app_for, client_of, research_with_pdf, wait_run
-from test_abstract_answer_sources import candidate, ranked
+from test_abstract_answer_sources import candidate
 
 
 def research(client, source_scope="academic"):
@@ -100,7 +100,6 @@ def test_zero_includes_calls_the_answer_with_only_eligible_abstracts(tmp_path, m
         sources = [candidate(store, rid, f"abstract-{i}",
                              f"SYNTHETIC supervised exercise lowered fatigue in cohort {i}.",
                              "runs_agree_candidate", *(["no_fulltext"] if i % 2 else [])) for i in range(4)]
-        ranked(store, rid, sources)
         completed_discovery(store, rid, sources=sources)
         if exclude:
             version = store.conn.execute("SELECT version FROM selections WHERE source_version_id = ?",
@@ -140,7 +139,6 @@ def test_zero_includes_with_only_a_user_excluded_candidate_still_records_no_evid
         store = app.state.store
         rid = research(client)
         source = candidate(store, rid, "excluded", "SYNTHETIC exercise lowered fatigue.", "runs_agree_candidate")
-        ranked(store, rid, [source])
         completed_discovery(store, rid, sources=[source])
         version = store.conn.execute("SELECT version FROM selections WHERE source_version_id = ?", (source,)).fetchone()[0]
         store.set_user_selection(rid, source, "excluded", version, "SYNTHETIC user exclusion")

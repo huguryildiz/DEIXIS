@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { nextPort } from './ports'
+import { nextPort, readingDone, modeEnv } from './ports'
 
 // Case S (slice 28, SW27, D109): the criterion names a comparator and both reading runs find no part of a work, so code
 // does not exclude it. The queue shows it as a `confirm_absent` row whose reason is `comparator_exclusion_withheld`:
@@ -30,7 +30,7 @@ class Slice28Server {
   constructor(readonly port: number, readonly env: Record<string, string>) {}
 
   async start() {
-    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...this.env }
+    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...modeEnv, ...this.env }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {
       try { if ((await fetch(`http://127.0.0.1:${this.port}/api/health`)).ok) return } catch { /* not listening yet */ }
@@ -85,7 +85,7 @@ test.describe.serial('S: a work both runs find no part of, on a comparator crite
     expect((await post(api, `/api/researches/${rid}/runs`, { kind: 'discovery' })).ok()).toBe(true)
     await expect.poll(async () => {
       const view = await (await api.context.get(`/api/researches/${rid}`)).json()
-      return view.runs.some((r: { kind: string; status: string }) => r.kind === 'fulltext_adjudication' && r.status === 'completed')
+      return readingDone(view)
     }, { timeout: 90_000 }).toBe(true)
     const rows = (await (await api.context.get(`/api/researches/${rid}/queue`)).json()).rows as Row[]
     const row = rows.find(r => r.title.startsWith(WORK))

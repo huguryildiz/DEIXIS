@@ -1,9 +1,9 @@
 import { expect, request as apiRequest, test, type APIRequestContext, type Page } from '@playwright/test'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { nextPort } from './ports'
+import { nextPort, readingDone, modeEnv } from './ports'
 
 // Case J: the human queue of an sw research (slice 17, D97). A person sees the works the reading could not settle,
 // opens a row's page, and answers; an answer can be taken back, a row that moved is refused, and the list follows the
@@ -36,7 +36,7 @@ class QueueServer {
 
   async start() {
     const env = {  // no provider keys or user data directory reach the fixture
-      PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...this.env,
+      PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...modeEnv, ...this.env,
     }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {
@@ -48,10 +48,12 @@ class QueueServer {
 
   async stop() {
     const proc = this.proc
-    if (!proc || proc.exitCode !== null) return
-    const exited = new Promise(resolve => proc.once('exit', resolve))
-    proc.kill('SIGTERM')
-    await exited
+    if (proc && proc.exitCode === null) {
+      const exited = new Promise(resolve => proc.once('exit', resolve))
+      proc.kill('SIGTERM')
+      await exited
+    }
+    rmSync(this.dataDir, { recursive: true, force: true })
   }
 
   url() { return `http://127.0.0.1:${this.port}` }
@@ -105,7 +107,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     // Discovery, retrieval and reading run one after another; the queue is read once the reading run has settled.
     await expect.poll(async () => {
       const view = await (await api.context.get(`/api/researches/${rid}`)).json()
-      return view.runs.some((r: { kind: string; status: string }) => r.kind === 'fulltext_adjudication' && r.status === 'completed')
+      return readingDone(view)
     }, { timeout: 90_000 }).toBe(true)
     // Ortak karar 4: the four kinds must be there before anything is asked of the screen; if not, the fixture failed.
     const kinds = new Set((await queueOf(api, rid)).rows.map(r => r.kind))

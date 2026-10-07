@@ -490,7 +490,7 @@ export type WaitingRow = {
   links: { doi: string | null; landing: string | null }; find_pdf_source_version_id: string | null
   versions: WaitingVersion[]; versions_digest: string
 }
-export type WaitingView = { rows: WaitingRow[]; count: number; scope_revision: number; has_plan: boolean; via_proxy: boolean; order: 'fulltext_plan'; files: PersonFiles }
+export type WaitingView = { rows: WaitingRow[]; count: number; scope_revision: number; has_plan: boolean; via_proxy: boolean; order: 'fulltext_plan' | 'small_batch_plan'; files: PersonFiles }
 // A file the person added, and what became of it, read from the stored decisions and steps (slice 18b, decision 9).
 export type PersonFileState = 'waiting' | 'reading' | 'included' | 'criterion_not_met' | 'your_decision' | 'unread' | 'changed' | 'model_off' | 'decision_stands' | 'not_eligible'
 export type PersonFile = {

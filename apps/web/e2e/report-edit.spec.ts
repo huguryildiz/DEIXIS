@@ -735,9 +735,15 @@ test('check and acknowledge each discard old reads, confirm outcomes, and reads 
 test('an isolated 422 form error preserves typed input without a report recovery read', async ({ page }) => {
   const f = await fixture(page), claim = claimByKey(await f.read(), 'III.1')
   await openEvidence(page)
-  await page.waitForTimeout(700)
   let gets = 0
   page.on('request', req => { if (req.method() === 'GET' && req.url() === f.url) gets++ })
+  // The sheet's own opening read lands at a load-dependent moment; wait until the report URL has been quiet for a while
+  // so only a read caused by the refused save can move the count below.
+  for (let quiet = 0; quiet < 3; ) {
+    const was = gets
+    await page.waitForTimeout(400)
+    quiet = gets === was ? quiet + 1 : 0
+  }
   await page.route(`${f.url}/claims/${claim.id}`, route => route.fulfill({ status: 422, json: { detail: 'SYNTHETIC text refused' } }))
   const form = await openEdit(page, 'III.1')
   await form.getByLabel('Claim text').fill('SYNTHETIC typed draft stays.')

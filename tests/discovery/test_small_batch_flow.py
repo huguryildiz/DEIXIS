@@ -64,6 +64,11 @@ def test_batch_runs_and_counts(tmp_path, monkeypatch, n, expected, minimum):
         assert progress["counts"] == {"processed": n, "fulltext_adjudicated": 0,
                                       "included": 0, "blocked": 0, "pending": 0}
         assert all(i["reason_code"] == "no_fulltext" for i in progress["items"])
+        waiting = client.get(f"/api/researches/{rid}/waiting").json()
+        assert waiting["order"] == "small_batch_plan" and waiting["has_plan"]
+        assert [row["head"] for row in waiting["rows"]] == listing["order"]
+        assert waiting["count"] == view["counts"]["waiting_for_pdf"] == n
+        assert view["counts"]["flow"]["five"]["waiting_for_pdf"] == n
         assert len([r for r in view["runs"] if r["kind"] == "discovery"]) == 1
         assert not [r for r in view["runs"] if r["kind"] in ("fulltext_fetch", "fulltext_adjudication")]
         assert not fetcher.calls

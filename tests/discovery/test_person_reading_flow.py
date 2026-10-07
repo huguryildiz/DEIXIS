@@ -55,7 +55,9 @@ def request_of(store, asset_id):
     return dict(row) if row else None
 
 
-def test_a_confirmed_file_is_read_first_and_its_work_is_included(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ["on", "off"])
+def test_a_confirmed_file_is_read_first_and_its_work_is_included(tmp_path, monkeypatch, mode):
+    monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", mode)
     app, client, rid, adapter = reading_research(tmp_path, monkeypatch)
     try:
         store = app.state.store
@@ -82,7 +84,9 @@ def test_a_confirmed_file_is_read_first_and_its_work_is_included(tmp_path, monke
     assert files["reading_on"] is True and files["paused_run"] is None
 
 
-def test_a_file_the_model_could_not_read_is_unread_and_read_again_on_the_person_s_retry(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ["on", "off"])
+def test_a_file_the_model_could_not_read_is_unread_and_read_again_on_the_person_s_retry(tmp_path, monkeypatch, mode):
+    monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", mode)
     app, client, rid, adapter = reading_research(tmp_path, monkeypatch, responder=silent)
     try:
         store = app.state.store
@@ -106,7 +110,7 @@ def test_a_file_the_model_could_not_read_is_unread_and_read_again_on_the_person_
     assert retried.status_code == 200 and retried.json()["run"]["idempotency_key"].endswith(":1")
     assert (request["status"], request["attempt"]) == ("read", 1)
     assert again.status_code == 409
-    assert runs_after_unread >= 3
+    assert runs_after_unread == (2 if mode == "on" else 3)
 
 
 def test_a_file_with_no_text_keeps_its_work_waiting_and_the_only_version_takes_no_other(tmp_path, monkeypatch):

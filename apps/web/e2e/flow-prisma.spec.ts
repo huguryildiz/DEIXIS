@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { nextPort } from './ports'
+import { nextPort, readingDone, modeEnv } from './ports'
 
 // Case M: where every work of an sw research stands (slice 20, D102). The Sources tab's flow line, the PRISMA-S search
 // report in both formats, the line under an answer that says where the flow stood when the answer started, and the
@@ -28,7 +28,7 @@ class FlowServer {
 
   async start() {
     const env = {  // no provider keys or user data directory reach the fixture
-      PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...this.env,
+      PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...modeEnv, ...this.env,
     }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {
@@ -72,7 +72,7 @@ test.describe.serial('M: the flow of an sw research and its search report', () =
     expect(created.status()).toBe(201)
     rid = (await created.json()).research.id
     expect((await post(api, `/api/researches/${rid}/runs`, { kind: 'discovery' })).ok()).toBe(true)
-    await expect.poll(async () => (await viewOf(api, rid)).runs.some((r: { kind: string; status: string }) => r.kind === 'fulltext_adjudication' && r.status === 'completed'), { timeout: 90_000 }).toBe(true)
+    await expect.poll(async () => readingDone(await viewOf(api, rid)), { timeout: 90_000 }).toBe(true)
     // The fixture must have given one include by agreement and four queue rows before the screen is asked anything.
     const five = (await viewOf(api, rid)).counts.flow.five
     if (five.included_by_agreement !== 1 || five.queued !== 4) throw new Error(`fixture failure: flow ${JSON.stringify(five)}`)

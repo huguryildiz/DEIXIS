@@ -1,7 +1,7 @@
 """The works an `sw` research waits on a PDF for, and a file the person drops for one of them (slice 18a).
 
-The list is not stored. Each read derives it from the current full-text decisions and the stored retrieval plans
-(`fulltext.waiting`), so a revised question or a new file changes it without anything being rewritten. Reading it
+The list is not stored. Each read derives it from current full-text decisions and stored retrieval or small-batch
+plans/closures, so a revised question or a new file changes it without anything being rewritten. Reading it
 opens no step and writes nothing.
 
 A dropped file is matched to a work (`identity.propose`), never attached by the match: the person picks the version
@@ -22,7 +22,7 @@ from deixis.documents import identity
 from deixis.domain import proxy
 from deixis.domain.canonical import sha256_hex
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow import fulltext
+from deixis.workflow import fulltext, small_batch
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.store import Store
 
@@ -46,11 +46,39 @@ def require_sw(store: Store, research_id: str) -> None:
 
 
 def _plans(store: Store, research_id: str, revision: int) -> list[dict[str, Any]]:
-    """Every stored retrieval plan of this question revision, newest first, with when it was written."""
-    return [json.loads(row["output_json"]) | {"finished_at": row["finished_at"]} for row in store.conn.execute(
-        "SELECT s.output_json, s.finished_at FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
+    """Retrieval orders, newest first; batch records form one reading order per frozen run."""
+    plans = [json.loads(row["output_json"]) | {"finished_at": row["finished_at"], "order": "fulltext_plan",
+                                               "step_id": row["id"]} for row in store.conn.execute(
+        "SELECT s.id, s.output_json, s.finished_at FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
         " AND r.scope_revision = ? AND s.operation_key = 'fulltext_plan' AND s.status = 'succeeded'"
         " AND s.output_json IS NOT NULL ORDER BY s.finished_at DESC, s.id DESC", (research_id, revision))]
+    batches: dict[str, dict[str, Any]] = {}
+    for row in store.conn.execute(
+            "SELECT s.id, s.run_id, s.output_json, s.finished_at, r.budget_json FROM run_steps s"
+            " JOIN runs r ON r.id = s.run_id WHERE r.research_id = ? AND r.scope_revision = ?"
+            " AND r.kind = 'discovery' AND s.kind IN ('code:small_batch_plan', 'code:small_batch_close')"
+            " AND s.status = 'succeeded' AND s.output_json IS NOT NULL"
+            " ORDER BY s.finished_at, s.id", (research_id, revision)):
+        if not small_batch.enabled(json.loads(row["budget_json"])):
+            continue
+        batch = batches.setdefault(row["run_id"], {"items": {}, "order": "small_batch_plan"})
+        for item in json.loads(row["output_json"]).get("items", []):
+            # Closures lack version lists; retain the plan's version identities for changed heads.
+            batch["items"][item["position"]] = batch["items"].get(item["position"], {}) | item
+        batch.update(finished_at=row["finished_at"], step_id=row["id"])
+    for batch in batches.values():
+        batch["works"] = list(dict.fromkeys(svid for _, item in sorted(batch.pop("items").items())
+                                            for svid in [item["head"], *item.get("versions", [])]))
+        plans.append(batch)
+    return sorted(plans, key=lambda plan: (plan["finished_at"], plan["step_id"]), reverse=True)
+
+
+def _waiting_rows(works: list[dict[str, Any]], plans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if plans and plans[0]["order"] == "small_batch_plan":
+        reached = {svid for plan in plans for svid in plan.get("works", [])}
+        works = [work for work in works if any(v["id"] in reached for v in work["versions"])
+                 and any(not v["has_asset"] for v in work["versions"])]
+    return fulltext.waiting(works, plans)
 
 
 def _works(store: Store, research_id: str) -> list[dict[str, Any]]:
@@ -74,6 +102,10 @@ def _works(store: Store, research_id: str) -> list[dict[str, Any]]:
         " JOIN source_assets a ON a.id = p.asset_id AND a.removed_at IS NULL"
         "  AND a.extraction_version IS p.extraction_version"
         " WHERE p.kind = 'pdf_page'", (research_id,))}
+    with_asset = {row[0] for row in store.conn.execute(
+        "SELECT DISTINCT a.source_version_id FROM source_assets a JOIN corpus_memberships m"
+        " ON m.source_version_id = a.source_version_id WHERE m.research_id = ?"
+        " AND m.removed_at IS NULL AND a.removed_at IS NULL", (research_id,))}
     held: dict[str, dict[str, Any]] = {}
     for row in store.conn.execute("SELECT rowid AS row_order, * FROM stage_decisions WHERE research_id = ?"
                                   " AND stage = 'fulltext'"
@@ -82,7 +114,8 @@ def _works(store: Store, research_id: str) -> list[dict[str, Any]]:
                                           "stale": decisions.is_stale(dict(row), stale_key),
                                           "created_at": row["created_at"], "order": row["row_order"]}
     return [{"work_id": work_id, "head": head,
-             "versions": [{"id": svid, "has_text": svid in with_text, "fulltext": held.get(svid)}
+             "versions": [{"id": svid, "has_text": svid in with_text, "has_asset": svid in with_asset,
+                           "fulltext": held.get(svid)}
                           for svid in sorted(by_work.get(work_id, []))]}
             for work_id, head in sorted(heads.items())]
 
@@ -90,7 +123,7 @@ def _works(store: Store, research_id: str) -> list[dict[str, Any]]:
 def _rows(store: Store, research_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
     revision = store.research(research_id)["current_scope_revision"]
     plans = _plans(store, research_id, revision)
-    return fulltext.waiting(_works(store, research_id), plans), plans, revision
+    return _waiting_rows(_works(store, research_id), plans), plans, revision
 
 
 def for_context(ctx: Any) -> tuple[dict[str, dict[str, Any]], set[str]]:
@@ -98,7 +131,7 @@ def for_context(ctx: Any) -> tuple[dict[str, dict[str, Any]], set[str]]:
     the flow's buckets and the tab's count read the same derivation (slice 20)."""
     if ctx._waiting is None:
         works = _works(ctx.store, ctx.rid)
-        rows = fulltext.waiting(works, _plans(ctx.store, ctx.rid, ctx.revision))
+        rows = _waiting_rows(works, _plans(ctx.store, ctx.rid, ctx.revision))
         ctx._waiting = ({work["work_id"]: work for work in works}, {row["work_id"] for row in rows})
     return ctx._waiting
 
@@ -158,7 +191,7 @@ def waiting_view(store: Store, research_id: str) -> dict[str, Any]:
             "find_pdf_source_version_id": next((s["id"] for s in sources if s["doi"]), None),
             "versions": view["versions"], "versions_digest": view["versions_digest"]})
     return {"rows": rows, "count": len(rows), "scope_revision": revision, "has_plan": bool(plans),
-            "via_proxy": bool(address), "order": "fulltext_plan"}
+            "via_proxy": bool(address), "order": plans[0]["order"] if plans else "fulltext_plan"}
 
 
 def candidate_works(store: Store, research_id: str) -> dict[str, str]:

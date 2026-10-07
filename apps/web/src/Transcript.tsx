@@ -117,7 +117,10 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   queueCount?: number; onOpenQueue?: () => void
 }) {
   const runs = [...view.runs].reverse()  // the view lists the newest run first
-  const lastReading = runs.filter(r => r.kind === 'fulltext_adjudication').at(-1)?.id
+  // The turn that names the works awaiting a decision: the reading run, or, for a small-batch discovery run (D237, the
+  // default since D239), which reads inside the discovery run and has no reading run of its own, that discovery run.
+  const lastReading = runs.filter(r => r.kind === 'fulltext_adjudication'
+    || (r.kind === 'discovery' && (r.budget as unknown as { inspection?: { policy?: string } } | null)?.inspection?.policy === 'small_batch_fused_v1')).at(-1)?.id
   const active = runs.some(r => ACTIVE.has(r.status))
   const end = useRef<HTMLDivElement>(null)
   const [atEnd, setAtEnd] = useState(true)

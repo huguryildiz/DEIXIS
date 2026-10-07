@@ -199,7 +199,9 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
           await route.fulfill({ status: failure.status, contentType: 'application/json', body: JSON.stringify({ detail: failure.detail, ...(failure.code ? { code: failure.code } : {}) }) })
         })
         const target = row(ui, titles[1]).getByRole('button', { name: t('Retry text extraction'), exact: true })
-        await target.focus(); await ui.keyboard.press('Enter')
+        // Let the view's own reads finish before the key press: a late refresh replaces the row and drops its focus.
+        await ui.waitForLoadState('networkidle')
+        await target.focus(); await expect(target).toBeFocused(); await ui.keyboard.press('Enter')
         const message = failure.detail === 'File missing' ? t('The stored PDF is missing; upload it again to restore it.') : t(failure.detail)
         await expect(row(ui, titles[1]).getByRole('alert')).toContainText(message)
         await expect(target).not.toHaveAttribute('aria-disabled', 'true'); await expect(target).toBeFocused()

@@ -94,6 +94,7 @@ test('explicitly write a report with a recorded failed row and disclose it in th
     expect(report.missing_rows.counts).toEqual({ included: 2, completed: 1, failed: 1, cells_total: 2, cells_missing: 1 })
     expect(report.missing_rows.failed_rows[0].title).toBe(FAILED)
     expect(report.table_i.rows.filter((row: { failed?: boolean }) => row.failed)).toHaveLength(1)
+    await page.getByRole('tab', { name: 'Answer' }).click()  // the report card sits on the Answer tab since D230
     await page.getByRole('button', { name: 'Open evidence report' }).click()
     const sheet = page.locator('.report-sheet')
     await expect(sheet.locator('.report-document > .notice').first()).toContainText(NOTE)

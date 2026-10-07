@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { nextPort } from './ports'
+import { nextPort, readingDone, modeEnv } from './ports'
 
 // Case P (slice 25, SW21, D106): works whose own PDF is withheld get their text from Europe PMC's open-access XML,
 // drawn as a PDF by DEIXIS. Every surface that names one of its pages says "Europe PMC text, rendered p. n", never
@@ -11,8 +11,9 @@ import { nextPort } from './ports'
 // its Markdown copy, the passage sheet's plain text and the PDF viewer. The plain "PDF p. n" of an ordinary PDF is
 // checked on the same surfaces by cases A, J and K.
 //
-// Case Q (slice 25, SW22, D106): an sw research whose search finished with nothing included can still ask for an
-// answer; the answer says no work was included at full text when it started, with the flow line, and asks no model.
+// Case Q (slice 25, SW22, D106, changed by D234): an sw research whose search finished with nothing included can still
+// ask for an answer. Since D234 it is written from the abstract-only candidates, and its flow line keeps "included 0"
+// apart from what the model was given; the D106 no-answer notice stays for a research with no eligible abstract either.
 //
 // Both run on SYNTHETIC records with a scripted model and mocked providers. A passing case shows application behavior,
 // not how often Europe PMC holds a work or how well its XML draws.
@@ -37,7 +38,7 @@ class Slice25Server {
   constructor(readonly port: number, readonly env: Record<string, string>) {}
 
   async start() {
-    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...this.env }
+    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...modeEnv, ...this.env }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {
       try { if ((await fetch(`http://127.0.0.1:${this.port}/api/health`)).ok) return } catch { /* not listening yet */ }
@@ -94,7 +95,7 @@ test.describe.serial('P: pages of Europe PMC’s drawn text say "rendered" on ev
     api = await apiOf(server)
     rid = await createResearch(api, QUESTION)
     expect((await post(api, `/api/researches/${rid}/runs`, { kind: 'discovery' })).ok()).toBe(true)
-    await expect.poll(async () => (await viewOf(api, rid)).runs.some((r: RunRow) => r.kind === 'fulltext_adjudication' && r.status === 'completed'),
+    await expect.poll(async () => readingDone(await viewOf(api, rid)),
       { timeout: 90_000 }).toBe(true)
     // The fixture must have drawn the withheld works from Europe PMC before anything is asked of the screen.
     const view = await viewOf(api, rid)
@@ -160,7 +161,7 @@ test.describe.serial('P: pages of Europe PMC’s drawn text say "rendered" on ev
   })
 })
 
-test.describe.serial('Q: an sw research with nothing included ends with an answer that says so', () => {
+test.describe.serial('Q: an sw research with nothing included answers from its abstracts and says so', () => {
   // Retrieval and reading are off here, so the search finishes with no work included (the fixture's smallest case).
   const server = new Slice25Server(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed' })
   let api: Api
@@ -187,10 +188,14 @@ test.describe.serial('Q: an sw research with nothing included ends with an answe
         await expect(button).toBeEnabled()
         // The run ends within one poll, so the page never sees it running and shows no toast; the notice is the check.
         if (width === 1440) await button.click()
-        const notice = page.getByText('No work was included at full text when this answer started, so no answer was written and no model was asked.')
-        await expect(notice).toBeVisible()
+        // D234 (superseding D106's zero-included gate): the five abstract-only candidates give the answer its passages, so
+        // the no-answer notice is absent and the start snapshot keeps "included 0" apart from what the model was given.
+        const flow = page.getByRole('group', { name: 'Flow at the start of this answer' }).first()
+        await expect(flow).toBeVisible()
+        await expect(flow).toContainText('included 0')
+        await expect(flow).toContainText(/Given to the model: works [1-9]\d*, passages [1-9]\d*/)
+        await expect(page.getByText('No work was included at full text when this answer started, so no answer was written and no model was asked.')).toHaveCount(0)
         await expect(page.getByText(/met the criterion/)).toHaveCount(0)
-        await expect(page.getByRole('group', { name: 'Flow at the start of this answer' }).first()).toBeVisible()
         expect(await noSideScroll(page)).toBe(true)
         await shot(page, `Q-no-include-answer-${width}`)
       } finally { await page.close() }

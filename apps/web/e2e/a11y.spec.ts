@@ -3,7 +3,7 @@ import { expect, request as apiRequest, test, type Browser, type Locator, type P
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { nextPort } from './ports'
+import { nextPort, readingDone, modeEnv } from './ports'
 
 // P9 H6 accessibility audit (plan X01 to X06). Synthetic records and a scripted model: this measures the interface,
 // not research quality. Part 1 scans a frozen screen list with axe in four states (X01 to X04); part 2 walks the A to G
@@ -29,7 +29,7 @@ class Fixture {
   get dataDir() { return this.dir ??= mkdtempSync(path.join(OUT, `a11y-${this.port}-`)) }  // created when a server first needs it, not when the file is loaded
 
   private childEnv() {  // no provider keys or user data directory reach the fixture
-    return { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${path.join(REPO, 'backend')}:${REPO}`, ...this.env }
+    return { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${path.join(REPO, 'backend')}:${REPO}`, ...modeEnv, ...this.env }
   }
 
   // A fixture's own child must answer, not another worktree's server on the same port: refuse to start if the port already answers.
@@ -413,7 +413,7 @@ async function queueResearchId() {
       expect(discovery.ok(), await discovery.text()).toBe(true)
       await expect.poll(async () => {
         const view = await (await context.get(`/api/researches/${rid}`)).json()
-        return view.runs.some((r: { kind: string; status: string }) => r.kind === 'fulltext_adjudication' && r.status === 'completed')
+        return readingDone(view)
       }, { timeout: 120_000 }).toBe(true)
       return rid
     } finally { await context.dispose() }

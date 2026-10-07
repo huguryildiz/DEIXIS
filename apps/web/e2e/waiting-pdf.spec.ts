@@ -1,9 +1,9 @@
 import { expect, request as apiRequest, test, type Page } from '@playwright/test'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { nextPort } from './ports'
+import { nextPort, readingDone, modeEnv } from './ports'
 
 // Case K: the works of an sw research waiting for the person's PDF (slice 18a). A work no route found a PDF for is
 // listed in reading order with its DOI link; the person drops a publisher file, the match names the work by its DOI,
@@ -28,7 +28,7 @@ const PORT = nextPort()
 const URL = `http://127.0.0.1:${PORT}`
 const QUESTION = 'How do SYNTHETIC molecular relays and greenhouse irrigation schedule their releases?'
 const WAITING_TITLE = 'SYNTHETIC release timing of molecular relays in closed channels'
-const ENV = { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_WAITING: 'on' }
+const ENV = { ...modeEnv, DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_WAITING: 'on' }
 
 // Starts a fixture server on `port` over a fresh data directory and waits until it answers.
 async function startServer(dataDir: string, port: number, publisherPdf: string) {
@@ -69,7 +69,7 @@ async function readyResearch(base: string, question: string) {
   expect((await api.post(`/api/researches/${id}/runs`, { data: { kind: 'discovery' }, headers })).ok()).toBe(true)
   await expect.poll(async () => {
     const view = await (await api.get(`/api/researches/${id}`)).json()
-    return view.runs.some((r: { kind: string; status: string }) => r.kind === 'fulltext_adjudication' && r.status === 'completed')
+    return readingDone(view)
   }, { timeout: 90_000 }).toBe(true)
   await api.dispose()
   return id
@@ -100,7 +100,7 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
     // Discovery (with the fetch inside it) and the reading run settle; the list is read after that.
     await expect.poll(async () => {
       const view = await (await api.get(`/api/researches/${rid}`)).json()
-      return view.runs.some((r: { kind: string; status: string }) => r.kind === 'fulltext_adjudication' && r.status === 'completed')
+      return readingDone(view)
     }, { timeout: 90_000 }).toBe(true)
     const waiting = await (await api.get(`/api/researches/${rid}/waiting`)).json()
     if (!waiting.rows.some((r: { title: string }) => r.title === WAITING_TITLE)) throw new Error('fixture failure: the work with no open copy is not waiting')
@@ -110,6 +110,7 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
   test.afterAll(async () => {
     await page?.close()
     if (proc && proc.exitCode === null) { const exited = new Promise(resolve => proc!.once('exit', resolve)); proc.kill('SIGTERM'); await exited }
+    rmSync(dataDir, { recursive: true, force: true })
   })
 
   test('a waiting work is listed in reading order with its DOI link, at desktop and phone width', async () => {
@@ -179,7 +180,7 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
     await expect(row).toContainText(/Waiting to be read|The model is reading it…/)
     await expect(row).toContainText('The model is reading it…', { timeout: 15_000 })
     await shot(page, 'L-your-files-reading-1440')
-    await expect(row).toContainText('Included: both readings found every part of the criterion', { timeout: 30_000 })
+    await expect(row).toContainText('Included: both readings found every required part of the criterion', { timeout: 30_000 })
     const quotes = row.getByRole('list', { name: 'Quotes code found on their pages' })
     await expect(quotes).toContainText('PDF p. 1')
     await expect(quotes).toContainText('Journal of Relay Studies')
@@ -251,6 +252,7 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
   test.afterAll(async () => {
     await page?.close()
     if (proc && proc.exitCode === null) { const exited = new Promise(resolve => proc!.once('exit', resolve)); proc.kill('SIGTERM'); await exited }
+    rmSync(dataDir, { recursive: true, force: true })
   })
 
   test('L failure: a reading that decides nothing leaves the file unread until the person asks again', async ({ browser }) => {
@@ -349,7 +351,7 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
     await expect(row).toContainText('Not read.')
     await again.click()
     await expect(page.getByText('The file waits to be read again.')).toBeVisible()
-    await expect(row).toContainText('Included: both readings found every part of the criterion', { timeout: 30_000 })
+    await expect(row).toContainText('Included: both readings found every required part of the criterion', { timeout: 30_000 })
     await expect(row.getByRole('button', { name: 'Read again' })).toHaveCount(0)
   })
 

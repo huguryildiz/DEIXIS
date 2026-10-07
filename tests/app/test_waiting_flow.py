@@ -239,6 +239,49 @@ def write_plan(lib, heads):
     return step["id"]
 
 
+def write_batch(lib, heads, number=0, *, closed=False):
+    lib.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?",
+                           (json.dumps({"inspection": {"policy": "small_batch_fused_v1"}}), lib.run))
+    kind = "close" if closed else "plan"
+    step = lib.store.step(lib.run, f"small_batch:v1:{number}:{kind}", f"code:small_batch_{kind}")
+    items = [{"head": head, "work_id": lib.work_of(head), "position": number * 40 + i + 1,
+              **({} if closed else {"versions": [head]})} for i, head in enumerate(heads)]
+    lib.store.finish_step(step["id"], "succeeded", output={"items": items})
+    return step["id"]
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_small_batch_waiting_uses_frozen_positions_and_current_decisions(store, closed):
+    lib = Lib(store, "channels")
+    first, second, excluded, stale, unreached = (lib.work() for _ in range(5))
+    # Later batch finishes first (pipelined preparation); finish time must not reverse the reading order.
+    step = write_batch(lib, [second], number=1, closed=closed)
+    write_batch(lib, [first, excluded, stale], closed=closed)
+    for head in (first, second, stale, unreached):
+        lib.ds.record(lib.rid, head, "no_fulltext", step_id=step)
+    lib.ds.record(lib.rid, excluded, "human_criterion_not_met", step_id=step)
+    store.conn.execute("UPDATE stage_decisions SET scope_revision = 0 WHERE source_version_id = ?", (stale,))
+    view = waiting.waiting_view(store, lib.rid)
+    assert [row["head"] for row in view["rows"]] == [first, second]
+    assert view["count"] == waiting.waiting_count(store, lib.rid) == 2
+    assert view["order"] == "small_batch_plan" and view["has_plan"]
+    assert lib.work_of(second) in waiting.candidate_works(store, lib.rid)
+    # A revised scope cannot reuse the previous revision's batch records.
+    store.conn.execute("UPDATE runs SET scope_revision = 0 WHERE id = ?", (lib.run,))
+    assert waiting.waiting_view(store, lib.rid)["rows"] == []
+
+
+def test_small_batch_waiting_requires_a_version_that_can_accept_a_pdf(store):
+    lib = Lib(store, "channels")
+    head = lib.work()
+    step = write_batch(lib, [head])
+    lib.ds.record(lib.rid, head, "text_unreadable", step_id=step)
+    assert waiting.waiting_count(store, lib.rid) == 1
+    # No text, but an occupied version cannot take another upload (the attach guard remains authoritative).
+    lib.text(head, [])
+    assert waiting.waiting_count(store, lib.rid) == 0
+
+
 def test_the_candidates_are_the_plan_s_works_the_list_and_the_works_included_after_the_plan(store):
     lib = Lib(store, "irrigation")
     planned, waiting_one, before, after, other = (lib.work() for _ in range(5))

@@ -417,7 +417,7 @@ def stage_record_ranking(rows: list[dict[str, Any]]) -> Any:
               "tfidf": ranking.tfidf_scores(pool, seeds), "graph": ranking.graph_scores(pool, seeds)}
     ranks = {name: ranking.mean_ranks(score, ranking.availability(pool, name)) for name, score in scores.items()}
     fused = ranking.fuse(ranks, ranking.CODE_SIGNALS)
-    order, rescued = ranking.inspection_order(fused, fused, None)
+    order, rescued = list(fused), []
     return {"scores": {name: {rid: list(value) if isinstance(value, tuple) else value
                               for rid, value in score.items()} for name, score in scores.items()},
             "ranks": {name: {rid: list(value) for rid, value in row.items()} for name, row in ranks.items()},

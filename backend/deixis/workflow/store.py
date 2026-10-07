@@ -150,6 +150,34 @@ class LegacyResearchReadOnly(Exception):
     """Stored legacy research cannot start or revise discovery work."""
 
 
+class LegacyInspectionPolicyRemoved(Exception):
+    """D242: stored sw inspection records remain readable, but cannot execute."""
+
+
+def legacy_inspection_policy_removed(store: Any, run: dict[str, Any]) -> bool:
+    from deixis.workflow import small_batch
+
+    scope = store.scope(run["research_id"], run["scope_revision"])
+    if scope.get("search_workflow") != "sw":
+        return False  # D119 answers retain their own stored policy.
+    if run["kind"] == "fulltext_adjudication":
+        return not (run.get("idempotency_key") or "").startswith("fulltext_adjudication:person:")
+    if run["kind"] == "fulltext_fetch":
+        return True
+    if run["kind"] == "discovery":
+        return not small_batch.enabled(run["budget"])
+    if run["kind"] != "answer" or scope.get("source_scope") == "attached":
+        return False
+    if scope.get("source_scope") == "attached_and_academic":
+        searched = store.conn.execute(
+            "SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'discovery'"
+            " AND status = 'completed' ORDER BY created_at DESC, id DESC LIMIT 1",
+            (run["research_id"], run["scope_revision"])).fetchone()
+        if searched is None or small_batch.enabled(store.run(searched["id"])["budget"]):
+            return False  # Match answer_budget's completed-discovery policy selection.
+    return not small_batch.enabled(run["budget"])
+
+
 def legacy_research_read_only(scope: dict[str, Any]) -> bool:
     return scope.get("search_workflow") == "legacy"
 
@@ -761,6 +789,8 @@ class Store:
             raise LegacyResearchReadOnly("legacy_research_read_only")
 
     def _guard_legacy_run(self, run: dict[str, Any]) -> None:
+        if legacy_inspection_policy_removed(self, run):
+            raise LegacyInspectionPolicyRemoved("legacy_inspection_policy_removed")
         if run["kind"] in DISCOVERY_RUN_KINDS:
             self._guard_legacy_scope(run["research_id"], run["scope_revision"])
 
@@ -801,6 +831,7 @@ class Store:
         """Resume any kind without renewing usage or bypassing the single-active-run rule."""
         with transaction(self.conn):
             run = self.run(run_id)
+            self._guard_legacy_run(run)
             if run["status"] != "paused":
                 raise RevisionConflict("Only a paused run can resume")
             active = self.conn.execute(

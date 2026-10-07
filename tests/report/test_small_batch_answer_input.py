@@ -167,7 +167,9 @@ def test_abstract_heavy_prefix_fills_depth_then_widens_to_48(tmp_path):
 def test_unflagged_answer_keeps_d236_order_and_mixed_quarter_quota(tmp_path):
     store, rid, included, works = setup(tmp_path)
     run = answer_run(store, rid)
-    assert small_batch.answer_budget(store, rid, run["scope_revision"], run["budget"]) == run["budget"]
+    from deixis.workflow.store import LegacyInspectionPolicyRemoved
+    with pytest.raises(LegacyInspectionPolicyRemoved):
+        small_batch.answer_budget(store, rid, run["scope_revision"], run["budget"])
     flow = flow_of(store)
     extra = flow._abstract_sources(run, [included])
     assert extra == [works["never_read"], works["no_text"]]

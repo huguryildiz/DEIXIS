@@ -494,7 +494,8 @@ def dispatch_flow(tmp_path):
     flow = ResearchFlow(deps)
     def new_run(providers=("ieee_xplore",)):
         rid = store.create_research("SYNTHETIC?", "academic", "standard", list(providers), "fake", "m", "en")
-        run = store.create_run(rid, "discovery", {"max_provider_requests": 1000}, None)
+        run = store.create_run(rid, "discovery", {"max_provider_requests": 1000,
+                                                "inspection": {"policy": "small_batch_fused_v1"}}, None)
         store.update_run(run["id"], status="running")
         return store.run(run["id"])
     yield flow, new_run

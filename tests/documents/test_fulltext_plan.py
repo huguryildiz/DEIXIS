@@ -206,8 +206,9 @@ def test_a_user_started_retrieval_run_gets_the_same_chain_room(tmp_path, monkeyp
             "model_connection": "fake", "requested_model": "fake-model", "effort": "standard"})
         rid = created.json()["research"]["id"]
         started = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_fetch"})
-    assert started.status_code == 202, started.text
-    assert started.json()["budget"] == fulltext.fetch_budget("standard") and started.json()["budget"]["chain_room"] == 12
+    assert started.status_code == 409, started.text
+    assert started.json()["code"] == "legacy_inspection_policy_removed"
+    assert started.json()["next_action"] == "new_discovery"
 
 
 # ---- the identity check (Task 3) ---------------------------------------------------------------

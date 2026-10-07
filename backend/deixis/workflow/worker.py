@@ -18,7 +18,7 @@ from pathlib import Path
 
 from deixis.storage.db import describe_failure, now, transaction
 from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.store import Store, legacy_inspection_policy_removed
 
 try:
     import fcntl
@@ -104,6 +104,20 @@ class Worker:
 
     def wake(self) -> None:
         self._wake.set()
+
+    def cancel_legacy_inspection(self) -> int:
+        """Cancel removed sw execution and its event in one transaction; retain all inputs."""
+        with transaction(self.store.conn):
+            runs = [self.store.run(row[0]) for row in self.store.conn.execute(
+                "SELECT id FROM runs WHERE status IN ('queued', 'running', 'pause_requested', 'paused')"
+                " AND kind IN ('discovery', 'fulltext_fetch', 'fulltext_adjudication', 'answer')")]
+            removed = [run for run in runs if legacy_inspection_policy_removed(self.store, run)]
+            for run in removed:
+                self.store.update_run(run["id"], status="cancelled",
+                                      pause_reason="legacy_inspection_policy_removed")
+                self.store._event(run["research_id"], "run_cancelled",
+                                  {"status": "cancelled", "reason": "legacy_inspection_policy_removed"}, run["id"])
+        return len(removed)
 
     async def run_forever(self) -> None:
         try:

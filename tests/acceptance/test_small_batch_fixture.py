@@ -12,7 +12,6 @@ from test_fetch_overlap_flow import wait
 
 @pytest.mark.parametrize("reading", ["off", "auto"])
 def test_scripted_fixture_small_batch_discovery(tmp_path, monkeypatch, reading):
-    monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", "on")
     app = create_app(
         Settings(data_dir=tmp_path, port=8877, model_concurrency=1,
                  protocol_approval="as_proposed", search_query="code",

@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { nextPort, readingDone, modeEnv } from './ports'
+import { nextPort, readingDone } from './ports'
 
 // Case S (slice 28, SW27, D109): the criterion names a comparator and both reading runs find no part of a work, so code
 // does not exclude it. The queue shows it as a `confirm_absent` row whose reason is `comparator_exclusion_withheld`:
@@ -30,7 +30,7 @@ class Slice28Server {
   constructor(readonly port: number, readonly env: Record<string, string>) {}
 
   async start() {
-    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...modeEnv, ...this.env }
+    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...this.env }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {
       try { if ((await fetch(`http://127.0.0.1:${this.port}/api/health`)).ok) return } catch { /* not listening yet */ }

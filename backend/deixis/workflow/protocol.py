@@ -202,7 +202,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                      {"signal": "graph", "seeds": "verified_then_code"},
                      {"signal": "joint", "runs": "comparison_question_with_two_task_terms"},
                      {"signal": "embedding", "model": embedding_model,
-                      "rescue": budget.get("inspection", {}).get("policy") != "small_batch_fused_v1"}],
+                      "rescue": False}],
         "thresholds": {
             "screening_batch": SCREENING_BATCH,
             "max_abstract_chars": MAX_ABSTRACT_CHARS,

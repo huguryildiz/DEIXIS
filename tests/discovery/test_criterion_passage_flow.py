@@ -278,7 +278,9 @@ def test_a_resumed_run_uses_the_phrases_its_step_stored(tmp_path, monkeypatch):
 
 def test_no_other_run_kind_opens_the_step_and_reading_a_run_leaves_none_pending(tmp_path, monkeypatch):
     """Lesson C: `store.step` opens what it reads, so only the answer path that runs the step may call it."""
-    app = app_for(tmp_path, monkeypatch)
+    from test_abstract_flow import Pool, app_for as batch_app, discover, work
+
+    app = batch_app(tmp_path, monkeypatch, Pool([work(1)]))
     client = client_of(app)
     try:
         rid = research_with_pdf(client)
@@ -287,10 +289,13 @@ def test_no_other_run_kind_opens_the_step_and_reading_a_run_leaves_none_pending(
         collection = client.post(f"/api/researches/{rid}/runs", json={"kind": "pdf_collection"}).json()["id"]
         wait_run(client, rid, collection)
         collection_keys = {s["operation_key"] for s in store.run_steps(collection)}
-        retrieval = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_fetch"})
-        assert retrieval.status_code < 300, retrieval.text
-        _, fetched = wait_run(client, rid, retrieval.json()["id"])
-        collection_keys |= {s["operation_key"] for s in store.run_steps(fetched["id"])}
+        # Academic discovery performs inspection; the attached research keeps the D119 answer path.
+        academic_rid, discovery_id, _, discovery = discover(client)
+        assert discovery["status"] == "completed", discovery
+        assert discovery["budget"]["inspection"]["policy"] == "small_batch_fused_v1"
+        collection_keys |= {s["operation_key"] for s in store.run_steps(discovery_id)}
+        research_view(store, academic_rid)
+        assert phrase_steps(store, academic_rid) == []
         research_view(store, rid)  # the run view a UI reads must open nothing
         before = phrase_steps(store, rid)
         answer(client, rid)

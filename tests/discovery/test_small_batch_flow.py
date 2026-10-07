@@ -27,7 +27,7 @@ def client_of(app):
         client.__exit__(None, None, None)
 
 
-def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, flag="on", adapter=None, model_works=False,
+def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, adapter=None, model_works=False,
             transport=None, fetch="auto", reading="auto", search_query="code", start_worker=True, **settings):
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
     for connector in CONNECTORS.values():
@@ -40,7 +40,7 @@ def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, flag="on", adapter=None, 
                            for i in range(n)} if pdf else {}, delay=0.002)
     app = create_app(Settings(data_dir=tmp_path / "data", port=8877, search_query=search_query,
                               protocol_approval="as_proposed", fulltext_fetch=fetch,
-                              fulltext_adjudication=reading, small_batch_inspection=flag, **settings),
+                              fulltext_adjudication=reading, **settings),
                      adapters={"fake": adapter or FakeAdapter(valid_response)},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport or Transport(records))),
                      fetcher=fetcher, extra_hosts=("testserver",), trusted_clients=("testclient",), start_worker=start_worker)
@@ -112,58 +112,9 @@ def test_abstract_exclusions_count_without_pdf_calls(tmp_path, monkeypatch):
         assert not fetcher.calls
 
 
-def test_flag_off_has_old_steps_and_no_inspection_policy(tmp_path, monkeypatch):
-    app, _ = app_for(tmp_path, monkeypatch, 4, flag="off")
-    with client_of(app) as client:
-        _, run_id, _, run = discover(client)
-        assert "inspection" not in run["budget"]
-        assert "inspection_progress" not in run
-        assert output(app.state.store, run_id, small_batch.LIST_KEY) is None
-        assert output(app.state.store, run_id, "abstract_stage")
 
 
-@pytest.mark.parametrize("effort", ["quick", "standard", "detailed"])
-@pytest.mark.parametrize("query", ["code", "model"])
-@pytest.mark.parametrize("reading", ["off", "auto"])
-def test_flag_does_not_change_any_pre_search_model_input(tmp_path, monkeypatch, effort, query, reading):
-    search_round = ResearchFlow._search_round
-    before_search = {}
-    adapters = {}
 
-    async def capture(flow, run, *args, **kwargs):
-        # Capture every call (including repeated proposals and repairs) before the
-        # first result search, rather than maintaining a task-name allowlist.
-        flag = flow.deps.settings.small_batch_inspection
-        before_search.setdefault(flag, list(adapters[flag].calls))
-        return await search_round(flow, run, *args, **kwargs)
-
-    monkeypatch.setattr(ResearchFlow, "_search_round", capture)
-    for flag in ("off", "on"):
-        adapter = adapters[flag] = FakeAdapter(valid_response)
-        app, _ = app_for(tmp_path / flag, monkeypatch, 4, flag=flag, adapter=adapter,
-                         search_query=query, reading=reading)
-        with client_of(app) as client:
-            rid, _, _, run = discover(client, effort=effort)
-            assert run["status"] == "completed", run
-            stored_protocol = app.state.store.current_protocol(rid, run["scope_revision"])
-            assert ("inspection" in stored_protocol["body"]) is (flag == "on")
-            assert all("inspection" not in si and "protocol" not in si for si in adapter.calls)
-            if flag == "on":
-                assert run["budget"]["inspection"]["discovery_model_calls"] == before_search[flag][0]["budget"]["max_model_calls"]
-                if reading == "auto":
-                    assert run["budget"]["max_model_calls"] > before_search[flag][0]["budget"]["max_model_calls"]
-
-    volatile = {"step_input_id", "research_id", "run_id", "step_id", "created_at"}
-
-    def normalized(inputs):
-        return json.dumps([{k: v for k, v in si.items() if k not in volatile} for si in inputs],
-                          sort_keys=True, separators=(",", ":"))
-
-    assert before_search["off"]
-    tasks = {si["task_type"] for si in before_search["off"]}
-    assert {"vocabulary_labels", "criterion_proposal"} <= tasks
-    assert ("search_query" in tasks) is (query == "model")
-    assert normalized(before_search["on"]) == normalized(before_search["off"])
 
 
 def test_legacy_frozen_budget_exposes_only_discovery_allowance():
@@ -175,24 +126,19 @@ def test_legacy_frozen_budget_exposes_only_discovery_allowance():
     assert small_batch.model_call_allowance({"max_model_calls": 40}) == 40
 
 
-def test_product_default_flag_on(monkeypatch, tmp_path):
+@pytest.mark.parametrize("obsolete", ["off", "on", "yes"])
+def test_obsolete_flag_cannot_change_product_policy(monkeypatch, tmp_path, obsolete):
     monkeypatch.setenv("DEIXIS_DATA_DIR", str(tmp_path))
-    monkeypatch.delenv("DEIXIS_SMALL_BATCH_INSPECTION", raising=False)
-    assert Settings(data_dir=tmp_path).small_batch_inspection == "on"
-    assert load_settings().small_batch_inspection == "on"
+    monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", obsolete)
+    assert not hasattr(Settings(data_dir=tmp_path), "small_batch_inspection")
+    assert not hasattr(load_settings(), "small_batch_inspection")
 
 
-def test_explicit_off_restores_legacy_settings(monkeypatch, tmp_path):
-    monkeypatch.setenv("DEIXIS_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", "off")
-    assert Settings(data_dir=tmp_path).small_batch_inspection == "off"
-    assert load_settings().small_batch_inspection == "off"
 
 
-def test_invalid_flag_setting(monkeypatch):
-    monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", "yes")
-    with pytest.raises(ValueError, match="DEIXIS_SMALL_BATCH_INSPECTION"):
-        load_settings()
+
+
+
 
 
 def test_abstract_budget_defers_tail_in_one_step_without_more_batch_scans(tmp_path, monkeypatch):
@@ -325,12 +271,11 @@ def test_group_budget_stop_marks_all_unread_closes_step_and_defers_lookahead(tmp
         assert sum(s["kind"] == "model:abstract_screening" for s in records) == 2 * read_groups
 
 
-@pytest.mark.parametrize("flag", ["on", "off"])
-def test_answer_api_freezes_discovery_policy_and_uses_that_input(tmp_path, monkeypatch, flag):
+def test_answer_api_freezes_discovery_policy_and_uses_that_input(tmp_path, monkeypatch):
     from test_fetch_overlap_flow import wait
 
     adapter = FakeAdapter(valid_response)
-    app, _ = app_for(tmp_path, monkeypatch, 4, flag=flag, adapter=adapter)
+    app, _ = app_for(tmp_path, monkeypatch, 4, adapter=adapter)
     with client_of(app) as client:
         rid, discovery_id, _, discovery = discover(client, effort="standard")
         assert discovery["status"] == "completed", discovery
@@ -338,17 +283,15 @@ def test_answer_api_freezes_discovery_policy_and_uses_that_input(tmp_path, monke
         _, settled = wait(client, rid, answer["id"])
         assert settled["status"] == "completed", settled
         stored = app.state.store.run(answer["id"])
-        assert small_batch.enabled(stored["budget"]) is (flag == "on")
+        assert small_batch.enabled(stored["budget"])
         allocation = output(app.state.store, answer["id"], "small_batch:v1:answer_input")
-        if flag == "on":
-            assert stored["budget"]["inspection"]["list_run_id"] == discovery_id
-            listing = output(app.state.store, discovery_id, small_batch.LIST_KEY)
-            sent = next(c for c in adapter.calls if c["task_type"] == "grounded_answer")
-            assert len(allocation["passage_ids"]) == 4
-            assert [i["work_id"] for i in allocation["items"]] == [i["work_id"] for i in listing["items"]]
-            assert len(sent["passages"]) == 4
-        else:
-            assert allocation is None
+        assert stored["budget"]["inspection"]["list_run_id"] == discovery_id
+        listing = output(app.state.store, discovery_id, small_batch.LIST_KEY)
+        sent = next(c for c in adapter.calls if c["task_type"] == "grounded_answer")
+        assert len(allocation["passage_ids"]) == 4
+        assert [i["work_id"] for i in allocation["items"]] == [i["work_id"] for i in listing["items"]]
+        assert len(sent["passages"]) == 4
+
 
 
 def test_flagged_answer_without_eligible_work_records_no_evidence(tmp_path, monkeypatch):

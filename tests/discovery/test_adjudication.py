@@ -9,7 +9,6 @@ or that a quote which verifies also supports the label.
 import random
 
 import pytest
-from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
 from deixis.config import Settings
@@ -114,22 +113,6 @@ def _app(tmp_path, monkeypatch, workflow):
                                fulltext_fetch="off", fulltext_adjudication="off"),
                       adapters={"fake": FakeAdapter()}, extra_hosts=("testserver",),
                       trusted_clients=("testclient",), start_worker=False)
-def test_an_sw_research_queues_a_reading_run_on_the_inspection_stage_with_the_read_budget(tmp_path, monkeypatch):
-    """The route stores the budget. The worker is not started, so nothing is read and no decision is written."""
-    app = _app(tmp_path, monkeypatch, "sw")
-    with TestClient(app) as client:
-        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-        created = client.post("/api/researches", json={
-            "question": "SYNTHETIC: drip irrigation and marketable yield of greenhouse tomato, beside a bakery.",
-            "model_connection": "fake", "requested_model": "fake-model", "effort": "quick",
-        })
-        assert created.status_code == 201, created.text
-        rid = created.json()["research"]["id"]
-        started = client.post(f"/api/researches/{rid}/runs", json={"kind": "fulltext_adjudication"})
-    assert started.status_code == 202, started.text
-    run = started.json()
-    assert run["kind"] == "fulltext_adjudication" and run["stage"] == "inspection" and run["status"] == "queued"
-    assert run["budget"] == adjudication.read_budget("quick")
 
 
 def test_the_advertised_capabilities_do_not_gain_the_reading_task():

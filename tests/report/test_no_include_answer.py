@@ -25,15 +25,28 @@ def research(client, source_scope="academic"):
     return client.post("/api/researches", json=body).json()["research"]["id"]
 
 
-def completed_discovery(store, rid, status="completed", revision=None):
-    """A discovery run of the research's current revision that ended as `status`; SYNTHETIC, no step inside."""
+def completed_discovery(store, rid, status="completed", revision=None, sources=()):
+    """Synthetic stored small-batch discovery; the API answer must bind its list."""
+    from deixis.workflow import small_batch
     current = store.research(rid)["current_scope_revision"]
-    ts = now()
+    ts, run_id = now(), new_id("run")
     with db.transaction(store.conn):
         store.conn.execute(
             "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
-            " VALUES (?, ?, ?, 'discovery', ?, 'discovery', '{}', ?, ?)",
-            (new_id("run"), rid, revision if revision is not None else current, status, ts, ts))
+            " VALUES (?, ?, ?, 'discovery', ?, 'discovery', ?, ?, ?)",
+            (run_id, rid, revision if revision is not None else current, status,
+             json.dumps({"inspection": {"policy": small_batch.POLICY}}), ts, ts))
+        if status == "completed" and (revision is None or revision == current):
+            versions = {svid: store.source(svid) for svid in sources}
+            for svid, version in versions.items():
+                version["abstract"] = " ".join(p["text"] for p in store.passages_for(svid) if p["kind"] == "abstract") or None
+            listing = {"manifest_hash": "synthetic-no-include", "order_hash": "synthetic-no-include",
+                       "manifest": {"scope_revision": current, "versions": versions},
+                       "order": list(sources), "automatic_order": list(sources), "user_priority": [],
+                       "items": [{"head": svid, "work_id": versions[svid]["work_id"], "versions": [svid],
+                                  "position": i + 1, "user_priority": False} for i, svid in enumerate(sources)]}
+            step = store.step(run_id, small_batch.LIST_KEY, "code:small_batch_list")
+            store.finish_step(step["id"], "succeeded", output=listing)
 
 
 def start_answer(client, rid):
@@ -88,6 +101,7 @@ def test_zero_includes_calls_the_answer_with_only_eligible_abstracts(tmp_path, m
                              f"SYNTHETIC supervised exercise lowered fatigue in cohort {i}.",
                              "runs_agree_candidate", *(["no_fulltext"] if i % 2 else [])) for i in range(4)]
         ranked(store, rid, sources)
+        completed_discovery(store, rid, sources=sources)
         if exclude:
             version = store.conn.execute("SELECT version FROM selections WHERE source_version_id = ?",
                                          (sources[0],)).fetchone()[0]
@@ -96,6 +110,7 @@ def test_zero_includes_calls_the_answer_with_only_eligible_abstracts(tmp_path, m
         response = start_answer(client, rid)
         assert response.status_code == 202, response.text
         view, run = wait_run(client, rid, response.json()["id"])
+        assert run["status"] == "completed", run
         step = store.existing_step(run["id"], "grounded_answer")
         payload = store.step_input_payload(step["output"]["step_input_id"])
         input_selection_revision = store.step_input_selection_revision(step["output"]["step_input_id"])
@@ -126,6 +141,7 @@ def test_zero_includes_with_only_a_user_excluded_candidate_still_records_no_evid
         rid = research(client)
         source = candidate(store, rid, "excluded", "SYNTHETIC exercise lowered fatigue.", "runs_agree_candidate")
         ranked(store, rid, [source])
+        completed_discovery(store, rid, sources=[source])
         version = store.conn.execute("SELECT version FROM selections WHERE source_version_id = ?", (source,)).fetchone()[0]
         store.set_user_selection(rid, source, "excluded", version, "SYNTHETIC user exclusion")
         response = start_answer(client, rid)

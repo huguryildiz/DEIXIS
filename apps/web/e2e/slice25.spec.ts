@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { nextPort, readingDone, modeEnv } from './ports'
+import { nextPort, readingDone } from './ports'
 
 // Case P (slice 25, SW21, D106): works whose own PDF is withheld get their text from Europe PMC's open-access XML,
 // drawn as a PDF by DEIXIS. Every surface that names one of its pages says "Europe PMC text, rendered p. n", never
@@ -38,7 +38,7 @@ class Slice25Server {
   constructor(readonly port: number, readonly env: Record<string, string>) {}
 
   async start() {
-    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...modeEnv, ...this.env }
+    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...this.env }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {
       try { if ((await fetch(`http://127.0.0.1:${this.port}/api/health`)).ok) return } catch { /* not listening yet */ }

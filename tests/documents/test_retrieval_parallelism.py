@@ -1,4 +1,4 @@
-"""Slice 13e: the full-text retrieval run fetches several works at once, one request per host, and decides the same.
+"""Small-batch discovery fetches several works at once, one request per host, and decides the same.
 
 Three things are checked, all without a network. Equality: the same research fetched one work at a time and several
 at a time leaves the same work steps, the same decisions, the same selections and the same lookup rows. Politeness
@@ -16,6 +16,8 @@ import asyncio
 import functools
 import json
 import random
+import re
+from collections import Counter
 
 import httpx
 
@@ -109,7 +111,8 @@ def _names(store, rid):
 
 def _key(operation_key, names):
     """An operation key with the record identifiers inside it named, as in `fulltext_work:<head>`."""
-    return ":".join(names.get(part, part) for part in operation_key.split(":"))
+    return ":".join("frozen_hash" if re.fullmatch(r"[0-9a-f]{64}", part) else names.get(part, part)
+                    for part in operation_key.split(":"))
 
 
 def _canonical(value, names):
@@ -152,7 +155,7 @@ def snapshot(store, rid, run_id):
     names = _names(store, rid)
     steps = {row["operation_key"]: row for row in _rows(
         store, "SELECT kind, operation_key, status, error_code, output_json, error_json FROM run_steps"
-               " WHERE run_id = ?", (run_id,), names)}
+               " WHERE run_id = ? AND kind = 'code:fulltext_work'", (run_id,), names)}
     return {
         "steps": steps,
         "decisions": _by_record(_rows(
@@ -173,8 +176,16 @@ def snapshot(store, rid, run_id):
                    " JOIN corpus_memberships m ON m.source_version_id = s.id WHERE m.research_id = ?", (rid,), names),
             key=lambda r: json.dumps(r, sort_keys=True)),
         "events": sorted(json.dumps(row, sort_keys=True) for row in _rows(
-            store, "SELECT type, payload_json FROM events WHERE research_id = ? AND run_id = ?", (rid, run_id), names)),
+            store, "SELECT type, payload_json FROM events WHERE research_id = ? AND run_id = ? AND type = 'fulltext_work_settled'", (rid, run_id), names)),
     }
+
+
+def fetch_summary(steps):
+    outputs = [step["output_json"] for step in steps.values()]
+    return {"routes": dict(Counter(o["route"] for o in outputs)),
+            "not_settled": sum(o["code"] is None for o in outputs),
+            "no_fulltext": sum(o["code"] == "no_fulltext" for o in outputs),
+            "fetched": sum(bool(o.get("asset_id")) for o in outputs)}
 
 
 def _retrieve(tmp_path, monkeypatch, parallel):
@@ -183,7 +194,7 @@ def _retrieve(tmp_path, monkeypatch, parallel):
     # in both researches and the two retrieval plans are the same list in the same order.
     monkeypatch.setattr(db, "secrets", random.Random(13))
     fetcher = SlowFetcher(ANSWERS)
-    app = app_for(tmp_path, monkeypatch, _transport(), fetcher, overlap=False)
+    app = app_for(tmp_path, monkeypatch, _transport(), fetcher)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
@@ -199,8 +210,8 @@ def test_works_fetched_side_by_side_leave_what_works_fetched_one_by_one_leave(tm
     four_run, four, four_calls = _retrieve(tmp_path / "four", monkeypatch, 4)
     assert one_run["status"] == four_run["status"] == "completed"
     # The scenario reaches every route it was built for, so the comparison below is not of two empty runs.
-    summary = one["steps"]["fulltext_summary"]["output_json"]
-    assert summary["routes"] == {"lookup_version": 1, "none": 1, "record_link": 3, "work_version": 2}
+    summary = fetch_summary(one["steps"])
+    assert summary["routes"] == {"lookup_version": 1, None: 2, "record_link": 3, "work_version": 2}
     assert summary["not_settled"] == 1 and summary["no_fulltext"] == 1 and summary["fetched"] == 6
     assert one_calls == four_calls
     for part in one:
@@ -251,12 +262,12 @@ def test_no_host_is_asked_twice_at_once_and_no_more_than_the_bound_are_in_flight
             "https://h2.example.org/a.pdf", "https://h2.example.org/b.pdf", "https://h3.example.org/a.pdf",
             "https://h4.example.org/moved.pdf", "https://h5.example.org/a.pdf", "https://h6.example.org/a.pdf"]
     monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=len(urls)))
-    app = app_for(tmp_path, monkeypatch, Transport([work(n + 1, pdf_url=url) for n, url in enumerate(urls)]), fetcher, overlap=False)
+    app = app_for(tmp_path, monkeypatch, Transport([work(n + 1, pdf_url=url) for n, url in enumerate(urls)]), fetcher)
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
         _, run = wait_for_retrieval(client, rid)
-        summary = step_output(app.state.store, run["id"], "fulltext_summary")
+        summary = fetch_summary(snapshot(app.state.store, rid, run["id"])["steps"])
     finally:
         client.__exit__(None, None, None)
     assert run["status"] == "completed" and summary["fetched"] == len(urls)
@@ -277,12 +288,12 @@ def test_a_pause_lets_the_works_in_flight_finish_and_the_resumed_run_ends_like_a
 
     def run_once(path, pause_at):
         fetcher = SlowFetcher(answers)
-        app = app_for(path, monkeypatch, Transport([work(n, pdf_url=url) for n, url in enumerate(urls, 1)]), fetcher, overlap=False)
+        app = app_for(path, monkeypatch, Transport([work(n, pdf_url=url) for n, url in enumerate(urls, 1)]), fetcher)
 
         def hook(fetcher, url):
             if pause_at and len(fetcher.calls) == pause_at:
                 row = app.state.store.conn.execute(
-                    "SELECT id FROM runs WHERE kind = 'fulltext_fetch' AND status = 'running'").fetchone()
+                    "SELECT id FROM runs WHERE kind = 'discovery' AND status = 'running'").fetchone()
                 if row:
                     app.state.store.update_run(row["id"], status="pause_requested", pause_reason="user_requested")
 
@@ -292,7 +303,9 @@ def test_a_pause_lets_the_works_in_flight_finish_and_the_resumed_run_ends_like_a
             rid, _, _, _ = discover(client)
             _, first = wait_for_retrieval(client, rid)
             store = app.state.store
-            at_pause = {head: step["status"] for head, step in work_steps(store, first["id"]).items()}
+            at_pause = {row["operation_key"]: row["status"] for row in store.conn.execute(
+                "SELECT operation_key, status FROM run_steps WHERE run_id = ? AND kind = 'code:fulltext_work'",
+                (first["id"],))}
             asked = len(fetcher.calls)
             if first["status"] == "paused":
                 fetcher.hook = None
@@ -300,7 +313,7 @@ def test_a_pause_lets_the_works_in_flight_finish_and_the_resumed_run_ends_like_a
                 _, first_after = wait(client, rid, first["id"])
             else:
                 first_after = first
-            summary = step_output(store, first["id"], "fulltext_summary")
+            summary = fetch_summary(snapshot(store, rid, first["id"])["steps"])
             return first, first_after, at_pause, asked, summary, sorted(fetcher.calls)
         finally:
             client.__exit__(None, None, None)
@@ -308,8 +321,11 @@ def test_a_pause_lets_the_works_in_flight_finish_and_the_resumed_run_ends_like_a
     paused, resumed, at_pause, asked, summary, calls = run_once(tmp_path / "paused", pause_at=2)
     _, whole, _, _, uninterrupted, whole_calls = run_once(tmp_path / "whole", pause_at=None)
     assert paused["status"] == "paused" and paused["pause_reason"] == "user_requested"
-    # Every work that was sent finished and wrote its step, and no work was opened after the pause was seen.
-    assert set(at_pause.values()) == {"succeeded"} and len(at_pause) == asked
+    # Work stopped between routes is recorded as cancelled and resumes from its stored route results.
+    # No in-flight step or new work remains after the coordinator observes the pause.
+    assert set(at_pause.values()) <= {"succeeded", "cancelled", "pending"}
+    assert sum(status != "pending" for status in at_pause.values()) <= asked
+    assert len(at_pause) == len(urls)  # the frozen batch preallocates work steps before sending requests
     assert asked <= max(2, getattr(fulltext, "FULLTEXT_FETCH_PARALLEL", 1))
     assert resumed["status"] == whole["status"] == "completed"
     # The resumed run asked nothing twice and reports what an uninterrupted run reports.

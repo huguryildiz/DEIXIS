@@ -70,7 +70,8 @@ from deixis.workflow.report import export as report_export
 from deixis.workflow.report import latex_export
 from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
                                    SeedUnavailable, Store, LegacyResearchReadOnly, DISCOVERY_RUN_KINDS,
-                                   legacy_research_read_only, RequestConflict, RecoveryConflict, NotRetryable)
+                                   legacy_research_read_only, LegacyInspectionPolicyRemoved,
+                                   RequestConflict, RecoveryConflict, NotRetryable)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.lineage.run import LineagePlanner, stale_link_revisions
 from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
@@ -705,6 +706,7 @@ def create_app(
 
         if owner:
             app.state.legacy_cancelled = worker.cancel_legacy_discovery()
+            app.state.legacy_inspection_cancelled = worker.cancel_legacy_inspection()
             await reconcile_recovery()
 
         from deixis.workflow.watch.scheduler import WatchScheduler
@@ -722,6 +724,7 @@ def create_app(
                 await asyncio.sleep(1.0)
             app.state.recovered = worker.recover()
             app.state.legacy_cancelled = worker.cancel_legacy_discovery()
+            app.state.legacy_inspection_cancelled = worker.cancel_legacy_inspection()
             await reconcile_recovery()
             app.state.owner = True
             equations.start()
@@ -894,10 +897,14 @@ def create_app(
         return JSONResponse({"detail": "legacy_research_read_only"}, status_code=409)
 
     def guard_legacy_discovery(store: Store, run: dict[str, Any]) -> None:
-        if run["kind"] in DISCOVERY_RUN_KINDS and legacy_research_read_only(
-            store.scope(run["research_id"], run["scope_revision"])
-        ):
-            raise LegacyResearchReadOnly("legacy_research_read_only")
+        store._guard_legacy_run(run)
+
+    @app.exception_handler(LegacyInspectionPolicyRemoved)
+    async def removed_inspection(_: Request, exc: LegacyInspectionPolicyRemoved):
+        return JSONResponse({"detail": "legacy_inspection_policy_removed",
+                             "code": "legacy_inspection_policy_removed",
+                             "message": "This stored inspection policy was removed. Start a new discovery in this research.",
+                             "next_action": "new_discovery"}, status_code=409)
 
     # The queue's 409 says why (slice 17): the row changed, or the reading of a confirmed PDF began. Other 409s keep
     # their one-sentence detail.
@@ -1359,6 +1366,8 @@ def create_app(
         scope = store.scope(research_id)
         if body.kind in DISCOVERY_RUN_KINDS and legacy_research_read_only(scope):
             raise LegacyResearchReadOnly("legacy_research_read_only")
+        if body.kind in ("fulltext_fetch", "fulltext_adjudication") and scope.get("search_workflow") == "sw":
+            raise LegacyInspectionPolicyRemoved("legacy_inspection_policy_removed")
         if body.kind == "discovery" and scope["source_scope"] == "attached":
             raise HTTPException(422, "Academic search is not part of this research's source scope")
         if body.kind == "discovery" and scope["seed_mode"] == "uploaded_seed":
@@ -1404,7 +1413,7 @@ def create_app(
                 # The full text is fetched inside this run, beside its screening, with the room a retrieval run
                 # would have had (slice 17a); the mode is frozen here, so a run keeps the path it was queued with.
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
-            if settings.small_batch_inspection == "on" and scope.get("search_workflow") == "sw":
+            if scope.get("search_workflow") == "sw":
                 budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.

@@ -180,7 +180,8 @@ def test_all_run_creators_and_requeues_succeed_but_wait(path, tmp_path):
         store = lib.store
         run = None
         if path not in ("create", "follow_on"):
-            run = store.create_run(lib.rid, "discovery" if path == "search_retry" else "answer", {}, None)
+            run = store.create_run(lib.rid, "discovery" if path == "search_retry" else "answer",
+                                   {"inspection": {"policy": "small_batch_fused_v1"}}, None)
             store.update_run(run["id"], status="paused")
             if path in ("suggestions", "approval"):
                 store.step(run["id"], "protocol_approval", "protocol_approval", {"suggestion_requests": 0})

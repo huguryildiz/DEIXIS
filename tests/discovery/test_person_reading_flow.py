@@ -55,9 +55,7 @@ def request_of(store, asset_id):
     return dict(row) if row else None
 
 
-@pytest.mark.parametrize("mode", ["on", "off"])
-def test_a_confirmed_file_is_read_first_and_its_work_is_included(tmp_path, monkeypatch, mode):
-    monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", mode)
+def test_a_confirmed_file_is_read_first_and_its_work_is_included(tmp_path, monkeypatch):
     app, client, rid, adapter = reading_research(tmp_path, monkeypatch)
     try:
         store = app.state.store
@@ -84,9 +82,7 @@ def test_a_confirmed_file_is_read_first_and_its_work_is_included(tmp_path, monke
     assert files["reading_on"] is True and files["paused_run"] is None
 
 
-@pytest.mark.parametrize("mode", ["on", "off"])
-def test_a_file_the_model_could_not_read_is_unread_and_read_again_on_the_person_s_retry(tmp_path, monkeypatch, mode):
-    monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", mode)
+def test_a_file_the_model_could_not_read_is_unread_and_read_again_on_the_person_s_retry(tmp_path, monkeypatch):
     app, client, rid, adapter = reading_research(tmp_path, monkeypatch, responder=silent)
     try:
         store = app.state.store
@@ -110,7 +106,7 @@ def test_a_file_the_model_could_not_read_is_unread_and_read_again_on_the_person_
     assert retried.status_code == 200 and retried.json()["run"]["idempotency_key"].endswith(":1")
     assert (request["status"], request["attempt"]) == ("read", 1)
     assert again.status_code == 409
-    assert runs_after_unread == (2 if mode == "on" else 3)
+    assert runs_after_unread == 2
 
 
 def test_a_file_with_no_text_keeps_its_work_waiting_and_the_only_version_takes_no_other(tmp_path, monkeypatch):
@@ -133,8 +129,8 @@ def test_a_file_with_no_text_keeps_its_work_waiting_and_the_only_version_takes_n
     finally:
         client.__exit__(None, None, None)
     assert first.status_code == 201 and first.json()["attached"]["reading"] == "unreadable"
-    row = next(row for row in listed["rows"] if row["head"] == records["W4"])
-    assert row["reason_code"] == "text_unreadable"
+    # A version with an occupied PDF cannot accept another file; its recorded unreadable code stays on the source.
+    assert records["W4"] not in [row["head"] for row in listed["rows"]]
     assert not [f for f in listed["files"]["rows"] if f["source_version_id"] == records["W4"]]
     # Its only version holds its own file: 18b neither replaces nor removes it, so the new file is refused.
     assert [v["has_pdf"] for v in again["work"]["versions"]] == [True]
@@ -215,7 +211,7 @@ def test_a_source_row_upload_to_an_excluded_work_writes_nothing_and_a_legacy_upl
 def test_a_queued_run_the_api_pauses_holds_the_reading_and_cancelling_it_opens_it(still):
     app, client, lib = still()
     store = app.state.store
-    discovery = store.create_run(lib.rid, "discovery", {"max_model_calls": 1}, None)
+    discovery = store.create_run(lib.rid, "discovery", {"max_model_calls": 1, "inspection": {"policy": "small_batch_fused_v1"}}, None)
     svid = candidate(lib)
     assert upload(client, lib.rid, svid).status_code == 201
     assert runs(store, lib.rid) == []  # a queued run is active: the reading waits
@@ -274,7 +270,7 @@ def test_a_crash_after_the_attach_opens_the_reading_when_the_app_starts_again(tm
     client = client_of(first)
     lib = Lib(first.state.store)
     svid = candidate(lib)
-    active = first.state.store.create_run(lib.rid, "table_columns", {"max_model_calls": 1}, None)
+    active = first.state.store.create_run(lib.rid, "table_columns", {"max_model_calls": 1, "inspection": {"policy": "small_batch_fused_v1"}}, None)
     upload(client, lib.rid, svid)  # the reading waits behind the queued run
     first.state.store.update_run(active["id"], status="cancelled")  # it ended; the process died before the queue
     client.__exit__(None, None, None)

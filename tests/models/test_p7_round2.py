@@ -97,7 +97,7 @@ def quota_flow(tmp_path):
     flow = ResearchFlow(deps)
     def new_run():
         rid = store.create_research("SYNTHETIC?", "academic", "standard", ["openalex"], "fake", "m", "en")
-        return store.create_run(rid, "discovery", {"max_provider_requests": 10}, None)
+        return store.create_run(rid, "discovery", {"max_provider_requests": 10, "inspection": {"policy": "small_batch_fused_v1"}}, None)
     yield flow, new_run
     asyncio.run(client.aclose())
     if deps.http is not client:

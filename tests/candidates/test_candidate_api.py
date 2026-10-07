@@ -471,7 +471,7 @@ def test_read_endpoints_perform_only_idempotent_lifecycle_sync_after_recovery_or
 @pytest.mark.parametrize("paused_kind,active_kind", [("answer", "kill_search"), ("lineage_links", "claim_decomposition"),
                                                      ("kill_search", "answer"), ("claim_decomposition", "lineage_links")])
 def test_resume_409_guard_is_shared_by_candidate_answer_and_lineage_runs(api, paused_kind, active_kind):
-    paused = api.store.create_run(api.rid, paused_kind, {}, None)
+    paused = api.store.create_run(api.rid, paused_kind, {"inspection": {"policy": "small_batch_fused_v1"}}, None)
     api.store.update_run(paused["id"], status="paused")
     api.store.add_usage(paused["id"], "model_calls", 3)
     active = api.store.create_run(api.rid, active_kind, {}, None)

@@ -157,7 +157,9 @@ def reached_screening(run):
     call; now the abstract stage's code half decides first, so a run whose records code can classify finishes.
     What each test here is about is that the search stage completed and the run went on, not which of the two.
     """
-    assert "abstract_stage" in {s["operation_key"] for s in run["steps"]}, run
+    assert run["budget"]["inspection"]["policy"] == "small_batch_fused_v1", run
+    assert any(s["operation_key"].startswith("small_batch:v1:")
+               and s["operation_key"].endswith(":abstract_stage") for s in run["steps"]), run
     assert run["status"] in ("paused", "completed") and run["pause_reason"] in (None, "model_call_failed"), run
     return True
 

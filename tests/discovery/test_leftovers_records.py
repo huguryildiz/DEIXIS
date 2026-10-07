@@ -113,7 +113,10 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
         assert (run["status"], run["pause_reason"]) == ("completed", None)
         assert [(s["provider"], s["status"]) for s in view["search_runs"]] == [("openalex", "completed"), ("biorxiv", "rate_limited")]
         assert [s["status"] for s in run["steps"] if s["operation_key"].startswith("search:")] == ["succeeded", "failed"]
-        assert view["counts"]["unique"] == 1 and any(s["operation_key"] == "abstract_stage" for s in run["steps"])
+        assert view["counts"]["unique"] == 1
+        assert run["budget"]["inspection"]["policy"] == "small_batch_fused_v1"
+        assert any(s["operation_key"].startswith("small_batch:v1:")
+                   and s["operation_key"].endswith(":abstract_stage") for s in run["steps"])
         store = app.state.store
         frozen = store.current_protocol(rid, 1)
         planning_calls = [call for call in adapter.calls if call["task_type"] in ("vocabulary_labels", "criterion_proposal")]

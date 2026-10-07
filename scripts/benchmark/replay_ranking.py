@@ -24,7 +24,7 @@ RULE = {
     'feedback': 'equal-weight RRF: pending B order + bibliographic coupling/direct citations to positive batch-1 works',
     'positive': 'fulltext include; otherwise abstract candidate (provisional); unresolved is neutral',
     'negative': 'fulltext criterion_not_met or abstract out_of_scope; recorded but not used as a penalty',
-    'rescue': dict(ranking.THRESHOLDS),
+    'rescue': {'rescue_outside_top': 200, 'rescue_embedding_top': 50},
     'embedding_feedback': 'not used: question-source scalar similarities are not source-source vectors',
 }
 
@@ -102,6 +102,28 @@ def feedback_order(pool, order, decisions):
     }
 
 
+def historical_inspection_order(fused: list[str], fused_code: list[str],
+                     embedding_ranks: dict[str, tuple[float, bool]] | None) -> tuple[list[str], list[str]]:
+    """The order screening reads, and the records the embedding arm brought to its front (SW8.1).
+
+    A record outside the top `200` of the four code signals' own fused order but inside the embedding's
+    top `50` goes to the front, in embedding order. Everything else keeps its fused place. A record
+    the embedding never scored cannot be rescued by the tail rank it shares with the other unscored records: the
+    embedding has no authority and adds nothing it did not measure (SW8.2).
+    """
+    if embedding_ranks is None:
+        return list(fused), []
+    place = {rid: position + 1 for position, rid in enumerate(fused_code)}
+    rescued = [rid for rid in fused
+               if place.get(rid, len(fused_code) + 1) > 200
+               and embedding_ranks.get(rid, (0.0, False))[1]
+               and embedding_ranks[rid][0] <= 50]
+    rescued.sort(key=lambda rid: (embedding_ranks[rid][0], rid))
+    lifted = set(rescued)
+    return rescued + [rid for rid in fused if rid not in lifted], rescued
+
+
+
 def compute_orders(data, rescue_signal=False):
     keyword_ids = set(data['baseline'])
     keyword_pool = [r for r in data['pool'] if r['id'] in keyword_ids]
@@ -111,6 +133,10 @@ def compute_orders(data, rescue_signal=False):
     ranked = ranking.rank_pool(data['pool'], data['verified'], set(data['query_words']), data['blocks'],
                                data['embedding_model'], data['similarities'],
                                compared_terms=data['compared_terms'])
+    # Historical A0/B retain rescue, independently of the product ranking policy.
+    for result in (keyword, ranked):
+        result['order'], result['rescued'] = historical_inspection_order(
+            result['fused'], result['fused_code'], result['ranks'].get('embedding'))
     d, feedback = feedback_order(data['pool'], ranked['order'], data['decisions'])
     result = {'orders': {'A': data['baseline'], 'A0': keyword['order'], 'C0': keyword['fused'],
                        'B': ranked['order'], 'C': ranked['fused'], 'D': d},

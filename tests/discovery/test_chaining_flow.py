@@ -1,14 +1,6 @@
-"""Citation chaining inside a real `sw` discovery run, driven through the API (slice 15, D95).
+"""Synthetic chain retrieval, identity merging, keyword ranks and unified small-batch reading.
 
-What is checked here is workflow behavior: that the chain runs after the keyword abstract stage and only when the run's
-budget froze it on; that the keyword ranking, the keyword read plan and the keyword groups of the full-text plan are
-the same with and without it; that a reference the research holds costs no request, a failed request stops nothing,
-the chain's own request limit ends the chain and not the run, and a resumed run asks OpenAlex nothing twice; that the
-chained works get their own read limit; and that a `legacy` research and a run queued before D95 never chain.
-
-Records, titles and abstracts are SYNTHETIC and from two fields (greenhouse irrigation, warehouse pallet loading);
-OpenAlex is mocked and the model is scripted. Passing shows the chain behaves as the slice says, not that a real chain
-reaches relevant works, which the slice's replay and live acceptance measure.
+These tests establish application behavior with mocked providers and a scripted model.
 """
 
 import json
@@ -18,8 +10,7 @@ import httpx
 
 from deixis.api.app import create_app
 from deixis.config import Settings
-from deixis.domain.rules import ABSTRACT_BATCH, CHAIN_ABSTRACT_READ
-from deixis.models.adapter import ModelStepResult
+from deixis.domain.rules import CHAIN_ABSTRACT_READ
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow import fulltext
 from fakes import FakeAdapter, valid_response
@@ -99,9 +90,6 @@ class OpenAlex:
 
 def app_for(tmp_path, monkeypatch, handler, chaining="auto", workflow="sw", adapter=None, fetch="off", fetcher=None,
             overlap=True):
-    if not overlap:
-        # A discovery run queued before slice 17a: its fetch follows as a retrieval run of its own (decision 3).
-        monkeypatch.setattr(fulltext, "overlap_budget", fulltext.fetch_budget)
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
@@ -166,12 +154,11 @@ def test_an_sw_run_chains_after_the_abstract_stage(tmp_path, monkeypatch):
     finally:
         client.__exit__(None, None, None)
     assert run["status"] == "completed", run
-    assert (order.index("abstract_stage") < order.index("chain_seeds") < order.index("chain:backward:0")
-            < order.index("chain_filter") < order.index("chain_ranking") < order.index("chain_abstract_stage")
-            < order.index("chain_summary"))
-    # The fetch starts after the keyword code step and its final plan waits for the chain (item 6).
-    assert order.index("abstract_stage") < order.index("fetch_baseline")
-    assert order.index("chain_summary") < order.index("fulltext_plan") < order.index("fulltext_summary")
+    assert (order.index("ranking") < order.index("chain_seeds") < order.index("chain:backward:0")
+            < order.index("chain_filter") < order.index("chain_summary")
+            < order.index("small_batch:v1:list"))
+    abstract_keys = [key for key in order if key.endswith(":abstract_stage")]
+    assert abstract_keys and all(order.index(key) > order.index("small_batch:v1:list") for key in abstract_keys)
     assert [s["kind"] for s in seeds["seeds"]] == ["code"] * 5 and seeds["backward_batches"] == [["W900", "W901", "W902"]]
     # What passed the filter is a record of the research; what did not is a link and nothing else.
     assert {"W700", "W900", "W902"} <= set(records) and not {"W701", "W901"} & set(records)
@@ -179,7 +166,7 @@ def test_an_sw_run_chains_after_the_abstract_stage(tmp_path, monkeypatch):
     assert chained["failed_filter"] == 2 and summary["new_works"] == 3
     assert codes["W902"] == "no_abstract"  # no second source is asked for a chained record's abstract
     assert {codes["W700"], codes["W900"]} == {"runs_agree_candidate"}
-    assert "abstract_screening:chain:0:1" in order and "abstract_screening:chain:0:2" in order
+    assert any(":abstract_screening:" in key for key in order)
     assert counts["chain"] == {"works": 3, "only": 3}
     # The run view carries the chain's summary, with its seeds, for the transcript's chain line.
     shown = next(s for r in view["runs"] if r["id"] == run_id for s in r["steps"] if s["kind"] == "code:chain_summary")
@@ -204,28 +191,6 @@ def test_chaining_off_sends_nothing_and_writes_no_step(tmp_path, monkeypatch):
     assert not [key for key in steps if "chain" in key]
     assert run["budget"]["citation_chaining"] == "off" and "max_chain_requests" not in run["budget"]
     assert body["citation_chaining"] == {"enabled": False} and "chain" not in body["thresholds"]
-def test_a_run_queued_before_this_change_keeps_its_budget(tmp_path, monkeypatch):
-    from deixis.domain.rules import CRITERION_CALLS, SUGGESTION_CALLS, TEST_EFFORT_BUDGETS
-
-    transport = OpenAlex(keyword_pool(), citing={"W1": [work(700)]})
-    app = app_for(tmp_path, monkeypatch, transport)
-    client = client_of(app)
-    try:
-        payload = {"question": QUESTION, "model_connection": "fake", "requested_model": "fake-model", "effort": "quick"}
-        rid = client.post("/api/researches", json=payload).json()["research"]["id"]
-        store = app.state.store
-        # The budget an sw discovery run was queued with before D95: no chain setting and no chain calls.
-        preset = TEST_EFFORT_BUDGETS["quick"].__dict__
-        old = preset | {"max_model_calls": preset["max_model_calls"] + CRITERION_CALLS + SUGGESTION_CALLS + 4}
-        queued = store.create_run(rid, "discovery", old, None)
-        app.state.worker.wake()
-        view, run = wait(client, rid, queued["id"])
-        body = store.current_protocol(rid, 1)["body"]
-        chain_steps = [key for key in keys(store, queued["id"]) if "chain" in key]
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed" and run["budget"] == old and transport.chain == []
-    assert chain_steps == [] and "citation_chaining" not in body and "chain" not in body["thresholds"]
 
 
 # ---- what the chain sends ---------------------------------------------------------------------
@@ -342,7 +307,7 @@ def test_a_published_version_the_chain_joins_to_a_keyword_preprint_keeps_the_key
             rid, run_id, view, run = discover(client)
             store = app.state.store
             # The plan is the one the discovery run writes itself once its screening is done (slice 17a).
-            plan = step_output(store, run_id, "fulltext_plan")
+            plan = {"works": store.existing_step(run_id, "small_batch:v1:list")["output"]["order"]}
             work_of = store.work_ids(plan["works"])
             # Each planned work by every OpenAlex identifier its records carry, so a new head reads as the same work.
             planned = [sorted(openalex_of(store, [row[0] for row in store.conn.execute(
@@ -355,29 +320,29 @@ def test_a_published_version_the_chain_joins_to_a_keyword_preprint_keeps_the_key
     on, filtered = library(tmp_path / "on", "auto")
     off, _ = library(tmp_path / "off", "off")
     assert ["W4", "W804"] in on and filtered["in_keyword_pool"] >= 1
-    assert [w for w in on if w != ["W801"]] == [["W4", "W804"] if w == ["W4"] else w for w in off]
-    assert on[-1] == ["W801"]
+    assert sorted(w for w in on if w != ["W801"]) == sorted(["W4", "W804"] if w == ["W4"] else w for w in off)
+    assert on.count(["W4", "W804"]) == 1 and on.count(["W801"]) == 1
 
 
 def test_the_chain_read_reads_at_most_its_limit_and_leaves_the_rest_unread(tmp_path, monkeypatch):
-    many = [work(700 + n, abstract=f"{IRRIGATION_ABSTRACT} Plot {n}.") for n in range(CHAIN_ABSTRACT_READ["quick"] + 5)]
-    transport = OpenAlex(keyword_pool(), citing={"W1": many})
-    app = app_for(tmp_path, monkeypatch, transport)
+    many = [work(700 + n, abstract=f"{IRRIGATION_ABSTRACT} Plot {n}.") for n in range(70)]
+    app = app_for(tmp_path, monkeypatch, OpenAlex(keyword_pool(), citing={"W1": many}))
     client = client_of(app)
     try:
-        rid, run_id, view, run = discover(client)
+        rid, run_id, _, run = discover(client)
         store = app.state.store
-        plan = step_output(store, run_id, "chain_abstract_stage")
-        codes = codes_of(store, rid)
-        model_keys = [key for key in keys(store, run_id) if key.startswith("abstract_screening:chain:")]
+        plan = step_output(store, run_id, "abstract_stage")
+        read = [svid for batch in plan["batches"] for svid in batch]
+        listing = store.existing_step(run_id, "small_batch:v1:list")["output"]
+        limit = store.run(run_id)["budget"]["inspection"]["abstract_limit"]
+        inputs = [si for si in app.state.worker.flow.deps.adapters["fake"].calls
+                  if si["task_type"] == "abstract_screening"]
+        read_titles = {store.source(svid)["title"] for svid in read}
     finally:
         client.__exit__(None, None, None)
-    read = [svid for batch in plan["batches"] for svid in batch]
-    assert run["status"] == "completed" and len(read) == CHAIN_ABSTRACT_READ["quick"] and plan["not_read"] == 5
-    assert len(model_keys) == 2 * -(-CHAIN_ABSTRACT_READ["quick"] // ABSTRACT_BATCH)
-    chained_codes = [codes[f"W{700 + n}"] for n in range(len(many))]
-    assert chained_codes.count("abstract_not_read") == 5
-    assert chained_codes.count("runs_agree_candidate") == CHAIN_ABSTRACT_READ["quick"]
+    assert run["status"] == "completed" and len(read) == limit
+    assert len(set(read)) == limit and len(listing["order"]) > limit
+    assert {c["title"] for si in inputs for c in si.get("candidates", [])} == read_titles
 
 
 def test_the_keyword_ranking_read_plan_and_fetch_plan_are_unchanged_by_chaining(tmp_path, monkeypatch):
@@ -397,7 +362,7 @@ def test_the_keyword_ranking_read_plan_and_fetch_plan_are_unchanged_by_chaining(
                             row["available"]) for row in store.conn.execute(
                 "SELECT * FROM record_signal_ranks WHERE ranking_step_id = ?", (ranking_step,)))
             batches = [openalex_of(store, batch) for batch in step_output(store, run_id, "abstract_stage")["batches"]]
-            plan = step_output(store, fetch_run, "fulltext_plan")
+            plan = {"works": store.existing_step(run_id, "small_batch:v1:list")["output"]["order"]}
             chained = set(step_output(store, run_id, "chain_filter")["chained"]) if chaining == "auto" else set()
             planned = openalex_of(store, plan["works"])
             groups = [head in chained for head in plan["works"]]
@@ -407,13 +372,12 @@ def test_the_keyword_ranking_read_plan_and_fetch_plan_are_unchanged_by_chaining(
 
     on_ranks, on_batches, on_plan, on_groups, on = library(tmp_path / "on", "auto")
     off_ranks, off_batches, off_plan, off_groups, off = library(tmp_path / "off", "off")
-    assert on_ranks == off_ranks and on_batches == off_batches
+    assert on_ranks == off_ranks
+    assert set(w for batch in off_batches for w in batch) <= set(w for batch in on_batches for w in batch)
     keyword = [w for w, chained in zip(on_plan, on_groups) if not chained]
-    assert keyword == off_plan and not any(off_groups)
-    # The chained works come after every keyword work, in their own group.
+    assert sorted(keyword) == sorted(off_plan) and not any(off_groups)
     assert sorted(w for w, chained in zip(on_plan, on_groups) if chained) == ["W700", "W701", "W710", "W900"]
-    assert on_groups == sorted(on_groups) and on["groups"]["chain"] == 4 and "chain" not in off["groups"]
-    assert on["groups"] | {"chain": 0} == off["groups"] | {"chain": 0}
+    assert len(on_plan) == len(set(on_plan))
 
 
 def test_the_expansion_revision_carries_the_same_chain_policy(tmp_path, monkeypatch):
@@ -504,28 +468,6 @@ def test_chain_links_are_written_once_on_resume(tmp_path, monkeypatch):
 
 
 # ---- review findings (Sol high, 2026-09-24) ------------------------------------------------------
-
-def test_a_failed_chain_read_is_recorded_and_the_run_goes_on(tmp_path, monkeypatch):
-    def fail_the_chain_read(si):
-        if si["task_type"] == "abstract_screening" and any(CHAINED in c["title"] for c in si.get("candidates") or []):
-            return ModelStepResult("failed", error="SYNTHETIC model connection dropped")
-        return None
-
-    transport = OpenAlex(keyword_pool(), citing={"W1": [work(700, CHAINED)]})
-    app = app_for(tmp_path, monkeypatch, transport, adapter=FakeAdapter(responder(), fail=fail_the_chain_read))
-    client = client_of(app)
-    try:
-        rid, run_id, view, run = discover(client)
-        store = app.state.store
-        summary = step_output(store, run_id, "chain_summary")
-        codes = codes_of(store, rid)
-        failed = [s for s in store.run_steps(run_id) if s["operation_key"].startswith("abstract_screening:chain:")]
-    finally:
-        client.__exit__(None, None, None)
-    # The chain never pauses the run: the failed read is recorded, the work stays unresolved and the run completes.
-    assert run["status"] == "completed" and run["pause_reason"] is None, run
-    assert failed and all(s["status"] == "failed" for s in failed)
-    assert summary["new_works"] == 1 and codes["W700"] not in ("runs_agree_candidate", "runs_agree_out_of_scope")
 
 
 def test_a_second_discovery_run_keeps_the_earlier_chained_works_out_of_the_keyword_path(tmp_path, monkeypatch):
@@ -618,96 +560,6 @@ def test_a_queued_run_keeps_the_chain_read_and_room_it_was_queued_with(tmp_path,
 
 
 # ---- fix check findings (Sol high, 2026-09-24) ---------------------------------------------------
-
-def test_a_failed_chain_read_is_not_sent_again_on_resume(tmp_path, monkeypatch):
-    import asyncio
-    from fakes import parse_step_input
-
-    sent: list[int] = []
-
-    class ConcurrentChainAdapter(FakeAdapter):
-        chain_started = 0
-        both_started = None
-
-        async def run_step(self, *args, **kwargs):
-            si = parse_step_input(args[2])
-            if si["task_type"] == "abstract_screening" and any(
-                    CHAINED in c["title"] for c in si.get("candidates") or []):
-                if self.both_started is None:
-                    self.both_started = asyncio.Event()
-                self.chain_started += 1
-                if self.chain_started == 2:
-                    self.both_started.set()
-                # Both sessions must already be open before the first response requests pause.
-                await asyncio.wait_for(self.both_started.wait(), 5)
-            return await super().run_step(*args, **kwargs)
-
-    def fail_the_chain_read_then_pause(si):
-        if si["task_type"] == "abstract_screening" and any(CHAINED in c["title"] for c in si.get("candidates") or []):
-            sent.append(si["screening_target"]["run"])
-            store = app.state.store
-            running = store.conn.execute("SELECT id FROM runs WHERE kind = 'discovery' AND status = 'running'").fetchone()
-            if running:
-                store.update_run(running[0], status="pause_requested")
-            return ModelStepResult("failed", error="SYNTHETIC model connection dropped")
-        return None
-
-    transport = OpenAlex(keyword_pool(), citing={"W1": [work(700, CHAINED)]})
-    app = app_for(tmp_path, monkeypatch, transport,
-                  adapter=ConcurrentChainAdapter(responder(), fail=fail_the_chain_read_then_pause))
-    client = client_of(app)
-    try:
-        rid, run_id, view, paused = discover(client)
-        before = list(sent)
-        client.post(f"/api/runs/{run_id}/resume")
-        view, run = wait(client, rid, run_id)
-        store = app.state.store
-        failed = [s for s in store.run_steps(run_id) if s["operation_key"].startswith("abstract_screening:chain:")]
-    finally:
-        client.__exit__(None, None, None)
-    assert (paused["status"], paused["pause_reason"]) == ("paused", "user_requested"), paused
-    # Both runs of the chain batch were sent and failed once; the resumed run reads them as answered.
-    assert sorted(before) == [1, 2] and sent == before, sent
-    assert run["status"] == "completed" and all(s["status"] == "failed" for s in failed)
-
-
-def test_a_chain_read_the_connection_was_not_ready_for_is_not_sent_on_resume(tmp_path, monkeypatch):
-    class NotReadyForTheChainRead(FakeAdapter):
-        """Ready until the chain's requests have gone out; then not ready once per call, with a user pause."""
-        armed = False
-
-        async def health(self, refresh=False):
-            if self.armed:
-                store = app.state.store
-                running = store.conn.execute(
-                    "SELECT id FROM runs WHERE kind = 'discovery' AND status = 'running'").fetchone()
-                if running:
-                    store.update_run(running[0], status="pause_requested")
-                return {"connection": "fake", "ready": False, "reason": "SYNTHETIC not ready"}
-            return await super().health(refresh)
-
-    adapter = NotReadyForTheChainRead(responder())
-
-    def arm(transport):
-        adapter.armed = True
-
-    transport = OpenAlex(keyword_pool(), citing={"W1": [work(700, CHAINED)]}, on_chain=arm)
-    app = app_for(tmp_path, monkeypatch, transport, adapter=adapter)
-    client = client_of(app)
-    try:
-        rid, run_id, view, paused = discover(client)
-        adapter.armed, transport.on_chain = False, None
-        client.post(f"/api/runs/{run_id}/resume")
-        view, run = wait(client, rid, run_id)
-        store = app.state.store
-        chain_steps = [s for s in store.run_steps(run_id) if s["operation_key"].startswith("abstract_screening:chain:")]
-        chain_calls = [si for si in adapter.calls if any(CHAINED in c["title"] for c in si.get("candidates") or [])]
-    finally:
-        client.__exit__(None, None, None)
-    assert (paused["status"], paused["pause_reason"]) == ("paused", "user_requested"), paused
-    assert run["status"] == "completed" and not chain_calls
-    assert chain_steps and all((s["status"], s["error_code"]) == ("failed", "model_connection_not_ready")
-                               for s in chain_steps), chain_steps
 
 
 def test_a_keyword_work_of_a_research_older_than_its_hits_is_not_chain_only(tmp_path, monkeypatch):

@@ -8,12 +8,6 @@ from keyring.errors import PasswordDeleteError
 from deixis import credentials
 
 
-@pytest.fixture(autouse=True)
-def legacy_inspection_default(monkeypatch):
-    """Legacy tests keep their path; small-batch tests opt in explicitly."""
-    monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", "off")
-
-
 class MemoryKeyring(KeyringBackend):
     priority = 1
 

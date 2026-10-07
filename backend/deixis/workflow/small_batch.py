@@ -36,11 +36,20 @@ def enabled(budget: dict[str, Any]) -> bool:
 
 def answer_budget(store: Any, rid: str, revision: int, budget: dict[str, Any]) -> dict[str, Any]:
     """Bind a new answer to the latest completed discovery, without switching an older run's policy."""
+    scope = store.scope(rid, revision)
+    if scope.get("source_scope") == "attached":
+        return budget
     row = store.conn.execute(
         "SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'discovery'"
         " AND status = 'completed' ORDER BY created_at DESC, id DESC LIMIT 1", (rid, revision)).fetchone()
-    if row is None or not enabled(store.run(row["id"])["budget"]):
+    if row is None:
+        if scope.get("source_scope") == "academic":
+            from deixis.workflow.store import LegacyInspectionPolicyRemoved
+            raise LegacyInspectionPolicyRemoved("legacy_inspection_policy_removed")
         return budget
+    if not enabled(store.run(row["id"])["budget"]):
+        from deixis.workflow.store import LegacyInspectionPolicyRemoved
+        raise LegacyInspectionPolicyRemoved("legacy_inspection_policy_removed")
     step = store.existing_step(row["id"], LIST_KEY)
     if step is None or step["status"] != "succeeded":
         return budget | {"inspection": {"policy": POLICY, "list_run_id": row["id"],
@@ -392,6 +401,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                                    works=set(flow.store.work_ids(chained).values()), key="chain_record_flags")
             await flow._source_similarity(run, scope, [{"source_version_id": head} for head in chained],
                                           key="small_batch:v1:chain_similarity", identity_step="source_similarity")
+        flow._chain_summary(run)
     listing = freeze_list(flow, run, scope, vocabulary)
     if run["budget"]["inspection"].get("runner_version", 1) >= 4:
         await execute_pipeline(flow, run, scope, vocabulary, listing)

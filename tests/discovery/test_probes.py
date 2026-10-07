@@ -539,30 +539,6 @@ def test_the_view_derives_the_facts_once_calls_no_verified_records_and_changes_n
     assert view["counts"]["queue"] == 0
 
 
-def test_a_record_a_scripted_similarity_moved_up_and_later_included_is_moved_up_then_included(tmp_path, monkeypatch):
-    """The ranking itself, not a written output: `rank_records` with a stored similarity lifts one record (SW8.1, the
-    arm's limits lowered as in `test_ranking_flow`), and what the table reads of it follows the decision's time."""
-    import test_ranking_flow as flow_tests
-    from deixis.workflow import ranking
-
-    monkeypatch.setattr(ranking, "RESCUE_OUTSIDE_TOP", 2)
-    monkeypatch.setattr(ranking, "RESCUE_EMBEDDING_TOP", 1)
-    records = [flow_tests.provider_record(i, f"SYNTHETIC wireless sensor networks packet size study {i}") for i in range(3)]
-    records += [flow_tests.provider_record(i, f"SYNTHETIC sourdough bakery {i}") for i in range(3, 6)]
-    store, rid, run = flow_tests.stored_research(tmp_path, records)
-    svids = [store.find_source_by_identifier("openalex", f"W{i}") for i in range(6)]
-    target = svids[5]
-    store.save_source_similarities(rid, 1, "scripted-embedding", {s: 0.9 if s == target else 0.1 for s in svids})
-    output = flow_tests.rank(store, rid, run, "scripted-embedding")
-    assert output["rescued"] == [target]
-    step = store.step(run["id"], "ranking", "code:ranking")
-    store.finish_step(step["id"], "succeeded", output=output)
-    store.conn.execute("UPDATE run_steps SET finished_at = ? WHERE id = ?", ("2000-01-01T00:00:00.000+00:00", step["id"]))
-    DecisionStore(store).record(rid, target, "all_parts_verified")
-    probe = probes.probe_set(queue.context(store, rid))
-    embedding = probes.signal_table(store, run["id"], probe)["embedding"]
-    assert (embedding["moved_up"], embedding["moved_up_then_included"]) == (1, 1)
-    store.conn.close()
 
 
 def test_a_list_confirmation_made_before_the_ranking_stays_before_it_when_a_new_head_copies_the_selection(store):

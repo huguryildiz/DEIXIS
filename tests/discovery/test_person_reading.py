@@ -50,6 +50,7 @@ class Research:
         self.store = Store(self.connection)
         self.lib = Lib(self.store, field)
         self.rid, self.ds = self.lib.rid, self.lib.ds
+        self.store.conn.execute("UPDATE scope_revisions SET source_scope = 'attached' WHERE research_id = ?", (self.rid,))
         self.adapter = FakeAdapter(responder)
         self.flow = ResearchFlow(FlowDeps(
             Settings(data_dir=tmp_path / "data", port=8765, fulltext_adjudication=reading),
@@ -368,7 +369,7 @@ def test_a_run_in_the_group_order_that_reads_an_unread_file_marks_it_read(resear
     assert r.request(asset)["status"] == "unread"
     r.adapter.responder = valid_response
     # The next reading run a retrieval run leaves behind reads it in the group order, not at the front.
-    run = r.store.create_run(r.rid, "fulltext_adjudication", adjudication.read_budget("standard"), "SYNTHETIC-after")
+    run = r.store.create_run(r.rid, "fulltext_adjudication", adjudication.read_budget("standard"), "fulltext_adjudication:person:SYNTHETIC-after")
     r.work_through(run["id"])
     assert r.code(svid) == "all_parts_verified" and r.request(asset)["status"] == "read"
     assert r.plan(run["id"])["works"][0]["read_version"] == svid
@@ -379,7 +380,7 @@ def test_a_run_in_the_group_order_that_reads_an_unread_file_marks_it_read(resear
 @pytest.mark.parametrize("status", ["queued", "running", "pause_requested", "paused"])
 def test_the_reading_waits_while_the_research_has_an_active_or_paused_run(research, status):
     r = research()
-    other = r.store.create_run(r.rid, "discovery", {"max_model_calls": 1}, None)
+    other = r.store.create_run(r.rid, "discovery", {"max_model_calls": 1, "inspection": {"policy": "small_batch_fused_v1"}}, None)
     r.store.update_run(other["id"], status=status)
     svid = r.work()
     asset, _ = r.attach(svid)
@@ -390,7 +391,7 @@ def test_the_reading_waits_while_the_research_has_an_active_or_paused_run(resear
                                            ("paused", False)])
 def test_the_reading_is_queued_when_the_run_before_it_ends_each_way(research, ending, opens):
     r = research()
-    other = r.store.create_run(r.rid, "table_columns", {"max_model_calls": 1}, None)
+    other = r.store.create_run(r.rid, "table_columns", {"max_model_calls": 1, "inspection": {"policy": "small_batch_fused_v1"}}, None)
     r.store.update_run(other["id"], status="running")
     svid = r.work()
     asset, _ = r.attach(svid)
@@ -461,16 +462,15 @@ def test_a_discovery_end_reading_run_takes_the_waiting_files_and_no_second_run_o
     r = research()
     first, second = r.work(), r.work()
     r.file(first, r.pages(), origin="download")
-    discovery = r.store.create_run(r.rid, "discovery", {"max_model_calls": 1}, None)
+    discovery = r.store.create_run(r.rid, "discovery", {"max_model_calls": 1, "inspection": {"policy": "small_batch_fused_v1"}}, None)
     r.store.update_run(discovery["id"], status="running")
     asset, _ = r.attach(second)
     assert r.runs() == []
     # The fetch ended inside discovery: the run completes and queues the reading of D98 in one write.
     r.store.update_run(discovery["id"], status="completed")
-    r.flow._queue_fulltext_adjudication(r.store.run(discovery["id"]), r.store.scope(r.rid))
     r.flow.person_run_ended(discovery["id"])
     [after] = r.runs()
-    assert after["idempotency_key"] == f"fulltext_adjudication:after:{discovery['id']}"
+    assert after["idempotency_key"].startswith("fulltext_adjudication:person:")
     r.drain()
     assert len(r.runs()) == 1 and r.request(asset)["status"] == "read"
     assert r.plan(after["id"])["works"][0]["head"] == second
@@ -727,7 +727,7 @@ def test_a_file_asked_under_an_earlier_question_reaches_no_answer_until_this_cri
     r.store.freeze_protocol(r.rid, 2, body(r.lib.field, question=r.store.scope(r.rid)["question"]))
     for svid in (lone, other):
         r.ds.record(r.rid, svid, CANDIDATE_CODE)
-    run = r.store.create_run(r.rid, "fulltext_adjudication", adjudication.read_budget("standard"), "SYNTHETIC-revised")
+    run = r.store.create_run(r.rid, "fulltext_adjudication", adjudication.read_budget("standard"), "fulltext_adjudication:person:SYNTHETIC-revised")
     r.work_through(run["id"])
     assert lone in [item["read_version"] for item in r.plan(run["id"])["works"]]
     assert r.code(lone) == "all_parts_verified" and r.request(asset)["status"] == "waiting"
@@ -819,7 +819,7 @@ def test_your_files_shows_no_verified_quote_for_a_file_whose_pages_changed_since
 
 def test_the_view_offers_the_paused_run_while_a_file_waits(research):
     r = research()
-    paused = r.store.create_run(r.rid, "discovery", {"max_model_calls": 1}, None)
+    paused = r.store.create_run(r.rid, "discovery", {"max_model_calls": 1, "inspection": {"policy": "small_batch_fused_v1"}}, None)
     r.store.update_run(paused["id"], status="paused", pause_reason="user_requested")
     svid = r.work()
     r.attach(svid)

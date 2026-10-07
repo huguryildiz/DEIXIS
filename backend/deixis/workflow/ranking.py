@@ -29,17 +29,14 @@ from deixis.workflow.decisions import DecisionStore
 BM25_K1 = 1.5  # fuse.py's values; not varied
 BM25_B = 0.75
 GRAPH_SEEDS = 15  # SW7 context: seeds code picks when the research has too few verified ones
-RESCUE_OUTSIDE_TOP = 200  # SW8.1
-RESCUE_EMBEDDING_TOP = 50  # SW8.1
-THRESHOLDS = {"bm25_k1": BM25_K1, "bm25_b": BM25_B, "graph_seeds": GRAPH_SEEDS,
-              "rescue_outside_top": RESCUE_OUTSIDE_TOP, "rescue_embedding_top": RESCUE_EMBEDDING_TOP}
+THRESHOLDS = {"bm25_k1": BM25_K1, "bm25_b": BM25_B, "graph_seeds": GRAPH_SEEDS}
 CODE_SIGNALS = ("bm25", "blocks", "tfidf", "graph", "joint")
 SIGNALS = (*CODE_SIGNALS, "embedding")
 # A question asks for a comparison when it holds one of these words (D226). English only: a question in another
 # language is read through its saved English sentence, else the signal does not run.
 COMPARISON_WORDS = frozenset({"compare", "compared", "compares", "comparing", "comparison", "comparisons", "versus",
                               "vs", "differ", "differs", "difference", "differences", "between", "than"})
-# The three rows a ranking stores beside the signals: the code-only order the rescue arm reads, the order of every
+# The three rows a ranking stores beside the signals: the code-only order, the order of every
 # signal that ran, and the inspection order screening follows.
 ORDERS = ("fused_code", "fused", "inspection")
 
@@ -304,27 +301,6 @@ def fuse(ranks: dict[str, dict[str, tuple[float, bool]]], signals: tuple[str, ..
     return sorted(ids, key=lambda rid: (-scores[rid], rid))
 
 
-def inspection_order(fused: list[str], fused_code: list[str],
-                     embedding_ranks: dict[str, tuple[float, bool]] | None) -> tuple[list[str], list[str]]:
-    """The order screening reads, and the records the embedding arm brought to its front (SW8.1).
-
-    A record outside the top `RESCUE_OUTSIDE_TOP` of the four code signals' own fused order but inside the embedding's
-    top `RESCUE_EMBEDDING_TOP` goes to the front, in embedding order. Everything else keeps its fused place. A record
-    the embedding never scored cannot be rescued by the tail rank it shares with the other unscored records: the
-    embedding has no authority and adds nothing it did not measure (SW8.2).
-    """
-    if embedding_ranks is None:
-        return list(fused), []
-    place = {rid: position + 1 for position, rid in enumerate(fused_code)}
-    rescued = [rid for rid in fused
-               if place.get(rid, len(fused_code) + 1) > RESCUE_OUTSIDE_TOP
-               and embedding_ranks.get(rid, (0.0, False))[1]
-               and embedding_ranks[rid][0] <= RESCUE_EMBEDDING_TOP]
-    rescued.sort(key=lambda rid: (embedding_ranks[rid][0], rid))
-    lifted = set(rescued)
-    return rescued + [rid for rid in fused if rid not in lifted], rescued
-
-
 # ---- the pool, the seeds and the one store-driven entry point ----------------------------------
 
 def _versions(store: Any, research_id: str) -> dict[str, dict[str, Any]]:
@@ -499,7 +475,7 @@ def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_
              for name, score in scores.items()}
     fused_code = fuse(ranks, CODE_SIGNALS)
     fused = fuse(ranks, SIGNALS)
-    order, rescued = inspection_order(fused, fused_code, ranks.get("embedding"))
+    order, rescued = list(fused), []
     return {"ranks": ranks, "fused_code": fused_code, "fused": fused, "order": order, "rescued": rescued,
             "reasons": reasons, "graph_seeds": graph_seeds}
 

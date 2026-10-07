@@ -395,6 +395,25 @@ def same(value):
     return json.loads(json.dumps(value, sort_keys=True))
 
 
+def canonical_evidence_ids(value):
+    """Normalize search entities in write order, independently of non-search step count."""
+    seen, counts = {}, {}
+
+    def label(match):
+        old, prefix = match.group(0), match.group(1)
+        if old not in seen:
+            counts[prefix] = counts.get(prefix, 0) + 1
+            seen[old] = f"{prefix}#{counts[prefix]:04d}"
+        return seen[old]
+
+    for key in ("source_versions", "search_runs", "candidates", "memberships", "identifiers"):
+        re.sub(r"\b([a-z]{3})#\d+", label, json.dumps(value[key], sort_keys=True))
+    result = json.loads(re.sub(r"\b([a-z]{3})#\d+", label, json.dumps(value, sort_keys=True)))
+    result["heads"] = sorted(result["heads"])
+    result["links"] = sorted(result["links"], key=lambda link: json.dumps(link, sort_keys=True))
+    return result
+
+
 # ---- Task 1: equality, written on the sequential code ----------------------------------------------------------
 
 
@@ -402,23 +421,23 @@ def test_the_first_round_writes_the_evidence_the_sequential_read_wrote(tmp_path,
     """Three hosts, five queries, paged reads, a DOI two providers share, a rate-limited page and a single-page
     provider: every row, output and event is the one the sequential code wrote, in the same order."""
     found, view, run = run_discovery(tmp_path, monkeypatch, Hosts())
-    assert "abstract_stage" in {s["operation_key"] for s in run["steps"]}, run
-    assert same(found) == golden("first_round", same(found))
+    assert any(s["operation_key"].endswith(":abstract_stage") for s in run["steps"]), run
+    assert canonical_evidence_ids(same(found)) == canonical_evidence_ids(golden("first_round", same(found)))
 
 
 def test_the_expansion_round_writes_the_evidence_the_sequential_read_wrote(tmp_path, monkeypatch):
     found, view, run = run_discovery(tmp_path, monkeypatch, Hosts(), SECOND_ROUND)
-    assert "abstract_stage" in {s["operation_key"] for s in run["steps"]}, run
+    assert any(s["operation_key"].endswith(":abstract_stage") for s in run["steps"]), run
     assert [s["query_text"] for s in found["search_runs"]][-4:] == [
         "SYNTHETIC transmit power control", "SYNTHETIC transmit power control", "SYNTHETIC drift turbulence coding",
         "SYNTHETIC vascular relay hop"]
-    assert same(found) == golden("second_round", same(found))
+    assert canonical_evidence_ids(same(found)) == canonical_evidence_ids(golden("second_round", same(found)))
 
 
 def test_a_host_that_fails_every_query_does_not_pause_the_run_while_another_succeeds(tmp_path, monkeypatch):
     """D18: a failed search is recorded and the others go on."""
     found, view, run = run_discovery(tmp_path, monkeypatch, Hosts(fail={"api.semanticscholar.org"}))
-    assert "abstract_stage" in {s["operation_key"] for s in run["steps"]}, run
+    assert any(s["operation_key"].endswith(":abstract_stage") for s in run["steps"]), run
     statuses = {(s["provider"], s["status"]) for s in view["search_runs"]}
     assert ("semantic_scholar", "failed") in statuses and ("openalex", "completed") in statuses
 
@@ -478,7 +497,7 @@ def test_a_query_that_uses_up_its_share_ends_its_own_read_and_the_run_goes_on(tm
     small_allowances(monkeypatch, {"SYNTHETIC packet size energy": 3})
     hosts = RefusedOnce({"SYNTHETIC packet size energy"})
     found, view, run = run_discovery(tmp_path, monkeypatch, hosts, effort="standard")
-    assert "abstract_stage" in {s["operation_key"] for s in run["steps"]}, run
+    assert any(s["operation_key"].endswith(":abstract_stage") for s in run["steps"]), run
     assert run["pause_reason"] != "budget_exhausted"
     first = [r for r in view["search_runs"] if r["query_text"] == "SYNTHETIC packet size energy"]
     assert [(r["page_number"], r["stop_reason"], r["unread_count"]) for r in first] == [
@@ -540,7 +559,7 @@ def test_hosts_are_read_side_by_side_and_each_host_one_request_at_a_time(tmp_pat
     # OpenAlex and bioRxiv share a host, so their queries are read one after the other, never at once.
     assert all(hosts.most[host] == 1 for host in ("api.openalex.org", "api.semanticscholar.org", "serpapi.com"))
     assert hosts.most["hosts"] == 3 <= flow.SEARCH_PARALLEL_HOSTS
-    assert same(found) == golden("first_round", same(found))
+    assert canonical_evidence_ids(same(found)) == canonical_evidence_ids(golden("first_round", same(found)))
 
 
 def test_no_more_hosts_are_read_at_once_than_the_bound(tmp_path, monkeypatch):
@@ -548,7 +567,7 @@ def test_no_more_hosts_are_read_at_once_than_the_bound(tmp_path, monkeypatch):
     hosts = Hosts(delay={"api.openalex.org": 0.05, "api.semanticscholar.org": 0.05, "serpapi.com": 0.05})
     found, view, run = run_discovery(tmp_path, monkeypatch, hosts)
     assert hosts.most["hosts"] == 2
-    assert same(found) == golden("first_round", same(found))
+    assert canonical_evidence_ids(same(found)) == canonical_evidence_ids(golden("first_round", same(found)))
 
 
 @pytest.mark.parametrize("second_round", [False, True])
@@ -560,7 +579,7 @@ def test_a_later_query_whose_host_answers_first_is_still_written_in_query_order(
     first_semantic = next(i for i, e in enumerate(hosts.log) if e["host"] == "api.semanticscholar.org")
     assert first_semantic < next(i for i, e in enumerate(hosts.log) if e["host"] == "api.openalex.org")
     name = "second_round" if second_round else "first_round"
-    assert same(found) == golden(name, same(found))
+    assert canonical_evidence_ids(same(found)) == canonical_evidence_ids(golden(name, same(found)))
 
 
 def content(store, rid):
@@ -615,7 +634,7 @@ def test_a_pause_lets_the_requests_in_flight_finish_writes_what_was_read_in_orde
         assert written[:2] == [(0, 0), (0, 1)] and written == sorted(written)
         # Resumed, the run asks for the pages it had not read and for none it had.
         session.control("resume")
-        assert "abstract_stage" in {s["operation_key"] for s in session.run["steps"]}, session.run
+        assert any(s["operation_key"].endswith(":abstract_stage") for s in session.run["steps"]), session.run
         assert set(Counter(hosts.requests()).values()) == {1}
         assert content(session.store, session.rid) == whole
     finally:
@@ -669,7 +688,7 @@ def test_a_first_round_whose_every_share_was_spent_before_it_asked_pauses_instea
         assert (session.run["status"], session.run["pause_reason"]) == ("paused", "budget_exhausted"), session.run
         assert hosts.log == [] and "vocabulary_expansion" not in {s["operation_key"] for s in session.run["steps"]}
         session.control("retry_failed")
-        assert "abstract_stage" in {s["operation_key"] for s in session.run["steps"]}, session.run
+        assert any(s["operation_key"].endswith(":abstract_stage") for s in session.run["steps"]), session.run
         assert hosts.requests("api.openalex.org")
     finally:
         session.close()
@@ -693,7 +712,7 @@ def test_a_query_resumed_past_a_lowered_read_limit_asks_for_nothing_more(tmp_pat
         monkeypatch.setattr(flow, "SW_READ_LIMIT", read_limit(15))
         asked = len([p for p in hosts.requests("api.openalex.org") if p[1] == "SYNTHETIC packet size energy"])
         session.control("resume")
-        assert "abstract_stage" in {s["operation_key"] for s in session.run["steps"]}, session.run
+        assert any(s["operation_key"].endswith(":abstract_stage") for s in session.run["steps"]), session.run
         assert len([p for p in hosts.requests("api.openalex.org") if p[1] == "SYNTHETIC packet size energy"]) == asked
     finally:
         session.close()

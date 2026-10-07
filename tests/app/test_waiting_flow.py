@@ -42,10 +42,10 @@ def sw_research(tmp_path, monkeypatch, workflow="sw"):
 
 
 def plan_heads(store, rid):
-    row = store.conn.execute(
-        "SELECT s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
-        " AND s.operation_key = 'fulltext_plan' AND s.status = 'succeeded'", (rid,)).fetchone()
-    return json.loads(row[0])["works"]
+    from deixis.workflow import small_batch
+    run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = 'discovery'"
+                                " ORDER BY created_at DESC LIMIT 1", (rid,)).fetchone()[0]
+    return store.existing_step(run_id, small_batch.LIST_KEY)["output"]["order"]
 
 
 def match(client, rid, *files):

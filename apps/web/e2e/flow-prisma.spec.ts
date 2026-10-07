@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { nextPort, readingDone, modeEnv } from './ports'
+import { nextPort, readingDone } from './ports'
 
 // Case M: where every work of an sw research stands (slice 20, D102). The Sources tab's flow line, the PRISMA-S search
 // report in both formats, the line under an answer that says where the flow stood when the answer started, and the
@@ -28,7 +28,7 @@ class FlowServer {
 
   async start() {
     const env = {  // no provider keys or user data directory reach the fixture
-      PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...modeEnv, ...this.env,
+      PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...this.env,
     }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {

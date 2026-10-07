@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { nextPort, readingDone, modeEnv } from './ports'
+import { nextPort, readingDone } from './ports'
 
 // Case J: the human queue of an sw research (slice 17, D97). A person sees the works the reading could not settle,
 // opens a row's page, and answers; an answer can be taken back, a row that moved is refused, and the list follows the
@@ -36,7 +36,7 @@ class QueueServer {
 
   async start() {
     const env = {  // no provider keys or user data directory reach the fixture
-      PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...modeEnv, ...this.env,
+      PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), ...this.env,
     }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {

@@ -108,7 +108,7 @@ def test_an_sw_discovery_searches_with_no_criterion_while_every_model_call_fails
     # The run went on to the abstract stage, whose code half needs no model. This fixture's one record carries
     # both concept blocks in its title, so code closed it and the run finished with the connection down (slice 09).
     assert (run["status"], run["pause_reason"]) == ("completed", None), run
-    assert [s["operation_key"] for s in run["steps"]][-1] == "abstract_stage"
+    assert [s["operation_key"] for s in run["steps"]][-1] == "small_batch:v1:summary"
 
 
 def test_two_failed_proposals_do_not_cancel_the_third_call_and_one_run_builds_nothing(tmp_path, monkeypatch):

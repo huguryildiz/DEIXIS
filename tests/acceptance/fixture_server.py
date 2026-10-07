@@ -883,7 +883,6 @@ def main() -> None:
         return
     # Cases A–G approve the code-built proposal automatically; case H explicitly asks for approval.
     settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1,
-                        small_batch_inspection=os.environ.get("DEIXIS_SMALL_BATCH_INSPECTION", "on"),
                         protocol_approval=os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "as_proposed"),
                         # Cases A–H keep the code's query alone, as they always had it; case I asks for the
                         # model-written query of D92.
@@ -895,6 +894,12 @@ def main() -> None:
                         arxiv_source="auto" if ARXIV_SOURCE_MODE else "off")
     if os.environ.get("DEIXIS_FIXTURE_STORED_LEGACY") == "on":
         seed_stored_legacy(args.data_dir)
+    if os.environ.get("DEIXIS_FIXTURE_STORED_SW") == "on":
+        from stored_inspection import seed
+        conn = db.connect(args.data_dir / "library.sqlite")
+        db.migrate(conn)
+        seed(Store(conn), model=MODEL)
+        conn.close()
     if os.environ.get("DEIXIS_FIXTURE_REEXTRACT") == "on":
         seed_reextract(args.data_dir)
     handler, local_embedder = openalex, None

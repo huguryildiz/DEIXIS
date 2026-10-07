@@ -129,7 +129,7 @@ def test_an_sw_discovery_searches_while_every_model_call_fails(tmp_path, monkeyp
     # closes it as a candidate and the run needs no model at all: with every model call failing, a whole sw
     # discovery searches, ranks and decides. Nothing it decided is `included`.
     assert run["status"] == "completed" and run["pause_reason"] is None, run
-    assert [s["operation_key"] for s in run["steps"]][-1] == "abstract_stage"
+    assert [s["operation_key"] for s in run["steps"]][-1] == "small_batch:v1:summary"
     assert not any(s["kind"] == "model:abstract_screening" for s in run["steps"])
     assert decisions == [("blocks_in_title", "candidate")] and selections == [("pending", "code_rule")]
     assert view["counts"]["unique"] == 1

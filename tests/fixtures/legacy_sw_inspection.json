@@ -1,0 +1,6 @@
+{
+  "budget": {"max_model_calls": 17, "max_provider_requests": 5, "fulltext_fetch": {"mode": "overlap", "max_fulltext_works": 10}},
+  "abstract": "SYNTHETIC stored exercise evidence.",
+  "claim": "SYNTHETIC stored claim.",
+  "answer": "SYNTHETIC stored answer."
+}

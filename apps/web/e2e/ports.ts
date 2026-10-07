@@ -7,14 +7,7 @@ export function nextPort(): number {
   return 30000 + worker * 1000 + next++
 }
 
-// True once the reading of an sw research's works is settled: the separate fulltext_adjudication run of the legacy
-// path, or the discovery run itself when it carries the small-batch inspection (D237, the default since D239).
-export function readingDone(view: { runs: Array<{ kind: string; status: string; budget?: { inspection?: { policy?: string } } }> }): boolean {
-  return view.runs.some(r => (r.kind === 'fulltext_adjudication' && r.status === 'completed')
-    || (r.kind === 'discovery' && r.status === 'completed' && String(r.budget?.inspection?.policy ?? '').startsWith('small_batch')))
+// Discovery owns automatic inspection. Separate reading runs handle a person's files.
+export function readingDone(view: { runs: Array<{ kind: string; status: string }> }): boolean {
+  return view.runs.some(r => (r.kind === 'discovery' || r.kind === 'fulltext_adjudication') && r.status === 'completed')
 }
-
-// The acceptance run can pin the inspection mode for every fixture server it spawns
-// (DEIXIS_SMALL_BATCH_INSPECTION=on|off); unset, the fixture follows the product default.
-export const modeEnv: Record<string, string> = process.env.DEIXIS_SMALL_BATCH_INSPECTION
-  ? { DEIXIS_SMALL_BATCH_INSPECTION: process.env.DEIXIS_SMALL_BATCH_INSPECTION } : {}

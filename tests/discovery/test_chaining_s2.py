@@ -10,11 +10,10 @@ import json
 
 import httpx
 
-from deixis.domain.rules import CRITERION_CALLS, SUGGESTION_CALLS, TEST_EFFORT_BUDGETS
 from deixis.workflow import chaining
 from test_abstract_flow import QUESTION, client_of, step_output, wait
 from test_chaining_flow import (IRRIGATION, IRRIGATION_ABSTRACT, OFF_ABSTRACT, OFF_TOPIC, OpenAlex, app_for, discover,
-                                keys, keyword_pool, work)
+                                keyword_pool, work)
 
 
 def paper(number, title=IRRIGATION, abstract=IRRIGATION_ABSTRACT, doi=None):
@@ -145,37 +144,6 @@ def test_a_resumed_run_sends_no_semantic_scholar_request_twice(tmp_path, monkeyp
     finally:
         client.__exit__(None, None, None)
     assert sent == 10 and len(transport.s2) == sent and again == stored
-
-
-def test_a_run_queued_before_this_change_asks_openalex_alone(tmp_path, monkeypatch):
-    oa = OpenAlex(keyword_pool(), citing={"W1": [work(700)]})
-    transport = Both(oa, citations={"10.1/oa.1": [paper(9)]})
-    app = app_for(tmp_path, monkeypatch, transport)
-    client = client_of(app)
-    try:
-        payload = {"question": QUESTION, "model_connection": "fake", "requested_model": "fake-model", "effort": "quick"}
-        rid = client.post("/api/researches", json=payload).json()["research"]["id"]
-        store = app.state.store
-        preset = TEST_EFFORT_BUDGETS["quick"].__dict__
-        # What D95 queued: the chain setting and its limits, with no rule version and no source list.
-        old = preset | {"max_model_calls": preset["max_model_calls"] + CRITERION_CALLS + SUGGESTION_CALLS + 20,
-                        "citation_chaining": "auto", "max_chain_requests": 40, "chain_abstract_read": 20,
-                        "chain_plan_room": 12}
-        queued = store.create_run(rid, "discovery", old, None)
-        app.state.worker.wake()
-        view, run = wait(client, rid, queued["id"])
-        body = store.current_protocol(rid, 1)["body"]
-        summary = step_output(store, queued["id"], "chain_summary")
-        order = keys(store, queued["id"])
-        s2 = s2_steps(store, queued["id"])
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed", run
-    assert transport.s2 == [] and not s2 and "chain_s2_plan" not in order
-    assert summary is not None and "semantic_scholar" not in summary
-    policy = body["citation_chaining"]
-    assert policy["rule_version"] == "deixis.citation_chaining.v1" and "sources" not in policy
-    assert policy["source"] == "openalex"
 
 
 def test_a_seed_without_a_doi_is_skipped_and_counted(tmp_path, monkeypatch):

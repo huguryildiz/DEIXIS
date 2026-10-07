@@ -27,8 +27,21 @@ def abstract_calls(adapter):
 
 
 def screening_steps(store, run_id):
-    return {s["operation_key"]: s["status"] for s in store.run_steps(run_id)
-            if s["kind"] == "model:abstract_screening"}
+    # Batch keys contain a source-id hash; compare groups by the exact titles supplied to each call.
+    records = []
+    for step in store.run_steps(run_id):
+        if step["kind"] != "model:abstract_screening":
+            continue
+        payload = json.loads(store.conn.execute(
+            "SELECT payload_json FROM step_inputs WHERE step_id = ? ORDER BY rowid DESC LIMIT 1",
+            (step["id"],)).fetchone()[0])
+        group = tuple(sorted(c["title"] for c in payload["candidates"]))
+        records.append((group, payload["screening_target"]["run"], step["status"]))
+    groups = sorted({group for group, _, _ in records})
+    result = {f"abstract_screening:{groups.index(group)}:{run_no}": status
+              for group, run_no, status in records}
+    assert len(result) == len(records)  # no distinct stored call may disappear in normalization
+    return result
 
 
 def proposal_rows(store, rid):
@@ -82,7 +95,7 @@ def test_a_pause_stops_new_submissions_and_the_calls_in_flight_write_their_steps
         if si["task_type"] != "abstract_screening":
             return
         seen.append(si["step_id"])
-        if len(seen) == 4:
+        if len(seen) == ABSTRACT_RUNS:
             holder["store"].update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
                                        pause_reason="user_requested")
 
@@ -101,11 +114,12 @@ def test_a_pause_stops_new_submissions_and_the_calls_in_flight_write_their_steps
     finally:
         client.__exit__(None, None, None)
     assert (run["status"], run["pause_reason"]) == ("completed", None)
-    # The pause arrived during the fourth call: the four in flight finished and recorded their steps, and nothing
+    # Small-batch inspection completes one two-reading group before submitting the next. Pause while both reads
+    # of the first group are in flight: they finish and record their steps, and nothing
     # else was submitted. No batch was closed, so no record was decided from an answer the run did not keep.
-    assert paused_calls == 4 and list(paused_steps.values()) == ["succeeded"] * 4
+    assert paused_calls == ABSTRACT_RUNS and list(paused_steps.values()) == ["succeeded"] * ABSTRACT_RUNS
     assert paused_proposals == 0
-    # Resuming called only the two missing runs: the four stored steps were read back, not asked again.
+    # Resuming calls only the four missing reads; the two stored steps are not asked again.
     assert resumed_calls == 6 and len(resumed_steps) == 6
     assert set(codes.values()) == {"runs_agree_candidate"}
 
@@ -116,11 +130,14 @@ def test_the_budget_stops_before_a_batch_it_cannot_read_twice(tmp_path, monkeypa
     """Rule K3: a batch is read twice or not at all, and what the budget does not reach stays unread, not dropped."""
     original = ResearchFlow._abstract_stage
 
-    async def one_batch_only(self, run, scope, vocabulary, order):
+    limit = {}
+
+    async def one_batch_only(self, run, scope, vocabulary, order, **kwargs):
         # The run keeps every call it has already spent and is left room for exactly one batch.
         spent = self.store.run(run["id"])["usage"].get("model_calls", 0)
-        run["budget"] = run["budget"] | {"max_model_calls": spent + ABSTRACT_RUNS}
-        return await original(self, run, scope, vocabulary, order)
+        limit.setdefault("calls", spent + ABSTRACT_RUNS)
+        run["budget"] = run["budget"] | {"max_model_calls": limit["calls"]}
+        return await original(self, run, scope, vocabulary, order, **kwargs)
 
     monkeypatch.setattr(ResearchFlow, "_abstract_stage", one_batch_only)
     adapter = FakeAdapter(responder(), delay=0.01)
@@ -150,11 +167,11 @@ def test_a_resumed_run_does_not_charge_the_budget_for_calls_it_reads_back(tmp_pa
     holder, seen = {}, []
     original = ResearchFlow._abstract_stage
 
-    async def room_for_the_whole_read(self, run, scope, vocabulary, order):
+    async def room_for_the_whole_read(self, run, scope, vocabulary, order, **kwargs):
         # Fixed on the first entry: every call already spent, plus exactly the six this read costs.
         holder.setdefault("limit", self.store.run(run["id"])["usage"].get("model_calls", 0) + 3 * ABSTRACT_RUNS)
         run["budget"] = run["budget"] | {"max_model_calls": holder["limit"]}
-        return await original(self, run, scope, vocabulary, order)
+        return await original(self, run, scope, vocabulary, order, **kwargs)
 
     def before(si):
         if si["task_type"] != "abstract_screening":
@@ -180,6 +197,7 @@ def test_a_resumed_run_does_not_charge_the_budget_for_calls_it_reads_back(tmp_pa
     assert (run["status"], run["pause_reason"]) == ("completed", None)
     # The four answers the run had paid for are used, and the third batch is sent: the budget held all six calls.
     assert len(abstract_calls(adapter)) == 6 and len(steps) == 6
+    assert run["usage"]["model_calls"] == holder["limit"]
     assert set(codes.values()) == {"runs_agree_candidate"}
 
 

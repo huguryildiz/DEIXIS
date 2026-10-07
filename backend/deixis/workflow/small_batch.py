@@ -8,7 +8,7 @@ from typing import Any
 
 from deixis.domain import canonical
 from deixis.domain.reason_codes import reason
-from deixis.domain.rules import ABSTRACT_READ_LIMIT, CHAIN_ABSTRACT_READ
+from deixis.domain.rules import ABSTRACT_READ_LIMIT, CHAIN_ABSTRACT_READ, FULLTEXT_RUNS
 from deixis.storage.db import now, transaction
 from deixis.workflow import adjudication, chaining, fulltext, ranking
 from deixis.workflow.decisions import DecisionStore
@@ -93,6 +93,7 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
     body["max_fulltext_reads"] = reads.get("max_fulltext_reads", 0)
     body["inspection"] = {
         "policy": POLICY, "runner_version": 4, "batch_size": BATCH_SIZE, "minimum_processed_works": MINIMUM,
+        "discovery_model_calls": budget["max_model_calls"],
         "abstract_limit": ABSTRACT_READ_LIMIT[effort] + (
             budget.get("chain_abstract_read", CHAIN_ABSTRACT_READ[effort]) if chaining.enabled(budget) else 0),
         "fetch_limit": fetch.get("max_fulltext_works", 0) + fetch.get("chain_room", 0),
@@ -100,6 +101,15 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
         "fetch_attempts": fulltext.FULLTEXT_WORK_ATTEMPTS,
     }
     return body
+
+
+def model_call_allowance(budget: dict[str, Any]) -> int:
+    """Model context keeps discovery's allowance; execution counts against the combined allowance."""
+    if not enabled(budget):
+        return budget["max_model_calls"]
+    # Older frozen budgets did not record the discovery allowance separately.
+    return budget["inspection"].get("discovery_model_calls",
+                                    budget["max_model_calls"] - FULLTEXT_RUNS * budget.get("max_fulltext_reads", 0))
 
 
 def json_value(value: Any) -> Any:

@@ -5895,7 +5895,7 @@ class ResearchFlow:
             "candidates": candidates, "sources": sources, "passages": passages,
             "allowlist": allowlist,
             "human_corrections": [],
-            "budget": {"max_model_calls": run["budget"]["max_model_calls"], "max_schema_repairs": schema_repairs(task_type),
+            "budget": {"max_model_calls": small_batch.model_call_allowance(run["budget"]), "max_schema_repairs": schema_repairs(task_type),
                        "max_provider_requests": run["budget"]["max_provider_requests"]},
             "model": {"connection": model[0], "requested_model": model[1]},
             "created_at": now(),

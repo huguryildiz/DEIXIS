@@ -28,7 +28,7 @@ def client_of(app):
 
 
 def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, flag="on", adapter=None, model_works=False,
-            transport=None, fetch="auto", reading="auto", start_worker=True, **settings):
+            transport=None, fetch="auto", reading="auto", search_query="code", start_worker=True, **settings):
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
     for connector in CONNECTORS.values():
         if connector.key_env:
@@ -38,7 +38,7 @@ def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, flag="on", adapter=None, 
                     pdf_url=f"https://example.org/w{i}.pdf" if pdf else None) for i in range(n)]
     fetcher = SlowFetcher({f"https://example.org/w{i}.pdf": ok(named_pdf(f"10.1/oa.{i}"))
                            for i in range(n)} if pdf else {}, delay=0.002)
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8877, search_query="code",
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8877, search_query=search_query,
                               protocol_approval="as_proposed", fulltext_fetch=fetch,
                               fulltext_adjudication=reading, small_batch_inspection=flag, **settings),
                      adapters={"fake": adapter or FakeAdapter(valid_response)},
@@ -115,6 +115,59 @@ def test_flag_off_has_old_steps_and_no_inspection_policy(tmp_path, monkeypatch):
         assert "inspection_progress" not in run
         assert output(app.state.store, run_id, small_batch.LIST_KEY) is None
         assert output(app.state.store, run_id, "abstract_stage")
+
+
+@pytest.mark.parametrize("effort", ["quick", "standard", "detailed"])
+@pytest.mark.parametrize("query", ["code", "model"])
+@pytest.mark.parametrize("reading", ["off", "auto"])
+def test_flag_does_not_change_any_pre_search_model_input(tmp_path, monkeypatch, effort, query, reading):
+    search_round = ResearchFlow._search_round
+    before_search = {}
+    adapters = {}
+
+    async def capture(flow, run, *args, **kwargs):
+        # Capture every call (including repeated proposals and repairs) before the
+        # first result search, rather than maintaining a task-name allowlist.
+        flag = flow.deps.settings.small_batch_inspection
+        before_search.setdefault(flag, list(adapters[flag].calls))
+        return await search_round(flow, run, *args, **kwargs)
+
+    monkeypatch.setattr(ResearchFlow, "_search_round", capture)
+    for flag in ("off", "on"):
+        adapter = adapters[flag] = FakeAdapter(valid_response)
+        app, _ = app_for(tmp_path / flag, monkeypatch, 4, flag=flag, adapter=adapter,
+                         search_query=query, reading=reading)
+        with client_of(app) as client:
+            rid, _, _, run = discover(client, effort=effort)
+            assert run["status"] == "completed", run
+            stored_protocol = app.state.store.current_protocol(rid, run["scope_revision"])
+            assert ("inspection" in stored_protocol["body"]) is (flag == "on")
+            assert all("inspection" not in si and "protocol" not in si for si in adapter.calls)
+            if flag == "on":
+                assert run["budget"]["inspection"]["discovery_model_calls"] == before_search[flag][0]["budget"]["max_model_calls"]
+                if reading == "auto":
+                    assert run["budget"]["max_model_calls"] > before_search[flag][0]["budget"]["max_model_calls"]
+
+    volatile = {"step_input_id", "research_id", "run_id", "step_id", "created_at"}
+
+    def normalized(inputs):
+        return json.dumps([{k: v for k, v in si.items() if k not in volatile} for si in inputs],
+                          sort_keys=True, separators=(",", ":"))
+
+    assert before_search["off"]
+    tasks = {si["task_type"] for si in before_search["off"]}
+    assert {"vocabulary_labels", "criterion_proposal"} <= tasks
+    assert ("search_query" in tasks) is (query == "model")
+    assert normalized(before_search["on"]) == normalized(before_search["off"])
+
+
+def test_legacy_frozen_budget_exposes_only_discovery_allowance():
+    budget = small_batch.freeze_budget({"max_model_calls": 40, "fulltext_fetch": {"max_fulltext_works": 100}},
+                                      "standard", "auto")
+    assert budget["max_model_calls"] == 140
+    del budget["inspection"]["discovery_model_calls"]
+    assert small_batch.model_call_allowance(budget) == 40
+    assert small_batch.model_call_allowance({"max_model_calls": 40}) == 40
 
 
 def test_default_flag_off_and_invalid_setting(monkeypatch, tmp_path):

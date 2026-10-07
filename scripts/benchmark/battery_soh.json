@@ -1,0 +1,911 @@
+{
+  "name": "battery_soh",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-10-07",
+  "label_authority": "Sol + Claude kör iki model uzlaşısı, uyuşmazlıklar özetle karara bağlandı; insan doğrulaması yok",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "heldout",
+  "question": "Which model-based and data-driven methods estimate lithium-ion battery state of health, and what measurements and validation conditions distinguish these approaches?",
+  "question_sha256": "cbd0748bc27fac1de69e92d63af0ea35e22a6afae7f85c46551eafb3f6e5bbc6",
+  "reference": "A Review of Lithium-Ion Battery State of Health Estimation and Prediction Methods (2021), DOI 10.3390/wevj12030113; Crossref /works/10.3390/wevj12030113 reference field; abstract objective/scope; OA license https://creativecommons.org/licenses/by/4.0/; retained evidence .local/benchmark/2026-10-07-quality85-crossref/energy-source.json. Source review is not a target and is never supplied to the run.",
+  "answer_elements": [
+    {
+      "id": "B1",
+      "question": "Model-based state-of-health estimation"
+    },
+    {
+      "id": "B2",
+      "question": "Data-driven state-of-health estimation"
+    },
+    {
+      "id": "B3",
+      "question": "Measurements and validation conditions"
+    }
+  ],
+  "papers": [
+    {
+      "key": "battery_soh_01",
+      "doi": "10.1016/j.apenergy.2018.01.011",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A single particle model with chemical/mechanical degradation physics for lithium ion battery State of Health (SOH) estimation",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "Tek parçacık kimyasal/mekanik degradation SOH modeli başlık/kaynakçada açık. Crossref reference[21] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 21,
+        "reference_entry": {
+          "key": "ref_22",
+          "doi-asserted-by": "crossref",
+          "first-page": "1178",
+          "DOI": "10.1016/j.apenergy.2018.01.011",
+          "article-title": "A Single Particle Model with Chemical/Mechanical Degradation Physics for Lithium Ion Battery State of Health (SOH) Estimation",
+          "volume": "212",
+          "author": "Jie",
+          "year": "2018",
+          "journal-title": "Appl. Energy"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/energy-target-21.json",
+        "crossref_sha256": "6fbd1264d0761820d7c54da2d2dd9b8d5ee5363900c53979ef54be7dfe4d07b1",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2783030034",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "53bd1ca950e6690c",
+        "sol": {
+          "label": "relevant",
+          "reason": "Tek parçacık kimyasal/mekanik degradation SOH modeli başlık/kaynakçada açık. Crossref reference[21] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "53bd1ca950e6690c",
+          "label": "relevant",
+          "reason": "Single particle electrochemical model with degradation physics for SOH (B1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref073",
+      "doi": "10.1016/j.energy.2019.03.177",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Feature parameter extraction and intelligent estimation of the State-of-Health of lithium-ion batteries",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "SOH feature extraction ve intelligent estimation başlık/kaynakçada açık. Crossref reference[73] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 73,
+        "reference_entry": {
+          "key": "ref_74",
+          "doi-asserted-by": "crossref",
+          "first-page": "91",
+          "DOI": "10.1016/j.energy.2019.03.177",
+          "article-title": "Feature parameter extraction and intelligent estimation of the State-of-Health of lithium-ion batteries",
+          "volume": "176",
+          "author": "Deng",
+          "year": "2019",
+          "journal-title": "Energy"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-73.json",
+        "crossref_sha256": "2e66f95945a57dcc079afb73031371de68c01b0d3bda50ea444b5f8fbed58b7e",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2925615792",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "8cac9340f79a15c7",
+        "sol": {
+          "label": "relevant",
+          "reason": "SOH feature extraction ve intelligent estimation başlık/kaynakçada açık. Crossref reference[73] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "8cac9340f79a15c7",
+          "label": "relevant",
+          "reason": "Feature extraction plus intelligent SOH estimation (B2, B3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref075",
+      "doi": "10.1016/j.jpowsour.2020.229154",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "State-of-health estimators coupled to a random forest approach for lithium-ion battery aging factor ranking",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "SOH estimators ile random forest aging-factor ranking başlık/kaynakçada açık. Crossref reference[75] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 75,
+        "reference_entry": {
+          "key": "ref_76",
+          "doi-asserted-by": "crossref",
+          "first-page": "229154",
+          "DOI": "10.1016/j.jpowsour.2020.229154",
+          "article-title": "State-of-health estimators coupled to a random forest approach for lithium-ion battery aging factor ranking-sciencedirect",
+          "volume": "484",
+          "author": "Mawonou",
+          "year": "2021",
+          "journal-title": "J. Power Sources"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-75.json",
+        "crossref_sha256": "6cb6571a7bd9baf46fd59d605edb9290e00a99e57788aebd96107618da4dffeb",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3110175444",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "a6fc29d3ba8f2567",
+        "sol": {
+          "label": "relevant",
+          "reason": "SOH estimators ile random forest aging-factor ranking başlık/kaynakçada açık. Crossref reference[75] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "a6fc29d3ba8f2567",
+          "label": "relevant",
+          "reason": "SOH estimators coupled with random forest for aging-factor ranking (B2, B3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_02",
+      "doi": "10.1016/j.jpowsour.2014.07.116",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A support vector machine-based state-of-health estimation method for lithium-ion batteries under electric vehicle operation",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "Elektrikli araç çalışması altında SVM SOH kestirimi başlık/kaynakçada açık. Crossref reference[79] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 79,
+        "reference_entry": {
+          "key": "ref_80",
+          "doi-asserted-by": "crossref",
+          "first-page": "262",
+          "DOI": "10.1016/j.jpowsour.2014.07.116",
+          "article-title": "A support vector machine-based state-of-health estimation method for lithium-ion batteries under electric vehicle operation",
+          "volume": "270",
+          "author": "Klass",
+          "year": "2014",
+          "journal-title": "J. Power Sources"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/energy-target-79.json",
+        "crossref_sha256": "5ac663a433cadec75f1827d989122ec2a61c3fd3bfb20f1720254d16684ad266",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W1966039250",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "cd09febcfa4f979f",
+        "sol": {
+          "label": "relevant",
+          "reason": "Elektrikli araç çalışması altında SVM SOH kestirimi başlık/kaynakçada açık. Crossref reference[79] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "cd09febcfa4f979f",
+          "label": "relevant",
+          "reason": "SVM SOH under EV operating conditions (B2, B3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref080",
+      "doi": "10.1016/j.apenergy.2017.02.016",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A multi-timescale estimator for battery state of charge and capacity dual estimation based on an online identified model",
+      "stratum": "Enerji sistemleri",
+      "label": "karar verilemedi",
+      "label_reason": "İçerik özeti yok; SOC ve capacity dual estimation başlığından capacity değerinin SOH göstergesi olarak kullanımı doğrulanamıyor.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 80,
+        "reference_entry": {
+          "key": "ref_81",
+          "doi-asserted-by": "crossref",
+          "first-page": "1264",
+          "DOI": "10.1016/j.apenergy.2017.02.016",
+          "article-title": "A multi-timescale estimator for battery state of charge and capacity dual estimation based on an online identified model",
+          "volume": "204",
+          "author": "Wei",
+          "year": "2017",
+          "journal-title": "Appl. Energy"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-80.json",
+        "crossref_sha256": "e04544438a6df1491d8bce6dc02b807af9a1859bd9fc5efb4bd8ee09bd18527d",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2588881132",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "eea5ce863a71fe74",
+        "sol": {
+          "label": "undecidable",
+          "reason": "Başlık/kaynakça SOC ve capacity dual estimation diyor; SOH göstergesi olarak kullanımı içerik özetiyle doğrulanamıyor. Crossref reference[80] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "eea5ce863a71fe74",
+          "label": "relevant",
+          "reason": "Multi-timescale estimator with online identified ECM for capacity (B1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "undecidable",
+          "reason": "İçerik özeti yok; SOC ve capacity dual estimation başlığından capacity değerinin SOH göstergesi olarak kullanımı doğrulanamıyor.",
+          "reading_depth": "title_only",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "battery_soh_ref081",
+      "doi": "10.1016/j.energy.2021.120235",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A method to estimate battery SOH indicators based on vehicle operating data only",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "Yalnız araç işletim verisinden SOH göstergesi kestirimi başlık/kaynakçada açık. Crossref reference[81] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 81,
+        "reference_entry": {
+          "key": "ref_82",
+          "doi-asserted-by": "crossref",
+          "first-page": "120235",
+          "DOI": "10.1016/j.energy.2021.120235",
+          "article-title": "A method to estimate battery soh indicators based on vehicle operating data only",
+          "volume": "225",
+          "author": "Vichard",
+          "year": "2021",
+          "journal-title": "Energy"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-81.json",
+        "crossref_sha256": "50dfdfbd74218700369ee680c90b53e9e3855108b1949805c290596e5d696eef",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3134677430",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "44ea30b8f7c39a75",
+        "sol": {
+          "label": "relevant",
+          "reason": "Yalnız araç işletim verisinden SOH göstergesi kestirimi başlık/kaynakçada açık. Crossref reference[81] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "44ea30b8f7c39a75",
+          "label": "relevant",
+          "reason": "SOH indicators from vehicle operating data only; field measurement condition (B3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref083",
+      "doi": "10.1016/j.jpowsour.2012.11.102",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On-board state-of-health monitoring of lithium-ion batteries using linear parameter-varying models",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "On-board SOH için linear parameter-varying model başlık/kaynakçada açık. Crossref reference[83] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 83,
+        "reference_entry": {
+          "key": "ref_84",
+          "doi-asserted-by": "crossref",
+          "first-page": "689",
+          "DOI": "10.1016/j.jpowsour.2012.11.102",
+          "article-title": "On-board state-of-health monitoring of lithium-ion batteries using linear parameter-varying models",
+          "volume": "239",
+          "author": "Remmlinger",
+          "year": "2013",
+          "journal-title": "J. Power Sources"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-83.json",
+        "crossref_sha256": "d8fa43cd2c3cbf75c206c65516248ec909bb4e78e733947554c4a7fc5878c395",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2083808869",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "b6bf994f72b328c7",
+        "sol": {
+          "label": "relevant",
+          "reason": "On-board SOH için linear parameter-varying model başlık/kaynakçada açık. Crossref reference[83] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "b6bf994f72b328c7",
+          "label": "relevant",
+          "reason": "LPV model-based on-board SOH monitoring (B1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref085",
+      "doi": "10.1049/iet-est.2019.0033",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Systematic mixed adaptive observer and EKF approach to estimate SOC and SOH of lithium–ion battery",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "RC model, adaptive observer/EKF ile SOC/internal resistance/SOH ve deneysel doğrulama özette açık. Crossref reference[85] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 85,
+        "reference_entry": {
+          "key": "ref_86",
+          "doi-asserted-by": "crossref",
+          "first-page": "135",
+          "DOI": "10.1049/iet-est.2019.0033",
+          "article-title": "A Systematic Mixed Adaptive Observer and EKF Approach to Estimate the SOC and SOH of a Lithium-Ion Battery",
+          "volume": "10",
+          "author": "Gholizadeh",
+          "year": "2019",
+          "journal-title": "IET Electr. Syst. Transp."
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-85.json",
+        "crossref_sha256": "c836054dcda5182b8cf630a0132c7d3be21b7bdfb9e33a080bd0fd19d70db513",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2949238220",
+        "abstract_text": "One of the main issues with KF‐based methods is complication of determining the process noise covariance matrix, which is usually obtained by empirical tuning. Here, by using the adaptive observer designed around an arbitrary operating point of a non‐linear system, a novel systematic approach is developed for determining the covariance matrix of the parameter noise in the EKF with the aim of jointly estimating the states and unknown parameters of the system. The proposed mixed adaptive observer and EKF method are applied to a Lithium–Ion battery to simultaneously estimate its state of charge (SOC) and internal resistance as well as the state of health (SOH). The dynamical behaviour of the battery is modelled by using a commonly used RC model and is validated by the real data collected from the battery. The proposed method provides a robust performance against the model uncertainties and shows satisfactory parameter convergence properties. Experimental tests are established to certify the capability and effectiveness of the proposed scheme compared to the conventional EKF. Furthermore, a simulation study is carried out to verify the robustness of the proposed method.",
+        "abstract_source": "crossref"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "B1",
+          "B3"
+        ],
+        "contribution": "RC model, adaptive observer/EKF ile SOC/internal resistance/SOH ve deneysel doğrulama özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "5d00ceb343ab4986",
+        "sol": {
+          "label": "relevant",
+          "reason": "RC model, adaptive observer/EKF ile SOC/internal resistance/SOH ve deneysel doğrulama özette açık. Crossref reference[85] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "5d00ceb343ab4986",
+          "label": "relevant",
+          "reason": "Adaptive observer + EKF model-based SOC/SOH estimation (B1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref096",
+      "doi": "10.1038/s41598-020-66424-9",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "An Incremental Voltage Difference Based Technique for Online State of Health Estimation of Li-ion Batteries",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "Kısmi şarj voltaj farkı/sıcaklık özellikleriyle ANN SOH kestirimi özette açık. Crossref reference[96] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 96,
+        "reference_entry": {
+          "key": "ref_97",
+          "doi-asserted-by": "crossref",
+          "first-page": "9526",
+          "DOI": "10.1038/s41598-020-66424-9",
+          "article-title": "An Incremental Voltage Difference Based Technique for Online State of Health Estimation of Li-ion Batteries",
+          "volume": "10",
+          "author": "Naha",
+          "year": "2020",
+          "journal-title": "Sci. Rep."
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-96.json",
+        "crossref_sha256": "b8344d912dae7a12af76ef1f90f7b7f9f0acadb1ea5d759b3e94cceee476e976",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3035578270",
+        "abstract_text": "Abstract Accurate state of health (SOH) estimation of rechargeable batteries is important for the safe and reliable operation of electric vehicles (EVs), smart phones, and other battery operated systems. We propose a novel method for accurate SOH estimation which does not necessarily need full charging data. Using only partial charging data during normal usage, 10 derived voltage values ( $${v}_{sei}$$ v s e i ) are collected. The initial $${v}_{sei}$$ v s e i point is fixed and then for every 1.5% increase in the Coulomb counting, other points are selected. The difference between the $${v}_{sei}$$ v s e i values ( $$\\Delta {v}_{sei}$$ Δ v s e i ) and the average temperature during the charging form the feature vector at different SOH levels. The training data set is prepared by extrapolating the charging voltage curves for the complete SOH range using initial 400 cycles of data. The trained artificial neural network (ANN) based on the feature vector and SOH values can be used in any battery management system (BMS) with a time complexity of only $$O({n}^{4})$$ O ( n 4 ) . Less than 1% mean absolute error (MAE) for the test cases has been achieved. The proposed method has a moderate training data requirement and does not need any knowledge of previous SOH, state of charge (SOC) vs. OCV relationship, and absolute SOC value.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "7a94eb33bc8aa8f2",
+        "sol": {
+          "label": "relevant",
+          "reason": "Kısmi şarj voltaj farkı/sıcaklık özellikleriyle ANN SOH kestirimi özette açık. Crossref reference[96] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "7a94eb33bc8aa8f2",
+          "label": "relevant",
+          "reason": "Incremental voltage difference technique for online SOH (B3 measurements; feature-based).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref098",
+      "doi": "10.3390/en13102548",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A Method for the Combined Estimation of Battery State of Charge and State of Health Based on Artificial Neural Networks",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "ANN SOC/SOH kestirimi laboratuvar verisiyle eğitiliyor ve gerçek sürüş profilleriyle doğrulanıyor. Crossref reference[98] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 98,
+        "reference_entry": {
+          "key": "ref_99",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Bonfitto, A. (2020). A Method for the Combined Estimation of Battery State of Charge and State of Health Based on Artificial Neural Networks. Energies, 13.",
+          "DOI": "10.3390/en13102548"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-98.json",
+        "crossref_sha256": "1958a9cf063e3dded6b3ac970983bd5fcd61452e8270d293adaabd7ee8d7f21a",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3025182772",
+        "abstract_text": "This paper proposes a method for the combined estimation of the state of charge (SOC) and state of health (SOH) of batteries in hybrid and full electric vehicles. The technique is based on a set of five artificial neural networks that are used to tackle a regression and a classification task. In the method, the estimation of the SOC relies on the identification of the ageing of the battery and the estimation of the SOH depends on the behavior of the SOC in a recursive closed-loop. The networks are designed by means of training datasets collected during the experimental characterizations conducted in a laboratory environment. The lithium battery pack adopted during the study is designed to supply and store energy in a mild hybrid electric vehicle. The validation of the estimation method is performed by using real driving profiles acquired on-board of a vehicle. The obtained accuracy of the combined SOC and SOH estimator is around 97%, in line with the industrial requirements in the automotive sector. The promising results in terms of accuracy encourage to deepen the experimental validation with a deployment on a vehicle battery management system.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "95a9c1d638fcdc54",
+        "sol": {
+          "label": "relevant",
+          "reason": "ANN SOC/SOH kestirimi laboratuvar verisiyle eğitiliyor ve gerçek sürüş profilleriyle doğrulanıyor. Crossref reference[98] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "95a9c1d638fcdc54",
+          "label": "relevant",
+          "reason": "ANN-based combined SOC and SOH estimation (B2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref100",
+      "doi": "10.1002/er.5413",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Online state of health prediction method for lithium‐ion batteries, based on gated recurrent unit neural networks",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "GRU SOH prediction ve farklı sıcaklıklarda deneysel değerlendirme özette açık. Crossref reference[100] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 100,
+        "reference_entry": {
+          "key": "ref_101",
+          "doi-asserted-by": "crossref",
+          "first-page": "6767",
+          "DOI": "10.1002/er.5413",
+          "article-title": "Online state of health prediction method for lithium-ion batteries, based on gated recurrent unit neural networks",
+          "volume": "44",
+          "author": "Ungurean",
+          "year": "2020",
+          "journal-title": "Int. J. Energy Res."
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-100.json",
+        "crossref_sha256": "675c5a4f4fbf94de7fb0304180fae676ab7a3b08bc25d6a933b0d360d5cab943",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3015574081",
+        "abstract_text": "Online state of health (SOH) prediction of lithium-ion batteries remains a very important problem in assessing the safety and reliability of battery-powered systems. Deep learning techniques based on recurrent neural networks with memory, such as the long short-term memory (LSTM) and gated recurrent unit (GRU), have very promising advantages, when compared to other SOH estimation algorithms. This work addresses the battery SOH prediction based on GRU. A complete BMS is presented along with the internal structure and configuration parameters. The neural network was highly optimized by adaptive moment estimation (Adam) algorithm. Experimental data show very good estimation results for different temperature values, not only at room value. Comparisons performed against other relevant estimation methods highlight the performance of the recursive neural network algorithms such as GRU and LSTM, with the exception of the battery regeneration points. Compared to LSTM, the GRU algorithm gives slightly higher estimation errors, but within similar prediction error range, while needing significantly fewer parameters (about 25% fewer), thus making it a very suitable candidate for embedded implementations.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "27e4eaf118bd1be3",
+        "sol": {
+          "label": "relevant",
+          "reason": "GRU SOH prediction ve farklı sıcaklıklarda deneysel değerlendirme özette açık. Crossref reference[100] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "27e4eaf118bd1be3",
+          "label": "relevant",
+          "reason": "GRU network online SOH prediction (B2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_03",
+      "doi": "10.1016/j.est.2020.101741",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A novel deep learning framework for state of health estimation of lithium-ion battery",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "Lityum-ion SOH için deep learning çerçevesi başlık/kaynakçada açık. Crossref reference[105] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 105,
+        "reference_entry": {
+          "key": "ref_106",
+          "doi-asserted-by": "crossref",
+          "first-page": "101741",
+          "DOI": "10.1016/j.est.2020.101741",
+          "article-title": "A novel deep learning framework for state of health estimation of lithium-ion battery",
+          "volume": "32",
+          "author": "Fan",
+          "year": "2020",
+          "journal-title": "J. Energy Storage"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/energy-target-105.json",
+        "crossref_sha256": "a04c887cf11c695249a7e2f90b3d5e7ac6117b7adfd5e845a14d581d0f5313d7",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3047827241",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "1b1e61700084dca9",
+        "sol": {
+          "label": "relevant",
+          "reason": "Lityum-ion SOH için deep learning çerçevesi başlık/kaynakçada açık. Crossref reference[105] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "1b1e61700084dca9",
+          "label": "relevant",
+          "reason": "Deep learning SOH estimation framework (B2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref108",
+      "doi": "10.1109/tie.2019.2946551",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Transfer Learning With Long Short-Term Memory Network for State-of-Health Prediction of Lithium-Ion Batteries",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "LSTM transfer learning SOH prediction ve sınırlı training-data stratejisi özette açık. Crossref reference[108] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 108,
+        "reference_entry": {
+          "key": "ref_109",
+          "doi-asserted-by": "crossref",
+          "first-page": "8723",
+          "DOI": "10.1109/TIE.2019.2946551",
+          "article-title": "Transfer Learning With Long Short-Term Memory Network for State-of-Health Prediction of Lithium-Ion Batteries",
+          "volume": "67",
+          "author": "Tan",
+          "year": "2019",
+          "journal-title": "IEEE Trans. Ind. Electron."
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-108.json",
+        "crossref_sha256": "00ddfe06ff6255e777c522a35d66e92a9d8b0cdd81c4fc0326ee73d60faf65ae",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2980420373",
+        "abstract_text": "Existing state-of-health (SOH) data-driven prediction techniques for lithium-ion batteries are subject to mass training data, which leads to limited application. To face the challenge, in this article, we propose a novel SOH prediction method based on transfer learning. The long short-term memory (LSTM) combined with fully connected (FC) layers is designed as the base model. The LSTM can learn the long-term dependencies of battery aging to reduce the noise sensitivity of the prediction model, and the FC layers serve as the “firewall” during the transferring process. A feature expression scoring (FES) rule is developed to assess the relevance of multiple prediction tasks. Different from traditional transfer learning, we select the task with the highest FES score to obtain the base model with superior generalization performance. During transfer learning, the fine-tuning strategy is executed for the tasks with high scores, but rebuilding strategy for the low score one. Only using the first 25% of a dataset for transfer training, our technique can predict more phases compared to traditional data-driven methods, which will avoid more unreasonable operations from users. The experimental results verify that the proposed method can achieve accurate, fast, and steady SOH prediction. Compared to some existing data-driven methods, our method obtains optimal performance.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "2d271ccb7c1834fe",
+        "sol": {
+          "label": "relevant",
+          "reason": "LSTM transfer learning SOH prediction ve sınırlı training-data stratejisi özette açık. Crossref reference[108] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "2d271ccb7c1834fe",
+          "label": "relevant",
+          "reason": "LSTM with transfer learning for SOH prediction across cells (B2, B3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref110",
+      "doi": "10.1109/tvt.2019.2927120",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Online State-of-Health Estimation for Li-Ion Battery Using Partial Charging Segment Based on Support Vector Machine",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "SVM ile kısmi şarj eğrilerinden online SOH kestirimi ve ölçüm gereksinimi özette açık. Crossref reference[110] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 110,
+        "reference_entry": {
+          "key": "ref_111",
+          "doi-asserted-by": "crossref",
+          "first-page": "8583",
+          "DOI": "10.1109/TVT.2019.2927120",
+          "article-title": "Online State-of-Health Estimation for Li-Ion Battery Using Partial Charging Segment Based on Support Vector Machine",
+          "volume": "68",
+          "author": "Feng",
+          "year": "2019",
+          "journal-title": "IEEE Trans. Veh. Technol."
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-110.json",
+        "crossref_sha256": "7429de7bb7013ed4a003aa635c9b17d70388b10bef6083c7b8fae561e150fd2d",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2963691557",
+        "abstract_text": "The online estimation of battery state-of-health (SOH) is an ever significant issue for the intelligent energy management of the autonomous electric vehicles. Machine-learning based approaches are promising for the online SOH estimation. This paper proposes a machine-learning based algorithm for the online SOH estimation of Li-ion battery. A predictive diagnosis model used in the algorithm is established based on support vector machine (SVM). The support vectors, which reflects the intrinsic characteristics of the Li-ion battery, are determined from the charging data of fresh cells. Furthermore, the coefficients of the SVMs for cells at different SOH are identified once the support vectors are determined. The algorithm functions by comparing partial charging curves with the stored SVMs. Similarity factor is defined after comparison to quantify the SOH of the data under evaluation. The operation of the algorithm only requires partial charging curves, e.g., 15 min charging curves, making fast on-board diagnosis of battery SOH into reality. The partial charging curves can be intercepted from a wide range of voltage section, thereby relieving the pain that there is little chance that the driver charges the battery pack from a predefined state-of-charge. Train, validation, and test are conducted for two commercial Li-ion batteries with Li(NiCoMn)1/3O2 cathode and graphite anode, indicating that the algorithm can estimate the battery SOH with less than 2% error for 80% of all the cases, and less than 3% error for 95% of all the cases.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "B2",
+          "B3"
+        ],
+        "contribution": "SVM ile kısmi şarj eğrilerinden online SOH kestirimi ve ölçüm gereksinimi özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "bc9caef68883b2ef",
+        "sol": {
+          "label": "relevant",
+          "reason": "SVM ile kısmi şarj eğrilerinden online SOH kestirimi ve ölçüm gereksinimi özette açık. Crossref reference[110] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "bc9caef68883b2ef",
+          "label": "relevant",
+          "reason": "SVM SOH from partial charging segment (B2, B3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_04",
+      "doi": "10.1016/j.jpowsour.2018.03.015",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A novel Gaussian process regression model for state-of-health estimation of lithium-ion battery using charging curve",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "Charging curve ile GPR SOH kestirimi başlık/kaynakçada açık. Crossref reference[132] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 132,
+        "reference_entry": {
+          "key": "ref_133",
+          "doi-asserted-by": "crossref",
+          "first-page": "387",
+          "DOI": "10.1016/j.jpowsour.2018.03.015",
+          "article-title": "A novel Gaussian process regression model for state-of-health estimation of lithium-ion battery using charging curve",
+          "volume": "384",
+          "author": "Yang",
+          "year": "2018",
+          "journal-title": "J. Power Sources"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/energy-target-132.json",
+        "crossref_sha256": "3385cdcf3c24b40815ab35fa01ff22169a7a318fefbd3413c173b7db54ba7076",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2793702125",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "6220a23d89f5d822",
+        "sol": {
+          "label": "relevant",
+          "reason": "Charging curve ile GPR SOH kestirimi başlık/kaynakçada açık. Crossref reference[132] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "6220a23d89f5d822",
+          "label": "relevant",
+          "reason": "GPR SOH estimation from charging-curve features (B2, B3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "battery_soh_ref133",
+      "doi": "10.1002/aic.14760",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "State of health estimation of lithium‐ion batteries: A multiscale G aussian process regression modeling approach",
+      "stratum": "Enerji sistemleri",
+      "label": "ilgili",
+      "label_reason": "Multiscale GPR global degradation/local regeneration ve bir/çok adımlı testleri özette açık. Crossref reference[133] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.3390/wevj12030113",
+        "reference_index_zero_based": 133,
+        "reference_entry": {
+          "key": "ref_134",
+          "doi-asserted-by": "crossref",
+          "first-page": "1589",
+          "DOI": "10.1002/aic.14760",
+          "article-title": "State of health estimation of lithium-ion batteries: A multiscale Gaussian process regression modeling approach",
+          "volume": "61",
+          "author": "He",
+          "year": "2015",
+          "journal-title": "AIChE J."
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-133.json",
+        "crossref_sha256": "13e49ebfa44fb559c3ab6e6eff6faea3c935eed92f4a6771c215e805c64ea858",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2094999625",
+        "abstract_text": "Accurate state of health (SOH) estimation in lithium‐ion batteries, which plays a significant role not only in state of charge (SOC) estimation but also in remaining useful life (RUL) prognostics is studied. SOC estimation and RUL prognostics often require one‐step‐ahead and long‐term SOH prediction, respectively. A systematic multiscale Gaussian process regression (GPR) modeling method is proposed to tackle accurate SOH estimation problems. Wavelet analysis method is utilized to decouple global degradation, local regeneration and fluctuations in SOH time series. GPR with the inclusion of time index is utilized to fit the extracted global degradation trend, and GPR with the input of lag vector is designed to recursively predict local regeneration and fluctuations. The proposed method is validated through experimental data from lithium‐ion batteries degradation test. Both one‐step‐ahead and multi‐step‐ahead SOH prediction performances are thoroughly evaluated. The satisfactory results illustrate that the proposed method outperform GPR models without trend extraction. It is thus indicated that the proposed multiscale GPR modeling method can not only be greatly helpful to both RUL prognostics and SOC estimation for lithium‐ion batteries, but also provide a general promising approach to tackle complex time series prediction in health management systems. © 2015 American Institute of Chemical Engineers AIChE J, 61: 1589–1600, 2015",
+        "abstract_source": "crossref"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "B2",
+          "B3"
+        ],
+        "contribution": "Multiscale GPR global degradation/local regeneration ve bir/çok adımlı testleri özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "2d8c7c70fef2a166",
+        "sol": {
+          "label": "relevant",
+          "reason": "Multiscale GPR global degradation/local regeneration ve bir/çok adımlı testleri özette açık. Crossref reference[133] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "2d8c7c70fef2a166",
+          "label": "relevant",
+          "reason": "Multiscale Gaussian process regression SOH estimation (B2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    }
+  ],
+  "revision": "consensus-freeze-1",
+  "revision_history": {
+    "previous_question": "Which model-based and data-driven methods estimate lithium-ion battery state of health, and what measurements and validation conditions distinguish these approaches?",
+    "previous_question_sha256": "cbd0748bc27fac1de69e92d63af0ea35e22a6afae7f85c46551eafb3f6e5bbc6",
+    "previous_snapshot": ".local/benchmark/2026-10-07-quality85-revision/battery_soh-before.json",
+    "scope_reason": "Soru ve kaynak derleme korunur; yalnız hedeflerin kanıtı ve sayısı düzeltilir."
+  },
+  "source_evidence": {
+    "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/energy-source.json",
+    "crossref_sha256": "1054fc5358b40255f34c24803dfdbb3bff9161dfe03b1ed72c022fc93c403b61",
+    "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+    "abstract_text": "Lithium-ion power batteries have been widely used in transportation due to their advantages of long life, high specific power, and energy. However, the safety problems caused by the inaccurate estimation and prediction of battery health state have attracted wide attention in academic circles. In this paper, the degradation mechanism and main definitions of state of health (SOH) were described by summarizing domestic and foreign literatures. The estimation and prediction methods of lithium-ion power battery SOH were discussed from three aspects: model-based methods, data-driven methods, and fusion technology methods. This review summarizes the advantages and disadvantages of the current mainstream SOH estimation and prediction methods. This paper believes that more innovative feature parameter extraction methods, multi-algorithm coupling, combined with cloud platform and other technologies will be the development trend of SOH estimation and prediction in the future, which provides a reference for health state estimation and prediction of lithium-ion power battery."
+  },
+  "consensus_freeze": {
+    "original_sol_snapshot": ".local/benchmark/2026-10-07-quality85-revision/battery_soh-sol-before-consensus.json",
+    "original_sol_sha256": "ef4ecf08504609cac9d28384a9355efc2801fd7e7423775a73a3d1833edf2b40",
+    "claude_input": ".local/docs/product/search-quality-85-claude-labels-2026-10-07.json",
+    "claude_sha256": "031f012c50599684f94df7978c355786f8cab1a62fd9e360c5d8c26675666945",
+    "blind_evidence": ".local/benchmark/2026-10-07-quality85-revision/battery_soh-blind-evidence.json",
+    "blind_evidence_sha256": "b71ef6d52ea2a69273862d086dac687fc45571817335c7557208473324e1530c",
+    "agreement": {
+      "n": 16,
+      "agreements": 15,
+      "raw_agreement": 0.9375,
+      "expected_agreement": 0.9375,
+      "cohen_kappa": 0.0,
+      "cohen_kappa_exact": "0",
+      "disagreements": 1,
+      "contingency": {
+        "relevant": {
+          "relevant": 15,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "background": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "out_of_scope": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "undecidable": {
+          "relevant": 1,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        }
+      }
+    },
+    "sol_keys": [
+      "battery_soh_ref085",
+      "battery_soh_ref110",
+      "battery_soh_ref133"
+    ],
+    "claude_keys": [
+      "battery_soh_01",
+      "battery_soh_04",
+      "battery_soh_02"
+    ],
+    "key_intersection": [],
+    "final_keys": [
+      "battery_soh_ref085",
+      "battery_soh_ref110",
+      "battery_soh_ref133"
+    ],
+    "key_selection_reason": "Anahtar kesişimi boş. Ref085 model-based RC/observer, ref110 kısmi şarj/SVM ve ref133 multiscale GPR ile B1/B2/B3 tamamlandı; üçü de saklı içerik özetine dayanıyor. Claude önerileri _01/_04/_02 yalnız başlık düzeyinde olduğundan mevcut üç özetli seçim tercih edildi; ilgili hedef kalırlar.",
+    "relevant_targets": 15,
+    "human_verified": false
+  }
+}

@@ -1,0 +1,950 @@
+{
+  "name": "higher_ed_ai",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-10-07",
+  "label_authority": "Sol + Claude kör iki model uzlaşısı, uyuşmazlıklar özetle karara bağlandı; insan doğrulaması yok",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "development",
+  "question": "How are artificial intelligence applications used for profiling and prediction, assessment, personalization, and intelligent tutoring in higher education, and what educational evidence and limitations accompany these uses?",
+  "question_sha256": "1e2530853e06e5e40ab7588fcc9c1ddc547611d15623e6c66f6ff721cb8cc1ba",
+  "reference": "Systematic review of research on artificial intelligence applications in higher education – where are the educators? (2019), DOI 10.1186/s41239-019-0171-0; Crossref /works/10.1186/s41239-019-0171-0 reference field; abstract objective/scope; OA license https://creativecommons.org/licenses/by/4.0; retained evidence .local/benchmark/2026-10-07-quality85-crossref/education-source.json. Source review is not a target and is never supplied to the run.",
+  "answer_elements": [
+    {
+      "id": "E1",
+      "question": "Profiling and prediction applications"
+    },
+    {
+      "id": "E2",
+      "question": "Assessment applications"
+    },
+    {
+      "id": "E3",
+      "question": "Personalization and intelligent tutoring applications"
+    },
+    {
+      "id": "E4",
+      "question": "Educational evaluation and evidence limits"
+    }
+  ],
+  "papers": [
+    {
+      "key": "higher_ed_ai_ref000",
+      "doi": "10.1016/j.eswa.2008.09.007",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Support vector machines for predicting the admission decision of a candidate to the School of Physical Education and Sports at Cukurova University",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "Üniversiteye giriş kararının SVM ile kestirimi kaynakça ve başlıkta açık. Crossref reference[0] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 0,
+        "reference_entry": {
+          "issue": "3 PART 2",
+          "key": "171_CR1",
+          "doi-asserted-by": "publisher",
+          "first-page": "7228",
+          "DOI": "10.1016/j.eswa.2008.09.007",
+          "volume": "36",
+          "author": "M Acikkar",
+          "year": "2009",
+          "unstructured": "Acikkar, M., & Akay, M. F. (2009). Support vector machines for predicting the admission decision of a candidate to the School of Physical Education and Sports at Cukurova University. Expert Systems with Applications, 36(3 PART 2), 7228–7233. \n                    https://doi.org/10.1016/j.eswa.2008.09.007\n                    \n                  .",
+          "journal-title": "Expert Systems with Applications"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-0.json",
+        "crossref_sha256": "83e6772d20c3af2ed708696413892b00d610b4108142c90b74dc65870e6d5603",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2014294307",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "5c7d27a32dc4d50a",
+        "sol": {
+          "label": "relevant",
+          "reason": "Üniversiteye giriş kararının SVM ile kestirimi kaynakça ve başlıkta açık. Crossref reference[0] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "5c7d27a32dc4d50a",
+          "label": "relevant",
+          "reason": "SVM predicting admission decisions (E1 profiling).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref002",
+      "doi": "10.1109/access.2016.2568756",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Predicting Instructor Performance Using Data Mining Techniques in Higher Education",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "Özet yükseköğretimde ders değerlendirme verileri üzerinde dört classifier karşılaştırmasını ve ölçüm aracının sınırlarını açıklıyor; E2/E4 katkısı var. Donmuş soru yalnız öğrenci profiling ile sınırlı değil.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 2,
+        "reference_entry": {
+          "key": "171_CR3",
+          "doi-asserted-by": "publisher",
+          "first-page": "2379",
+          "DOI": "10.1109/ACCESS.2016.2568756",
+          "volume": "4",
+          "author": "M Agaoglu",
+          "year": "2016",
+          "unstructured": "Agaoglu, M. (2016). Predicting instructor performance using data mining techniques in higher education. IEEE Access, 4, 2379–2387. \n                    https://doi.org/10.1109/ACCESS.2016.2568756\n                    \n                  .",
+          "journal-title": "IEEE Access"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-2.json",
+        "crossref_sha256": "91c1fa5588933c933a81681c93e2bc386dac073372acab6bb6f13ef22ad7389a",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2373555655",
+        "abstract_text": "Data mining applications are becoming a more common tool in understanding and solving educational and administrative problems in higher education. In general, research in educational mining focuses on modeling student's performance instead of instructors' performance. One of the common tools to evaluate instructors' performance is the course evaluation questionnaire to evaluate based on students' perception. In this paper, four different classification techniques - decision tree algorithms, support vector machines, artificial neural networks, and discriminant analysis - are used to build classifier models. Their performances are compared over a data set composed of responses of students to a real course evaluation questionnaire using accuracy, precision, recall, and specificity performance metrics. Although all the classifier models show comparably high classification performances, C5.0 classifier is the best with respect to accuracy, precision, and specificity. In addition, an analysis of the variable importance for each classifier model is done. Accordingly, it is shown that many of the questions in the course evaluation questionnaire appear to be irrelevant. Furthermore, the analysis shows that the instructors' success based on the students' perception mainly depends on the interest of the students in the course. The findings of this paper indicate the effectiveness and expressiveness of data mining models in course evaluation and higher education mining. Moreover, these findings may be used to improve the measurement instruments.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "3b638f74271663b2",
+        "sol": {
+          "label": "relevant",
+          "reason": "Yükseköğretim ders değerlendirme verisinde öğretim elemanı performansının classifier karşılaştırması özette açık. Crossref reference[2] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "3b638f74271663b2",
+          "label": "background",
+          "reason": "Predicts instructor (not student) performance; peripheral to student profiling.",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "relevant",
+          "reason": "Özet yükseköğretimde ders değerlendirme verileri üzerinde dört classifier karşılaştırmasını ve ölçüm aracının sınırlarını açıklıyor; E2/E4 katkısı var. Donmuş soru yalnız öğrenci profiling ile sınırlı değil.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref006",
+      "doi": "10.5130/ajceb.v16i4.5184",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Predicting the academic success of architecture students by pre-enrolment requirement: using machine-learning techniques",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "Lisans mimarlık programında ön-giriş verileriyle k-NN/LDA akademik başarı kestirimi özette açık. Crossref reference[6] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 6,
+        "reference_entry": {
+          "issue": "4",
+          "key": "171_CR7",
+          "doi-asserted-by": "publisher",
+          "first-page": "86",
+          "DOI": "10.5130/AJCEB.v16i4.5184",
+          "volume": "16",
+          "author": "RO Aluko",
+          "year": "2016",
+          "unstructured": "Aluko, R. O., Adenuga, O. A., Kukoyi, P. O., Soyingbe, A. A., & Oyedeji, J. O. (2016). Predicting the academic success of architecture students by pre-enrolment requirement: Using machine-learning techniques. Construction Economics and Building, 16(4), 86–98. \n                    https://doi.org/10.5130/AJCEB.v16i4.5184\n                    \n                  .",
+          "journal-title": "Construction Economics and Building"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-6.json",
+        "crossref_sha256": "4f832633a8e1f124ef773289e9b030f245375fe76cfd0acc6f8d78b91e0a5836",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2559836622",
+        "abstract_text": "In recent years, there has been an increase in the number of applicants seeking admission into architecture programmes. As expected, prior academic performance (also referred to as pre-enrolment requirement) is a major factor considered during the process of selecting applicants. In the present study, machine learning models were used to predict academic success of architecture students based on information provided in prior academic performance. Two modeling techniques, namely K-nearest neighbour (k-NN) and linear discriminant analysis were applied in the study. It was found that K-nearest neighbour (k-NN) outperforms the linear discriminant analysis model in terms of accuracy. In addition, grades obtained in mathematics (at ordinary level examinations) had a significant impact on the academic success of undergraduate architecture students. This paper makes a modest contribution to the ongoing discussion on the relationship between prior academic performance and academic success of undergraduate students by evaluating this proposition. One of the issues that emerges from these findings is that prior academic performance can be used as a predictor of academic success in undergraduate architecture programmes. Overall, the developed k-NN model can serve as a valuable tool during the process of selecting new intakes into undergraduate architecture programmes in Nigeria.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "c04bf6cb9ec1b985",
+        "sol": {
+          "label": "relevant",
+          "reason": "Lisans mimarlık programında ön-giriş verileriyle k-NN/LDA akademik başarı kestirimi özette açık. Crossref reference[6] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "c04bf6cb9ec1b985",
+          "label": "relevant",
+          "reason": "ML prediction of architecture students' success from pre-enrolment data (E1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "higher_ed_ai_01",
+      "doi": "10.5539/ijel.v6n5p54",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "The Effect of Using Automated Essay Evaluation on ESL Undergraduate Students’ Writing Skill",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "Lisans ESL yazma dersinde automated feedback/scoring ve repeated-measure tasarımı özette açık. Crossref reference[7] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 7,
+        "reference_entry": {
+          "issue": "5",
+          "key": "171_CR8",
+          "doi-asserted-by": "publisher",
+          "first-page": "54",
+          "DOI": "10.5539/ijel.v6n5p54",
+          "volume": "6",
+          "author": "ES Aluthman",
+          "year": "2016",
+          "unstructured": "Aluthman, E. S. (2016). The effect of using automated essay evaluation on ESL undergraduate students’ writing skill. International Journal of English Linguistics, 6(5), 54–67. \n                    https://doi.org/10.5539/ijel.v6n5p54\n                    \n                  .",
+          "journal-title": "International Journal of English Linguistics"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/education-target-7.json",
+        "crossref_sha256": "4026e4bfe6898fd93fc61f2a7ad826d7990c0ae10facdb5853e5a0ff86022106",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2523536876",
+        "abstract_text": "<p>Advances in Natural Language Processing (NLP) have yielded significant advances in the language assessment field. The Automated Essay Evaluation (AEE) mechanism relies on basic research in computational linguistics focusing on transforming human language into algorithmic forms. The Criterion® system is an instance of AEE software providing both formative feedback and an automated holistic score. This paper aims to investigate the impact of this newly-developed AEE software in a current ESL setting by measuring the effectiveness of the Criterion® system in improving ESL undergraduate students’ writing performance. Data was collected from sixty-one ESL undergraduate students in an academic writing course in the English Language department at Princess Norah bint Abdulruhman University PNU. The researcher employed a repeated measure design study to test the potential effects of the formative feedback and automated holistic score on overall writing proficiency across time. Results indicated that the Criterion® system had a positive effect on the students’ cores on their writing tasks. However, results also suggested that students’ mechanics in writing significantly improved, while grammar, usage and style showed only moderate improvement. These findings are discussed in relation to AEE literature. The paper concludes by discussing the implications of implementing AEE software in educational contexts.</p><p><span><br /></span></p>",
+        "abstract_source": "crossref"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "E2",
+          "E4"
+        ],
+        "contribution": "Lisans ESL yazma dersinde automated feedback/scoring ve repeated-measure tasarımı özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "35d8ef745b302c52",
+        "sol": {
+          "label": "relevant",
+          "reason": "Lisans ESL yazma dersinde automated feedback/scoring ve repeated-measure tasarımı özette açık. Crossref reference[7] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "35d8ef745b302c52",
+          "label": "relevant",
+          "reason": "Automated essay evaluation effect on ESL undergraduate writing (E2, E4).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref012",
+      "doi": "10.12738/estp.2016.3.0214",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Using Neural Network and Logistic Regression Analysis to Predict Prospective Mathematics Teachers’ Academic Success upon Entering Graduate Education",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "Lisansüstü girişinde matematik öğretmeni adaylarının başarı kestirimi özette açık. Crossref reference[12] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 12,
+        "reference_entry": {
+          "issue": "3",
+          "key": "171_CR13",
+          "doi-asserted-by": "publisher",
+          "first-page": "943",
+          "DOI": "10.12738/estp.2016.3.0214",
+          "volume": "16",
+          "author": "E Bahadır",
+          "year": "2016",
+          "unstructured": "Bahadır, E. (2016). Using neural network and logistic regression analysis to predict prospective mathematics teachers’ academic success upon entering graduate education. Kuram ve Uygulamada Egitim Bilimleri, 16(3), 943–964. \n                    https://doi.org/10.12738/estp.2016.3.0214\n                    \n                  .",
+          "journal-title": "Kuram ve Uygulamada Egitim Bilimleri"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-12.json",
+        "crossref_sha256": "ec018418f259c36fd916a7969c418180c4aadd394f94a0bd330346d19a79cc31",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2338062064",
+        "abstract_text": "The ability to predict the success of students when they enter a graduate program is critical for educational institutions because it allows them to develop strategic programs that will help improve students’ performances during their stay at an institution. In this study, we present the results of an experimental comparison study of Logistic Regression Analysis (LRA) and Artificial Neural Network (ANN) for predicting prospective mathematics teachers’ academic success when they enter graduate education. A sample of 372 student profiles was used to train and test our model. The strength of the model can be measured through Logistic Regression Analysis (LRA). The average correct success rate of students for ANN was higher than LRA. The successful prediction rate of the back-propagation neural network (BPNN, or a common type of ANN was 93.02%, while the success of prediction of LRA was 90.75%.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "660dd55f2fba043d",
+        "sol": {
+          "label": "relevant",
+          "reason": "Lisansüstü girişinde matematik öğretmeni adaylarının başarı kestirimi özette açık. Crossref reference[12] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "660dd55f2fba043d",
+          "label": "relevant",
+          "reason": "NN vs logistic regression for graduate academic success prediction (E1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref020",
+      "doi": "10.1016/j.eswa.2010.03.018",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A semantic approach to expert system for e-Assessment of credentials and competencies",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "karar verilemedi",
+      "label_reason": "İçerik özeti yok; credentials/competencies başlığı yükseköğretim örneklemini doğrulamıyor.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 20,
+        "reference_entry": {
+          "issue": "10",
+          "key": "171_CR21",
+          "doi-asserted-by": "publisher",
+          "first-page": "7003",
+          "DOI": "10.1016/j.eswa.2010.03.018",
+          "volume": "37",
+          "author": "O Biletska",
+          "year": "2010",
+          "unstructured": "Biletska, O., Biletskiy, Y., Li, H., & Vovk, R. (2010). A semantic approach to expert system for e-assessment of credentials and competencies. Expert Systems with Applications, 37(10), 7003–7014. \n                    https://doi.org/10.1016/j.eswa.2010.03.018\n                    \n                  .",
+          "journal-title": "Expert Systems with Applications"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-20.json",
+        "crossref_sha256": "e2eb32be2c35a2a6bd291c3e9889a08d6456637da3a36422d555d49b1b3c77ee",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2065322548",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "80975750b07f0366",
+        "sol": {
+          "label": "undecidable",
+          "reason": "Credential assessment başlığı yükseköğretim katılımcılarını doğrulamıyor; içerik özeti yok. Crossref reference[20] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "80975750b07f0366",
+          "label": "relevant",
+          "reason": "Semantic expert system for e-assessment of competencies (E2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "undecidable",
+          "reason": "İçerik özeti yok; credentials/competencies başlığı yükseköğretim örneklemini doğrulamıyor.",
+          "reading_depth": "title_only",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref028",
+      "doi": "10.1142/s1469026814500059",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "TRAINING NEURAL NETWORKS TO PREDICT STUDENT ACADEMIC PERFORMANCE: A COMPARISON OF CUCKOO SEARCH AND GRAVITATIONAL SEARCH ALGORITHMS",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "karar verilemedi",
+      "label_reason": "Özet öğrenci performansı ve kabul süreçlerini anlatıyor fakat eğitim düzeyini belirtmiyor; öğrencinin lise konumu üniversite katılımcısı olduğunu kanıtlamıyor.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 28,
+        "reference_entry": {
+          "key": "171_CR29",
+          "doi-asserted-by": "publisher",
+          "unstructured": "Chen, J.-F., & Do, Q. H. (2014). Training neural networks to predict student academic performance: A comparison of cuckoo search and gravitational search algorithms. International Journal of Computational Intelligence and Applications, 13(1). \n                    https://doi.org/10.1142/S1469026814500059\n                    \n                  .",
+          "DOI": "10.1142/S1469026814500059"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-28.json",
+        "crossref_sha256": "58d1d449cbf1843e3a4f29ad1f7ee394ac647e6b15314b46ae43e2083f80dedd",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W1985472194",
+        "abstract_text": "The accurate prediction of students' academic performance is of importance to institutions as it provides valuable information for decision making in the admission process and enhances educational services by allocating customized assistance according to the predicted performance. The purpose of this study is to investigate the prediction ability of neural networks trained by two recent heuristic algorithms inspired by the behaviors of natural phenomena, namely, the cuckoo search and gravitational search algorithms. We used previous exam results and other factors, such as the location of the student's high school and the student's gender, as input variables, and predicted the student's expected performance. The cuckoo search and gravitational search algorithms were utilized to train the feed-forward neural network for prediction. These algorithms optimized the weights between layers and biases of the neuron network. The simulation results of the two algorithms were then discussed and analyzed. It was found that the neural network trained by the cuckoo search could be used in the prediction of students' academic performance. It is expected that this work may be used to support student admission procedures and strengthen the service system in educational institutions.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "0468f0e903b76a65",
+        "sol": {
+          "label": "undecidable",
+          "reason": "Özet giriş/performans kestirimini açıklıyor, ancak eğitim düzeyini belirtmiyor; lise kökeni üniversite örneklemi kanıtı değildir. Crossref reference[28] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "0468f0e903b76a65",
+          "label": "relevant",
+          "reason": "Neural networks trained with metaheuristics to predict student performance (E1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "undecidable",
+          "reason": "Özet öğrenci performansı ve kabul süreçlerini anlatıyor fakat eğitim düzeyini belirtmiyor; öğrencinin lise konumu üniversite katılımcısı olduğunu kanıtlamıyor.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref037",
+      "doi": "10.1016/j.dss.2010.06.003",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A comparative analysis of machine learning techniques for student retention management",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "karar verilemedi",
+      "label_reason": "İçerik özeti yok; student retention başlığından yükseköğretim düzeyi belirlenemiyor. Bu nedenle Claude anahtar önerisi de seçilemez.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 37,
+        "reference_entry": {
+          "issue": "4",
+          "key": "171_CR38",
+          "doi-asserted-by": "publisher",
+          "first-page": "498",
+          "DOI": "10.1016/j.dss.2010.06.003",
+          "volume": "49",
+          "author": "D Delen",
+          "year": "2010",
+          "unstructured": "Delen, D. (2010). A comparative analysis of machine learning techniques for student retention management. Decision Support Systems, 49(4), 498–506. \n                    https://doi.org/10.1016/j.dss.2010.06.003\n                    \n                  .",
+          "journal-title": "Decision Support Systems"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-37.json",
+        "crossref_sha256": "9ef2f039a671f3524e1429c0ab1d0da374fef4f4890a6a156ff141f473650a96",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W1970881937",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "8e9f600e2280d61b",
+        "sol": {
+          "label": "undecidable",
+          "reason": "Student retention başlığı eğitim düzeyini doğrulamıyor; iki sağlayıcıda içerik özeti yok. Crossref reference[37] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "8e9f600e2280d61b",
+          "label": "relevant",
+          "reason": "Comparative ML for student retention prediction (E1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "undecidable",
+          "reason": "İçerik özeti yok; student retention başlığından yükseköğretim düzeyi belirlenemiyor. Bu nedenle Claude anahtar önerisi de seçilemez.",
+          "reading_depth": "title_only",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref038",
+      "doi": "10.2190/cs.13.1.b",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Predicting Student Attrition with Data Mining Methods",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "Üniversite freshmen attrition için sekiz yıllık kurumsal veriler ve held-out örneklem özette açık. Crossref reference[38] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 38,
+        "reference_entry": {
+          "issue": "1",
+          "key": "171_CR39",
+          "doi-asserted-by": "publisher",
+          "first-page": "17",
+          "DOI": "10.2190/CS.13.1.b",
+          "volume": "13",
+          "author": "D Delen",
+          "year": "2011",
+          "unstructured": "Delen, D. (2011). Predicting student attrition with data mining methods. Journal of College Student Retention: Research, Theory and Practice, 13(1), 17–35. \n                    https://doi.org/10.2190/CS.13.1.b\n                    \n                  .",
+          "journal-title": "Journal of College Student Retention: Research, Theory and Practice"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-38.json",
+        "crossref_sha256": "231f8e32e0c1e2e2dedf7d5c8588da0082c5bda0ae47c911c219291ca28d7170",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2045487331",
+        "abstract_text": "Affecting university rankings, school reputation, and financial well-being, student retention has become one of the most important measures of success for higher education institutions. From the institutional perspective, improving student retention starts with a thorough understanding of the causes behind the attrition. Such an understanding is the basis for accurately predicting at-risk students and appropriately intervening to retain them. In this study, using 8 years of institutional data along with three popular data mining techniques, we developed analytical models to predict freshmen student attrition. Of the three model types (artificial neural networks, decision trees, and logistic regression), artificial neural networks performed the best, with an 81% overall prediction accuracy on the holdout sample. The variable importance analysis of the models revealed that the educational and financial variables are the most important among the predictors used in this study.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "30ab8b72c4273578",
+        "sol": {
+          "label": "relevant",
+          "reason": "Üniversite freshmen attrition için sekiz yıllık kurumsal veriler ve held-out örneklem özette açık. Crossref reference[38] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "30ab8b72c4273578",
+          "label": "relevant",
+          "reason": "Data mining to predict student attrition (E1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref051",
+      "doi": "10.1002/cae.21996",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Automatic argument assessment of final project reports of computer engineering students",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "İki üniversitede lisans engineering raporlarının ML argument assessment sistemi kontrol/pilot gruplarla inceleniyor. Crossref reference[51] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 51,
+        "reference_entry": {
+          "key": "171_CR52",
+          "doi-asserted-by": "publisher",
+          "unstructured": "Garcia-Gorrostieta, J. M., Lopez-Lopez, A., & Gonzalez-Lopez, S. (2018). Automatic argument assessment of final project reports of computer engineering students. Computer Applications in Engineering Education, 26(5), 1217–1226. \n                    https://doi.org/10.1002/cae.21996",
+          "DOI": "10.1002/cae.21996"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-51.json",
+        "crossref_sha256": "8ef849c2da49e76ac6d72d0679a342321811d036f4f0ededa0a8bc2e4b5bc408",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2811022694",
+        "abstract_text": "Abstract Arguments in final course project reports written by engineering students are an essential feature of academic texts. Further revisions of instructors reveal to the students their mistakes, such as a lack of argumentation. However, the depth of revisions is often limited by the time availability of the instructor. In this paper, we present a system for argument assessment embedded in an Internet‐based Moodle course with Learning Tools Interoperability (LTI) standard, to help students improve argumentation in the problem statement, justification and conclusion sections of their final project report. The system identifies argumentative paragraphs along with argumentation level and provides recommendations to improve their writing. The analysis is achieved employing machine learning techniques with lexical features trained using an annotated collection of student writings. We performed a pilot test to compare control and experimental groups. Both groups consisted of undergraduate students of computer engineering programs from two different universities. We observed that using the argument assessment system increased the number of arguments in the experimental group. We discuss some further improvements for the system.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "c86c61e1967bab06",
+        "sol": {
+          "label": "relevant",
+          "reason": "İki üniversitede lisans engineering raporlarının ML argument assessment sistemi kontrol/pilot gruplarla inceleniyor. Crossref reference[51] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "c86c61e1967bab06",
+          "label": "relevant",
+          "reason": "Automatic argument assessment of student project reports (E2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "higher_ed_ai_02",
+      "doi": "10.1371/journal.pone.0171207",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Data-driven system to predict academic grades and dropout",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "Üniversite degree verisinde not/dropout kestirimi ve kişiselleştirilmiş ders önerileri deneysel doğrulamayla açıklanıyor. Crossref reference[111] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 111,
+        "reference_entry": {
+          "issue": "2",
+          "key": "171_CR112",
+          "doi-asserted-by": "publisher",
+          "first-page": "1",
+          "DOI": "10.1371/journal.pone.0171207",
+          "volume": "12",
+          "author": "S Rovira",
+          "year": "2017",
+          "unstructured": "Rovira, S., Puertas, E., & Igual, L. (2017). Data-driven system to predict academic grades and dropout. PLoS One, 12(2), 1–21. \n                    https://doi.org/10.1371/journal.pone.0171207\n                    \n                  .",
+          "journal-title": "PLoS One"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/education-target-111.json",
+        "crossref_sha256": "f83e54f5a94481a9a23067130e3e5ea397d8f0d8e8e875ac7f67fd67ee9a4fe0",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2588330427",
+        "abstract_text": "Nowadays, the role of a tutor is more important than ever to prevent students dropout and improve their academic performance. This work proposes a data-driven system to extract relevant information hidden in the student academic data and, thus, help tutors to offer their pupils a more proactive personal guidance. In particular, our system, based on machine learning techniques, makes predictions of dropout intention and courses grades of students, as well as personalized course recommendations. Moreover, we present different visualizations which help in the interpretation of the results. In the experimental validation, we show that the system obtains promising results with data from the degree studies in Law, Computer Science and Mathematics of the Universitat de Barcelona.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "E1",
+          "E3",
+          "E4"
+        ],
+        "contribution": "Üniversite degree verisinde not/dropout kestirimi ve kişiselleştirilmiş ders önerileri deneysel doğrulamayla açıklanıyor.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "08eb39a34f322703",
+        "sol": {
+          "label": "relevant",
+          "reason": "Üniversite degree verisinde not/dropout kestirimi ve kişiselleştirilmiş ders önerileri deneysel doğrulamayla açıklanıyor. Crossref reference[111] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "08eb39a34f322703",
+          "label": "relevant",
+          "reason": "Data-driven grade and dropout prediction system (E1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "higher_ed_ai_03",
+      "doi": "10.1016/j.compedu.2008.05.008",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "eTeacher: Providing personalized assistance to e-learning students",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "karar verilemedi",
+      "label_reason": "İçerik özeti yok; e-learning öğrencileri başlığı üniversite bağlamını doğrulamıyor.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 116,
+        "reference_entry": {
+          "issue": "4",
+          "key": "171_CR117",
+          "doi-asserted-by": "publisher",
+          "first-page": "1744",
+          "DOI": "10.1016/j.compedu.2008.05.008",
+          "volume": "51",
+          "author": "S Schiaffino",
+          "year": "2008",
+          "unstructured": "Schiaffino, S., Garcia, P., & Amandi, A. (2008). eTeacher: Providing personalized assistance to e-learning students. Computers & Education, 51(4), 1744–1754. \n                    https://doi.org/10.1016/j.compedu.2008.05.008\n                    \n                  .",
+          "journal-title": "Computers & Education"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/education-target-116.json",
+        "crossref_sha256": "c0485b3ed49031a270c0a5e4d7ce8192fbf14d3392ec1b499a33610d89691268",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W1997956661",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "404482a70b08bfa0",
+        "sol": {
+          "label": "undecidable",
+          "reason": "eTeacher kişiselleştirme başlığı/atıf metni üniversite bağlamını doğrulamıyor; içerik özeti yok. Crossref reference[116] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "404482a70b08bfa0",
+          "label": "relevant",
+          "reason": "eTeacher intelligent agent for personalized e-learning assistance (E3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "undecidable",
+          "reason": "İçerik özeti yok; e-learning öğrencileri başlığı üniversite bağlamını doğrulamıyor.",
+          "reading_depth": "title_only",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref124",
+      "doi": "10.1037/a0034752",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A meta-analysis of the effectiveness of intelligent tutoring systems on college students’ academic learning.",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "College students için intelligent tutoring meta-analizi öğretim karşılaştırıcıları ve kanıt sınırlarını açıklıyor. Crossref reference[124] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 124,
+        "reference_entry": {
+          "issue": "2",
+          "key": "171_CR125",
+          "doi-asserted-by": "publisher",
+          "first-page": "331",
+          "DOI": "10.1037/a0034752",
+          "volume": "106",
+          "author": "S Steenbergen-Hu",
+          "year": "2014",
+          "unstructured": "Steenbergen-Hu, S., & Cooper, H. (2014). A meta-analysis of the effectiveness of intelligent tutoring systems on college students’ academic learning. Journal of Educational Psychology, 106(2), 331–347. \n                    https://doi.org/10.1037/a0034752\n                    \n                  .",
+          "journal-title": "Journal of Educational Psychology"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-124.json",
+        "crossref_sha256": "db90b758039bb82459da879dd87e5b350a559f60a38c966c0a3ab7a360fcccb0",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2316441559",
+        "abstract_text": "© 2013 American Psychological Association.This meta-analysis synthesizes research on the effectiveness of intelligent tutoring systems (ITS) for college students. Thirty-five reports were found containing 39 studies assessing the effectiveness of 22 types of ITS in higher education settings. Most frequently studied were AutoTutor, Assessment and Learning in Knowledge Spaces, eXtended Tutor-Expert System, and Web Interface for Statistics Education. Major findings include (a) Overall, ITS had a moderate positive effect on college students' academic learning (g = .32 to g = .37); (b) ITS were less effective than human tutoring, but they outperformed all other instruction methods and learning activities, including traditional classroom instruction, reading printed text or computerized materials, computer-assisted instruction, laboratory or homework assignments, and no-treatment control; (c) ITS's effectiveness did not significantly differ by different ITS, subject domain, or the manner or degree of their involvement in instruction and learning; and (d) effectiveness in earlier studies appeared to be significantly greater than that in more recent studies. In addition, there is some evidence suggesting the importance of teachers and pedagogy in ITS-assisted learning.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "949ecba22ebf6aa8",
+        "sol": {
+          "label": "relevant",
+          "reason": "College students için intelligent tutoring meta-analizi öğretim karşılaştırıcıları ve kanıt sınırlarını açıklıyor. Crossref reference[124] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "949ecba22ebf6aa8",
+          "label": "relevant",
+          "reason": "Meta-analysis of ITS effectiveness for college learning (E3, E4).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref125",
+      "doi": "10.1177/0020720916688484",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Predicting performance of electrical engineering students using cognitive and non-cognitive features for identification of potential dropouts",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "Üniversite electrical engineering öğrencileri için cognitive/noncognitive dropout kestirimi özette açık. Crossref reference[125] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 125,
+        "reference_entry": {
+          "issue": "2",
+          "key": "171_CR126",
+          "doi-asserted-by": "publisher",
+          "first-page": "105",
+          "DOI": "10.1177/0020720916688484",
+          "volume": "54",
+          "author": "S Sultana",
+          "year": "2017",
+          "unstructured": "Sultana, S., Khan, S., & Abbas, M. (2017). Predicting performance of electrical engineering students using cognitive and non-cognitive features for identification of potential dropouts. International Journal of Electrical Engineering Education, 54(2), 105–118. \n                    https://doi.org/10.1177/0020720916688484\n                    \n                  .",
+          "journal-title": "International Journal of Electrical Engineering Education"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-125.json",
+        "crossref_sha256": "4895d6bf1aa3846de3e129bcd52af34b7a443d3d481f177ef47e51c423200038",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2573353566",
+        "abstract_text": "The student dropout rate in universities is fascinating, especially among the students of Electrical Engineering. Even the most developed European countries face 40% to 50% dropout rate of engineering students during their first year, and the rate can be as high as 80% for some engineering disciplines. This problem calls attention of educators and university administration to take measures which can help in the reduction of the dropout rate and assist students in successfully completing their degree. Among many other solutions to control the student dropout rate, one is the adoption of a prediction mechanism whereby students can be warned about their potentially poor performance so that they can improve their performance resulting in better grades. Most of the existing prediction mechanisms apply various machine learning techniques on student cognitive features. In addition, non-cognitive features also have significant impact on students’ performance; however, they have been sparsely applied for prediction. This research aims at improving the existing prediction mechanism by exploiting both cognitive and non-cognitive features of students for predicting their results. It has been found in the result analysis that addition of cognitive features increases prediction accuracies of decision tree; however, the addition does not play a significant role in other techniques. The study also identified the individual cognitive features that should be considered by students and universities to cater for drop outs.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "9fc5a264e2049131",
+        "sol": {
+          "label": "relevant",
+          "reason": "Üniversite electrical engineering öğrencileri için cognitive/noncognitive dropout kestirimi özette açık. Crossref reference[125] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "9fc5a264e2049131",
+          "label": "relevant",
+          "reason": "Predicting engineering student performance/dropout with cognitive and non-cognitive features (E1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref128",
+      "doi": "10.5455/aim.2015.23.296-300",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A Comparison of Logistic Regression Model and Artificial Neural Networks in Predicting of Student's Academic Failure",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "Üniversite lisans sağlık öğrencilerinde LR/ANN başarısızlık kestirimi özette açık. Crossref reference[128] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 128,
+        "reference_entry": {
+          "key": "171_CR129",
+          "doi-asserted-by": "publisher",
+          "unstructured": "Teshnizi, S. H., & Ayatollahi, S. M. T. (2015). A comparison of logistic regression model and artificial neural networks in predicting of student’s academic failure. Acta Informatica Medica, 23(5), 296-300. \n                    https://doi.org/10.5455/aim.2015.23.296-300",
+          "DOI": "10.5455/aim.2015.23.296-300"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-128.json",
+        "crossref_sha256": "4a041ec3be83e17c84a3ee02bca06f720d943fe4a531a1a968b70ac9f0e02d0c",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W1844599194",
+        "abstract_text": "BACKGROUND AND OBJECTIVE: Artificial Neural Networks (ANNs) have recently been applied in situations where an analysis based on the logistic regression (LR) is a standard statistical approach; direct comparisons of the results, however, are seldom attempted. In this study, we compared both logistic regression models and feed-forward neural networks on the academic failure data set. METHODS: The data for this study included 18 questions about study situation of 275 undergraduate students selected randomly from among nursing and midwifery and paramedic schools of Hormozgan University of Medical Sciences in 2013. Logistic regression with forward method and feed forward Artificial Neural Network with 15 neurons in hidden layer were fitted to the dataset. The accuracy of the models in predicting academic failure was compared by using ROC (Receiver Operating Characteristic) and classification accuracy. RESULTS: Among nine ANNs, the ANN with 15 neurons in hidden layer was a better ANN compared with LR. The Area Under Receiver Operating Characteristics (AUROC) of the LR model and ANN with 15 neurons in hidden layers, were estimated as 0.55 and 0.89, respectively and ANN was significantly greater than the LR. The LR and ANN models respectively classified 77.5% and 84.3% of the students correctly. CONCLUSION: Based on this dataset, it seems the classification of the students in two groups with and without academic failure by using ANN with 15 neurons in the hidden layer is better than the LR model.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "8ca57ae8a0b3beff",
+        "sol": {
+          "label": "relevant",
+          "reason": "Üniversite lisans sağlık öğrencilerinde LR/ANN başarısızlık kestirimi özette açık. Crossref reference[128] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "8ca57ae8a0b3beff",
+          "label": "relevant",
+          "reason": "Logistic regression vs ANN predicting student academic failure (E1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "higher_ed_ai_ref136",
+      "doi": "10.1007/s40593-016-0127-7",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Comprehension and Writing Strategy Training Improves Performance on Content-Specific Source-Based Writing Tasks",
+      "stratum": "Sosyal bilim/eğitim",
+      "label": "ilgili",
+      "label_reason": "Özet undergraduate öğrencilerini, Writing Pal ve iSTART intelligent tutoring sistemlerini ve karşılaştırmalı eğitim koşullarını açıkça tanımlıyor; E3/E4 kapsamını doğruluyor.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1186/s41239-019-0171-0",
+        "reference_index_zero_based": 136,
+        "reference_entry": {
+          "issue": "1",
+          "key": "171_CR137",
+          "doi-asserted-by": "publisher",
+          "first-page": "106",
+          "DOI": "10.1007/s40593-016-0127-7",
+          "volume": "28",
+          "author": "JL Weston-Sementelli",
+          "year": "2018",
+          "unstructured": "Weston-Sementelli, J. L., Allen, L. K., & McNamara, D. S. (2018). Comprehension and writing strategy training improves performance on content-specific source-based writing tasks. International Journal of Artificial Intelligence in Education, 28(1), 106–137. \n                    https://doi.org/10.1007/s40593-016-0127-7\n                    \n                  .",
+          "journal-title": "International Journal of Artificial Intelligence in Education"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/education-target-136.json",
+        "crossref_sha256": "de5d7d7c14b7541601fe48678779a1fb4f34589c66fed9b5d3f2c57676d9d5ba",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2559798508",
+        "abstract_text": "Source-based essays are evaluated both on the quality of the writing and the content appropriate interpretation and use of source material. Hence, composing a high-quality source-based essay (an essay written based on source material) relies on skills related to both reading (the sources) and writing (the essay) skills. As such, source-based writing must involve language comprehension and production processes. The purpose of the current study is to examine the impact of reading, writing, and blended (i.e., reading and writing) strategy training on students’ performance on a content-specific source-based essay writing task. In contrast to general source-based writing tasks, content-specific source-based writing tasks are tasks wherein writers are provided the source material on which to base their essays. Undergraduate students ( n = 175) were provided with strategy instruction and practice in the context of two intelligent tutoring systems, Writing Pal and Interactive Strategy Training for Active Reading and Thinking (iSTART). Results indicated that participants in the blended strategy training condition produced higher quality source-based essays than participants in the reading comprehension-only, writing-only, or control condition, with no differences observed between the latter three conditions. Further, the benefits of this blended strategy instruction remained significant regardless of prior reading and writing skills, or time on task.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "E3",
+          "E4"
+        ],
+        "contribution": "Lisans öğrencilerinde Writing Pal/iSTART tutoring ve okuma-yazma/blended eğitim karşılaştırması özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "09ab8b2cf10df59c",
+        "sol": {
+          "label": "relevant",
+          "reason": "Lisans öğrencilerinde Writing Pal/iSTART tutoring ve okuma-yazma/blended eğitim karşılaştırması özette açık. Crossref reference[136] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "09ab8b2cf10df59c",
+          "label": "undecidable",
+          "reason": "Likely an ITS strategy-training study (E3), but no abstract and unclear whether AI-based or higher-ed sample.",
+          "reading_depth": "metadata"
+        },
+        "adjudication": {
+          "label": "relevant",
+          "reason": "Özet undergraduate öğrencilerini, Writing Pal ve iSTART intelligent tutoring sistemlerini ve karşılaştırmalı eğitim koşullarını açıkça tanımlıyor; E3/E4 kapsamını doğruluyor.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    }
+  ],
+  "revision": "consensus-freeze-1",
+  "revision_history": {
+    "previous_question": "How are artificial intelligence applications used for prediction, assessment, and personalized learning in higher education, and what educational evidence supports these uses?",
+    "previous_question_sha256": "3eca9fb3662fff2d36ad200fb7e2e8c5fbd3c7bdd2467053b4339570b00c9481",
+    "previous_snapshot": ".local/benchmark/2026-10-07-quality85-revision/higher_ed_ai-before.json",
+    "scope_reason": "Derlemenin dört uygulama ailesini açıkça kapsama; soru daraltılmadı."
+  },
+  "source_evidence": {
+    "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/education-source.json",
+    "crossref_sha256": "e0d82007fc220fd81be44be27fc0a9889055dc2cdf07b30a02e2dc488ab0239f",
+    "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/education-openalex.json",
+    "abstract_text": "Abstract According to various international reports, Artificial Intelligence in Education (AIEd) is one of the currently emerging fields in educational technology. Whilst it has been around for about 30 years, it is still unclear for educators how to make pedagogical advantage of it on a broader scale, and how it can actually impact meaningfully on teaching and learning in higher education. This paper seeks to provide an overview of research on AI applications in higher education through a systematic review. Out of 2656 initially identified publications for the period between 2007 and 2018, 146 articles were included for final synthesis, according to explicit inclusion and exclusion criteria. The descriptive results show that most of the disciplines involved in AIEd papers come from Computer Science and STEM, and that quantitative methods were the most frequently used in empirical studies. The synthesis of results presents four areas of AIEd applications in academic support services, and institutional and administrative services: 1. profiling and prediction, 2. assessment and evaluation, 3. adaptive systems and personalisation, and 4. intelligent tutoring systems. The conclusions reflect on the almost lack of critical reflection of challenges and risks of AIEd, the weak connection to theoretical pedagogical perspectives, and the need for further exploration of ethical and educational approaches in the application of AIEd in higher education."
+  },
+  "consensus_freeze": {
+    "original_sol_snapshot": ".local/benchmark/2026-10-07-quality85-revision/higher_ed_ai-sol-before-consensus.json",
+    "original_sol_sha256": "8512b141056dfdfdf5461a38ae830d0efa9c889997d1dcec60c84331b315bfd5",
+    "claude_input": ".local/docs/product/search-quality-85-claude-labels-2026-10-07.json",
+    "claude_sha256": "031f012c50599684f94df7978c355786f8cab1a62fd9e360c5d8c26675666945",
+    "blind_evidence": ".local/benchmark/2026-10-07-quality85-revision/higher_ed_ai-blind-evidence.json",
+    "blind_evidence_sha256": "bf50b9140dc06fd189bff263ed494a5bb0a2f8ad00173089e7d9684b56f40c34",
+    "agreement": {
+      "n": 16,
+      "agreements": 10,
+      "raw_agreement": 0.625,
+      "expected_agreement": 0.671875,
+      "cohen_kappa": -0.14285714285714285,
+      "cohen_kappa_exact": "-1/7",
+      "disagreements": 6,
+      "contingency": {
+        "relevant": {
+          "relevant": 10,
+          "background": 1,
+          "out_of_scope": 0,
+          "undecidable": 1
+        },
+        "background": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "out_of_scope": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "undecidable": {
+          "relevant": 4,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        }
+      }
+    },
+    "sol_keys": [
+      "higher_ed_ai_01",
+      "higher_ed_ai_02",
+      "higher_ed_ai_ref136"
+    ],
+    "claude_keys": [
+      "higher_ed_ai_ref124",
+      "higher_ed_ai_ref037",
+      "higher_ed_ai_01"
+    ],
+    "key_intersection": [
+      "higher_ed_ai_01"
+    ],
+    "final_keys": [
+      "higher_ed_ai_01",
+      "higher_ed_ai_02",
+      "higher_ed_ai_ref136"
+    ],
+    "key_selection_reason": "Kesişimdeki _01 automated assessment için önce seçildi. _02 prediction/personalization ve özetle relevant kararı verilen ref136 intelligent tutoring ile uygulama aileleri tamamlandı. Claude ref124 ilgili alternatif kalır; ref037 undecidable olduğu için anahtar olamaz.",
+    "relevant_targets": 12,
+    "human_verified": false
+  }
+}

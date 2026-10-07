@@ -4,7 +4,7 @@
   "freeze_date": "2026-10-06",
   "label_authority": "freeze §3 + §8 + §9; model agreement/delegated decision, not human verification",
   "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
-  "validation_role": "untuned_validation_not_unseen",
+  "validation_role": "development",
   "question": "How have reflection coefficients (passive beamforming) been optimized in intelligent reflecting surface (IRS/RIS)-assisted wireless communications, which algorithms (SDR, alternating optimization, and deep reinforcement learning) have been used in single-user and multi-user systems, systems with discrete phase shifts, OFDM systems, and MIMO systems, and by which methods has the channel estimation required for this optimization been performed?",
   "question_sha256": "bebe3ef51afcceeab21778f14ac865584ad0ce0e2c6118574c6d1d5a12b05a75",
   "answer_elements": [

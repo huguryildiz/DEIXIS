@@ -1,0 +1,707 @@
+{
+  "name": "sentiment_adversarial",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-10-07",
+  "label_authority": "Sol + Claude kör iki model uzlaşısı, uyuşmazlıklar özetle karara bağlandı; insan doğrulaması yok",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "development",
+  "question": "How are textual adversarial examples generated and evaluated for deep learning text classifiers, particularly sentiment analysis, and what perturbation constraints and model-access assumptions are used?",
+  "question_sha256": "a825f3b6484603dd3451bf285f2a20957c3754e94e0a8d7813bea5df59c6e202",
+  "reference": "A Survey of Adversarial Attacks: An Open Issue for Deep Learning Sentiment Analysis Models (2024), DOI 10.3390/app14114614; Crossref /works/10.3390/app14114614 reference field; abstract objective/scope; OA license https://creativecommons.org/licenses/by/4.0/; retained evidence .local/benchmark/2026-10-07-quality85-crossref/nlp-source.json. Source review is not a target and is never supplied to the run.",
+  "answer_elements": [
+    {
+      "id": "N1",
+      "question": "Adversarial example generation methods"
+    },
+    {
+      "id": "N2",
+      "question": "Perturbation constraints and attack access assumptions"
+    },
+    {
+      "id": "N3",
+      "question": "Text-classifier evaluation, sentiment-specific evidence and limitations"
+    }
+  ],
+  "papers": [
+    {
+      "key": "sentiment_adversarial_01",
+      "doi": "10.18653/v1/w19-4824",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Adversarial Attack on Sentiment Classification",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "CNN sentiment/IMDB için white-box Global Search, saldırı başarımı ve perplexity özette açık. Crossref reference[16] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 16,
+        "reference_entry": {
+          "key": "ref_17",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Tsai, Y.T., Yang, M.C., and Chen, H.Y. (2019, January 1). Adversarial Attack on Sentiment Classification. Proceedings of the 2019 ACL Workshop BlackboxNLP: Analyzing and Interpreting Neural Networks for NLP, Florence, Italy.",
+          "DOI": "10.18653/v1/W19-4824"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/nlp-target-16.json",
+        "crossref_sha256": "f42a21357f9aefc8dea5ad8540d9363d1d4b7d6640aa025cf6a129e592dbd0fb",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2972577746",
+        "abstract_text": "In this paper, we propose a white-box attack algorithm called \"Global Search\" method and compare it with a simple misspelling noise and a more sophisticated and common white-box attack approach called \"Greedy Search\".The attack methods are evaluated on the Convolutional Neural Network (CNN) sentiment classifier trained on the IMDB movie review dataset.The attack success rate is used to evaluate the effectiveness of the attack methods and the perplexity of the sentences is used to measure the degree of distortion of the generated adversarial examples.The experiment results show that the proposed \"Global Search\" method generates more powerful adversarial examples with less distortion or less modification to the source text.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "N1",
+          "N2",
+          "N3"
+        ],
+        "contribution": "CNN sentiment/IMDB için white-box Global Search, saldırı başarımı ve perplexity özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "e654fd596b46b7ba",
+        "sol": {
+          "label": "relevant",
+          "reason": "CNN sentiment/IMDB için white-box Global Search, saldırı başarımı ve perplexity özette açık. Crossref reference[16] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "e654fd596b46b7ba",
+          "label": "relevant",
+          "reason": "Adversarial attack targeted at sentiment classification (N1, N3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_02",
+      "doi": "10.14722/ndss.2019.23138",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "TextBugger: Generating Adversarial Text Against Real-world Applications",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "TextBugger gerçek sentiment ve toxic-content servislerinde saldırı üretimi ve değerlendirmesi sunuyor. Crossref reference[17] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 17,
+        "reference_entry": {
+          "key": "ref_18",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Li, J., Ji, S., Du, T., Li, B., and Wang, T. (2019, January 24–27). TextBugger: Generating Adversarial Text Against Real-world Applications. Proceedings of the 2019 Network and Distributed System Security Symposium, San Diego, CA, USA.",
+          "DOI": "10.14722/ndss.2019.23138"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/nlp-target-17.json",
+        "crossref_sha256": "a7494d6120ab9bc0b99c6c9f8e0b76245811f60ad23bc7443b22e54629e8620a",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2905526464",
+        "abstract_text": "Deep Learning-based Text Understanding (DLTU) is the backbone technique behind various applications, including question answering, machine translation, and text classification.Despite its tremendous popularity, the security vulnerabilities of DLTU are still largely unknown, which is highly concerning given its increasing use in security-sensitive applications such as sentiment analysis and toxic content detection.In this paper, we show that DLTU is inherently vulnerable to adversarial text attacks, in which maliciously crafted texts trigger target DLTU systems and services to misbehave.Specifically, we present TEXTBUGGER, a general attack framework for generating adversarial texts.In contrast to prior works, TEXTBUGGER differs in significant ways: (i) effective -it outperforms state-of-the-art attacks in terms of attack success rate; (ii) evasive -it preserves the utility of benign text, with 94.9% of the adversarial text correctly recognized by human readers; and (iii) efficient -it generates adversarial text with computational complexity sub-linear to the text length.We empirically evaluate TEXTBUGGER on a set of real-world DLTU systems and services used for sentiment analysis and toxic content detection, demonstrating its effectiveness, evasiveness, and efficiency.For instance, TEXTBUGGER achieves 100% success rate on the IMDB dataset based on Amazon AWS Comprehend within 4.61 seconds and preserves 97% semantic similarity.We further discuss possible defense mechanisms to mitigate such attack and the adversary's potential countermeasures, which leads to promising directions for further research.Recently, some mechanisms are proposed towards generating adversarial texts [19,33].These work proposed to generate adversarial texts by replacing a word with an out-of-vocabulary one [4,11,14].Although seminal, they are limited in practice due to the following reasons: (i) they are not computationally efficient, (ii) they are designed under the white-box setting, (iii) they require manual intervention, and/or (iv) they are designed against a particular NLP model and are not comprehensively evaluated.Thus, the efficiency and effectiveness of current adversarial text generation techniques and the robustness of",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "d2e65ca293fe8c95",
+        "sol": {
+          "label": "relevant",
+          "reason": "TextBugger gerçek sentiment ve toxic-content servislerinde saldırı üretimi ve değerlendirmesi sunuyor. Crossref reference[17] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "d2e65ca293fe8c95",
+          "label": "relevant",
+          "reason": "TextBugger white/black-box attacks on real-world sentiment and toxicity systems (N1, N2, N3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_03",
+      "doi": "10.18653/v1/d18-1316",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Generating Natural Language Adversarial Examples",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "Black-box population-based saldırı, semantik/sentaktik kısıtlar, sentiment ve entailment deneyleri özette açık. Crossref reference[18] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 18,
+        "reference_entry": {
+          "key": "ref_19",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Alzantot, M., Sharma, Y., Elgohary, A., Ho, B.J., Srivastava, M., and Chang, K.W. (November, January 31). Generating Natural Language Adversarial Examples. Proceedings of the 2018 Conference on Empirical Methods in Natural Language Processing, Brussels, Belgium.",
+          "DOI": "10.18653/v1/D18-1316"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/nlp-target-18.json",
+        "crossref_sha256": "2d9dcec5403e9bc5de423ca7595edb3106706d81b0cd541fa51cdc34b04c17af",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2962718684",
+        "abstract_text": "Deep neural networks (DNNs) are vulnerable to adversarial examples, perturbations to correctly classified examples which can cause the model to misclassify.In the image domain, these perturbations are often virtually indistinguishable to human perception, causing humans and state-of-the-art models to disagree.However, in the natural language domain, small perturbations are clearly perceptible, and the replacement of a single word can drastically alter the semantics of the document.Given these challenges, we use a black-box population-based optimization algorithm to generate semantically and syntactically similar adversarial examples that fool well-trained sentiment analysis and textual entailment models with success rates of 97% and 70%, respectively.We additionally demonstrate that 92.3% of the successful sentiment analysis adversarial examples are classified to their original label by 20 human annotators, and that the examples are perceptibly quite similar.Finally, we discuss an attempt to use adversarial training as a defense, but fail to yield improvement, demonstrating the strength and diversity of our adversarial examples.We hope our findings encourage researchers to pursue improving the robustness of DNNs in the natural language domain.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "N1",
+          "N2",
+          "N3"
+        ],
+        "contribution": "Black-box population-based saldırı, semantik/sentaktik kısıtlar, sentiment ve entailment deneyleri özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "38f0fb687ea40c2b",
+        "sol": {
+          "label": "relevant",
+          "reason": "Black-box population-based saldırı, semantik/sentaktik kısıtlar, sentiment ve entailment deneyleri özette açık. Crossref reference[18] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "38f0fb687ea40c2b",
+          "label": "relevant",
+          "reason": "Genetic black-box word substitution attack on sentiment (IMDB) and NLI (N1, N2, N3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_ref021",
+      "doi": "10.18653/v1/n19-1165",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Text Processing Like Humans Do: Visually Attacking and Shielding NLP Systems",
+      "stratum": "NLP/ML",
+      "label": "karar verilemedi",
+      "label_reason": "Saklı içerik özeti yok; bibliyografik tekrar içerik kanıtı değil. Başlık saldırının classifier kapsamını ve üretim/değerlendirme koşullarını doğrulamıyor.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 21,
+        "reference_entry": {
+          "key": "ref_22",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Eger, S., Şahin, G.G., Rücklé, A., Lee, J.U., Schulz, C., Mesgar, M., Swarnkar, K., Simpson, E., and Gurevych, I. (2019, January 2–7). Text Processing Like Humans Do: Visually Attacking and Shielding NLP Systems. Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Minneapolis, MN, USA. Long and Short Papers.",
+          "DOI": "10.18653/v1/N19-1165"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-target-21.json",
+        "crossref_sha256": "87aee4dab4bc684f94d483064def1e0700b7c04047c69d2daefaeab83070e7fc",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2962782614",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "14847affc5f7d0cd",
+        "sol": {
+          "label": "undecidable",
+          "reason": "Visually attacking NLP başlığı tek başına classifier/generation kapsamını açıklamıyor; OpenAlex abstract alanı yalnız bibliyografik metin. Crossref reference[21] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "14847affc5f7d0cd",
+          "label": "relevant",
+          "reason": "Visual character-perturbation attacks and shielding on NLP models (N1, N2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "undecidable",
+          "reason": "Saklı içerik özeti yok; bibliyografik tekrar içerik kanıtı değil. Başlık saldırının classifier kapsamını ve üretim/değerlendirme koşullarını doğrulamıyor.",
+          "reading_depth": "title_only",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "sentiment_adversarial_04",
+      "doi": "10.18653/v1/2020.acl-main.540",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Word-level Textual Adversarial Attacking as Combinatorial Optimization",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "Sememe word substitution ve PSO ile BiLSTM/BERT saldırı üretimi özette açık; sentiment alt görevi bu özette belirtilmiyor. Crossref reference[22] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 22,
+        "reference_entry": {
+          "key": "ref_23",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Zang, Y., Qi, F., Yang, C., Liu, Z., Zhang, M., Liu, Q., and Sun, M. (2020, January 5–10). Word-level Textual Adversarial Attacking as Combinatorial Optimization. Proceedings of the 58th Annual Meeting of the Association for Computational Linguistics, Online.",
+          "DOI": "10.18653/v1/2020.acl-main.540"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/nlp-target-22.json",
+        "crossref_sha256": "1bc88e50910cc428f65ddd2ac117bc8cb8798d8dc33669a8d39b22d2e734d259",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2988194011",
+        "abstract_text": "Adversarial attacks are carried out to reveal the vulnerability of deep neural networks.Textual adversarial attacking is challenging because text is discrete and a small perturbation can bring significant change to the original input.Word-level attacking, which can be regarded as a combinatorial optimization problem, is a well-studied class of textual attack methods.However, existing word-level attack models are far from perfect, largely because unsuitable search space reduction methods and inefficient optimization algorithms are employed.In this paper, we propose a novel attack model, which incorporates the sememebased word substitution method and particle swarm optimization-based search algorithm to solve the two problems separately.We conduct exhaustive experiments to evaluate our attack model by attacking BiLSTM and BERT on three benchmark datasets.Experimental results demonstrate that our model consistently achieves much higher attack success rates and crafts more high-quality adversarial examples as compared to baseline methods.Also, further experiments show our model has higher transferability and can bring more robustness enhancement to victim models by adversarial training.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "5bbe13d718beed8b",
+        "sol": {
+          "label": "relevant",
+          "reason": "Sememe word substitution ve PSO ile BiLSTM/BERT saldırı üretimi özette açık; sentiment alt görevi bu özette belirtilmiyor. Crossref reference[22] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "5bbe13d718beed8b",
+          "label": "relevant",
+          "reason": "Sememe-based word substitution with PSO search; attack evaluated on sentiment tasks (N1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_ref024",
+      "doi": "10.24963/ijcai.2018/585",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Deep Text Classification Can be Fooled",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "DNN text classification için white/black-box ve insertion/modification/removal üretimi özette açık; sentiment alt görevi belirtilmiyor. Crossref reference[24] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 24,
+        "reference_entry": {
+          "key": "ref_25",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Liang, B., Li, H., Su, M., Bian, P., Li, X., and Shi, W. (2018, January 13–19). Deep Text Classification Can be Fooled. Proceedings of the Twenty-Seventh International Joint Conference on Artificial Intelligence, IJCAI-18. International Joint Conferences on Artificial Intelligence Organization, Stockholm, Sweden.",
+          "DOI": "10.24963/ijcai.2018/585"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-target-24.json",
+        "crossref_sha256": "b42d551f55c47bc13a2d32aceeef56194155d0f818aa8db4abd8004c29dcace7",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2609368435",
+        "abstract_text": "In this paper, we present an effective method to craft text adversarial samples, revealing one important yet underestimated fact that DNN-based text classifiers are also prone to adversarial sample attack. Specifically, confronted with different adversarial scenarios, the text items that are important for classification are identified by computing the cost gradients of the input (white-box attack) or generating a series of occluded test samples (black-box attack). Based on these items, we design three perturbation strategies, namely insertion, modification, and removal, to generate adversarial samples. The experiment results show that the adversarial samples generated by our method can successfully fool both state-of-the-art character-level and word-level DNN-based text classifiers. The adversarial samples can be perturbed to any desirable classes without compromising their utilities. At the same time, the introduced perturbation is difficult to be perceived.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "9ff46c7ca03513af",
+        "sol": {
+          "label": "relevant",
+          "reason": "DNN text classification için white/black-box ve insertion/modification/removal üretimi özette açık; sentiment alt görevi belirtilmiyor. Crossref reference[24] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "9ff46c7ca03513af",
+          "label": "relevant",
+          "reason": "White/black-box insertion/modification/removal attacks on text classifiers (N1, N2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_ref034",
+      "doi": "10.18653/v1/p18-1079",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Semantically Equivalent Adversarial Rules for Debugging NLP models",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "Semantik eşdeğer adversarial replacement rules ve sentiment dahil üç görev özette açık. Crossref reference[34] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 34,
+        "reference_entry": {
+          "key": "ref_35",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Ribeiro, M.T., Singh, S., and Guestrin, C. (2018, January 15–20). Semantically Equivalent Adversarial Rules for Debugging NLP models. Proceedings of the 56th Annual Meeting of the Association for Computational Linguistics, Melbourne, Australia. Long Papers.",
+          "DOI": "10.18653/v1/P18-1079"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-target-34.json",
+        "crossref_sha256": "e28a60158deb17c9785d0ec4e62163c3421685ccc53d402286734f5ba2e96df0",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2799007037",
+        "abstract_text": "Complex machine learning models for NLP are often brittle, making different predictions for input instances that are extremely similar semantically. To automatically detect this behavior for individual instances, we present semantically equivalent adversaries (SEAs) – semantic-preserving perturbations that induce changes in the model’s predictions. We generalize these adversaries into semantically equivalent adversarial rules (SEARs) – simple, universal replacement rules that induce adversaries on many instances. We demonstrate the usefulness and flexibility of SEAs and SEARs by detecting bugs in black-box state-of-the-art models for three domains: machine comprehension, visual question-answering, and sentiment analysis. Via user studies, we demonstrate that we generate high-quality local adversaries for more instances than humans, and that SEARs induce four times as many mistakes as the bugs discovered by human experts. SEARs are also actionable: retraining models using data augmentation significantly reduces bugs, while maintaining accuracy.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "b2d7cdaeff724522",
+        "sol": {
+          "label": "relevant",
+          "reason": "Semantik eşdeğer adversarial replacement rules ve sentiment dahil üç görev özette açık. Crossref reference[34] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "b2d7cdaeff724522",
+          "label": "relevant",
+          "reason": "Semantically equivalent adversarial rules; semantic-preservation constraint, sentiment among tasks (N1, N2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_ref035",
+      "doi": "10.1109/spw.2018.00016",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Black-Box Generation of Adversarial Text Sequences to Evade Deep Learning Classifiers",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "DeepWordBug black-box karakter dönüşümleriyle IMDB sentiment ve spam veri kümelerinde test ediliyor. Crossref reference[35] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 35,
+        "reference_entry": {
+          "key": "ref_36",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Gao, J., Lanchantin, J., Soffa, M.L., and Qi, Y. (2018, January 24). Black-box generation of adversarial text sequences to evade deep learning classifiers. Proceedings of the 2018 IEEE Security and Privacy Workshops (SPW), San Francisco, CA, USA.",
+          "DOI": "10.1109/SPW.2018.00016"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-target-35.json",
+        "crossref_sha256": "2cd17a9877a0d676cd47f8ba40c6dd11ccef930d7dc09c79108d9a536d393f83",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2962818281",
+        "abstract_text": "Although various techniques have been proposed to generate adversarial samples for white-box attacks on text, little attention has been paid to a black-box attack, which is a more realistic scenario. In this paper, we present a novel algorithm, DeepWordBug, to effectively generate small text perturbations in a black-box setting that forces a deep-learning classifier to misclassify a text input. We develop novel scoring strategies to find the most important words to modify such that the deep classifier makes a wrong prediction. Simple character-level transformations are applied to the highest-ranked words in order to minimize the edit distance of the perturbation. We evaluated DeepWordBug on two real-world text datasets: Enron spam emails and IMDB movie reviews. Our experimental results indicate that DeepWordBug can reduce the classification accuracy from 99% to 40% on Enron and from 87% to 26% on IMDB. Our results strongly demonstrate that the generated adversarial sequences from a deep-learning model can similarly evade other deep models.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "cafdb2f084968e70",
+        "sol": {
+          "label": "relevant",
+          "reason": "DeepWordBug black-box karakter dönüşümleriyle IMDB sentiment ve spam veri kümelerinde test ediliyor. Crossref reference[35] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "cafdb2f084968e70",
+          "label": "relevant",
+          "reason": "DeepWordBug black-box character-level attack on classifiers (N1, N2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_ref036",
+      "doi": "10.1609/aaai.v34i05.6311",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Is BERT Really Robust? A Strong Baseline for Natural Language Attack on Text Classification and Entailment",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "TextFooler text classification/entailment için semantik ve dilbilgisel kısıtlı üretim sunuyor; sentiment alt görevi özette belirtilmiyor. Crossref reference[36] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 36,
+        "reference_entry": {
+          "key": "ref_37",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Jin, D., Jin, Z., Zhou, J.T., and Szolovits, P. (2020, January 7–12). Is bert really robust? A strong baseline for natural language attack on text classification and entailment. In Proceedings of the AAAI Conference on Artificial Intelligence, New York, NY, USA.",
+          "DOI": "10.1609/aaai.v34i05.6311"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-target-36.json",
+        "crossref_sha256": "933fc732acbfbc15f9e29a17f185dcd58f54a5e31c09a002f52758ea10d8f569",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2996851481",
+        "abstract_text": "Machine learning algorithms are often vulnerable to adversarial examples that have imperceptible alterations from the original counterparts but can fool the state-of-the-art models. It is helpful to evaluate or even improve the robustness of these models by exposing the maliciously crafted adversarial examples. In this paper, we present TextFooler, a simple but strong baseline to generate adversarial text. By applying it to two fundamental natural language tasks, text classification and textual entailment, we successfully attacked three target models, including the powerful pre-trained BERT, and the widely used convolutional and recurrent neural networks. We demonstrate three advantages of this framework: (1) effective—it outperforms previous attacks by success rate and perturbation rate, (2) utility-preserving—it preserves semantic content, grammaticality, and correct types classified by humans, and (3) efficient—it generates adversarial text with computational complexity linear to the text length.1",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "c4c76cdbea30fdad",
+        "sol": {
+          "label": "relevant",
+          "reason": "TextFooler text classification/entailment için semantik ve dilbilgisel kısıtlı üretim sunuyor; sentiment alt görevi özette belirtilmiyor. Crossref reference[36] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "c4c76cdbea30fdad",
+          "label": "relevant",
+          "reason": "TextFooler black-box attack with semantic/POS constraints on classification incl. sentiment (N1, N2, N3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_ref037",
+      "doi": "10.18653/v1/2022.findings-aacl.44",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Adversarial Sample Generation for Aspect based Sentiment Classification",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "ABSA saldırısı açıklanabilirlik sinyalleriyle üretiliyor; semantik tutarlılık, erişim varsayımları ve insan değerlendirmesi özette açık. Crossref reference[37] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 37,
+        "reference_entry": {
+          "key": "ref_38",
+          "unstructured": "Ekbal, A. (2022, January 20–23). Adversarial Sample Generation for Aspect based Sentiment Classification. Proceedings of the Findings of the Association for Computational Linguistics: AACL-IJCNLP 2022, Online."
+        },
+        "membership_rule": "unstructured_title_author_year_resolved_doi",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-target-37.json",
+        "crossref_sha256": "0006e9f38b69b27cfbf1e8ace205d3f6803405561fcd9a91f1392640e362a3e5",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W4404783692",
+        "abstract_text": "Deep learning models have been proven vulnerable towards small imperceptible perturbed input, known as adversarial samples, which are indiscernible by humans.Initial attacks in Natural Language Processing perturb characters or words in sentences using heuristics and synonyms-based strategies, resulting in grammatical incorrect or out-of-context sentences.Recent works attempt to generate contextual adversarial samples using a masked language model, capturing word relevance using leaveone-out (LOO).However, they lack the design to maintain the semantic coherency for aspect based sentiment analysis (ABSA) tasks.Moreover, they focused on resource-rich languages like English.We present an attack algorithm for the ABSA task by exploiting model explainability techniques to address these limitations.It does not require access to the training data, raw access to the model, or calibrating a new model.Our proposed method generates adversarial samples for a given aspect, maintaining more semantic coherency.In addition, it can be generalized to low-resource languages, which are at high risk due to resource scarcity.We show the effectiveness of the proposed attack using automatic and human evaluation.Our method outperforms the state-of-art methods in perturbation ratio, success rate, and semantic coherence.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "N1",
+          "N2",
+          "N3"
+        ],
+        "contribution": "ABSA saldırısı açıklanabilirlik sinyalleriyle üretiliyor; semantik tutarlılık, erişim varsayımları ve insan değerlendirmesi özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "a5ee2d43d5df7e71",
+        "sol": {
+          "label": "relevant",
+          "reason": "ABSA saldırısı açıklanabilirlik sinyalleriyle üretiliyor; semantik tutarlılık, erişim varsayımları ve insan değerlendirmesi özette açık. Crossref reference[37] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "a5ee2d43d5df7e71",
+          "label": "relevant",
+          "reason": "Adversarial sample generation for aspect-based sentiment (N1, N3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_ref038",
+      "doi": "10.18653/v1/2021.naacl-main.321",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Grey-box Adversarial Attack And Defence For Sentiment Classification",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "Grey-box sentiment saldırısı ve savunması kaynakça/başlıkta açık; OpenAlex metni içerik özeti değil. Crossref reference[38] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 38,
+        "reference_entry": {
+          "key": "ref_39",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Xu, Y., Zhong, X., Jimeno Yepes, A., and Lau, J.H. (2021, January 6–11). Grey-box Adversarial Attack and Defence For Sentiment Classification. Proceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Online.",
+          "DOI": "10.18653/v1/2021.naacl-main.321"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-target-38.json",
+        "crossref_sha256": "bf15c502561cab227fc4bb0a8b1c942632754bb5c82dabb836f582c7b9402637",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3169965252",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "6ced1acb739ff8c6",
+        "sol": {
+          "label": "relevant",
+          "reason": "Grey-box sentiment saldırısı ve savunması kaynakça/başlıkta açık; OpenAlex metni içerik özeti değil. Crossref reference[38] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "6ced1acb739ff8c6",
+          "label": "relevant",
+          "reason": "Grey-box attack and defence specifically for sentiment classification (N1, N2, N3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_ref048",
+      "doi": "10.1007/978-3-030-57884-8_37",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Generating More Effective and Imperceptible Adversarial Text Examples for Sentiment Classification",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "Sentiment sınıflandırması için adversarial metin üretimi kaynakça/başlıkta açık; etkinlik nicel olarak okunamadı. Crossref reference[48] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 48,
+        "reference_entry": {
+          "key": "ref_49",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Du, X., Yi, Z., Li, S., Ma, J., Yu, J., Tan, Y., and Wu, Q. (2020, January 19–23). Generating More Effective and Imperceptible Adversarial Text Examples for Sentiment Classification. Proceedings of the International Conference on Artificial Intelligence and Security, Dublin, Ireland.",
+          "DOI": "10.1007/978-3-030-57884-8_37"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-target-48.json",
+        "crossref_sha256": "4492de637e44fe618e70ad4ed0032cd5d41715e9942496c4caea95833b47d6d8",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3082522045",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "d02a49b3dc0c308a",
+        "sol": {
+          "label": "relevant",
+          "reason": "Sentiment sınıflandırması için adversarial metin üretimi kaynakça/başlıkta açık; etkinlik nicel olarak okunamadı. Crossref reference[48] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "d02a49b3dc0c308a",
+          "label": "relevant",
+          "reason": "Imperceptible adversarial text for sentiment classification (N1, N3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "sentiment_adversarial_ref050",
+      "doi": "10.18653/v1/2021.emnlp-main.121",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On the Transferability of Adversarial Attacks against Neural Text Classifier",
+      "stratum": "NLP/ML",
+      "label": "ilgili",
+      "label_reason": "Text-classifier transfer saldırıları, model ensemble ve genetic algorithm özette açık; sentiment kapsamı doğrulanmadı. Crossref reference[50] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.3390/app14114614",
+        "reference_index_zero_based": 50,
+        "reference_entry": {
+          "key": "ref_51",
+          "doi-asserted-by": "crossref",
+          "unstructured": "Yuan, L., Zheng, X., Zhou, Y., Hsieh, C.J., and Chang, K.W. (2021, January 7–11). On the Transferability of Adversarial Attacks against Neural Text Classifier. Proceedings of the Empirical Methods in Natural Language Processing, Punta Cana, Dominican Republic.",
+          "DOI": "10.18653/v1/2021.emnlp-main.121"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-target-50.json",
+        "crossref_sha256": "1e8f4d1d9c21542f5d7def0606a8194985a55305897aea41389728411df760ef",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3200185163",
+        "abstract_text": "Deep neural networks are vulnerable to adversarial attacks, where a small perturbation to an input alters the model prediction.In many cases, malicious inputs intentionally crafted for one model can fool another model.In this paper, we present the first study to systematically investigate the transferability of adversarial examples for text classification models and explore how various factors, including network architecture, tokenization scheme, word embedding, and model capacity, affect the transferability of adversarial examples.Based on these studies, we propose a genetic algorithm to find an ensemble of models that can be used to induce adversarial examples to fool almost all existing models.Such adversarial examples reflect the defects of the learning process and the data bias in the training set.Finally, we derive word replacement rules that can be used for model diagnostics from these adversarial examples. A.2 Transferability among Different Neural ModelsWe show in Figure 4 the transferability rate among all neural models in the model pool.The column and row headers indicate the IDs of source and target models respectively.The mapping of IDs and the corresponding models is shown in Figure 8.We generate adversarial examples by attacking a source model, and report the transferability rates on a target (or victim) model. 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 1 .71.50.68.66.21.30.50.39.48.48.22.27.51.49.57.50.21.29 .44 .38 2 .55.63.58.59.21.33 .46.47.46.48.20 .31.49.59.52 .50.18.30.45.47 3 .68.53.70.70.22.28.49.41.50.48.21.26.52 .50.58.55.20 .27.44 .41 4 .",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "8af2d27461d0ab5d",
+        "sol": {
+          "label": "relevant",
+          "reason": "Text-classifier transfer saldırıları, model ensemble ve genetic algorithm özette açık; sentiment kapsamı doğrulanmadı. Crossref reference[50] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "8af2d27461d0ab5d",
+          "label": "relevant",
+          "reason": "Transferability of attacks across text classifiers; access assumptions (N2, N3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    }
+  ],
+  "revision": "consensus-freeze-1",
+  "revision_history": {
+    "previous_question": "How are textual adversarial examples generated to attack deep learning sentiment classifiers, and what perturbation constraints and evaluation settings are used?",
+    "previous_question_sha256": "fdbabd14e93f22fc0340905d239aa0bd62cc3cfc297b37234159146dea38828f",
+    "previous_snapshot": ".local/benchmark/2026-10-07-quality85-revision/sentiment_adversarial-before.json",
+    "scope_reason": "Derlemenin metin saldırıları kapsamına dönüş; sentiment özel odağı korunur. Sentiment olmayan deneyler N3 sentiment kanıtı sayılmaz."
+  },
+  "source_evidence": {
+    "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/nlp-source.json",
+    "crossref_sha256": "fddb3ae57549955b3e62610f857155b581bbacfb0a1780d43d00d1e405b105cd",
+    "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/nlp-openalex.json",
+    "abstract_text": "In recent years, the use of deep learning models for deploying sentiment analysis systems has become a widespread topic due to their processing capacity and superior results on large volumes of information. However, after several years’ research, previous works have demonstrated that deep learning models are vulnerable to strategically modified inputs called adversarial examples. Adversarial examples are generated by performing perturbations on data input that are imperceptible to humans but that can fool deep learning models’ understanding of the inputs and lead to false predictions being generated. In this work, we collect, select, summarize, discuss, and comprehensively analyze research works to generate textual adversarial examples. There are already a number of reviews in the existing literature concerning attacks on deep learning models for text applications; in contrast to previous works, however, we review works mainly oriented to sentiment analysis tasks. Further, we cover the related information concerning generation of adversarial examples to make this work self-contained. Finally, we draw on the reviewed literature to discuss adversarial example design in the context of sentiment analysis tasks."
+  },
+  "consensus_freeze": {
+    "original_sol_snapshot": ".local/benchmark/2026-10-07-quality85-revision/sentiment_adversarial-sol-before-consensus.json",
+    "original_sol_sha256": "a0da0f46e07872e1500d5f5a8fb593d771a99dc6af286539e4a3d1e9fc5ec3bc",
+    "claude_input": ".local/docs/product/search-quality-85-claude-labels-2026-10-07.json",
+    "claude_sha256": "031f012c50599684f94df7978c355786f8cab1a62fd9e360c5d8c26675666945",
+    "blind_evidence": ".local/benchmark/2026-10-07-quality85-revision/sentiment_adversarial-blind-evidence.json",
+    "blind_evidence_sha256": "18a1a2211b2a515e09d4df4a386d0f6ec3571fa15ffd073a29e10fda40e93074",
+    "agreement": {
+      "n": 13,
+      "agreements": 12,
+      "raw_agreement": 0.9230769230769231,
+      "expected_agreement": 0.9230769230769231,
+      "cohen_kappa": 0.0,
+      "cohen_kappa_exact": "0",
+      "disagreements": 1,
+      "contingency": {
+        "relevant": {
+          "relevant": 12,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "background": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "out_of_scope": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "undecidable": {
+          "relevant": 1,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        }
+      }
+    },
+    "sol_keys": [
+      "sentiment_adversarial_01",
+      "sentiment_adversarial_03",
+      "sentiment_adversarial_ref037"
+    ],
+    "claude_keys": [
+      "sentiment_adversarial_ref036",
+      "sentiment_adversarial_02",
+      "sentiment_adversarial_03"
+    ],
+    "key_intersection": [
+      "sentiment_adversarial_03"
+    ],
+    "final_keys": [
+      "sentiment_adversarial_01",
+      "sentiment_adversarial_03",
+      "sentiment_adversarial_ref037"
+    ],
+    "key_selection_reason": "Kesişimdeki _03 önce seçildi. _01 white-box sentiment ve ref037 aspect-based sentiment saldırılarıyla erişim/kısıt/görev çeşitliliği tamamlandı; hepsinde içerik özeti var. Claude ref036/_02 alternatifleri ilgili hedef kalır.",
+    "relevant_targets": 12,
+    "human_verified": false
+  }
+}

@@ -1,0 +1,920 @@
+{
+  "name": "clinical_imaging",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-10-07",
+  "label_authority": "Sol + Claude kör iki model uzlaşısı, uyuşmazlıklar özetle karara bağlandı; insan doğrulaması yok",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "heldout",
+  "question": "How does the diagnostic performance of deep learning systems compare with health-care professionals in medical imaging, and how do external validation, comparator conditions, and reporting limitations affect these comparisons?",
+  "question_sha256": "abf376f6e05b8493dec8478f4dd48fc098a4dbc7f1d9c807daa1883b886e182d",
+  "reference": "A comparison of deep learning performance against health-care professionals in detecting diseases from medical imaging: a systematic review and meta-analysis (2019), DOI 10.1016/s2589-7500(19)30123-2; Crossref reference field; OA vor license http://creativecommons.org/licenses/by/4.0/; scope verified from retained OpenAlex abstract. Source review is not a target and is never supplied to the run.",
+  "answer_elements": [
+    {
+      "id": "C1",
+      "question": "Diagnostic performance and comparator conditions"
+    },
+    {
+      "id": "C2",
+      "question": "External validation, study design, reporting and limitations"
+    }
+  ],
+  "papers": [
+    {
+      "key": "clinical_imaging_ref018",
+      "doi": "10.1038/s41591-019-0447-x",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "End-to-end lung cancer screening with three-dimensional deep learning on low-dose chest computed tomography",
+      "stratum": "Tıp/klinik",
+      "label": "karar verilemedi",
+      "label_reason": "Saklı içerik özeti yok; başlık radyolog karşılaştırmasını veya dış doğrulamayı belirtmiyor. Claude gerekçesindeki altı radyolog ve bağımsız doğrulama ayrıntıları verilen kanıttan doğrulanamıyor.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 18,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib19",
+          "doi-asserted-by": "crossref",
+          "first-page": "954",
+          "DOI": "10.1038/s41591-019-0447-x",
+          "article-title": "End-to-end lung cancer screening with three-dimensional deep learning on low-dose chest computed tomography",
+          "volume": "25",
+          "author": "Ardila",
+          "year": "2019",
+          "journal-title": "Nat Med"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-18.json",
+        "crossref_sha256": "8a09f7bc095c5cfc2e8855ce3fbc3da78e1ae45ad8ffdaaa3ee40144dee7ea94",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2946185430",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "c37c0c0bd2ad91cf",
+        "sol": {
+          "label": "undecidable",
+          "reason": "Uzman klinisyen karşılaştırması başlıkta yok; iki sağlayıcıda içerik özeti yok. Crossref reference[18] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "c37c0c0bd2ad91cf",
+          "label": "relevant",
+          "reason": "3D DL lung cancer screening vs six radiologists, with independent validation set (C1, C2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "undecidable",
+          "reason": "Saklı içerik özeti yok; başlık radyolog karşılaştırmasını veya dış doğrulamayı belirtmiyor. Claude gerekçesindeki altı radyolog ve bağımsız doğrulama ayrıntıları verilen kanıttan doğrulanamıyor.",
+          "reading_depth": "title_only",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "clinical_imaging_ref024",
+      "doi": "10.1111/1754-9485.12828",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Computer vs human: Deep learning versus perceptual training for the detection of neck of femur fractures",
+      "stratum": "Tıp/klinik",
+      "label": "kapsam dışı",
+      "label_reason": "Özet medically-naïve karşılaştırıcıları açıkça tanımlıyor; sağlık çalışanlarıyla karşılaştırma kapsamını karşılamıyor. İki etiket de hedef dışına çıkarıyor; ayrılık kategori düzeyinde.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 24,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib25",
+          "doi-asserted-by": "crossref",
+          "first-page": "27",
+          "DOI": "10.1111/1754-9485.12828",
+          "article-title": "Computer vs human: deep learning versus perceptual training for the detection of neck of femur fractures",
+          "volume": "63",
+          "author": "Adams",
+          "year": "2019",
+          "journal-title": "J Med Imaging Radiat Oncol"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-24.json",
+        "crossref_sha256": "cd324d443e7c6310f2c4f8a822068abed292b3af5c066bbe3ebd07394af142aa",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2899835486",
+        "abstract_text": "Abstract Introduction To evaluate the accuracy of deep convolutional neural networks ( DCNN s) for detecting neck of femur (NoF) fractures on radiographs, in comparison with perceptual training in medically‐naïve individuals. Methods This study extends a previous study that conducted perceptual training in medically‐naïve individuals for the detection of NoF fractures on a variety of dataset sizes. The same anteroposterior hip radiograph dataset was used to train two DCNN s (AlexNet and GoogLeNet) to detect NoF fractures. For direct comparison with perceptual training results, deep learning was completed across a variety of dataset sizes (200, 320 and 640 images) with images split into training (80%) and validation (20%). An additional 160 images were used as the final test set. Multiple pre‐processing and augmentation techniques were utilised. Results AlexNet and GoogLeNet DCNN s NoF fracture detection accuracy increased with larger training dataset sizes and mildly with augmentation. Accuracy increased from 81.9% and 88.1% to 89.4% and 94.4% for AlexNet and GoogLeNet respectively. Similarly, the test accuracy for the perceptual training in top‐performing medically‐naïve individuals increased from 87.6% to 90.5% when trained on 640 images compared with 200 images. Conclusions Single detection tasks in radiology are commonly used in DCNN research with their results often used to make broader claims about machine learning being able to perform as well as subspecialty radiologists. This study suggests that as impressive as recognising fractures is for a DCNN , similar learning can be achieved by top‐performing medically‐naïve humans with less than 1 hour of perceptual training.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "a1500cd265dd90e4",
+        "sol": {
+          "label": "out_of_scope",
+          "reason": "Özet karşılaştırıcıların medically-naïve kişiler olduğunu açıkça söylüyor; sağlık çalışanı karşılaştırması değil. Crossref reference[24] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "a1500cd265dd90e4",
+          "label": "background",
+          "reason": "Comparator is perceptually trained medically naive individuals, not health-care professionals.",
+          "reading_depth": "abstract"
+        },
+        "adjudication": {
+          "label": "out_of_scope",
+          "reason": "Özet medically-naïve karşılaştırıcıları açıkça tanımlıyor; sağlık çalışanlarıyla karşılaştırma kapsamını karşılamıyor. İki etiket de hedef dışına çıkarıyor; ayrılık kategori düzeyinde.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "clinical_imaging_ref029",
+      "doi": "10.1016/j.ejca.2019.02.005",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A convolutional neural network trained with dermoscopic images performed on par with 145 dermatologists in a clinical melanoma image classification task",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "Dermatologlarla aynı klinik görüntülerin sınıflandırılması karşılaştırılıyor. Crossref reference[29] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 29,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib30",
+          "doi-asserted-by": "crossref",
+          "first-page": "148",
+          "DOI": "10.1016/j.ejca.2019.02.005",
+          "article-title": "A convolutional neural network trained with dermoscopic images performed on par with 145 dermatologists in a clinical melanoma image classification task",
+          "volume": "111",
+          "author": "Brinker",
+          "year": "2019",
+          "journal-title": "Eur J Cancer"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-29.json",
+        "crossref_sha256": "e9c5e4f17b616a254120502c129c7722e784834e629883dec8cf07cbe63bab2f",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2921785317",
+        "abstract_text": "BACKGROUND: Recent studies have demonstrated the use of convolutional neural networks (CNNs) to classify images of melanoma with accuracies comparable to those achieved by board-certified dermatologists. However, the performance of a CNN exclusively trained with dermoscopic images in a clinical image classification task in direct competition with a large number of dermatologists has not been measured to date. This study compares the performance of a convolutional neuronal network trained with dermoscopic images exclusively for identifying melanoma in clinical photographs with the manual grading of the same images by dermatologists. METHODS: We compared automatic digital melanoma classification with the performance of 145 dermatologists of 12 German university hospitals. We used methods from enhanced deep learning to train a CNN with 12,378 open-source dermoscopic images. We used 100 clinical images to compare the performance of the CNN to that of the dermatologists. Dermatologists were compared with the deep neural network in terms of sensitivity, specificity and receiver operating characteristics. FINDINGS: The mean sensitivity and specificity achieved by the dermatologists with clinical images was 89.4% (range: 55.0%-100%) and 64.4% (range: 22.5%-92.5%). At the same sensitivity, the CNN exhibited a mean specificity of 68.2% (range 47.5%-86.25%). Among the dermatologists, the attendings showed the highest mean sensitivity of 92.8% at a mean specificity of 57.7%. With the same high sensitivity of 92.8%, the CNN had a mean specificity of 61.1%. INTERPRETATION: For the first time, dermatologist-level image classification was achieved on a clinical image classification task without training on clinical images. The CNN had a smaller variance of results indicating a higher robustness of computer vision compared with human assessment for dermatologic image classification tasks.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "653e7281a283e0d4",
+        "sol": {
+          "label": "relevant",
+          "reason": "Dermatologlarla aynı klinik görüntülerin sınıflandırılması karşılaştırılıyor. Crossref reference[29] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "653e7281a283e0d4",
+          "label": "relevant",
+          "reason": "CNN vs 145 dermatologists on melanoma images (C1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref030",
+      "doi": "10.1016/j.compbiomed.2017.01.018",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Comparing humans and deep learning performance for grading AMD: A study in using universal deep features and transfer learning for automated AMD analysis",
+      "stratum": "Tıp/klinik",
+      "label": "karar verilemedi",
+      "label_reason": "İçerik özeti yok; humans ifadesi sağlık çalışanı niteliğini doğrulamıyor.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 30,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib31",
+          "doi-asserted-by": "crossref",
+          "first-page": "80",
+          "DOI": "10.1016/j.compbiomed.2017.01.018",
+          "article-title": "Comparing humans and deep learning performance for grading AMD: a study in using universal deep features and transfer learning for automated AMD analysis",
+          "volume": "82",
+          "author": "Burlina",
+          "year": "2017",
+          "journal-title": "Comput Biol Med"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-30.json",
+        "crossref_sha256": "8dbd26ae8b40faebd62e469b9a566578f4fd7b50eaf3b1e620c3b73d6bcfef6e",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2580835947",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "17fb126cce21387e",
+        "sol": {
+          "label": "undecidable",
+          "reason": "Humans ifadesi sağlık çalışanı niteliğini doğrulamıyor; içerik özeti yok. Crossref reference[30] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "17fb126cce21387e",
+          "label": "relevant",
+          "reason": "Head-to-head DL vs human graders for AMD grading (C1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "undecidable",
+          "reason": "İçerik özeti yok; humans ifadesi sağlık çalışanı niteliğini doğrulamıyor.",
+          "reading_depth": "title_only",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "clinical_imaging_ref035",
+      "doi": "10.2214/ajr.18.20817",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Performance of a Deep Learning Algorithm in Detecting Osteonecrosis of the Femoral Head on Digital Radiography: A Comparison With Assessments by Radiologists",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "Osteonekroz için radyolog değerlendirmesiyle doğrudan karşılaştırma başlıkta açık. Crossref reference[35] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 35,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib36",
+          "doi-asserted-by": "crossref",
+          "DOI": "10.2214/AJR.18.20817",
+          "article-title": "Performance of a deep learning algorithm in detecting osteonecrosis of the femoral head on digital radiography: a comparison with assessments by radiologists",
+          "author": "Chee",
+          "year": "2019",
+          "journal-title": "AJR Am J Roentgenol"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-35.json",
+        "crossref_sha256": "e61f95629c169cab4e6d02d43b84d9b3f75f1cb0a14a06ec6cc63fd7ed204232",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2925189575",
+        "abstract_text": "The sensitivity of the DL algorithm for diagnosing ONFH using digital radiography was noninferior to that of both less experienced and experienced radiologist assessments.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "af181152e775e866",
+        "sol": {
+          "label": "relevant",
+          "reason": "Osteonekroz için radyolog değerlendirmesiyle doğrudan karşılaştırma başlıkta açık. Crossref reference[35] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "af181152e775e866",
+          "label": "relevant",
+          "reason": "DL vs radiologists for femoral head osteonecrosis on radiographs (C1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref036",
+      "doi": "10.3348/kjr.2018.0530",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Effect of a Deep Learning Framework-Based Computer-Aided Diagnosis System on the Diagnostic Performance of Radiologists in Differentiating between Malignant and Benign Masses on Breast Ultrasonography",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "Meme ultrasonografisinde radyolog başarımına DL destekli tanının etkisi başlıkta açık. Crossref reference[36] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 36,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib37",
+          "doi-asserted-by": "crossref",
+          "first-page": "749",
+          "DOI": "10.3348/kjr.2018.0530",
+          "article-title": "Effect of a deep learning framework-based computer-aided diagnosis system on the diagnostic performance of radiologists in differentiating between malignant and benign masses on breast ultrasonography",
+          "volume": "20",
+          "author": "Choi",
+          "year": "2019",
+          "journal-title": "Korean J Radiol"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-36.json",
+        "crossref_sha256": "f5422ab42dbd8c6bdb7d8b46056c9333e1678b4c0a2d027b7bec766c33139315",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2924306747",
+        "abstract_text": "Objective: To investigate whether a computer-aided diagnosis (CAD) system based on a deep learning framework (deep learning-based CAD) improves the diagnostic performance of radiologists in differentiating between malignant and benign masses on breast ultrasound (US).Materials and Methods: B-mode US images were prospectively obtained for 253 breast masses (173 benign, 80 malignant) in 226 consecutive patients.Breast mass US findings were retrospectively analyzed by deep learning-based CAD and four radiologists.In predicting malignancy, the CAD results were dichotomized (possibly benign vs. possibly malignant).The radiologists independently assessed Breast Imaging Reporting and Data System final assessments for two datasets (US images alone or with CAD).For each dataset, the radiologists' final assessments were classified as positive (category 4a or higher) and negative (category 3 or lower).The diagnostic performances of the radiologists for the two datasets (US alone vs. US with CAD) were compared Results: When the CAD results were added to the US images, the radiologists showed significant improvement in specificity (range of all radiologists for US alone vs. US with CAD: 72.8-92.5% vs. 82.1-93.1%;p < 0.001), accuracy (77.9-88.9% vs. 86.2-90.9%;p = 0.038), and positive predictive value (PPV) (60.2-83.3% vs. 70.4-85.2%;p = 0.001).However, there were no significant changes in sensitivity (81.3-88.8% vs. 86.3-95.0%;p = 0.120) and negative predictive value (91.4-93.5% vs. 92.9-97.3%;p = 0.259).Conclusion: Deep learning-based CAD could improve radiologists' diagnostic performance by increasing their specificity, accuracy, and PPV in differentiating between malignant and benign masses on breast US.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "91ced803c24a49e6",
+        "sol": {
+          "label": "relevant",
+          "reason": "Meme ultrasonografisinde radyolog başarımına DL destekli tanının etkisi başlıkta açık. Crossref reference[36] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "91ced803c24a49e6",
+          "label": "relevant",
+          "reason": "Radiologist performance with and without DL CAD on breast ultrasound; assisted-reader comparator (C1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref044",
+      "doi": "10.1001/jama.2017.14585",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Diagnostic Assessment of Deep Learning Algorithms for Detection of Lymph Node Metastases in Women With Breast Cancer",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "Patolog karşılaştırması, bağımsız test kümesi ve süre kısıtlı/kısıtsız okuyucu koşulları özette açık. Crossref reference[44] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 44,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib45",
+          "doi-asserted-by": "crossref",
+          "first-page": "2199",
+          "DOI": "10.1001/jama.2017.14585",
+          "article-title": "Diagnostic assessment of deep learning algorithms for detection of lymph node metastases in women with breast cancer",
+          "volume": "318",
+          "author": "Ehteshami Bejnordi",
+          "year": "2017",
+          "journal-title": "JAMA"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-44.json",
+        "crossref_sha256": "dae4958f465928fee63d62e1340c4443cab0a0f2a40742d8f2266ad556b6adae",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2772723798",
+        "abstract_text": "Importance: Application of deep learning algorithms to whole-slide pathology images can potentially improve diagnostic accuracy and efficiency. Objective: Assess the performance of automated deep learning algorithms at detecting metastases in hematoxylin and eosin-stained tissue sections of lymph nodes of women with breast cancer and compare it with pathologists' diagnoses in a diagnostic setting. Design, Setting, and Participants: Researcher challenge competition (CAMELYON16) to develop automated solutions for detecting lymph node metastases (November 2015-November 2016). A training data set of whole-slide images from 2 centers in the Netherlands with (n = 110) and without (n = 160) nodal metastases verified by immunohistochemical staining were provided to challenge participants to build algorithms. Algorithm performance was evaluated in an independent test set of 129 whole-slide images (49 with and 80 without metastases). The same test set of corresponding glass slides was also evaluated by a panel of 11 pathologists with time constraint (WTC) from the Netherlands to ascertain likelihood of nodal metastases for each slide in a flexible 2-hour session, simulating routine pathology workflow, and by 1 pathologist without time constraint (WOTC). Exposures: Deep learning algorithms submitted as part of a challenge competition or pathologist interpretation. Main Outcomes and Measures: The presence of specific metastatic foci and the absence vs presence of lymph node metastasis in a slide or image using receiver operating characteristic curve analysis. The 11 pathologists participating in the simulation exercise rated their diagnostic confidence as definitely normal, probably normal, equivocal, probably tumor, or definitely tumor. Results: The area under the receiver operating characteristic curve (AUC) for the algorithms ranged from 0.556 to 0.994. The top-performing algorithm achieved a lesion-level, true-positive fraction comparable with that of the pathologist WOTC (72.4% [95% CI, 64.3%-80.4%]) at a mean of 0.0125 false-positives per normal whole-slide image. For the whole-slide image classification task, the best algorithm (AUC, 0.994 [95% CI, 0.983-0.999]) performed significantly better than the pathologists WTC in a diagnostic simulation (mean AUC, 0.810 [range, 0.738-0.884]; P < .001). The top 5 algorithms had a mean AUC that was comparable with the pathologist interpreting the slides in the absence of time constraints (mean AUC, 0.960 [range, 0.923-0.994] for the top 5 algorithms vs 0.966 [95% CI, 0.927-0.998] for the pathologist WOTC). Conclusions and Relevance: In the setting of a challenge competition, some deep learning algorithms achieved better diagnostic performance than a panel of 11 pathologists participating in a simulation exercise designed to mimic routine pathology workflow; algorithm performance was comparable with an expert pathologist interpreting whole-slide images without time constraints. Whether this approach has clinical utility will require evaluation in a clinical setting.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "C1",
+          "C2"
+        ],
+        "contribution": "Patolog karşılaştırması, bağımsız test kümesi ve süre kısıtlı/kısıtsız okuyucu koşulları özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "fec3f3200420d954",
+        "sol": {
+          "label": "relevant",
+          "reason": "Patolog karşılaştırması, bağımsız test kümesi ve süre kısıtlı/kısıtsız okuyucu koşulları özette açık. Crossref reference[44] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "fec3f3200420d954",
+          "label": "relevant",
+          "reason": "CAMELYON16 algorithms vs pathologists with and without time constraint (C1 comparator conditions).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref045",
+      "doi": "10.1038/nature21056",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Dermatologist-level classification of skin cancer with deep neural networks",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "Deri kanseri görüntülerinin dermatolog düzeyinde sınıflandırılması başlıkta açık; deney tasarımı okunamadı. Crossref reference[45] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 45,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib46",
+          "doi-asserted-by": "crossref",
+          "first-page": "115",
+          "DOI": "10.1038/nature21056",
+          "article-title": "Dermatologist-level classification of skin cancer with deep neural networks",
+          "volume": "542",
+          "author": "Esteva",
+          "year": "2017",
+          "journal-title": "Nature"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-45.json",
+        "crossref_sha256": "8f5d79911374de2c1faa106ee141babf5cc0138bf914a8664f22541905124428",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2581082771",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "320698af2785a95b",
+        "sol": {
+          "label": "relevant",
+          "reason": "Deri kanseri görüntülerinin dermatolog düzeyinde sınıflandırılması başlıkta açık; deney tasarımı okunamadı. Crossref reference[45] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "320698af2785a95b",
+          "label": "relevant",
+          "reason": "CNN vs 21 dermatologists on biopsy-proven skin cancer; core comparator study (C1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref047",
+      "doi": "10.1111/bjd.16924",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Deep‐learning‐based, computer‐aided classifier developed with a small dataset of clinical images surpasses board‐certified dermatologists in skin tumour diagnosis",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "Klinik görüntülerle eğitilen DCNN, uzman dermatologlar ve asistanlarla test ediliyor. Crossref reference[47] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 47,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib48",
+          "doi-asserted-by": "crossref",
+          "first-page": "373",
+          "DOI": "10.1111/bjd.16924",
+          "article-title": "Deep-learning-based, computer-aided classifier developed with a small dataset of clinical images surpasses board-certified dermatologists in skin tumour diagnosis",
+          "volume": "180",
+          "author": "Fujisawa",
+          "year": "2019",
+          "journal-title": "Br J Dermatol"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-47.json",
+        "crossref_sha256": "2b421a1ae4a01c0d134824679b942c549e2f5e50d11d0f5170d5d680bf3eaab8",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2891858760",
+        "abstract_text": "BACKGROUND: Application of deep-learning technology to skin cancer classification can potentially improve the sensitivity and specificity of skin cancer screening, but the number of training images required for such a system is thought to be extremely large. OBJECTIVES: To determine whether deep-learning technology could be used to develop an efficient skin cancer classification system with a relatively small dataset of clinical images. METHODS: A deep convolutional neural network (DCNN) was trained using a dataset of 4867 clinical images obtained from 1842 patients diagnosed with skin tumours at the University of Tsukuba Hospital from 2003 to 2016. The images consisted of 14 diagnoses, including both malignant and benign conditions. Its performance was tested against 13 board-certified dermatologists and nine dermatology trainees. RESULTS: The overall classification accuracy of the trained DCNN was 76·5%. The DCNN achieved 96·3% sensitivity (correctly classified malignant as malignant) and 89·5% specificity (correctly classified benign as benign). Although the accuracy of malignant or benign classification by the board-certified dermatologists was statistically higher than that of the dermatology trainees (85·3% ± 3·7% and 74·4% ± 6·8%, P < 0·01), the DCNN achieved even greater accuracy, as high as 92·4% ± 2·1% (P < 0·001). CONCLUSIONS: We have developed an efficient skin tumour classifier using a DCNN trained on a relatively small dataset. The DCNN classified images of skin tumours more accurately than board-certified dermatologists. Collectively, the current system may have capabilities for screening purposes in general medical practice, particularly because it requires only a single clinical image for classification.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "a624ed3b5a52332b",
+        "sol": {
+          "label": "relevant",
+          "reason": "Klinik görüntülerle eğitilen DCNN, uzman dermatologlar ve asistanlarla test ediliyor. Crossref reference[47] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "a624ed3b5a52332b",
+          "label": "relevant",
+          "reason": "Small-dataset DL classifier vs board-certified dermatologists (C1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref050",
+      "doi": "10.1093/annonc/mdy166",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Man against machine: diagnostic performance of a deep learning convolutional neural network for dermoscopic melanoma recognition in comparison to 58 dermatologists",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "58 dermatologla okuyucu çalışması ve klinik bilgi verilen/verilmeyen koşullar özette açık. Crossref reference[50] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 50,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib51",
+          "doi-asserted-by": "crossref",
+          "first-page": "1836",
+          "DOI": "10.1093/annonc/mdy166",
+          "article-title": "Man against machine: diagnostic performance of a deep learning convolutional neural network for dermoscopic melanoma recognition in comparison to 58 dermatologists",
+          "volume": "29",
+          "author": "Haenssle",
+          "year": "2018",
+          "journal-title": "Ann Oncol"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-50.json",
+        "crossref_sha256": "83a8f1ebd010d6794577a069ce2a9258e9167a0e5d3fb744e2aae9d4e39c32d3",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2806853752",
+        "abstract_text": "Background: Deep learning convolutional neural networks (CNN) may facilitate melanoma detection, but data comparing a CNN's diagnostic performance to larger groups of dermatologists are lacking. Methods: Google's Inception v4 CNN architecture was trained and validated using dermoscopic images and corresponding diagnoses. In a comparative cross-sectional reader study a 100-image test-set was used (level-I: dermoscopy only; level-II: dermoscopy plus clinical information and images). Main outcome measures were sensitivity, specificity and area under the curve (AUC) of receiver operating characteristics (ROC) for diagnostic classification (dichotomous) of lesions by the CNN versus an international group of 58 dermatologists during level-I or -II of the reader study. Secondary end points included the dermatologists' diagnostic performance in their management decisions and differences in the diagnostic performance of dermatologists during level-I and -II of the reader study. Additionally, the CNN's performance was compared with the top-five algorithms of the 2016 International Symposium on Biomedical Imaging (ISBI) challenge. Results: In level-I dermatologists achieved a mean (±standard deviation) sensitivity and specificity for lesion classification of 86.6% (±9.3%) and 71.3% (±11.2%), respectively. More clinical information (level-II) improved the sensitivity to 88.9% (±9.6%, P = 0.19) and specificity to 75.7% (±11.7%, P < 0.05). The CNN ROC curve revealed a higher specificity of 82.5% when compared with dermatologists in level-I (71.3%, P < 0.01) and level-II (75.7%, P < 0.01) at their sensitivities of 86.6% and 88.9%, respectively. The CNN ROC AUC was greater than the mean ROC area of dermatologists (0.86 versus 0.79, P < 0.01). The CNN scored results close to the top three algorithms of the ISBI 2016 challenge. Conclusions: For the first time we compared a CNN's diagnostic performance with a large international group of 58 dermatologists, including 30 experts. Most dermatologists were outperformed by the CNN. Irrespective of any physicians' experience, they may benefit from assistance by a CNN's image classification. Clinical trial number: This study was registered at the German Clinical Trial Register (DRKS-Study-ID: DRKS00013570; https://www.drks.de/drks_web/).",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "d848e99336914908",
+        "sol": {
+          "label": "relevant",
+          "reason": "58 dermatologla okuyucu çalışması ve klinik bilgi verilen/verilmeyen koşullar özette açık. Crossref reference[50] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "d848e99336914908",
+          "label": "relevant",
+          "reason": "CNN vs 58 dermatologists, with/without clinical information (C1 comparator conditions).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref068",
+      "doi": "10.1073/pnas.1806905115",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Deep neural network improves fracture detection by clinicians",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "Acil klinisyenlerinin kırık tanısı yardımlı/yardımsız kontrollü deneyde karşılaştırılıyor. Crossref reference[68] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 68,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib69",
+          "doi-asserted-by": "crossref",
+          "first-page": "11591",
+          "DOI": "10.1073/pnas.1806905115",
+          "article-title": "Deep neural network improves fracture detection by clinicians",
+          "volume": "115",
+          "author": "Lindsey",
+          "year": "2018",
+          "journal-title": "Proc Natl Acad Sci USA"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-68.json",
+        "crossref_sha256": "31340fc1e353489b62d271e026193bf6967276db05610755ef540c031935fc2d",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2897228760",
+        "abstract_text": "Significance Historically, computer-assisted detection (CAD) in radiology has failed to achieve improvements in diagnostic accuracy, decreasing clinician sensitivity and leading to unnecessary further diagnostic tests. With the advent of deep learning approaches to CAD, there is great excitement about its application to medicine, yet there is little evidence demonstrating improved diagnostic accuracy in clinically-relevant applications. We trained a deep learning model to detect fractures on radiographs with a diagnostic accuracy similar to that of senior subspecialized orthopedic surgeons. We demonstrate that when emergency medicine clinicians are provided with the assistance of the trained model, their ability to accurately detect fractures significantly improves.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "65873b08acebf853",
+        "sol": {
+          "label": "relevant",
+          "reason": "Acil klinisyenlerinin kırık tanısı yardımlı/yardımsız kontrollü deneyde karşılaştırılıyor. Crossref reference[68] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "65873b08acebf853",
+          "label": "relevant",
+          "reason": "Clinicians with vs without DNN aid for fracture detection; comparator condition of assisted reading (C1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref072",
+      "doi": "10.1016/j.gie.2019.04.245",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Classification for invasion depth of esophageal squamous cell carcinoma using a deep neural network compared with experienced endoscopists",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "Özofagus tümörü invazyon derinliğinde deneyimli endoskopistlerle karşılaştırma başlıkta açık. Crossref reference[72] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 72,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib73",
+          "doi-asserted-by": "crossref",
+          "DOI": "10.1016/j.gie.2019.04.245",
+          "article-title": "Classification for invasion depth of esophageal squamous cell carcinoma using a deep neural network compared with experienced endoscopists",
+          "author": "Nakagawa",
+          "year": "2019",
+          "journal-title": "Gastrointestinal Endoscopy"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-72.json",
+        "crossref_sha256": "ff18b2053974674e7164e05b0880d53f50dbe5dee1876f3a714c43fac48ce862",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2944507165",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "4643b27ea0286be7",
+        "sol": {
+          "label": "relevant",
+          "reason": "Özofagus tümörü invazyon derinliğinde deneyimli endoskopistlerle karşılaştırma başlıkta açık. Crossref reference[72] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "4643b27ea0286be7",
+          "label": "relevant",
+          "reason": "DNN vs experienced endoscopists for ESCC invasion depth (C1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref077",
+      "doi": "10.1371/journal.pmed.1002686",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Deep learning for chest radiograph diagnosis: A retrospective comparison of the CheXNeXt algorithm to practicing radiologists",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "CheXNeXt radyologlarla aynı doğrulama görüntülerinde retrospektif olarak karşılaştırılıyor. Crossref reference[77] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 77,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib78",
+          "doi-asserted-by": "crossref",
+          "DOI": "10.1371/journal.pmed.1002686",
+          "article-title": "Deep learning for chest radiograph diagnosis: a retrospective comparison of the CheXNeXt algorithm to practicing radiologists",
+          "volume": "15",
+          "author": "Rajpurkar",
+          "year": "2018",
+          "journal-title": "PLoS Med"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-77.json",
+        "crossref_sha256": "4cb15c12797ca8ea44617e60294b04ddef6eaa201f60202841413dd6f3711b55",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2901954625",
+        "abstract_text": "BACKGROUND: Chest radiograph interpretation is critical for the detection of thoracic diseases, including tuberculosis and lung cancer, which affect millions of people worldwide each year. This time-consuming task typically requires expert radiologists to read the images, leading to fatigue-based diagnostic error and lack of diagnostic expertise in areas of the world where radiologists are not available. Recently, deep learning approaches have been able to achieve expert-level performance in medical image interpretation tasks, powered by large network architectures and fueled by the emergence of large labeled datasets. The purpose of this study is to investigate the performance of a deep learning algorithm on the detection of pathologies in chest radiographs compared with practicing radiologists. METHODS AND FINDINGS: We developed CheXNeXt, a convolutional neural network to concurrently detect the presence of 14 different pathologies, including pneumonia, pleural effusion, pulmonary masses, and nodules in frontal-view chest radiographs. CheXNeXt was trained and internally validated on the ChestX-ray8 dataset, with a held-out validation set consisting of 420 images, sampled to contain at least 50 cases of each of the original pathology labels. On this validation set, the majority vote of a panel of 3 board-certified cardiothoracic specialist radiologists served as reference standard. We compared CheXNeXt's discriminative performance on the validation set to the performance of 9 radiologists using the area under the receiver operating characteristic curve (AUC). The radiologists included 6 board-certified radiologists (average experience 12 years, range 4-28 years) and 3 senior radiology residents, from 3 academic institutions. We found that CheXNeXt achieved radiologist-level performance on 11 pathologies and did not achieve radiologist-level performance on 3 pathologies. The radiologists achieved statistically significantly higher AUC performance on cardiomegaly, emphysema, and hiatal hernia, with AUCs of 0.888 (95% confidence interval [CI] 0.863-0.910), 0.911 (95% CI 0.866-0.947), and 0.985 (95% CI 0.974-0.991), respectively, whereas CheXNeXt's AUCs were 0.831 (95% CI 0.790-0.870), 0.704 (95% CI 0.567-0.833), and 0.851 (95% CI 0.785-0.909), respectively. CheXNeXt performed better than radiologists in detecting atelectasis, with an AUC of 0.862 (95% CI 0.825-0.895), statistically significantly higher than radiologists' AUC of 0.808 (95% CI 0.777-0.838); there were no statistically significant differences in AUCs for the other 10 pathologies. The average time to interpret the 420 images in the validation set was substantially longer for the radiologists (240 minutes) than for CheXNeXt (1.5 minutes). The main limitations of our study are that neither CheXNeXt nor the radiologists were permitted to use patient history or review prior examinations and that evaluation was limited to a dataset from a single institution. CONCLUSIONS: In this study, we developed and validated a deep learning algorithm that classified clinically important abnormalities in chest radiographs at a performance level comparable to practicing radiologists. Once tested prospectively in clinical settings, the algorithm could have the potential to expand patient access to chest radiograph diagnostics.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "C1",
+          "C2"
+        ],
+        "contribution": "CheXNeXt radyologlarla aynı doğrulama görüntülerinde retrospektif olarak karşılaştırılıyor.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "c721fd41465a5add",
+        "sol": {
+          "label": "relevant",
+          "reason": "CheXNeXt radyologlarla aynı doğrulama görüntülerinde retrospektif olarak karşılaştırılıyor. Crossref reference[77] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "c721fd41465a5add",
+          "label": "relevant",
+          "reason": "CheXNeXt vs practicing radiologists, retrospective design (C1, C2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref078",
+      "doi": "10.1038/s41746-019-0099-8",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Deep learning versus human graders for classifying diabetic retinopathy severity in a nationwide screening program",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "Ulusal tarama verisinde insan değerlendiricilerle karşılaştırma ve retinal uzman paneli referansı özette açık. Crossref reference[78] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 78,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib79",
+          "doi-asserted-by": "crossref",
+          "first-page": "25",
+          "DOI": "10.1038/s41746-019-0099-8",
+          "article-title": "Deep learning versus human graders for classifying diabetic retinopathy severity in a nationwide screening program",
+          "volume": "2",
+          "author": "Ruamviboonsuk",
+          "year": "2019",
+          "journal-title": "NPJ Digit Med"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-78.json",
+        "crossref_sha256": "e0f2007a4011dcf9dce36a4e9e3d860c0023233d806fbdbeab9beb335909e64e",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2935900679",
+        "abstract_text": "Abstract Deep learning algorithms have been used to detect diabetic retinopathy (DR) with specialist-level accuracy. This study aims to validate one such algorithm on a large-scale clinical population, and compare the algorithm performance with that of human graders. A total of 25,326 gradable retinal images of patients with diabetes from the community-based, nationwide screening program of DR in Thailand were analyzed for DR severity and referable diabetic macular edema (DME). Grades adjudicated by a panel of international retinal specialists served as the reference standard. Relative to human graders, for detecting referable DR (moderate NPDR or worse), the deep learning algorithm had significantly higher sensitivity (0.97 vs. 0.74, p < 0.001), and a slightly lower specificity (0.96 vs. 0.98, p < 0.001). Higher sensitivity of the algorithm was also observed for each of the categories of severe or worse NPDR, PDR, and DME ( p < 0.001 for all comparisons). The quadratic-weighted kappa for determination of DR severity levels by the algorithm and human graders was 0.85 and 0.78 respectively ( p < 0.001 for the difference). Across different severity levels of DR for determining referable disease, deep learning significantly reduced the false negative rate (by 23%) at the cost of slightly higher false positive rates (2%). Deep learning algorithms may serve as a valuable tool for DR screening.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "5bbfb8ec36a34cd3",
+        "sol": {
+          "label": "relevant",
+          "reason": "Ulusal tarama verisinde insan değerlendiricilerle karşılaştırma ve retinal uzman paneli referansı özette açık. Crossref reference[78] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "5bbfb8ec36a34cd3",
+          "label": "relevant",
+          "reason": "DL vs human graders in a nationwide DR screening programme (C1, real-world setting).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref087",
+      "doi": "10.1001/jamadermatol.2018.4378",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Expert-Level Diagnosis of Nonpigmented Skin Cancer by Combined Convolutional Neural Networks",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "CNN ile farklı deneyim düzeylerindeki tıbbi personelin tanısı aynı test vakalarında karşılaştırılıyor. Crossref reference[87] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 87,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib88",
+          "doi-asserted-by": "crossref",
+          "first-page": "58",
+          "DOI": "10.1001/jamadermatol.2018.4378",
+          "article-title": "Expert-level diagnosis of nonpigmented skin cancer by combined convolutional neural networks",
+          "volume": "155",
+          "author": "Tschandl",
+          "year": "2019",
+          "journal-title": "JAMA Dermatol"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-87.json",
+        "crossref_sha256": "bbb1998be0cee32f6b420335527205a2a8a9dd862f9746cd1fc6cbdaacdd0402",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2903060508",
+        "abstract_text": "Importance: Convolutional neural networks (CNNs) achieve expert-level accuracy in the diagnosis of pigmented melanocytic lesions. However, the most common types of skin cancer are nonpigmented and nonmelanocytic, and are more difficult to diagnose. Objective: To compare the accuracy of a CNN-based classifier with that of physicians with different levels of experience. Design, Setting, and Participants: A CNN-based classification model was trained on 7895 dermoscopic and 5829 close-up images of lesions excised at a primary skin cancer clinic between January 1, 2008, and July 13, 2017, for a combined evaluation of both imaging methods. The combined CNN (cCNN) was tested on a set of 2072 unknown cases and compared with results from 95 human raters who were medical personnel, including 62 board-certified dermatologists, with different experience in dermoscopy. Main Outcomes and Measures: The proportions of correct specific diagnoses and the accuracy to differentiate between benign and malignant lesions measured as an area under the receiver operating characteristic curve served as main outcome measures. Results: Among 95 human raters (51.6% female; mean age, 43.4 years; 95% CI, 41.0-45.7 years), the participants were divided into 3 groups (according to years of experience with dermoscopy): beginner raters (<3 years), intermediate raters (3-10 years), or expert raters (>10 years). The area under the receiver operating characteristic curve of the trained cCNN was higher than human ratings (0.742; 95% CI, 0.729-0.755 vs 0.695; 95% CI, 0.676-0.713; P < .001). The specificity was fixed at the mean level of human raters (51.3%), and therefore the sensitivity of the cCNN (80.5%; 95% CI, 79.0%-82.1%) was higher than that of human raters (77.6%; 95% CI, 74.7%-80.5%). The cCNN achieved a higher percentage of correct specific diagnoses compared with human raters (37.6%; 95% CI, 36.6%-38.4% vs 33.5%; 95% CI, 31.5%-35.6%; P = .001) but not compared with experts (37.3%; 95% CI, 35.7%-38.8% vs 40.0%; 95% CI, 37.0%-43.0%; P = .18). Conclusions and Relevance: Neural networks are able to classify dermoscopic and close-up images of nonpigmented lesions as accurately as human experts in an experimental setting.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "45030e43ae78b0d6",
+        "sol": {
+          "label": "relevant",
+          "reason": "CNN ile farklı deneyim düzeylerindeki tıbbi personelin tanısı aynı test vakalarında karşılaştırılıyor. Crossref reference[87] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "45030e43ae78b0d6",
+          "label": "relevant",
+          "reason": "Combined CNN vs dermatologists for nonpigmented skin cancer (C1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "clinical_imaging_ref108",
+      "doi": "10.1371/journal.pmed.1002683",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Variable generalization performance of a deep learning model to detect pneumonia in chest radiographs: A cross-sectional study",
+      "stratum": "Tıp/klinik",
+      "label": "ilgili",
+      "label_reason": "Üç hastane sistemi arasında dış doğrulama ve hastane/prevalans karıştırıcısı inceleniyor; klinisyen karşılaştırması iddiası yok. Crossref reference[108] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1016/s2589-7500(19)30123-2",
+        "reference_index_zero_based": 108,
+        "reference_entry": {
+          "key": "10.1016/S2589-7500(19)30123-2_bib109",
+          "doi-asserted-by": "crossref",
+          "DOI": "10.1371/journal.pmed.1002683",
+          "article-title": "Variable generalization performance of a deep learning model to detect pneumonia in chest radiographs: a cross-sectional study",
+          "volume": "15",
+          "author": "Zech",
+          "year": "2018",
+          "journal-title": "PLoS Med"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-target-108.json",
+        "crossref_sha256": "bd686cbc5ea675ee334016c633a98c79f9f51544ed1fe3a80ad01f48523969be",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2811374795",
+        "abstract_text": "BACKGROUND: There is interest in using convolutional neural networks (CNNs) to analyze medical imaging to provide computer-aided diagnosis (CAD). Recent work has suggested that image classification CNNs may not generalize to new data as well as previously believed. We assessed how well CNNs generalized across three hospital systems for a simulated pneumonia screening task. METHODS AND FINDINGS: A cross-sectional design with multiple model training cohorts was used to evaluate model generalizability to external sites using split-sample validation. A total of 158,323 chest radiographs were drawn from three institutions: National Institutes of Health Clinical Center (NIH; 112,120 from 30,805 patients), Mount Sinai Hospital (MSH; 42,396 from 12,904 patients), and Indiana University Network for Patient Care (IU; 3,807 from 3,683 patients). These patient populations had an age mean (SD) of 46.9 years (16.6), 63.2 years (16.5), and 49.6 years (17) with a female percentage of 43.5%, 44.8%, and 57.3%, respectively. We assessed individual models using the area under the receiver operating characteristic curve (AUC) for radiographic findings consistent with pneumonia and compared performance on different test sets with DeLong's test. The prevalence of pneumonia was high enough at MSH (34.2%) relative to NIH and IU (1.2% and 1.0%) that merely sorting by hospital system achieved an AUC of 0.861 (95% CI 0.855-0.866) on the joint MSH-NIH dataset. Models trained on data from either NIH or MSH had equivalent performance on IU (P values 0.580 and 0.273, respectively) and inferior performance on data from each other relative to an internal test set (i.e., new data from within the hospital system used for training data; P values both <0.001). The highest internal performance was achieved by combining training and test data from MSH and NIH (AUC 0.931, 95% CI 0.927-0.936), but this model demonstrated significantly lower external performance at IU (AUC 0.815, 95% CI 0.745-0.885, P = 0.001). To test the effect of pooling data from sites with disparate pneumonia prevalence, we used stratified subsampling to generate MSH-NIH cohorts that only differed in disease prevalence between training data sites. When both training data sites had the same pneumonia prevalence, the model performed consistently on external IU data (P = 0.88). When a 10-fold difference in pneumonia rate was introduced between sites, internal test performance improved compared to the balanced model (10× MSH risk P < 0.001; 10× NIH P = 0.002), but this outperformance failed to generalize to IU (MSH 10× P < 0.001; NIH 10× P = 0.027). CNNs were able to directly detect hospital system of a radiograph for 99.95% NIH (22,050/22,062) and 99.98% MSH (8,386/8,388) radiographs. The primary limitation of our approach and the available public data is that we cannot fully assess what other factors might be contributing to hospital system-specific biases. CONCLUSION: Pneumonia-screening CNNs achieved better internal than external performance in 3 out of 5 natural comparisons. When models were trained on pooled data from sites with different pneumonia prevalence, they performed better on new pooled data from these sites but not on external data. CNNs robustly identified hospital system and department within a hospital, which can have large differences in disease burden and may confound predictions.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "C2"
+        ],
+        "contribution": "Üç hastane sistemi arasında dış doğrulama ve hastane/prevalans karıştırıcısı inceleniyor; klinisyen karşılaştırması iddiası yok.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "3eedf555d76221be",
+        "sol": {
+          "label": "relevant",
+          "reason": "Üç hastane sistemi arasında dış doğrulama ve hastane/prevalans karıştırıcısı inceleniyor; klinisyen karşılaştırması iddiası yok. Crossref reference[108] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "3eedf555d76221be",
+          "label": "relevant",
+          "reason": "Shows DL pneumonia model generalises variably across external hospitals; direct external-validation evidence (C2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    }
+  ],
+  "revision": "consensus-freeze-1",
+  "revision_history": {
+    "previous_question": "How are deep learning systems evaluated against expert clinicians in medical imaging, and what study-design and reporting limitations affect those comparisons?",
+    "previous_question_sha256": "aab74b37e6fc9a2ea253573954a07f5f630cfd2fd2ecb367ff235b825cc3422a",
+    "previous_snapshot": ".local/benchmark/2026-10-07-quality85-revision/clinical_imaging-before.json",
+    "scope_reason": "Kaynakça yetersizliği nedeniyle daha zengin OA karşılaştırma derlemesi; sağlık çalışanları ve dış doğrulama amacına dönüş."
+  },
+  "source_evidence": {
+    "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-source.json",
+    "crossref_sha256": "281aedc7ee8ef58c3ccf59d3514a7b941c4ba1ed1befb9611bead12f463f93e4",
+    "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/clinical-openalex.json",
+    "abstract_text": "BACKGROUND: Deep learning offers considerable promise for medical diagnostics. We aimed to evaluate the diagnostic accuracy of deep learning algorithms versus health-care professionals in classifying diseases using medical imaging. METHODS: In this systematic review and meta-analysis, we searched Ovid-MEDLINE, Embase, Science Citation Index, and Conference Proceedings Citation Index for studies published from Jan 1, 2012, to June 6, 2019. Studies comparing the diagnostic performance of deep learning models and health-care professionals based on medical imaging, for any disease, were included. We excluded studies that used medical waveform data graphics material or investigated the accuracy of image segmentation rather than disease classification. We extracted binary diagnostic accuracy data and constructed contingency tables to derive the outcomes of interest: sensitivity and specificity. Studies undertaking an out-of-sample external validation were included in a meta-analysis, using a unified hierarchical model. This study is registered with PROSPERO, CRD42018091176. FINDINGS: Our search identified 31 587 studies, of which 82 (describing 147 patient cohorts) were included. 69 studies provided enough data to construct contingency tables, enabling calculation of test accuracy, with sensitivity ranging from 9·7% to 100·0% (mean 79·1%, SD 0·2) and specificity ranging from 38·9% to 100·0% (mean 88·3%, SD 0·1). An out-of-sample external validation was done in 25 studies, of which 14 made the comparison between deep learning models and health-care professionals in the same sample. Comparison of the performance between health-care professionals in these 14 studies, when restricting the analysis to the contingency table for each study reporting the highest accuracy, found a pooled sensitivity of 87·0% (95% CI 83·0-90·2) for deep learning models and 86·4% (79·9-91·0) for health-care professionals, and a pooled specificity of 92·5% (95% CI 85·1-96·4) for deep learning models and 90·5% (80·6-95·7) for health-care professionals. INTERPRETATION: Our review found the diagnostic performance of deep learning models to be equivalent to that of health-care professionals. However, a major finding of the review is that few studies presented externally validated results or compared the performance of deep learning models and health-care professionals using the same sample. Additionally, poor reporting is prevalent in deep learning studies, which limits reliable interpretation of the reported diagnostic accuracy. New reporting standards that address specific challenges of deep learning could improve future studies, enabling greater confidence in the results of future evaluations of this promising technology. FUNDING: None."
+  },
+  "consensus_freeze": {
+    "original_sol_snapshot": ".local/benchmark/2026-10-07-quality85-revision/clinical_imaging-sol-before-consensus.json",
+    "original_sol_sha256": "36dbcbe4a5425ae9da6db8116d8fc70029a9848c9164fd5c143ef0412264fcc9",
+    "claude_input": ".local/docs/product/search-quality-85-claude-labels-2026-10-07.json",
+    "claude_sha256": "031f012c50599684f94df7978c355786f8cab1a62fd9e360c5d8c26675666945",
+    "blind_evidence": ".local/benchmark/2026-10-07-quality85-revision/clinical_imaging-blind-evidence.json",
+    "blind_evidence_sha256": "77db0292431b149f68d7b1dd12d99f9e918a2d3cdff751cd32106a70dc94c5cb",
+    "agreement": {
+      "n": 16,
+      "agreements": 13,
+      "raw_agreement": 0.8125,
+      "expected_agreement": 0.76171875,
+      "cohen_kappa": 0.21311475409836064,
+      "cohen_kappa_exact": "13/61",
+      "disagreements": 3,
+      "contingency": {
+        "relevant": {
+          "relevant": 13,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "background": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "out_of_scope": {
+          "relevant": 0,
+          "background": 1,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "undecidable": {
+          "relevant": 2,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        }
+      }
+    },
+    "sol_keys": [
+      "clinical_imaging_ref044",
+      "clinical_imaging_ref077",
+      "clinical_imaging_ref108"
+    ],
+    "claude_keys": [
+      "clinical_imaging_ref044",
+      "clinical_imaging_ref108",
+      "clinical_imaging_ref050"
+    ],
+    "key_intersection": [
+      "clinical_imaging_ref044",
+      "clinical_imaging_ref108"
+    ],
+    "final_keys": [
+      "clinical_imaging_ref044",
+      "clinical_imaging_ref077",
+      "clinical_imaging_ref108"
+    ],
+    "key_selection_reason": "Kesişimdeki ref044 ve ref108 önce seçildi: patolog karşılaştırması ve dış doğrulama/karıştırıcı koşulları. Üçüncü ref077, saklı özette radyolog karşılaştırması ve retrospektif doğrulama koşulları verdiği için korundu; Claude ref050 alternatifi dışlanmış hedef değildir.",
+    "relevant_targets": 13,
+    "human_verified": false
+  }
+}

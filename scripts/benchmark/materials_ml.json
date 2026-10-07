@@ -1,0 +1,937 @@
+{
+  "name": "materials_ml",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-10-07",
+  "label_authority": "Sol + Claude kör iki model uzlaşısı, uyuşmazlıklar özetle karara bağlandı; insan doğrulaması yok",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "development",
+  "question": "How are machine learning methods used to predict material properties and guide material discovery, and what data and validation limitations constrain these applications?",
+  "question_sha256": "4d5c9397373a11facda3790751f5e8153141db9c20a67876dfc8da80be224345",
+  "reference": "Machine learning in materials science (2019), DOI 10.1002/inf2.12028; Crossref /works/10.1002/inf2.12028 reference field; abstract objective/scope; OA license http://creativecommons.org/licenses/by/4.0/; retained evidence .local/benchmark/2026-10-07-quality85-crossref/materials-source.json. Source review is not a target and is never supplied to the run.",
+  "answer_elements": [
+    {
+      "id": "M1",
+      "question": "Property prediction methods and representations"
+    },
+    {
+      "id": "M2",
+      "question": "Data sources and material discovery strategies"
+    },
+    {
+      "id": "M3",
+      "question": "Validation conditions and limitations"
+    }
+  ],
+  "papers": [
+    {
+      "key": "materials_ml_01",
+      "doi": "10.1038/nature17439",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Machine-learning-assisted materials discovery using failed experiments",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "Başarısız deneylerden ML destekli malzeme keşfi doğrudan başlıkta; doğrulama ayrıntısı okunamadı. Crossref reference[27] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 27,
+        "reference_entry": {
+          "key": "e_1_2_9_29_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1038/nature17439"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/materials-target-27.json",
+        "crossref_sha256": "5dc0714d8c9ccf1105ca8c119ae15110a2820f94d77dfe15a2080e4675a84990",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2347129741",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "43978b22afc7822f",
+        "sol": {
+          "label": "relevant",
+          "reason": "Başarısız deneylerden ML destekli malzeme keşfi doğrudan başlıkta; doğrulama ayrıntısı okunamadı. Crossref reference[27] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "43978b22afc7822f",
+          "label": "relevant",
+          "reason": "ML trained on failed experiments guides synthesis discovery (M2, data limitation M3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_ref028",
+      "doi": "10.1126/science.aat2663",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Inverse molecular design using machine learning: Generative models for matter engineering",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "Özet inverse design yöntemlerini photovoltaics, redox flow batteries ve solid-state materials bağlamında açıklıyor; M2 katkısı var. Donmuş soru birincil araştırma şartı koymuyor; derleme olması dışlama nedeni değil.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 28,
+        "reference_entry": {
+          "key": "e_1_2_9_30_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1126/science.aat2663"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/materials-target-28.json",
+        "crossref_sha256": "7182efb69af54980de748e1a7386b699a3310071ca02f70eb788cdc908f57d01",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2883583109",
+        "abstract_text": "The discovery of new materials can bring enormous societal and technological progress. In this context, exploring completely the large space of potential materials is computationally intractable. Here, we review methods for achieving inverse design, which aims to discover tailored materials from the starting point of a particular desired functionality. Recent advances from the rapidly growing field of artificial intelligence, mostly from the subfield of machine learning, have resulted in a fertile exchange of ideas, where approaches to inverse molecular design are being proposed and employed at a rapid pace. Among these, deep generative models have been applied to numerous classes of materials: rational design of prospective drugs, synthetic routes to organic compounds, and optimization of photovoltaics and redox flow batteries, as well as a variety of other solid-state materials.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "7111c78e289102f1",
+        "sol": {
+          "label": "relevant",
+          "reason": "Özet ML ile inverse material design, photovoltaics ve solid-state malzemeleri açıkça kapsıyor. Crossref reference[28] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "7111c78e289102f1",
+          "label": "background",
+          "reason": "Review of generative inverse design; not a primary method/result.",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "relevant",
+          "reason": "Özet inverse design yöntemlerini photovoltaics, redox flow batteries ve solid-state materials bağlamında açıklıyor; M2 katkısı var. Donmuş soru birincil araştırma şartı koymuyor; derleme olması dışlama nedeni değil.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "materials_ml_02",
+      "doi": "10.1021/acs.jpclett.5b00831",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Machine Learning Predictions of Molecular Properties: Accurate Many-Body Potentials and Nonlocality in Chemical Space",
+      "stratum": "Malzeme/kimya",
+      "label": "arka plan",
+      "label_reason": "Özet moleküler enerji, polarizability ve frontier orbital kestirimini açıklıyor; doğrudan malzeme uygulaması veya malzeme keşfi doğrulanmıyor. Temsil yöntemi arka plan katkısıdır; molekül özelliği otomatik olarak malzeme özelliği sayılmadı.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 32,
+        "reference_entry": {
+          "key": "e_1_2_9_34_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1021/acs.jpclett.5b00831"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/materials-target-32.json",
+        "crossref_sha256": "35b94396e7ccb1cad4fb0bdd0ea3f26f35fd5c17d577e036bf05cd590ded37c2",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W1531674615",
+        "abstract_text": "Abstract Simultaneously accurate and efficient prediction of molecular properties throughout chemical compound space is a critical ingredient toward rational compound design in chemical and pharmaceutical industries. Aiming toward this goal, we develop and apply a systematic hierarchy of efficient empirical methods to estimate atomization and total energies of molecules. These methods range from a simple sum over atoms, to addition of bond energies, to pairwise interatomic force fields, reaching to the more sophisticated machine learning approaches that are capable of describing collective interactions between many atoms or bonds. In the case of equilibrium molecular geometries, even simple pairwise force fields demonstrate prediction accuracy comparable to benchmark energies calculated using density functional theory with hybrid exchange-correlation functionals; however, accounting for the collective many-body interactions proves to be essential for approaching the “holy grail” of chemical accuracy of 1 kcal/mol for both equilibrium and out-of-equilibrium geometries. This remarkable accuracy is achieved by a vectorized representation of molecules (so-called Bag of Bonds model) that exhibits strong nonlocality in chemical space. In addition, the same representation allows us to predict accurate electronic properties of molecules, such as their polarizability and molecular frontier orbital energies.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "0fe4032aac39731d",
+        "sol": {
+          "label": "relevant",
+          "reason": "Moleküler enerjiler ve Bag of Bonds temsilini öğrenen özellik kestirimi özette açık. Crossref reference[32] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "0fe4032aac39731d",
+          "label": "background",
+          "reason": "ML molecular properties in chemical space; molecular, not material property prediction.",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "background",
+          "reason": "Özet moleküler enerji, polarizability ve frontier orbital kestirimini açıklıyor; doğrudan malzeme uygulaması veya malzeme keşfi doğrulanmıyor. Temsil yöntemi arka plan katkısıdır; molekül özelliği otomatik olarak malzeme özelliği sayılmadı.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "materials_ml_ref039",
+      "doi": "10.1021/acs.chemmater.6b02724",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "High-Throughput Machine-Learning-Driven Synthesis of Full-Heusler Compounds",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "Full-Heusler bileşiklerinin ML yönlendirmeli sentezi başlıkta açık. Crossref reference[39] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 39,
+        "reference_entry": {
+          "key": "e_1_2_9_41_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1021/acs.chemmater.6b02724"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-39.json",
+        "crossref_sha256": "cf9ee8fce0f264ad6c94981bfa1388faf791ec40a4f0748979ead1086cfad460",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2520500207",
+        "abstract_text": "A machine-learning model has been trained to discover Heusler compounds, which are intermetallics exhibiting diverse physical properties attractive for applications in thermoelectric and spintronic materials. Improving these properties requires knowledge of crystal structures, which occur in three subtle variations (Heusler, inverse Heusler, and CsCl-type structures) that are difficult, and at times impossible, to distinguish by diffraction techniques. Compared to alternative approaches, this Heusler discovery engine performs exceptionally well, making fast and reliable predictions of the occurrence of Heusler vs non-Heusler compounds for an arbitrary combination of elements with no structural input on over 400 000 candidates. The model has a true positive rate of 0.94 (and false positive rate of 0.01). It is also valuable for data sanitizing, by flagging questionable entries in crystallographic databases. It was applied to screen candidates with the formula AB 2 C and predict the existence of 12 novel gallides M Ru 2 Ga and Ru M 2 Ga (M = Ti–Co) as Heusler compounds, which were confirmed experimentally. One member, TiRu 2 Ga, exhibited diagnostic superstructure peaks that confirm the adoption of an ordered Heusler as opposed to a disordered CsCl-type structure.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "50e954446dec2107",
+        "sol": {
+          "label": "relevant",
+          "reason": "Full-Heusler bileşiklerinin ML yönlendirmeli sentezi başlıkta açık. Crossref reference[39] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "50e954446dec2107",
+          "label": "relevant",
+          "reason": "ML-driven discovery of Heusler compounds with experimental validation (M2, M3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_03",
+      "doi": "10.1038/s41467-018-05761-w",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Accelerated discovery of stable lead-free hybrid organic-inorganic perovskites via machine learning",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "ML+DFT ile perovskit bandgap kestirimi ve aday taraması özette açık. Crossref reference[40] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 40,
+        "reference_entry": {
+          "key": "e_1_2_9_42_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1038/s41467-018-05761-w"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/materials-target-40.json",
+        "crossref_sha256": "1d10537512831ddb2ad09f654bcde1350b7068d18fca71ba0a64efbcc0d57de9",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2888395196",
+        "abstract_text": "Abstract Rapidly discovering functional materials remains an open challenge because the traditional trial-and-error methods are usually inefficient especially when thousands of candidates are treated. Here, we develop a target-driven method to predict undiscovered hybrid organic-inorganic perovskites (HOIPs) for photovoltaics. This strategy, combining machine learning techniques and density functional theory calculations, aims to quickly screen the HOIPs based on bandgap and solve the problems of toxicity and poor environmental stability in HOIPs. Successfully, six orthorhombic lead-free HOIPs with proper bandgap for solar cells and room temperature thermal stability are screened out from 5158 unexplored HOIPs and two of them stand out with direct bandgaps in the visible region and excellent environmental stability. Essentially, a close structure-property relationship mapping the HOIPs bandgap is established. Our method can achieve high accuracy in a flash and be applicable to a broad class of functional material design.",
+        "abstract_source": "crossref"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "M1",
+          "M2"
+        ],
+        "contribution": "ML+DFT ile perovskit bandgap kestirimi ve aday taraması özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "f685e26763d99948",
+        "sol": {
+          "label": "relevant",
+          "reason": "ML+DFT ile perovskit bandgap kestirimi ve aday taraması özette açık. Crossref reference[40] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "f685e26763d99948",
+          "label": "relevant",
+          "reason": "ML-accelerated discovery of stable lead-free hybrid perovskites with DFT check (M2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_ref041",
+      "doi": "10.1038/s41598-018-35934-y",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "ElemNet: Deep Learning the Chemistry of Materials From Only Elemental Composition",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "Elemental bileşimden malzeme özelliği öğrenimi ve aday taraması özette açık. Crossref reference[41] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 41,
+        "reference_entry": {
+          "key": "e_1_2_9_43_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1038/s41598-018-35934-y"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-41.json",
+        "crossref_sha256": "44853788d0f2b202f540a549a2743d05664f81d91758d0ae820bf60490554a3d",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2902452488",
+        "abstract_text": "Abstract Conventional machine learning approaches for predicting material properties from elemental compositions have emphasized the importance of leveraging domain knowledge when designing model inputs. Here, we demonstrate that by using a deep learning approach, we can bypass such manual feature engineering requiring domain knowledge and achieve much better results, even with only a few thousand training samples. We present the design and implementation of a deep neural network model referred to as ElemNet ; it automatically captures the physical and chemical interactions and similarities between different elements using artificial intelligence which allows it to predict the materials properties with better accuracy and speed. The speed and best-in-class accuracy of ElemNet enable us to perform a fast and robust screening for new material candidates in a huge combinatorial space; where we predict hundreds of thousands of chemical systems that could contain yet-undiscovered compounds.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "3256ed20394cdec8",
+        "sol": {
+          "label": "relevant",
+          "reason": "Elemental bileşimden malzeme özelliği öğrenimi ve aday taraması özette açık. Crossref reference[41] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "3256ed20394cdec8",
+          "label": "relevant",
+          "reason": "ElemNet property prediction from composition only, OQMD data (M1, M2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_ref061",
+      "doi": "10.1021/acscentsci.8b00507",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "PotentialNet for Molecular Property Prediction",
+      "stratum": "Malzeme/kimya",
+      "label": "arka plan",
+      "label_reason": "Özet PotentialNet uygulamasını drug discovery, protein–ligand binding ve ligand görevleriyle sınırlandırıyor; doğrudan malzeme uygulaması göstermiyor. Genel model/validation yöntemi arka plan olarak korunur.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 61,
+        "reference_entry": {
+          "key": "e_1_2_9_63_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1021/acscentsci.8b00507"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-61.json",
+        "crossref_sha256": "b43e16110408aed67697d9c1017cc09966d907c32544531ccc4184dbf798c8f8",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2895884529",
+        "abstract_text": "High Resolution Image Download MS PowerPoint Slide The arc of drug discovery entails a multiparameter optimization problem spanning vast length scales. The key parameters range from solubility (angstroms) to protein–ligand binding (nanometers) to in vivo toxicity (meters). Through feature learning—instead of feature engineering—deep neural networks promise to outperform both traditional physics-based and knowledge-based machine learning models for predicting molecular properties pertinent to drug discovery. To this end, we present the PotentialNet family of graph convolutions. These models are specifically designed for and achieve state-of-the-art performance for protein–ligand binding affinity. We further validate these deep neural networks by setting new standards of performance in several ligand-based tasks. In parallel, we introduce a new metric, the Regression Enrichment Factor EF χ (R), to measure the early enrichment of computational models for chemical data. Finally, we introduce a cross-validation strategy based on structural homology clustering that can more accurately measure model generalizability, which crucially distinguishes the aims of machine learning for drug discovery from standard machine learning tasks.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "798281ea04c8ff15",
+        "sol": {
+          "label": "undecidable",
+          "reason": "Molecular property ifadesinden malzeme özellikleri bağlamı doğrulanamadı; başlık yeterli değil. Crossref reference[61] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "798281ea04c8ff15",
+          "label": "background",
+          "reason": "Molecular property / binding prediction model; molecular, not materials.",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "background",
+          "reason": "Özet PotentialNet uygulamasını drug discovery, protein–ligand binding ve ligand görevleriyle sınırlandırıyor; doğrudan malzeme uygulaması göstermiyor. Genel model/validation yöntemi arka plan olarak korunur.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "materials_ml_ref067",
+      "doi": "10.1021/ci500747n",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Deep Neural Nets as a Method for Quantitative Structure–Activity Relationships",
+      "stratum": "Malzeme/kimya",
+      "label": "kapsam dışı",
+      "label_reason": "Özet Merck ilaç keşfi QSAR veri kümelerini inceliyor; malzeme özellikleri/discovery sorusuna doğrudan cevap değil. Crossref reference[67] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 67,
+        "reference_entry": {
+          "key": "e_1_2_9_69_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1021/ci500747n"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-67.json",
+        "crossref_sha256": "46ef104eb7892c9ec14991c5f6d41457a437472658dfd3b26f580bcb72354d0f",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W1999798000",
+        "abstract_text": "Neural networks were widely used for quantitative structure-activity relationships (QSAR) in the 1990s. Because of various practical issues (e.g., slow on large problems, difficult to train, prone to overfitting, etc.), they were superseded by more robust methods like support vector machine (SVM) and random forest (RF), which arose in the early 2000s. The last 10 years has witnessed a revival of neural networks in the machine learning community thanks to new methods for preventing overfitting, more efficient training algorithms, and advancements in computer hardware. In particular, deep neural nets (DNNs), i.e. neural nets with more than one hidden layer, have found great successes in many applications, such as computer vision and natural language processing. Here we show that DNNs can routinely make better prospective predictions than RF on a set of large diverse QSAR data sets that are taken from Merck's drug discovery effort. The number of adjustable parameters needed for DNNs is fairly large, but our results show that it is not necessary to optimize them for individual data sets, and a single set of recommended parameters can achieve better performance than RF for most of the data sets we studied. The usefulness of the parameters is demonstrated on additional data sets not used in the calibration. Although training DNNs is still computationally intensive, using graphical processing units (GPUs) can make this issue manageable.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "63818451e5bb87f5",
+        "sol": {
+          "label": "out_of_scope",
+          "reason": "Özet Merck ilaç keşfi QSAR veri kümelerini inceliyor; malzeme özellikleri/discovery sorusuna doğrudan cevap değil. Crossref reference[67] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "63818451e5bb87f5",
+          "label": "out_of_scope",
+          "reason": "Deep nets for drug QSAR activity; pharmaceutical, not materials.",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_ref073",
+      "doi": "10.1016/j.actamat.2017.11.053",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Material structure-property linkages using three-dimensional convolutional neural networks",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "3D CNN ile malzeme yapı-özellik ilişkileri başlıkta açık. Crossref reference[73] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 73,
+        "reference_entry": {
+          "key": "e_1_2_9_75_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1016/j.actamat.2017.11.053"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-73.json",
+        "crossref_sha256": "647ef97529935ffdf863c8274a1814abcf036de604f7754bcacad87f05ddc835",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2777965033",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "266291d5df51b254",
+        "sol": {
+          "label": "relevant",
+          "reason": "3D CNN ile malzeme yapı-özellik ilişkileri başlıkta açık. Crossref reference[73] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "266291d5df51b254",
+          "label": "relevant",
+          "reason": "3D CNN structure-property linkage for microstructures (M1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_ref074",
+      "doi": "10.1063/1.5019779",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "SchNet – A deep learning architecture for molecules and materials",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "SchNet atomistik temsilden molekül ve malzeme özellikleri ve kuvvet alanlarını öğreniyor. Crossref reference[74] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 74,
+        "reference_entry": {
+          "key": "e_1_2_9_76_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1063/1.5019779"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-74.json",
+        "crossref_sha256": "c0e674aa133af73075bd390f72b913c637946c38d4b9f2d59a0c578759ba838e",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2778051509",
+        "abstract_text": "Deep learning has led to a paradigm shift in artificial intelligence, including web, text, and image search, speech recognition, as well as bioinformatics, with growing impact in chemical physics. Machine learning, in general, and deep learning, in particular, are ideally suitable for representing quantum-mechanical interactions, enabling us to model nonlinear potential-energy surfaces or enhancing the exploration of chemical compound space. Here we present the deep learning architecture SchNet that is specifically designed to model atomistic systems by making use of continuous-filter convolutional layers. We demonstrate the capabilities of SchNet by accurately predicting a range of properties across chemical space for molecules and materials, where our model learns chemically plausible embeddings of atom types across the periodic table. Finally, we employ SchNet to predict potential-energy surfaces and energy-conserving force fields for molecular dynamics simulations of small molecules and perform an exemplary study on the quantum-mechanical properties of C20-fullerene that would have been infeasible with regular ab initio molecular dynamics.",
+        "abstract_source": "crossref"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "M1"
+        ],
+        "contribution": "SchNet atomistik temsilden molekül ve malzeme özellikleri ve kuvvet alanlarını öğreniyor.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "1a51032f159d0e83",
+        "sol": {
+          "label": "relevant",
+          "reason": "SchNet atomistik temsilden molekül ve malzeme özellikleri ve kuvvet alanlarını öğreniyor. Crossref reference[74] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "1a51032f159d0e83",
+          "label": "relevant",
+          "reason": "SchNet architecture for molecules and materials property prediction (M1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_ref075",
+      "doi": "10.1038/ncomms13890",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Quantum-chemical insights from deep tensor neural networks",
+      "stratum": "Malzeme/kimya",
+      "label": "arka plan",
+      "label_reason": "Özet moleküler quantum observables, atomik enerjiler ve izomerleri kapsıyor; doğrudan malzeme uygulaması açıklanmıyor. M1 için genel temsil arka planıdır; hedef paydasına alınmadı.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 75,
+        "reference_entry": {
+          "key": "e_1_2_9_77_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1038/ncomms13890"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-75.json",
+        "crossref_sha256": "1f29d2a2d10d21184621df4e5f64d49dbcd3c576205cb1d8afcac5348f5c7bff",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2527189750",
+        "abstract_text": "Abstract Learning from data has led to paradigm shifts in a multitude of disciplines, including web, text and image search, speech recognition, as well as bioinformatics. Can machine learning enable similar breakthroughs in understanding quantum many-body systems? Here we develop an efficient deep learning approach that enables spatially and chemically resolved insights into quantum-mechanical observables of molecular systems. We unify concepts from many-body Hamiltonians with purpose-designed deep tensor neural networks, which leads to size-extensive and uniformly accurate (1 kcal mol −1 ) predictions in compositional and configurational chemical space for molecules of intermediate size. As an example of chemical relevance, the model reveals a classification of aromatic rings with respect to their stability. Further applications of our model for predicting atomic energies and local chemical potentials in molecules, reliable isomer energies, and molecules with peculiar electronic structure demonstrate the potential of machine learning for revealing insights into complex quantum-chemical systems.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "4a8000c5baabca08",
+        "sol": {
+          "label": "relevant",
+          "reason": "Deep tensor ağları moleküler kuantum özellikleri/enerjileri için atomistik temsil sunuyor. Crossref reference[75] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "4a8000c5baabca08",
+          "label": "background",
+          "reason": "Deep tensor NN for molecular quantum chemistry; molecules, not materials.",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "background",
+          "reason": "Özet moleküler quantum observables, atomik enerjiler ve izomerleri kapsıyor; doğrudan malzeme uygulaması açıklanmıyor. M1 için genel temsil arka planıdır; hedef paydasına alınmadı.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "materials_ml_ref077",
+      "doi": "10.1038/s41524-018-0128-1",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Deep-learning-based inverse design model for intelligent discovery of organic molecules",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "Özet encoder–decoder inverse design ile ışık emici moleküller ve OLED host malzemeleri üretildiğini açıkça söylüyor; M2 malzeme keşfine doğrudan katkı var. Moleküler temsil bu uygulamayı kapsam dışına çıkarmaz.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 77,
+        "reference_entry": {
+          "key": "e_1_2_9_79_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1038/s41524-018-0128-1"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-77.json",
+        "crossref_sha256": "f9bbb0b0ddbbddf7f6090f93988bed423a287cceea238b4e06aa3aa3ba6b6071",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2903564615",
+        "abstract_text": "Abstract The discovery of high-performance functional materials is crucial for overcoming technical issues in modern industries. Extensive efforts have been devoted toward accelerating and facilitating this process, not only experimentally but also from the viewpoint of materials design. Recently, machine learning has attracted considerable attention, as it can provide rational guidelines for efficient material exploration without time-consuming iterations or prior human knowledge. In this regard, here we develop an inverse design model based on a deep encoder-decoder architecture for targeted molecular design. Inspired by neural machine language translation, the deep neural network encoder extracts hidden features between molecular structures and their material properties, while the recurrent neural network decoder reconstructs the extracted features into new molecular structures having the target properties. In material design tasks, the proposed fully data-driven methodology successfully learned design rules from the given databases and generated promising light-absorbing molecules and host materials for a phosphorescent organic light-emitting diode by creating new ligands and combinatorial rules.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "80e9def4ec8186b8",
+        "sol": {
+          "label": "relevant",
+          "reason": "Encoder-decoder inverse design ile ışık emici ve OLED host malzeme molekülleri özette açık. Crossref reference[77] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "80e9def4ec8186b8",
+          "label": "background",
+          "reason": "Inverse design of organic molecules; molecular rather than materials discovery.",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "relevant",
+          "reason": "Özet encoder–decoder inverse design ile ışık emici moleküller ve OLED host malzemeleri üretildiğini açıkça söylüyor; M2 malzeme keşfine doğrudan katkı var. Moleküler temsil bu uygulamayı kapsam dışına çıkarmaz.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "materials_ml_ref113",
+      "doi": "10.1021/acs.jcim.7b00272",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Machine Learning for Silver Nanoparticle Electron Transfer Property Prediction",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "Gümüş nanoparçacık elektron transfer özelliğinin ML kestirimi başlıkta açık. Crossref reference[113] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 113,
+        "reference_entry": {
+          "key": "e_1_2_9_115_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1021/acs.jcim.7b00272"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-113.json",
+        "crossref_sha256": "0b666af2ef5b05adbfbc0c6eb382493b266c763d37942e5544759f1408f2a332",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2756682189",
+        "abstract_text": "Nanoparticles exhibit diverse structural and morphological features that are often interconnected, making the correlation of structure/property relationships challenging. In this study a multi-structure/single-property relationship of silver nanoparticles is developed for the energy of Fermi level, which can be tuned to improve the transfer of electrons in a variety of applications. By combining different machine learning analytical algorithms, including k-mean, logistic regression, and random forest with electronic structure simulations, we find that the degree of twinning (characterized by the fraction of hexagonal closed packed atoms) and the population of the {111} facet (characterized by a surface coordination number of nine) are strongly correlated to the Fermi energy of silver nanoparticles. A concise three layer artificial neural network together with principal component analysis is built to predict this property, with reduced geometrical, structural, and topological features, making the method ideal for efficient and accurate high-throughput screening of large-scale virtual nanoparticle libraries and the creation of single-structure/single-property, multi-structure/single-property, and single-structure/multi-property relationships in the near future.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "4109216babca7dfc",
+        "sol": {
+          "label": "relevant",
+          "reason": "Gümüş nanoparçacık elektron transfer özelliğinin ML kestirimi başlıkta açık. Crossref reference[113] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "4109216babca7dfc",
+          "label": "relevant",
+          "reason": "ML prediction of nanoparticle electron transfer property (M1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_ref114",
+      "doi": "10.1038/s41467-018-02937-2",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Predicting phase behavior of grain boundaries with evolutionary search and machine learning",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "Evrimsel arama ve öğrenmeye dayalı clustering ile Cu grain-boundary yapıları ve fazları bulunuyor. Crossref reference[114] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 114,
+        "reference_entry": {
+          "key": "e_1_2_9_116_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1038/s41467-018-02937-2"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-114.json",
+        "crossref_sha256": "53e92e14298e2cfbc0ba93318174bda217d42daa46e68a83be0d62a9e2a0a779",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2742061408",
+        "abstract_text": "Abstract The study of grain boundary phase transitions is an emerging field until recently dominated by experiments. The major bottleneck in the exploration of this phenomenon with atomistic modeling has been the lack of a robust computational tool that can predict interface structure. Here we develop a computational tool based on evolutionary algorithms that performs efficient grand-canonical grain boundary structure search and we design a clustering analysis that automatically identifies different grain boundary phases. Its application to a model system of symmetric tilt boundaries in Cu uncovers an unexpected rich polymorphism in the grain boundary structures. We find new ground and metastable states by exploring structures with different atomic densities. Our results demonstrate that the grain boundaries within the entire misorientation range have multiple phases and exhibit structural transitions, suggesting that phase behavior of interfaces is likely a general phenomenon.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "96206aac126735c5",
+        "sol": {
+          "label": "relevant",
+          "reason": "Evrimsel arama ve öğrenmeye dayalı clustering ile Cu grain-boundary yapıları ve fazları bulunuyor. Crossref reference[114] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "96206aac126735c5",
+          "label": "relevant",
+          "reason": "Evolutionary search plus ML predicts grain boundary phase behavior (M1, M2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_ref120",
+      "doi": "10.1038/srep19375",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Machine learning bandgaps of double perovskites",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "Double perovskit bandgap kestirimi, özellik seçimi ve train/validation/test koşulları özette açık. Crossref reference[120] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 120,
+        "reference_entry": {
+          "key": "e_1_2_9_122_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1038/srep19375"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-120.json",
+        "crossref_sha256": "c518d1b16e963ed3fd5f1ed1d62d3f26fc713c3448f2f99ceba709313a88ddfe",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2342831537",
+        "abstract_text": "Abstract The ability to make rapid and accurate predictions on bandgaps of double perovskites is of much practical interest for a range of applications. While quantum mechanical computations for high-fidelity bandgaps are enormously computation-time intensive and thus impractical in high throughput studies, informatics-based statistical learning approaches can be a promising alternative. Here we demonstrate a systematic feature-engineering approach and a robust learning framework for efficient and accurate predictions of electronic bandgaps of double perovskites. After evaluating a set of more than 1.2 million features, we identify lowest occupied Kohn-Sham levels and elemental electronegativities of the constituent atomic species as the most crucial and relevant predictors. The developed models are validated and tested using the best practices of data science and further analyzed to rationalize their prediction performance.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "bf1f98be191a1a7c",
+        "sol": {
+          "label": "relevant",
+          "reason": "Double perovskit bandgap kestirimi, özellik seçimi ve train/validation/test koşulları özette açık. Crossref reference[120] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "bf1f98be191a1a7c",
+          "label": "relevant",
+          "reason": "ML bandgap prediction for double perovskites with descriptor analysis (M1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_ref126",
+      "doi": "10.1021/acs.chemmater.6b04229",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Machine Learning and Statistical Analysis for Materials Science: Stability and Transferability of Fingerprint Descriptors and Chemical Insights",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "Malzeme tarama iş akışı, catalyst alloy descriptors ve stability/transferability değerlendirmesi özette açık. Crossref reference[126] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 126,
+        "reference_entry": {
+          "key": "e_1_2_9_128_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1021/acs.chemmater.6b04229"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-126.json",
+        "crossref_sha256": "72e67317624e5cd610782d5164de3952c581af2dfb9470372de2aa2995ca954e",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2606191816",
+        "abstract_text": "In the paradigm of virtual high-throughput screening for materials, we have developed a semiautomated workflow or “recipe” that can help a material scientist to start from a raw data set of materials with their properties and descriptors, build predictive models, and draw insights into the governing mechanism. We demonstrate our recipe, which employs machine learning tools and statistical analysis, through application to a case study leading to identification of descriptors relevant to catalysts for CO 2 electroreduction, starting from a published database of 298 catalyst alloys. At the heart of our methodology lies the Bootstrapped Projected Gradient Descent (BoPGD) algorithm, which has significant advantages over commonly used machine learning (ML) and statistical analysis (SA) tools such as the regression coefficient shrinkage-based method (LASSO) or artificial neural networks: (a) it selects descriptors with greater stability and transferability, with a goal to understand the chemical mechanism rather than fitting data, and (b) while being effective for smaller data sets such as in the test case, it employs clustering of descriptors to scale far more efficiently to large size of descriptor sets in terms of computational speed. In addition to identifying the descriptors that parametrize the d -band model of catalysts for CO 2 reduction, we predict work function to be an essential and relevant descriptor. Based on this result, we propose a modification of the d -band model that includes the chemical effect of work function, and show that the resulting predictive model gives the binding energy of CO to catalyst fairly accurately. Since our scheme is general and particularly efficient in reducing a set of large number of descriptors to a minimal one, we expect it to be a versatile tool in obtaining chemical insights into complex phenomena and development of predictive models for design of materials.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "M1",
+          "M3"
+        ],
+        "contribution": "Malzeme tarama iş akışı, catalyst alloy descriptors ve stability/transferability değerlendirmesi özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "f49d9892e54de2c0",
+        "sol": {
+          "label": "relevant",
+          "reason": "Malzeme tarama iş akışı, catalyst alloy descriptors ve stability/transferability değerlendirmesi özette açık. Crossref reference[126] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "f49d9892e54de2c0",
+          "label": "relevant",
+          "reason": "Stability and transferability of fingerprint descriptors; validation limitation (M1, M3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "materials_ml_ref137",
+      "doi": "10.1021/acscentsci.7b00572",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Automatic Chemical Design Using a Data-Driven Continuous Representation of Molecules",
+      "stratum": "Malzeme/kimya",
+      "label": "arka plan",
+      "label_reason": "Özet örnek uygulamaları drug-like ve dokuzdan az ağır atomlu moleküller olarak tanımlıyor; malzeme tasarımına doğrudan uygulama doğrulanmıyor. Genel generative yöntem arka plan olarak korunur.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 137,
+        "reference_entry": {
+          "key": "e_1_2_9_139_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1021/acscentsci.7b00572"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-137.json",
+        "crossref_sha256": "1392c8b80bbd473b8ea17a7df256fe23a49210e1e59ef2dd31a981243acd6132",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2529996553",
+        "abstract_text": "We report a method to convert discrete representations of molecules to and from a multidimensional continuous representation. This model allows us to generate new molecules for efficient exploration and optimization through open-ended spaces of chemical compounds. A deep neural network was trained on hundreds of thousands of existing chemical structures to construct three coupled functions: an encoder, a decoder, and a predictor. The encoder converts the discrete representation of a molecule into a real-valued continuous vector, and the decoder converts these continuous vectors back to discrete molecular representations. The predictor estimates chemical properties from the latent continuous vector representation of the molecule. Continuous representations of molecules allow us to automatically generate novel chemical structures by performing simple operations in the latent space, such as decoding random vectors, perturbing known chemical structures, or interpolating between molecules. Continuous representations also allow the use of powerful gradient-based optimization to efficiently guide the search for optimized functional compounds. We demonstrate our method in the domain of drug-like molecules and also in a set of molecules with fewer that nine heavy atoms.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "e66bd54386041954",
+        "sol": {
+          "label": "undecidable",
+          "reason": "Özet drug-like ve küçük molekül tasarımını örnekliyor; malzeme tasarımına doğrudan uygulama doğrulanmadı. Crossref reference[137] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "e66bd54386041954",
+          "label": "background",
+          "reason": "Molecular VAE for chemical design; molecules rather than materials.",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "background",
+          "reason": "Özet örnek uygulamaları drug-like ve dokuzdan az ağır atomlu moleküller olarak tanımlıyor; malzeme tasarımına doğrudan uygulama doğrulanmıyor. Genel generative yöntem arka plan olarak korunur.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "materials_ml_ref145",
+      "doi": "10.1021/acs.chemmater.7b03500",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Materials Synthesis Insights from Scientific Literature via Text Extraction and Machine Learning",
+      "stratum": "Malzeme/kimya",
+      "label": "ilgili",
+      "label_reason": "Literatürden text extraction ve ML ile malzeme sentezi bilgisi başlıkta açık. Crossref reference[145] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1002/inf2.12028",
+        "reference_index_zero_based": 145,
+        "reference_entry": {
+          "key": "e_1_2_9_147_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1021/acs.chemmater.7b03500"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/materials-target-145.json",
+        "crossref_sha256": "300c1b927113371e2c997d99dd8bbc6e0bc19c8d4280f8d1dc958af5375c0aa8",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2766362701",
+        "abstract_text": "In the past several years, Materials Genome Initiative (MGI) efforts have produced myriad examples of computationally designed materials in the fields of energy storage, catalysis, thermoelectrics, and hydrogen storage as well as large data resources that are used to screen for potentially transformative compounds. The bottleneck in high-throughput materials design has thus shifted to materials synthesis, which motivates our development of a methodology to automatically compile materials synthesis parameters across tens of thousands of scholarly publications using natural language processing techniques. To demonstrate our framework’s capabilities, we examine the synthesis conditions for various metal oxides across more than 12 thousand manuscripts. We then apply machine learning methods to predict the critical parameters needed to synthesize titania nanotubes via hydrothermal methods and verify this result against known mechanisms. Finally, we demonstrate the capacity for transfer learning by using machine learning models to predict synthesis outcomes on materials systems not included in the training set and thereby outperform heuristic strategies.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "d037fe8b6bf73828",
+        "sol": {
+          "label": "relevant",
+          "reason": "Literatürden text extraction ve ML ile malzeme sentezi bilgisi başlıkta açık. Crossref reference[145] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "d037fe8b6bf73828",
+          "label": "relevant",
+          "reason": "Text-mined literature as data source for synthesis insight (M2 data sources).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    }
+  ],
+  "revision": "consensus-freeze-1",
+  "revision_history": {
+    "previous_question": "How are machine learning methods used to predict material properties and guide material discovery, and what data and validation limitations constrain these applications?",
+    "previous_question_sha256": "4d5c9397373a11facda3790751f5e8153141db9c20a67876dfc8da80be224345",
+    "previous_snapshot": ".local/benchmark/2026-10-07-quality85-revision/materials_ml-before.json",
+    "scope_reason": "Soru ve kaynak derleme korunur; yalnız hedeflerin kanıtı ve sayısı düzeltilir."
+  },
+  "source_evidence": {
+    "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/materials-source.json",
+    "crossref_sha256": "a576703a224edffdc81d49e7bd6e4b666cd83846ebf59db8fcac50c183b100ea",
+    "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/materials-openalex.json",
+    "abstract_text": "Abstract Traditional methods of discovering new materials, such as the empirical trial and error method and the density functional theory (DFT)‐based method, are unable to keep pace with the development of materials science today due to their long development cycles, low efficiency, and high costs. Accordingly, due to its low computational cost and short development cycle, machine learning is coupled with powerful data processing and high prediction performance and is being widely used in material detection, material analysis, and material design. In this article, we discuss the basic operational procedures in analyzing material properties via machine learning, summarize recent applications of machine learning algorithms to several mature fields in materials science, and discuss the improvements that are required for wide‐ranging application."
+  },
+  "consensus_freeze": {
+    "original_sol_snapshot": ".local/benchmark/2026-10-07-quality85-revision/materials_ml-sol-before-consensus.json",
+    "original_sol_sha256": "e977b142db469a3806dde3a167220d590efe5d009a736bded0a082542679968f",
+    "claude_input": ".local/docs/product/search-quality-85-claude-labels-2026-10-07.json",
+    "claude_sha256": "031f012c50599684f94df7978c355786f8cab1a62fd9e360c5d8c26675666945",
+    "blind_evidence": ".local/benchmark/2026-10-07-quality85-revision/materials_ml-blind-evidence.json",
+    "blind_evidence_sha256": "45cb986bc84ce16ee5a4b11a77fb4a7b52cee7b01afc6de34f0f4797f38dafc6",
+    "agreement": {
+      "n": 18,
+      "agreements": 12,
+      "raw_agreement": 0.6666666666666666,
+      "expected_agreement": 0.5123456790123457,
+      "cohen_kappa": 0.31645569620253167,
+      "cohen_kappa_exact": "25/79",
+      "disagreements": 6,
+      "contingency": {
+        "relevant": {
+          "relevant": 11,
+          "background": 4,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "background": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "out_of_scope": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 1,
+          "undecidable": 0
+        },
+        "undecidable": {
+          "relevant": 0,
+          "background": 2,
+          "out_of_scope": 0,
+          "undecidable": 0
+        }
+      }
+    },
+    "sol_keys": [
+      "materials_ml_03",
+      "materials_ml_ref074",
+      "materials_ml_ref126"
+    ],
+    "claude_keys": [
+      "materials_ml_ref041",
+      "materials_ml_01",
+      "materials_ml_ref126"
+    ],
+    "key_intersection": [
+      "materials_ml_ref126"
+    ],
+    "final_keys": [
+      "materials_ml_03",
+      "materials_ml_ref074",
+      "materials_ml_ref126"
+    ],
+    "key_selection_reason": "Kesişimdeki ref126 descriptor stability/transferability için önce seçildi. _03 perovskit discovery ve ref074 atomistik property representations ile M1/M2/M3 kapsamı tamamlandı. Claude _01/ref041 alternatifleri ilgili hedef olarak korunur; _01 yalnız başlık düzeyindedir.",
+    "relevant_targets": 13,
+    "human_verified": false
+  }
+}

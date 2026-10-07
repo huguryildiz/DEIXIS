@@ -1,0 +1,747 @@
+{
+  "name": "oyster_restoration",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-10-07",
+  "label_authority": "Sol + Claude kör iki model uzlaşısı, uyuşmazlıklar özetle karara bağlandı; insan doğrulaması yok",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "heldout",
+  "question": "How does oyster reef restoration affect oyster populations, habitat provision, and nutrient removal relative to degraded or reference habitats?",
+  "question_sha256": "824f7136683485b1d7eadf9a7b7828a9a5a4de8f60e4f7dd038d24d5284e597e",
+  "reference": "Meta‐analysis of ecosystem services associated with oyster restoration (2022), DOI 10.1111/cobi.13966; Crossref /works/10.1111/cobi.13966 reference field; abstract objective/scope; OA license http://creativecommons.org/licenses/by/4.0/; retained evidence .local/benchmark/2026-10-07-quality85-crossref/ecology-source.json. Source review is not a target and is never supplied to the run.",
+  "answer_elements": [
+    {
+      "id": "O1",
+      "question": "Oyster population and production response"
+    },
+    {
+      "id": "O2",
+      "question": "Habitat provision and community response"
+    },
+    {
+      "id": "O3",
+      "question": "Nutrient removal and reference conditions"
+    }
+  ],
+  "papers": [
+    {
+      "key": "oyster_restoration_ref018",
+      "doi": "10.1002/eap.2340",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Recruitment enhancement varies by taxonomic group and oyster reef habitat characteristics",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Doğal ve restore resiflerde nekton recruitment farkları ve resif tasarım özellikleri özette açık. Crossref reference[18] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 18,
+        "reference_entry": {
+          "key": "e_1_2_6_20_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1002/eap.2340"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-target-18.json",
+        "crossref_sha256": "6090c40ddc4d57ed1e632bccf1096f10cef10f091adafb4a32d5711befdd7d73",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3140260853",
+        "abstract_text": "Abstract The rapid loss of coastal and estuarine biogenic habitats has reduced the delivery of valuable ecosystem services, resulting in calls for increased habitat restoration. Yet, a lack of information on how key habitat characteristics (e.g., area, vertical relief, age) influence the ability of restored habitats to deliver these ecosystem services hinders efforts to maximize the return on restoration investments. We conducted a meta‐analysis to assess the influence of reef type (natural or restored), taxa, and restored reef size, vertical relief, age, and tidal zone on the presence and magnitude of recruitment enhancement for nekton (i.e., fish and swimming crabs). Both intertidal and subtidal reefs, as well as restored and natural reefs, enhanced nekton recruitment, though there was variation among taxonomic groups with reef types. Recruitment enhancement was more common across taxa on restored (six families) than on natural (one family) reefs. Resident nekton families were more consistently enhanced than transient families. Nekton enhancement varied with a number of restored reef characteristics. Recruitment enhancement increased with greater reef size across taxa, decreased with higher vertical relief for two families, showed maximum recruitment around a single intertidal reef age for one family, and showed minimum recruitment around a single subtidal reef age for three families. Understanding variation across species in response to key design elements will improve restoration success and enhance return on investment. Moving forward, we recommend studies that vary reef habitat characteristics independently and in combination to identify how variation in these characteristics interact to influence nekton recruitment enhancement by oyster reefs.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "0010b6b0ec240a43",
+        "sol": {
+          "label": "relevant",
+          "reason": "Doğal ve restore resiflerde nekton recruitment farkları ve resif tasarım özellikleri özette açık. Crossref reference[18] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "0010b6b0ec240a43",
+          "label": "relevant",
+          "reason": "Meta-analysis of nekton recruitment enhancement on restored vs natural reefs by reef traits (O2).",
+          "reading_depth": "abstract"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "oyster_restoration_01",
+      "doi": "10.2983/035.035.0210",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Reversing a Rapid Decline in Oyster Reefs: Effects of Durable Substrate on Oyster Populations, Elevations, and Aquatic Bird Community Composition",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Bozulmuş resifte substrat ekleme, eşlenmiş kontrol ve istiridye/kuş yanıtları özette açık. Crossref reference[28] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 28,
+        "reference_entry": {
+          "key": "e_1_2_6_30_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.2983/035.035.0210"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/ecology-target-28.json",
+        "crossref_sha256": "d3eb7f3fa472c5c3cc1e56bc009a587196f50b003fdbb6848d40a6dc6d85a9b0",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2507429026",
+        "abstract_text": "Offshore oyster reefs in the Big Bend Coast of Florida have declined by 88% during the last 30 y, with the most likely mechanism being repeated die-offs due to predation and disease during high-salinity periods, driven by episodic and increasing periods of reduced freshwater input to estuaries. These die-off events have led to a conversion from shell to sandbar substrate and rapid loss of elevation (ca 8 cm/y). This process appears to be nonreversible, because oyster spat are unable to colonize sandy substrate. It is hypothesized that the addition of durable hard substrate would make reefs more resilient to periodic declines in freshwater flow by providing a persistent settlement site for extant larvae. This article reports a test of the assumption that oyster populations on these reefs are limited by substrate, and documents key effects on oysters, elevation, and avian usage associated with the addition of substrate. Durable substrate was added in the form of limerock cobbles and recycled clam Mercenaria mercenaria (Linnaeus, 1758) aquaculture bags filled with cultch, live oysters, and associated fauna to eight paired treatment and control sites spaced along a highly degraded offshore reef chain. Elevation on treatment reefs increased postconstruction by an average of 16 cm. Mean oyster density on treatment sites increased by 2.65×on rock, 14.5×on clam bags, and 9.2×overall compared with control sites. Recycled clam bags contributed approximately 25%of the surface area on treatment reefs, but accounted for 52% of the oysters observed. Oyster densities on treatment sites were between 89×and 125×those measured at a larger sample of nearby natural reefs, and exceeded the 89th percentile of reported densities at natural and restored reefs in the Gulf ofMexico. Total bird use was higher on treatment sites, but when controlled for elevation, all species but doublecrested cormorants [Phalacrocorax auritus (Lesson, 1831)] and bald eagles [Haliaeetus leucocephalus (Linnaeus, 1766)] preferred control (sand bar) sites. These results indicate that (1) oyster recruitment can be strongly limited by available, durable substrate, especially in high-energy environments; (2) aquaculture byproduct materials can play a significant role in the process of restoration; and (3) restoration of oyster reefs and other living shorelines may have impacts on avian community composition. Future research should be aimed at understanding whether durable substrate can also confer longer term resilience to oyster reef communities.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "O1",
+          "O2"
+        ],
+        "contribution": "Bozulmuş resifte substrat ekleme, eşlenmiş kontrol ve istiridye/kuş yanıtları özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "a75adbc5f50d0038",
+        "sol": {
+          "label": "relevant",
+          "reason": "Bozulmuş resifte substrat ekleme, eşlenmiş kontrol ve istiridye/kuş yanıtları özette açık. Crossref reference[28] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "a75adbc5f50d0038",
+          "label": "relevant",
+          "reason": "Durable substrate restoration effects on oyster populations, elevation and bird community (O1, O2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "oyster_restoration_02",
+      "doi": "10.3354/meps10188",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Addition of juvenile oysters fails to enhance oyster reef development in Pamlico Sound",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Restore resiflerde seeding, doğal recruitment ve substrat deneyinin karşılaştırması özette açık. Crossref reference[30] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 30,
+        "reference_entry": {
+          "key": "e_1_2_6_32_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.3354/meps10188"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/ecology-target-30.json",
+        "crossref_sha256": "63a45fec5ea3f77f56dfd5462f5ac522815039dfc95da828a235ecd2686f93d3",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2334571515",
+        "abstract_text": "Oyster reefs are one of the most depleted and degraded marine habitats worldwide.To reverse the current oyster reef declines, governmental and private organizations have invested substantial resources into oyster restoration.Restoration primarily consists of deploying hard substrate.If oyster recruitment is thought to be limited, hatchery-raised juvenile oysters are set on the hard substrate.These costly setting efforts are carried out despite limited information on whether seed oysters accelerate reef development and, if so, how oyster size and time of deployment maximize oyster survival.North Carolina, USA, has established subtidal oyster sanctuaries in Pamlico Sound using marl mounds and hatchery-raised juvenile oysters set on recycled shell.We experimentally manipulated marl mounds at 3 sanctuaries differing abiotically and biotically during summer 2010 and varied recycled shell and seed presence, seed size, and shell and seed deployment date.Although oyster settlement varied spatially, natural recruitment swamped any measurable effect of seeding.Our findings, in combination with information from 3 additional sanctuaries seeded in 2006 and 2008, indicate that seeding does not enhance oyster reef restoration efforts in Pamlico Sound.Financial resources used for oyster seed would be better used to increase the amount of substrate for oyster settlement.Although our results may not apply to areas with less natural oyster recruitment, our study highlights the need to quantify basic ecological processes on appropriate spatiotemporal scales to optimize restoration actions.Analogous information should underlie restoration planning for other biogenic habitats like seagrass meadows and coral reefs.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "2b3a61aeed2aafbd",
+        "sol": {
+          "label": "relevant",
+          "reason": "Restore resiflerde seeding, doğal recruitment ve substrat deneyinin karşılaştırması özette açık. Crossref reference[30] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "2b3a61aeed2aafbd",
+          "label": "relevant",
+          "reason": "Experimental juvenile oyster addition result: no enhancement of reef development (O1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "oyster_restoration_ref031",
+      "doi": "10.1890/14-0716",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Living shorelines can enhance the nursery role of threatened estuarine habitats",
+      "stratum": "Ekoloji",
+      "label": "karar verilemedi",
+      "label_reason": "Özet marsh sills, balıklar ve filtreleyici bivalvleri karşılaştırıyor; istiridye resifi restorasyonunun ayrı etkisini doğrulamıyor.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 31,
+        "reference_entry": {
+          "key": "e_1_2_6_33_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1890/14-0716"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/ecology-target-31.json",
+        "crossref_sha256": "0a2d45f016f22fc5ad740821eea66a14567b3ca5f0fb3d862557c3828ff6fe01",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2160587748",
+        "abstract_text": "Abstract Coastal ecosystems provide numerous services, such as nutrient cycling, climate change amelioration, and habitat provision for commercially valuable organisms. Ecosystem functions and processes are modified by human activities locally and globally, with degradation of coastal ecosystems by development and climate change occurring at unprecedented rates. The demand for coastal defense strategies against storms and sea‐level rise has increased with human population growth and development along coastlines worldwide, even while that population growth has reduced natural buffering of shorelines. Shoreline hardening, a common coastal defense strategy that includes the use of seawalls and bulkheads (vertical walls constructed of concrete, wood, vinyl, or steel), is resulting in a “coastal squeeze” on estuarine habitats. In contrast to hardening, living shorelines, which range from vegetation plantings to a combination of hard structures and plantings, can be deployed to restore or enhance multiple ecosystem services normally delivered by naturally vegetated shores. Although hundreds of living shoreline projects have been implemented in the United States alone, few studies have evaluated their effectiveness in sustaining or enhancing ecosystem services relative to naturally vegetated shorelines and hardened shorelines. We quantified the effectiveness of (1) sills with landward marsh (a type of living shoreline that combines marsh plantings with an offshore low‐profile breakwater), (2) natural salt marsh shorelines (control marshes), and (3) unvegetated bulkheaded shores in providing habitat for fish and crustaceans (nekton). Sills supported higher abundances and species diversity of fishes than unvegetated habitat adjacent to bulkheads, and even control marshes. Sills also supported higher cover of filter‐feeding bivalves (a food resource and refuge habitat for nekton) than bulkheads or control marshes. These ecosystem‐service enhancements were detected on shores with sills three or more years after construction, but not before. Sills provide added structure and may provide better refuges from predation and greater opportunity to use available food resources for nekton than unvegetated bulkheaded shores or control marshes. Our study shows that unlike shoreline hardening, living shorelines can enhance some ecosystem services provided by marshes, such as provision of nursery habitat.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "12c99556be8ff5ce",
+        "sol": {
+          "label": "undecidable",
+          "reason": "Özet living-shoreline marsh sills ve bivalvleri anlatıyor; istiridye resifi restorasyonunun ayrı etkisi doğrulanamıyor. Crossref reference[31] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "12c99556be8ff5ce",
+          "label": "relevant",
+          "reason": "Living shoreline/oyster habitat nursery function measured against reference habitats (O2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": {
+          "label": "undecidable",
+          "reason": "Özet marsh sills, balıklar ve filtreleyici bivalvleri karşılaştırıyor; istiridye resifi restorasyonunun ayrı etkisini doğrulamıyor.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "oyster_restoration_ref034",
+      "doi": "10.1890/04-0690",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "HOW HABITAT SETTING INFLUENCES RESTORED OYSTER REEF COMMUNITIES",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Restore istiridye resifleri kontrol habitatlarıyla karşılaştırılıyor; çevre habitatın topluluk yanıtına etkisi özette açık. Crossref reference[34] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 34,
+        "reference_entry": {
+          "key": "e_1_2_6_36_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1890/04-0690"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-target-34.json",
+        "crossref_sha256": "0c89660e9dca7f0c8f7362953377d93cca420b99c0248cf57294710a8c0765cd",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W1967451821",
+        "abstract_text": "Integrating how habitat heterogeneity influences food web dynamics is critical to enhance our understanding of community structure. This study quantified resident (invertebrates) and transient (juvenile and piscivorous fish) fauna within restored intertidal oyster reefs and analogous control sites without reef habitat in each of three habitats (on the edge of salt marsh away from seagrass, on mudflats isolated from vegetated structures, and in between seagrass and salt marsh habitat). Reefs enhanced the abundance of resident invertebrates (e.g., polychaetes, nemerteans, epibenthic anemones, bivalves, and resident decapods) that comprise >90% of juvenile fish prey biomass. However, the increase in food availability due to reef presence did not affect abundance of juvenile fish in either of the vegetated habitats, suggesting that resources may not limit juvenile fish when restored in these habitats. Only mudflat reefs augmented juvenile fish abundances, most likely due to a combination of greater resource availability and relative isolation from functionally equivalent habitats. In addition, lower abundances of piscivorous fish in mudflat reefs relative to control areas likely contributed to this pattern. Thus, community structure and important ecosystem functions such as secondary production depend on the spatial configuration of surrounding habitats, in much the same way that species interactions can depend on their biotic and abiotic context.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "O2"
+        ],
+        "contribution": "Restore istiridye resifleri kontrol habitatlarıyla karşılaştırılıyor; çevre habitatın topluluk yanıtına etkisi özette açık.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "0bdde3d7e28a76f5",
+        "sol": {
+          "label": "relevant",
+          "reason": "Restore istiridye resifleri kontrol habitatlarıyla karşılaştırılıyor; çevre habitatın topluluk yanıtına etkisi özette açık. Crossref reference[34] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "0bdde3d7e28a76f5",
+          "label": "relevant",
+          "reason": "Restored reef community response depends on landscape setting (O2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "oyster_restoration_03",
+      "doi": "10.3354/meps10331",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Denitrification and nutrient assimilation on a restored oyster reef",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Restore resif ve kontrol alanında denitrifikasyon, besin asimilasyonu ve makrobentik habitat karşılaştırılıyor. Crossref reference[43] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 43,
+        "reference_entry": {
+          "key": "e_1_2_6_45_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.3354/meps10331"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/ecology-target-43.json",
+        "crossref_sha256": "9976fa8a2bd3c40138375082caa7de933e6bd907d6b94bed781ffd7bb3285975",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2082640792",
+        "abstract_text": "At a restored reef site and a control site in the Choptank River, Maryland, USA, we partially quantified the effect of oyster reef restoration on the removal of nutrients from the water column by determining seasonal fluxes of oxygen (O 2 ), ammonium (NH 4 + ), combined nitrate and nitrite (NO 2+ 3 ), di-nitrogen (N 2 ) and soluble reactive phosphorus (SRP) and by assessing the assimilation of nutrients by macrofauna.Fluxes of O 2 , NH 4 + , NO 2+ 3 and SRP at the restored site were enhanced by at least one order of magnitude during all seasons.Seasonal denitrification rates at the restored site, measured as flux of N 2 -N, ranged from 0.3 to 1.6 mmol N 2 -N m -2 h -1 , with August rates among the highest ever recorded for an aquatic system.In addition to oysters (131 oysters m -2 ; average shell height = 114 mm; age = 2 to 7 yr), the restored reef provided habitat for 24 585 other macrobenthic organisms per square meter compared to 2265 organisms m -2 at the control site.Restoration enhanced the average standing stock of assimilated nutrients by 95 g N m -2 and 15 g P m -2 .Nitrogen and phosphorus in shells of live oysters and mussels accounted for 47 and 48% of total nitrogen and phosphorus standing stocks, respectively.Our results demonstrate that oyster reef restoration can significantly increase denitrification rates and enhance nutrient sequestration via assimilation into bivalve shells.",
+        "abstract_source": "openalex"
+      },
+      "key_contribution": {
+        "answer_elements": [
+          "O2",
+          "O3"
+        ],
+        "contribution": "Restore resif ve kontrol alanında denitrifikasyon, besin asimilasyonu ve makrobentik habitat karşılaştırılıyor.",
+        "limitation": "Anahtar seçimi bu kapanışta kilitlendi; insan doğrulaması yok. Özet kapsam/katkı kanıtıdır; tam metin veya sayısal sonuç doğrulaması değildir."
+      },
+      "label_assessments": {
+        "blind_item_id": "7655e6957084f07f",
+        "sol": {
+          "label": "relevant",
+          "reason": "Restore resif ve kontrol alanında denitrifikasyon, besin asimilasyonu ve makrobentik habitat karşılaştırılıyor. Crossref reference[43] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "7655e6957084f07f",
+          "label": "relevant",
+          "reason": "Measured denitrification and nutrient assimilation on a restored reef (O3).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "oyster_restoration_ref044",
+      "doi": "10.2983/035.030.0312",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Lessons Learned from Efforts to Restore Oyster Populations in Maryland and Virginia, 1990 to 2007",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Maryland/Virginia istiridye popülasyonu restorasyon deneyimi doğrudan başlıkta; nicel etkiler okunamadı. Crossref reference[44] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 44,
+        "reference_entry": {
+          "key": "e_1_2_6_46_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.2983/035.030.0312"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/ecology-target-44.json",
+        "crossref_sha256": "8c99c7e9cc731d0ba8422f2b6c000770d7e00e502570080ca30dc00e30015d8c",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2158250032",
+        "abstract_text": "A century-long decline of the fishery for the Eastern oyster Crassostrea virginica (Gmelin, 1791) in Maryland and Virginia stimulated numerous efforts by federal, state, and nongovernmental agencies to restore oyster populations, with limited success. To learn from recent efforts, we analyzed records of restoration and monitoring activities undertaken between 1990 and 2007 by 12 such agencies. Of the 1,037 oyster bars (reefs, beds, or grounds) for which we obtained data, 43% experienced both restoration and monitoring, with the remaining experiencing either restoration or monitoring only. Restoration activities involved adding substrate (shell), transplanting hatchery or wild seed (juvenile oysters), bar cleaning, and bagless dredging. Of these, substrate addition and transplanting seed were common actions, with bar cleaning and bagless dredging relatively uncommon. Limited monitoring efforts, a lack of replicated postrestoration sampling, and the effects of harvest on some restored bars hinders evaluations of the effectiveness of restoration activities. Future restoration activities should have clearly articulated objectives and be coordinated among agencies and across bars, which should also be off limits to fishing. To evaluate restoration efforts, experimental designs should include replication, quantitative sampling, and robust sample sizes, supplemented by pre- and postrestoration monitoring.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "c21fa10a9756bfe9",
+        "sol": {
+          "label": "relevant",
+          "reason": "Maryland/Virginia istiridye popülasyonu restorasyon deneyimi doğrudan başlıkta; nicel etkiler okunamadı. Crossref reference[44] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "c21fa10a9756bfe9",
+          "label": "relevant",
+          "reason": "Outcomes of Maryland/Virginia restoration efforts 1990-2007 on oyster populations (O1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "oyster_restoration_ref049",
+      "doi": "10.1016/j.ocecoaman.2013.12.002",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Oyster reef restoration in the northern Gulf of Mexico: Extent, methods and outcomes",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Kuzey Meksika Körfezi istiridye resifi restorasyonunun yöntem ve sonuçları başlıkta açık; tek tek hizmet etkileri okunamadı. Crossref reference[49] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 49,
+        "reference_entry": {
+          "key": "e_1_2_6_51_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1016/j.ocecoaman.2013.12.002"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-target-49.json",
+        "crossref_sha256": "f40176f7964257751340306ac245a3db9d6a9c53c6439348375e2d1056e77044",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2111694336",
+        "abstract_text": null,
+        "abstract_source": null
+      },
+      "label_assessments": {
+        "blind_item_id": "51e327e74f4e3243",
+        "sol": {
+          "label": "relevant",
+          "reason": "Kuzey Meksika Körfezi istiridye resifi restorasyonunun yöntem ve sonuçları başlıkta açık; tek tek hizmet etkileri okunamadı. Crossref reference[49] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "title_only"
+        },
+        "claude": {
+          "id": "51e327e74f4e3243",
+          "label": "relevant",
+          "reason": "Synthesis of Gulf of Mexico restoration methods and measured outcomes (O1); partly a review.",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "oyster_restoration_ref071",
+      "doi": "10.3354/meps264249",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Estimated enhancement of fish production resulting from restoring oyster reef habitat: quantitative valuation",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "İstiridye resifi eklenmesinin balık/kabuklu üretimine etkisi modelle tahmin ediliyor; saha etkisiyle eş tutulmaz. Crossref reference[71] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 71,
+        "reference_entry": {
+          "key": "e_1_2_6_73_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.3354/meps264249"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-target-71.json",
+        "crossref_sha256": "3a160e45f2606a09fb2b405d11056fa1aecf8348deacfe8c9617bafc50b3a7e4",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2124806930",
+        "abstract_text": "We reviewed studies providing quantitative measurements of abundance of fishes and large mobile crustaceans on oyster reefs and on nearby sedimentary habitat in the southeast United States.For each species, we compared density by size (age) class on oyster reefs and sedimentary bottom as a means of estimating the degree to which restoration of oyster reef on sedimentary bottom could augment abundances.By applying published information on growth rates of each species and a combination of empirical data and published information on age-specific survivorship, we calculated the per-unit-area enhancement of production of fishes and large mobile crustaceans expected from the addition of oyster reef habitat.For this calculation, we gave the reef habitat full credit for the expected lifetime production of species whose recruitment was judged to be limited by the area of oyster reefs based on nearly exclusive association of recruits to reefs.For species that were only modestly enhanced in abundance by oyster reefs, we gave the reef credit for the fraction of production that is derived from consumption of reef-associated prey, using a combination of gut content data and natural history information.This combination of analyses and calculations revealed that 10 m 2 of restored oyster reef in the southeast United States is expected to yield an additional 2.6 kg yr -1 of production of fish and large mobile crustaceans for the functional lifetime of the reef.Because the reef is biogenic and self-sustaining, the lifetime of a reef protected from bottom-disturbing fishing gear is limited by intense storms or sedimentation.A reef lasting 20 to 30 yr would be expected to augment fish and large mobile crustacean production by a cumulative amount of 38 to 50 kg 10 m -2 , discounted to present-day value.This set of calculations assumes that oyster reef habitat now limits production of reef-associated fish and crustaceans in the southeast United States.This assumption seems reasonable based on the tight associations of so many fishes with reef-dependent prey, and the depletion of reef habitat over the past century.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "41318f87c29ca9eb",
+        "sol": {
+          "label": "relevant",
+          "reason": "İstiridye resifi eklenmesinin balık/kabuklu üretimine etkisi modelle tahmin ediliyor; saha etkisiyle eş tutulmaz. Crossref reference[71] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "41318f87c29ca9eb",
+          "label": "relevant",
+          "reason": "Quantified fish production enhancement from restored oyster reef habitat (O2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "oyster_restoration_ref076",
+      "doi": "10.3354/meps08164",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Success of constructed oyster reefs in no-harvest sanctuaries: implications for restoration",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Hasada kapalı alanlarda inşa edilen istiridye resiflerinin başarısı başlıkta açık; kontrol ayrıntıları okunamadı. Crossref reference[76] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 76,
+        "reference_entry": {
+          "key": "e_1_2_6_78_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.3354/meps08164"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-target-76.json",
+        "crossref_sha256": "f061fce546f6fc7d8e4c5f0004bdcf5ee134fc6ea8cc801e6230cd4febc6c55f",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2141636362",
+        "abstract_text": "Dramatic declines in populations of the eastern oyster Crassostrea virginica are a symptom of degradation in many US Atlantic and Gulf of Mexico estuaries.We sampled 94 oyster reefs (88 constructed, 6 natural) within 11 no-harvest sanctuaries in estuaries of central and northern North Carolina, USA, to evaluate the success of oyster sanctuaries as a conservation tool.The sanctuaries have been in existence from 3 to 30 yr; 10 sanctuaries protect constructed ('restored') oyster reefs and 1 sanctuary protects natural reefs.Measurements of vertical relief, live oyster density, recruitment, abundance of market-sized oysters, and biomass as well as disease prevalence and severity indicated that 7 of the 11 sanctuaries met criteria for minimal success by having vertical relief > 20 cm in height, living oysters (>10 oysters m -2 ), and evidence of recent recruitment in 1 of 2 yr of the survey.Most reefs within the 7 sanctuaries far surpassed these relatively low benchmarks.For reefs that failed, burial by sedimentation appeared to be the primary cause in 2 sanctuaries, poor water quality (low dissolved oxygen) in 1, and poor oyster recruitment in another.All intertidal reefs were successful and had significantly higher densities of all size categories of live oysters (spat, adult, marketable size) than subtidal oyster reefs.Disease prevalence and severity were low in sanctuary reefs despite high oyster densities and increased longevity of oysters on these reefs.Pronouncements that restoration of the native eastern oyster is a failure prove incorrect when a decade-long history of oyster reef sanctuaries is evaluated.The proposed introduction of a non-native oyster into the US Atlantic coast estuaries cannot be justified by claiming failure of native oyster restoration in light of promising successes within sanctuaries.",
+        "abstract_source": "openalex"
+      },
+      "label_assessments": {
+        "blind_item_id": "da3c434c04b22e1a",
+        "sol": {
+          "label": "relevant",
+          "reason": "Hasada kapalı alanlarda inşa edilen istiridye resiflerinin başarısı başlıkta açık; kontrol ayrıntıları okunamadı. Crossref reference[76] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "da3c434c04b22e1a",
+          "label": "relevant",
+          "reason": "Constructed reefs in no-harvest sanctuaries: oyster density/biomass outcomes (O1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "oyster_restoration_ref084",
+      "doi": "10.1126/science.1176516",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Unprecedented Restoration of a Native Oyster Metapopulation",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Yüksek/alçak relief ve restore edilmemiş resiflerin karşılaştırıldığı restorasyon deneyi özette açık. Crossref reference[84] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 84,
+        "reference_entry": {
+          "key": "e_1_2_6_86_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1126/science.1176516"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-target-84.json",
+        "crossref_sha256": "98b4ccd9117428b6601f3983c4bbb46826135974ed34dc7423b8b8a2e8a124d0",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/supplement-openalex.json",
+        "openalex_work_id": "https://openalex.org/W1963942538",
+        "abstract_text": "Restoring Oysters Populations and wild fisheries of native oyster species have collapsed worldwide because of overfishing and habitat destruction, resulting in severe ecosystem alteration and degradation. Expensive restoration efforts have met with little success, leading to the introduction of non-native oyster species in an attempt to recover lost economic and ecological benefits. In the Chesapeake Bay on the U.S. East Coast, eastern oyster landings and population abundance have plummeted to approximately 1% of historical levels, despite considerable expensive attempts to restore the fishery. Schulte et al. (p. 1124 , published online 30 July) present field evidence of a successful restoration of a large metapopulation of native oysters in the Great Wicomico River, a tributary on the western shore of the Chesapeake Bay. The metapopulation is composed of a network of reef complexes spanning 35 hectares and comprises an estimated 185 million live native oysters of 1-year-old juveniles and 2- and 3-year-old adults.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "2235eea2cb0c126c",
+        "sol": {
+          "label": "relevant",
+          "reason": "Yüksek/alçak relief ve restore edilmemiş resiflerin karşılaştırıldığı restorasyon deneyi özette açık. Crossref reference[84] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "2235eea2cb0c126c",
+          "label": "relevant",
+          "reason": "Restored high-relief reefs in sanctuaries produce large oyster population gains vs low-relief (O1).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    },
+    {
+      "key": "oyster_restoration_ref088",
+      "doi": "10.1577/m04-058.1",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Assessment of Recent Habitat Conditions of Eastern Oyster Crassostrea virginica Bars in Mesohaline Chesapeake Bay",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Özet shell spreading uygulanmış 49 konumda habitat iyileşmesinin sedimentasyonla kısa ömürlü olduğunu bildiriyor; restorasyonun habitat etkisi ve sınırı O1/O2 ile doğrudan ilişkili. Yalnız bozulmuş başlangıç habitatı anlatılmıyor.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 88,
+        "reference_entry": {
+          "key": "e_1_2_6_90_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1577/M04-058.1"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-target-88.json",
+        "crossref_sha256": "7e726b595b297c506a433d3bf0f515ed34b8eb62214a0413e07d9f8694f27ca0",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2089645128",
+        "abstract_text": "Abstract Eastern oysters Crassostrea virginica in Chesapeake Bay, USA, have been subjected to intense harvest pressure since about 1850 and to disease epizootics since the 1950s. Combined, these processes have degraded the once extensive eastern oyster bottom; the remaining oyster shells, which are required as substrate for successful larval oyster settlement, are thus rendered increasingly susceptible to siltation. Between 1999 and 2001, we used an acoustic seabed classification system and underwater videography to assess oyster habitat conditions throughout Maryland's portion of Chesapeake Bay relative to eastern oyster recruitment and habitat restoration activities. We performed 16 surveys that covered a total of 39 km2 of bottom that were classified in 1911 as supporting productive oyster populations. Over 90% of this area has degraded from productive oyster bottom to mud, sand, or heavily sedimented oyster shell. Seventy percent of the locations we identified as containing unsedimented shell came from within the approximately 90 km2 of oyster bottom that had been subject to the management activity of spreading large volumes of shell at some time between 1960 and 1999. However, video observations of 49 of these locations that had been replenished with shell at various times indicated that any improvements in oyster habitat were short lived, as interstitial spaces in spread shell became highly sedimented after an average period of 5.5 years (n = 49; SE = 1.03). We conclude that the majority of oyster bottom in Maryland is extremely degraded and that no reasonable increase in the scale of present management practices will reverse this habitat decline.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "d38837da79197f47",
+        "sol": {
+          "label": "relevant",
+          "reason": "Shell spreading restorasyonunun habitat iyileşmesi ve sedimentasyonla sınırlanması özette açık. Crossref reference[88] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "d38837da79197f47",
+          "label": "background",
+          "reason": "Survey of degraded oyster bottom condition; describes degraded baseline, not restoration effect.",
+          "reading_depth": "abstract"
+        },
+        "adjudication": {
+          "label": "relevant",
+          "reason": "Özet shell spreading uygulanmış 49 konumda habitat iyileşmesinin sedimentasyonla kısa ömürlü olduğunu bildiriyor; restorasyonun habitat etkisi ve sınırı O1/O2 ile doğrudan ilişkili. Yalnız bozulmuş başlangıç habitatı anlatılmıyor.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "oyster_restoration_04",
+      "doi": "10.1002/ecs2.3573",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Metapopulation dynamics of oysters: sources, sinks, and implications for conservation and restoration",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Özet restore/doğal ve hasada açık/kapalı resifleri ayıran, ampirik demografik veriye dayalı metapopülasyon modelini ve farklı nüfus yörüngelerini açıklıyor. O1 için model katkısıdır; ölçülmüş nedensel saha etkisi sayılmaz.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 97,
+        "reference_entry": {
+          "key": "e_1_2_6_99_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1002/ecs2.3573"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/ecology-target-97.json",
+        "crossref_sha256": "e1f038216b659cbee7bd961cfe11768ea32e5b4e3e5a5a2ac0330afa7615f2c8",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W3178756054",
+        "abstract_text": "Abstract Metapopulation and source–sink dynamics are increasingly considered within spatially explicit management of wildlife populations, yet the application of these concepts has generally been limited to comparisons of the performance (e.g., demographic rates or dispersal) inside vs. outside protected areas, and at spatial scales that do not encompass an entire metapopulation. In the present study, a spatially explicit, size‐structured matrix model was applied to simulate the dynamics of an Eastern oyster ( Crassostrea virginica ) metapopulation in the second largest estuary in the United States—the Albemarle‐Pamlico Estuarine System in North Carolina. The model integrated larval dispersal simulations with empirical measures of oyster demographic rates to simulate the dynamics of the entire oyster metapopulation consisting of 646 reefs and five reef types: (1) restored subtidal reefs closed to harvest (i.e., sanctuaries or protected areas; n = 14), (2) restored subtidal reefs open to harvest ( n = 53), (3) natural subtidal reefs open to harvest ( n = 301), (4) natural intertidal reefs open to harvest ( n = 129), and (5) oyster reefs on manmade, hard structures such as seawalls ( n = 149). Key findings included (1) an overall stable, yet slightly declining oyster metapopulation, (2) variable reef type‐specific population trajectories, largely dependent on spatiotemporal variation in larval recruitment, (3) a greater relative importance of inter‐reef larval connectivity on metapopulation dynamics than local larval retention processes, and (4) spatiotemporal variation in the source–sink status of reef subpopulations wherein subtidal sanctuaries and reefs located in the northeastern portion of the estuary were frequent sources. From a management perspective, continued protection of oyster sanctuaries is warranted. Sanctuaries represented only 6.2% of the total reef area, however, they harbored 19% (± 2%) of all oysters and produced 25% (± 6%) of all larvae settling within the metapopulation. Additional management priorities should focus on restoration or conservation of subpopulations that serve as frequent source subpopulations (including those with poor demographic rates, but high connectivity potential), and management of harvest from sink subpopulations. The application of a source–sink framework and similar integrated modeling approach could inform management of oysters in other systems, as well as other species that exhibit similar metapopulation characteristics.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "a9367e4e1658a3ec",
+        "sol": {
+          "label": "relevant",
+          "reason": "Restore/doğal ve hasada açık/kapalı resif tipleri metapopülasyon modelinde ayrılıyor; bu bir model çalışması. Crossref reference[97] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "a9367e4e1658a3ec",
+          "label": "background",
+          "reason": "Metapopulation model of source/sink reefs; informs restoration siting but not measured restoration response.",
+          "reading_depth": "abstract"
+        },
+        "adjudication": {
+          "label": "relevant",
+          "reason": "Özet restore/doğal ve hasada açık/kapalı resifleri ayıran, ampirik demografik veriye dayalı metapopülasyon modelini ve farklı nüfus yörüngelerini açıklıyor. O1 için model katkısıdır; ölçülmüş nedensel saha etkisi sayılmaz.",
+          "reading_depth": "abstract",
+          "adjudicator": "Sol",
+          "human_verified": false
+        }
+      }
+    },
+    {
+      "key": "oyster_restoration_ref105",
+      "doi": "10.1111/1365-2664.12576",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Quantifying fish and mobile invertebrate production from a threatened nursery habitat",
+      "stratum": "Ekoloji",
+      "label": "ilgili",
+      "label_reason": "Yapısız habitata istiridye resifi eklenmesinden türetilen recruitment/üretim tahminleri ve belirsizlik özette açık. Crossref reference[105] üyeliği ayrı doğrulandı; correction-1 tek model önerisi. Kör ikinci etikette aynı kategori; insan doğrulaması yok.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "selection_evidence": {
+        "source_doi": "10.1111/cobi.13966",
+        "reference_index_zero_based": 105,
+        "reference_entry": {
+          "key": "e_1_2_6_107_1",
+          "doi-asserted-by": "publisher",
+          "DOI": "10.1111/1365-2664.12576"
+        },
+        "membership_rule": "reference_doi_exact",
+        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/ecology-target-105.json",
+        "crossref_sha256": "6f51f9a955cf3be04c4a30becb992b06c1303d0f71f0508b884adb2aa7b946ad",
+        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+        "openalex_work_id": "https://openalex.org/W2179616945",
+        "abstract_text": "Summary Quantification of ecosystem services is increasingly valuable for conservation and restoration decision‐making. Structured habitats serve as nursery grounds by enhancing juvenile fish and mobile crustacean survival and abundance. This service is challenging to quantify due to ontogenetic shifts in habitat use by many species. We reviewed available literature on the increased abundance of juvenile fish and mobile crustaceans in a key nursery habitat – Crassostrea virginica reefs in the USA . We modelled the growth and mortality of the enhanced species using three different natural mortality ( M ) estimates to provide estimates of the gross and net lifetime production and uncertainty that can be attributed to the habitat. Recruitment of nineteen and twelve species were found to be enhanced by the addition of C. virginica reefs to previously unstructured habitat in the Gulf of Mexico and the South Atlantic and Mid‐Atlantic USA , respectively. This increased recruitment is estimated to result in a mean lifetime enhancement in production of 397 ± 115 (1 SD ) g m −2 year −1 in the Gulf of Mexico and 281 ± 56 g m −2 year −1 in the South Atlantic and Mid‐Atlantic. The two regions differed with regard to the identity of the enhanced species and their degree of augmentation. Thus, our results highlight the inadequacy of applying regional estimates of ecosystem services to global scales. Furthermore, estimates of total enhancement varied by up to a factor of 2·8 across the three methods of M estimation. Our estimates are quantitative predictions of the ecological benefits derived from the restoration or conservation of a threatened habitat, and advance the field of restoration science beyond qualitative statements that just predict direction of benefit (e.g. increased or decreased). Quantification of the uncertainty in the production estimates further increases their utility for decision‐makers. Synthesis and applications . Our results can be applied to the restoration or conservation of nursery habitats where habitat is limiting the recruitment of fish species. Quantitative estimates of fisheries productivity enhancement by habitats can be used by managers to determine the expected return on investment in restoration activities, provide testable predictions for monitoring programs and communicate the value of restoring or conserving habitat.",
+        "abstract_source": "crossref"
+      },
+      "label_assessments": {
+        "blind_item_id": "df1ac1118daf5b23",
+        "sol": {
+          "label": "relevant",
+          "reason": "Yapısız habitata istiridye resifi eklenmesinden türetilen recruitment/üretim tahminleri ve belirsizlik özette açık. Crossref reference[105] üyeliği ayrı doğrulandı; correction-1 tek model önerisi.",
+          "reading_depth": "abstract"
+        },
+        "claude": {
+          "id": "df1ac1118daf5b23",
+          "label": "relevant",
+          "reason": "Quantified fish and mobile invertebrate production per unit oyster reef (O2).",
+          "reading_depth": "title_only"
+        },
+        "adjudication": null
+      }
+    }
+  ],
+  "revision": "consensus-freeze-1",
+  "revision_history": {
+    "previous_question": "How does oyster reef restoration affect oyster populations, habitat provision, and nutrient removal relative to degraded or reference habitats?",
+    "previous_question_sha256": "824f7136683485b1d7eadf9a7b7828a9a5a4de8f60e4f7dd038d24d5284e597e",
+    "previous_snapshot": ".local/benchmark/2026-10-07-quality85-revision/oyster_restoration-before.json",
+    "scope_reason": "Soru ve kaynak derleme korunur; yalnız hedeflerin kanıtı ve sayısı düzeltilir."
+  },
+  "source_evidence": {
+    "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/ecology-source.json",
+    "crossref_sha256": "d6e560d9ee8d3b3833ab47ebf62fb9478b3bd850b36e2232a6563106371578cf",
+    "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/ecology-openalex.json",
+    "abstract_text": "Abstract Restoration of foundation species promises to reverse environmental degradation and return lost ecosystem services, but a lack of standardized evaluation across projects limits understanding of recovery, especially in marine systems. Oyster reefs are restored to reverse massive global declines and reclaim valuable ecosystem services, but the success of these projects has not been systematically and comprehensively quantified. We synthesized data on ecosystem services associated with oyster restoration from 245 pairs of restored and degraded reefs and 136 pairs of restored and reference reefs across 3500 km of U.S. Gulf of Mexico and Atlantic coastlines. On average, restoration was associated with a 21‐fold increase in oyster production (mean log response ratio = 3.08 [95% confidence interval: 2.58–3.58]), 34–97% enhancement of habitat provisioning (mean community abundance = 0.51 [0.41–0.61], mean richness = 0.29 [0.19–0.39], and mean biomass = 0.69 [0.39–0.99]), 54% more nitrogen removal (mean = 0.43 [0.13–0.73]), and 89–95% greater sediment nutrients (mean = 0.67 [0.27–1.07]) and organic matter (mean = 0.64 [0.44–0.84]) relative to degraded habitats. Moreover, restored reefs matched reference reefs for these ecosystem services. Our results support the continued and expanded use of oyster restoration to enhance ecosystem services of degraded coastal systems and match many functions provided by reference reefs."
+  },
+  "consensus_freeze": {
+    "original_sol_snapshot": ".local/benchmark/2026-10-07-quality85-revision/oyster_restoration-sol-before-consensus.json",
+    "original_sol_sha256": "341ec5e877d5167da187e8d2001f2e7bd7accaa0a9a9b6daab1ca70637ca1d68",
+    "claude_input": ".local/docs/product/search-quality-85-claude-labels-2026-10-07.json",
+    "claude_sha256": "031f012c50599684f94df7978c355786f8cab1a62fd9e360c5d8c26675666945",
+    "blind_evidence": ".local/benchmark/2026-10-07-quality85-revision/oyster_restoration-blind-evidence.json",
+    "blind_evidence_sha256": "6120151f3ab3c83d372c950d1d2bbea374ca3053348bb73d9534b066d76c421a",
+    "agreement": {
+      "n": 14,
+      "agreements": 11,
+      "raw_agreement": 0.7857142857142857,
+      "expected_agreement": 0.7959183673469388,
+      "cohen_kappa": -0.05,
+      "cohen_kappa_exact": "-1/20",
+      "disagreements": 3,
+      "contingency": {
+        "relevant": {
+          "relevant": 11,
+          "background": 2,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "background": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "out_of_scope": {
+          "relevant": 0,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        },
+        "undecidable": {
+          "relevant": 1,
+          "background": 0,
+          "out_of_scope": 0,
+          "undecidable": 0
+        }
+      }
+    },
+    "sol_keys": [
+      "oyster_restoration_01",
+      "oyster_restoration_ref034",
+      "oyster_restoration_03"
+    ],
+    "claude_keys": [
+      "oyster_restoration_03",
+      "oyster_restoration_ref084",
+      "oyster_restoration_ref105"
+    ],
+    "key_intersection": [
+      "oyster_restoration_03"
+    ],
+    "final_keys": [
+      "oyster_restoration_01",
+      "oyster_restoration_ref034",
+      "oyster_restoration_03"
+    ],
+    "key_selection_reason": "Kesişimdeki _03 besin giderimi için önce seçildi. _01 substrat müdahalesi/nüfus yanıtını, ref034 kontrol habitatı ve topluluk yanıtını özette doğruladığından tamamlandı. Claude ref084/ref105 alternatifleri ilgili hedef olarak korunur.",
+    "relevant_targets": 13,
+    "human_verified": false
+  }
+}

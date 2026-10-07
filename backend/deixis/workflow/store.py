@@ -750,6 +750,7 @@ class Store:
                 "sought_term_in_criterion": origin.get("sought_term_in_criterion"),
                 "question_elements": origin.get("question_elements", []),
                 "required_roles": origin.get("required_roles", []),
+                **({"role_fallback": origin["role_fallback"]} if "role_fallback" in origin else {}),
                 "protocol_revision": row["protocol_revision"],
             }
         return None

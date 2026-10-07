@@ -2,18 +2,19 @@
 
 The model is asked the same question three times and nothing it says once is used: a phrase enters the criterion
 only when at least `PROPOSAL_MAJORITY` of the runs wrote it, and with fewer than that many valid runs there is no
-criterion at all. Free text cannot be voted on, so the criterion sentence and the parts come from the one run that
-shares the most kept phrases with the consensus; that is a plan decision and its cost is named in D78.
+criterion at all. Free text cannot be voted on, so the criterion sentence and the parts come from one run.
+D241 first prefers unbundled core definitions, then uses D78's kept-phrase agreement and run-number tie break.
 
 A population or comparator the question names is a part of its own (SW23, D106). A role at least
 `PROPOSAL_MAJORITY` runs listed in `question_elements` is required: only a run holding every required role can be the
 base run, so the criterion never rests on a run that left out what most runs found in the question. With no required
-role the base run is chosen as before and every output field but the two new ones is what it was. A stored v1
+role, legacy proposals without part roles keep D78's original base choice. A stored v1
 proposal has no `question_elements` and reads as naming none.
 
-A v3 part records core or aspect. Only a base aspect backed by two proposals
-with the same normalized part name stays aspect; every other part remains an
-inclusion requirement. Legacy parts without roles keep their stored shape.
+A v3 part records core or aspect. D241 matches names and literal cue overlap;
+roles use distinct-run majority votes, retaining the base role without a majority.
+If role resolution removes every core, the base proposal's roles are restored and recorded.
+Legacy parts without roles keep their stored shape.
 
 `consensus` is pure: no clock, no randomness, no store. The order the runs arrive in, and the order phrases and
 exclusion words arrive in, never reach the result (SW14.6).
@@ -27,7 +28,11 @@ from typing import Any
 
 PROPOSAL_RUNS = 3  # SW15.2
 PROPOSAL_MAJORITY = 2
-THRESHOLDS = {"proposal_runs": PROPOSAL_RUNS, "proposal_majority": PROPOSAL_MAJORITY}
+MATCH_MIN_SHARED_CUES = 2
+MATCH_OVERLAP_DIVISOR = 2
+THRESHOLDS = {"proposal_runs": PROPOSAL_RUNS, "proposal_majority": PROPOSAL_MAJORITY,
+              "role_consensus_version": 2, "match_min_shared_cues": MATCH_MIN_SHARED_CUES,
+              "match_overlap_divisor": MATCH_OVERLAP_DIVISOR}
 # What one proposal may contain. The contract enforces these; they are here so the schema and the check read
 # the same numbers.
 PARTS_PER_PROPOSAL = (2, 5)
@@ -49,6 +54,69 @@ def norm(text: str) -> str:
 def holds(word: str, text: str) -> bool:
     """Whether the normalised text holds the word at a word boundary; both sides are already normalised."""
     return re.search(rf"\b{re.escape(word)}\b", text) is not None
+
+
+def _cues(part: dict[str, Any]) -> set[str]:
+    return {norm(p) for p in part["phrases"] if norm(p)}
+
+
+def matching_parts(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    """Lexical correspondence, not a claim of semantic equivalence.
+
+    Two literal shared cues must cover at least half the smaller inventory.
+    No transitive clustering: a broad part cannot bridge unrelated parts.
+    """
+    if norm(left["name"]) == norm(right["name"]):
+        return True
+    a, b = _cues(left), _cues(right)
+    shared = len(a & b)
+    return shared >= MATCH_MIN_SHARED_CUES and MATCH_OVERLAP_DIVISOR * shared >= min(len(a), len(b))
+
+
+def _bundled_aspects(part: dict[str, Any], runs: dict[int, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Detect an aspect embedded in a core definition by two distinct multiword cues.
+
+    This bounded lexical guard cannot parse arbitrary conjunctions. It chooses
+    an unbundled proposal rather than editing model-owned definitions.
+    """
+    own = _cues(part)
+    definition = norm(part["definition"])
+    return [other for run in runs.values() for other in run["parts"]
+            if other.get("role") == "aspect" and not matching_parts(part, other)
+            and len({cue for cue in _cues(other) - own
+                     if len(cue.split()) > 1 and holds(cue, definition)}) >= 2]
+
+
+def _consensus_role(part: dict[str, Any], runs: dict[int, dict[str, Any]]) -> str:
+    matches = [(number, other) for number in sorted(runs) for other in runs[number]["parts"]
+               if matching_parts(part, other)]
+    votes = {role: len({number for number, other in matches if other.get("role") == role})
+             for role in ("core", "aspect")}
+    role = part["role"]
+    if votes["core"] != votes["aspect"]:
+        candidate = max(votes, key=votes.get)
+        if votes[candidate] >= PROPOSAL_MAJORITY:
+            role = candidate
+    if role == "aspect":
+        return role
+    # Separate inventories inside a composite need separate votes. A composite
+    # cannot count as an independent core vote for either of its components.
+    components = [other for _, other in matches if len(_cues(part) & _cues(other)) >= 2]
+    separated = False
+    for left in components:
+        for right in components:
+            if len(_cues(left) & _cues(right)) > 1:
+                continue
+            separated = True
+            for component, sibling in ((left, right), (right, left)):
+                votes = {number for number, other in matches if other.get("role") == "core"
+                         and matching_parts(component, other)
+                         and len(_cues(sibling) & _cues(other)) <= 1}
+                if len(votes) < PROPOSAL_MAJORITY:
+                    return "aspect"
+    if re.search(r"\band\b|[&+]", norm(part["name"])) and not separated:
+        return "aspect"  # Repeated votes for an AND bundle are not component votes.
+    return "aspect" if _bundled_aspects(part, runs) else "core"
 
 
 def consensus(question: str, runs: dict[int, dict[str, Any]],
@@ -73,23 +141,33 @@ def consensus(question: str, runs: dict[int, dict[str, Any]],
     counts = Counter(phrase for number in ordered for phrase in phrases[number])
     kept = {phrase for phrase, count in counts.items() if count >= PROPOSAL_MAJORITY}
     # The base run is the one closest to what the runs agreed on; a tie goes to the run that was asked first.
-    base = min(eligible, key=lambda number: (-len(phrases[number] & kept), number))
+    # Prefer a proposal whose core definitions do not embed separately proposed
+    # aspects. Keep the original phrase agreement and run-number tie break.
+    base = min(eligible, key=lambda number: (
+        sum(bool(_bundled_aspects(part, runs)) for part in runs[number]["parts"]
+            if part.get("role") == "core"
+            and norm(part["name"]) not in {norm(e["part"]) for e in elements[number]}),
+        -len(phrases[number] & kept), number))
     proposal = runs[base]
 
-    # Free-text parts keep the base run's meaning (D78). Only explicit agreement
-    # on the same named aspect may remove an inclusion requirement (D235).
-    aspect_votes = Counter(name for number in ordered for name in {
-        norm(part["name"]) for part in runs[number]["parts"] if part.get("role") == "aspect"
-    })
+    # Free-text parts and definitions remain owned by one proposal. Population
+    # and study-level comparator requirements retain D235's exception.
     protected = {norm(e["part"]) for e in elements[base]}
     parts = []
     for part in proposal["parts"]:
         row = {"name": part["name"], "definition": part["definition"]}
         if "role" in part:
-            row["role"] = ("aspect" if part["role"] == "aspect"
-                           and aspect_votes[norm(part["name"])] >= PROPOSAL_MAJORITY
-                           and norm(part["name"]) not in protected else "core")
+            row["role"] = ("core" if norm(part["name"]) in protected
+                           else _consensus_role(part, runs))
         parts.append(row)
+
+    role_fallback = any("role" in part for part in parts) and not any(part.get("role") == "core" for part in parts)
+    if role_fallback:
+        # Valid role-bearing proposals contain a core. Disagreement must not
+        # silently remove the inclusion gate; retain the selected proposal.
+        for row, part in zip(parts, proposal["parts"]):
+            if "role" in part:
+                row["role"] = part["role"]
 
     part_of: dict[str, str] = {}
     for part in proposal["parts"]:
@@ -118,6 +196,7 @@ def consensus(question: str, runs: dict[int, dict[str, Any]],
         "question_elements": sorted(({"role": e["role"], "words": e["words"], "part": e["part"]} for e in elements[base]),
                                     key=lambda e: e["role"]),
         "required_roles": required,
+        **({"role_fallback": True} if role_fallback else {}),
     }
 
 

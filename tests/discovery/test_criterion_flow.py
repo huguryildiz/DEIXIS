@@ -30,7 +30,7 @@ RUNS = three_runs()
 CRITERION_STEPS = ["criterion"] + [f"criterion_proposal_{i + 1}" for i in range(PROPOSAL_RUNS)]
 
 
-def proposing(fail_steps=(), invalid_steps=(), elements=None):
+def proposing(fail_steps=(), invalid_steps=(), elements=None, roles=None):
     """A model that answers each criterion call with its own proposal, and fails or breaks the ones named.
 
     The run number follows the step, not the call, so a schema repair of a broken proposal stays broken instead of
@@ -55,7 +55,8 @@ def proposing(fail_steps=(), invalid_steps=(), elements=None):
         if number(si) in invalid_steps:
             body = body | {"parts": body["parts"][:1]}  # one part: below the contract's floor, so the run is dropped
         body = body | {"question_elements": (elements or {}).get(number(si), [])}
-        body = body | {"parts": [part | {"role": "core"} for part in body["parts"]]}
+        body = body | {"parts": [part | {"role": (roles or {}).get(number(si), {}).get(index, "core")}
+                                  for index, part in enumerate(body["parts"])]}
         return json.dumps(envelope(si, "deixis.criterion_proposal.v3") | body)
 
     return FakeAdapter(responder, fail=fail)
@@ -138,6 +139,36 @@ def test_a_proposal_that_breaks_the_contract_is_dropped_and_the_other_two_decide
 
 # ---- the model answers ----------------------------------------------------------------------------------------
 
+def test_role_fallback_keeps_the_gate_and_survives_protocol_reuse(tmp_path, monkeypatch):
+    import copy
+    import sys
+
+    runs = {n: copy.deepcopy(RUNS[1]) for n in (1, 2, 3)}
+    # Two aspect votes remove the base core; the other cores cannot jointly
+    # promote its aspect because they have different literal inventories.
+    runs[3]["parts"][1]["name"] = "distinct requirement"
+    runs[3]["parts"][1]["phrases"] = ["unique a", "unique b", "unique c", "unique d", "unique e", "unique f"]
+    monkeypatch.setattr(sys.modules[__name__], "RUNS", runs)
+    openalex = CountingOpenAlex()
+    adapter = proposing(roles={1: {0: "core", 1: "aspect"},
+                               2: {0: "aspect", 1: "core"},
+                               3: {0: "aspect", 1: "core"}})
+    with TestClient(app_for(tmp_path, monkeypatch, openalex, adapter)) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        rid, run_id = start(client, EXERCISE)
+        wait(client, rid, run_id)
+        first = store_at(tmp_path).latest_step_output(rid, "criterion", 1)
+        assert first["origin"] == "model"
+        assert first["criterion"]["role_fallback"] is True
+        assert [p["role"] for p in first["criterion"]["parts"]] == ["core", "aspect"]
+        second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        wait(client, rid, second)
+    bodies = body_of(tmp_path, rid)
+    assert all(b["inclusion_criterion"] and b["criterion_origin"]["role_fallback"] is True for b in bodies)
+    assert all(b["criterion_parts"] == first["criterion"]["parts"] for b in bodies)
+    assert len(criterion_calls(adapter)) == PROPOSAL_RUNS
+
+
 def run_with_proposals(tmp_path, monkeypatch, question=EXERCISE, **body):
     openalex, adapter = CountingOpenAlex(), proposing()
     with TestClient(app_for(tmp_path, monkeypatch, openalex, adapter)) as client:
@@ -168,7 +199,9 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     assert body["criterion_origin"]["sought_term_in_criterion"] is True
     # No proposal named a population or a comparator, so none is required (SW23).
     assert body["criterion_origin"]["question_elements"] == [] and body["criterion_origin"]["required_roles"] == []
-    assert body["thresholds"]["criterion"] == {"proposal_runs": 3, "proposal_majority": 2}
+    assert body["thresholds"]["criterion"] == {
+        "proposal_runs": 3, "proposal_majority": 2, "role_consensus_version": 2,
+        "match_min_shared_cues": 2, "match_overlap_divisor": 2}
     # An sw discovery run is given the criterion's three calls, the abstract stage's own (slice 09) and the one
     # term suggestion the user may ask for (slice 08c), on top of its preset; the preset a legacy run and an answer
     # run read is untouched.

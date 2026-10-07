@@ -143,6 +143,7 @@ def test_fulltext_adjudication_method_text_is_the_slice_text_and_the_hash_change
     assert text == (
         "You are given one paper's selected passages, one inclusion criterion and its parts. For each part decide whether these passages show that the paper itself contains it. Answer every part exactly once, by its name.\n"
         "`inclusion_role: core` marks a requirement for inclusion; `aspect` marks contribution to an answer subquestion. Read and quote both with the same evidence standard. An absent or unclear aspect does not prevent inclusion. Missing inclusion roles mean every part is required. A related metric with a different definition or interpretation does not establish the core concept merely by sharing its name; apply the part's definition.\n"
+        "The recorded part roles govern inclusion if the original proposal's criterion sentence also names an aspect. Do not turn that aspect into an additional inclusion requirement from the sentence.\n"
         "`present`: a passage states it. Copy one continuous quote from that passage, character for character, at most 600 characters, and name the passage. Do not join text from two places, do not correct, translate or complete it. An equation may be quoted as it is printed.\n"
         "`absent`: the passages describe what the paper does and this part is not among it. No quote.\n"
         "`unclear`: the passages do not let you tell. No quote. Passages are a selection, not the whole paper: when the part could be elsewhere in the paper, say `unclear`, not `absent`.\n"

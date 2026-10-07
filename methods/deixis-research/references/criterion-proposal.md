@@ -31,6 +31,13 @@ blocks.
    parts, not core requirements. A paper may contribute to only some of these
    subquestions. The criterion sentence states only core requirements. A
    study-level comparator the question names is core (rule 8).
+   Keep each core definition atomic: do not append an aspect requirement to
+   the central concept's definition or criterion sentence. If two independent
+   requirements must both hold, propose separate core parts with their own
+   phrases. Code matches normalized names or literal phrase inventories;
+   two core votes are required and any corresponding aspect vote vetoes core,
+   except for population and study-level comparator parts. A combined part
+   cannot supply independent core votes for its separate components.
 7. Give `exclusion_title_words`: title words of papers that are about the topic
    but are not primary studies of this kind. Give an empty list when none apply.
 8. When the question names the **population** a study must be done in

@@ -75,7 +75,7 @@ def test_roles_are_required_and_at_least_one_core_is_enforced():
     assert "schema_invalid" in contracts.validate_model_output(STEP_INPUT, output).codes()
 
 
-def test_consensus_requires_two_named_aspect_votes_and_preserves_multiple_cores():
+def test_consensus_roles_use_majority_even_with_different_wording():
     import copy
 
     runs = {n: copy.deepcopy(three_runs()[1]) for n in (1, 2, 3)}
@@ -87,7 +87,108 @@ def test_consensus_requires_two_named_aspect_votes_and_preserves_multiple_cores(
     runs[2]["parts"][1]["role"] = "aspect"
     assert [p["role"] for p in consensus(FATIGUE, runs)["parts"]] == ["core", "aspect"]
     runs[2]["parts"][1]["name"] = "different wording"
+    assert [p["role"] for p in consensus(FATIGUE, runs)["parts"]] == ["core", "aspect"]
+    runs[1]["parts"][1]["role"] = "core"
+    # Two cores outweigh the differently named aspect.
     assert [p["role"] for p in consensus(FATIGUE, runs)["parts"]] == ["core", "core"]
+
+
+def test_minority_retains_base_role_and_duplicate_matches_do_not_add_votes():
+    import copy
+
+    runs = {n: copy.deepcopy(three_runs()[1]) for n in (1, 2)}
+    for body in runs.values():
+        for entry in body["parts"]:
+            entry["role"] = "core"
+    alone = part("unsupported aspect", ["unique one", "unique two", "unique three",
+                                        "unique four", "unique five", "unique six"]) | {"role": "aspect"}
+    runs[1]["parts"].append(alone)
+    assert consensus(FATIGUE, runs)["parts"][-1]["role"] == "aspect"
+    runs[1]["parts"].append(alone | {"name": "alias in the same proposal"})
+    assert all(p["role"] == "aspect" for p in consensus(FATIGUE, runs)["parts"][-2:])
+    runs[1]["parts"][-2]["role"] = "core"
+    result = consensus(FATIGUE, runs)
+    assert [p["role"] for p in result["parts"][-2:]] == ["core", "aspect"]
+
+
+def test_multiple_matching_aspects_in_one_run_count_as_one_vote():
+    import copy
+
+    runs = {n: copy.deepcopy(three_runs()[1]) for n in (1, 2)}
+    for body in runs.values():
+        for entry in body["parts"]:
+            entry["role"] = "core"
+    runs[2]["parts"][1]["role"] = "aspect"
+    runs[2]["parts"].append(runs[2]["parts"][1] | {"name": "fatigue alias"})
+    assert consensus(FATIGUE, runs)["parts"][1]["role"] == "core"
+
+
+def test_no_core_consensus_restores_base_roles_and_records_fallback():
+    import copy
+
+    runs = {n: copy.deepcopy(three_runs()[1]) for n in (1, 2, 3)}
+    for body in runs.values():
+        for entry in body["parts"]:
+            entry["role"] = "aspect"
+    # Each proposal has a valid core, but two aspect votes remove the base core.
+    runs[1]["parts"][0]["role"] = "core"
+    runs[2]["parts"][1]["role"] = "core"
+    runs[3]["parts"].append(part("independent core", ["distinct a", "distinct b", "distinct c",
+                                                     "distinct d", "distinct e", "distinct f"]) | {"role": "core"})
+    result = consensus(FATIGUE, runs)
+    assert result["base_run"] == 1
+    assert result["role_fallback"] is True
+    assert [p["role"] for p in result["parts"]] == ["core", "aspect"]
+    assert result["criterion"] == runs[1]["criterion"]
+
+
+@pytest.mark.parametrize("base_role", ["core", "aspect"])
+def test_tied_role_votes_retain_base_role(base_role):
+    import copy
+
+    runs = {n: copy.deepcopy(three_runs()[1]) for n in (1, 2)}
+    for body in runs.values():
+        body["parts"][0]["role"] = "core"
+    runs[1]["parts"][1]["role"] = base_role
+    runs[2]["parts"][1]["role"] = "aspect" if base_role == "core" else "core"
+    assert consensus(FATIGUE, runs)["parts"][1]["role"] == base_role
+
+
+def test_composite_needs_independent_core_votes_for_each_component():
+    a = ["dose amount", "dose level", "drug dose", "daily dose", "dose rate", "dose interval"]
+    b = ["followup length", "followup duration", "followup period", "followup time", "study duration", "study period"]
+    central = part("central", ["primary intervention", "primary treatment", "main intervention",
+                                "main treatment", "treatment arm", "active therapy"]) | {"role": "core"}
+    combined = part("dose and followup", a + b) | {"role": "core"}
+    left = part("dose", a) | {"role": "core"}
+    right = part("followup", b) | {"role": "core"}
+    bundled_runs = {n: proposal("SYNTHETIC", [central, combined]) for n in (1, 2, 3)}
+    assert consensus(FATIGUE, bundled_runs)["parts"][1]["role"] == "aspect"
+    runs = {1: proposal("SYNTHETIC", [central, combined]),
+            2: proposal("SYNTHETIC", [central, left, right])}
+    assert consensus(FATIGUE, runs)["parts"][1]["role"] == "aspect"
+    runs[3] = proposal("SYNTHETIC", [central, left, right])
+    assert consensus(FATIGUE, runs)["parts"][1]["role"] == "core"
+
+
+def test_unbundled_core_definition_is_preferred_without_rewriting_it():
+    import copy
+
+    runs = {n: copy.deepcopy(three_runs()[1]) for n in (1, 2)}
+    for body in runs.values():
+        body["parts"][0]["role"] = "core"
+        body["parts"][1]["role"] = "aspect"
+    runs[1]["parts"][0]["definition"] += " Requires fatigue score and fatigue severity."
+    result = consensus(FATIGUE, runs)
+    assert result["base_run"] == 2
+    assert result["parts"][0]["definition"] == runs[2]["parts"][0]["definition"]
+
+
+def test_one_shared_cue_does_not_merge_related_concepts():
+    from deixis.workflow.criterion import matching_parts
+
+    assert not matching_parts(part("primary", ["shared metric", "a", "b", "c", "d", "e"]),
+                              part("related", ["shared metric", "f", "g", "h", "i", "j"]))
 
 
 def test_population_and_comparator_cannot_be_aspects():
@@ -100,6 +201,38 @@ def test_population_and_comparator_cannot_be_aspects():
     assert "question_element_not_core" in report.codes()
     runs = {n: output for n in (1, 2, 3)}
     assert consensus(FATIGUE, runs)["parts"][1]["role"] == "core"
+
+
+def supplemental_consensus_cases():
+    """Synthetic variations of the existing medical fixture and survey question."""
+    import copy
+
+    cases = json.loads((FIXTURES / "fake-outputs.json").read_text())["cases"]
+    medical = next(c for c in cases if c["name"] == "criterion_proposal_valid_with_elements")
+    medical_input = json.loads((FIXTURES / "step-inputs.json").read_text())[medical["step_input"]]
+    medicine = {n: copy.deepcopy(medical["output"]) for n in (1, 2, 3)}
+    medicine[1]["parts"][-1]["role"] = "aspect"  # Two core votes override the base aspect.
+    surveys = {n: proposal("SYNTHETIC: the paper uses a household commuting-time survey instrument.", [
+        part("survey instrument", ["survey instrument", "household panel", "commuting time",
+                                   "travel survey", "household survey", "panel questionnaire"]) | {"role": "core"},
+        part("reported duration", ["travel duration", "commute duration", "mean duration",
+                                   "journey duration", "duration estimate", "reported duration"]) | {"role": "aspect"}
+    ]) for n in (1, 2, 3)}
+    surveys[3]["parts"][0]["role"] = "aspect"
+    surveys[3]["parts"][1]["role"] = "core"
+    surveys[3]["parts"][0]["name"] = "household questionnaire"
+    return [("medicine_population_comparator", medical_input["question"]["text"], medicine,
+             [p["name"] for p in medical["output"]["parts"]]),
+            ("household_commuting_survey", SURVEYS, surveys, ["survey instrument"])]
+
+
+@pytest.mark.parametrize("case", supplemental_consensus_cases(), ids=lambda case: case[0])
+def test_other_question_domains_preserve_expected_cores(case):
+    _, question, runs, expected = case
+    result = consensus(question, runs)
+    assert result is not None
+    assert [p["name"] for p in result["parts"] if p.get("role") == "core"] == expected
+    assert not result.get("role_fallback", False)
 
 
 @pytest.mark.parametrize(("name", "codes"), [

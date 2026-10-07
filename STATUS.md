@@ -1,6 +1,6 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 6 Ekim 2026.
+**Son güncelleme:** 7 Ekim 2026.
 
 ## Şu an
 
@@ -10,7 +10,7 @@ Kural (sahip, 3 Ekim): yazan ve inceleyen farklı şirketin modeli; Sol yazarsa 
 
 ## Sıradaki
 
-0. Arama ölçümü (6 Eki, Sol + Claude): protokol ve dondurulmuş hedefler `.local/docs/product/search-measurement-{protocol,freeze}-2026-10-06.md`; ölçüm araçları `scripts/benchmark/` (14579dc). Sıradaki: izole A serisi (DBR/VBF → kurt2017 → uwsn-kconn2022 → irs2021), sonra survey A/B/C/N ve sahibin ilk 20 kör değerlendirmesi. Ardından Sol'un öncelik listesi: kilit kaynağın cevaba ulaşması, küçük partili arama, hedefli chaining.
+0. Küçük partili arama (7 Eki, Sol + Claude): donmuş birleşik liste ve partili inceleme (D237), saklı politikayla cevap girdisi dağıtımı (D238) uygulandı; yeni koşularda varsayılan `on`, eski koşular saklı politikalarıyla, yeni aramada `off` geri dönüşü (D239). Gate2 maliyet medyanları geçti, hedef kimliği kapısı geçmedi; D239 ölçüm sonrası kapı revizyonudur. Açık işler: Hakim atıf seçimi, UWSN 09 recall, cevap derinliği ödünü, bütçe sonunda öncelik bölümünün ortasında kalma; P@20 etiketleri sahipte. 1–2 haftalık kullanımda kaynak kaybı/işlem sorunu görülürse `off`. Kanıt: `.local/benchmark/2026-10-07-small-batch-gate2/SUMMARY.md`.
 1. P10: macOS paketi. Rapor kalitesi çalışması (kanıt kesilmesi, çok parçalı iddialar) isteğe bağlı ve sahip kararıyla.
 
 ## Tamamlanan fazlar

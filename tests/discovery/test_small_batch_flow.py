@@ -170,11 +170,21 @@ def test_legacy_frozen_budget_exposes_only_discovery_allowance():
     assert small_batch.model_call_allowance({"max_model_calls": 40}) == 40
 
 
-def test_default_flag_off_and_invalid_setting(monkeypatch, tmp_path):
+def test_product_default_flag_on(monkeypatch, tmp_path):
     monkeypatch.setenv("DEIXIS_DATA_DIR", str(tmp_path))
     monkeypatch.delenv("DEIXIS_SMALL_BATCH_INSPECTION", raising=False)
+    assert Settings(data_dir=tmp_path).small_batch_inspection == "on"
+    assert load_settings().small_batch_inspection == "on"
+
+
+def test_explicit_off_restores_legacy_settings(monkeypatch, tmp_path):
+    monkeypatch.setenv("DEIXIS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", "off")
     assert Settings(data_dir=tmp_path).small_batch_inspection == "off"
     assert load_settings().small_batch_inspection == "off"
+
+
+def test_invalid_flag_setting(monkeypatch):
     monkeypatch.setenv("DEIXIS_SMALL_BATCH_INSPECTION", "yes")
     with pytest.raises(ValueError, match="DEIXIS_SMALL_BATCH_INSPECTION"):
         load_settings()

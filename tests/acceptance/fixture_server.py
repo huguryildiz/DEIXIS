@@ -883,6 +883,7 @@ def main() -> None:
         return
     # Cases A–G approve the code-built proposal automatically; case H explicitly asks for approval.
     settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1,
+                        small_batch_inspection=os.environ.get("DEIXIS_SMALL_BATCH_INSPECTION", "on"),
                         protocol_approval=os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "as_proposed"),
                         # Cases A–H keep the code's query alone, as they always had it; case I asks for the
                         # model-written query of D92.

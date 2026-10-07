@@ -3,7 +3,7 @@
 Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
 
 ## D240 — Small-batch runs expose the PDF waiting list
-Status: accepted · Date: 2026-10-07 · Author: Sol · Reviewer: Claude (review pending)
+Status: accepted · Date: 2026-10-07 · Author: Sol · Reviewer: Claude (code reviewed; waiting and human-queue Playwright specs 24/24 in both modes)
 Decision: For stored `small_batch_fused_v1` discovery runs, the waiting list and its counters derive reading order from successful batch plans/closures, ordered by frozen position within each run. Current fresh D99 waiting decisions still determine eligibility; a listed small-batch work must have a reached version and a version that can accept a PDF. Legacy retrieval plans retain their path. No stored run, decision or model contract is rewritten. Confirmed uploads use D100's existing person-reading request, bounded no-decision outcome and explicit retry. The latest reading turn is selected chronologically across both run kinds; acceptance fixtures honor `DEIXIS_SMALL_BATCH_INSPECTION=on|off`.
 Limits: Synthetic checks establish application behavior only. Browser acceptance in both modes remains unverified where sandbox restrictions prevent Chrome from launching. Claude's review of this correction is pending.
 

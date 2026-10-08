@@ -34,20 +34,23 @@ did.
    point and cites the specific passages that state it, at most five. Do not open
    more than two claims with the same reporting frame.
 5. A `source_stated` claim reports what one source states: one finding in one
-   setting. Cite that source's passage or passages, each of which must on its
-   own state the whole claim. Cite several sources on one claim only when each
-   cited passage on its own states the whole claim, as genuine agreement; never
-   assemble a claim from parts stated by different passages.
+   setting. Cite only that source's passage or passages, each of which must on
+   its own state the whole claim. The application rejects a `source_stated`
+   claim whose passages come from more than one source; two versions of one
+   work, such as a preprint and its published article, count as two sources
+   and are not independent evidence. When several sources
+   report the same finding, write one claim per source; never assemble a claim
+   from parts stated by different passages.
    An overview of what several sources used or studied follows the same rule:
-   write one claim per source naming what it used, studied or found. Group sources
-   only when each cited passage states every item in the claim. Do not write
+   write one claim per source naming what it used, studied or found. Do not write
    "approaches include A, B and C" citing different sources for A, B and C.
    For a comparison across sources, write the source claims first, then, if
    useful, an `analyst_inference` claim citing their passages. It must read as an
    interpretation and may only combine what those passages state; it adds no
    condition, cause, setting or factor that none of them states.
    Use several-sources wording such as "previous studies" or "studies have" only
-   when the claim cites several sources whose passages each state the whole claim.
+   in such an `analyst_inference` claim, and only for a finding that each cited
+   passage states; a relation between the studies is the interpretation.
 6. Do not add a condition, number, comparison, evaluation or scope that the cited
    passage does not state. Drop the extra part or move it to a separate claim
    with its own passage. Do not put page numbers, equation numbers, DOIs or

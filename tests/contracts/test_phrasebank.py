@@ -217,7 +217,8 @@ def test_several_sources_wording_for_a_one_source_claim_is_flagged(text, languag
     draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
     draft["answer_language"] = language
     one = dict(draft["claims"][0], text=text, passage_ids=["psg_SYNA1abs01"])
-    two = dict(draft["claims"][0], claim_label="c2", text=text, passage_ids=["psg_SYNA1abs01", "psg_SYNA3pg002"])
+    two = dict(draft["claims"][0], claim_label="c2", text=text, support_type="analyst_inference",
+               passage_ids=["psg_SYNA1abs01", "psg_SYNA3pg002"])
     draft["claims"], draft["limitations"], draft["unanswered_aspects"] = [one, two], [], []
     report = contracts.validate_model_output(STEP_INPUTS["A_answer"], anchored(draft))
     assert report.ok and [w.path for w in report.warnings if w.code == "plural_sources_for_one_source"] == ["/claims/0/text"]
@@ -283,3 +284,42 @@ def test_language_without_frames_is_a_warning_not_a_failure():
     draft["claims"][0]["text"] = "Die Quelle formuliert ein gemischt-ganzzahliges Programm."
     report = contracts.validate_model_output(STEP_INPUTS["A_answer"], draft)
     assert report.ok and [w.code for w in report.warnings] == ["phrasing_not_checked"]
+
+
+@pytest.mark.parametrize("support_type, passage_ids, rejected", [
+    ("source_stated", ["psg_SYNA1abs01", "psg_SYNA1pg003"], False),  # two passages of one source
+    ("source_stated", ["psg_SYNA1abs01", "psg_SYNA3pg002"], True),
+    ("analyst_inference", ["psg_SYNA1abs01", "psg_SYNA3pg002"], False),
+])
+def test_source_stated_claim_cites_one_source(support_type, passage_ids, rejected):
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    draft["claims"] = [dict(draft["claims"][0], support_type=support_type, passage_ids=passage_ids)]
+    draft["limitations"], draft["unanswered_aspects"] = [], []
+    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], anchored(draft))
+    codes = [(i.code, i.path) for i in report.issues if i.code == "source_stated_several_sources"]
+    assert codes == ([("source_stated_several_sources", "/claims/0/passage_ids")] if rejected else [])
+    assert report.ok is not rejected
+
+
+def test_two_versions_of_one_work_count_as_two_sources():
+    step_input = json.loads(json.dumps(STEP_INPUTS["A_answer"]))
+    # SYNTHETIC: the second passage of SYNA1 now belongs to another version record of the same work.
+    next(p for p in step_input["passages"] if p["passage_id"] == "psg_SYNA1pg003")["source_id"] = "srv_SYNA1pre01"
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    draft["claims"] = [dict(draft["claims"][0], support_type="source_stated",
+                            passage_ids=["psg_SYNA1abs01", "psg_SYNA1pg003"])]
+    draft["limitations"], draft["unanswered_aspects"] = [], []
+    report = contracts.validate_model_output(step_input, anchored(draft))
+    assert [i.code for i in report.issues] == ["source_stated_several_sources"]
+
+
+def test_several_sources_defect_is_never_salvaged_with_anchor_defects():
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    draft["claims"] = [dict(draft["claims"][0], support_type="source_stated",
+                            passage_ids=["psg_SYNA1abs01", "psg_SYNA3pg002"])]
+    draft["limitations"], draft["unanswered_aspects"] = [], []
+    draft = anchored(draft)
+    draft["citation_anchors"].append(dict(draft["citation_anchors"][0]))  # duplicate anchor, salvageable alone
+    assert {i.code for i in contracts.validate_model_output(STEP_INPUTS["A_answer"], draft).issues} >= {
+        "source_stated_several_sources", "duplicate_citation_anchor"}
+    assert contracts.salvage_answer_draft(STEP_INPUTS["A_answer"], draft) == (draft, [])

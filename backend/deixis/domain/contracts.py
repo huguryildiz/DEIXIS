@@ -2313,6 +2313,7 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
                                    f"expected at most 15 words, got {title_words}"))
     labels: set[str] = set()
     cited_by_claim: dict[str, set[str]] = {}
+    source_of = {p["passage_id"]: p["source_id"] for p in step_input["passages"]}
     for i, claim in enumerate(draft["claims"]):
         if match := LOCATOR_IN_TEXT.search(claim["text"]):
             report.issues.append(Issue("locator_in_claim_text", f"/claims/{i}/text",
@@ -2330,6 +2331,12 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
         if len(set(claim["passage_ids"])) != len(claim["passage_ids"]):
             report.issues.append(Issue("duplicate_passage_id", f"/claims/{i}/passage_ids", claim["claim_label"]))
         cited_by_claim[claim["claim_label"]] = set(claim["passage_ids"])
+        # D247: a source_stated claim reports one source; merged claims were mostly only partly supported.
+        sources = {source_of[pid] for pid in claim["passage_ids"] if pid in source_of}
+        if claim["support_type"] == "source_stated" and len(sources) > 1:
+            report.issues.append(Issue("source_stated_several_sources", f"/claims/{i}/passage_ids",
+                                       f"{claim['claim_label']}: cites {len(sources)} sources; write one source_stated "
+                                       "claim per source, each citing only that source's passages"))
 
     # A published citation must resolve to source-owned text so the evidence panel can show the exact highlighted
     # span (D27). D244 may prune anchor-only defects after validation; all other defects require bounded repair.

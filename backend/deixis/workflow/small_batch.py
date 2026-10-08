@@ -18,6 +18,7 @@ POLICY = "small_batch_fused_v1"
 BATCH_SIZE = 40
 MINIMUM = 50
 LIST_KEY = "small_batch:v1:list"
+GRAPH_SEEDS = 30  # D246: rows with a reference list taken from the top of the fused order
 ANSWER_ALLOCATION_VERSION = 2
 
 
@@ -137,10 +138,30 @@ def replay(manifest: dict[str, Any]) -> dict[str, Any]:
     def row(stored: dict[str, Any]) -> dict[str, Any]:
         return stored | {"own_ids": set(stored["own_ids"]),
                          "references": set(stored["references"]) if stored["references"] is not None else None}
-    ranked = ranking.rank_pool([row(r) for r in manifest["pool"]], [row(r) for r in manifest["verified"]],
+    pool, verified = [row(r) for r in manifest["pool"]], [row(r) for r in manifest["verified"]]
+    ranked = ranking.rank_pool(pool, verified,
                              set(manifest["query_words"]), manifest["blocks"], manifest["embedding_model"],
                              manifest["similarities"], manifest["off_reason"], manifest["compared_terms"])
-    if manifest.get("ranking_version", 1) == 2:
+    version = manifest.get("ranking_version", 1)
+    top = ranked["fused"][:20]
+    if version == 3:
+        # D246: a second graph pass seeded from the fused top instead of the keyword top, counting a seed's
+        # citation of a record twice; the whole pool is fused again before the version 2 reorder below.
+        verified_works = {r["work_id"] for r in verified}
+        by_id = {r["id"]: r for r in pool}
+        seeds = verified + [by_id[rid] for rid in ranked["fused"]
+                            if by_id[rid]["references"] and by_id[rid]["work_id"] not in verified_works][:GRAPH_SEEDS]
+        if any(seed["references"] for seed in seeds):
+            graph = ranking.graph_scores(pool, seeds)
+            for r in pool:
+                graph[r["id"]] += sum(bool(r["own_ids"] & (seed["references"] or set()))
+                                      for seed in seeds if seed["work_id"] != r["work_id"])
+            ranked["ranks"]["graph"] = ranking.mean_ranks(graph, ranking.availability(pool, "graph"))
+            ranked["reasons"].pop("graph", None)
+            ranked["graph_seeds"] = seeds
+            ranked["fused_code"] = ranking.fuse(ranked["ranks"], ranking.CODE_SIGNALS)
+            ranked["fused"] = ranking.fuse(ranked["ranks"], ranking.SIGNALS)
+    if version in (2, 3):
         from deixis.workflow.flow import RRF_K
 
         counts = {r["id"]: r["cited_by_count"] for r in manifest["pool"]}
@@ -153,6 +174,9 @@ def replay(manifest: dict[str, Any]) -> dict[str, Any]:
         scores = {rid: sum((2 if name in ("graph", "cites") else 1) / (RRF_K + ranks[rid][0])
                            for name, ranks in ranked["ranks"].items()) for rid in base[20:500]}
         ranked["fused"] = base[:20] + sorted(scores, key=lambda rid: (-scores[rid], rid)) + base[500:]
+        if version == 3:
+            # The original fused top 20 stays first, so P@20 is unchanged by construction.
+            ranked["fused"] = top + [rid for rid in ranked["fused"] if rid not in set(top)]
         ranked["order"] = list(ranked["fused"])
     return ranked
 
@@ -306,7 +330,7 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
             " WHERE m.research_id = ? AND m.removed_at IS NULL) GROUP BY work_id", (rid,))}
         for row in list(pool.values()) + priority_pool + verified:
             row["cited_by_count"] = counts.get(row["work_id"])
-        manifest = {"ranking_version": 2,
+        manifest = {"ranking_version": 3,
                     "scope_revision": run["scope_revision"], "selection_revision": store.selection_revision(rid),
                     "protocol": store.existing_step(run["id"], "protocol")["output"],
                     "pool": sorted(pool.values(), key=lambda row: row["id"]), "priority_pool": priority_pool,

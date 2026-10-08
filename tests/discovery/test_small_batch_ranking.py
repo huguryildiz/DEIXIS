@@ -88,6 +88,61 @@ def test_v2_citation_ties_and_missing_counts():
     assert ranks["v003"] == ranks["v024"] == (14.5, False)
 
 
+def v3_manifest(n=120):
+    stored = manifest(n)
+    for i, row in enumerate(stored["pool"]):
+        row["cited_by_count"] = i % 7 or None
+    return stored
+
+
+@pytest.mark.parametrize("n", [0, 12, 65, 520])
+def test_v3_keeps_the_v1_top20_and_orders_a_permutation(n):
+    stored = v3_manifest(n)
+    v1 = small_batch.replay(stored)
+    stored["ranking_version"] = 3
+    ranked = small_batch.replay(stored)
+    assert ranked["fused"][:20] == v1["fused"][:20]
+    assert sorted(ranked["fused"]) == sorted(v1["fused"])
+    assert ranked["order"] == ranked["fused"]
+    assert sorted(ranked["fused_code"]) == sorted(v1["fused_code"])
+    listing = small_batch.build_list(stored)
+    assert small_batch.build_list(json.loads(json.dumps(listing["manifest"]))) == listing
+
+
+def test_v3_without_reference_lists_is_v2():
+    stored = v3_manifest()
+    for row in stored["pool"]:
+        row["references"] = None
+    stored["ranking_version"] = 2
+    v2 = small_batch.replay(stored)
+    stored["ranking_version"] = 3
+    v3 = small_batch.replay(stored)
+    assert v3["fused"] == v2["fused"]
+    assert v3["reasons"]["graph"] == "no_seed_with_references"
+
+
+def test_v3_seeds_come_from_the_fused_top_and_lift_a_record_they_cite():
+    stored = v3_manifest(300)
+    v1 = small_batch.replay(stored)
+    # Only fused-top rows carry reference lists, and they all cite one late record that no keyword seed cites.
+    late = v1["fused"][-1]
+    late_ids = next(r["own_ids"] for r in stored["pool"] if r["id"] == late)
+    keyword_seeds = {seed["id"] for seed in v1["graph_seeds"]}
+    top = set(v1["fused"][:30]) - keyword_seeds
+    for row in stored["pool"]:
+        row["references"] = set(late_ids) if row["id"] in top else {"W_SYNTHETIC_ELSEWHERE"} if row["id"] == late else None
+    stored["ranking_version"] = 2
+    v2 = small_batch.replay(stored)
+    stored["ranking_version"] = 3
+    v3 = small_batch.replay(stored)
+    assert "graph" not in v3["reasons"]
+    assert v3["fused"].index(late) < v2["fused"].index(late)
+    stored["ranking_version"] = 1
+    assert v3["fused"][:20] == small_batch.replay(stored)["fused"][:20]
+    graph = v3["ranks"]["graph"]
+    assert graph[late][0] == 1.0
+
+
 @pytest.mark.parametrize("n,sizes", [(0, []), (29, [29]), (40, [40]), (49, [40, 9]), (50, [40, 10]),
                                      (59, [40, 19]), (60, [40, 20]), (81, [40, 40, 1])])
 def test_batch_boundaries(n, sizes):
@@ -142,3 +197,41 @@ def test_human_fulltext_inclusion_is_terminal_without_becoming_model_adjudicatio
     state = small_batch.work_state(item, work)
     assert state["processed"] and state["included"]
     assert not state["fulltext_adjudicated"]
+
+
+def test_v3_takes_30_referenced_rows_from_the_fused_top_and_never_a_verified_work_again():
+    stored = v3_manifest(200)
+    for row in stored["pool"]:
+        row["references"] = {"W0"}
+    stored["verified"] = [dict(stored["pool"][i]) for i in (0, 1)]
+    v1 = small_batch.replay(stored)
+    stored["ranking_version"] = 3
+    ranked = small_batch.replay(stored)
+    seeds = ranked["graph_seeds"]
+    assert [seed["id"] for seed in seeds[:2]] == ["v000", "v001"]
+    expected = [rid for rid in v1["fused"] if rid not in ("v000", "v001")][:small_batch.GRAPH_SEEDS]
+    assert [seed["id"] for seed in seeds[2:]] == expected
+    assert ranked["fused_code"] == ranking.fuse(ranked["ranks"], ranking.CODE_SIGNALS)
+
+
+def test_v3_keeps_the_reason_when_only_verified_seeds_lack_reference_lists():
+    stored = v3_manifest(60)
+    for row in stored["pool"]:
+        row["references"] = None
+    stored["verified"] = [dict(stored["pool"][0])]
+    stored["ranking_version"] = 3
+    ranked = small_batch.replay(stored)
+    assert ranked["reasons"]["graph"] == "no_seed_with_references"
+    assert "graph" not in ranked["ranks"]
+
+
+def test_v3_record_cited_by_seeds_without_its_own_reference_list_stays_unavailable():
+    stored = v3_manifest(80)
+    cited = stored["pool"][-1]
+    cited["references"] = None
+    for row in stored["pool"][:-1]:
+        row["references"] = set(cited["own_ids"])
+    stored["ranking_version"] = 3
+    graph = small_batch.replay(stored)["ranks"]["graph"]
+    assert graph[cited["id"]][1] is False
+    assert graph[cited["id"]][0] == max(rank for rank, _ in graph.values())

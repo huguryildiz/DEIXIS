@@ -217,12 +217,14 @@ def test_the_screening_list_follows_the_inspection_order_and_not_the_provider_s(
     assert screened == [title for title in titles[1:] if not title.startswith(STRONG)][:len(screened)]
 
 
-def test_the_read_limit_cuts_by_the_new_order_deletes_nothing_and_max_candidates_cuts_nothing(tmp_path, monkeypatch):
-    """SW7.2 and slice 09: the read limit replaced `max_candidates` here, and what it leaves out stays unread.
+def test_the_read_limit_cuts_by_the_frozen_list_order_deletes_nothing_and_max_candidates_cuts_nothing(tmp_path, monkeypatch):
+    """The read limit follows the frozen small-batch list, and what it leaves out stays unread.
 
     A pool of 45 at quick effort, whose read limit is 40 and whose `max_candidates` is 20: if the old limit still
     cut, 25 works would never be looked at.
     """
+    from deixis.workflow import small_batch
+
     app = app_for(tmp_path, monkeypatch, Pool(pool(45)))
     client = client_of(app)
     try:
@@ -230,6 +232,8 @@ def test_the_read_limit_cuts_by_the_new_order_deletes_nothing_and_max_candidates
         store = app.state.store
         candidates = store.candidates(rid, 1)
         order = DecisionStore(store).latest_ranking(rid, 1)
+        listing = store.existing_step(run_id, small_batch.LIST_KEY)["output"]
+        frozen_order = listing["order"]
         plan = step_output(store, run_id, "abstract_stage")
         decided = {row["source_version_id"]: decision_of(store, rid, row["source_version_id"])
                    for row in candidates}
@@ -237,10 +241,11 @@ def test_the_read_limit_cuts_by_the_new_order_deletes_nothing_and_max_candidates
     finally:
         client.__exit__(None, None, None)
     assert len(candidates) == 45 and len(order) == 45  # nothing was removed and everything was ranked
+    assert len(frozen_order) == 45 and set(frozen_order) == set(order)
     assert plan["limit"] == 40 and sum(len(batch) for batch in plan["batches"]) + plan["not_read"] == 44
-    # The read plan followed the order: the works left unread are the last ones in it, not the last found.
+    # D245's frozen list can differ from the keyword ranking; decisions must follow the list's tail.
     unread = {svid for svid, row in decided.items() if row["reason_code"] == "abstract_not_read"}
-    assert unread == set(order[-plan["not_read"]:])
+    assert unread == set(frozen_order[-plan["not_read"]:])
     assert plan["not_read"] == 4 and states == {"pending"}
 
 

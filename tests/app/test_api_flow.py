@@ -290,12 +290,14 @@ def test_a_final_draft_with_only_repeated_quotes_and_unquoted_extra_citations_is
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
         view, run = wait_run(client, rid, run["id"])
         answer = view["answers"][0]
-        assert [task for task, _, _ in adapter.sent].count("grounded_answer") == 2  # the repair is still asked for first
+        assert [task for task, _, _ in adapter.sent].count("grounded_answer") == 2  # D244 repairs before removing links
         assert answer["status"] == "structurally_valid"
         assert [len(claim["evidence"]) for claim in answer["claims"]] == [1]
         assert all(evidence["anchor_text"] for claim in answer["claims"] for evidence in claim["evidence"])
         warnings = {w["code"] for w in answer["validation"]["warnings"]}
-        assert {"duplicate_citation_anchor_ignored", "citation_without_quote_removed"} <= warnings
+        assert "citation_anchor_salvaged" in warnings
+        assert {"duplicate_citation_anchor", "missing_citation_anchor"} <= {
+            code for w in answer["validation"]["warnings"] for code in w.get("issue_codes", [])}
 
 
 def test_seed_requires_readable_uploaded_pdf_and_rejects_other_scopes(tmp_path):

@@ -462,6 +462,14 @@ class Issue:
 
 
 @dataclass
+class AnchorSalvageWarning(Issue):
+    claim_label: str
+    passage_id: str | None
+    dropped: str
+    issue_codes: list[str]
+
+
+@dataclass
 class ValidationReport:
     output_type: str | None = None
     result: dict[str, Any] | None = None
@@ -2324,7 +2332,7 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
         cited_by_claim[claim["claim_label"]] = set(claim["passage_ids"])
 
     # A published citation must resolve to source-owned text so the evidence panel can show the exact highlighted
-    # span (D27). Missing or unlocatable anchors go through the same bounded repair path as other structural errors.
+    # span (D27). D244 may prune anchor-only defects after validation; all other defects require bounded repair.
     passage_text = {p["passage_id"]: p["text"] for p in step_input["passages"]}
     required_anchors = {
         (claim["claim_label"], pid)
@@ -2652,42 +2660,64 @@ def name_sources_in_prose(step_input: dict[str, Any], data: dict[str, Any]) -> d
 
 
 def salvage_answer_draft(step_input: dict[str, Any], draft: dict[str, Any]) -> tuple[dict[str, Any], list[Issue]]:
-    """Remove the citation defects that need no new text from a final, still invalid answer draft.
-
-    A (claim, passage) pair quoted more than once keeps its first locatable quote (as D43 accepts for cells); an anchor for
-    a passage its claim does not cite is dropped; a citation without a locatable quote is dropped only when the claim keeps
-    another quoted citation. Claims are never removed and nothing is added, so the caller must validate the result again.
-    """
+    """D244: prune only anchor defects; require a revalidated answer with at least one claim."""
+    if step_input["task_type"] != "grounded_answer":
+        return draft, []
+    report = validate_model_output(step_input, draft)
+    eligible = {"duplicate_citation_anchor", "anchor_not_in_passage", "missing_citation_anchor",
+                "anchor_passage_not_cited"}
+    if report.ok or any(issue.code not in eligible for issue in report.issues):
+        return draft, []
+    # An uncited anchor can carry an unknown ID without the existing validator naming it as such.
+    if any(a["passage_id"] not in step_input["allowlist"]["passage_ids"] for a in draft["citation_anchors"]):
+        return draft, []
+    original = draft
+    draft = copy.deepcopy(draft)
     warnings: list[Issue] = []
-    claims = [c for c in draft.get("claims", []) if isinstance(c, dict) and isinstance(c.get("passage_ids"), list)]
-    anchors = [a for a in draft.get("citation_anchors", []) if isinstance(a, dict)]
-    if len(claims) != len(draft.get("claims", [])) or len(anchors) != len(draft.get("citation_anchors", [])):
-        return draft, warnings
+    claims, anchors = draft["claims"], draft["citation_anchors"]
     text = {p["passage_id"]: p["text"] for p in step_input["passages"]}
-    located = lambda a: isinstance(a.get("quote"), str) and locate_anchor(a["quote"], text.get(a.get("passage_id"), "")) is not None
-    cited = {(c.get("claim_label"), pid) for c in claims for pid in c["passage_ids"]}
-    chosen: dict[tuple[Any, Any], int] = {}
+    cited = {(c["claim_label"], pid) for c in claims for pid in c["passage_ids"]}
+    chosen: dict[tuple[str, str], int] = {}
+    pair_codes: dict[tuple[str, str], set[str]] = {}
     for i, anchor in enumerate(anchors):
-        pair = (anchor.get("claim_label"), anchor.get("passage_id"))
-        if pair not in cited:
-            warnings.append(Issue("uncited_anchor_ignored", f"/citation_anchors/{i}", f"{pair[0]}:{pair[1]}"))
-        elif pair not in chosen:
+        pair = (anchor["claim_label"], anchor["passage_id"])
+        pair_codes.setdefault(pair, set()).update(issue.code for issue in report.issues
+                                                if issue.path.startswith(f"/citation_anchors/{i}/")
+                                                or issue.path == f"/citation_anchors/{i}")
+        if pair in cited and pair not in chosen and locate_anchor(anchor["quote"], text[pair[1]]) is not None:
             chosen[pair] = i
-        else:
-            warnings.append(Issue("duplicate_citation_anchor_ignored", f"/citation_anchors/{i}", f"{pair[0]}:{pair[1]}"))
-            if not located(anchors[chosen[pair]]) and located(anchor):
-                chosen[pair] = i
+
+    def dropped(pair: tuple[str, str | None], path: str, kind: str, codes: set[str]) -> None:
+        warnings.append(AnchorSalvageWarning("citation_anchor_salvaged", path,
+                        f"{pair[0]}:{pair[1] or ''}: removed {kind} ({', '.join(sorted(codes))})",
+                        pair[0], pair[1], kind, sorted(codes)))
+
+    for i, anchor in enumerate(anchors):
+        pair = (anchor["claim_label"], anchor["passage_id"])
+        if pair not in cited:
+            dropped(pair, f"/citation_anchors/{i}", "anchor", pair_codes[pair] | {"anchor_passage_not_cited"})
+        elif chosen.get(pair) != i:
+            dropped(pair, f"/citation_anchors/{i}", "anchor", pair_codes[pair])
     draft["citation_anchors"] = [anchors[i] for i in sorted(chosen.values())]
-    quoted = {pair for pair, i in chosen.items() if located(anchors[i])}
+    kept_claims = []
     for i, claim in enumerate(claims):
-        keep = [pid for pid in claim["passage_ids"] if (claim.get("claim_label"), pid) in quoted]
-        if keep and len(keep) < len(claim["passage_ids"]):
-            for pid in claim["passage_ids"]:
-                if pid not in keep:
-                    warnings.append(Issue("citation_without_quote_removed", f"/claims/{i}/passage_ids", f"{claim.get('claim_label')}:{pid}"))
-            claim["passage_ids"] = keep
-    kept = {(c.get("claim_label"), pid) for c in claims for pid in c["passage_ids"]}
-    draft["citation_anchors"] = [a for a in draft["citation_anchors"] if (a.get("claim_label"), a.get("passage_id")) in kept]
+        keep, removed_codes = [], set()
+        for j, pid in enumerate(claim["passage_ids"]):
+            pair = (claim["claim_label"], pid)
+            if pair in chosen:
+                keep.append(pid)
+            else:
+                codes = pair_codes.get(pair, {"missing_citation_anchor"})
+                removed_codes.update(codes)
+                dropped(pair, f"/claims/{i}/passage_ids/{j}", "citation_link", codes)
+        claim["passage_ids"] = keep
+        if keep:
+            kept_claims.append(claim)
+        else:
+            dropped((claim["claim_label"], None), f"/claims/{i}", "claim", removed_codes)
+    draft["claims"] = kept_claims
+    if not kept_claims or not validate_model_output(step_input, draft).ok:
+        return original, []
     return draft, warnings
 
 

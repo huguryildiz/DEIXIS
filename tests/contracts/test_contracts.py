@@ -478,7 +478,7 @@ def test_handles_written_into_answer_text_are_replaced_by_source_titles():
     assert len(contracts.name_sources_in_prose(step_input, resolved)["limitations"][0]["text"]) > 500
 
 
-def test_salvage_drops_repeated_stray_and_unquoted_citations_but_not_a_claim_left_without_evidence():
+def test_salvage_drops_repeated_stray_and_unquoted_citations_and_an_emptied_claim():
     step_input = STEP_INPUTS["A_answer"]
     first, second = step_input["passages"][0], step_input["passages"][1]
     quote = lambda p: " ".join(p["text"].split())[:200]
@@ -493,9 +493,11 @@ def test_salvage_drops_repeated_stray_and_unquoted_citations_but_not_a_claim_lef
     salvaged, warnings = contracts.salvage_answer_draft(step_input, json.loads(json.dumps(answer)))
     assert salvaged["claims"][0]["passage_ids"] == [first["passage_id"]]
     assert salvaged["citation_anchors"] == [{"claim_label": "c1", "passage_id": first["passage_id"], "quote": quote(first)}]
-    assert {w.code for w in warnings} == {"duplicate_citation_anchor_ignored", "uncited_anchor_ignored", "citation_without_quote_removed"}
-    # c2 has no quoted citation left to keep, so the draft stays invalid.
-    assert contracts.validate_model_output(step_input, salvaged).codes() == ["missing_citation_anchor"]
+    assert {w.code for w in warnings} == {"citation_anchor_salvaged"}
+    assert [c["claim_label"] for c in salvaged["claims"]] == ["c1"]
+    assert any(w.claim_label == "c2" and w.dropped == "claim" for w in warnings)
+    assert contracts.validate_model_output(step_input, salvaged).ok
+    assert len(answer["claims"]) == 2  # pruning does not mutate the raw draft
 
 
 def test_a_handle_with_extra_leading_zeros_resolves_to_its_record():

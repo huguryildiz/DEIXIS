@@ -1832,6 +1832,7 @@ const tr: Record<string, string> = {
   'Math is not well formed': 'Matematiksel ifade düzgün biçimlendirilmemiş',
   'Math cites abstract text only': 'Matematiksel ifade yalnızca özet metnine atıf yapıyor',
   'Citation opens without a highlight': 'Atıf vurgulama olmadan açılır',
+  'Citation cleanup removed an anchor, link or claim without a located citation': 'Atıf temizliği, alıntı çapası, bağlantı veya bulunabilen atfı olmayan iddia çıkardı',
   'Exact text cited in the answer': 'Yanıtta atıf yapılan tam metin',
   'Source view': 'Kaynak görünümü',
   'Plain text': 'Düz metin',

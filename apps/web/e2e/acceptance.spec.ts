@@ -95,12 +95,36 @@ test('stored old sw inspection keeps answer, evidence, transcript and waiting wi
     const before = await (await page.request.get(url)).json()
     expect(before.answers[0].claims[0].evidence[0].anchor_text).toBe('SYNTHETIC stored exercise evidence.')
     expect(before.runs.every((r: { status: string }) => r.status === 'completed')).toBe(true)
+    // Synthetic API warning exercises rendering only; FakeAdapter tests cover salvage and persistence.
+    await page.route(url, async route => {
+      const response = await route.fetch()
+      const view = await response.json()
+      view.answers[0].validation.warnings = [...(view.answers[0].validation.warnings ?? []),
+        { code: 'citation_anchor_salvaged', path: '/citation_anchors/1',
+          message: 'SYNTHETIC c1: removed duplicate anchor (duplicate_citation_anchor)' }]
+      await route.fulfill({ response, json: view })
+    })
     await page.goto(server.url(`#/research/${rid}`))
     await expect(page.getByRole('button', { name: /Ran answer generation/ })).toBeVisible()
     await page.getByRole('button', { name: /Open report:/ }).click()
     const report = page.locator('.report-sheet')
     await expect(report).toContainText('SYNTHETIC stored claim.')
     await expect(report.locator('.claim')).toContainText('SYNTHETIC stored claim.')
+    const checks = report.locator('.phrasing-note')
+    await checks.locator('summary').click()
+    await expect(checks).toContainText('Citation cleanup removed an anchor, link or claim without a located citation')
+    await expect(checks).toContainText('SYNTHETIC c1: removed duplicate anchor')
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      for (const dark of [false, true]) {
+        await page.evaluate(value => document.documentElement.classList.toggle('dark', value), dark)
+        await expect(checks).toBeVisible()
+        await checks.scrollIntoViewIfNeeded()
+        await shot(page, `anchor-salvage-${width}-${dark ? 'dark' : 'light'}`)
+      }
+    }
+    await page.evaluate(() => document.documentElement.classList.remove('dark'))
+    await page.setViewportSize({ width: 1280, height: 900 })
     const reference = report.locator('.reference-list li', { hasText: 'SYNTHETIC historical sw source' })
     await reference.getByRole('button').click()
     await expect(page.getByRole('dialog', { name: 'Source details' })).toContainText('SYNTHETIC stored exercise evidence.')

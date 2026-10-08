@@ -944,6 +944,7 @@ const mathLabels: Record<string, string> = {
   ocr_numbers_unchecked: 'Number or equation read only from OCR text',
   anchor_not_in_passage: 'Citation opens without a highlight',
   missing_citation_anchor: 'Citation opens without a highlight',
+  citation_anchor_salvaged: 'Citation cleanup removed an anchor, link or claim without a located citation',
 }
 const checkCodes = new Set([...phrasingCodes, ...Object.keys(mathLabels)])
 

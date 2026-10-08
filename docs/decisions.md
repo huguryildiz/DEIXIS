@@ -1,6 +1,13 @@
 # DEIXIS decisions
 
-Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `accepted`, `superseded`, `rejected`, and `deferred`.
+Durable decisions, newest first. Each entry is short: status, what was decided, and the main limit. The full original text is in Git history at commit `d213395`. An entry does not turn an unimplemented proposal into a working feature. Status values are `proposed`, `accepted`, `superseded`, `rejected`, and `deferred`.
+
+## D243 — One-source-per-claim answers
+Status: accepted (Sol + Claude), measured on four development questions only · Date: 2026-10-08 · Writer: gpt-6.1-sol · Reviewer: Claude
+Context: In the b1 benchmark (2026-10-08, 10 questions), 59 of 126 sampled claim-passage links were `full` and 67 `partial`, about 13 of 100 points. Most partial links joined findings, conditions or results that no single cited passage stated.
+Decision: A `source_stated` claim reports one finding of one source in one setting; several citations only when each passage on its own states the whole claim. An overview of what several sources used is one claim per source, never "approaches include A, B and C" citing different sources. An `analyst_inference` claim only combines what its cited passages state. Each anchor supports the whole claim. Two to six claims per paragraph, at most thirty, one or two sentences each. The review verdict text gains one clarifying line; no schema change.
+Measurement (a1, `.local/benchmark/2026-10-08-a1`): answer step rerun on the stored b1 corpus of dbr_vbf, kurt2017, uwsn_kconn2022 and irs2021 (same passages), three valid answers per arm, up to 15 sampled links per answer, blind labels by gpt-6.1-sol and Claude, strict (worse) label: macro full-link rate 0.523 (old package) → 0.596 (round 1) → 0.702 (round 2); optimistic 0.578 → 0.728; round-2 raw agreement 0.955. kurt2017 stays low (0.35), mostly one answer that still lists across sources.
+Limits: Model behaviour change, gpt-5.6-luna medium only. Four development questions, the six other benchmark questions not run. Round 2 was labeled in a separate session from the base and round-1 arms. Sampled links, not the plan's atomic A metric. Codex transient pauses (`workspace routing discovery timed out`) needed extra reruns.
 
 ## D242 — Remove old sw inspection execution, preserve stored evidence
 Status: accepted by owner; slices 1–3 implemented; slice 3 checks complete with known environment failures, separate code review pending · Date: 2026-10-07 · Author: Sol · Reviewer: Claude (slices 1–2)

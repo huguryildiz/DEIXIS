@@ -14,6 +14,7 @@ suggest new sources.
    - `supported`: the cited passages state what the claim says. For an
      `analyst_inference` claim, the inference follows from them without adding
      facts they do not contain.
+     For a `source_stated` claim with several passages, each passage on its own states the whole claim.
    - `partially_supported`: part of the claim is supported, or the claim is
      stronger, broader or more certain than the passages.
    - `not_supported`: the cited passages do not say this, or they contradict it.

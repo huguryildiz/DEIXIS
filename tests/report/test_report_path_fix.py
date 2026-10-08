@@ -399,6 +399,6 @@ def test_m1_package_hash_changed_and_integrity_passes():
     """New contract M1 paired with E1: changed runtime identity plus the existing package-integrity guard."""
     package_hash = skill.load_skill_package().package_hash
     assert package_hash != OLD_HASH
-    # Current runtime identity includes D241's atomic-core instructions.
-    assert package_hash == "sha256:53b66ba6dc9f9a902b4fb44d012eb1640ebf72a4fe093419c4334b325c348449"
+    # Current runtime identity includes D243's one-source claim instructions.
+    assert package_hash == "sha256:63708471f3ef2ac99c13bbf648e7c2b5e440695608013fda8499655e5846ace9"
     assert skill.integrity_issues() == []

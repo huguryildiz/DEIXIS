@@ -11,6 +11,27 @@ def test_package_integrity():
     assert skill.integrity_issues() == []
 
 
+def test_one_source_claim_rules_reach_answer_and_review_steps():
+    """Check loaded instructions, not model compliance or semantic support."""
+    package = skill.load_skill_package()
+    answer = " ".join(package.runtime_text("grounded_answer").split())
+    review = " ".join(package.runtime_text("answer_review").split())
+    for rule in (
+        "two to six claims per paragraph, at most thirty claims in all",
+        "A claim is one or two sentences about one point",
+        "each of which must on its own state the whole claim",
+        "never assemble a claim from parts stated by different passages",
+        "write one claim per source naming what it used, studied or found",
+        "Group sources only when each cited passage states every item in the claim",
+        'Do not write "approaches include A, B and C" citing different sources for A, B and C',
+        "may only combine what those passages state; it adds no condition, cause, setting or factor that none of them states",
+        'Use several-sources wording such as "previous studies" or "studies have" only when the claim cites several sources whose passages each state the whole claim',
+        "If no single exact contiguous span in a passage supports the whole claim, split the claim",
+    ):
+        assert rule in answer
+    assert "For a `source_stated` claim with several passages, each passage on its own states the whole claim." in review
+
+
 def test_owner_review_method_loading_hash_and_provenance():
     package = skill.load_skill_package()
     assert skill.RUNTIME_FILES["owner_review"] == ("SKILL.md", "references/review.md")

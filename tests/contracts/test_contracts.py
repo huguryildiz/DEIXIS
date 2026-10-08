@@ -286,6 +286,24 @@ def test_cross_research_passage_is_rejected_even_though_it_exists_elsewhere():
     assert "unknown_passage_id" in report.codes()
 
 
+def test_thirty_claim_answer_retains_every_claim_passage_link():
+    """Synthetic capacity check only; repeated fixture text is not model evidence."""
+    step_input = STEP_INPUTS["A_answer"]
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    claim = draft["claims"][0]
+    anchors = [a for a in draft["citation_anchors"] if a["claim_label"] == claim["claim_label"]]
+    draft["claims"] = [claim | {"claim_label": f"c{i}", "section": f"Topic {(i - 1) // 6 + 1}"}
+                       for i in range(1, 31)]
+    draft["citation_anchors"] = [a | {"claim_label": f"c{i}"} for i in range(1, 31) for a in anchors]
+
+    assert contracts.validate_model_output(step_input, draft).ok
+    links = contracts.derive_evidence_links(step_input, draft)
+    assert {(link["claim_label"], link["passage_id"]) for link in links} == {
+        (c["claim_label"], pid) for c in draft["claims"] for pid in c["passage_ids"]
+    }
+    assert all(link["anchor_match"] == "exact" for link in links)
+
+
 def test_abstract_evidence_link_has_no_page_and_depth_comes_from_records():
     """T02 (P1 part): locator and reading depth are backend-derived, never model-supplied."""
     step_input = STEP_INPUTS["A_answer"]

@@ -27,24 +27,38 @@ did.
    directly, with the numbers the passages give for it.
    Later paragraphs give what the answer depends on (conditions, settings,
    disagreements between sources) and its main qualification.
-4. Keep the answer short: two to four claims per paragraph, at most twenty
+4. Keep the answer short: two to six claims per paragraph, at most thirty
    claims in all. Choose the passages that bear most directly on the question,
    above all those that compare the alternatives the question names or report
-   the quantities it asks about. A claim is one to three sentences about one
+   the quantities it asks about. A claim is one or two sentences about one
    point and cites the specific passages that state it, at most five. Do not open
    more than two claims with the same reporting frame.
-5. `source_stated` claims cite at least one passage that states the claim.
-   `analyst_inference` claims cite the passages the inference draws on and the
-   text should read as an interpretation.
-6. Do not cite a passage for something it does not say. Do not put page numbers,
-   equation numbers, DOIs or quotations into claim text; the application displays
-   locators from its records.
+5. A `source_stated` claim reports what one source states: one finding in one
+   setting. Cite that source's passage or passages, each of which must on its
+   own state the whole claim. Cite several sources on one claim only when each
+   cited passage on its own states the whole claim, as genuine agreement; never
+   assemble a claim from parts stated by different passages.
+   An overview of what several sources used or studied follows the same rule:
+   write one claim per source naming what it used, studied or found. Group sources
+   only when each cited passage states every item in the claim. Do not write
+   "approaches include A, B and C" citing different sources for A, B and C.
+   For a comparison across sources, write the source claims first, then, if
+   useful, an `analyst_inference` claim citing their passages. It must read as an
+   interpretation and may only combine what those passages state; it adds no
+   condition, cause, setting or factor that none of them states.
+   Use several-sources wording such as "previous studies" or "studies have" only
+   when the claim cites several sources whose passages each state the whole claim.
+6. Do not add a condition, number, comparison, evaluation or scope that the cited
+   passage does not state. Drop the extra part or move it to a separate claim
+   with its own passage. Do not put page numbers, equation numbers, DOIs or
+   quotations into claim text; the application displays locators from its records.
    For every claim-passage link, also add one `citation_anchors` item containing
-   the shortest contiguous sentence or sentences that directly support the
-   claim. Copy `quote` exactly from that passage: keep its language, punctuation,
-   mathematical extraction and wording; do not translate, repair, paraphrase,
-   add ellipses or join non-contiguous spans. If no exact contiguous span supports
-   the claim, the passage does not support that claim and must not be cited.
+   the shortest contiguous sentence or sentences that on their own support the
+   whole claim, not just one part. Copy `quote` exactly from that passage: keep
+   its language, punctuation, mathematical extraction and wording; do not
+   translate, repair, paraphrase, add ellipses or join non-contiguous spans.
+   If no single exact contiguous span in a passage supports the whole claim,
+   split the claim. Cite that passage only for a claim the span supports in full.
 7. Write mathematical content (decision variables, objective functions,
    constraints, channel or energy models) in LaTeX, between `$…$` inside a
    sentence or `$$…$$` for a displayed expression. Write an expression only as a

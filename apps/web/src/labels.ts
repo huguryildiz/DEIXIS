@@ -567,7 +567,7 @@ export const queryOriginLabels: Record<string, string> = { model: 'the model’s
 // The ranking signals (D79) and the two stored orders the signal table reads beside them.
 export const signalLabels: Record<string, string> = {
   bm25: 'BM25', blocks: 'Concept blocks', tfidf: 'TF-IDF', graph: 'Citation graph', joint: 'Terms named together',
-  embedding: 'Embedding',
+  embedding: 'Embedding', cites: 'Citation count',
   fused: 'Fused order', inspection: 'Screening order',
 }
 const signalReasons: Record<string, string> = {

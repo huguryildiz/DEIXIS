@@ -74,6 +74,33 @@ def test_batch_runs_and_counts(tmp_path, monkeypatch, n, expected, minimum):
         assert not fetcher.calls
 
 
+def test_freeze_list_records_v2_maximum_version_counts_and_replays_without_store(tmp_path, monkeypatch):
+    freeze = small_batch.freeze_list
+
+    def with_counts(flow, run, scope, vocabulary):
+        store = flow.store
+        heads = sorted(store.work_heads(run["research_id"]).values())
+        store.conn.execute("UPDATE source_versions SET cited_by_count = 0 WHERE id = ?", (heads[0],))
+        store.conn.execute("UPDATE source_versions SET cited_by_count = 7 WHERE id = ?", (heads[1],))
+        other = store.open_lookup_version(run["research_id"], heads[1], "accepted", "https://example.org/accepted")
+        store.conn.execute("UPDATE source_versions SET cited_by_count = 23 WHERE id = ?", (other,))
+        listing = freeze(flow, run, scope, vocabulary)
+        manifest = listing["manifest"]
+        assert manifest["ranking_version"] == 2
+        counts = {r["id"]: r["cited_by_count"] for r in manifest["pool"]}
+        assert counts == {heads[0]: 0, heads[1]: 23, heads[2]: None}
+        store.conn.execute("UPDATE source_versions SET cited_by_count = 999")
+        assert small_batch.build_list(manifest) == listing
+        assert freeze(flow, run, scope, vocabulary) == listing
+        return listing
+
+    monkeypatch.setattr(small_batch, "freeze_list", with_counts)
+    app, _ = app_for(tmp_path, monkeypatch, 3, reading="off")
+    with client_of(app) as client:
+        _, _, _, run = discover(client, effort="standard")
+        assert run["status"] == "completed", run
+
+
 def test_read_limit_and_whole_pipeline_budget_are_shared(tmp_path, monkeypatch):
     app, fetcher = app_for(tmp_path, monkeypatch, 60, pdf=True)
     with client_of(app) as client:

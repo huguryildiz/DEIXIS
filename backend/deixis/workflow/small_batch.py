@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from typing import Any
 
 from deixis.domain import canonical
@@ -136,9 +137,24 @@ def replay(manifest: dict[str, Any]) -> dict[str, Any]:
     def row(stored: dict[str, Any]) -> dict[str, Any]:
         return stored | {"own_ids": set(stored["own_ids"]),
                          "references": set(stored["references"]) if stored["references"] is not None else None}
-    return ranking.rank_pool([row(r) for r in manifest["pool"]], [row(r) for r in manifest["verified"]],
+    ranked = ranking.rank_pool([row(r) for r in manifest["pool"]], [row(r) for r in manifest["verified"]],
                              set(manifest["query_words"]), manifest["blocks"], manifest["embedding_model"],
                              manifest["similarities"], manifest["off_reason"], manifest["compared_terms"])
+    if manifest.get("ranking_version", 1) == 2:
+        from deixis.workflow.flow import RRF_K
+
+        counts = {r["id"]: r["cited_by_count"] for r in manifest["pool"]}
+        ranked["ranks"]["cites"] = ranking.mean_ranks(
+            {rid: math.log1p(count) if count is not None else float("-inf")
+             for rid, count in counts.items()},
+            {rid: count is not None for rid, count in counts.items()})
+        # Ranks cover the whole pool; the gate restricts movement, not signal computation.
+        base = ranked["fused"]
+        scores = {rid: sum((2 if name in ("graph", "cites") else 1) / (RRF_K + ranks[rid][0])
+                           for name, ranks in ranked["ranks"].items()) for rid in base[20:500]}
+        ranked["fused"] = base[:20] + sorted(scores, key=lambda rid: (-scores[rid], rid)) + base[500:]
+        ranked["order"] = list(ranked["fused"])
+    return ranked
 
 
 def build_list(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -283,7 +299,15 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
         keyword_output = keyword_step["output"]
         model = keyword_output.get("embedding_model")
         off = (keyword_output.get("signals", {}).get("embedding") or {}).get("reason")
-        manifest = {"scope_revision": run["scope_revision"], "selection_revision": store.selection_revision(rid),
+        counts = {row["work_id"]: row["cited_by_count"] for row in store.conn.execute(
+            "SELECT work_id, MAX(cited_by_count) AS cited_by_count FROM source_versions"
+            " WHERE work_id IN (SELECT v.work_id FROM corpus_memberships m"
+            " JOIN source_versions v ON v.id = m.source_version_id"
+            " WHERE m.research_id = ? AND m.removed_at IS NULL) GROUP BY work_id", (rid,))}
+        for row in list(pool.values()) + priority_pool + verified:
+            row["cited_by_count"] = counts.get(row["work_id"])
+        manifest = {"ranking_version": 2,
+                    "scope_revision": run["scope_revision"], "selection_revision": store.selection_revision(rid),
                     "protocol": store.existing_step(run["id"], "protocol")["output"],
                     "pool": sorted(pool.values(), key=lambda row: row["id"]), "priority_pool": priority_pool,
                     "versions": versions,

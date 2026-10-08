@@ -5,7 +5,7 @@ import json
 import pytest
 
 from deixis.domain import canonical
-from deixis.workflow import small_batch, fulltext
+from deixis.workflow import small_batch, fulltext, ranking
 
 
 def manifest(n=61, priority=()):
@@ -26,6 +26,66 @@ def test_fused_order_and_manifest_are_exactly_replayable():
     assert stored["order_hash"] == canonical.sha256_hex(stored["order"])
     assert small_batch.build_list(stored["manifest"]) == stored
     assert len(set(item["work_id"] for item in stored["items"])) == 61
+
+
+def test_v1_replay_is_rank_pool_even_when_counts_are_present():
+    stored = manifest()
+    for i, row in enumerate(stored["pool"]):
+        row["cited_by_count"] = i
+    expected = ranking.rank_pool(stored["pool"], stored["verified"], stored["query_words"],
+                                 stored["blocks"], stored["embedding_model"], stored["similarities"],
+                                 stored["off_reason"], stored["compared_terms"])
+    assert small_batch.replay(stored) == expected
+
+
+@pytest.mark.parametrize("n", [0, 12, 65, 520])
+def test_v2_protects_top20_and_tail_with_pool_wide_weighted_ranks(n):
+    stored = manifest(n)
+    base = small_batch.replay(stored)
+    # Reverse citation preference, including a highly cited work outside the gate.
+    counts = {rid: i for i, rid in enumerate(base["fused"])}
+    for row in stored["pool"]:
+        row["cited_by_count"] = counts[row["id"]] if counts[row["id"]] % 3 else None
+    stored["ranking_version"] = 2
+    ranked = small_batch.replay(stored)
+    assert ranked["fused"][:20] == base["fused"][:20]
+    assert ranked["fused"][500:] == base["fused"][500:]
+    assert set(ranked["fused"][20:500]) == set(base["fused"][20:500])
+    cite_ranks = ranked["ranks"]["cites"]
+    have = [rid for rid, (_, available) in cite_ranks.items() if available]
+    missing = [rank for rank, available in cite_ranks.values() if not available]
+    assert len(set(missing)) <= 1
+    if missing:
+        assert missing[0] == (len(have) + n + 1) / 2
+        assert all(cite_ranks[rid][0] < missing[0] for rid in have)
+    # Independent weighted-fusion oracle via repeated signals and the existing fuse.
+    ranks = base["ranks"] | {"cites": cite_ranks, "cites_again": cite_ranks}
+    if "graph" in ranks:
+        ranks["graph_again"] = ranks["graph"]
+    gate = set(base["fused"][20:500])
+    expected = [rid for rid in ranking.fuse(ranks, tuple(ranks)) if rid in gate]
+    assert ranked["fused"][20:500] == expected
+    if n > 20:
+        assert expected != base["fused"][20:500]
+    assert ranked["order"] == ranked["fused"]
+    assert ranked["fused_code"] == base["fused_code"]
+    listing = small_batch.build_list(stored)
+    assert listing["signal_reasons"] == base["reasons"]
+    assert small_batch.build_list(json.loads(json.dumps(listing["manifest"]))) == listing
+
+
+def test_v2_citation_ties_and_missing_counts():
+    stored = manifest(25)
+    for row in stored["pool"]:
+        row["cited_by_count"] = None
+    stored["pool"][0]["cited_by_count"] = 0
+    stored["pool"][1]["cited_by_count"] = 10
+    stored["pool"][2]["cited_by_count"] = 10
+    stored["ranking_version"] = 2
+    ranks = small_batch.replay(stored)["ranks"]["cites"]
+    assert ranks["v001"] == ranks["v002"] == (1.5, True)
+    assert ranks["v000"] == (3.0, True)
+    assert ranks["v003"] == ranks["v024"] == (14.5, False)
 
 
 @pytest.mark.parametrize("n,sizes", [(0, []), (29, [29]), (40, [40]), (49, [40, 9]), (50, [40, 10]),

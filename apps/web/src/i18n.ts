@@ -3502,6 +3502,7 @@ const tr: Record<string, string> = {
   'Concept blocks': 'Kavram blokları',
   'TF-IDF': 'TF-IDF',
   'Citation graph': 'Atıf grafiği',
+  'Citation count': 'Atıf sayısı',
   'Terms named together': 'Birlikte geçen terimler',
   'Fused order': 'Birleşik sıra',
   'Screening order': 'Tarama sırası',

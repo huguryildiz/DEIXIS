@@ -194,8 +194,11 @@ def provisional_title(question: str) -> str:
 EQUATION_SKIP_KEY = "equations_skip"
 
 class Store:
-    def __init__(self, conn: sqlite3.Connection):
+    def __init__(self, conn: sqlite3.Connection, clock: Any = None):
+        from deixis.workflow import fast_path
+
         self.conn = conn
+        self.clock = clock if clock is not None else fast_path.SystemClock()
         self.recovery_dir: Path | None = None
         self.pending_text_retry_interruptions: dict[str, str] = {}
         self.pending_file_restore_interruptions: dict[str, str] = {}
@@ -811,7 +814,10 @@ class Store:
             ).fetchone()
             if active:
                 raise RevisionConflict(f"run {active['id']} is still active")
-            run_id, ts = new_id("run"), now()
+            from deixis.workflow import fast_path
+
+            run_id = new_id("run")
+            ts = fast_path.timestamp(self.clock) if fast_path.enabled(budget) else now()
             stage = {"discovery": "discovery", "answer": "inspection", "pdf_collection": "inspection",
                      "fulltext_fetch": "inspection", "fulltext_adjudication": "inspection",
                      "research_title": "intake", "lineage_links": "synthesis",
@@ -824,6 +830,7 @@ class Store:
                  dumps(target) if target is not None else None, ts, ts),
             )
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
+            fast_path.create_run(self, self.run(run_id))
             self._event(research_id, "run_queued", {"kind": kind}, run_id)
         return self.run(run_id)
 
@@ -904,6 +911,12 @@ class Store:
             run = self.run(run_id)
             if fields.get("status") in ("queued", "running"):
                 self._guard_legacy_run(run)
+            if (run["status"] in ("running", "pause_requested") and "status" in fields
+                    and fields["status"] not in ("running", "pause_requested")):
+                from deixis.workflow import fast_path
+
+                if fast_path.enabled(run["budget"]):
+                    fast_path.close_run(self, run_id, "paused" if fields["status"] == "paused" else "stopped")
             assignments = ", ".join(f"{k} = ?" for k in columns)
             self.conn.execute(f"UPDATE runs SET {assignments}, version = version + 1 WHERE id = ?", (*columns.values(), run_id))
             if event:
@@ -3391,6 +3404,9 @@ class Store:
                 )
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), research_id))
             self._event(research_id, "answer_saved", {"answer_id": aid, "status": status}, run_id)
+            from deixis.workflow import fast_path
+
+            fast_path.save_answer(self, run_id, status)
         return aid
 
     def answer_review(self, answer_id: str) -> dict[str, Any] | None:

@@ -45,6 +45,7 @@ from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import abstract_stage
 from deixis.workflow import small_batch
+from deixis.workflow import fast_path
 from deixis.workflow import adjudication
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import chaining
@@ -337,12 +338,16 @@ class FlowDeps:
     limiter: ModelCallLimiter = field(default_factory=lambda: ModelCallLimiter(1))
     local_embedder: Any = None  # documents.local_embedding.LocalEmbedder: the built-in embedding model (slice 21)
     fetch_xml: Callable[[str], Awaitable[fetch_module.FetchResult]] = acquisition.fetch_xml  # Europe PMC (SW21)
+    clock: fast_path.Clock | None = None
 
 
 class ResearchFlow:
     def __init__(self, deps: FlowDeps):
         self.deps = deps
         self.store = deps.store
+        if getattr(deps, "clock", None) is not None:
+            self.store.clock = deps.clock
+        self._clock_tasks: dict[str, dict[str, tuple[str, asyncio.Task]]] = {}
         self._held: dict[str, _Held] = {}
         self._quota_out: dict[str, set[str]] = {}
         self._openalex_budget: dict[str, acquisition.OpenAlexBudget] = {}
@@ -353,9 +358,43 @@ class ResearchFlow:
         try:
             await self._execute_run(run_id)
         finally:
-            if self.store.run(run_id)["kind"] == "kill_search":
+            tasks = self._clock_tasks.pop(run_id, {})
+            for _, task in tasks.values():
+                task.cancel()
+            results = await asyncio.gather(*(task for _, task in tasks.values()), return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    log.exception("Fast-path checkpoint task failed for run %s", run_id,
+                                  exc_info=(type(result), result, result.__traceback__))
+            with transaction(self.store.conn):
+                run = self.store.run(run_id)
+                if fast_path.enabled(run["budget"]) and run["status"] not in ("running", "pause_requested"):
+                    fast_path.close_run(self.store, run_id, "paused" if run["status"] == "paused" else "stopped")
+            if run["kind"] == "kill_search":
                 from deixis.workflow.candidates.store import CandidateStore
                 CandidateStore(self.store).sync_search_outcome(run_id)
+
+    def _enter_clock_stage(self, run: dict[str, Any], stage: str) -> None:
+        interval_id = fast_path.enter_stage(self.store, run, stage)
+        if interval_id is None:
+            return
+        tasks = self._clock_tasks.setdefault(run["id"], {})
+        if interval_id not in tasks:
+            tasks[interval_id] = (stage, asyncio.create_task(self._clock_checkpoint(interval_id)))
+
+    async def _clock_checkpoint(self, interval_id: str) -> None:
+        while self.store.conn.execute(
+                "SELECT 1 FROM fast_path_intervals WHERE id = ? AND closed_at IS NULL", (interval_id,)).fetchone():
+            await self.store.clock.sleep(5)
+            fast_path.checkpoint(self.store, interval_id)
+
+    def _close_clock_stage(self, run: dict[str, Any], stage: str) -> None:
+        if not fast_path.enabled(run["budget"]):
+            return
+        fast_path.close_stage(self.store, run["id"], stage)
+        for name, task in self._clock_tasks.get(run["id"], {}).values():
+            if name == stage:
+                task.cancel()
 
     def _openalex_budget_of(self, run_id: str) -> acquisition.OpenAlexBudget:
         """The run's memory of OpenAlex's daily budget, brought up to date with the store at every lookup: a resumed or
@@ -477,6 +516,7 @@ class ResearchFlow:
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         if scope["source_scope"] == "attached":
             return
+        self._enter_clock_stage(run, "plan")
         self._checkpoint(run_id, revision)
         if scope["seed_mode"] == "uploaded_seed" and self.store.seed_status(rid, scope) != "ready":
             self._pause(run_id, "seed_unavailable")
@@ -502,6 +542,9 @@ class ResearchFlow:
             self.store.finish_step(protocol_step["id"], "succeeded",
                                    output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
 
+        self._close_clock_stage(run, "plan")
+        self._enter_clock_stage(run, "search")
+
         # A failed search is recorded and shown, and the other searches go on (D18). The run pauses on a failure only when
         # none of its searches succeeded; resuming it then retries the failed searches.
         def searched() -> bool:
@@ -526,6 +569,7 @@ class ResearchFlow:
         more = await self._expansion(run, scope, vocabulary, queries, criterion, approval)
         await self._search_round(run, list(enumerate(more, start=len(queries))), retry_failed, effort)
         await self._second_sources(run, scope, vocabulary)
+        self._close_clock_stage(run, "search")
 
         self._checkpoint(run_id, revision)
         # A work is screened once, through its head; its other versions follow the head's selection (D46, D48).
@@ -533,10 +577,14 @@ class ResearchFlow:
         pool = [c for c in self.store.candidates(rid, revision)
                 if c["origin"] != "user" and c["source_version_id"] in heads]
         # Rank the full pool before deciding which abstracts to read.
+        self._enter_clock_stage(run, "ranking")
         await self._source_similarity(run, scope, pool)
         await self._ranking(run, scope, vocabulary)
+        self._close_clock_stage(run, "ranking")
         self.store.update_run(run_id, stage="screening")
+        self._enter_clock_stage(run, "read")
         await small_batch.execute(self, run, scope, vocabulary)
+        self._close_clock_stage(run, "read")
 
         # Derive a short title from the question and the included sources once screening is done. A structurally valid
         # answer later replaces it (store.save_answer). Optional: the run continues with the provisional title on failure.
@@ -2746,6 +2794,7 @@ class ResearchFlow:
     # ---- answer ---------------------------------------------------------------------
     async def _answer(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
         run_id, rid = run["id"], run["research_id"]
+        self._enter_clock_stage(run, "answer")
         if small_batch.enabled(run["budget"]):
             inspection = run["budget"]["inspection"]
             if inspection.get("binding_error"):
@@ -2848,6 +2897,8 @@ class ResearchFlow:
                                            output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", [])}
                                            | ({"extra_repair": extra_repair} if extra_repair else {}), links,
                                            selection_revision=step_selection)
+        for _, task in self._clock_tasks.get(run_id, {}).values():
+            task.cancel()
         await self._review(run, scope, answer_id, output["result"])
 
     def _answer_start_snapshot(self, run: dict[str, Any], heads: list[str], selection_revision: int) -> None:

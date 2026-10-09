@@ -28,6 +28,7 @@ from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
 from deixis.workflow.evidence_deps import latest_completed_restore, passage_dependencies
 from deixis.workflow.report.passage_freshness import passage_freshness
 from deixis.workflow import recovery_view
+from deixis.workflow import fast_path
 
 
 # What the transcript reports from a search plan; the rest of the stored output stays out of the view.
@@ -492,6 +493,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     for row in conn.execute("SELECT id FROM runs WHERE research_id = ? ORDER BY created_at DESC LIMIT 10", (research_id,)):
         run = store.run(row["id"])
         run["steps"] = store.run_steps(run["id"])
+        if fast_path.enabled(run["budget"]):
+            run["fast_path"] = fast_path.view(store, run)
         if (run["budget"].get("inspection") or {}).get("policy") == "small_batch_fused_v1":
             run["inspection_progress"] = inspection_progress(store, run)
         # The protocol this run froze; a run that froze none (an answer run) ran under the revision's latest one.

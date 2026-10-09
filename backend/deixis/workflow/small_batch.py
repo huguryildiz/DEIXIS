@@ -439,7 +439,9 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     if flow.store.existing_step(run["id"], LIST_KEY) is None and chaining.enabled(run["budget"]):
         forms = flow._chain_forms(run, scope, vocabulary)
         seeds = flow._chain_seeds(run, scope)
+        flow._enter_clock_stage(run, "chain")
         await flow._chain_requests(run, scope, seeds, forms)
+        flow._close_clock_stage(run, "chain")
         flow._checkpoint(run["id"], run["scope_revision"])
         chained = flow._chain_filter(run)
         if chained:

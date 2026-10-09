@@ -68,6 +68,9 @@ class Worker:
     def recover(self) -> dict[str, int]:
         conn = self.store.conn
         with transaction(conn):
+            from deixis.workflow import fast_path
+
+            fast_path.recover(self.store)
             steps = conn.execute(
                 "UPDATE run_steps SET status = 'outcome_unknown', finished_at = ? WHERE status = 'running'", (now(),)
             ).rowcount

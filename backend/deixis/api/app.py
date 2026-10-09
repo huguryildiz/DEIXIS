@@ -36,7 +36,7 @@ from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
-from deixis.workflow import chaining, small_batch
+from deixis.workflow import chaining, fast_path, small_batch
 from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
                                  CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
@@ -642,6 +642,7 @@ def create_app(
     equation_service: Any = None,
     local_embedder: Any = None,
     xml_fetcher: Callable[[str], Awaitable[fetch_module.FetchResult]] | None = None,
+    clock: fast_path.Clock | None = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     ports = {settings.port}
@@ -655,7 +656,7 @@ def create_app(
             raise RuntimeError(f"method package integrity failed: {issues}")
         conn = db.connect(settings.db_path)
         db.migrate(conn)
-        store = Store(conn)
+        store = Store(conn, clock=clock)
         store.recovery_dir = settings.recovery_dir
         store.link_published_versions()  # preprints flagged beside their published record before D48
         store.assign_source_keys()  # works stored before D59
@@ -680,7 +681,7 @@ def create_app(
         local_embedding.register(builtin.integrity)
         flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf, equations,
                                      limiter=ModelCallLimiter(settings.model_concurrency), local_embedder=embedder,
-                                     fetch_xml=xml_fetcher or acquisition.fetch_xml))
+                                     fetch_xml=xml_fetcher or acquisition.fetch_xml, clock=store.clock))
         app.state.builtin = builtin
         worker = Worker(store, flow, settings.lock_path)
         owner = start_worker and worker.acquire()
@@ -1415,6 +1416,8 @@ def create_app(
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
             if scope.get("search_workflow") == "sw":
                 budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
+                if settings.fast_path == "on":
+                    budget["fast_path"] = fast_path.freeze_budget(budget, scope["effort"])
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}
@@ -1430,6 +1433,7 @@ def create_app(
             budget = adjudication.read_budget(scope["effort"])
         elif body.kind == "answer" and scope.get("search_workflow") == "sw":
             budget = small_batch.answer_budget(store, research_id, scope["revision"], budget)
+            budget = fast_path.answer_budget(store, research_id, scope["revision"], budget)
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
         run = store.create_run(research_id, body.kind, budget, key)
         request.app.state.worker.wake()

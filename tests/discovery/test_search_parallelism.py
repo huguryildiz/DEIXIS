@@ -397,6 +397,22 @@ def same(value):
 
 def canonical_evidence_ids(value):
     """Normalize search entities in write order, independently of non-search step count."""
+    def evidence_fields(item):
+        # D256 adds presentation metadata and removes unsafe error prose. This
+        # historical comparator still freezes transport, evidence and states.
+        if isinstance(item, dict):
+            result = {}
+            for key, child in item.items():
+                if key in {"service_kind", "reset_at"} or (key in {"error", "retries"} and "rate_limit" in item):
+                    continue
+                if key == "error" and "http_status" in item:
+                    continue
+                result[key] = json.dumps(evidence_fields(json.loads(child)), sort_keys=True) if key == "error_json" and child else evidence_fields(child)
+            return result
+        if isinstance(item, list):
+            return [evidence_fields(child) for child in item]
+        return item
+    value = evidence_fields(value)
     seen, counts = {}, {}
 
     def label(match):
@@ -519,7 +535,7 @@ def test_a_query_s_share_does_not_depend_on_which_host_answered_first(tmp_path, 
         path = tmp_path / str(len(found))
         found.append(same(run_discovery(path, monkeypatch, RefusedOnce({"SYNTHETIC packet size energy"}, delay=delay),
                                         effort="standard")[0]))
-    assert found[0] == found[1]
+    assert canonical_evidence_ids(found[0]) == canonical_evidence_ids(found[1])
 
 
 def test_a_resumed_run_keeps_each_query_s_count(tmp_path, monkeypatch):

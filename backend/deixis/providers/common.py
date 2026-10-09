@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from deixis.providers.pacing import SEMANTIC_SCHOLAR_PACER
-from deixis.domain.limits import limit_kind
+from deixis.domain.limits import limit_kind, service_error_kind, retry_at
 
 MAX_RATE_LIMIT_RETRIES = 2
 MAX_RETRY_WAIT_SECONDS = 10.0  # a longer provider wait pauses the run instead of blocking it
@@ -100,6 +100,8 @@ class SearchOutcome:
     retries: int = 0
     next_cursor: str | None = None  # what the next page is asked for with; None when the provider has no more
     error_kind: str | None = None
+    # UI classification is independent of the connector's quota-only retry contract.
+    service_kind: str | None = None
 
 
 def page_offset(cursor: str | None) -> int:
@@ -176,6 +178,10 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     """
     retries = 0
     def finish(response, outcome):
+        if outcome.status not in {"completed", "zero_results"}:
+            outcome.service_kind = service_error_kind(outcome.error_kind or outcome.http_status or outcome.status,
+                text=(outcome.error or outcome.delivery_class or "") if outcome.http_status is None else "")
+            outcome.error = f"Service request failed ({outcome.service_kind})."
         entries = _transport_collector.get()
         if entries is not None:
             parts = urlsplit(url)
@@ -210,6 +216,8 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
         except httpx.HTTPError as exc:
             return finish(None, SearchOutcome("failed", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries))
         rate = {h: redact(response.headers[h], *secrets) for h in (*rate_headers, "retry-after") if h in response.headers}
+        if "retry-after" in rate and not retry_at(rate["retry-after"]):
+            rate.pop("retry-after")
         base = dict(request_description=description, access_mode=access_mode, http_status=response.status_code, rate_limit=rate,
                     retries=retries)
         try:

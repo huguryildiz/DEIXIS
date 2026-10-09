@@ -182,6 +182,7 @@ export type RunTarget = {
 export type Run = {
   id: string; research_id: string; scope_revision: number; kind: RunKind; status: RunStatus; stage: string
   pause_reason: string | null; error: unknown; budget: Record<string, number>; usage: Record<string, number>
+  service_wait?: { connection: string; attempt: number; seconds: number } | null
   created_at: string; updated_at: string; version: number; steps?: Step[]; target: RunTarget | null
   // plan null: this run wrote no search plan. screening_notes: the note of each screening batch, in order, with its step.
   plan: SearchPlan | null; screening_notes: { step_id: string; text: string }[]
@@ -375,7 +376,7 @@ export type ApprovalSuggestions = {
 }
 export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string
-  result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null } | null
+  result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null; service_kind?: string; error_kind?: string; reset_at?: string | null; retries?: number } | null
   // 1: the approved queries; 2: the term expansion's, searched with phrases the first round's records brought.
   round?: number
 }
@@ -467,7 +468,7 @@ export type PdfCandidate = {
 }
 export type PdfDiscovery = {
   provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'europepmc' | 'web_search'; query_text: string; status: string; result_count: number; other_title_count: number
-  http_status: number | null; error_code: string | null; created_at: string; finished_at: string | null
+  http_status: number | null; error_code: string | null; retry_after?: string | null; created_at: string; finished_at: string | null
 }
 export type PdfMatch = { filename: string; source_version_id: string | null; basis: 'doi' | 'title' | null }
 // One version of a work a dropped file may go to (slice 18a): the person picks it; `proposed` is the version the match named.
@@ -718,7 +719,7 @@ export type ModelOption = {
   default_reasoning_effort?: string | null; reasoning_efforts?: { id: string; description: string }[]
 }
 export type ModelHealth = {
-  connection: string; ready: boolean; reason?: string | null; installed?: boolean; cli_version?: string; signed_in?: boolean; key_configured?: boolean
+  connection: string; ready: boolean; reason_code?: string | null; reset_at?: string | null; reason?: string | null; installed?: boolean; cli_version?: string; signed_in?: boolean; key_configured?: boolean
   account_type?: string | null; plan_type?: string | null; models?: ModelOption[]
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
 }
@@ -726,7 +727,7 @@ export type Connections = { models: Record<string, ModelHealth>; providers: { id
 export type Keychain = { available: boolean; name: string | null }
 export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean }
 export type Credentials = { keychain: Keychain; keys: KeyEntry[] }
-export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed'; detail: string; checked_at: string }
+export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed'; detail: string; checked_at: string; kind?: string; http_status?: number | null; reset_at?: string | null }
 export type LocalToolModel = { id: string; size_bytes: number | null; embedding: boolean }
 export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; url: string }
 export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string } | null

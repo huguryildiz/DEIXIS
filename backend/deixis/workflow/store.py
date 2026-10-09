@@ -223,6 +223,14 @@ class Store:
         )
         return int(cur.lastrowid)
 
+    def service_waiting(self, run_id: str, connection: str, attempt: int, seconds: float) -> None:
+        with transaction(self.conn):
+            run = self.run(run_id)
+            self._event(run["research_id"], "service_waiting", {
+                "connection": connection, "attempt": attempt, "seconds": seconds,
+                "service_kind": "rate_limited",
+            }, run_id)
+
     def events_after(self, research_id: str, after_id: int, limit: int = 200) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             "SELECT * FROM events WHERE research_id = ? AND id > ? ORDER BY id LIMIT ?",
@@ -1072,6 +1080,7 @@ class Store:
         error: Any = None,
         delivery_class: str | None = None,
         finished_at: str | None = None,
+        service_detail: dict[str, Any] | None = None,
     ) -> None:
         with transaction(self.conn):
             row = self.conn.execute(
@@ -1085,7 +1094,10 @@ class Store:
             self._event(
                 row["research_id"], "step_finished",
                 {"step_id": step_id, "kind": row["kind"], "operation_key": row["operation_key"], "status": status, "error_code": error_code,
-                 **({"http_status": error["http_status"]} if isinstance(error, dict) and error.get("http_status") else {})},
+                 **({k: error[k] for k in ("http_status", "service_kind", "reset_at") if error.get(k) is not None}
+                    if isinstance(error, dict) else {}),
+                 **({k: v for k, v in service_detail.items() if k in {"service_kind", "connection", "reset_at", "http_status"}}
+                    if service_detail else {})},
                 row["run_id"],
             )
 
@@ -2369,6 +2381,7 @@ class Store:
                 "source_version_id": svid, "provider": provider, "status": outcome.status,
                 "result_count": len(outcome.candidates), "http_status": outcome.http_status,
                 "error_code": outcome.error_code,
+                "reset_at": retry_after,
             })
         return run_id
 
@@ -2423,8 +2436,10 @@ class Store:
         )]
 
     def pdf_discoveries(self, research_id: str, svid: str, *, retry_after: bool = False) -> list[dict[str, Any]]:
-        """The record's lookup rows; `retry_after` adds when a refused lookup may be asked again (0072, so only the
-        workflow, never the views of a library not yet migrated, asks for it)."""
+        """Lookup rows; migrated runtime views can request the 0072 retry-time field.
+
+        Migration probes can omit it while inspecting an earlier schema.
+        """
         return [dict(r) for r in self.conn.execute(
             "SELECT provider, query_text, status, result_count, other_title_count, http_status, error_code,"
             f" {'retry_after,' if retry_after else ''} created_at, finished_at FROM pdf_discovery_runs"

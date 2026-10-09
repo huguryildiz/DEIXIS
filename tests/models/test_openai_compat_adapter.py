@@ -65,7 +65,7 @@ def test_health_lists_models_and_offers_no_reasoning_effort(spec, monkeypatch):
 def test_health_reports_http_errors_and_unreadable_lists(spec, monkeypatch):
     monkeypatch.setenv(spec.key_env, "test-key")
     status = asyncio.run(adapter(spec, lambda r: httpx.Response(401, json={"error": {"message": "bad key"}})).health(refresh=True))
-    assert status["ready"] is False and status["reason"] == f"{spec.name} API answered HTTP 401: bad key"
+    assert status["ready"] is False and status["reason"] == f"{spec.name} API answered HTTP 401: API request failed"
     status = asyncio.run(adapter(spec, lambda r: httpx.Response(200, text="not JSON")).health(refresh=True))
     assert status["ready"] is False and "unreadable" in status["reason"]
 
@@ -146,7 +146,7 @@ def test_run_step_reports_http_errors_without_retrying(spec, monkeypatch, status
 
     result = asyncio.run(adapter(spec, handler).run_step("b", "d", "m", {}, "model-a"))
     assert (result.status, result.raw_text, result.resolved_model, result.delivery_class) == ("failed", None, None, None)
-    assert result.error.startswith(f"HTTP {status}: {message}") and result.error.endswith("(quota)") is quota
+    assert result.http_status == status and result.error.startswith(f"HTTP {status}: API request failed") and result.error.endswith("(quota)") is quota
     assert is_rate_limited(result) is limited
     assert (result.error_kind == "quota_exhausted") is quota
     assert calls == ["/compatible-mode/v1/chat/completions" if spec.id == "qwen" else "/v1/chat/completions"]
@@ -166,7 +166,9 @@ def test_run_step_reports_transport_errors_without_retrying(spec, monkeypatch, e
         raise exception("unreachable", request=request)
 
     result = asyncio.run(adapter(spec, handler).run_step("b", "d", "m", {}, "model-a"))
-    assert (result.status, result.error, result.delivery_class) == (status, f"{exception.__name__}: unreachable", delivery)
+    assert (result.status, result.delivery_class) == (status, delivery)
+    assert result.error_kind == ("network" if exception is httpx.ConnectError else "timeout")
+    assert "unreachable" not in result.error
     assert len(calls) == 1
 
 

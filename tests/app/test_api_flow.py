@@ -632,6 +632,8 @@ def test_model_not_ready_pauses_run(tmp_path):
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
         _, run = wait_run(client, rid, run["id"])
         assert (run["status"], run["pause_reason"]) == ("paused", "model_connection_not_ready")
+        # D256: a health answer without a reason class stores none, so the UI keeps the "open Settings" sentence.
+        assert "error_kind" not in (run["error"] or {})
 
 
 def test_backend_crash_mid_run_is_recovered_as_paused_then_resumable(tmp_path):

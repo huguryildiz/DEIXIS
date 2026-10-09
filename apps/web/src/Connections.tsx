@@ -3,12 +3,12 @@ import { BookMarked, Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, Scan
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
-import { api, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { ConnectionIcon } from './connectionIcons'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
-import { compatConnectionKeys, connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
+import { serviceErrorSentence, healthReasonText, compatConnectionKeys, connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
 import { Notice } from './Notice'
 
 const providerNames: Record<string, string> = {
@@ -49,14 +49,18 @@ function KeyPanel({ env, entry, keychain, dark, onSaved }: { env: string; entry:
   function test() {
     setTesting(true)
     api.testCredential(env).then(result => {
-      toast(result.status === 'ok' ? 'success' : 'warning', result.detail)
+      toast(result.status === 'ok' ? 'success' : 'warning', result.status === 'ok' ? t('The key works.') : serviceErrorSentence({ kind: result.kind, service: modelNames[entry!.service] ?? providerNames[entry!.service] ?? entry!.service, resetAt: result.reset_at, effect: 'settings' }))
       onSaved()
     }).catch((e: Error) => toast('error', e.message)).finally(() => setTesting(false))
   }
   function save() {
     setBusy(true); setFormError('')
-    api.saveCredential(env, value).then(() => { setEditing(false); setValue(''); onSaved(); toast('success', t('Key saved.')) })
-      .catch((e: Error) => setFormError(e.message)).finally(() => setBusy(false))
+    api.saveCredential(env, value).then(result => { setEditing(false); setValue(''); onSaved(); toast(result.test && result.test.status !== 'ok' ? 'warning' : 'success', result.test && result.test.status !== 'ok'
+        ? t('Key saved, but the service test failed.') + ' ' + serviceErrorSentence({ kind: result.test.kind, service: modelNames[entry!.service] ?? entry!.service, resetAt: result.test.reset_at, effect: 'settings' })
+        : t('Key saved.')) })
+      .catch((e: Error) => setFormError(e instanceof ApiError && e.code === 'credential_test_failed'
+        ? t('The key was not saved.') + ' ' + serviceErrorSentence({ kind: e.details?.kind, service: modelNames[entry!.service] ?? entry!.service, resetAt: e.details?.reset_at, effect: 'settings' })
+        : e.message)).finally(() => setBusy(false))
   }
   function remove() {
     setBusy(true)
@@ -407,7 +411,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
       if (notify) {
         const label = modelNames[id] ?? id
         if (result.ready) toast('success', t('{name}: ready', { name: label }))
-        else toast('warning', `${label}: ${result.reason ?? t('not ready')}`)
+        else toast('warning', `${label}: ${healthReasonText(result)}`)
       }
     }).catch((e: Error) => {
       if (notify) toast('error', t('Check failed: {message}', { message: e.message }))
@@ -586,7 +590,7 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
           {localTool && <LocalToolDetails key={localTool.id} tool={localTool} dark={dark} onChanged={() => loadTools(true)} />}
           {model && <>
             {refreshingModel === selected?.id && <p className="source-byline connection-catalog-refresh"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Refreshing model catalogue…')}</p>}
-            {model.ready ? <span className="status-chip">{t('Ready')}</span> : <p className="source-byline">{model.reason ?? t('Not ready')}</p>}
+            {model.ready ? <span className="status-chip">{t('Ready')}</span> : <p className="source-byline">{healthReasonText(model)}</p>}
             {selected?.id === 'codex' && <>
               <p className="source-byline">{t('DEIXIS runs Codex in its own Codex home with tools, connectors, skills and instruction files disabled, and starts a new session for every step.')}</p>
               <div className="connection-checks">

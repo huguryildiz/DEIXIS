@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
-import { accessParts, citedText, fetchReasonText, fileRestoreNote, fileRestoreText, fileRestoreTone, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, recoveryDecisionText, recoveryReasonText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, stepLabel, verdictLabels, versionText, versionTones } from './labels'
+import { serviceErrorText, serviceErrorSentence, serviceKind, serviceWaitingText, connectionName, accessParts, citedText, fetchReasonText, fileRestoreNote, fileRestoreText, fileRestoreTone, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, recoveryDecisionText, recoveryReasonText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { TextRecovery } from './TextRecovery'
 import { TextRecoveryContext } from './TextRecoveryContext'
@@ -240,7 +240,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (current.kind === 'watch_check') return
     if (!previous || (previous.id === current.id && previous.status === current.status)) return
     const label = t(current.kind === 'answer' ? 'Answer generation' : runKindLabels[current.kind])
-    const reason = pauseReasonText(current.pause_reason)
+    const reason = pauseReasonText(current.pause_reason, current.error)
     if (previous.id !== current.id) { if (ACTIVE.has(current.status) && !announcedRuns.current.has(current.id)) toast('success', t('{label} started.', { label })); return }
     switch (current.status) {
       case 'completed': {
@@ -598,7 +598,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
         <EnglishQuestion researchId={id} view={view} busy={busy} onSaved={next => { setView(next); toast('success', t('English sentence saved for this question revision.')) }} />
         <FlowBlock researchId={id} counts={view.counts} />
-        {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {t(s.status.replace('_', ' '))} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
+        {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {['completed', 'zero_results'].includes(s.status) ? t(s.status.replace('_', ' ')) : serviceErrorSentence({ kind: serviceKind(s.error?.service_kind ?? s.error?.error_kind ?? s.status, s.error?.http_status), service: providerName(s.provider), resetAt: s.error?.reset_at, effect: view.runs.find(r => r.id === s.run_id)?.status === 'completed' ? 'continued' : undefined })} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
         {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
           {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
           <a href="#/trash">{t('Show in Trash')}</a></p>}
@@ -1209,7 +1209,7 @@ function PdfLookupTable({ source, busy, onAttachCandidate }: { source: Source; b
         : last?.status === 'completed' ? { tone: '', text: t('completed') }
         : { tone: 'bad', text: t((last?.status ?? 'failed').replaceAll('_', ' ')) }
       const otherTitles = Math.max(0, ...checks.map(d => d.other_title_count ?? 0))
-      const notes = [...new Set(checks.map(d => [d.error_code?.replaceAll('_', ' '), d.http_status && `HTTP ${d.http_status}`].filter(Boolean).join(' · ')).filter(Boolean))]
+      const notes = [...new Set(checks.filter(d => !['completed', 'zero_results'].includes(d.status)).map(d => serviceErrorSentence({ kind: serviceKind(d.error_code ?? d.status, d.http_status), service: providerName(provider), resetAt: d.retry_after, effect: 'lookup' }) + (d.http_status ? ` · HTTP ${d.http_status}` : '')).filter(Boolean))]
       if (otherTitles) notes.unshift(t(otherTitles === 1 ? '{n} result under another title, not kept' : '{n} results under other titles, not kept', { n: otherTitles }))
       return <tr key={provider}>
         <td className="pdf-lookup-service"><ConnectionIcon id={provider} />{providerName(provider)}</td>
@@ -1288,16 +1288,24 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
   const p = event.payload as Record<string, string | number | null>
   const lucide = (Icon: LucideIcon, text: string, chips: EventChip[] = []) => ({ icon: <Icon size={15} aria-hidden />, text, chips })
   const brand = (id: string, text: string, chips: EventChip[] = []) => ({ icon: <ConnectionIcon id={id} />, text, chips })
-  const reason = p.pause_reason ? [{ label: pauseReasonText(String(p.pause_reason)), tone: 'neutral' as const }] : []
-  const errorChip = p.error_code ? [{ label: String(p.error_code), tone: 'neutral' as const }] : []
+  const errorProvider = p.provider ?? (typeof p.kind === 'string' && p.kind.startsWith('provider_search:') ? p.kind.split(':')[1] : null)
+  const reason = p.pause_reason ? [{ label: pauseReasonText(String(p.pause_reason), p.error_json), tone: 'neutral' as const }] : []
+  // Only events that carry a service classification get the service sentence; other and older codes keep their chip.
+  const errorChip: EventChip[] = !p.error_code ? [] : !p.service_kind ? [{ label: String(p.error_code), tone: 'neutral' }] : [{ label: serviceErrorText({ kind: serviceKind(p.service_kind, typeof p.http_status === 'number' ? p.http_status : null),
+    service: errorProvider ? providerName(String(errorProvider)) : p.connection ? connectionName(String(p.connection)) : t('The selected service') }).what, tone: 'neutral' }]
+  if (typeof p.reset_at === 'string') errorChip.push({ label: serviceErrorText({ service: t('The selected service'), resetAt: p.reset_at }).when, tone: 'neutral' })
   switch (event.type) {
     case 'research_created': return lucide(FilePlus2, t('Research created'))
     case 'scope_revised': return lucide(PencilLine, t('Question revised (revision {n})', { n: String(p.scope_revision) }))
     case 'research_title_edited': return lucide(PencilLine, t('Research title edited'))
     case 'run_queued': return lucide(ListPlus, p.kind === 'discovery' || p.kind === 'answer' ? t(p.kind === 'discovery' ? 'Search run queued' : 'Answer run queued') : t('{label} queued', { label: t(runKindLabels[String(p.kind) as RunKind] ?? String(p.kind)) }))
+    case 'service_waiting': return brand(String(p.connection), serviceWaitingText(connectionName(String(p.connection)), Number(p.attempt)), [])
     case 'run_started': return lucide(Play, t('Run started'))
     case 'run_completed': return lucide(CircleCheck, t('Run completed'), [statusChip('completed')])
-    case 'run_paused': return lucide(Pause, t('Run paused'), reason)
+    case 'run_paused': {
+      const detail = event.payload.error_json as Record<string, unknown> | undefined
+      return lucide(Pause, t('Run paused'), [...reason, ...(detail?.reset_at ? [{ label: serviceErrorText({ service: t('The selected service'), resetAt: detail.reset_at }).when, tone: 'neutral' as const }] : [])])
+    }
     case 'run_failed': return lucide(CircleX, t('Run failed'), [statusChip('failed'), ...reason])
     case 'run_resumed': return lucide(RotateCw, t('Run resumed'))
     case 'run_cancelled': return lucide(Ban, t('Run cancelled'))

@@ -3,6 +3,66 @@ import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
 
+export const serviceErrors: Record<string, string> = {
+  quota_exhausted: '{service} usage quota is used up.',
+  rate_limited: '{service} is receiving too many requests right now.',
+  needs_key: '{service} needs a key or contact setting that is not configured.',
+  auth_failed: '{service} did not accept the key or sign-in.',
+  bad_request: '{service} rejected the request as invalid.',
+  model_unavailable: '{service} could not find the chosen model or endpoint.',
+  not_found: '{service} found no file at this link.',
+  blocked: '{service} did not allow this download.',
+  timeout: '{service} did not answer in time.',
+  service_error: '{service} had an error on its side.',
+  network: 'DEIXIS could not reach {service}.',
+  unknown: '{service} did not complete the request.',
+}
+
+export function serviceKind(code: unknown, httpStatus?: number | null, surface = 'api'): string {
+  if (typeof code === 'string' && serviceErrors[code]) return code
+  if (['not_configured', 'missing_core_key', 'missing_serpapi_key', 'missing_contact_email'].includes(String(code))) return 'needs_key'
+  if (['auth_required', 'entitlement_missing', 'email_rejected', 'authentication_failed'].includes(String(code))) return 'auth_failed'
+  if (/timeout|timed out/i.test(String(code))) return 'timeout'
+  if (/ConnectError|before_send|fetch_failed/i.test(String(code))) return 'network'
+  if (code === 'fetch_blocked_url') return 'blocked'
+  if (httpStatus === 402) return 'quota_exhausted'
+  if (httpStatus === 429) return 'rate_limited'
+  if (httpStatus === 401 || httpStatus === 403) return surface === 'pdf' ? 'blocked' : 'auth_failed'
+  if (surface === 'pdf' && (httpStatus === 404 || httpStatus === 410)) return 'not_found'
+  if (surface === 'model' && httpStatus === 404) return 'model_unavailable'
+  if (httpStatus && httpStatus >= 400 && httpStatus < 500) return 'bad_request'
+  if (httpStatus && httpStatus >= 500 || code === 'parse_error') return 'service_error'
+  return 'unknown'
+}
+
+export function serviceErrorText({ kind, service, resetAt, effect }: { kind?: unknown; service: string; resetAt?: unknown; effect?: 'paused' | 'continued' | 'retrying' | 'settings' | 'lookup' }) {
+  const code = serviceKind(kind)
+  const reset = typeof resetAt === 'string' ? new Date(resetAt) : null
+  const when = reset && !Number.isNaN(reset.getTime())
+    ? t('Retry suggested at {time}; recovery is not guaranteed.', { time: reset.toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' }) })
+    : t('The service did not give a recovery time.')
+  const guidance = code === 'needs_key' ? t('Open Settings → Connections and check the required key or contact setting.')
+    : code === 'auth_failed' ? t('Test the key in Settings or sign in again.')
+    : code === 'model_unavailable' ? t('Check the chosen model and connection in Settings.')
+    : code === 'bad_request' ? t('Report the problem with this request.')
+    : code === 'blocked' || code === 'not_found' ? t('Open another copy or attach the PDF yourself.')
+    : code === 'network' ? t('Check your internet connection before trying again.')
+    : code === 'quota_exhausted' ? t('Check the service quota before trying again.')
+    : t('Try again later; the request may still fail.')
+  const next = effect === 'paused' ? t('Completed work is saved; the run is paused. Resume when the service is available.')
+    : effect === 'continued' ? t('The run continued with available results; this service’s results are incomplete.')
+    : effect === 'retrying' ? t('DEIXIS is waiting before another attempt.')
+    : effect === 'lookup' ? t('This lookup produced no usable file.') : ''
+  return { what: t(serviceErrors[code], { service }), when, next: [next, guidance].filter(Boolean).join(' ') }
+}
+
+export const serviceErrorSentence = (options: Parameters<typeof serviceErrorText>[0]) => Object.values(serviceErrorText(options)).join(' ')
+export const healthReasonText = (health: { connection: string; reason_code?: string | null; reset_at?: string | null; reason?: string | null }) =>
+  health.reason_code ? serviceErrorSentence({ kind: health.reason_code, service: connectionName(health.connection), resetAt: health.reset_at, effect: 'settings' }) : t('The connection is not ready. Check it in Settings.')
+export const serviceWaitingText = (service: string, attempt: number) => t('Waiting for {service} before retry {n}.', { service, n: attempt })
+export const serviceWaitRecordText = (service: string, attempt: number, seconds: number) => t('Rate-limit wait for {service} before retry {n}: {seconds} s.', { service, n: attempt, seconds })
+export const providerRetryText = (count: number) => t('Retried {n} times after a rate limit.', { n: count })
+
 const recoveryReasons: Record<string, string> = {
   run_active: 'a research using this source has an active run', baseline_changed: 'the stored text changed first',
   membership_changed: 'this research no longer holds the source', asset_removed: 'the PDF record was removed',
@@ -186,22 +246,31 @@ const pauseReasons: Record<string, string> = {
   search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
 }
 export { reviewFindingLabels, reviewFocusLabels, reviewDecisionLabels, reviewStaleLabels, reviewNotReviewedLabels, reviewContextLabels, notReviewedText } from './review/labels'
-export const pauseReasonText = (reason: string | null) => (reason ? t(pauseReasons[reason] ?? reason) : '')
-// What the run stored about a model stop, in the connection's own words: a usage limit and a rate limit read differently
-// there, and DEIXIS does not guess which one it was. A second line under the reason, never a replacement for it.
-const oneLine = (text: unknown, max = 240) => {
-  const flat = typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : ''
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+export const pauseReasonText = (reason: string | null, detail?: unknown) => {
+  const error = detail && typeof detail === 'object' ? detail as Record<string, unknown> : {}
+  if ((reason === 'model_call_failed' || reason === 'model_connection_not_ready' || reason?.startsWith('provider_')) && (error.error_kind || error.service_kind)) {
+    const service = typeof error.provider === 'string' ? providerName(error.provider) : error.connection ? connectionName(String(error.connection)) : t('The selected service')
+    return serviceErrorText({ kind: error.service_kind || error.error_kind, service }).what
+  }
+  return reason ? t(pauseReasons[reason] ?? 'An operation stopped this run. Completed work is saved.') : ''
 }
-export const pauseDetailText = (run: { pause_reason: string | null; error: unknown }): string[] => {
+// An older pause kept only the raw Retry-After header; a date in it is usable, a bare number of seconds has no anchor.
+const retryHeaderTime = (value: unknown): string | undefined =>
+  typeof value === 'string' && Number.isNaN(Number(value)) && !Number.isNaN(Date.parse(value)) ? new Date(value).toISOString() : undefined
+// Historical free text is not safe to echo; stored classes choose localized fallback sentences.
+export const pauseDetailText = (run: { pause_reason: string | null; error: unknown; status?: string }): string[] => {
   const error = run.error && typeof run.error === 'object' ? run.error as Record<string, unknown> : {}
+  if ((run.pause_reason === 'model_call_failed' || run.pause_reason === 'model_connection_not_ready' || run.pause_reason?.startsWith('provider_')) && (error.error_kind || error.service_kind)) {
+    const message = serviceErrorText({ kind: error.service_kind || error.error_kind,
+      service: typeof error.provider === 'string' ? providerName(error.provider) : error.connection ? connectionName(String(error.connection)) : t('The selected service'),
+      resetAt: error.reset_at ?? retryHeaderTime(error.retry_after), effect: run.status === 'paused' ? 'paused' : undefined })
+    return [message.when, message.next]
+  }
   if (run.pause_reason === 'model_connection_not_ready') {
-    const reason = oneLine(error.reason)
-    return [t('Open Settings, connect it again, then resume this run.'), ...(reason ? [t('The connection says: {text}', { text: reason })] : [])]
+    return [t('Open Settings, connect it again, then resume this run.')]
   }
   if (run.pause_reason === 'model_call_failed') {
-    const text = oneLine(error.error)
-    return text ? [t('The connection reported: {text}', { text })] : []
+    return [t('The connection did not complete this call. Check it in Settings before resuming.')]
   }
   return []
 }
@@ -391,10 +460,10 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
 // Why a PDF step gave no file, in plain words; the HTTP status stays in view for the record.
 const fetchReasons: Record<string, string> = { fetch_file_repair_refused: 'the stored file could not be repaired now', fetch_file_busy: 'the stored file was busy', fetch_timeout: 'timed out', fetch_too_large: 'file too large', fetch_not_pdf: 'not a PDF', fetch_blocked_url: 'address not allowed', fetch_failed: 'connection failed', no_other_copy: 'no other open copy found' }
 export function fetchReasonText(code: string | null | undefined, httpStatus?: number | null) {
-  if (code !== 'fetch_http_error') return t(fetchReasons[code ?? ''] ?? 'connection failed')
-  if (httpStatus === 401 || httpStatus === 403) return t('site blocked automatic download · HTTP {status}', { status: httpStatus })
-  if (httpStatus === 404 || httpStatus === 410) return t('no file at this link · HTTP {status}', { status: httpStatus })
-  return httpStatus ? t('server refused · HTTP {status}', { status: httpStatus }) : t('server refused')
+  if (['fetch_http_error', 'fetch_timeout', 'fetch_failed', 'fetch_blocked_url'].includes(code ?? '')) {
+    return serviceErrorSentence({ kind: serviceKind(code, httpStatus, 'pdf'), service: t('The download site') })
+  }
+  return t(fetchReasons[code ?? ''] ?? 'connection failed')
 }
 
 // The one way a page is named (SW21): a page of Europe PMC's text drawn by DEIXIS is never written as a PDF page of

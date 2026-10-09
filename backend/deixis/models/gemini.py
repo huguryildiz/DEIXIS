@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 
 from deixis.models.adapter import ModelStepResult
-from deixis.domain.limits import http_limit
+from deixis.domain.limits import http_limit, service_error_kind, retry_at
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta"
 KEY_ENV = "GEMINI_API_KEY"
@@ -77,6 +77,7 @@ class GeminiAdapter:
             except (subprocess.TimeoutExpired, OSError):
                 status["cli_version"] = None
         if not key:
+            status["reason_code"] = "needs_key"
             status["reason"] = f"Add a Gemini API key in Settings or set {KEY_ENV} in .env to use the Gemini API"
             return status
         # A second try after a transport error: the first can expire while something else holds the event loop, and
@@ -88,10 +89,13 @@ class GeminiAdapter:
                 break
             except httpx.HTTPError as exc:
                 if attempt:
+                    status["reason_code"] = service_error_kind(exc=exc)
                     status["reason"] = f"Gemini API unreachable: {type(exc).__name__}"
                     return status
         if response.status_code != 200:
-            status["reason"] = f"Gemini API answered HTTP {response.status_code}: {error_message(response)}"
+            status["reason_code"] = http_limit(response)["error_kind"]
+            status["reset_at"] = retry_at(http_limit(response)["retry_after"])
+            status["reason"] = f"Gemini API answered HTTP {response.status_code}: API request failed"
             return status
         status["models"] = [
             {"id": m["name"].removeprefix("models/"), "display_name": m.get("displayName") or m["name"], "is_default": False,
@@ -111,7 +115,7 @@ class GeminiAdapter:
         key = api_key()
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{KEY_ENV} is not set" if not key else "no model requested",
-                                   delivery_class="before_send")
+                                   delivery_class="before_send", error_kind="needs_key" if not key else "unknown")
         config: dict[str, Any] = {"responseMimeType": "application/json", "responseJsonSchema": response_schema(output_schema)}
         if reasoning_effort:
             config["thinkingConfig"] = {"thinkingLevel": reasoning_effort}
@@ -121,11 +125,11 @@ class GeminiAdapter:
             response = await self._http().post(f"{API_URL}/models/{requested_model}:generateContent", json=body,
                                                headers={"x-goog-api-key": key}, timeout=self.turn_timeout)
         except httpx.ConnectError as exc:
-            return ModelStepResult("unavailable", error=f"ConnectError: {str(exc)[:250]}", delivery_class="before_send")
+            return ModelStepResult("unavailable", error=type(exc).__name__, delivery_class="before_send")
         except httpx.HTTPError as exc:  # the request may have been processed without an answer arriving
-            return ModelStepResult("failed", error=f"{type(exc).__name__}: {str(exc)[:250]}", delivery_class="after_send_unknown")
+            return ModelStepResult("failed", error=type(exc).__name__, delivery_class="after_send_unknown")
         if response.status_code != 200:
-            return ModelStepResult("failed", error=f"HTTP {response.status_code}: {error_message(response)}", **http_limit(response))
+            return ModelStepResult("failed", error=f"HTTP {response.status_code}: API request failed", **http_limit(response))
         data = response.json()
         candidate = (data.get("candidates") or [{}])[0]
         text = "".join(p.get("text", "") for p in (candidate.get("content") or {}).get("parts", []) if not p.get("thought"))

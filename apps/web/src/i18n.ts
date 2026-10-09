@@ -1,5 +1,5 @@
 // Interface language. English text is the key; Turkish renderings live below and missing ones fall back to English.
-// Model output, source records, provider notes and backend error messages are shown as they arrive.
+// Model output and source records keep their original language; service errors use localized labels.
 
 export type UiLanguage = 'en' | 'tr'
 
@@ -25,6 +25,43 @@ export function t(text: string, vars?: Record<string, string | number>): string 
 }
 
 const tr: Record<string, string> = {
+  'The key works.': 'Anahtar çalışıyor.',
+  'Key saved, but the service test failed.': 'Anahtar kaydedildi, ancak servis testi başarısız oldu.',
+  'The key was not saved.': 'Anahtar kaydedilmedi.',
+  'Rate-limit wait for {service} before retry {n}: {seconds} s.': '{service} hız sınırı nedeniyle {n}. tekrardan önce bekleme: {seconds} sn.',
+  'Retried {n} times after a rate limit.': 'Hız sınırı nedeniyle {n} kez yeniden denendi.',
+  'The download site': 'Dosyanın bulunduğu site',
+  '{service} usage quota is used up.': '{service} kullanım kotası doldu.',
+  '{service} is receiving too many requests right now.': '{service} şu an çok fazla istek alıyor.',
+  '{service} needs a key or contact setting that is not configured.': '{service} için gerekli anahtar veya iletişim bilgisi ayarlanmamış.',
+  '{service} did not accept the key or sign-in.': '{service} anahtarı ya da oturumu kabul etmedi.',
+  '{service} rejected the request as invalid.': '{service} isteği geçersiz bulup reddetti.',
+  '{service} could not find the chosen model or endpoint.': '{service} seçilen modeli veya API adresini bulamadı.',
+  '{service} found no file at this link.': '{service} bu bağlantıda dosya bulamadı.',
+  '{service} did not allow this download.': '{service} bu indirmeye izin vermedi.',
+  '{service} did not answer in time.': '{service} zamanında yanıt vermedi.',
+  '{service} had an error on its side.': '{service} kendi tarafında hata verdi.',
+  'DEIXIS could not reach {service}.': 'DEIXIS {service} servisine ulaşamadı.',
+  '{service} did not complete the request.': '{service} isteği tamamlamadı.',
+  'Retry suggested at {time}; recovery is not guaranteed.': 'Servisin önerdiği yeniden deneme zamanı {time}; o anda düzelmiş olacağı kesin değil.',
+  'The service did not give a recovery time.': 'Servis ne zaman düzeleceğini bildirmedi.',
+  'Open Settings → Connections and check the required key or contact setting.': 'Ayarlar → Bağlantılar bölümünde gerekli anahtarı veya iletişim bilgisini kontrol edin.',
+  'Test the key in Settings or sign in again.': 'Ayarlar bölümünde anahtarı test edin veya yeniden oturum açın.',
+  'Check the chosen model and connection in Settings.': 'Ayarlar bölümünde seçilen modeli ve bağlantıyı kontrol edin.',
+  'Report the problem with this request.': 'Bu istekle ilgili sorunu bildirin.',
+  'Open another copy or attach the PDF yourself.': 'Başka bir kopyayı açın veya PDF dosyasını kendiniz ekleyin.',
+  'Check your internet connection before trying again.': 'Yeniden denemeden önce internet bağlantınızı kontrol edin.',
+  'Check the service quota before trying again.': 'Yeniden denemeden önce servisin kotasını kontrol edin.',
+  'Try again later; the request may still fail.': 'Daha sonra yeniden deneyin; istek yine başarısız olabilir.',
+  'Completed work is saved; the run is paused. Resume when the service is available.': 'Tamamlanan iş kaydedildi; çalışma duraklatıldı. Servis kullanılabilir olduğunda devam edin.',
+  'The run continued with available results; this service’s results are incomplete.': 'Çalışma eldeki sonuçlarla devam etti; bu servisin sonuçları eksik.',
+  'DEIXIS is waiting before another attempt.': 'DEIXIS yeniden denemeden önce bekliyor.',
+  'This lookup produced no usable file.': 'Bu aramada kullanılabilir dosya bulunamadı.',
+  'The connection is not ready. Check it in Settings.': 'Bağlantı hazır değil. Ayarlar bölümünde kontrol edin.',
+  'Waiting for {service} before retry {n}.': '{service} için yeniden denemeden önce bekleniyor ({n}. tekrar).',
+  'The selected service': 'Seçilen servis',
+  'An operation stopped this run. Completed work is saved.': 'Bir işlem bu çalışmayı durdurdu. Tamamlanan iş kaydedildi.',
+  'The connection did not complete this call. Check it in Settings before resuming.': 'Bağlantı bu çağrıyı tamamlamadı. Devam etmeden önce Ayarlar bölümünde kontrol edin.',
   'The frozen read cutoff is missing. Start a new search before answering.': 'Dondurulmuş okuma kesimi bulunamadı. Cevap üretmeden önce yeni bir arama başlat.',
   'The stored answer is unavailable for review.': 'Kayıtlı cevap inceleme için kullanılamıyor.',
   'From abstract': 'Özetten',

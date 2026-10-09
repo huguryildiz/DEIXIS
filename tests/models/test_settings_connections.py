@@ -93,7 +93,7 @@ def test_a_key_without_credit_is_kept_and_a_refused_key_is_not(client, memory_ke
     refused = client.put("/api/credentials/OPENAI_API_KEY", json={"value": "openai-bad-key"})
     assert refused.status_code == 422 and "openai-bad-key" not in refused.text
     kept = client.put("/api/credentials/OPENAI_API_KEY", json={"value": "openai-no-credit-key"}).json()
-    assert kept["test"]["status"] == "no_credit" and "no credits" in kept["test"]["detail"]
+    assert kept["test"]["status"] == "no_credit" and kept["test"]["kind"] == "quota_exhausted" and kept["test"]["http_status"] == 429
     assert memory_keychain.items == {("DEIXIS", "OPENAI_API_KEY"): "openai-no-credit-key"}
 
 

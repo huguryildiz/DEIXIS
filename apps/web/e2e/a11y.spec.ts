@@ -1422,7 +1422,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await expectReturn(open, 'the Open evidence report button')
   })
 
-  test('E: a provider rate limit reads "rate limited" in the keyboard-opened Search details', async () => {
+  test('E: a provider rate limit has a sentence in the keyboard-opened Search details', async () => {
     test.setTimeout(240_000)
     await startByKeyboard(page, keys, 'SYNTHETIC [rate-limit] How is molecule release scheduling optimized?')
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
@@ -1431,7 +1431,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await tabTo(page, summary, 'Search details')
     await press(page, 'Enter', 'Search details', () => expect(page.locator('.search-summary:not(.flow-block)')).toHaveAttribute('open', ''))
     const openAlex = page.locator('.search-summary:not(.flow-block) .search-summary-list > div', { hasText: 'OpenAlex' })
-    await expect(openAlex).toContainText('rate limited')
+    await expect(openAlex).toContainText('OpenAlex is receiving too many requests right now.')
     await expect(openAlex).not.toContainText('zero results')
     // The stored list is plain text under a <details>: no role=alert (blocking errors only) and no role=status (live text only).
     expect(await page.locator('.search-summary:not(.flow-block) .search-summary-list').getAttribute('role')).toBeNull()

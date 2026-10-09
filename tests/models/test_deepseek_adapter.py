@@ -140,7 +140,7 @@ def test_run_step_reports_http_errors_without_retrying(monkeypatch, status, mess
 
     result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, "deepseek-v4-pro"))
     assert (result.status, result.raw_text, result.resolved_model, result.delivery_class) == ("failed", None, None, None)
-    assert result.error.startswith(f"HTTP {status}: {message}")
+    assert result.http_status == status and result.error.startswith(f"HTTP {status}: API request failed")
     assert is_rate_limited(result) is limited
     assert calls == ["/chat/completions"]
 
@@ -159,7 +159,9 @@ def test_run_step_reports_transport_errors_without_retrying(monkeypatch, excepti
         raise exception("unreachable", request=request)
 
     result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, "deepseek-v4-pro"))
-    assert (result.status, result.error, result.delivery_class) == (status, f"{exception.__name__}: unreachable", delivery)
+    assert (result.status, result.delivery_class) == (status, delivery)
+    assert result.error_kind == ("network" if exception is httpx.ConnectError else "timeout")
+    assert "unreachable" not in result.error
     assert not is_rate_limited(result)
     assert calls == ["/chat/completions"]
 

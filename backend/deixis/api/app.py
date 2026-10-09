@@ -1159,7 +1159,10 @@ def create_app(
             raise HTTPException(503, "No system keychain is available; set the key in .env")
         result = await credentials.test(request.app.state.http, env, body.value) if key.testable else None
         if result and result["status"] in ("rejected", "failed"):
-            raise HTTPException(422, f"The key was not saved. {result['detail']}")
+            return JSONResponse(status_code=422, content={"code": "credential_test_failed",
+                "detail": f"The key was not saved. {result['detail']}", "service": key.service,
+                "kind": result.get("kind", "unknown"), "http_status": result.get("http_status"),
+                "reset_at": result.get("reset_at")})
         try:
             credentials.save(env, body.value)
         except credentials.KeySourceConflict as exc:

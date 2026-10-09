@@ -20,7 +20,7 @@ from typing import Any, Protocol
 
 from deixis.models.codex_isolation import isolation_overrides
 from deixis.models.codex_rpc import CodexAppServer, RpcError
-from deixis.domain.limits import limit_kind
+from deixis.domain.limits import limit_kind, service_error_kind, safe_error
 
 # Variables the Codex app-server needs to run and reach the network. Provider keys and other
 # settings loaded from .env are deliberately not passed on.
@@ -56,8 +56,9 @@ class ModelStepResult:
     retry_after: str | None = None
 
     def __post_init__(self) -> None:
-        if self.status == "failed" and self.error_kind is None:
-            self.error_kind = limit_kind(self.error, status=self.http_status)
+        if self.status in {"failed", "unavailable"} and self.error_kind is None:
+            self.error_kind = service_error_kind(self.http_status, text=f"{self.error or ''} {self.delivery_class or ''}", surface="model")
+        self.error = safe_error(self.error)
 
 
 def is_rate_limited(result: ModelStepResult) -> bool:
@@ -143,10 +144,12 @@ class CodexAdapter:
                 sources = thread.get("instructionSources") or []
                 await server.request("thread/unsubscribe", {"threadId": thread["thread"]["id"]})
         except (RpcError, ConnectionError, TimeoutError, OSError) as exc:
-            status["reason"] = f"codex app-server error: {str(exc)[:200]}"
+            status["reason"] = f"codex app-server error: {safe_error(str(exc))[:200]}"
+            status["reason_code"] = limit_kind(exc.error if isinstance(exc, RpcError) else str(exc)) or "unknown"
             return status
         status["isolation"] = {"instruction_sources": len(sources), "live_mcp_servers": live_mcp}
         if not status["signed_in"]:
+            status["reason_code"] = "auth_failed"
             status["reason"] = "Not signed in to the DEIXIS Codex home"
         elif sources or live_mcp:
             status["reason"] = "Isolation check failed: instruction files or MCP tools are loaded"
@@ -199,7 +202,7 @@ class CodexAdapter:
         return ModelStepResult(
             status, raw_text=turn.final_text, resolved_model=resolved, external_thread_id=thread_id,
             token_usage=turn.token_usage, tool_item_types=turn.tool_item_types,
-            error=str(turn.error)[:300] if turn.error else (None if status == "completed" else turn.status),
+            error=safe_error(str(turn.error))[:300] if turn.error else (None if status == "completed" else turn.status),
             delivery_class=delivery,
             error_kind=limit_kind(turn.error) if status == "failed" else None,
             retry_after=turn.error.get("retryAfter") if isinstance(turn.error, dict) else None,

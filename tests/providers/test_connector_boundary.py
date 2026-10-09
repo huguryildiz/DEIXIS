@@ -338,8 +338,17 @@ def test_unreadable_body_shapes_are_required(case):
 @pytest.mark.provider_pacing
 @pytest.mark.parametrize("case", FROZEN["cases"], ids=lambda case: case["id"])
 def test_baseline_equivalence(case):
-    assert baseline.replay(case) == case["expected"]
-    assert baseline.replay(case, True) == case.get("facade_expected", case["expected"])
+    def without_error_prose(value):
+        # D256 removes untrusted HTTP error bodies. Freeze every transport, quota,
+        # paging and evidence field; error prose is tested for safety separately.
+        if isinstance(value, dict):
+            return {key: without_error_prose(item) for key, item in value.items()
+                    if not (key == "error" and "http_status" in value)}
+        if isinstance(value, list):
+            return [without_error_prose(item) for item in value]
+        return value
+    assert without_error_prose(baseline.replay(case)) == without_error_prose(case["expected"])
+    assert without_error_prose(baseline.replay(case, True)) == without_error_prose(case.get("facade_expected", case["expected"]))
     if "facade_expected" in case:
         assert case["shape"] == "unknown_endpoint"
         assert case["expected"]["requests"] == case["facade_expected"]["requests"] == []

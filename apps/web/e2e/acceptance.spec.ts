@@ -351,7 +351,7 @@ async function startResearch(page: Page, server: FixtureServer, question: string
   await expect(page.locator('.models-summary')).toContainText('fixture-model')  // listed models, shown before starting
   await page.getByRole('button', { name: 'Start research' }).click()
   await page.waitForURL(/#\/research\//)
-  if (question.includes('[rate-limit]') || question.includes('[model-down]')) return
+  if (question.includes('[rate-limit]') || question.includes('[model-down]') || question.includes('[model-quota]')) return
   await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
   if (includeInUi) {
     await openTab(page, /Sources/)
@@ -626,7 +626,7 @@ test.describe.serial('Failures: E and B (code check)', () => {
     await expect(page.getByText('Ran search & screening')).toBeVisible()
     await openTab(page, /Sources/)
     const openAlex = page.locator('.search-summary:not(.flow-block) .search-summary-list > div', { hasText: 'OpenAlex' })
-    await expect(openAlex).toContainText('rate limited')
+    await expect(openAlex).toContainText('OpenAlex is receiving too many requests right now.')
     await expect(openAlex).not.toContainText('zero results')
     await shot(page, 'E-provider-rate-limited')
   })
@@ -634,9 +634,9 @@ test.describe.serial('Failures: E and B (code check)', () => {
   test('E: a model failure pauses with saved work and resumes on the same model', async () => {
     await startResearch(page, server, 'SYNTHETIC [model-down] How is molecule release scheduling optimized?')
     await expect(page.getByText('Search & screening · Paused')).toBeVisible()
-    await expect(page.getByText('The model call did not complete. Completed work is saved.', { exact: true })).toBeVisible()
+    await expect(page.getByText('DEIXIS could not reach Codex.', { exact: true })).toBeVisible()
     // The connection's own words sit under the reason, so a usage limit and a rate limit read differently there.
-    await expect(page.getByText('The connection reported: SYNTHETIC connection dropped', { exact: true })).toBeVisible()
+    await expect(page.getByText('The service did not give a recovery time.', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Resume' })).toHaveCSS('background-color', 'rgb(59, 91, 154)')
     await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCSS('color', 'rgb(180, 35, 24)')
     await openTab(page, /Sources/)
@@ -663,6 +663,30 @@ test.describe.serial('Failures: E and B (code check)', () => {
     await shot(page, 'B-invented-locator-rejected')
   })
 })
+
+for (const language of ['en', 'tr'] as const) {
+  test(`D256: model quota explains service, suggested retry and saved state (${language})`, async ({ browser }) => {
+    const server = new FixtureServer(nextPort())
+    await server.start()
+    const page = await browser.newPage({ viewport: language === 'tr' ? { width: 390, height: 844 } : { width: 1280, height: 900 } })
+    try {
+      await startResearch(page, server, 'SYNTHETIC [model-quota] How is molecule release scheduling optimized?')
+      await expect(page.getByText('Codex usage quota is used up.', { exact: true })).toBeVisible()
+      if (language === 'tr') {
+        await page.evaluate(() => localStorage.setItem('deixis-ui-language', 'tr'))
+        await page.reload()
+      }
+      await expect(page.getByText(language === 'tr' ? 'Codex kullanım kotası doldu.' : 'Codex usage quota is used up.', { exact: true })).toBeVisible()
+      await expect(page.getByText(language === 'tr' ? /Servisin önerdiği yeniden deneme zamanı/ : /Retry suggested at/).first()).toBeVisible()
+      await expect(page.getByText(language === 'tr' ? /Tamamlanan iş kaydedildi; çalışma duraklatıldı/ : /Completed work is saved; the run is paused/).first()).toBeVisible()
+      await expect(page.locator('.chat-note')).not.toContainText('quota_exhausted')
+      await shot(page, `D256-quota-${language}`)
+    } finally {
+      await page.close()
+      await server.stop()
+    }
+  })
+}
 
 test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
   const server = new FixtureServer(nextPort())

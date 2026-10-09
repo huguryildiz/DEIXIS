@@ -28,7 +28,7 @@ from claude_agent_sdk import (
 )
 
 from deixis.models.adapter import ModelStepResult
-from deixis.domain.limits import limit_kind
+from deixis.domain.limits import limit_kind, service_error_kind, safe_error
 
 
 def _model_matches(actual: str | None, expected: str) -> bool:
@@ -86,7 +86,8 @@ class ClaudeCodeAdapter:
                     info = await client.get_server_info() or {}
                     mcp = await client.get_mcp_status()
         except (ClaudeSDKError, OSError, subprocess.TimeoutExpired, TimeoutError) as exc:
-            status["reason"] = f"Claude Code SDK error: {str(exc)[:200]}"
+            status["reason"] = f"Claude Code SDK error: {safe_error(str(exc))[:200]}"
+            status["reason_code"] = service_error_kind(exc=exc)
             return status
         account = info.get("account") or {}
         status.update(
@@ -113,6 +114,7 @@ class ClaudeCodeAdapter:
             ],
         )
         if not status["signed_in"]:
+            status["reason_code"] = "auth_failed"
             status["reason"] = "Not signed in to Claude Code"
         elif status["isolation"]["live_mcp_servers"]:
             status["reason"] = "Isolation check failed: MCP servers are connected"
@@ -185,11 +187,13 @@ class ClaudeCodeAdapter:
                                 text_parts = [item.result]
                             if item.is_error:
                                 error = "; ".join(item.errors or []) or item.result or item.subtype
-                                kind = limit_kind({"type": assistant_error}, status=item.api_error_status, text=error)
+                                kind = service_error_kind(item.api_error_status or assistant_error,
+                                                          payload={"type": assistant_error}, text=error, surface="model")
                                 return ModelStepResult(
-                                    "failed", raw_text="".join(text_parts) or None, resolved_model=actual_model,
+                                    "failed", raw_text=None if item.api_error_status else "".join(text_parts) or None, resolved_model=actual_model,
                                     external_thread_id=session_id, token_usage=usage, tool_item_types=external_tools(),
-                                    error=error, error_kind=kind, http_status=item.api_error_status,
+                                    error=f"API request failed (HTTP {item.api_error_status})." if item.api_error_status else error,
+                                    error_kind=kind, http_status=item.api_error_status,
                                     delivery_class="after_send_unknown",
                                     requested_model_verified=_model_matches(actual_model, expected_model),
                                 )
@@ -200,7 +204,7 @@ class ClaudeCodeAdapter:
                                    requested_model_verified=_model_matches(actual_model, expected_model))
         except (ClaudeSDKError, OSError) as exc:
             return ModelStepResult("failed", resolved_model=actual_model, external_thread_id=session_id,
-                                   token_usage=usage, tool_item_types=tool_types, error=str(exc)[:300],
+                                   token_usage=usage, tool_item_types=tool_types, error=safe_error(str(exc))[:300],
                                    delivery_class="after_send_unknown",
                                    requested_model_verified=_model_matches(actual_model, expected_model))
         finally:

@@ -73,6 +73,7 @@ def test_provider_503_quota_wording_is_unknown_after_send():
         lambda request: httpx.Response(503, json={"error": "Quota exceeded per day"})))
     _, outcome = asyncio.run(common.send(client, "https://synthetic.invalid", {}, {}, "test", "keyless"))
     assert (outcome.status, outcome.delivery_class, outcome.error_kind) == ("failed", "after_send_unknown", None)
+    assert outcome.service_kind == "service_error"
 
 
 def test_limit_classifier_has_neutral_ownership():

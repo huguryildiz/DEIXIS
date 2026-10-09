@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, ListPlus, LoaderCircle, Minus, RotateCw, Search, Sparkles, TriangleAlert, Waypoints } from 'lucide-react'
 import { api, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
-import { connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
+import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { ProtocolApproval } from './ProtocolApproval'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
@@ -651,6 +651,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         <time>{durationText(secondsBetween(started, clock))}</time>
       </button>
       {expanded && <>
+        {run.service_wait && <p className="chat-report-line">{serviceWaitRecordText(connectionName(run.service_wait.connection), run.service_wait.attempt, run.service_wait.seconds)}</p>}
         {run.kind === 'answer' && active && run.stage === 'inspection' && steps.some(step => step.kind === 'read_equations' && step.status === 'running') && !steps.some(step => step.kind === 'equations_skip') && <p className="chat-report-line"><button type="button" className="chat-steps-toggle" onClick={() => { api.skipEquations(run.id).catch(() => undefined) }}>{t('Answer now with PDF text')}</button></p>}
         {steps.filter(step => step.kind === 'equations_skipped' && step.status === 'succeeded').map(step => <p key={step.id} className="chat-report-line">{t('Answered now with PDF text; equations of {skipped} PDFs were not read ({read} were read).', { skipped: step.output?.pdfs_skipped ?? 0, read: step.output?.pdfs_read ?? 0 })}</p>)}
         {busyEquationPdfs > 0 && <p className="chat-report-line">{t(busyEquationPdfs === 1 ? 'PDF busy; equations of {n} PDF were not read in this run.' : 'PDF busy; equations of {n} PDFs were not read in this run.', { n: busyEquationPdfs })}</p>}
@@ -682,7 +683,11 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
                 ? <button type="button" className="chat-step-title" aria-expanded={detailsOpen} onClick={() => setOpenPhases({ ...openPhases, [key]: !detailsOpen })}><span className={state === 'running' ? 'shimmer-text' : undefined}>{title(key, state, group)}</span>{detailsOpen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}</button>
                 : <span className={`chat-step-title${state === 'running' ? ' shimmer-text' : ''}`}>{title(key, state, group)}</span>}
               {(text || missed.length > 0) && <small>{text}{text && missed.length ? ' · ' : ''}
-                {missed.length > 0 && <em className="chat-step-missed">{missed.map(([id]) => <ConnectionIcon key={id} id={id} />)}{t('{list} did not complete', { list: missed.map(([, name]) => name).join(', ') })}</em>}</small>}
+                {missed.length > 0 && <em className="chat-step-missed">{missed.map(([id]) => <ConnectionIcon key={id} id={id} />)}{missed.map(([id, name]) => {
+                  const failure = searches.filter(row => row.provider === id && !['completed', 'zero_results'].includes(row.status)).at(-1)
+                  return serviceErrorSentence({ kind: serviceKind(failure?.error?.service_kind ?? failure?.error?.error_kind ?? failure?.status, failure?.error?.http_status),
+                    service: name, resetAt: failure?.error?.reset_at, effect: run.status === 'completed' ? 'continued' : undefined })
+                }).join(' ')}</em>}</small>}
             </span>
             <time>{seconds === null ? '' : durationText(seconds)}</time>
           </div>
@@ -716,10 +721,11 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
               const failed = pages.find(p => p.status !== 'completed' && p.status !== 'zero_results')
               const count = pages.reduce((sum, p) => sum + p.result_count, 0)
               const total = pages.find(p => p.provider_total !== null)?.provider_total ?? null
+              const retryCount = pages.reduce((sum, page) => sum + (page.error?.retries ?? 0), 0)
               const why = rationaleOf(s.provider, s.query_text)
               return <Fragment key={s.id}>{heading}<li className={failed ? 'is-attention' : undefined}>
                 <span className="chat-list-text"><code>{s.query_text}</code>{why && <small>{why}</small>}</span>
-                <span className="chat-list-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · <b>{failed && count === 0 ? t(failed.status.replace('_', ' ')) : total === null ? plural(count, '{n} result taken', '{n} results taken') : t('{count} of {total} results taken', { count, total: compact(total) })}</b>{pages.length > 1 && <> · {plural(pages.length, '{n} page', '{n} pages')}</>}{failed && count > 0 && <> · {t(failed.status.replace('_', ' '))}</>}</span>
+                <span className="chat-list-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · <b>{failed && count === 0 ? t(failed.status.replace('_', ' ')) : total === null ? plural(count, '{n} result taken', '{n} results taken') : t('{count} of {total} results taken', { count, total: compact(total) })}</b>{pages.length > 1 && <> · {plural(pages.length, '{n} page', '{n} pages')}</>}{failed && count > 0 && <> · {t(failed.status.replace('_', ' '))}</>}{retryCount > 0 && <> · {providerRetryText(retryCount)}</>}</span>
               </li></Fragment>
             })}
             {/* The citation chain is not a search round (D95); one line says it follows, so all three steps read in one place. */}
@@ -758,7 +764,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
     </div>
 
     {run.status === 'paused' && run.pause_reason !== 'protocol_approval_needed' && <div className="chat-note is-warning">
-      <p>{pauseReasonText(run.pause_reason)}</p>
+      <p>{pauseReasonText(run.pause_reason, run.error)}</p>
       {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
       {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
       {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
@@ -772,7 +778,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
     </div>}
     {/* What this run would search with, before it searches: the user corrects it here and approves it (D80). */}
     {run.approval && <ProtocolApproval run={run} approval={run.approval} onApproved={() => onProtocolApproved?.()} />}
-    {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note ${run.status === 'failed' ? 'is-error' : 'is-neutral'}`}><p>{pauseReasonText(run.pause_reason)}</p>{pauseDetailText(run).map(line => <p key={line}>{line}</p>)}</div>}
+    {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note ${run.status === 'failed' ? 'is-error' : 'is-neutral'}`}><p>{pauseReasonText(run.pause_reason, run.error)}</p>{pauseDetailText(run).map(line => <p key={line}>{line}</p>)}</div>}
     {queueLine && <p className="chat-queue-line"><Hand size={14} aria-hidden /><span>{t(queueLine.count === 1 ? '{n} work awaits your decision' : '{n} works await your decision', { n: queueLine.count })}</span>
       <span aria-hidden>·</span><button type="button" onClick={queueLine.open}>{t('Open')}</button></p>}
     {children}

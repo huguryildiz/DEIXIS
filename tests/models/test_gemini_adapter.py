@@ -50,7 +50,7 @@ def test_health_lists_text_models_and_thinking_levels_for_gemini_3(monkeypatch):
 def test_rejected_key_is_reported_with_the_api_message(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "bad-key")
     status = asyncio.run(adapter(lambda request: httpx.Response(403, json={"error": {"message": "API key not valid"}})).health(refresh=True))
-    assert status["ready"] is False and status["reason"] == "Gemini API answered HTTP 403: API key not valid"
+    assert status["ready"] is False and status["reason"] == "Gemini API answered HTTP 403: API request failed"
 
 
 def test_run_step_sends_one_structured_request_without_tools(monkeypatch):
@@ -77,7 +77,7 @@ def test_truncated_rejected_and_lost_answers_are_not_completed(monkeypatch):
     truncated = asyncio.run(adapter(lambda r: answer([{"text": '{"cla'}], "MAX_TOKENS")).run_step("b", "d", "m", {}, "gemini-3.8-flash"))
     assert (truncated.status, truncated.error) == ("failed", "finish reason MAX_TOKENS")
     limited = asyncio.run(adapter(lambda r: httpx.Response(429, json={"error": {"message": "quota"}})).run_step("b", "d", "m", {}, "gemini-3.8-flash"))
-    assert (limited.status, limited.error, limited.delivery_class) == ("failed", "HTTP 429: quota", None)
+    assert (limited.status, limited.error, limited.delivery_class) == ("failed", "HTTP 429: API request failed", None)
 
     def timeout(request):
         raise httpx.ReadTimeout("slow", request=request)

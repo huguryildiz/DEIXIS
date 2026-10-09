@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import math
+from deixis.domain.limits import service_error_kind, retry_at, safe_error
 import re
 from collections import Counter
 from dataclasses import dataclass, field
@@ -2538,7 +2539,7 @@ class ResearchFlow:
                                    error={"error": outcome.request_description, "http_status": None},
                                    delivery_class="before_send", finished_at=finished_at)
             return "provider_not_configured", {"provider": provider, "http_status": None,
-                                                "error_kind": None, "retry_after": None}
+                                                "error_kind": None, "retry_after": None, "service_kind": "needs_key", "reset_at": None}
         payload_path = payload_digest = None
         if outcome.raw_payload is not None:
             settings.payloads_dir.mkdir(parents=True, exist_ok=True)
@@ -2552,6 +2553,8 @@ class ResearchFlow:
             result_count=len(outcome.records), provider_total=outcome.provider_total, page_limit=limit,
             error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit}
                              | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {})
+                             | {"service_kind": outcome.service_kind or service_error_kind(outcome.error_kind or outcome.http_status or outcome.status),
+                                "reset_at": retry_at(outcome.rate_limit.get("retry-after")), "retries": outcome.retries}
                              # How many 429s this effort was willing to wait out here: a skipped wait is on the row,
                              # never silent (D88).
                              | ({"rate_limit_retries": page.rate_limit_retries} if page else {})),
@@ -2584,13 +2587,16 @@ class ResearchFlow:
                                  step_output=(transport_output | {"dropped_records": dispatched.dropped_records}
                                  if dispatched is not None and dispatched.dropped_records else transport_output or None),
                                  error_code=outcome.status, error={"error": outcome.error, "http_status": outcome.http_status}
-                                 | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {}),
+                                 | {"error_kind": outcome.error_kind, "service_kind": outcome.service_kind or service_error_kind(outcome.error_kind or outcome.http_status or outcome.status),
+                                    "reset_at": retry_at(outcome.rate_limit.get("retry-after"))},
                                  delivery_class=outcome.delivery_class, first_rank=page.read_before if page else 0,
                                  finished_at=finished_at)
         reason = "provider_quota_exhausted" if outcome.error_kind == "quota_exhausted" else f"provider_{outcome.status}"
         return reason, {"provider": provider, "http_status": outcome.http_status,
                                               "error_kind": outcome.error_kind,
-                                              "retry_after": outcome.rate_limit.get("retry-after")}
+                                              "retry_after": outcome.rate_limit.get("retry-after"),
+                                              "service_kind": outcome.service_kind or service_error_kind(outcome.error_kind or outcome.http_status or outcome.status),
+                                              "reset_at": retry_at(outcome.rate_limit.get("retry-after"))}
 
     def _allowance_ended_searches(self, run_id: str) -> bool:
         """Whether a search step of this run was closed because its query's share was spent before it asked (D89)."""
@@ -5691,6 +5697,7 @@ class ResearchFlow:
             )
             await limiter.reduce()
             self._checkpoint(run_id)
+            self.store.service_waiting(run_id, connection, attempts, RATE_LIMIT_BACKOFF_SECONDS * attempts)
             await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * attempts)
             self._checkpoint(run_id)
             guard = getattr(self, "_small_batch_guard", None)
@@ -5775,7 +5782,8 @@ class ResearchFlow:
             halt("model_connection_unavailable", {"connection": connection})
         health = await adapter.health()
         if not health.get("ready"):
-            halt("model_connection_not_ready", {"connection": connection, "reason": health.get("reason")})
+            halt("model_connection_not_ready", {"connection": connection, "reason": safe_error(health.get("reason")),
+                 **({"error_kind": health["reason_code"]} if health.get("reason_code") else {}), "reset_at": health.get("reset_at")})
         self._checkpoint(run_id)  # a pause or cancel may have arrived while the connection was checked
 
         def unchanged() -> bool:
@@ -5994,7 +6002,9 @@ class ResearchFlow:
             if result.status != "completed":
                 final = "outcome_unknown" if result.delivery_class == "after_send_unknown" else "failed"
                 complete(final, error_code=f"model_{result.status}",
-                                               error=result.error, delivery_class=result.delivery_class, **sent_output())
+                         error=result.error, delivery_class=result.delivery_class,
+                         service_detail={"service_kind": result.error_kind, "connection": connection,
+                                         "http_status": result.http_status, "reset_at": retry_at(result.retry_after)}, **sent_output())
                 self._checkpoint(run_id)
                 if (task_type in TIMEOUT_RETRIED_TASKS and not timeout_resent and turn_timed_out(result)
                         and self.store.run(run_id)["usage"].get("model_calls", 0) < run["budget"]["max_model_calls"]):
@@ -6005,7 +6015,11 @@ class ResearchFlow:
                     timeout_resent = True
                     self.store.start_step(step["id"])
                     continue
-                halt("model_call_failed", {"status": result.status, "error": result.error})
+                halt("model_call_failed", {"status": result.status, "error": safe_error(result.error),
+                     "error_kind": service_error_kind(result.error_kind or result.http_status,
+                         text=result.error or result.delivery_class or "", surface="model"),
+                     "http_status": result.http_status, "retry_after": result.retry_after if retry_at(result.retry_after) else None,
+                     "reset_at": retry_at(result.retry_after), "connection": connection, "requested_model": requested_model})
             if not requested_model or (result.resolved_model != requested_model and not result.requested_model_verified):
                 # Output from any model other than the one chosen for this step's role is recorded but never used.
                 mismatch = {"requested_model": requested_model, "resolved_model": result.resolved_model}

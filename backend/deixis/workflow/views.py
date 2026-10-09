@@ -489,10 +489,16 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     # research (D91).
     scope_view["search_providers"] = search_providers(scope["providers"], scope.get("search_workflow"))
 
+    # A library viewed before migration 0072 has no lookup retry time.
+    discovery_retry = store._has_column("pdf_discovery_runs", "retry_after")
+    service_waits = {row["run_id"]: json.loads(row["payload_json"]) for row in conn.execute(
+        "SELECT run_id, payload_json FROM events WHERE research_id = ? AND type = 'service_waiting' ORDER BY id",
+        (research_id,))}
     runs = []
     for row in conn.execute("SELECT id FROM runs WHERE research_id = ? ORDER BY created_at DESC LIMIT 10", (research_id,)):
         run = store.run(row["id"])
         run["steps"] = store.run_steps(run["id"])
+        run["service_wait"] = service_waits.get(run["id"])
         if fast_path.enabled(run["budget"]):
             run["fast_path"] = fast_path.view(store, run)
             if fast_path.enforces(run["budget"], "read"):
@@ -705,7 +711,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                        "oa_pdf_url": row["oa_pdf_url"], "oa_pdf_version": row["oa_pdf_version"], "assets": assets, "replaced_assets": replaced_assets,
                        "fetch": dict(fetch) if fetch else None, "other_copy": dict(other_copy) if other_copy else None,
                        "pdf_candidates": pdf_candidates,
-                       "pdf_discoveries": store.pdf_discoveries(research_id, svid)},
+                       "pdf_discoveries": store.pdf_discoveries(research_id, svid, retry_after=discovery_retry)},
             "selection": {"state": row["state"], "origin": row["selection_origin"], "version": row["selection_version"],
                           "proposal": row["proposal"], "proposal_reason": row["proposal_reason"],
                           "proposal_basis": row["proposal_basis"], "user_reason": row["user_reason"],

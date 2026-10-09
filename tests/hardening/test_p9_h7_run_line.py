@@ -24,7 +24,7 @@ def paused_run(tmp_path, adapter):
 def test_a_paused_run_for_a_connection_that_is_not_ready_carries_the_connections_reason(tmp_path):
     run = paused_run(tmp_path, FakeAdapter(ready=False))
     assert (run["status"], run["pause_reason"]) == ("paused", "model_connection_not_ready")
-    assert run["error"] == {"connection": "fake", "reason": "fake not ready"}
+    assert run["error"] == {"connection": "fake", "reason": "fake not ready", "reset_at": None}
 
 
 def test_a_paused_run_after_a_model_failure_carries_the_connections_own_words(tmp_path):
@@ -34,9 +34,10 @@ def test_a_paused_run_after_a_model_failure_carries_the_connections_own_words(tm
     assert run["error"]["error"] == words
 
 
-def test_the_run_line_shows_those_words_as_a_second_line_and_keeps_the_reason_line():
+def test_the_run_line_uses_safe_fallbacks_and_keeps_the_reason_line():
     labels = (TESTS.parent / "apps" / "web" / "src" / "labels.ts").read_text()
     transcript = (TESTS.parent / "apps" / "web" / "src" / "Transcript.tsx").read_text()
     assert "model_connection_not_ready: 'The selected model connection is not ready. Nothing was sent to another model.'" in labels
-    assert "error.reason" in labels and "error.error" in labels
+    assert "Historical free text is not safe to echo" in labels
+    assert "The connection did not complete this call. Check it in Settings before resuming." in labels
     assert transcript.count("pauseDetailText(run)") == 2  # the paused note and the failed/cancelled note

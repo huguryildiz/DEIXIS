@@ -495,6 +495,9 @@ class ScriptedCodex:
         global LINEAGE_MODE, LINEAGE_REJECT_MODE
         LINEAGE_REJECT_MODE = '[lineage-reject]' in question
         LINEAGE_MODE = '[lineage]' in question or LINEAGE_REJECT_MODE
+        if "[model-quota]" in question and task == "abstract_screening":
+            return ModelStepResult("failed", error="SYNTHETIC quota", error_kind="quota_exhausted",
+                                   http_status=429, retry_after="3600")
         if "[model-down]" in question and task == "abstract_screening" and si["research_id"] not in self.failed_once:
             self.failed_once.add(si["research_id"])
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")

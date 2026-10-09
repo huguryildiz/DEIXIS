@@ -20,9 +20,9 @@ import keyring
 from keyring.errors import KeyringError, PasswordDeleteError
 
 from deixis.models.gemini import API_URL as GEMINI_API_URL
-from deixis.models.gemini import error_message
 from deixis.models.openai_compat import BY_KEY_ENV as COMPAT_BY_KEY_ENV
 from deixis.storage.db import now
+from deixis.domain.limits import service_error_kind, http_limit, retry_at
 
 SERVICE = "DEIXIS"
 OPENAI_API_URL = "https://api.openai.com/v1"
@@ -160,7 +160,7 @@ def delete(env: str) -> None:
     _from_keychain.discard(env)
 
 
-async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, str]:
+async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any]:
     """One short request with the key: Gemini, DeepSeek, Qwen, Kimi and Mistral list models; OpenAI embeds one word, which also shows missing credit."""
     try:
         if env == "GEMINI_API_KEY":
@@ -174,11 +174,14 @@ async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, str
             response = await client.post(f"{OPENAI_API_URL}/embeddings", json={"model": "text-embedding-3-small", "input": ["test"]},
                                          headers={"Authorization": f"Bearer {value}"}, timeout=20)
     except httpx.HTTPError as exc:
-        return {"status": "failed", "detail": f"Could not reach the API: {type(exc).__name__}", "checked_at": now()}
+        return {"status": "failed", "detail": f"Could not reach the API: {type(exc).__name__}", "checked_at": now(),
+                "kind": service_error_kind(exc=exc), "http_status": None, "reset_at": None}
     code = response.status_code
+    metadata = http_limit(response)
+    fields = {"kind": metadata["error_kind"], "http_status": code, "reset_at": retry_at(metadata["retry_after"])}
     if code == 200:
         return {"status": "ok", "detail": "The key works.", "checked_at": now()}
     if code in (400, 401, 403):  # the provider's own message can quote part of the key, so it is not passed on
-        return {"status": "rejected", "detail": f"The API did not accept the key (HTTP {code}).", "checked_at": now()}
+        return {"status": "rejected", "detail": f"The API did not accept the key (HTTP {code}).", "checked_at": now(), **fields}
     # 429: Gemini quota or OpenAI insufficient_quota; the message says which.
-    return {"status": "no_credit" if code == 429 else "failed", "detail": f"HTTP {code}: {error_message(response)}", "checked_at": now()}
+    return {"status": "no_credit" if code == 429 else "failed", "detail": f"API request failed (HTTP {code}).", "checked_at": now(), **fields}

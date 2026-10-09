@@ -647,7 +647,8 @@ def test_recording_not_configured_ignores_payload_and_records(dispatch_flow, pag
     saved = flow.store.existing_step(run["id"], "unsent")
     assert saved["output"] == {"status":"not_configured", "result_count":0}
     assert json.loads(saved["error_json"]) == {"error":"SYNTHETIC unsent", "http_status":None}
-    assert failure == ("provider_not_configured", {"provider":"ieee_xplore","http_status":None,"error_kind":None,"retry_after":None})
+    assert failure == ("provider_not_configured", {"provider":"ieee_xplore","http_status":None,"error_kind":None,"retry_after":None,
+                                                    "service_kind": "needs_key", "reset_at": None})
     assert flow.store.conn.execute("SELECT count(*) FROM search_runs").fetchone()[0] == 0
     assert not flow.deps.settings.payloads_dir.exists()
 

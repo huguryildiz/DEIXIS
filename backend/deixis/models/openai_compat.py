@@ -15,9 +15,8 @@ from typing import Any
 
 import httpx
 
-from deixis.domain.limits import http_limit
+from deixis.domain.limits import http_limit, service_error_kind, retry_at
 from deixis.models.adapter import ModelStepResult
-from deixis.models.deepseek import error_message
 
 
 @dataclass(frozen=True)
@@ -65,6 +64,7 @@ class OpenAICompatAdapter:
             "isolation": {"instruction_sources": 0, "live_mcp_servers": []},
         }
         if not key:
+            status["reason_code"] = "needs_key"
             status["reason"] = f"Add a {spec.name} API key in Settings or set {spec.key_env} in .env"
             return status
         # A second try after a transport error, as for DeepSeek: one failed check pauses the whole run.
@@ -74,14 +74,18 @@ class OpenAICompatAdapter:
                 break
             except httpx.HTTPError as exc:
                 if attempt:
+                    status["reason_code"] = service_error_kind(exc=exc)
                     status["reason"] = f"{spec.name} API unreachable: {type(exc).__name__}"
                     return status
         if response.status_code != 200:
-            status["reason"] = f"{spec.name} API answered HTTP {response.status_code}: {error_message(response)}"
+            status["reason_code"] = http_limit(response)["error_kind"]
+            status["reset_at"] = retry_at(http_limit(response)["retry_after"])
+            status["reason"] = f"{spec.name} API answered HTTP {response.status_code}: API request failed"
             return status
         try:
             listed = response.json().get("data", [])
         except ValueError:
+            status["reason_code"] = "service_error"
             status["reason"] = f"{spec.name} API returned an unreadable model list"
             return status
         status["models"] = [
@@ -98,7 +102,7 @@ class OpenAICompatAdapter:
         key, spec = self._key(), self.spec
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{spec.key_env} is not set" if not key else "no model requested",
-                                   delivery_class="before_send")
+                                   delivery_class="before_send", error_kind="needs_key" if not key else "unknown")
         # reasoning_effort is accepted for the protocol and deliberately not sent.
         system = f"{base}\n\n{developer}\n\nReturn only a JSON object."
         body: dict[str, Any] = {
@@ -114,14 +118,14 @@ class OpenAICompatAdapter:
             response = await self._http().post(f"{spec.base_url}/chat/completions", json=body,
                                                headers={"Authorization": f"Bearer {key}"}, timeout=self.turn_timeout)
         except httpx.ConnectError as exc:
-            return ModelStepResult("unavailable", error=f"ConnectError: {str(exc)[:250]}", delivery_class="before_send")
+            return ModelStepResult("unavailable", error=type(exc).__name__, delivery_class="before_send")
         except httpx.HTTPError as exc:
-            return ModelStepResult("failed", error=f"{type(exc).__name__}: {str(exc)[:250]}",
+            return ModelStepResult("failed", error=type(exc).__name__,
                                    delivery_class="after_send_unknown")
         if response.status_code != 200:
             # An exhausted balance (402) is a quota failure for the shared text classifier; 429 is classified by http_limit.
             quota = " (quota)" if response.status_code == 402 else ""
-            return ModelStepResult("failed", error=f"HTTP {response.status_code}: {error_message(response)}{quota}", **http_limit(response))
+            return ModelStepResult("failed", error=f"HTTP {response.status_code}: API request failed{quota}", **http_limit(response))
         try:
             data = response.json()
         except ValueError:

@@ -47,6 +47,8 @@ def _step_view_output(row: Any) -> dict[str, Any] | None:
     abstract-reading counter (how many the code queued, which ones the model has read), never the model's prose."""
     if not row["output_json"]:
         return None
+    if row["operation_key"] == "fast_chain:summary" or row["operation_key"].startswith("chain:fast:"):
+        return json.loads(row["output_json"])
     if row["kind"] in STEP_OUTPUT_KINDS or row["operation_key"] in STEP_OUTPUT_KEYS:
         return json.loads(row["output_json"])
     if row["kind"] in ("code:abstract_stage", "code:chain_abstract_stage"):

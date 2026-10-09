@@ -201,6 +201,9 @@ async def execute(flow, run, scope, plan, retry_failed):
         if consumer:
             consumer.notify()
     request_index += 1
+    chain = flow._fast_chains.get(run_id)
+    if chain:
+        chain.initial()
     flow._checkpoint(run_id, run["scope_revision"])
 
     async def s2_page():

@@ -69,6 +69,9 @@ class Consumer:
             (self.run["id"], self.embedder.batch if self.embedder else 64)).fetchall()
 
     def should_stop(self):
+        chain = self.flow._fast_chains.get(self.run["id"])
+        if chain:
+            self.cutoff = chain.cutoff()
         return (self.stopping or self.flow._stop_requested(self.run["id"], self.run["scope_revision"])
                 or (self.cutoff is not None and self.store.clock.now() >= self.cutoff))
 
@@ -102,6 +105,13 @@ class Consumer:
                 with transaction(self.store.conn):
                     self.store.save_source_similarities(self.run["research_id"], self.run["scope_revision"], self.embedder.stored_model, scores)
                     for row in pending:
+                        chain = self.flow._fast_chains.get(self.run["id"])
+                        if chain and chain.past_cutoff():
+                            self.store.conn.execute(
+                                "UPDATE fast_path_embedding_queue SET status = 'unembedded_at_cutoff', cutoff_at = ?"
+                                " WHERE run_id = ? AND source_version_id = ? AND status = 'pending'",
+                                (fast_path.timestamp(self.store.clock), self.run["id"], row["source_version_id"]))
+                            continue
                         self.store.conn.execute(
                             "UPDATE fast_path_embedding_queue SET status = ?, embedded_at = ?"
                             " WHERE run_id = ? AND source_version_id = ? AND status = 'pending'",
@@ -129,9 +139,18 @@ class Consumer:
         deadline = fast_path.stage_deadline(self.store, self.run, "ranking")
         self.cutoff = deadline - timedelta(milliseconds=self.run["budget"]["fast_path"]["arrival_margin_ms"]) if deadline else None
         self.notify()
-        while self.pending() and self.task and not self.task.done() and not self.should_stop():
+        chain = self.flow._fast_chains.get(self.run["id"])
+        while ((self.pending() and self.task and not self.task.done()) or (chain and not chain.done())) and not self.should_stop():
+            if chain:
+                self.cutoff = chain.cutoff()
             self.flow._checkpoint(self.run["id"], self.run["scope_revision"])
             await asyncio.sleep(0.01)
+        if chain:
+            await chain.stop()
+            chain.close_open("cutoff")
+            heads = set(self.store.work_heads(self.run["research_id"]).values())
+            pool = [c for c in self.store.candidates(self.run["research_id"], self.run["scope_revision"])
+                    if c["origin"] != "user" and c["source_version_id"] in heads]
         await self.stop()
         if self.task and self.task.done() and not self.task.cancelled():
             error = self.task.exception()
@@ -140,6 +159,8 @@ class Consumer:
         self.flow._checkpoint(self.run["id"], self.run["scope_revision"])
         ts = fast_path.timestamp(self.store.clock)
         with transaction(self.store.conn):
+            if chain:
+                chain.summary()
             # Head changes or earlier-revision corpus records must also have an
             # explicit cutoff outcome; an unqueued source is not a success.
             stored = self.store.source_similarities(self.run["research_id"], self.run["scope_revision"], self.embedder.stored_model) if self.embedder else {}

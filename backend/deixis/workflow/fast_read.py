@@ -23,7 +23,7 @@ def selected(works: list[dict[str, Any]], order: list[str], k: int,
 
 
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                  listing: dict[str, Any]) -> None:
+                  listing: dict[str, Any], *, read_versions: dict[str, Any] | None = None) -> None:
     from deixis.workflow.flow import _Held, RunStopped
 
     store, rid, run_id = flow.store, run["research_id"], run["id"]
@@ -38,10 +38,12 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     plan = small_batch.save_code(flow, run, f"{key}:plan", "code:small_batch_plan", lambda:
         small_batch.next_batch(listing, 0, policy["N"]) | {"N": policy["N"], "K": policy["K"],
                                                         "policy_hash": policy["policy_hash"]})
-    order = small_batch.unchanged_heads(store, rid, listing, plan["items"])
+    order = small_batch.unchanged_heads(store, rid, listing, plan["items"],
+                                       **({"versions": read_versions} if read_versions is not None else {}))
+    frozen = read_versions if read_versions is not None else listing["manifest"]["versions"]
     flow._small_batch_guard = {"run_id": run_id, "rid": rid,
         "user_signature": small_batch.user_signature(store, rid), "reserved_calls": set(),
-        "versions": {svid: listing["manifest"]["versions"][svid] for item in plan["items"]
+        "versions": {svid: frozen[svid] for item in plan["items"]
                      if item["head"] in order for svid in item["versions"]}}
     held = flow._held[run_id] = _Held(run["scope_revision"])
     fetches: dict[str, asyncio.Task] = {}

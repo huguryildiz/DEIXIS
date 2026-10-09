@@ -41,3 +41,23 @@ class SerialRequestPacer:
 # Measured live on 2026-09-18 with a key, six searches per interval: 1.05 s got 1/6 through, 2 s got 4/6. The stated
 # limit is one request per second, but requests landing on the boundary are throttled, so leave a full second of slack.
 SEMANTIC_SCHOLAR_PACER = SerialRequestPacer(2.0)
+
+
+class StartPacer:
+    """Space send starts across event loops without serializing HTTP replies."""
+
+    def __init__(self, interval_seconds):
+        self.interval_seconds = interval_seconds
+        self._lock = threading.Lock()
+        self._next = 0.0
+
+    async def wait(self):
+        with self._lock:
+            start = max(time.monotonic(), self._next)
+            self._next = start + self.interval_seconds
+        await asyncio.sleep(max(0, start - time.monotonic()))
+
+
+# Only the marked fast-chain execution opts in, including its keyword pages
+# and every common.send retry. The documented ceiling is 100 requests/s.
+FAST_OPENALEX_PACER = StartPacer(0.1)

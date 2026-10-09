@@ -53,6 +53,7 @@ def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
         "N": n, "K": k, "keyword_record_cap": cap, "semantic_top": 50,
         "chain_seeds": seeds, "backward_requests": backward, "backward_page_size": 50,
         "forward_requests": forward, "forward_page_size": 25,
+        "chain_in_flight": 5, "chain_rule": "fast_chain_v1",
         "embedding_threads": 4, "fetch_slots": 12, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
     }
@@ -61,6 +62,10 @@ def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
 
 def enabled(budget: dict[str, Any]) -> bool:
     return (budget.get("fast_path") or {}).get("policy") == POLICY
+
+
+def chain_on(budget: dict[str, Any]) -> bool:
+    return enabled(budget) and budget["fast_path"].get("chain_rule") == "fast_chain_v1"
 
 
 def enforces(budget: dict[str, Any], stage: str) -> bool:

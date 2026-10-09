@@ -596,7 +596,7 @@ def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
         assert [tuple(row) for row in stages] == [("plan", 2000, "done"), ("search", 2000, "done"),
                                                  ("ranking", 2000, "done"), ("read", 3000, "done"), ("answer", 2000, "done")]
         rows = app.state.store.conn.execute("SELECT stage, close_reason FROM fast_path_intervals ORDER BY rowid").fetchall()
-        assert [tuple(row) for row in rows] == [(s, "stage_done") for s in ("plan", "search", "lookups", "ranking", "read", "answer")]
+        assert [tuple(row) for row in rows] == [(s, "stage_done") for s in ("plan", "search", "ranking", "read", "answer")]
         assert run["budget"]["inspection"]["list_run_id"] == discovery_id
         assert run["fast_path"]["used_ms"] == 11000
         assert run["fast_path"]["latency_ms"] == 111000

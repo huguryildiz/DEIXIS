@@ -99,7 +99,7 @@ def in_scope(scope: dict[str, Any], provider: str) -> bool:
     return provider in scope["providers"] and CONNECTORS[provider].access_mode() != "not_configured"
 
 
-def _records(store: Store, research_id: str, scope_revision: int) -> list[dict[str, Any]]:
+def _records(store: Store, research_id: str, scope_revision: int, only: set[str] | None = None) -> list[dict[str, Any]]:
     """Every candidate record of this revision, work heads first, otherwise in `store.candidates` order.
 
     Work heads come first because a head's own abstract is what screening reads; the other versions follow, because
@@ -116,7 +116,13 @@ def _records(store: Store, research_id: str, scope_revision: int) -> list[dict[s
              "reference_count": row["reference_count"], "head": row["id"] in heads}
             for candidate in store.candidates(research_id, scope_revision)
             if (row := fields.get(candidate["source_version_id"])) is not None]
-    return sorted(rows, key=lambda row: not row["head"])  # a stable sort keeps the candidate order inside each group
+    return sorted([r for r in rows if only is None or r["source_version_id"] in only], key=lambda row: not row["head"])
+
+
+def _outside_shortlist(store, research_id, scope_revision, only):
+    return ({"outside_shortlist": sum(row["source_version_id"] not in only
+                                    for row in _records(store, research_id, scope_revision))}
+            if only is not None else {})
 
 
 def _has_abstract(store: Store, source_version_id: str) -> bool:
@@ -141,21 +147,21 @@ def _wanted(row: dict[str, Any], words: tuple[str, ...]) -> str | None:
 
 
 def plan_semantic_scholar(store: Store, research_id: str, scope_revision: int, scope: dict[str, Any],
-                          words: tuple[str, ...], limit: int = MAX_LOOKUP_REQUESTS) -> dict[str, Any]:
+                          words: tuple[str, ...], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None) -> dict[str, Any]:
     """Who Semantic Scholar is asked about, split into batches; `outside_limit` counts the records left over."""
     if not in_scope(scope, "semantic_scholar"):
-        return {"batches": [], "outside_limit": 0, "skipped": "out_of_scope"}
+        return {"batches": [], "outside_limit": 0, "skipped": "out_of_scope"} | _outside_shortlist(store, research_id, scope_revision, only)
     wanted = [{"source_version_id": row["source_version_id"], "doi": row["doi"], "reason": reason}
-              for row in _records(store, research_id, scope_revision)
+              for row in _records(store, research_id, scope_revision, only)
               if (reason := _wanted(row, words)) and not answered(store, row["source_version_id"], "semantic_scholar")]
     size = lookup.S2_LOOKUP_BATCH
     batches = [wanted[start:start + size] for start in range(0, len(wanted), size)]
     return {"batches": batches[:limit], "outside_limit": len(wanted) - sum(len(b) for b in batches[:limit]),
-            "skipped": None}
+            "skipped": None} | _outside_shortlist(store, research_id, scope_revision, only)
 
 
 def plan_crossref(store: Store, research_id: str, scope_revision: int, scope: dict[str, Any], words: tuple[str, ...],
-                  spent: int, limit: int = MAX_LOOKUP_REQUESTS) -> dict[str, Any]:
+                  spent: int, limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None) -> dict[str, Any]:
     """Who Crossref is asked about, one request each, split into chunks that share a step.
 
     Only records asked about for a missing abstract come here, and only those still missing one: a record Semantic
@@ -163,19 +169,19 @@ def plan_crossref(store: Store, research_id: str, scope_revision: int, scope: di
     failure is not the other's.
     """
     if not in_scope(scope, "crossref"):
-        return {"chunks": [], "outside_limit": 0, "skipped": "out_of_scope"}
+        return {"chunks": [], "outside_limit": 0, "skipped": "out_of_scope"} | _outside_shortlist(store, research_id, scope_revision, only)
     wanted = [{"source_version_id": row["source_version_id"], "doi": row["doi"]}
-              for row in _records(store, research_id, scope_revision)
+              for row in _records(store, research_id, scope_revision, only)
               if _wanted(row, words) == "abstract" and not row["has_abstract"]
               and not answered(store, row["source_version_id"], "crossref")]
     allowed = max(0, limit - spent)
     asked, outside = wanted[:allowed], wanted[allowed:]
     return {"chunks": [asked[start:start + CROSSREF_CHUNK] for start in range(0, len(asked), CROSSREF_CHUNK)],
-            "outside_limit": len(outside), "skipped": None}
+            "outside_limit": len(outside), "skipped": None} | _outside_shortlist(store, research_id, scope_revision, only)
 
 
 def plan_scopus(store: Store, research_id: str, scope_revision: int, words: tuple[str, ...], spent: int,
-                limit: int = MAX_LOOKUP_REQUESTS) -> dict[str, Any]:
+                limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None) -> dict[str, Any]:
     """Who Scopus is asked about: the records Semantic Scholar and Crossref left without an abstract (D91).
 
     The caller has already checked that this run's network is entitled to the complete view; `spent` counts that
@@ -185,7 +191,7 @@ def plan_scopus(store: Store, research_id: str, scope_revision: int, words: tupl
     records in the chunks the limit left out.
     """
     wanted = [{"source_version_id": row["source_version_id"], "doi": row["doi"]}
-              for row in _records(store, research_id, scope_revision)
+              for row in _records(store, research_id, scope_revision, only)
               if _wanted(row, words) == "abstract" and not row["has_abstract"]
               and not answered(store, row["source_version_id"], "scopus")]
     safe = [row for row in wanted if lookup.scopus_doi_is_safe(row["doi"])]
@@ -194,7 +200,7 @@ def plan_scopus(store: Store, research_id: str, scope_revision: int, words: tupl
     chunks += [[row] for row in wanted if not lookup.scopus_doi_is_safe(row["doi"])]
     allowed = max(0, limit - spent)
     return {"chunks": chunks[:allowed], "outside_limit": sum(len(chunk) for chunk in chunks[allowed:]),
-            "skipped": None}
+            "skipped": None} | _outside_shortlist(store, research_id, scope_revision, only)
 
 
 # ---- storing one answer -------------------------------------------------------------------------
@@ -270,7 +276,7 @@ def linked_dois(store: Store, source_version_id: str) -> list[str]:
 
 async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                              scope: dict[str, Any], words: tuple[str, ...],
-                             checkpoint: Callable[[], None], limit: int = MAX_LOOKUP_REQUESTS) -> None:
+                             checkpoint: Callable[[], None], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None) -> None:
     """Plan and send this run's DOI lookups. A failed request is recorded and the run goes on (D18).
 
     No request is sent twice: a step that already succeeded is skipped whole, and inside a chunk a record the
@@ -281,18 +287,18 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     # is recorded with its status, its records stay without an abstract, and the next batch is still sent.
     waits = PROVIDER_WAIT[scope["effort"]]
     plan = _code_step(store, run_id, "lookup_plan:semantic_scholar", "code:lookup_plan",
-                      lambda: plan_semantic_scholar(store, rid, revision, scope, words, limit))
+                      lambda: plan_semantic_scholar(store, rid, revision, scope, words, limit, only=only))
     for number, batch in enumerate(plan["batches"]):
         checkpoint()
         await _semantic_scholar_step(store, http, settings, run, number, batch, waits)
     plan_cr = _code_step(store, run_id, "lookup_plan:crossref", "code:lookup_plan",
-                         lambda: plan_crossref(store, rid, revision, scope, words, len(plan["batches"]), limit))
+                         lambda: plan_crossref(store, rid, revision, scope, words, len(plan["batches"]), limit, only=only))
     for number, chunk in enumerate(plan_cr["chunks"]):
         checkpoint()
         await _crossref_step(store, http, settings, run, number, chunk)
     checkpoint()
     spent = len(plan["batches"]) + sum(len(chunk) for chunk in plan_cr["chunks"])
-    plan_sc = await _scopus_plan(store, http, run, scope, words, spent, limit)
+    plan_sc = await _scopus_plan(store, http, run, scope, words, spent, limit, only=only)
     for number, chunk in enumerate(plan_sc["chunks"]):
         checkpoint()
         await _scopus_step(store, http, settings, run, number, chunk, waits)
@@ -371,7 +377,7 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
 
 
 async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any], scope: dict[str, Any],
-                       words: tuple[str, ...], spent: int, limit: int) -> dict[str, Any]:
+                       words: tuple[str, ...], spent: int, limit: int, *, only: set[str] | None = None) -> dict[str, Any]:
     """The Scopus plan, after one access check of this run's network (D91); a resumed run reads the stored plan.
 
     Scopus gives abstracts only in the complete view, which Elsevier entitles by the caller's IP range. Without it
@@ -391,7 +397,7 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
     if spent >= limit:
         # The access check is a request too: with none left it is not sent, and the plan says why Scopus was not
         # asked (review of 13g, 2026-09-23).
-        output = plan_scopus(store, run["research_id"], run["scope_revision"], words, spent, limit) | {
+        output = plan_scopus(store, run["research_id"], run["scope_revision"], words, spent, limit, only=only) | {
             "skipped": "request_limit"}
         store.finish_step(step["id"], "succeeded", output=output)
         return output
@@ -399,10 +405,11 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
     store.set_step_output(step["id"], {"access_checks": checks + 1})
     entitled = await scopus.complete_view_entitled(http, CONNECTORS["scopus"].api_key() or "")
     if entitled is True:
-        output = plan_scopus(store, run["research_id"], run["scope_revision"], words, spent + 1, limit)
+        output = plan_scopus(store, run["research_id"], run["scope_revision"], words, spent + 1, limit, only=only)
     else:
         output = {"chunks": [], "outside_limit": 0,
                   "skipped": "no_institutional_access" if entitled is False else "access_unknown"}
+    output |= _outside_shortlist(store, run["research_id"], run["scope_revision"], only)
     store.finish_step(step["id"], "succeeded", output=output)
     return output
 

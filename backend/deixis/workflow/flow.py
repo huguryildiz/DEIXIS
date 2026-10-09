@@ -350,6 +350,7 @@ class ResearchFlow:
             self.store.clock = deps.clock
         self._clock_tasks: dict[str, dict[str, tuple[str, asyncio.Task]]] = {}
         self._fast_consumers: dict[str, Any] = {}
+        self._fast_chains: dict[str, Any] = {}
         self._held: dict[str, _Held] = {}
         self._quota_out: dict[str, set[str]] = {}
         self._openalex_budget: dict[str, acquisition.OpenAlexBudget] = {}
@@ -361,9 +362,16 @@ class ResearchFlow:
     async def execute(self, run_id: str) -> None:
         # Resume and retry use the same flow and run ID; quota may have reset between executions.
         self._quota_out.pop(run_id, None)
+        from deixis.providers.common import fast_openalex_pacing
+        pacing = fast_openalex_pacing.set(fast_path.chain_on(self.store.run(run_id)["budget"]))
         try:
             await self._execute_run(run_id)
         finally:
+            chain = self._fast_chains.pop(run_id, None)
+            if chain is not None:
+                await chain.stop()
+                chain.close_open("interrupted")
+            fast_openalex_pacing.reset(pacing)
             consumer = self._fast_consumers.pop(run_id, None)
             if consumer is not None:
                 await consumer.stop()
@@ -596,6 +604,9 @@ class ResearchFlow:
         effort = scope["effort"]
         self._checkpoint(run_id, revision)
         if use_fast_search:
+            if fast_path.chain_on(run["budget"]):
+                from deixis.workflow.fast_chain import Round
+                self._fast_chains[run_id] = Round(self, run, scope, vocabulary)
             self._fast_consumers[run_id].start()
             failure = await fast_search.execute(self, run, scope, fast_search.stored_plan(self.store, run), retry_failed)
         else:
@@ -610,9 +621,14 @@ class ResearchFlow:
         # Expansion reads the first round's records and searches only additional phrases.
         if use_fast_search:
             self._close_clock_stage(run, "search")
-            self._enter_clock_stage(run, "lookups")
-            await self._second_sources(run, scope, vocabulary)
-            self._close_clock_stage(run, "lookups")
+            if fast_path.chain_on(run["budget"]):
+                self._enter_clock_stage(run, "ranking")
+                self._fast_chains[run_id].fallback()
+                self._fast_chains[run_id].admit.set()
+            else:
+                self._enter_clock_stage(run, "lookups")
+                await self._second_sources(run, scope, vocabulary)
+                self._close_clock_stage(run, "lookups")
         else:
             more = await self._expansion(run, scope, vocabulary, queries, criterion, approval)
             await self._search_round(run, list(enumerate(more, start=len(queries))), retry_failed, effort)
@@ -650,7 +666,7 @@ class ResearchFlow:
 
 
     async def _second_sources(self, run: dict[str, Any], scope: dict[str, Any],
-                              vocabulary: dict[str, Any] | None) -> None:
+                              vocabulary: dict[str, Any] | None, *, only: set[str] | None = None) -> None:
         """The three code steps of slice 05 (SW5, SW9.3).
 
         No model is called and no selection is written here. A failed lookup is recorded on the record and the run
@@ -661,7 +677,7 @@ class ResearchFlow:
         run_id, revision = run["id"], run["scope_revision"]
         words, _ = lookups.title_words(vocabulary)
         await lookups.ask_second_sources(self.store, self.deps.http, self.deps.settings, run, scope, words,
-                                         lambda: self._checkpoint(run_id, revision))
+                                         lambda: self._checkpoint(run_id, revision), **({"only": only} if only is not None else {}))
         lookups.external_links(self.store, run)
         lookups.flag_and_decide(self.store, run, scope, words)
 
@@ -2048,7 +2064,8 @@ class ResearchFlow:
                       outcome: SearchOutcome | facade.Dispatched | facade.DispatchedLookup,
                       forms: dict[str, list[str]], links: list[Any], *, cites: str | None, page: int | None,
                       batch: list[str] | None = None, per_page: int = CHAIN_CITING_PAGE,
-                      provider: str = "openalex", query_text: str | None = None) -> None:
+                      provider: str = "openalex", query_text: str | None = None,
+                      fast_request: int | None = None, fast_arrival: dict[str, Any] | None = None) -> None:
         """Write one answered chain request: the filter runs first, and only the records that pass are written, as a
         search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is kept, passing
         or not, in `chain_links`."""
@@ -2064,10 +2081,13 @@ class ResearchFlow:
             (settings.payloads_dir / payload_path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
             payload_digest = canonical.sha256_hex(outcome.raw_payload)
         passed = [record for record in outcome.records if chaining.passes(forms, record.title, record.abstract)]
+        if fast_arrival and fast_arrival["late"]:
+            passed = []
         ok = outcome.status in ("completed", "zero_results")
         search_fields = dict(
             research_id=rid, run_id=run_id, step_id=step["id"], scope_revision=revision, provider=provider,
-            query_text=query_text or (key.rpartition(":")[0] if cites is not None else key),
+            query_text=query_text or (f"chain:fast:{direction}:{fast_request}" if fast_request is not None
+                                     else key.rpartition(":")[0] if cites is not None else key),
             request_description=f"citation chaining, {direction}: {outcome.request_description}",
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
             result_count=len(passed), provider_total=outcome.provider_total, page_limit=per_page,
@@ -2083,6 +2103,8 @@ class ResearchFlow:
                   "next_cursor": outcome.next_cursor if cites is not None or provider != "openalex" else None,
                   "provider_total": outcome.provider_total}
         output = lookups.transport_output(self.store, step, output)
+        if fast_arrival is not None:
+            output |= fast_arrival
         if dispatched is not None and dispatched.dropped_records:
             output["dropped_records"] = dispatched.dropped_records
         if cites is None and provider == "openalex":
@@ -2095,7 +2117,7 @@ class ResearchFlow:
                 # A chained record ranks after every keyword record: a record a keyword query already found keeps the
                 # rank and the search its candidate row names, and only gains a hit (D93's `candidate_hits`).
                 self.store.record_search(search_fields, provider, passed, payload_path, step["id"], "succeeded",
-                                         step_output=output, first_rank=CHAIN_RANK_BASE)
+                                         step_output=output, first_rank=CHAIN_RANK_BASE + (fast_request or 0) * 1000)
             else:
                 final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
                 self.store.record_search(search_fields, provider, [], payload_path, step["id"], final,
@@ -2104,6 +2126,8 @@ class ResearchFlow:
                                          error={"error": outcome.error, "http_status": outcome.http_status}
                                          | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {}),
                                          delivery_class=outcome.delivery_class)
+                return
+            if fast_arrival and fast_arrival["late"]:
                 return
             # A Semantic Scholar paper id is kept apart from OpenAlex's in `chain_links` by its `s2:` front.
             front = "" if provider == "openalex" else chaining.S2_PREFIX
@@ -2118,6 +2142,19 @@ class ResearchFlow:
                 " linked_openalex_id, direction, passed_filter, source_version_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 [(rid, revision, run_id, seed, linked, direction, int(linked in became), became.get(linked))
                  for seed, linked in pairs])
+            if fast_request is not None:
+                search = self.store.conn.execute("SELECT id FROM search_runs WHERE step_id = ?", (step["id"],)).fetchone()
+                queued = set()
+                for position, record in enumerate(outcome.records):
+                    svid = became.get(record.provider_record_id)
+                    if svid and svid not in queued:
+                        queued.add(svid)
+                        self.store.conn.execute("UPDATE candidates SET rank = ? WHERE search_run_id = ? AND source_version_id = ?",
+                                                (CHAIN_RANK_BASE + fast_request * 1000 + position, search[0], svid))
+                        self.store.conn.execute(
+                            "INSERT OR IGNORE INTO fast_path_embedding_queue (run_id, class, request_index, position,"
+                            " source_version_id, search_run_id, enqueued_at, status) VALUES (?, 2, ?, ?, ?, ?, ?, 'pending')",
+                            (run_id, fast_request, position, svid, search[0], fast_path.timestamp(self.store.clock)))
 
     def _chain_filter(self, run: dict[str, Any]) -> list[str]:
         """Freeze the chained works: the heads of the records that passed, after the record path merged them, that

@@ -300,7 +300,7 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
     def build() -> dict[str, Any]:
         store, rid = flow.store, run["research_id"]
         versions, by_work, keyword = ranking.pool_rows(store, rid, run["scope_revision"])
-        chained = flow._chain_filter(run) if chaining.enabled(run["budget"]) else []
+        chained = flow._chain_filter(run) if chaining.enabled(run["budget"]) or fast_path.chain_on(run["budget"]) else []
         heads = store.work_heads(rid)
         pool = {row["work_id"]: row for row in keyword}
         for head in chained:
@@ -345,6 +345,9 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
                     "keyword_heads": DecisionStore(store).ranking_order(keyword_step["id"]),
                     "chain_heads": chained,
                     "keyword_step": keyword_step["id"]}
+        if fast_path.chain_on(run["budget"]):
+            from deixis.workflow.fast_chain import manifest as chain_manifest
+            manifest["fast_path"] = chain_manifest(store, run)
         return build_list(manifest)
     return save_code(flow, run, LIST_KEY, "code:small_batch_list", build)
 
@@ -373,8 +376,9 @@ def guard_reason(store: Any, guard: dict[str, Any]) -> str | None:
     return None
 
 
-def unchanged_heads(store: Any, rid: str, listing: dict[str, Any], items: list[dict[str, Any]]) -> list[str]:
-    frozen = listing["manifest"]["versions"]
+def unchanged_heads(store: Any, rid: str, listing: dict[str, Any], items: list[dict[str, Any]],
+                    *, versions: dict[str, Any] | None = None) -> list[str]:
+    frozen = versions if versions is not None else listing["manifest"]["versions"]
     current = ranking._versions(store, rid)
     heads = store.work_heads(rid)
     return [item["head"] for item in items if heads.get(item["work_id"]) == item["head"]
@@ -436,7 +440,9 @@ def stored_progress(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
-    if flow.store.existing_step(run["id"], LIST_KEY) is None and chaining.enabled(run["budget"]):
+    from deixis.workflow import fast_path
+    if (flow.store.existing_step(run["id"], LIST_KEY) is None and chaining.enabled(run["budget"])
+            and not fast_path.chain_on(run["budget"])):
         forms = flow._chain_forms(run, scope, vocabulary)
         seeds = flow._chain_seeds(run, scope)
         flow._enter_clock_stage(run, "chain")
@@ -452,13 +458,26 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             await flow._source_similarity(run, scope, [{"source_version_id": head} for head in chained],
                                           key="small_batch:v1:chain_similarity", identity_step="source_similarity")
         flow._chain_summary(run)
+    if fast_path.chain_on(run["budget"]) and flow.store.existing_step(run["id"], LIST_KEY) is None:
+        chained = flow._chain_filter(run)
+        from deixis.workflow import lookups
+        words, _ = lookups.title_words(vocabulary)
+        lookups.flag_and_decide(flow.store, run, scope, words,
+                               works=set(flow.store.work_ids(chained).values()), key="chain_record_flags")
     listing = freeze_list(flow, run, scope, vocabulary)
     from deixis.workflow import fast_path
     if fast_path.enforces(run["budget"], "read"):
         from deixis.workflow import fast_read
         flow._close_clock_stage(run, "ranking")
         flow._enter_clock_stage(run, "read")
-        await fast_read.execute(flow, run, scope, vocabulary, listing)
+        if fast_path.chain_on(run["budget"]):
+            only = {svid for item in listing["items"][:run["budget"]["fast_path"]["N"]] for svid in item["versions"]}
+            await flow._second_sources(run, scope, vocabulary, only=only)
+            from deixis.workflow.fast_chain import read_versions
+            snapshot = read_versions(flow, run, listing)
+            await fast_read.execute(flow, run, scope, vocabulary, listing, read_versions=snapshot["versions"])
+        else:
+            await fast_read.execute(flow, run, scope, vocabulary, listing)
         flow._close_clock_stage(run, "read")
         return
     if run["budget"]["inspection"].get("runner_version", 1) >= 4:

@@ -26,6 +26,7 @@ MAX_RETRY_WAIT_SECONDS = 10.0  # a longer provider wait pauses the run instead o
 FIRST_PAGE = "*"  # asks a provider for the first page of a paged read; an offset provider reads it as offset 0
 
 _transport_collector: ContextVar[list[dict[str, Any]] | None] = ContextVar("search_transport", default=None)
+fast_openalex_pacing: ContextVar[bool] = ContextVar("fast_openalex_pacing", default=False)
 
 
 @contextmanager
@@ -188,6 +189,9 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
 
     while True:
         try:
+            if fast_openalex_pacing.get() and urlsplit(url).hostname == "api.openalex.org":
+                from deixis.providers.pacing import FAST_OPENALEX_PACER
+                await FAST_OPENALEX_PACER.wait()
             # A body makes this a POST; everything else — the Semantic Scholar gate (D67), the bounded 429 retries
             # and the failure classes — is the same path every provider request takes.
             def attempt() -> Any:

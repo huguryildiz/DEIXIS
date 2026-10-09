@@ -690,6 +690,7 @@ EMPTY_BECAUSE = {
     "asset_arxiv_versions": "written only by the optional equation reader (Marker), which is not installed",
     "chain_links": "citation chaining is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",
+    "openalex_budget_runs": "written only when OpenAlex's daily budget refuses a PDF lookup; the fake providers never do",
     "owner_review_snapshots": "no review can be started until B2",
     "owner_reviews": "no review can be started until B2",
     "owner_review_findings": "no review can be started until B2",

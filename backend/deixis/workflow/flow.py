@@ -343,6 +343,7 @@ class ResearchFlow:
         self.store = deps.store
         self._held: dict[str, _Held] = {}
         self._quota_out: dict[str, set[str]] = {}
+        self._openalex_budget: dict[str, acquisition.OpenAlexBudget] = {}
 
     async def execute(self, run_id: str) -> None:
         # Resume and retry use the same flow and run ID; quota may have reset between executions.
@@ -353,6 +354,16 @@ class ResearchFlow:
             if self.store.run(run_id)["kind"] == "kill_search":
                 from deixis.workflow.candidates.store import CandidateStore
                 CandidateStore(self.store).sync_search_outcome(run_id)
+
+    def _openalex_budget_of(self, run_id: str) -> acquisition.OpenAlexBudget:
+        """The run's memory of OpenAlex's daily budget, brought up to date with the store at every lookup: a resumed or
+        restarted run, a later run, and a run another run's refusal has overtaken do not send what a refusal that
+        has not yet reset says cannot be served."""
+        budget = self._openalex_budget.setdefault(run_id, acquisition.OpenAlexBudget())
+        stored = self.store.openalex_budget_reset()
+        if stored and (budget.reset_at is None or stored > budget.reset_at):
+            budget.reset_at = stored
+        return budget
 
     async def _execute_run(self, run_id: str) -> None:
         run = self.store.run(run_id)
@@ -3248,8 +3259,10 @@ class ResearchFlow:
 
     def _needs_other_copy(self, research_id: str, source: dict[str, Any], refusal: dict[str, Any]) -> bool:
         """A blocked (403) or missing (404) link leads to one lookup per source; "Find PDF" repeats it on request."""
+        # A lookup history that was interrupted, or has a route that did not answer, is resumed here too (D248).
         return (refusal["http_status"] in (403, 404) and normalize_doi(source["doi"]) is not None
-                and not self.store.pdf_discoveries(research_id, source["id"]))
+                and (not self.store.pdf_discoveries(research_id, source["id"])
+                     or self._unanswered_lookups(research_id, source["id"]) > 0))
 
     async def _find_other_copy(self, run: dict[str, Any], source: dict[str, Any],
                                other_versions: bool = False) -> dict[str, Any]:
@@ -3269,6 +3282,7 @@ class ResearchFlow:
                 self.store, run["research_id"], source["id"], self.deps.http, settings.papers_dir, settings.contact_email, None,
                 self.deps.fetch_pdf, core_key=CONNECTORS["core"].api_key(), web_search=False, other_versions=other_versions,
                 xml_fetcher=self.deps.fetch_xml, recovery_dir=settings.recovery_dir,
+                openalex_budget=self._openalex_budget_of(run["id"]), workflow_run_id=run["id"],
             )
         except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
             refused = isinstance(exc, file_restore.FileRestoreRefused)
@@ -3427,14 +3441,16 @@ class ResearchFlow:
         has_text = any(self.store.has_pdf_text(svid) for svid in versions)
         has_asset = any(self.store.has_asset(svid) for svid in versions)
         unanswered = self._unanswered_routes(run_id, rid, versions)
+        deferred = sum(self._quota_deferred(rid, svid) for svid in versions)
         read = self._text_version(rid, head) if has_text else head
         asset_id = self._current_asset(read) if has_text else None
         return {"work_id": source["work_id"], "head": head, "read_version": read,
                 "version_label": self.store.source(read)["version_label"], "asset_id": asset_id, "route": route,
                 "identity": identity.check(self._pdf_head_text(read), [self.store.source(s) for s in versions])
                             if has_text else None,
-                "code": fulltext.settled_code({"has_text": has_text, "has_asset": has_asset, "unanswered": unanswered}),
-                "requests_unanswered": unanswered}
+                "code": fulltext.settled_code({"has_text": has_text, "has_asset": has_asset,
+                                               "unanswered": unanswered + deferred}),
+                "requests_unanswered": unanswered, "quota_deferred": deferred}
 
     def _other_copy_step(self, run_id: str, svid: str) -> dict[str, Any]:
         """This run's DOI lookup step for the record, read without opening one: `store.step` would leave a step
@@ -3491,9 +3507,27 @@ class ResearchFlow:
         A lookup is stored once per asking, so only each provider's newest row counts: a 429 an earlier run met
         says nothing once the same provider has answered since. A copy's row is updated in place.
         """
-        latest = {d["provider"]: d["status"] for d in self.store.pdf_discoveries(research_id, svid)}
-        return (sum(1 for status in latest.values() if status in UNANSWERED_LOOKUP_STATUSES)
+        latest = {d["provider"]: d for d in self.store.pdf_discoveries(research_id, svid, retry_after=True)}
+        # Each lookup is stored as it returns, so an interruption can leave a lookup history that stops part way: a
+        # route of the four that has no row was never asked, and the work is not settled without it.
+        missing = len(acquisition.REQUIRED_ROUTES - latest.keys()) if latest else 0
+        # A lookup OpenAlex's daily budget refused is asked again once its reset has passed, and until then it is
+        # deferred (`_quota_deferred`), not unanswered: asking before the reset would only be refused again.
+        return (missing
+                + sum(1 for d in latest.values() if d["status"] in UNANSWERED_LOOKUP_STATUSES and not self._budget_wait(d))
                 + sum(1 for c in self.store.pdf_candidates(svid) if c["access_status"] in UNANSWERED_LOOKUP_STATUSES))
+
+    @staticmethod
+    def _budget_wait(lookup: dict[str, Any]) -> bool:
+        """Whether this lookup row is one OpenAlex's budget refused whose reset has not come yet."""
+        return (lookup["error_code"] == acquisition.QUOTA_EXHAUSTED
+                and acquisition.OpenAlexBudget(reset_at=lookup["retry_after"]).exhausted)
+
+    def _quota_deferred(self, research_id: str, svid: str) -> int:
+        """How many of this record's newest lookups wait for OpenAlex's daily budget to return. Such a lookup was not
+        answered, so it says nothing about whether an open copy exists."""
+        latest = {d["provider"]: d for d in self.store.pdf_discoveries(research_id, svid, retry_after=True)}
+        return sum(1 for d in latest.values() if self._budget_wait(d))
 
     def _write_fulltext_codes(self, run: dict[str, Any], step_id: str | None,
                               writes: list[tuple[str, str]]) -> dict[str, int]:
@@ -3589,8 +3623,12 @@ class ResearchFlow:
             return
         output["claim"] = claim
         if output["code"] is None:
-            self.store.finish_step(step["id"], "failed", output=output, error_code="fetch_not_settled",
-                                   error={"head": head, "requests_unanswered": output["requests_unanswered"]})
+            # Waiting for OpenAlex's budget is its own cause: nothing was tried that could settle the work, and the
+            # work stays open for the first run after the reset.
+            cause = "quota_deferred" if output["quota_deferred"] and not output["requests_unanswered"] else "fetch_not_settled"
+            self.store.finish_step(step["id"], "failed", output=output, error_code=cause,
+                                   error={"head": head, "requests_unanswered": output["requests_unanswered"],
+                                          "quota_deferred": output["quota_deferred"]})
             return
         decisions = DecisionStore(self.store)
         with transaction(self.store.conn):

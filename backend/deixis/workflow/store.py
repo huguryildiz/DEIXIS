@@ -2317,22 +2317,68 @@ class Store:
         return source
 
     # ---- PDF acquisition -------------------------------------------------------------
-    def record_pdf_discovery(self, research_id: str, svid: str, provider: str, query: str, outcome: Any) -> str:
+    def record_pdf_discovery(self, research_id: str, svid: str, provider: str, query: str, outcome: Any,
+                             workflow_run_id: str | None = None) -> str:
         run_id, ts = new_id("pdr"), now()
+        retry_after = getattr(outcome, "reset_at", None)
+        counted = bool(workflow_run_id and outcome.error_code == "quota_exhausted" and retry_after)
+        # An outcome without an identity gets one if the budget caused it, counted or not; any other keeps none.
+        attempt_id = getattr(outcome, "attempt_id", None) or (uuid4().hex if outcome.error_code == "quota_exhausted" else None)
         with transaction(self.conn):
+            # One attempt is recorded (and counted, for a quota refusal) once, whatever the clock says and whether or
+            # not a run is counting: the same outcome stored again finds its row by the attempt's identity, and every
+            # other attempt is a row of its own (D248).
+            if attempt_id and (held := self.conn.execute(
+                    "SELECT id FROM pdf_discovery_runs WHERE attempt_id = ?", (attempt_id,)).fetchone()):
+                return held["id"]
+            # `retry_after` only when there is one: a library migrated before 0072 has no such column.
+            columns = {"id": run_id, "research_id": research_id, "source_version_id": svid, "provider": provider,
+                       "query_text": query, "status": outcome.status, "result_count": len(outcome.candidates),
+                       "other_title_count": getattr(outcome, "other_title_count", 0), "http_status": outcome.http_status,
+                       "error_code": outcome.error_code, "created_at": ts, "finished_at": ts}
+            if retry_after:
+                columns["retry_after"] = retry_after
+            if attempt_id:
+                columns["attempt_id"] = attempt_id
             self.conn.execute(
-                "INSERT INTO pdf_discovery_runs (id, research_id, source_version_id, provider, query_text, status,"
-                " result_count, other_title_count, http_status, error_code, created_at, finished_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (run_id, research_id, svid, provider, query, outcome.status, len(outcome.candidates),
-                 getattr(outcome, "other_title_count", 0), outcome.http_status, outcome.error_code, ts, ts),
-            )
+                f"INSERT INTO pdf_discovery_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                tuple(columns.values()))
+            if counted:
+                self._note_openalex_budget(research_id, workflow_run_id, retry_after,
+                                           skipped=outcome.http_status is None)
             self._event(research_id, "pdf_discovery_recorded", {
                 "source_version_id": svid, "provider": provider, "status": outcome.status,
                 "result_count": len(outcome.candidates), "http_status": outcome.http_status,
                 "error_code": outcome.error_code,
             })
         return run_id
+
+    def _note_openalex_budget(self, research_id: str, run_id: str, reset_at: str, *, skipped: bool) -> None:
+        """Count one OpenAlex lookup the daily budget did not serve, inside the transaction that records its row.
+
+        The run's first one opens its row and its one `openalex_budget_exhausted` event; later ones, in this process or
+        after a resume or restart, add to the counts and bring that same event up to date.
+        """
+        row = self.conn.execute("SELECT refused, skipped, event_id FROM openalex_budget_runs WHERE run_id = ?",
+                                (run_id,)).fetchone()
+        refused, skips = (row["refused"], row["skipped"]) if row else (0, 0)
+        refused, skips = refused + (not skipped), skips + bool(skipped)
+        payload = {"run_id": run_id, "lookups_refused": refused, "lookups_skipped": skips, "reset_at": reset_at}
+        if row is None:
+            event_id = self._event(research_id, "openalex_budget_exhausted", payload, run_id)
+            self.conn.execute("INSERT INTO openalex_budget_runs (run_id, research_id, reset_at, refused, skipped, event_id)"
+                              " VALUES (?, ?, ?, ?, ?, ?)", (run_id, research_id, reset_at, refused, skips, event_id))
+            return
+        self.conn.execute("UPDATE openalex_budget_runs SET reset_at = ?, refused = ?, skipped = ? WHERE run_id = ?",
+                          (reset_at, refused, skips, run_id))
+        self._set_event_payload(row["event_id"], payload)
+
+    def _set_event_payload(self, event_id: int, payload: dict[str, Any]) -> None:
+        self.conn.execute("UPDATE events SET payload_json = ? WHERE id = ?", (dumps(payload), event_id))
+
+    def openalex_budget_reset(self) -> str | None:
+        """The latest time any run was told OpenAlex's daily budget returns; the budget is the key's, not a run's."""
+        return self.conn.execute("SELECT MAX(reset_at) FROM openalex_budget_runs").fetchone()[0]
 
     def record_pdf_candidates(self, svid: str, run_id: str, candidates: list[Any]) -> list[dict[str, Any]]:
         with transaction(self.conn):
@@ -2357,10 +2403,14 @@ class Store:
             "SELECT * FROM pdf_candidates WHERE source_version_id = ? ORDER BY discovered_at, rowid", (svid,)
         )]
 
-    def pdf_discoveries(self, research_id: str, svid: str) -> list[dict[str, Any]]:
+    def pdf_discoveries(self, research_id: str, svid: str, *, retry_after: bool = False) -> list[dict[str, Any]]:
+        """The record's lookup rows; `retry_after` adds when a refused lookup may be asked again (0072, so only the
+        workflow, never the views of a library not yet migrated, asks for it)."""
         return [dict(r) for r in self.conn.execute(
-            "SELECT provider, query_text, status, result_count, other_title_count, http_status, error_code, created_at,"
-            " finished_at FROM pdf_discovery_runs WHERE research_id = ? AND source_version_id = ? ORDER BY created_at, rowid",
+            "SELECT provider, query_text, status, result_count, other_title_count, http_status, error_code,"
+            f" {'retry_after,' if retry_after else ''} created_at, finished_at FROM pdf_discovery_runs"
+            # Insertion order, not the clock: the newest row of a route is the one written last.
+            " WHERE research_id = ? AND source_version_id = ? ORDER BY rowid",
             (research_id, svid),
         )]
 

@@ -1310,6 +1310,16 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'model_call_started': return brand(String(p.connection), t('Model call sent to {connection}', { connection: String(p.connection) }), p.requested_model ? [{ label: String(p.requested_model), tone: 'neutral' }] : [])
     case 'search_recorded': return brand(String(p.provider), t('{provider} search', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} records', { count: String(p.result_count) }), tone: 'neutral' }])
     case 'pdf_discovery_recorded': return brand(String(p.provider), t('{provider} PDF lookup', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} candidates', { count: String(p.result_count) }), tone: 'neutral' }, ...errorChip])
+    case 'openalex_budget_exhausted': {
+      const refused = Number(p.lookups_refused ?? 0)
+      const skipped = Number(p.lookups_skipped ?? 0)
+      const reset = p.reset_at ? new Date(String(p.reset_at)) : null
+      return lucide(Info, t('OpenAlex daily budget ran out. Its PDF lookups wait for the reset; the other routes went on, and the works affected stay open for a later run.'), [
+        { label: t('{n} lookups refused', { n: refused }), tone: 'warn' },
+        { label: t('{n} lookups not sent', { n: skipped }), tone: 'warn' },
+        ...(reset && !Number.isNaN(reset.getTime()) ? [{ label: t('resets {time}', { time: reset.toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' }) }), tone: 'neutral' as const }] : []),
+      ])
+    }
     case 'asset_removed': return lucide(Trash2, t('PDF removed from a source'))
     case 'asset_replaced': return lucide(Replace, t('PDF replaced on a source'))
     case 'asset_text_retried': {

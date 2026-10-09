@@ -667,9 +667,12 @@ def test_the_europepmc_migration_keeps_every_pdf_lookup_row_and_accepts_the_new_
         store.record_pdf_discovery(rid, svid, "europepmc", "10.1/x", Lookup("zero_results", [], 200))
 
     monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
-    assert db.migrate(conn) == [55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71]
+    assert db.migrate(conn) == [55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72]
     after = {table: [tuple(row) for row in conn.execute(f"SELECT * FROM {table} ORDER BY rowid")]
              for table in ("pdf_discovery_runs", "pdf_candidates")}
+    # 0072 appends `retry_after` and `operation_key`, empty for every row that was there.
+    assert [row[-2:] for row in after["pdf_discovery_runs"]] == [(None, None)] * len(before["pdf_discovery_runs"])
+    after["pdf_discovery_runs"] = [row[:-2] for row in after["pdf_discovery_runs"]]
     assert after == before  # every row and column value kept, other_title_count included
     candidate = Candidate("europepmc", "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC1/fullTextXML", None,
                           "publishedVersion", None, "doi_verified", "match")

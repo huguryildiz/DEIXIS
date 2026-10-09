@@ -649,6 +649,92 @@ def test_small_batch_a_lookup_that_did_not_answer_is_asked_again_by_the_next_run
     assert codes == {"W1": "no_fulltext"}
 
 
+QUOTA_REFUSAL = {"x-ratelimit-remaining-usd": "0", "x-ratelimit-limit-usd": "1", "x-ratelimit-reset": "5400"}
+
+
+class OpenAlexRefuses(Transport):
+    """Every OpenAlex DOI lookup answers 429 with `headers` while `refusing`; the rest is the scripted Transport."""
+
+    def __init__(self, works, unpaywall=None, headers=None):
+        super().__init__(works, unpaywall)
+        self.headers, self.openalex_lookups, self.refusing = headers or {}, [], True
+
+    def __call__(self, request):
+        if request.url.host == "api.openalex.org" and "doi.org" in request.url.path:
+            self.openalex_lookups.append(request.url.path)
+            if self.refusing:
+                return httpx.Response(429, headers=self.headers, json={"message": "rate limit"})
+            return httpx.Response(404)
+        return super().__call__(request)
+
+
+def budget_events(store, rid):
+    return [json.loads(r[0]) for r in store.conn.execute(
+        "SELECT payload_json FROM events WHERE research_id = ? AND type = 'openalex_budget_exhausted'", (rid,))]
+
+
+def test_small_batch_openalex_daily_budget_gone_defers_the_work_and_the_next_run_after_the_reset_settles_it(tmp_path, monkeypatch):
+    """W2 has a copy at Unpaywall and is read as usual. W1 is a closed record whose OpenAlex lookup the budget refused:
+    nothing was tried that could say it has no open copy, so it is not decided (`quota_deferred`, not `no_fulltext`),
+    a second run before the reset sends nothing, and the first run after the reset asks again and settles it."""
+    transport = OpenAlexRefuses([work(1), work(2)], unpaywall("10.1/oa.2", "https://example.org/w2.pdf", "publishedVersion"),
+                                QUOTA_REFUSAL)
+    fetcher = Fetcher({"https://example.org/w2.pdf": ok(named_pdf("10.1/oa.2"))})
+    app = fetch_app(tmp_path, monkeypatch, transport, fetcher)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, first = wait_for_retrieval(client, rid)
+        store = app.state.store
+        codes = fulltext_codes(store, rid)
+        steps = sorted(s["error_code"] or "" for s in work_steps(store, first["id"]).values())
+        events = budget_events(store, rid)
+        sent = len(transport.openalex_lookups)
+        progress = {i["head"]: i for i in small_batch.stored_progress(store, store.run(first["id"]))["items"]}
+        w1 = progress[records_of(store, rid)["W1"]]
+        # Before the reset: another run, with this process's memory of the budget gone as after a restart.
+        app.state.worker.flow._openalex_budget.clear()
+        second_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        _, second = wait(client, rid, second_id)
+        before_reset = (len(transport.openalex_lookups), fulltext_codes(store, rid),
+                        sorted(s["error_code"] or "" for s in work_steps(store, second_id).values()))
+        # The reset passes and OpenAlex answers again: the refused row is asked once more and its answer settles the work.
+        past = "2000-01-01T00:00:00+00:00"
+        store.conn.execute("UPDATE pdf_discovery_runs SET retry_after = ? WHERE error_code = 'quota_exhausted'", (past,))
+        store.conn.execute("UPDATE openalex_budget_runs SET reset_at = ?", (past,))
+        transport.refusing = False
+        app.state.worker.flow._openalex_budget.clear()
+        third_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        _, third = wait(client, rid, third_id)
+        after_reset = (len(transport.openalex_lookups), fulltext_codes(store, rid))
+    finally:
+        client.__exit__(None, None, None)
+    assert first["status"] == "completed" and second["status"] == "completed" and third["status"] == "completed"
+    assert codes == {"W1": None, "W2": "not_read_yet"} and steps == ["", "quota_deferred"]
+    assert sent == 1, "a lookup was sent after the budget ran out"
+    assert (w1["processed"], w1["status"], w1["blocker"]) == (False, "blocked", "quota_deferred")
+    assert len(events) == 1 and events[0]["lookups_refused"] == 1 and events[0]["lookups_skipped"] == 1
+    assert events[0]["run_id"] == first["id"] and events[0]["reset_at"]
+    assert before_reset == (1, {"W1": None, "W2": "not_read_yet"}, ["quota_deferred"])
+    assert after_reset == (2, {"W1": "no_fulltext", "W2": "not_read_yet"})
+
+
+def test_small_batch_an_openalex_429_that_is_not_the_daily_budget_still_leaves_the_work_unsettled(tmp_path, monkeypatch):
+    transport = OpenAlexRefuses([work(1)], headers={"x-ratelimit-remaining-usd": "0.4"})
+    app = fetch_app(tmp_path, monkeypatch, transport, Fetcher({}))
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        _, run = wait_for_retrieval(client, rid)
+        store = app.state.store
+        codes = fulltext_codes(store, rid)
+        steps = [s["error_code"] for s in work_steps(store, run["id"]).values()]
+        events = store.conn.execute("SELECT COUNT(*) FROM events WHERE type = 'openalex_budget_exhausted'").fetchone()[0]
+    finally:
+        client.__exit__(None, None, None)
+    assert codes == {"W1": None} and steps == ["fetch_not_settled"] and events == 0
+
+
 def test_small_batch_an_answer_run_and_a_pdf_collection_run_keep_the_steps_they_had(tmp_path, monkeypatch):
     """Neither gains a retrieval step, the wider other-copy trigger, nor a version row of its own (byte for byte)."""
     fetcher = Fetcher({"https://example.org/w1.pdf": ok()})

@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 from urllib.parse import quote, urlsplit
@@ -30,6 +33,10 @@ OPENALEX_SELECT = "doi,display_name,primary_location,best_oa_location,locations"
 # Crossref's IEEE text-mining links redirect to the paywalled IEEE document page instead of a PDF: all 6 tried on
 # 2026-09-15/16 ended as not_pdf. They are not listed as candidates.
 CROSSREF_SKIPPED_HOSTS = {"xplorestaging.ieee.org"}
+# The `error_code` of an OpenAlex lookup that its daily budget refused (or that was not sent because it had been).
+QUOTA_EXHAUSTED = "quota_exhausted"
+# The lookups `acquire_for_source` always asks, in this order; a record with some but not all of them was interrupted.
+REQUIRED_ROUTES = frozenset({"unpaywall", "openalex", "crossref", "core"})
 
 
 @dataclass(frozen=True)
@@ -52,6 +59,63 @@ class Lookup:
     record: ProviderRecord | None = None
     # Web search only: results whose title is not this work's title. They are counted, not kept as candidates.
     other_title_count: int = 0
+    # OpenAlex only, with `error_code == QUOTA_EXHAUSTED`: when the daily budget comes back (ISO, UTC), if it said.
+    reset_at: str | None = None
+    # This attempt's identity, whatever its outcome: made for OpenAlex when the request was about to be sent (or, for a
+    # lookup the closed budget kept from being sent, when it was skipped), for the other routes when the answer is in
+    # hand. Storing the same outcome twice stores it once.
+    attempt_id: str | None = None
+
+
+@dataclass
+class OpenAlexBudget:
+    """What a run knows about OpenAlex's daily budget; the flow keeps one per run, loaded from the store.
+
+    `reset_at` is when a refusal said the budget returns. Until then no OpenAlex request can succeed, so the run's
+    OpenAlex lookups are not sent: their rows say so (`QUOTA_EXHAUSTED`, no HTTP status) and the work is not settled
+    without them. It ends by itself at `reset_at`; the counts live in the store (`openalex_budget_runs`).
+    """
+
+    reset_at: str | None = None
+
+    @property
+    def exhausted(self) -> bool:
+        try:
+            return self.reset_at is not None and datetime.fromisoformat(self.reset_at) > datetime.now(timezone.utc)
+        except (ValueError, TypeError):
+            return False
+
+
+def _decimal(value: str | None) -> Decimal | None:
+    """The exact finite number a header states, or None; no float, so a tiny balance never rounds to zero."""
+    try:
+        number = Decimal(value.strip()) if value is not None else None
+    except (InvalidOperation, ValueError):
+        return None
+    return number if number is not None and number.is_finite() and not number.is_signed() else None
+
+
+def openalex_quota_exhausted(headers: Any) -> bool:
+    """Whether a 429 is OpenAlex's daily budget running out, read from its headers; anything unclear is False.
+
+    The remaining daily dollars must be stated as exactly zero, and a prepaid balance, if stated, must be zero too:
+    a refusal that leaves money to spend, or states none, is a rate limit like any other and keeps the short-wait handling.
+    """
+    remaining = _decimal(headers.get("x-ratelimit-remaining-usd"))
+    if remaining is None or remaining != 0:
+        return False
+    prepaid = headers.get("x-ratelimit-prepaid-remaining-usd")
+    return prepaid is None or _decimal(prepaid) == 0
+
+
+def _reset_at(headers: Any) -> str:
+    """When the budget returns: `x-ratelimit-reset` is delta seconds (OpenAlex's documentation); a missing, malformed
+    or beyond-a-day value is ignored and the next midnight UTC, when the daily budget renews, is used instead."""
+    now = datetime.now(timezone.utc)
+    seconds = _decimal(headers.get("x-ratelimit-reset"))
+    if seconds is not None and seconds <= 86400:
+        return (now + timedelta(seconds=int(seconds))).isoformat(timespec="seconds")
+    return (now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).isoformat(timespec="seconds")
 
 
 def _version_status(candidate: str | None, source: str | None) -> str:
@@ -99,14 +163,37 @@ async def unpaywall_lookup(client: httpx.AsyncClient, doi: str, source_version: 
         return Lookup("parse_error", [], 200, type(exc).__name__)
 
 
+def attempted(lookup: Lookup) -> Lookup:
+    """The lookup with an attempt identity: its own if it has one, else a new one."""
+    return lookup if lookup.attempt_id else replace(lookup, attempt_id=uuid.uuid4().hex)
+
+
 async def openalex_lookup(client: httpx.AsyncClient, doi: str, source_version: str | None,
-                          api_key: str | None = None, contact_email: str | None = None) -> Lookup:
+                          api_key: str | None = None, contact_email: str | None = None, *,
+                          budget: OpenAlexBudget | None = None) -> Lookup:
+    """One OpenAlex lookup by DOI; with a `budget` it is not sent once the budget is exhausted, and learns of a refusal.
+
+    The budget is read inside the host gate, so a lookup that waited behind the one the budget refused is not sent.
+    Whatever the outcome of a request that was made, it carries the identity made just before the request.
+    """
+    made: list[str] = []
+    lookup = await _openalex_request(client, doi, source_version, api_key, contact_email, budget, made)
+    return lookup if lookup.attempt_id or not made else replace(lookup, attempt_id=made[0])
+
+
+async def _openalex_request(client: httpx.AsyncClient, doi: str, source_version: str | None, api_key: str | None,
+                            contact_email: str | None, budget: OpenAlexBudget | None, made: list[str]) -> Lookup:
     params: dict[str, str] = {"select": OPENALEX_SELECT}
     if contact_email:
         params["mailto"] = contact_email
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
         async with fetch.host_gate(OPENALEX_URL):  # one request per host at a time (slice 13e)
+            if budget is not None and budget.exhausted:  # no request is made: a skip, with no HTTP status
+                return Lookup("rate_limited", [], None, QUOTA_EXHAUSTED, reset_at=budget.reset_at,
+                              attempt_id=uuid.uuid4().hex)
+            attempt_id = uuid.uuid4().hex
+            made.append(attempt_id)
             response = await client.get(f"{OPENALEX_URL}/https://doi.org/{quote(doi, safe='/')}", params=params, headers=headers, timeout=30)
     except httpx.TimeoutException:
         return Lookup("timeout", [], error_code="timeout")
@@ -115,6 +202,11 @@ async def openalex_lookup(client: httpx.AsyncClient, doi: str, source_version: s
     if response.status_code == 404:
         return Lookup("zero_results", [], 404)
     if response.status_code == 429:
+        if openalex_quota_exhausted(response.headers):
+            reset_at = _reset_at(response.headers)
+            if budget is not None:
+                budget.reset_at = reset_at
+            return Lookup("rate_limited", [], 429, QUOTA_EXHAUSTED, reset_at=reset_at, attempt_id=attempt_id)
         return Lookup("rate_limited", [], 429, "rate_limited")
     if response.status_code in (401, 403):
         return Lookup("auth_required", [], response.status_code, "auth_required")
@@ -336,7 +428,9 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                              core_key: str | None = None, web_search: bool = True,
                              other_versions: bool = False,
                              xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml, *,
-                             recovery_dir: Path | None = None) -> dict[str, Any]:
+                             recovery_dir: Path | None = None,
+                             openalex_budget: OpenAlexBudget | None = None,
+                             workflow_run_id: str | None = None) -> dict[str, Any]:
     """Look this record's DOI up in Unpaywall, OpenAlex, Crossref and CORE and retrieve a copy of its own version.
 
     When none of their verified copies gave a file, Europe PMC is asked once (SW21, D106): its open-access full text
@@ -346,6 +440,10 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     file, a verified copy of a *different declared* version opens its own row under the same work and is attached
     there, never onto the published record (D4). Without it the function is what it has always been, and a copy of
     uncertain version still waits for the user in both.
+
+    `openalex_budget` is a run's memory of OpenAlex's daily budget (see `OpenAlexBudget`): once it is exhausted the
+    OpenAlex lookup is recorded as not sent, and a refusal met here exhausts it. Without it every record asks.
+    `workflow_run_id` is the run the refusals are counted under (`Store.record_pdf_discovery`).
     """
     recovery_dir = file_restore.resolve_recovery_dir(store, papers_dir, recovery_dir)
     source = store.source(source_version_id)
@@ -353,16 +451,22 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     if not doi:
         raise ValueError("A DOI is required for verified PDF acquisition")
     lookups: list[tuple[str, str, Lookup]] = []
-    unpaywall = await unpaywall_lookup(client, doi, source.get("version_label"), contact_email)
-    lookups.append(("unpaywall", doi, unpaywall))
-    oa = await openalex_lookup(client, doi, source.get("version_label"), contact_email=contact_email)
-    lookups.append(("openalex", doi, oa))
+
+    def record(provider: str, lookup: Lookup) -> None:
+        # Each answer is stored the moment it is in hand, before the next request is awaited: an interruption between
+        # two lookups must not lose what OpenAlex's budget said (D248).
+        lookup = attempted(lookup)
+        lookups.append((provider, doi, lookup))
+        with db.transaction(store.conn):  # the answer and its candidates are stored together or not at all
+            run_id = store.record_pdf_discovery(research_id, source_version_id, provider, doi, lookup, workflow_run_id)
+            store.record_pdf_candidates(source_version_id, run_id, lookup.candidates)
+
+    record("unpaywall", await unpaywall_lookup(client, doi, source.get("version_label"), contact_email))
+    record("openalex", await openalex_lookup(client, doi, source.get("version_label"), contact_email=contact_email,
+                                             budget=openalex_budget))
     cr = await crossref_lookup(client, doi, source.get("version_label"), contact_email=contact_email)
-    lookups.append(("crossref", doi, cr))
-    lookups.append(("core", doi, await core_lookup(client, doi, core_key)))
-    for provider, query, lookup in lookups:
-        run_id = store.record_pdf_discovery(research_id, source_version_id, provider, query, lookup)
-        store.record_pdf_candidates(source_version_id, run_id, lookup.candidates)
+    record("crossref", cr)
+    record("core", await core_lookup(client, doi, core_key))
     if cr.record is not None:
         store.enrich_source("crossref", source_version_id, cr.record)
 
@@ -389,6 +493,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     # Europe PMC only for a record still without a file, after the four lookups and their verified copies (SW21).
     if not store.has_asset(source_version_id):
         europepmc = await europepmc_lookup(client, doi, source.get("version_label"))
+        europepmc = attempted(europepmc)
         run_id = store.record_pdf_discovery(research_id, source_version_id, "europepmc", doi, europepmc)
         store.record_pdf_candidates(source_version_id, run_id, europepmc.candidates)
         lookups.append(("europepmc", doi, europepmc))
@@ -413,6 +518,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     if web_search and not store.has_asset(source_version_id):
         web_query = f'"{source["title"]}"'
         web = await web_lookup(client, doi, source["title"], serpapi_key)
+        web = attempted(web)
         run_id = store.record_pdf_discovery(research_id, source_version_id, "web_search", web_query, web)
         store.record_pdf_candidates(source_version_id, run_id, web.candidates)
         lookups.append(("web_search", web_query, web))

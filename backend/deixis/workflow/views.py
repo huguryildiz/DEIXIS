@@ -581,6 +581,12 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                 cited_sources.update(e["source_version_id"] for e in evidence)
             claims.append({"id": c["id"], "label": c["label"], "section": c["section"], "text": c["text"], "support_type": c["support_type"],
                            "semantic_review": c["semantic_review"], "evidence": evidence})
+        fast_answer = fast_path.enforces(store.run(a["run_id"])["budget"], "answer")
+        if fast_answer:
+            for claim in claims:
+                kinds = {e["kind"] for e in claim["evidence"]}
+                claim["evidence_basis"] = ("abstract" if kinds == {"abstract"} else "mixed"
+                                           if "abstract" in kinds else "full_text" if kinds else None)
         session = conn.execute(
             "SELECT connection, requested_model, resolved_model, token_usage_json FROM model_sessions WHERE step_input_id = ?",
             (a["step_input_id"],),
@@ -616,6 +622,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             # never today's counts in its place. Beside `inputs_given`, not instead of it.
             "start_snapshot": _start_snapshot(store, a) if sw else None,
             "review": review,
+            **({"abstract_only_sources": len({e["source_version_id"] for c in claims for e in c["evidence"]
+                if e["kind"] == "abstract"} - {e["source_version_id"] for c in claims for e in c["evidence"]
+                if e["kind"] != "abstract"})} if fast_answer else {}),
         })
     duplicates = store.suspected_duplicates(research_id)
     # Similarity from the chosen semantic search model only; with semantic search off, no source has one (D30).

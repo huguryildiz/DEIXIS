@@ -49,6 +49,21 @@ class FakeClock:
         await future
 
 
+@pytest.fixture(autouse=True)
+def historical_read_policy(monkeypatch, request):
+    """Keep slice 1/4 regressions on their already-frozen policy, without answer enforcement."""
+    if request.node.originalname == "test_02_policy_freezes_with_run_and_canonical_hash":
+        return
+    freeze = fast_path.freeze_budget
+    def historical(*args, **kwargs):
+        policy = freeze(*args, **kwargs)
+        policy["enforced_stages"] = ["read"]
+        for key in ("approval_mode", "auto_answer", "policy_hash"):
+            policy.pop(key, None)
+        return policy | {"policy_hash": canonical.sha256_hex(policy)}
+    monkeypatch.setattr(fast_path, "freeze_budget", historical)
+
+
 @pytest.fixture
 def library(tmp_path):
     conn = db.connect(tmp_path / "library.sqlite")
@@ -144,7 +159,9 @@ def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, 
         assert policy["total_ms"] == sum(bases) * 1000
         assert policy["mode"] == ("deep" if effort == "detailed" else effort)
         assert policy["policy_hash"] == canonical.sha256_hex({k: v for k, v in policy.items() if k != "policy_hash"})
-        assert policy["enforced_stages"] == ["search", "ranking", "read"] and policy["runner_version"] == 2
+        assert policy["enforced_stages"] == ["search", "ranking", "read", "answer"]
+        assert policy["enforcement"] == policy["enforced_stages"] and policy["runner_version"] == 2
+        assert policy["approval_mode"] == "unattended" and policy["auto_answer"] is True
         ledger = app.state.store.conn.execute("SELECT * FROM fast_path_ledgers WHERE ledger_run_id = ?", (run_id,)).fetchone()
         assert (ledger["research_id"], ledger["scope_revision"], ledger["started_at"], ledger["policy_hash"]) == (
             rid, 1, run["created_at"], policy["policy_hash"])

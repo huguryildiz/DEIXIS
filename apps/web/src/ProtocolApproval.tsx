@@ -755,7 +755,7 @@ function ApprovedSummary({ approval }: { approval: RunApproval }) {
     <button type="button" className="approval-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
       {open ? <ChevronDown size={15} aria-hidden /> : <ChevronRight size={15} aria-hidden />}
       <span>{approvedByText(approval.approved_by)}</span>
-      <small>{approval.approved_by === 'warn_kept' ? t('not reviewed, warned terms kept') : approval.approved_by === 'model_advice' ? t('not reviewed, the model advised') : approval.edited ? t('corrected before searching') : approval.approved_by === 'no_warning' ? t('not reviewed, no warning') : t('approved as proposed')}</small>
+      <small>{approval.approved_by === 'unattended' ? t('not reviewed, fast path') : approval.approved_by === 'warn_kept' ? t('not reviewed, warned terms kept') : approval.approved_by === 'model_advice' ? t('not reviewed, the model advised') : approval.edited ? t('corrected before searching') : approval.approved_by === 'no_warning' ? t('not reviewed, no warning') : t('approved as proposed')}</small>
     </button>
     {open && <div className="approval-diff">
       <DiffList title={t('Removed terms')} rows={gone} />
@@ -777,7 +777,7 @@ function ApprovedSummary({ approval }: { approval: RunApproval }) {
         <p className="approval-readonly"><small>{t('Approved')}</small> {approved?.criterion?.criterion ?? t('none')}</p>
       </div>}
       {!gone.length && !fresh.length && !movedRows.length && !criterionChanged
-        && <p className="approval-hint">{approval.approved_by === 'no_warning' ? t('The search went on without asking because no term inflated the matches.') : t('The proposal was approved without a change.')}</p>}
+        && <p className="approval-hint">{approval.approved_by === 'unattended' ? t('Nobody reviewed the search vocabulary; the fast path went on without asking.') : approval.approved_by === 'no_warning' ? t('The search went on without asking because no term inflated the matches.') : t('The proposal was approved without a change.')}</p>}
       {approval.skipped_edits.length > 0 && <div className="approval-diff-group">
         <strong>{t('Not applied to this run')}</strong>
         <p className="approval-hint">{t('These corrections named a phrase this run’s proposal no longer holds; they stay on record.')}</p>

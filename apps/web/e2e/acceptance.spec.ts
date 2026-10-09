@@ -145,6 +145,37 @@ test('stored old sw inspection keeps answer, evidence, transcript and waiting wi
   } finally { await page.close(); await server.stop() }
 })
 
+test('fast answer abstract basis label renders at desktop and narrow widths in both themes', async ({ browser }) => {
+  const server = new FixtureServer(nextPort(), { DEIXIS_FIXTURE_STORED_SW: 'on' })
+  await server.start()
+  const page = await browser.newPage()
+  try {
+    const listing = await (await page.request.get(`${server.url()}api/researches`)).json()
+    const rid = listing[0].id
+    const url = `${server.url()}api/researches/${rid}`
+    // Synthetic presentation only; backend tests derive this basis from persisted evidence links.
+    await page.route(url, async route => {
+      const response = await route.fetch()
+      const view = await response.json()
+      view.answers[0].claims[0].evidence_basis = 'abstract'
+      await route.fulfill({ response, json: view })
+    })
+    await page.goto(server.url(`#/research/${rid}`))
+    await page.getByRole('button', { name: /Open report:/ }).click()
+    const report = page.locator('.report-sheet')
+    const badge = report.getByText('From abstract', { exact: true })
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      for (const dark of [false, true]) {
+        await page.evaluate(value => document.documentElement.classList.toggle('dark', value), dark)
+        await expect(badge).toBeVisible()
+        await badge.scrollIntoViewIfNeeded()
+        await shot(page, `fast-answer-abstract-${width}-${dark ? 'dark' : 'light'}`)
+      }
+    }
+  } finally { await page.close(); await server.stop() }
+})
+
 test('connections separate planned models from configured scholarly access', async ({ browser }) => {
   const server = new FixtureServer(nextPort())
   await server.start()

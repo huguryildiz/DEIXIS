@@ -11,7 +11,7 @@ from deixis.workflow import background_fetch, fast_path, fast_read, fulltext, sm
 from deixis.workflow.flow import ResearchFlow, RunStopped
 from deixis.workflow.worker import Worker
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, RunInProgress
-from test_fast_path_clock import library, stage, answer_run
+from test_fast_path_clock import library, stage, answer_run, historical_read_policy
 from test_small_batch_flow import app_for, client_of
 from test_fetch_overlap_flow import discover
 from fakes import FakeAdapter, valid_response

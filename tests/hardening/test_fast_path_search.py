@@ -335,11 +335,19 @@ def test_queue_unique_and_stored_scores_not_embedded_twice(library, tmp_path, mo
 
 def test_policy_free_and_pre_slice2_frozen_protocol_are_not_upgraded(library):
     lib = library
+    policy = lib.run['budget']['fast_path']
+    policy['enforced_stages'] = policy['enforcement'] = ['search', 'ranking', 'read']
+    for key in ('approval_mode', 'auto_answer', 'policy_hash'):
+        policy.pop(key, None)
+    from deixis.domain.canonical import sha256_hex
+    policy['policy_hash'] = sha256_hex(policy)
+    lib.conn.execute('UPDATE runs SET budget_json = ? WHERE id = ?', (json.dumps(lib.run['budget']), lib.run['id']))
     protocol = lib.store.freeze_protocol(lib.rid, 1, {'SYNTHETIC': 'slice1'})
     step = lib.store.step(lib.run['id'], 'protocol', 'protocol:freeze')
     lib.store.finish_step(step['id'], 'succeeded', output={'protocol_revision': protocol['protocol_revision']})
     assert not fast_search.applicable(lib.store, lib.run)
     assert fast_path.view(lib.store, lib.run)['enforced_stages'] == ['search', 'ranking', 'read']
+    assert lib.store.run(lib.run['id'])['budget']['fast_path'] == policy
     policy_free = lib.run | {'budget': {}}
     assert not fast_search.applicable(lib.store, policy_free)
     assert fast_path.stage_deadline(lib.store, policy_free, 'search') is None

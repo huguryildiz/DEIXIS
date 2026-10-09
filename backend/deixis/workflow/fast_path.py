@@ -45,8 +45,9 @@ def elapsed(start: str, end: str) -> int:
 def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
     bases, n, k, cap, seeds, backward, forward = MODES[effort]
     policy = {
-        "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["search", "ranking", "read"],
-        "enforced_stages": ["search", "ranking", "read"], "background_fetch_slots": 4,
+        "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["search", "ranking", "read", "answer"],
+        "enforced_stages": ["search", "ranking", "read", "answer"], "background_fetch_slots": 4,
+        "approval_mode": "unattended", "auto_answer": True,
         "mode": "deep" if effort == "detailed" else effort,
         "stage_base_ms": dict(zip(STAGES, (s * 1000 for s in bases))), "total_ms": sum(bases) * 1000,
         "N": n, "K": k, "keyword_record_cap": cap, "semantic_top": 50,
@@ -113,7 +114,9 @@ def answer_budget(store: Any, rid: str, revision: int, budget: dict[str, Any]) -
     if ledger is None or (ledger["research_id"], ledger["scope_revision"], ledger["policy_hash"]) != (rid, revision, policy["policy_hash"]):
         return budget
     return budget | {"fast_path": {"policy": POLICY, "policy_hash": ledger["policy_hash"],
-                                   "ledger_run_id": ledger_id, "role": "rerun" if ledger["answer_run_id"] else "first"}}
+                                   "ledger_run_id": ledger_id, "role": "rerun" if ledger["answer_run_id"] else "first",
+                                   **({"enforced_stages": ["answer"]}
+                                      if enforces(discovery["budget"], "answer") else {})}}
 
 
 def create_run(store: Any, run: dict[str, Any]) -> None:

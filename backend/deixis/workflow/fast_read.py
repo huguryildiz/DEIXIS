@@ -165,6 +165,14 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         # A task in extraction may have published text but not settled its claim yet.
         late.update({wid: "in_flight" for wid, task in fetches.items() if not task.done()})
         deadline = fast_path.stage_deadline(store, run, "read")
+        cutoff_snapshot = None
+        cutoff_at = None
+        if fast_path.enforces(run["budget"], "answer"):
+            from deixis.workflow import fast_answer
+            cutoff_at = fast_path.timestamp(store.clock)
+            # Synchronous preparation cannot interleave with model/fetch/API writes. Only publication holds a transaction.
+            cutoff_snapshot = fast_answer.cutoff_snapshot(flow, run, listing, {
+                "read_cutoff_at": cutoff_at, "not_screened_at_cutoff": sorted(unread)})
 
         def close() -> dict[str, Any]:
             states = small_batch.progress_view(listing, small_batch.steps(store, run_id), works)["items"]
@@ -181,7 +189,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 background_fetch.enqueue(store, run, items[wid], origin)
             output = {"batch_hash": plan["hash"], "items": closed_items, "N": policy["N"], "K": policy["K"],
                 "deadline_at": deadline.isoformat() if deadline else None,
-                "read_cutoff_at": fast_path.timestamp(store.clock), "k_selected": len(final),
+                "read_cutoff_at": cutoff_at or fast_path.timestamp(store.clock), "k_selected": len(final),
                 "selected_work_ids": final, "not_screened_at_cutoff": sorted(unread),
                 "screened_count": sum(item["head"] in order and item["work_id"] not in unread for item in closed_items),
                 "fulltext_adjudicated_before_cutoff": sum(item["fulltext_adjudicated"] for item in closed_items),
@@ -189,6 +197,9 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 "k_short_reason": ("not_screened_at_cutoff" if unread else "screened_out")
                     if len(final) < policy["K"] else None}
             store._event(rid, "read_cutoff", output, run_id)
+            if fast_path.enforces(run["budget"], "answer"):
+                from deixis.workflow import fast_answer
+                fast_answer.freeze_cutoff(flow, run, listing, output, snapshot=cutoff_snapshot)
             fast_path.close_stage(store, run_id, "read")
             return output
 

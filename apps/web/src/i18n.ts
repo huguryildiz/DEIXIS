@@ -25,6 +25,12 @@ export function t(text: string, vars?: Record<string, string | number>): string 
 }
 
 const tr: Record<string, string> = {
+  'The frozen read cutoff is missing. Start a new search before answering.': 'Dondurulmuş okuma kesimi bulunamadı. Cevap üretmeden önce yeni bir arama başlat.',
+  'The stored answer is unavailable for review.': 'Kayıtlı cevap inceleme için kullanılamıyor.',
+  'From abstract': 'Özetten',
+  'Nobody reviewed the search vocabulary; the fast path went on without asking.': 'Arama terimlerini kimse incelemedi; hızlı yol onay sormadan devam etti.',
+  'not reviewed, fast path': 'incelenmedi, hızlı yol',
+  'Answer review': 'Cevap incelemesi',
   '{n} works found': '{n} eser bulundu',
   '{providers} searched.': '{providers} arandı.',
   'No provider was': 'Hiçbir sağlayıcı',

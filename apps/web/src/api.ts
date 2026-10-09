@@ -164,7 +164,7 @@ export type SearchPlan = {
   concepts: { label: string; role: string; synonyms: string[] }[]
   queries: { provider_id: string; query_text: string; rationale: string }[]
 }
-export type RunKind = 'discovery' | 'answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search'
+export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
@@ -314,7 +314,7 @@ export type ProtocolEdits = {
 export type RunApproval = {
   // waiting: the card is editable. submitted: the correction was sent and is being applied. approved: it is frozen.
   status: 'waiting' | 'submitted' | 'approved'
-  approved_by: 'user' | 'setting' | 'earlier_approval' | 'no_warning' | 'model_advice' | 'warn_kept' | null; edited: boolean | null; proposal_hash: string
+  approved_by: 'user' | 'setting' | 'earlier_approval' | 'no_warning' | 'model_advice' | 'warn_kept' | 'unattended' | null; edited: boolean | null; proposal_hash: string
   proposal: ApprovalSide; approved: ApprovalSide | null
   // Operations of an earlier approval this run could not apply, because the phrase is no longer in the proposal.
   skipped_edits: { op: string; phrase: string; block?: string; reason?: string }[]
@@ -533,19 +533,21 @@ export type Evidence = {
   rendition?: boolean
 }
 export type Claim = {
+  evidence_basis?: 'abstract' | 'full_text' | 'mixed' | null
   id: string; label: string; section: string | null; text: string; support_type: 'source_stated' | 'analyst_inference'; semantic_review: string; evidence: Evidence[]
   review: { verdict: Verdict; reason: string } | null
 }
 export type Limitation = { kind: string; text: string; source_ids: string[] }
 export type ValidationIssue = { code: string; path: string; message: string }
 export type Answer = {
+  abstract_only_sources?: number
   id: string; run_id: string; status: 'structurally_valid' | 'unverified_draft' | 'clarification' | 'no_evidence'
   scope_revision: number; applicability: 'current' | 'stale_scope' | 'stale_selection'; answer_language: string | null; created_at: string
   report_version: number | null; report_title: string | null
   claims: Claim[]; limitations: Limitation[]; unanswered_aspects: string[]; capability_notice: string | null
   clarification: { question: string; ambiguity: string; why_it_matters: string; options: string[] } | null
   unverified_draft: { claims?: { claim_label: string; text: string }[] } | null
-  validation: { ok?: boolean; issues?: ValidationIssue[]; warnings?: ValidationIssue[]; note?: string; reason?: 'no_includable_source' }
+  validation: { ok?: boolean; issues?: ValidationIssue[]; warnings?: ValidationIssue[]; note?: string; reason?: 'no_includable_source' | 'no_evidence_at_cutoff' }
   model: { connection: string; requested_model: string | null; resolved_model: string | null; token_usage: unknown } | null
   inputs_given: { sources: number; passages: number; source_ids: string[] } | null
   source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D45)

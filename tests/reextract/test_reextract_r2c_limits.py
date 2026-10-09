@@ -64,6 +64,10 @@ def test_r10_real_parser_limits_through_retry_guard(tmp_path, monkeypatch, limit
 def saturated(conn, table, lib):
     """No free page; fill the boundary's own table/index shape until SQLite refuses real allocation."""
     conn.execute("CREATE TABLE IF NOT EXISTS r2c_scratch (payload BLOB)")
+    # A rebuilt table can leave one free page, insufficient for a B-tree split.
+    # Allocate those pages singly before testing exhaustion at the named boundary.
+    while conn.execute("PRAGMA freelist_count").fetchone()[0]:
+        conn.execute(f"CREATE TABLE r2c_ballast_{db.new_id('page')} (payload BLOB)")
     cap = conn.execute("PRAGMA page_count").fetchone()[0]
     conn.execute(f"PRAGMA max_page_count = {cap}")
     for _ in range(10000):

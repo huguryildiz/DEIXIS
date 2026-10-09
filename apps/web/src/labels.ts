@@ -117,6 +117,7 @@ export const runStatusLabels: Record<RunStatus, string> = {
 export const runKindLabels: Record<RunKind, string> = {
   watch_check: 'Follow-up check',
   review: 'Review by another model',
+  answer_review: 'Answer review',
   discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title', lineage_links: 'Development links', claim_decomposition: 'Claim breakdown', kill_search: 'Prior-art search for a claim',
 }
 
@@ -126,6 +127,8 @@ export const reportChangeLabels: Record<string, string> = { cell_changed: 'a cit
 export const reportChangeViaLabels: Record<string, string> = { body_ref: '(through the section it summarises)', gap_ref: '(through a candidate aspect)' }
 
 const pauseReasons: Record<string, string> = {
+  answer_cutoff_missing: 'The frozen read cutoff is missing. Start a new search before answering.',
+  answer_unavailable: 'The stored answer is unavailable for review.',
   no_provider_read: 'No provider read succeeded.',
   watch_disabled: 'The follow-up was turned off.',
   watch_state_changed: 'The follow-up changed while this check was working.',
@@ -303,6 +306,7 @@ const suggestionBlockers: Record<string, string> = {
 }
 export const suggestionBlockerText = (reason: string | null) => (reason ? t(suggestionBlockers[reason] ?? reason) : '')
 const approvedByNames: Record<string, string> = {
+  unattended: 'Nobody reviewed the search vocabulary; the fast path went on without asking.',
   user: 'You approved these search terms and this criterion.',
   setting: 'Approved as proposed by the unattended setting, not by a person.',
   earlier_approval: 'Approved with the correction you made earlier for this question.',

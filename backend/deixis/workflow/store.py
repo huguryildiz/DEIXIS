@@ -3430,7 +3430,8 @@ class Store:
             self._event(research_id, "answer_saved", {"answer_id": aid, "status": status}, run_id)
             from deixis.workflow import fast_path
 
-            fast_path.save_answer(self, run_id, status)
+            fast_path.save_answer(self, run_id, "no_evidence_at_cutoff"
+                                  if validation.get("reason") == "no_evidence_at_cutoff" else status)
         return aid
 
     def answer_review(self, answer_id: str) -> dict[str, Any] | None:

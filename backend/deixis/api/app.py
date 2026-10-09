@@ -1433,8 +1433,8 @@ def create_app(
             # Two model calls per work the read limit reaches (D85). The same function the flow's auto-queue calls.
             budget = adjudication.read_budget(scope["effort"])
         elif body.kind == "answer" and scope.get("search_workflow") == "sw":
-            budget = small_batch.answer_budget(store, research_id, scope["revision"], budget)
-            budget = fast_path.answer_budget(store, research_id, scope["revision"], budget)
+            from deixis.workflow.fast_answer import answer_run_budget
+            budget = answer_run_budget(store, research_id, scope)
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
         run = store.create_run(research_id, body.kind, budget, key)
         request.app.state.worker.wake()

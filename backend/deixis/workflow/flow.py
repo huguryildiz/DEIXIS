@@ -424,6 +424,9 @@ class ResearchFlow:
                 await self._discovery(run, scope)
             elif run["kind"] == "answer":
                 await self._answer(run, scope)
+            elif run["kind"] == "answer_review":
+                from deixis.workflow import fast_answer
+                await fast_answer.review(self, run, scope)
             elif run["kind"] == "pdf_collection":
                 await self._inspect(run, limit=None)
             elif run["kind"] == "fulltext_adjudication":
@@ -459,8 +462,22 @@ class ResearchFlow:
             return
         if (self.store.run(run_id)["status"] in ("running", "pause_requested")
                 and run["kind"] == "discovery" and small_batch.enabled(run["budget"])):
-            self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
+            with transaction(self.store.conn):
+                self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
+                if fast_path.enforces(run["budget"], "answer"):
+                    from deixis.workflow import fast_answer
+                    fast_answer.auto_answer(self.store, run)
         elif self.store.run(run_id)["status"] in ("running", "pause_requested"):
+            if ((run["kind"] == "answer" and fast_path.enforces(run["budget"], "answer"))
+                    or run["kind"] == "answer_review"):
+                from deixis.workflow import fast_answer
+                with transaction(self.store.conn):
+                    self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
+                    if run["kind"] == "answer":
+                        fast_answer.after_answer(self, run)
+                    elif self.deps.settings.study_table == "auto":
+                        report_pipeline.after_answer(self.store, self.store.run(run["target"]["answer_run_id"]))
+                return
             # Nothing is left to pause once the last step's result has been applied. A person's file this run held
             # and did not read is `unread` from the same write (`Store.update_run`, slice 18b).
             self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
@@ -476,6 +493,9 @@ class ResearchFlow:
             changed = small_batch.guard_reason(self.store, guard)
             if changed:
                 self._pause(run_id, changed)
+            if guard.get("fast_answer"):
+                from deixis.workflow import fast_answer
+                fast_answer.check_input(self, run_id, guard["input"])
         # getattr: existing tests build the flow with object.__new__ and call the embedding steps, which now checkpoint.
         held = getattr(self, "_held", {}).get(run_id)
         if held is not None:
@@ -940,6 +960,8 @@ class ResearchFlow:
         """
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         step = self.store.step(run_id, "protocol_approval", "code:protocol_approval")
+        unattended = (fast_path.enforces(run["budget"], "answer")
+                      and run["budget"]["fast_path"].get("approval_mode") == "unattended")
         if step["status"] == "succeeded":
             approved = step["output"]["approved"]
             return (search_query_rules.settled(approved["vocabulary"], approved["queries"]), approved["queries"],
@@ -952,7 +974,7 @@ class ResearchFlow:
         # `model_advice` is the same run before D233), asked nobody: it is no approval to take back.
         earlier = next((row for row in self.store.approvals_of(rid)
                         if row["output"]["asked_for"] == asked_for
-                        and (row["output"].get("approval") or {}).get("approved_by") not in ("no_warning", "warn_kept", "model_advice")), None)
+                        and (row["output"].get("approval") or {}).get("approved_by") not in ("no_warning", "warn_kept", "model_advice", "unattended")), None)
         output = step["output"]
         if output is None:
             failures = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("failures", [])
@@ -972,7 +994,7 @@ class ResearchFlow:
             # work the worker's recovery has to guess about.
             self.store.set_step_output(step["id"], output)
 
-        if "warnings" not in output and self.deps.settings.protocol_approval != "as_proposed":
+        if "warnings" not in output and self.deps.settings.protocol_approval != "as_proposed" and not unattended:
             # Read once and stored, with every count it asked (a card stored before the check existed has neither):
             # a resumed run reads them back and probes nothing again, and each count is written as it arrives.
             def save(checks: list[dict[str, Any]]) -> None:
@@ -982,7 +1004,7 @@ class ResearchFlow:
             output = output | {"warnings": found, "warning_checks": checks}
             self.store.set_step_output(step["id"], output)
 
-        if output.get("warnings") and "advice" not in output and output["submitted"] is None and earlier is None:
+        if output.get("warnings") and "advice" not in output and output["submitted"] is None and earlier is None and not unattended:
             connection, requested, _ = step_model(scope, "term_advice")
             output = output | {"advice": await self._term_advice(run, scope, output),
                                "advice_model": {"connection": connection, "model": requested}}
@@ -999,7 +1021,7 @@ class ResearchFlow:
         # froze. One the model proposed for this run — the earlier run's model was down, so the user approved none —
         # has been seen by nobody, and the user is asked again (SW15.3).
         proposed_now = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("origin") == "model"
-        if criterion is not None and proposed_now:
+        if criterion is not None and proposed_now and not unattended:
             earlier = None
         if output["submitted"] is not None:
             edits, source, by = output["submitted"], "submitted", "user"
@@ -1009,6 +1031,8 @@ class ResearchFlow:
             done = earlier["output"]["edits"]
             edits, source, by = ({"terms": done["terms"], "criterion": None, "note": done.get("note"),
                                   "code_query": done.get("code_query")}, "earlier", "earlier_approval")
+        elif unattended:
+            edits, source, by = {"terms": [], "criterion": None, "note": None}, "unattended", "unattended"
         elif self.deps.settings.protocol_approval == "as_proposed":
             # A run nobody attends: the proposal is approved as it stands and the protocol says so by name, so a body
             # approved by a setting is never read as a body a user approved.
@@ -1046,7 +1070,8 @@ class ResearchFlow:
         code_off = (search_query_rules.is_model_written(built) and vocabulary["code_query"]["searched"]
                     and not built["code_query"]["searched"])
         record = {
-            "mode": self.deps.settings.protocol_approval, "approved_by": by,
+            "mode": "unattended" if unattended else self.deps.settings.protocol_approval, "approved_by": by,
+            **({"asked": False} if source == "unattended" else {}),
             "edited": bool(kept or edits.get("criterion") or code_off),
             "proposal_hash": output["proposal_hash"], "term_edits": len(kept),
             "criterion_edited": edits.get("criterion") is not None,
@@ -2853,6 +2878,10 @@ class ResearchFlow:
     async def _answer(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
         run_id, rid = run["id"], run["research_id"]
         self._enter_clock_stage(run, "answer")
+        if fast_path.enforces(run["budget"], "answer"):
+            from deixis.workflow import fast_answer
+            await fast_answer.answer(self, run, scope)
+            return
         if small_batch.enabled(run["budget"]):
             inspection = run["budget"]["inspection"]
             if inspection.get("binding_error"):
@@ -2897,6 +2926,11 @@ class ResearchFlow:
                                    {"ok": True, "issues": [], "note": "No accessible passages for the included sources."},
                                    selection_revision=selection_revision)
             return
+        await self._generate_answer(run, scope, passages, selection_revision)
+
+    async def _generate_answer(self, run: dict[str, Any], scope: dict[str, Any],
+                               passages: list[dict[str, Any]], selection_revision: int) -> None:
+        run_id, rid = run["id"], run["research_id"]
         source_ids = list(dict.fromkeys(p["source_version_id"] for p in passages))
         key, extra_repair = "grounded_answer", None
         later = self.store.existing_step(run_id, RESPLIT_KEY)
@@ -2937,6 +2971,8 @@ class ResearchFlow:
                 else:
                     extra_repair = {"labels": labels, "outcome": "skipped_budget"}
         step = self.store.step(run_id, key, "model:grounded_answer")
+        if fast_path.enforces(run["budget"], "answer"):
+            self._checkpoint(run_id, run["scope_revision"])
         # The revision recorded with the StepInput the output came from; a resumed run may reuse an earlier output.
         step_selection = self.store.step_input_selection_revision(output["step_input_id"])
         if output.get("invalid"):
@@ -2957,7 +2993,8 @@ class ResearchFlow:
                                            selection_revision=step_selection)
         for _, task in self._clock_tasks.get(run_id, {}).values():
             task.cancel()
-        await self._review(run, scope, answer_id, output["result"])
+        if not fast_path.enforces(run["budget"], "answer"):
+            await self._review(run, scope, answer_id, output["result"])
 
     def _answer_start_snapshot(self, run: dict[str, Any], heads: list[str], selection_revision: int) -> None:
         """Where the flow stood when this `sw` answer run started (slice 20, decision 3), kept in a code step.
@@ -5491,6 +5528,8 @@ class ResearchFlow:
         for svid in source_ids:
             source = self.store.source(svid)
             kinds = {p["kind"] for p in self.store.passages_for(svid)}
+            if task_type == "grounded_answer" and fast_path.enforces(run["budget"], "answer"):
+                kinds = {p["kind"] for p in passage_rows if p["source_version_id"] == svid}
             access = "pdf_available" if "pdf_page" in kinds else "abstract" if "abstract" in kinds else "metadata"
             sources.append({"source_id": svid, "work_id": source["work_id"], "title": source["title"], "year": source["year"],
                             "version_label": source["version_label"], "access_level": access})

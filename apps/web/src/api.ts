@@ -541,6 +541,8 @@ export type Claim = {
 export type Limitation = { kind: string; text: string; source_ids: string[] }
 export type ValidationIssue = { code: string; path: string; message: string }
 export type Answer = {
+  late_revision?: { kind: 'updated_with_full_text'; base_answer_id: string; base_report_version: number | null; upgraded_sources: number; late_excluded: number }
+  late_revision_status?: { status: 'waiting_fetch' | 'reading' | 'answering' | 'published' | 'skipped' | 'failed'; skip_reason: string | null; revision_answer_id: string | null; late_excluded: number }
   abstract_only_sources?: number
   id: string; run_id: string; status: 'structurally_valid' | 'unverified_draft' | 'clarification' | 'no_evidence'
   scope_revision: number; applicability: 'current' | 'stale_scope' | 'stale_selection'; answer_language: string | null; created_at: string

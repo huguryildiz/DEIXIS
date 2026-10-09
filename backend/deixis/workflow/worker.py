@@ -162,6 +162,8 @@ class Worker:
             self._write_failure()
         self.store.conn.execute("UPDATE worker_owner SET heartbeat_at = ? WHERE instance_id = ?", (now(), self.instance_id))
         await self.reconcile_recovery()
+        from deixis.workflow import late_revision
+        late_revision.advance(self.flow)
         run = self.store.next_queued_run()
         if run is None:
             self._wake.clear()
@@ -221,6 +223,8 @@ class Worker:
         # Whichever way the run returned, a person's waiting files get their reading run now (slice 18b).
         try:
             self.flow.person_run_ended(run_id)
+            from deixis.workflow import late_revision
+            late_revision.advance(self.flow, self.store.run(run_id)["research_id"])
         except Exception:  # noqa: BLE001 - the next run must not be held up by it
             log.exception("queueing a person's reading after run %s failed", run_id)
 

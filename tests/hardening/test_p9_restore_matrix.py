@@ -694,6 +694,7 @@ EMPTY_BECAUSE = {
     "fast_path_embedding_queue": "fast-path search (D252) is off in the test settings",
     "fast_path_intervals": "fast-path accounting (D250) is off in the test settings",
     "fast_path_ledgers": "fast-path accounting (D250) is off in the test settings",
+    "fast_path_late_revisions": "fast-path late revisions (D255) are off in the test settings",
     "fast_path_stages": "fast-path accounting (D250) is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",
     "openalex_budget_runs": "written only when OpenAlex's daily budget refuses a PDF lookup; the fake providers never do",

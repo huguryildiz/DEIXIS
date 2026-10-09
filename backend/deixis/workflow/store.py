@@ -163,6 +163,9 @@ def legacy_inspection_policy_removed(store: Any, run: dict[str, Any]) -> bool:
     if scope.get("search_workflow") != "sw":
         return False  # D119 answers retain their own stored policy.
     if run["kind"] == "fulltext_adjudication":
+        from deixis.workflow import late_revision
+        if late_revision.row_for_run(store, run):
+            return False
         return not (run.get("idempotency_key") or "").startswith("fulltext_adjudication:person:")
     if run["kind"] == "fulltext_fetch":
         return True
@@ -3406,6 +3409,17 @@ class Store:
                     status: str, draft: dict[str, Any] | None, validation: dict[str, Any],
                     links: list[dict[str, Any]] | None = None, selection_revision: int | None = None) -> str:
         aid = new_id("ans")
+        # Same event-loop connection; this synchronous guard precedes the write with no await.
+        from deixis.workflow import late_revision
+        late = late_revision.row_for_run(self, self.run(run_id))
+        if late:
+            reason = late_revision.guard_reason(self, late)
+            if reason:
+                from deixis.workflow.flow import RunStopped
+                with transaction(self.conn):
+                    late_revision.finish(self, late, "skipped", reason)
+                    self.update_run(run_id, event="run_cancelled", status="cancelled", pause_reason=reason)
+                raise RunStopped
         with transaction(self.conn):
             existing = self.conn.execute(
                 "SELECT id FROM answers WHERE run_id = ? AND IFNULL(step_input_id, '') = IFNULL(?, '') AND status = ?",
@@ -3449,6 +3463,7 @@ class Store:
 
             fast_path.save_answer(self, run_id, "no_evidence_at_cutoff"
                                   if validation.get("reason") == "no_evidence_at_cutoff" else status)
+            late_revision.published(self, self.run(run_id), aid, status)
         return aid
 
     def answer_review(self, answer_id: str) -> dict[str, Any] | None:

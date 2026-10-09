@@ -2,6 +2,21 @@ import type { ApprovalBlock, Evidence, FileRestoreReceipt, PersonFile, PersonFil
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
+export const LATE_REVISION_LABEL = 'Updated with full text'
+export const LATE_REVISION_DETAIL = 'Full text added for {n} sources since V{v}.'
+export const LATE_REVISION_PENDING = 'Full text that arrived later is being read; an updated version may follow.'
+export const LATE_REVISION_QUEUED = 'Late full-text reading queued'
+export const LATE_REVISION_SKIPPED = 'Late answer revision skipped'
+
+export const lateRevisionReasons: Record<string, string> = {
+  no_new_fulltext: 'No new full text arrived.', no_fulltext_inclusion: 'No late full text was included.',
+  selection_changed_by_user: 'Your source selection changed.', newer_answer_exists: 'A newer answer already exists.',
+  research_trashed: 'The research is in the Trash.', revision_unverified: 'The updated draft did not pass structural checks.',
+  scope_revised: 'The research question changed.', source_changed: 'The source changed.',
+  read_run_failed: 'Late full-text reading failed.', read_run_cancelled: 'Late full-text reading was cancelled.',
+  answer_run_failed: 'The late answer run failed.', answer_run_cancelled: 'The late answer run was cancelled.',
+  answer_run_completed: 'The late answer run completed without publishing a revision.',
+}
 
 export const serviceErrors: Record<string, string> = {
   quota_exhausted: '{service} usage quota is used up.',

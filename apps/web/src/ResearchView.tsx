@@ -8,6 +8,7 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
 import { serviceErrorText, serviceErrorSentence, serviceKind, serviceWaitingText, connectionName, accessParts, citedText, fetchReasonText, fileRestoreNote, fileRestoreText, fileRestoreTone, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, recoveryDecisionText, recoveryReasonText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, stepLabel, verdictLabels, versionText, versionTones } from './labels'
+import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING, LATE_REVISION_QUEUED, LATE_REVISION_SKIPPED, lateRevisionReasons } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { TextRecovery } from './TextRecovery'
 import { TextRecoveryContext } from './TextRecoveryContext'
@@ -285,7 +286,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const active = run ? ACTIVE.has(run.status) : false
   const candidateRun = view.runs.find(r => CANDIDATE_KINDS.has(r.kind) && (ACTIVE.has(r.status) || r.status === 'paused'))
   const watchRun = view.runs.find(r => r.kind === 'watch_check' && (ACTIVE.has(r.status) || r.status === 'paused'))
-  const answer = view.answers[0] as Answer | undefined
+  const answer = (view.answers.find(a => !(a.late_revision && a.status !== 'structurally_valid')) ?? view.answers[0]) as Answer | undefined
   const hasAcademic = view.scope.source_scope !== 'attached'
   const needsSeed = view.scope.source_scope === 'attached_and_academic' && view.scope.seed_mode === 'uploaded_seed'
   const seedSearchReady = !needsSeed || view.scope.seed_status === 'ready'
@@ -636,7 +637,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
       <TabsContent value="artifacts">
         {reports.length || tables?.length || view.reportRuns.length ? <ul className="artifact-list">{view.reportRuns.map(item => <li key={item.id}><button type="button" onClick={() => setOpenEvidenceReportId(item.id)}><FileText size={16} aria-hidden /><span><strong>{heading}</strong><small>{item.status === 'valid' ? t('Evidence report · V{n}', { n: item.report_version ?? '' }) : item.status === 'draft' ? t('Evidence report · draft') : t('Evidence report · being written')}</small></span><ArrowUpRight size={15} aria-hidden /></button></li>)}{reports.map(({ answer: a, version, title }) => <li key={a.id}><button type="button" onClick={() => setOpenReportId(a.id)}>
-          <FileText size={16} aria-hidden /><span><strong>{title}</strong><small>{t('Report')} · V{version}{a.applicability !== 'current' ? ` · ${t('earlier')}` : ''} · {new Date(a.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'medium' })}</small></span><ArrowUpRight size={15} aria-hidden />
+          <FileText size={16} aria-hidden /><span><strong>{title}</strong><small>{t('Report')} · V{version}{a.late_revision ? ` · ${t(LATE_REVISION_LABEL)}` : ''}{a.applicability !== 'current' || a.late_revision_status?.status === 'published' ? ` · ${t('earlier')}` : ''} · {new Date(a.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'medium' })}</small></span><ArrowUpRight size={15} aria-hidden />
         </button></li>)}
           {tables?.map(table => <li key={table.id}><button type="button" onClick={() => openTable(table.id)}>
             <Table2 size={16} aria-hidden /><span><strong>{table.title}</strong><small>{tableFacts(table)} · {new Date(table.updated_at).toLocaleDateString(uiLocale(), { dateStyle: 'medium' })}</small></span><ArrowUpRight size={15} aria-hidden />
@@ -739,6 +740,8 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
   }
   const openReviews = (request = false) => { mode(true, request); onReportOpenChange(true) }
   const chooseStyle = (next: CitationStyle) => { setStyle(next); try { localStorage.setItem('deixis-citation-style', next) } catch { /* the choice still applies for this tab */ } }
+  const latePending = showCard && answer.late_revision_status && ['waiting_fetch', 'reading', 'answering'].includes(answer.late_revision_status.status)
+    ? <p className="legacy-mini-note" role="status">{t(LATE_REVISION_PENDING)}</p> : null
   if (answer.status === 'clarification' && answer.clarification) {
     return <div className="legacy-answer"><div className="section-label">{t('Clarification needed')}</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">{t('Revise the question below to continue.')}</p></div>
   }
@@ -746,11 +749,11 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
     return <><Notice tone="attention">{t('No work was included at full text when this answer started, so no answer was written and no model was asked. The line below says where the works stand.')}</Notice><AnswerFlowNote answer={answer} /></>
   }
   if (answer.status === 'no_evidence') {
-    return <><Notice tone="attention">{t('No text passages were available for the included sources (no abstract, no retrievable PDF text). No answer was generated.')}</Notice><AnswerFlowNote answer={answer} /></>
+    return <><Notice tone="attention">{t('No text passages were available for the included sources (no abstract, no retrievable PDF text). No answer was generated.')}</Notice><AnswerFlowNote answer={answer} />{latePending}</>
   }
   if (answer.status === 'unverified_draft') {
     return <div className="legacy-answer"><Notice tone="error">{t('The model output failed validation after one repair attempt, so it is not shown as a cited answer.')}<ul className="plain-list">{answer.validation.issues?.map(i => <li key={`${i.code}${i.path}`}>{t('{code} at {path}', { code: i.code, path: i.path })}</li>)}</ul></Notice>
-      {answer.unverified_draft?.claims?.map(c => <p className="claim is-unverified" key={c.claim_label}><MathText text={c.text} /></p>)}<AnswerFlowNote answer={answer} /></div>
+      {answer.unverified_draft?.claims?.map(c => <p className="claim is-unverified" key={c.claim_label}><MathText text={c.text} /></p>)}<AnswerFlowNote answer={answer} />{latePending}</div>
   }
   const refs = new Map<string, { n: number; e: Answer['claims'][number]['evidence'][number] }>()
   answer.claims.forEach(c => c.evidence.forEach(e => { if (!refs.has(e.passage_id)) refs.set(e.passage_id, { n: refs.size + 1, e }) }))
@@ -809,6 +812,7 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
   const preview = answer.claims.slice(0, 2).map(claim => claim.text).join(' ')
   const report = <div className="legacy-answer report-content">
     <div className="section-label">{t('Source-linked answer')}{answer.applicability === 'stale_scope' ? ` · ${t('earlier question revision')}` : answer.applicability === 'stale_selection' ? ` · ${t('earlier source selection')}` : ''}</div>
+    {answer.late_revision && <p className="legacy-mini-note"><span className="support-badge">{t(LATE_REVISION_LABEL)}</span> {answer.late_revision.base_report_version !== null && t(LATE_REVISION_DETAIL, { n: answer.late_revision.upgraded_sources, v: answer.late_revision.base_report_version })}</p>}
     {answer.applicability === 'stale_scope' && <Notice tone="attention">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</Notice>}
     {answer.applicability === 'stale_selection' && <Notice tone="attention">{t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}</Notice>}
     {answer.source_text_changed && <Notice tone="attention">{t('A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.')}</Notice>}
@@ -868,12 +872,13 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
     {showCard && <button type="button" id="research-answer" className="report-artifact" onClick={() => onReportOpenChange(true)} aria-label={t('Open report: {title}', { title })}>
       <span className="report-artifact-preview" aria-hidden="true"><strong>{title}</strong><span>{preview}</span></span>
       <span className="report-artifact-copy">
-        <span className="report-artifact-meta"><Sparkles size={13} strokeWidth={1.8} aria-hidden />{t('Report')} · V{version}</span>
+        <span className="report-artifact-meta"><Sparkles size={13} strokeWidth={1.8} aria-hidden />{t('Report')} · V{version}{answer.late_revision ? ` · ${t(LATE_REVISION_LABEL)}` : ''}</span>
         <strong>{title}</strong>
       </span>
       <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
     </button>}
     {showCard && <AnswerFlowNote answer={answer} />}
+    {latePending}
     {showCard && <><ReviewSummary reviews={reviewList.reviews} open={() => openReviews()} /><button type="button" className="review-entry" onClick={() => openReviews(true)}>{t('Review with another model')}</button></>}
     <Sheet open={reportOpen} onOpenChange={open => { onReportOpenChange(open); if (!open) { setCopied(false); setReviewMode(false); setRequestReview(false) } }}>
       <SheetContent className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
@@ -1347,6 +1352,9 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'asset_reextracted': return lucide(ScanText, t('PDF text extracted again'), [p.outcome === 'current' ? { label: t('in use'), tone: 'ok' } : { label: t('not used'), tone: 'warn' }, { label: String(p.extraction_version), tone: 'neutral' }])
     case 'selection_changed': return lucide(UserPen, t('You marked a source'), [{ label: t(selectionStates[String(p.state)] ?? String(p.state)), tone: selectionTones[String(p.state)] ?? 'neutral' }])
     case 'answer_saved': return lucide(MessageSquareQuote, t('Answer saved'), [statusChip(p.status)])
+    case 'late_revision_queued': return lucide(BookOpenText, t(LATE_REVISION_QUEUED))
+    case 'late_revision_skipped': return lucide(Info, t(LATE_REVISION_SKIPPED), [{ label: t(lateRevisionReasons[String(p.reason)] ?? pauseReasonText(String(p.reason))), tone: 'neutral' }])
+    case 'late_revision_published': return lucide(MessageSquareQuote, t(LATE_REVISION_LABEL))
     case 'watch_check_completed': return lucide(ListChecks, t('Follow-up check completed'), [{ label: t('{n} new', { n: Number(p.new ?? 0) }), tone: 'neutral' }, { label: t('{n} notices', { n: Number(p.notices ?? 0) }), tone: 'neutral' }])
     case 'table_changed': return lucide(Table2, t('Evidence table changed'))
     case 'table_trashed': return lucide(Trash2, t('Evidence table moved to Trash'))

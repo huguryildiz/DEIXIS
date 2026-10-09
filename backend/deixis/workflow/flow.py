@@ -439,7 +439,15 @@ class ResearchFlow:
             elif run["kind"] == "pdf_collection":
                 await self._inspect(run, limit=None)
             elif run["kind"] == "fulltext_adjudication":
-                await self._fulltext_adjudication(run, scope)
+                from deixis.workflow import late_revision
+                late = late_revision.row_for_run(self.store, run)
+                if late:
+                    self._checkpoint(run_id, run["scope_revision"])
+                    await self._fulltext_adjudication(run, scope, batch_key=f"late:{late['ledger_run_id']}",
+                        order=run["target"]["heads"], read_limit=run["budget"]["max_fulltext_reads"])
+                    self._checkpoint(run_id, run["scope_revision"])
+                else:
+                    await self._fulltext_adjudication(run, scope)
             elif run["kind"] == "pdf_ocr":
                 await self._pdf_ocr(run)
             elif run["kind"] == "table_fill":
@@ -484,7 +492,8 @@ class ResearchFlow:
                     self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
                     if run["kind"] == "answer":
                         fast_answer.after_answer(self, run)
-                    elif self.deps.settings.study_table == "auto":
+                    elif (self.deps.settings.study_table == "auto"
+                          and self.store.run(run["target"]["answer_run_id"])["budget"].get("trigger") != "late_fulltext"):
                         report_pipeline.after_answer(self.store, self.store.run(run["target"]["answer_run_id"]))
                 return
             # Nothing is left to pause once the last step's result has been applied. A person's file this run held
@@ -498,6 +507,9 @@ class ResearchFlow:
     # ---- run control ---------------------------------------------------------------
     def _checkpoint(self, run_id: str, scope_revision: int | None = None) -> None:
         guard = getattr(self, "_small_batch_guard", None)
+        if guard and guard.get("late_revision"):
+            from deixis.workflow import late_revision
+            late_revision.checkpoint(self, self.store.run(run_id))
         if guard and guard["run_id"] == run_id:
             changed = small_batch.guard_reason(self.store, guard)
             if changed:
@@ -513,6 +525,9 @@ class ResearchFlow:
                 raise RunStopped
             return
         run = self.store.run(run_id)
+        if (run.get("target") or {}).get("late_revision_id") or run["budget"].get("late_revision_id"):
+            from deixis.workflow import late_revision
+            late_revision.checkpoint(self, run)
         if run["status"] == "pause_requested":
             self.store.update_run(run_id, event="run_paused", status="paused", pause_reason="user_requested")
             raise RunStopped
@@ -4081,6 +4096,10 @@ class ResearchFlow:
         if batch_key:
             corpus = [work for work in corpus if work["head"] in (order or [])]
         by_head = {work["head"]: work for work in corpus}
+        from deixis.workflow import late_revision
+        late = late_revision.row_for_run(self.store, run)
+        late_versions = ({item["head"]: item["source_version_id"] for item in json.loads(late["works_json"])}
+                         if late else {})
         eligible = adjudication.read_plan(corpus, order, len(corpus))
         if batch_key:
             eligible["works"] = [head for head in order if head in eligible["works"]]
@@ -4089,9 +4108,9 @@ class ResearchFlow:
         for head in eligible["works"]:
             # A person's file not read yet is read on its own version (slice 18b, decision 8).
             person = adjudication.person_version(by_head[head]) or self._stale_person_version(rid, head)
-            read = person or self._text_version(rid, head)
+            read = late_versions.get(head) or person or self._text_version(rid, head)
             versions = [head, *self.store.work_versions(rid, head)]
-            if person or self._user_supplied_pdf(read):
+            if person == read or self._user_supplied_pdf(read):
                 readable.append(self._plan_item(head, read))
                 continue
             found = identity.check(self._pdf_head_text(read), [self.store.source(svid) for svid in versions])

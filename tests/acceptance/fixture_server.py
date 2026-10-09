@@ -905,6 +905,17 @@ def main() -> None:
         conn.close()
     if os.environ.get("DEIXIS_FIXTURE_REEXTRACT") == "on":
         seed_reextract(args.data_dir)
+    if os.environ.get("DEIXIS_FIXTURE_LATE_REVISION") == "on":
+        # Reuse the deterministic D255 fixture; all calls finish before the server starts.
+        sys.path[:0] = [str(p) for p in (REPO / 'tests').iterdir() if p.is_dir()]
+        from test_fast_path_late_revision import prepared, read_late, drain
+        from deixis.workflow import late_revision
+        lib = prepared(args.data_dir)
+        read_late(lib)
+        late_revision.advance(lib.flow)
+        drain(lib)
+        lib.store.conn.execute("UPDATE researches SET title = '[late-pdf] SYNTHETIC revised answer' WHERE id = ?", (lib.rid,))
+        lib.store.conn.close()
     handler, local_embedder = openalex, None
     if os.environ.get("DEIXIS_FIXTURE_BUILTIN_EMBEDDING") == "fake":
         handler, local_embedder = fake_builtin(args.data_dir)

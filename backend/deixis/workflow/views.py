@@ -557,6 +557,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         if seen is None or order >= (seen["page_number"] or 0, seen["retrieved_at"], seen["id"]):
             last_stopped[key] = row
 
+    from deixis.workflow import late_revision
     answers = []
     cited_sources: set[str] = set()
     # A quote of a source removed from this research still opens; the view names the removal (D50).
@@ -604,6 +605,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         given = store.step_input_payload(a["step_input_id"]) if a["step_input_id"] else None
         validation = _json(a["validation_json"]) or {}
         answers.append({
+            **late_revision.answer_view(store, a["id"]),
             "id": a["id"], "run_id": a["run_id"], "status": a["status"], "scope_revision": a["scope_revision"],
             # A report keeps the number and title it was saved with; later answers and title changes do not rewrite them.
             "report_version": a["report_version"],
@@ -632,6 +634,10 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                 if e["kind"] == "abstract"} - {e["source_version_id"] for c in claims for e in c["evidence"]
                 if e["kind"] != "abstract"})} if fast_answer else {}),
         })
+        if (answers[-1].get("late_revision_status", {}).get("late_excluded")
+                and answers[-1]["applicability"] == "current"):
+            # Pending abstract candidates can be excluded without bumping the included-source revision.
+            answers[-1]["applicability"] = "stale_selection"
     duplicates = store.suspected_duplicates(research_id)
     # Similarity from the chosen semantic search model only; with semantic search off, no source has one (D30).
     provider, model = embeddings.chosen(store.setting("semantic_search"))

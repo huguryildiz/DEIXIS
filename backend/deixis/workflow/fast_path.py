@@ -48,6 +48,7 @@ def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
         "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["search", "ranking", "read", "answer"],
         "enforced_stages": ["search", "ranking", "read", "answer"], "background_fetch_slots": 4,
         "approval_mode": "unattended", "auto_answer": True,
+        "late_revision": {"mode": "auto", "max_revisions": 1},
         "mode": "deep" if effort == "detailed" else effort,
         "stage_base_ms": dict(zip(STAGES, (s * 1000 for s in bases))), "total_ms": sum(bases) * 1000,
         "N": n, "K": k, "keyword_record_cap": cap, "semantic_top": 50,
@@ -138,7 +139,8 @@ def create_run(store: Any, run: dict[str, Any]) -> None:
         assert ledger is not None and (ledger["research_id"], ledger["scope_revision"], ledger["policy_hash"]) == (
             run["research_id"], run["scope_revision"], policy["policy_hash"])
         # The role is fixed by the same transaction that queues the answer, rather than by a preceding API read.
-        policy["role"] = "rerun" if ledger["answer_run_id"] else "first"
+        policy["role"] = ("late_revision" if run["budget"].get("late_revision_id")
+                          else "rerun" if ledger["answer_run_id"] else "first")
         if policy["role"] == "first":
             store.conn.execute("UPDATE fast_path_ledgers SET answer_run_id = ? WHERE ledger_run_id = ? AND answer_run_id IS NULL",
                                (run["id"], policy["ledger_run_id"]))
@@ -148,6 +150,8 @@ def create_run(store: Any, run: dict[str, Any]) -> None:
 
 def enter_stage(store: Any, run: dict[str, Any], stage: str) -> str | None:
     if not enabled(run["budget"]):
+        return None
+    if run["budget"]["fast_path"].get("role") == "late_revision":
         return None
     conn, ts = store.conn, timestamp(store.clock)
     binding = run["budget"]["fast_path"]
@@ -260,6 +264,8 @@ def save_answer(store: Any, run_id: str, outcome: str) -> None:
     if not enabled(run["budget"]):
         return
     binding, ts = run["budget"]["fast_path"], timestamp(store.clock)
+    if binding.get("role") == "late_revision":
+        return
     if binding["role"] == "rerun":
         close_stage(store, run_id, "answer_rerun")
         return

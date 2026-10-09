@@ -295,8 +295,14 @@ def check_input(flow: Any, run_id: str, plan: dict[str, Any]) -> None:
         " WHERE m.research_id = ? AND m.removed_at IS NULL", (rid,))}
     pools = current_pools(store, rid)
     selected = set(plan["passage_ids"])
+    late = store.run(run_id)["budget"].get("late_revision_id")
+    versions = store.answer_versions(rid) if late else {}
+    heads = store.work_heads(rid) if late else {}
     for row in plan["items"]:
         svid = row["source_version_id"]
+        if late and (heads.get(row["work_id"]) != row["head"] or versions.get(row["head"], row["head"]) != svid
+                     or row["route"] == "fulltext" and flow._current_asset(svid) != row["asset_id"]):
+            flow._pause(run_id, "source_changed")
         if svid not in members or any(members[svid].get(k) != v for k, v in row["version"].items()):
             flow._pause(run_id, "source_changed")
         current = {p["id"] for p in pools.get(svid, [])}
@@ -306,9 +312,20 @@ def check_input(flow: Any, run_id: str, plan: dict[str, Any]) -> None:
 
 
 async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
-    plan = input_plan(flow, run, scope)
+    if run["budget"].get("late_revision_id"):
+        from deixis.workflow import late_revision
+        late = late_revision.row_for_run(flow.store, run)
+        if late and late["status"] in ("published", "failed") and flow.store.conn.execute(
+                "SELECT 1 FROM answers WHERE run_id = ?", (run["id"],)).fetchone():
+            # Publication survived a crash before run completion; finish and enqueue its review without regenerating.
+            return
+        plan = late_revision.revision_plan(flow, run, scope)
+    else:
+        plan = input_plan(flow, run, scope)
     flow._small_batch_guard = {"run_id": run["id"], "rid": run["research_id"],
         "user_signature": plan["user_signature"], "fast_answer": True, "input": plan}
+    if run["budget"].get("late_revision_id"):
+        flow._small_batch_guard["late_revision"] = True
     try:
         flow._checkpoint(run["id"], run["scope_revision"])
         flow.store.update_run(run["id"], stage="answer")
@@ -343,6 +360,8 @@ def auto_answer(store: Any, run: dict[str, Any]) -> None:
 
 def after_answer(flow: Any, run: dict[str, Any]) -> None:
     store = flow.store
+    from deixis.workflow import late_revision
+    late_revision.schedule(flow, run)
     row = store.conn.execute("SELECT id FROM answers WHERE run_id = ? AND status = 'structurally_valid'", (run["id"],)).fetchone()
     if not row:
         return

@@ -11,15 +11,31 @@ from deixis.workflow import background_fetch, fast_path, fulltext, small_batch
 
 
 def selected(works: list[dict[str, Any]], order: list[str], k: int,
-             pending: set[str], baseline: dict[str, Any]) -> list[str]:
-    """Worst-case pending admission, counting cached text in the same K slots."""
+             pending: set[str], baseline: dict[str, Any], without_text: set[str] = frozenset()) -> list[str]:
+    """Worst-case pending admission, counting cached text in the same K slots.
+
+    A work whose settled attempt found no text gives its slot to the next eligible work in list order.
+    """
     frozen = fulltext.as_of_baseline(works, baseline, pending)
     by_head = {work["head"]: work for work in frozen}
     excluded = set(baseline.get("fulltext_excluded", []))
-    wanted = [by_head[head]["work_id"] for head in order
-              if head in by_head and by_head[head]["work_id"] not in excluded
-              and fulltext.group_of(by_head[head]) is not None][:k]
+    wanted = [wid for wid in (by_head[head]["work_id"] for head in order
+                              if head in by_head and fulltext.group_of(by_head[head]) is not None)
+              if wid not in excluded and wid not in without_text][:k]
     return [wid for wid in wanted if wid not in pending]
+
+
+def without_text(policy: dict[str, Any], claims: dict[str, Any]) -> set[str]:
+    """Claimed works whose attempt settled without text (no file, an unreadable file, or no answer); empty for
+    policies frozen before slot refill.
+
+    Read from the settled claim alone, so a release is permanent: text that reaches the work later does not take
+    its slot back from the work admitted in its place.
+    """
+    if not policy.get("slot_refill"):
+        return set()
+    return {wid for wid, claim in claims.items() if claim["status"] in ("succeeded", "failed")
+            and (claim.get("output") or {}).get("code") != fulltext.settled_code({"has_text": True})}
 
 
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
@@ -112,14 +128,15 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             if cutoff():
                 break
             works = corpus()
-            safe = selected(works, order, policy["K"], pending(), baseline)
             claims = flow._claims(run_id)
+            released = without_text(policy, claims)
+            safe = selected(works, order, policy["K"], pending(), baseline, released)
             background_wids = {row["work_id"] for row in store.conn.execute(
                 "SELECT work_id FROM fast_path_background_fetches WHERE run_id = ?"
                 " AND status IN ('queued', 'running')", (run_id,))}
             # Resume retains admission even when retrieval/reading changed current decisions.
             admitted = [wid for wid in dict.fromkeys([wid for wid in plan["work_ids"] if wid in claims] + safe)
-                        if wid not in background_wids]
+                        if wid not in background_wids and wid not in released]
             by_work = {work["work_id"]: work for work in works}
             for wid in admitted:
                 if cutoff():
@@ -130,7 +147,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 has_text = any(v["has_text"] for v in work["versions"])
                 if (fetch_allowed and not has_text and wid not in fetches
                         and (wid not in claims or claims[wid]["status"] not in ("succeeded", "failed"))):
-                    # Claims are bounded by K, independently of task completion order.
+                    # Claims are bounded by K, independently of task completion order; with slot refill, by the N
+                    # screened works in list order.
                     if wid not in claims:
                         flow._claim(run_id, wid, not held.model_done, "fast_path")
                     fetches[wid] = asyncio.create_task(fetch(wid))
@@ -154,10 +172,11 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         works = corpus()
         unread = {wid for n, batch in enumerate(abstract_plan["batches"])
                   if n not in held.closed.get(prefix, set()) for wid in store.work_ids(batch).values()}
-        final = selected(works, order, policy["K"], set(), baseline)
         claims = flow._claims(run_id)
+        empty = without_text(policy, claims)
+        final = selected(works, order, policy["K"], set(), baseline, empty)
         # Paid-for claims cannot lose a slot after their full-text result arrives.
-        final = list(dict.fromkeys([wid for wid in plan["work_ids"] if wid in claims] + final))
+        final = list(dict.fromkeys([wid for wid in plan["work_ids"] if wid in claims and wid not in empty] + final))
         items = {item["work_id"]: item for item in plan["items"]}
         by_work = {work["work_id"]: work for work in works}
         late = {wid: ("in_flight" if wid in fetches and not fetches[wid].done() else "not_started")
@@ -193,6 +212,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 "deadline_at": deadline.isoformat() if deadline else None,
                 "read_cutoff_at": cutoff_at or fast_path.timestamp(store.clock), "k_selected": len(final),
                 "selected_work_ids": final, "not_screened_at_cutoff": sorted(unread),
+                **({"attempted_without_text": sorted(empty)} if policy.get("slot_refill") else {}),
                 "screened_count": sum(item["head"] in order and item["work_id"] not in unread for item in closed_items),
                 "fulltext_adjudicated_before_cutoff": sum(item["fulltext_adjudicated"] for item in closed_items),
                 "fulltext_after_cutoff": late,

@@ -55,7 +55,7 @@ def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
         "chain_seeds": seeds, "backward_requests": backward, "backward_page_size": 50,
         "forward_requests": forward, "forward_page_size": 25,
         "chain_in_flight": 5, "chain_rule": "fast_chain_v1",
-        "embedding_threads": 4, "fetch_slots": 12, "arrival_margin_ms": 5000,
+        "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
     }
     return policy | {"policy_hash": canonical.sha256_hex(policy)}

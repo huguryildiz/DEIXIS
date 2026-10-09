@@ -4,6 +4,8 @@
 
 ## Şu an
 
+D257 hızlı yol okuma yeri düzeltmesi main'de (9 Eki; Claude yazdı, Sol üç turda inceledi: 2 kusur düzeltildi): ilk gerçek Hızlı koşu (dbr_vbf) 86 saniyede cevap verdi ama hiç tam metin okumadı, çünkü 10 okuma yeri listedeki ilk 10 makaleye gidiyordu ve PDF'i olmayan makale de yer tutuyordu. Artık metni alınamayan makale (PDF yok, okunamıyor ya da kaynak yanıt vermedi) yerini kalıcı olarak sıradaki makaleye bırakıyor (taranan ilk 25/50/100 makale içinde). Ölçülen: yapay testler. Ölçülmeyen: gerçek koşuda kaç tam metin kazandırdığı.
+
 D256 anlaşılır servis hataları main'de (9 Eki; Sol yazdı, Claude inceledi ve 5 kusuru düzeltti, Sol düzeltmeleri onayladı): model ya da akademik kaynak hata verince (kota bitti, hız sınırı, anahtar geçersiz, hatalı istek, servis çöktü, ağ yok) zaman çizelgesinde ve ayarlarda hangi servisin, neden durduğu, ne zaman tekrar denenebileceği ve araştırmanın ne durumda kaldığı Türkçe/İngilizce cümleyle görünüyor. Yeniden deneme kuralları ve run durumları değişmedi; yeni migration yok. Ölçülen: sentetik yanıtlarla testler. Ölçülmeyen: gerçek sağlayıcıların hata biçimleri, tarayıcı kabul testi.
 
 D255 hızlı yol dilim 6 main'de (9 Eki; Sol yazdı, Claude inceledi: 4 kusur düzeltildi): yeni `fast_path_v1` politikaları geç tam metinden kesim başına tek yeni cevap sürümü üretiyor. İlk cevap ve kanıt bağlantıları korunuyor; V2 kendi `answer_review` run'ını alıyor. Scope/kullanıcı seçimi/kaynak/sürüm/asset korumaları, kalıcı durum geçişleri, çökmeden dönüş, ilk cevabın zaman defterinden ayrılma ve tabloyu yenilememe sınırı uygulandı. Migration 0077 ve i18n üzerinden “Tam metinle güncellendi” etiketi eklendi; D254/D256 paralel işlerine dokunulmadı. Ayrı kod incelemesi bekliyor.

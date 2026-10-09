@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from deixis.domain import canonical
 from deixis.storage.db import transaction
 from deixis.workflow import background_fetch, fast_path, fast_read, fulltext, small_batch
 from deixis.workflow.flow import ResearchFlow, RunStopped
@@ -71,6 +72,25 @@ def test_top_k_counts_cached_text_and_keeps_frozen_order():
     # A completed fetch cannot admit a later work or change the PDF-yield denominator.
     works[1]["versions"][0].update(has_text=True, fulltext={"reason_code": "not_read_yet", "decided_by": "code"})
     assert fast_read.selected(works, order, 2, set(), baseline) == ["w1", "w0"]
+
+
+def test_settled_work_without_text_frees_its_slot():
+    works = [candidate(0), candidate(1), candidate(2), candidate(3, text=True)]
+    order = ["h0", "h1", "h2", "h3"]
+    baseline = fulltext.baseline_of(works)
+    assert fast_read.selected(works, order, 2, set(), baseline) == ["w0", "w1"]
+    assert fast_read.selected(works, order, 2, set(), baseline, {"w0"}) == ["w1", "w2"]
+    claims = {"w0": {"status": "succeeded", "output": {"code": "no_fulltext"}}, "w1": {"status": "running", "output": {}},
+              "w2": {"status": "failed", "output": {"code": None}},
+              "w3": {"status": "succeeded", "output": {"code": "not_read_yet", "asset_id": "a3"}},
+              "w4": {"status": "succeeded", "output": {"code": "text_unreadable", "asset_id": None}}}
+    policy = fast_path.freeze_budget({}, "quick")
+    assert fast_read.without_text(policy, claims) == {"w0", "w2", "w4"}
+    # Text that reaches a released work later does not take the slot back.
+    works[0]["versions"][0].update(has_text=True)
+    assert fast_read.without_text(policy, claims) == {"w0", "w2", "w4"}
+    assert fast_read.selected(works, order, 2, set(), baseline, {"w0", "w2"}) == ["w1", "w3"]
+    assert fast_read.without_text({k: v for k, v in policy.items() if k != "slot_refill"}, claims) == set()
 
 
 def test_pending_prefix_reserves_k_until_excluded():
@@ -340,6 +360,66 @@ def test_fast_read_hands_off_fetch_without_wait_and_resume_is_idempotent(library
     asyncio.run(check())
 
 
+@pytest.mark.parametrize("case", ["forward", "reverse", "late_text", "resume"])
+def test_slot_refill_is_order_independent_permanent_and_resumable(library, monkeypatch, case):
+    """Even works have no file. Whatever the completion order, the K slots go to the first K odd works."""
+    lib = library
+    flow = ResearchFlow(SimpleNamespace(store=lib.store))
+    works = [candidate(n) for n in range(25)]
+    items = [{"work_id": w["work_id"], "head": w["head"], "versions": [], "user_priority": False,
+              "position": n + 1} for n, w in enumerate(works)]
+    listing = {"items": items, "manifest_hash": "synthetic", "order_hash": "synthetic",
+               "manifest": {"versions": {}}, "order": [w["head"] for w in works]}
+    lib.run["budget"]["inspection"].update(fetch_limit=10, read_limit=10)
+    by_id = {w["work_id"]: w for w in works}
+    monkeypatch.setattr(flow, "_fulltext_works", lambda rid: works)
+    monkeypatch.setattr(lib.store, "work_heads", lambda rid: {w["work_id"]: w["head"] for w in works})
+    monkeypatch.setattr(small_batch, "unchanged_heads", lambda store, rid, listing, items: [i["head"] for i in items])
+    def code(*args, batch_key, **kwargs):
+        return small_batch.save_code(flow, lib.run, f"{batch_key}:abstract_stage", "code:abstract_stage",
+                                     lambda: {"batches": [], "runs": 2})
+    monkeypatch.setattr(flow, "_abstract_code_stage", code)
+    async def abstracts(*args, **kwargs):
+        return None
+    monkeypatch.setattr(flow, "_abstract_stage", abstracts)
+    fetched, read = [], []
+
+    async def settle(run, wid):
+        n = int(wid[1:])
+        fetched.append(wid)
+        await asyncio.sleep(0.001 * ((n if case == "forward" else 25 - n) % 7))
+        step = lib.store.existing_step(run["id"], f"fulltext_work:{wid}")
+        lib.store.finish_step(step["id"], "succeeded", output={"code": "no_fulltext" if n % 2 == 0 else "not_read_yet",
+            "asset_id": None if n % 2 == 0 else f"a{n}", "claim": step["output"]["claim"]})
+        if n % 2:
+            by_id[wid]["versions"][0].update(has_text=True)
+        elif case == "late_text":  # another version of the released work brings text later
+            by_id[wid]["versions"][0].update(has_text=True)
+
+    async def adjudicate(run, scope, *, batch_key, order, **kwargs):
+        read.append(order[0])
+    monkeypatch.setattr(flow, "_overlap_work", settle)
+    monkeypatch.setattr(flow, "_fulltext_adjudication", adjudicate)
+    if case == "resume":  # a crashed run already settled two empty claims
+        for wid in ("w0", "w2"):
+            flow._claim(lib.run["id"], wid, False, "fast_path")
+            step = lib.store.existing_step(lib.run["id"], f"fulltext_work:{wid}")
+            lib.store.finish_step(step["id"], "succeeded", output={"code": "no_fulltext", "asset_id": None})
+
+    async def check():
+        fast_path.enter_stage(lib.store, lib.run, "read")
+        await asyncio.wait_for(fast_read.execute(flow, lib.run, {}, {}, listing), 5)
+    asyncio.run(check())
+    close = lib.store.existing_step(lib.run["id"], "small_batch:v1:synthetic:fast:close")["output"]
+    odd = [f"w{n}" for n in range(1, 21, 2)]
+    assert sorted(close["selected_work_ids"], key=lambda w: int(w[1:])) == odd
+    assert sorted(read, key=lambda h: int(h[1:])) == [f"h{n}" for n in range(1, 21, 2)]
+    assert not set(close["attempted_without_text"]) & set(close["selected_work_ids"])
+    assert set(close["attempted_without_text"]) <= {f"w{n}" for n in range(0, 25, 2)}
+    if case == "resume":
+        assert "w0" not in fetched and "w2" not in fetched
+
+
 def test_new_read_keeps_chain_and_list_freeze_in_ranking(tmp_path, monkeypatch):
     freeze = small_batch.freeze_list
     seen = []
@@ -398,6 +478,45 @@ def test_real_fetch_and_adjudication_are_bounded_by_top_k(tmp_path, monkeypatch)
         assert close["k_selected"] == close["fulltext_adjudicated_before_cutoff"] == 10
         assert not close["fulltext_after_cutoff"]
         assert run["usage"]["model_calls"] <= run["budget"]["max_model_calls"]
+
+
+@pytest.mark.parametrize("refill", [True, False])
+def test_work_without_text_gives_its_slot_to_the_next_work(tmp_path, monkeypatch, refill):
+    if not refill:  # a policy frozen before slot refill keeps its first K claims
+        freeze = fast_path.freeze_budget
+        def frozen_before(*args, **kwargs):
+            policy = freeze(*args, **kwargs)
+            policy.pop("slot_refill")
+            policy.pop("policy_hash")
+            return policy | {"policy_hash": canonical.sha256_hex(policy)}
+        monkeypatch.setattr(fast_path, "freeze_budget", frozen_before)
+    app, fetcher = app_for(tmp_path, monkeypatch, 40, pdf=True, fast_path="on")
+    for n in range(0, 40, 2):  # every other work has no file
+        del fetcher.answers[f"https://example.org/w{n}.pdf"]
+    with client_of(app) as client:
+        _, run_id, _, run = discover(client)
+        assert run["status"] == "completed", run
+        close = run["fast_path"]["read"]["cutoff"]
+    if refill:
+        assert close["fulltext_adjudicated_before_cutoff"] == close["k_selected"] == 10
+        assert len(close["attempted_without_text"]) == len(fetcher.calls) - 10 > 0
+        assert not set(close["attempted_without_text"]) & set(close["selected_work_ids"])
+    else:
+        assert len(fetcher.calls) == 10
+        assert close["fulltext_adjudicated_before_cutoff"] < 10
+        assert "attempted_without_text" not in close
+
+
+def test_refill_is_bounded_by_the_screened_window(tmp_path, monkeypatch):
+    app, fetcher = app_for(tmp_path, monkeypatch, 40, pdf=True, fast_path="on")
+    fetcher.answers.clear()  # no work has a file
+    with client_of(app) as client:
+        _, run_id, _, run = discover(client)
+        assert run["status"] == "completed", run
+        close = run["fast_path"]["read"]["cutoff"]
+    assert len(fetcher.calls) == run["budget"]["fast_path"]["N"] == 25
+    assert close["fulltext_adjudicated_before_cutoff"] == close["k_selected"] == 0
+    assert len(close["attempted_without_text"]) == 25
 
 
 def test_fulltext_deadline_after_limiter_cannot_decide_from_one_read(tmp_path, monkeypatch):

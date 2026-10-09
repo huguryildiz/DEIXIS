@@ -256,7 +256,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const searches = view.search_runs.filter(s => s.run_id === run.id && !s.query_text.startsWith('chain:'))
   const answer = view.answers.find(a => a.run_id === run.id)
   const started = present(steps.map(s => s.started_at))[0] ?? run.created_at
-  const unknownSteps = steps.filter(s => s.status === 'outcome_unknown')
+  // A call cut at a read deadline (D258) is closed for good: resuming does not repeat it.
+  const unknownSteps = steps.filter(s => s.status === 'outcome_unknown' && s.error_code !== 'model_read_cutoff')
   const failedOcrPages = steps.filter(s => s.kind === 'ocr_page' && troubled(s)).map(s => s.operation_key.split(':')[2])
   // A failed search no longer stops the run (D18); name the provider that is missing so the results are not read as
   // complete. Why it failed stays on its query row in the phase details, where the other provider results are.

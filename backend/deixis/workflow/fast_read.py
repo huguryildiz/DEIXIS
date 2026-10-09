@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 from typing import Any
 
 from deixis.domain.reason_codes import reason
@@ -69,6 +70,10 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     handed_off: set[str] = set()
     cutoff = lambda: fast_path.past_deadline(store, run, "read")
 
+    def send_by() -> Any:
+        deadline = fast_path.stage_deadline(store, run, "read")
+        return None if deadline is None else deadline + timedelta(milliseconds=policy["read_drain_ms"])
+
     def corpus() -> list[dict[str, Any]]:
         return [work for work in flow._fulltext_works(rid) if work["head"] in order]
 
@@ -116,6 +121,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                     if n not in held.closed.get(prefix, set()) and not held.model_done
                     for wid in store.work_ids(batch).values()}
 
+        if policy.get("read_drain_ms") is not None:
+            flow._send_by[run_id] = send_by
         model = asyncio.create_task(abstracts())
         timer = asyncio.create_task(alarm())
         while True:
@@ -251,6 +258,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             timer.cancel()
             await asyncio.gather(timer, return_exceptions=True)
         flow._held.pop(run_id, None)
+        flow._send_by.pop(run_id, None)
         flow._small_batch_guard = None
         await asyncio.gather(*(task for wid, task in fetches.items() if wid not in handed_off), return_exceptions=True)
     small_batch.save_code(flow, run, "small_batch:v1:summary", "code:small_batch_summary", lambda:

@@ -420,6 +420,116 @@ def test_slot_refill_is_order_independent_permanent_and_resumable(library, monke
         assert "w0" not in fetched and "w2" not in fetched
 
 
+def stage_of(store, run_id, name):
+    return dict(store.conn.execute("SELECT * FROM fast_path_stages WHERE ledger_run_id = ? AND stage = ?",
+                                   (run_id, name)).fetchone())
+
+
+@pytest.mark.parametrize("task", ["fulltext_adjudication", "abstract_screening", "health"])
+def test_hung_model_call_is_cut_at_the_read_deadline_without_pausing(tmp_path, monkeypatch, task):
+    """D258: a call still out at the read deadline plus the drain margin closes as a cutoff; the run goes on."""
+    import time
+    from fakes import valid_response as respond
+
+    class Hanging(FakeAdapter):
+        hung = 0
+        reading = False
+
+        async def health(self, refresh=False):
+            if task == "health" and self.reading and not self.hung:
+                self.hung += 1
+                await asyncio.sleep(60)  # the connection check of the next call hangs
+            return await super().health(refresh)
+
+        async def run_step(self, base, developer, message, output_schema, requested_model, reasoning_effort=None):
+            from fakes import parse_step_input
+            kind = parse_step_input(message)["task_type"]
+            if kind == "fulltext_adjudication":
+                self.reading = True
+            if kind == task and not self.hung:
+                self.hung += 1
+                await asyncio.sleep(60)
+            return await super().run_step(base, developer, message, output_schema, requested_model, reasoning_effort)
+
+    bases, *rest = fast_path.MODES["quick"]
+    monkeypatch.setitem(fast_path.MODES, "quick", ((1, 1, 1, 2, 30), *rest))  # little carry-forward into read
+    freeze = fast_path.freeze_budget
+    def short_drain(*args, **kwargs):
+        policy = freeze(*args, **kwargs)
+        policy.pop("policy_hash")
+        policy["read_drain_ms"] = 300
+        return policy | {"policy_hash": canonical.sha256_hex(policy)}
+    monkeypatch.setattr(fast_path, "freeze_budget", short_drain)
+    adapter = Hanging(respond)
+    app, fetcher = app_for(tmp_path, monkeypatch, 30, pdf=True, fast_path="on", adapter=adapter,
+                           model_works=task == "abstract_screening")
+    started = time.monotonic()
+    with client_of(app) as client:
+        rid, run_id, _, run = discover(client)
+        elapsed = time.monotonic() - started
+        assert run["status"] == "completed", run
+        store = app.state.store
+        cut = [dict(r) for r in store.conn.execute(
+            "SELECT s.status, s.error_code, (SELECT count(*) FROM model_sessions m WHERE m.step_id = s.id) AS sessions"
+            " FROM run_steps s WHERE s.run_id = ? AND s.error_code = 'model_read_cutoff'", (run_id,))]
+        # A call cut while out keeps its one session; one cut before sending (a hung connection check) has none.
+        expected = ([{"status": "cancelled", "error_code": "model_read_cutoff", "sessions": 0}] if task == "health"
+                    else [{"status": "outcome_unknown", "error_code": "model_read_cutoff", "sessions": 1}])
+        assert cut == expected
+        read = stage_of(store, run_id, "read")
+        assert read["status"] == "done" and read["used_ms"] < read["alloc_ms"] + 2000
+    assert adapter.hung == 1 and elapsed < 30
+
+
+def test_a_cut_call_is_never_sent_again_on_resume(library):
+    """D258: a step closed at the read cutoff reads back as cut; the adapter is not reached again."""
+    from deixis.workflow.flow import _AdjudicationJob
+    lib = library
+    flow = ResearchFlow(SimpleNamespace(store=lib.store))
+    for key, kind in (("fulltext_adjudication:h0:1", "model:fulltext_adjudication"), ("s:abstract_screening:0:1", "model:abstract_screening")):
+        step = lib.store.step(lib.run["id"], key, kind)
+        lib.store.start_step(step["id"])
+        lib.store.finish_step(step["id"], "outcome_unknown", error_code="model_read_cutoff", error="read_cutoff")
+    async def check():
+        job = _AdjudicationJob("fulltext_adjudication:h0:1", "h0", "h0", 1)
+        assert await flow._adjudication_call(lib.run, {}, {}, job, None) == {"cutoff": True}
+        assert await flow._abstract_call(lib.run, {}, 0, 1, [], None, "s:abstract_screening") == {"cutoff": True}
+    asyncio.run(check())
+
+
+def test_rate_limit_resend_that_would_land_after_the_cutoff_is_not_waited_for(library, monkeypatch):
+    """D258: the backoff before a rate-limit resend counts against the read window too."""
+    import time
+    from datetime import timedelta as delta
+    from deixis.models.adapter import ModelStepResult
+    from deixis.workflow.flow import _ReadCutoff
+    lib = library
+    flow = ResearchFlow(SimpleNamespace(store=lib.store))
+    step = lib.store.step(lib.run["id"], "fulltext_adjudication:h0:1", "model:fulltext_adjudication")
+    flow._send_by[lib.run["id"]] = lambda: lib.clock.now() + delta(seconds=1)  # less than the 1.5 s backoff
+    monkeypatch.setattr(lib.store, "start_model_session", lambda *a, **k: "ses_synthetic")
+    monkeypatch.setattr(lib.store, "finish_model_session", lambda *a, **k: None)
+    monkeypatch.setattr(flow, "_model_result_checkpoint", lambda *a, **k: True)
+    sent = []
+
+    class Limited:
+        async def run_step(self, *args):
+            sent.append(args)
+            return ModelStepResult("failed", error="429", error_kind="rate_limited")
+
+    class Limiter:
+        async def reduce(self):
+            pass
+
+    async def check():
+        started = time.monotonic()
+        with pytest.raises(_ReadCutoff):
+            await flow._call_adapter(lib.run["id"], lib.rid, step["id"], "sin_synthetic", "fake", "fake-model",
+                                     Limited(), "b", "d", "m", {}, None, Limiter())
+        return time.monotonic() - started
+    assert asyncio.run(check()) < 1.0 and len(sent) == 1
+
+
 def test_new_read_keeps_chain_and_list_freeze_in_ranking(tmp_path, monkeypatch):
     freeze = small_batch.freeze_list
     seen = []

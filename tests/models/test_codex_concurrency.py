@@ -153,3 +153,53 @@ def test_codex_adapter_overlaps_turns_starts_one_server_and_cancels_both(monkeyp
         ("thread-1", "turn-thread-1"), ("thread-2", "turn-thread-2"),
     }
     assert [result.status for result in results] == ["completed", "completed"]
+
+
+import pytest
+
+
+@pytest.mark.parametrize("started", [True, False])
+def test_codex_turn_is_interrupted_when_its_caller_stops_waiting(monkeypatch, tmp_path, started):
+    """D258: a read cutoff cancels the wait; the adapter interrupts that turn and leaves the thread."""
+    class FakeServer:
+        def __init__(self, argv, cwd, env=None):
+            self.proc = None
+            self.sent = []
+            self.started = asyncio.Event()
+
+        async def start(self):
+            self.proc = SimpleNamespace(returncode=None)
+
+        async def initialize(self, client_name, version):
+            return {}
+
+        async def request(self, method, params=None, timeout=60.0):
+            self.sent.append((method, params))
+            if method == "thread/start":
+                return {"thread": {"id": "thread-1"}, "model": "resolved", "instructionSources": []}
+            return {}
+
+        async def run_turn(self, thread_id, text, output_schema, timeout=300.0, on_started=None, effort=None):
+            if started:
+                await on_started("turn-1")
+            self.started.set()  # without `started`, cancelled before the turn's id came back
+            await asyncio.sleep(60)
+
+        async def close(self):
+            pass
+
+    async def exercise():
+        codex = adapter.CodexAdapter(tmp_path / "home", tmp_path / "workspace")
+        call = asyncio.create_task(codex.run_step("base", "dev", "text", {}, "model"))
+        while codex._server is None or not codex._server.started.is_set():
+            await asyncio.sleep(0)
+        call.cancel()
+        await asyncio.gather(call, return_exceptions=True)
+        await asyncio.gather(*codex._abandoned)
+        return codex
+
+    monkeypatch.setattr(adapter, "CodexAppServer", FakeServer)
+    codex = asyncio.run(exercise())
+    assert (("turn/interrupt", {"threadId": "thread-1", "turnId": "turn-1"}) in codex._server.sent) is started
+    assert ("thread/unsubscribe", {"threadId": "thread-1"}) in codex._server.sent
+    assert not codex._active and not codex._abandoned

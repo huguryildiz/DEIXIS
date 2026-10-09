@@ -1653,6 +1653,7 @@ const tr: Record<string, string> = {
   'The connection says: {text}': 'Bağlantının bildirdiği: {text}',
   'The connection reported: {text}': 'Bağlantının bildirdiği hata: {text}',
   'The model call did not complete. Completed work is saved.': 'Model çağrısı tamamlanmadı. Tamamlanan iş kaydedildi.',
+  'The model did not answer before the reading time ran out; this work counts as not read in time.': 'Model okuma süresi dolmadan yanıt vermedi; bu makale zamanında okunmamış sayılır.',
   'The model session reported tool use or loaded instructions, so its output was rejected.': 'Model oturumu araç kullanımı veya yüklenmiş talimat bildirdiği için çıktısı reddedildi.',
   'A scholarly provider rate-limited a search. Completed searches are kept; no other provider was used in its place.': 'Bir akademik sağlayıcı bir aramaya hız sınırı uyguladı. Tamamlanan aramalar korunur; yerine başka sağlayıcı kullanılmadı.',
   'A scholarly provider exhausted its quota. Completed searches are kept; no other provider was used in its place. This run will not retry it automatically; resuming or retrying allows another attempt.': 'Bir akademik sağlayıcının kotası tükendi. Tamamlanan aramalar korunur; yerine başka sağlayıcı kullanılmadı. Bu koşuda otomatik yeniden deneme yapılmaz; sürdürme veya yeniden deneme yeni bir isteğe izin verir.',

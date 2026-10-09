@@ -4,6 +4,8 @@
 
 ## Şu an
 
+D258 asılı model çağrısı düzeltmesi main'de (9 Eki; Claude yazdı, Sol üç turda inceledi): canlı pilotta bir Codex okuma çağrısı ~5 dakika yanıt vermedi ve okuma aşaması payını 252 sn aştı. Artık okuma aşamasında yanıt vermeyen çağrı süre dolduktan en çok 5 sn sonra kesiliyor; koşu duraklamıyor, o makale özetten cevaba giriyor. Ölçülen: yapay testler. Ölçülmeyen: canlıda ne sıklıkla olduğu (ilk 8 koşuda 1).
+
 D257 hızlı yol okuma yeri düzeltmesi main'de (9 Eki; Claude yazdı, Sol üç turda inceledi: 2 kusur düzeltildi): ilk gerçek Hızlı koşu (dbr_vbf) 86 saniyede cevap verdi ama hiç tam metin okumadı, çünkü 10 okuma yeri listedeki ilk 10 makaleye gidiyordu ve PDF'i olmayan makale de yer tutuyordu. Artık metni alınamayan makale (PDF yok, okunamıyor ya da kaynak yanıt vermedi) yerini kalıcı olarak sıradaki makaleye bırakıyor (taranan ilk 25/50/100 makale içinde). Ölçülen: yapay testler. Ölçülmeyen: gerçek koşuda kaç tam metin kazandırdığı.
 
 D256 anlaşılır servis hataları main'de (9 Eki; Sol yazdı, Claude inceledi ve 5 kusuru düzeltti, Sol düzeltmeleri onayladı): model ya da akademik kaynak hata verince (kota bitti, hız sınırı, anahtar geçersiz, hatalı istek, servis çöktü, ağ yok) zaman çizelgesinde ve ayarlarda hangi servisin, neden durduğu, ne zaman tekrar denenebileceği ve araştırmanın ne durumda kaldığı Türkçe/İngilizce cümleyle görünüyor. Yeniden deneme kuralları ve run durumları değişmedi; yeni migration yok. Ölçülen: sentetik yanıtlarla testler. Ölçülmeyen: gerçek sağlayıcıların hata biçimleri, tarayıcı kabul testi.

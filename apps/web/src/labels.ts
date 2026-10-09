@@ -223,6 +223,7 @@ const pauseReasons: Record<string, string> = {
   model_connection_not_ready: 'The selected model connection is not ready. Nothing was sent to another model.',
   model_connection_unavailable: 'The selected model connection is not available. Nothing was sent to another model.',
   model_call_failed: 'The model call did not complete. Completed work is saved.',
+  model_read_cutoff: 'The model did not answer before the reading time ran out; this work counts as not read in time.',
   section_must_be_rewritten: 'A section must be written again.',
   section_failed: 'A section could not be written.',
   model_isolation_violation: 'The model session reported tool use or loaded instructions, so its output was rejected.',

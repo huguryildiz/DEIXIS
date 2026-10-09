@@ -93,6 +93,7 @@ class CodexAdapter:
         self._lock = asyncio.Lock()
         self._health: tuple[float, dict[str, Any]] | None = None
         self._active: set[tuple[str, str]] = set()
+        self._abandoned: set[asyncio.Task] = set()
 
     async def _ensure_server(self) -> CodexAppServer:
         async with self._lock:
@@ -190,6 +191,13 @@ class CodexAdapter:
             return ModelStepResult("failed", resolved_model=resolved, external_thread_id=thread_id,
                                    error=str(exc)[:300], delivery_class="after_send_unknown",
                                    error_kind=limit_kind(exc.error if isinstance(exc, RpcError) else str(exc)))
+        except asyncio.CancelledError:
+            # The caller stopped waiting (D258): stop the turn too, so it does not run on unseen. Cancelled before the
+            # turn's id came back, only the thread can be left; the turn may then run on unseen.
+            task = asyncio.get_running_loop().create_task(self._abandon(server, thread_id, active[1] if active else None))
+            self._abandoned.add(task)
+            task.add_done_callback(self._abandoned.discard)
+            raise
         finally:
             if active is not None:
                 self._active.discard(active)
@@ -207,6 +215,16 @@ class CodexAdapter:
             error_kind=limit_kind(turn.error) if status == "failed" else None,
             retry_after=turn.error.get("retryAfter") if isinstance(turn.error, dict) else None,
         )
+
+    @staticmethod
+    async def _abandon(server: Any, thread_id: str, turn_id: str | None) -> None:
+        steps = ([("turn/interrupt", {"threadId": thread_id, "turnId": turn_id})] if turn_id else []) + [
+            ("thread/unsubscribe", {"threadId": thread_id})]
+        for method, params in steps:
+            try:
+                await server.request(method, params, timeout=10)
+            except (RpcError, ConnectionError, TimeoutError, OSError):
+                pass
 
     async def cancel(self) -> bool:
         if not self._server:

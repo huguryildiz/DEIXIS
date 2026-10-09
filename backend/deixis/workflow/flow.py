@@ -199,6 +199,10 @@ def turn_timed_out(result: ModelStepResult) -> bool:
             and result.delivery_class == "after_send_unknown")
 
 
+class _ReadCutoff(Exception):
+    """A model call the read window's cutoff (D258) reached before it was sent."""
+
+
 class RunStopped(Exception):
     """The run ended early (pause, cancel or recorded failure); state is already persisted."""
 
@@ -353,6 +357,8 @@ class ResearchFlow:
         self._fast_consumers: dict[str, Any] = {}
         self._fast_chains: dict[str, Any] = {}
         self._held: dict[str, _Held] = {}
+        # D258: per run, the latest time a model answer is still waited for (a fast-path read window's cutoff).
+        self._send_by: dict[str, Callable[[], Any]] = {}
         self._quota_out: dict[str, set[str]] = {}
         self._openalex_budget: dict[str, acquisition.OpenAlexBudget] = {}
         from deixis.workflow.background_fetch import BackgroundFetchLane, FetchSlots
@@ -1492,7 +1498,7 @@ class ResearchFlow:
         # resumed run does not send and charge it again.
         answered = {s["operation_key"] for s in self.store.run_steps(run_id)
                     if s["kind"] == "model:abstract_screening"
-                    and (s["status"] == "succeeded" or s["error_code"] == "invalid_model_output"
+                    and (s["status"] == "succeeded" or s["error_code"] in ("invalid_model_output", "model_read_cutoff")
                          or (chain is not None and s["operation_key"].startswith(f"{prefix}:")
                              and s["status"] in ("failed", "outcome_unknown")))}
 
@@ -1547,8 +1553,12 @@ class ResearchFlow:
             if rows is None:
                 submitted -= job.key not in answered
                 return None
-            return await self._abstract_call(run, scope, job.number, job.run_no, rows, self.deps.limiter, prefix,
-                                             recheck=undecided)
+            output = await self._abstract_call(run, scope, job.number, job.run_no, rows, self.deps.limiter, prefix,
+                                               recheck=undecided)
+            if output is not None and output.get("cutoff"):
+                cutoff_batches.add(job.number)
+                return None
+            return output
 
         def close_ready(completed: list[tuple[dict[str, Any] | None, _AbstractJob]]) -> None:
             """Close every batch both of whose runs have come back, on the event loop, one short transaction each."""
@@ -1662,6 +1672,8 @@ class ResearchFlow:
         step = self.store.step(run["id"], key, "model:abstract_screening")
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
             return None
+        if step["error_code"] == "model_read_cutoff":
+            return {"cutoff": True}  # D258: a resumed run does not send it again
         if optional and step["status"] in ("failed", "outcome_unknown"):
             return None
         try:
@@ -3939,7 +3951,7 @@ class ResearchFlow:
         items = {item["head"]: item for item in works}
         answered = {s["operation_key"] for s in self.store.run_steps(run_id)
                     if s["kind"] == "model:fulltext_adjudication"
-                    and (s["status"] == "succeeded" or s["error_code"] == "invalid_model_output")}
+                    and (s["status"] == "succeeded" or s["error_code"] in ("invalid_model_output", "model_read_cutoff"))}
 
         def jobs() -> Iterator[_AdjudicationJob]:
             nonlocal submitted
@@ -3990,7 +4002,11 @@ class ResearchFlow:
                 submitted -= f"fulltext_adjudication:{job.head}:{job.run_no}" not in answered
                 return {"human_decided": True}
             try:
-                return await self._adjudication_call(run, scope, plan, job, self.deps.limiter, undecided)
+                output = await self._adjudication_call(run, scope, plan, job, self.deps.limiter, undecided)
+                if output is not None and output.get("cutoff"):
+                    cutoff_heads.add(job.head)
+                    return None
+                return output
             except RunStopped:
                 raise
             except Exception:
@@ -4182,6 +4198,8 @@ class ResearchFlow:
         step = self.store.step(run["id"], job.key, "model:fulltext_adjudication")
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
             return None
+        if step["error_code"] == "model_read_cutoff":
+            return {"cutoff": True}  # D258: a resumed run does not send it again
         passages = self._adjudication_passages(run["research_id"], scope, plan["criterion"], job.read_version)
         target = {"source_id": job.read_version, "criterion": plan["criterion"]["criterion"],
                   "parts": plan["criterion"]["parts"], "runs": FULLTEXT_RUNS, "run": job.run_no}
@@ -5686,6 +5704,12 @@ class ResearchFlow:
                 return False
         return True
 
+    def _send_window(self, run_id: str) -> float | None:
+        """Seconds a model answer of this run is still waited for (D258), or None when no read window bounds it."""
+        send_by = getattr(self, "_send_by", {}).get(run_id)
+        limit = send_by() if send_by is not None else None
+        return None if limit is None else (limit - self.store.clock.now()).total_seconds()
+
     async def _call_adapter(self, run_id: str, rid: str, step_id: str, step_input_id: str, connection: str,
                             requested_model: str | None, adapter: ModelAdapter, base: str, developer: str, message: str,
                             schema: dict[str, Any], reasoning_effort: str | None,
@@ -5701,8 +5725,19 @@ class ResearchFlow:
         attempts = 0
         while True:
             step_attempt = self.store.conn.execute("SELECT attempt FROM run_steps WHERE id = ?", (step_id,)).fetchone()[0]
+            remaining = self._send_window(run_id)
+            if remaining is not None and remaining <= 0:
+                raise _ReadCutoff  # not sent, so no session is opened and nothing is charged
             session = self.store.start_model_session(rid, run_id, step_id, step_input_id, connection, requested_model)
-            result = await adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort)
+            if remaining is None:
+                result = await adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort)
+            else:
+                try:
+                    result = await asyncio.wait_for(
+                        adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort), remaining)
+                except TimeoutError:
+                    # D258: the read window's cutoff does not wait for this answer; it would arrive too late to count.
+                    result = ModelStepResult("cutoff", error="read_cutoff", delivery_class="after_send_unknown")
             if not self._model_result_checkpoint(session, result, run_id, rid, step_id, step_input_id, step_attempt):
                 raise RunStopped
             if (limiter is None or result.status == "completed" or attempts >= MAX_RATE_LIMIT_MODEL_RETRIES
@@ -5716,6 +5751,9 @@ class ResearchFlow:
             )
             await limiter.reduce()
             self._checkpoint(run_id)
+            window = self._send_window(run_id)
+            if window is not None and window <= RATE_LIMIT_BACKOFF_SECONDS * attempts:
+                raise _ReadCutoff  # D258: the resend would come after the read cutoff
             self.store.service_waiting(run_id, connection, attempts, RATE_LIMIT_BACKOFF_SECONDS * attempts)
             await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * attempts)
             self._checkpoint(run_id)
@@ -5799,7 +5837,22 @@ class ResearchFlow:
         adapter = self.deps.adapters.get(connection)
         if adapter is None:
             halt("model_connection_unavailable", {"connection": connection})
-        health = await adapter.health()
+
+        def cut_before_send() -> dict[str, Any]:
+            # D258: closed for good at the read cutoff; the abstract and full-text stages read it as not read in time.
+            self.store.finish_step(step["id"], "cancelled", error_code="model_read_cutoff", error="read_cutoff")
+            return {"cutoff": True}
+
+        window = self._send_window(run_id)
+        if window is not None:
+            try:
+                if window <= 0:
+                    raise TimeoutError
+                health = await asyncio.wait_for(adapter.health(), window)
+            except TimeoutError:
+                return cut_before_send()
+        else:
+            health = await adapter.health()
         if not health.get("ready"):
             halt("model_connection_not_ready", {"connection": connection, "reason": safe_error(health.get("reason")),
                  **({"error_kind": health["reason_code"]} if health.get("reason_code") else {}), "reset_at": health.get("reset_at")})
@@ -5992,11 +6045,14 @@ class ResearchFlow:
             sent_extra, sent_input = extra, payload["step_input_id"]
             step_attempt = self.store.conn.execute("SELECT attempt FROM run_steps WHERE id = ?", (step["id"],)).fetchone()[0]
             reserved.discard(operation_key)
-            session, result = await self._call_adapter(
-                run_id, rid, step["id"], payload["step_input_id"], connection, requested_model, adapter, base, developer,
-                message, schema, reasoning_effort, limiter,
-                unchanged if recheck is not None or resend_guard is not None else None,
-            )
+            try:
+                session, result = await self._call_adapter(
+                    run_id, rid, step["id"], payload["step_input_id"], connection, requested_model, adapter, base,
+                    developer, message, schema, reasoning_effort, limiter,
+                    unchanged if recheck is not None or resend_guard is not None else None,
+                )
+            except _ReadCutoff:
+                return cut_before_send()
             if session is None:
                 continue  # rate-limited, and a work of this input was decided since: the next attempt is built anew
             if not self._model_result_checkpoint(session, result, run_id, rid, step["id"], payload["step_input_id"], step_attempt):
@@ -6014,6 +6070,12 @@ class ResearchFlow:
                 "status": result.status, "resolved_model": result.resolved_model, "external_thread_id": result.external_thread_id,
                 "raw_output": result.raw_text, "token_usage_json": result.token_usage, "tool_item_types_json": result.tool_item_types,
             }
+            if result.status == "cutoff":
+                # Closed without a pause or a resend: the read window records the work as not read at its cutoff.
+                complete("outcome_unknown" if result.delivery_class == "after_send_unknown" else "cancelled",
+                         error_code="model_read_cutoff", error=result.error, delivery_class=result.delivery_class,
+                         **sent_output())
+                return {"cutoff": True}
             if result.status == "isolation_violation" or result.tool_item_types:
                 complete("failed", error_code="model_isolation_violation",
                                                error={"tool_item_types": result.tool_item_types, "error": result.error}, **sent_output())

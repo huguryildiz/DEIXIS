@@ -1,8 +1,10 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 9 Ekim 2026.
+**Son güncelleme:** 10 Ekim 2026.
 
 ## Şu an
+
+D259 bölünen iddiaların etiket düzeltmesi (10 Eki; Claude yazdı, Sol iki turda inceledi: 3 kusur düzeltildi): 36 koşuluk canlı denemede bir cevap (irs2021, Derin) hiç yayınlanmadı. Model fazladan onarımda birden çok kaynağa dayanan iddiayı doğru şekilde üç tek kaynaklı iddiaya böldü ama üçüne de aynı etiketi (c12) verdi; doğrulayıcı tüm cevabı reddetti. Artık bölünen parçalar, hangi alıntının hangi parçaya ait olduğu kesinse, yeni etiket alıyor; metin, kaynak ve alıntılar değişmiyor. Ölçülen: yapay testler ve gerçek başarısız çıktının yeniden doğrulanması (geçerli çıkıyor). Ölçülmeyen: canlıda ne sıklıkla olduğu (36 koşuda 1).
 
 D258 asılı model çağrısı düzeltmesi main'de (9 Eki; Claude yazdı, Sol üç turda inceledi): canlı pilotta bir Codex okuma çağrısı ~5 dakika yanıt vermedi ve okuma aşaması payını 252 sn aştı. Artık okuma aşamasında yanıt vermeyen çağrı süre dolduktan en çok 5 sn sonra kesiliyor; koşu duraklamıyor, o makale özetten cevaba giriyor. Ölçülen: yapay testler. Ölçülmeyen: canlıda ne sıklıkla olduğu (ilk 8 koşuda 1).
 

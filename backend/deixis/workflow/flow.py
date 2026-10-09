@@ -3038,6 +3038,9 @@ class ResearchFlow:
                 if not second.get("repair_skipped"):
                     output, key = second, RESPLIT_KEY
                     extra_repair = {"labels": labels, "outcome": "rejected" if second.get("invalid") else "published"}
+                    stored = (self.store.existing_step(run_id, RESPLIT_KEY) or {}).get("output") or {}
+                    if (stored.get("resplit") or {}).get("relabelled"):  # D259
+                        extra_repair["relabelled"] = stored["resplit"]["relabelled"]
                 else:
                     extra_repair = {"labels": labels, "outcome": "skipped_budget"}
         step = self.store.step(run_id, key, "model:grounded_answer")
@@ -5827,8 +5830,10 @@ class ResearchFlow:
             _, last, _, capped = self._answer_repair_state(step["id"], resplit, schema_repairs(task_type))
             if capped:
                 self._checkpoint(run_id, run["scope_revision"])
+                relabelled = json.loads(last["validation_json"]).get("relabelled")  # D259: kept across the recovery
                 output = {"step_input_id": last["id"]} | (
-                    {"resplit": {"labels": resplit["labels"], "outcome": "rejected"}} if resplit is not None else {})
+                    {"resplit": {"labels": resplit["labels"], "outcome": "rejected"} | ({"relabelled": relabelled} if relabelled else {})}
+                    if resplit is not None else {})
                 self.store.start_step(step["id"])
                 self.store.finish_step(step["id"], "failed", output=output, error_code="invalid_model_output",
                                        error=json.loads(last["validation_json"])["issues"])
@@ -5878,8 +5883,12 @@ class ResearchFlow:
             repair_issues, invalid_raw, invalid_input, repairs = (
                 resplit["issues"], resplit["raw_output"], resplit["step_input_id"], max_repairs)
 
+        split_relabel: dict[str, list[str]] = {}
+
         def resplit_meta(outcome: str) -> dict[str, Any]:
-            return {"resplit": {"labels": resplit["labels"], "outcome": outcome}} if resplit is not None else {}
+            if resplit is None:
+                return {}
+            return {"resplit": {"labels": resplit["labels"], "outcome": outcome} | ({"relabelled": split_relabel} if split_relabel else {})}
         extra = step_output_extra or {}
         sent_extra, sent_input = None, None
         attempt_records = {}
@@ -6133,6 +6142,11 @@ class ResearchFlow:
                 normalised_changes.extend(stamps)
                 output_text, stamps = contracts.stamp_step_input_id(task_type, payload, output_text)
                 normalised_changes.extend(stamps)
+                if resplit is not None:
+                    # D259: parts of a split claim that kept the offending label get new labels; nothing else changes.
+                    output_text, relabelled = contracts.relabel_split_claims(output_text, resplit["labels"])
+                    split_relabel.clear()
+                    split_relabel.update(relabelled)
                 report = contracts.validate_model_output(payload, output_text)
                 if task_type == "report_section" and repair_issues is not None:
                     report.issues.extend(contracts.report_section_repair_issues(patch_base, output_text))
@@ -6152,6 +6166,8 @@ class ResearchFlow:
                                          "normalised": normalised_changes}
             if patch_record is not None:
                 recorded["validation_json"]["anchor_patch"] = patch_record
+            if split_relabel:
+                recorded["validation_json"]["relabelled"] = dict(split_relabel)
             if report.ok:
                 if task_type == "grounded_answer":
                     report.result = contracts.name_sources_in_prose(payload, report.result)

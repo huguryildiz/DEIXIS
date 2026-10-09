@@ -2688,6 +2688,61 @@ def resplit_labels(issues: list[dict[str, Any]], draft: Any, step_input: dict[st
     return [issue["message"].split(":", 1)[0] for issue in issues if issue.get("code") == SEVERAL_SOURCES]
 
 
+def relabel_split_claims(draft: Any, labels: list[str]) -> tuple[Any, dict[str, list[str]]]:
+    """D259: give the parts of a split claim that kept the offending label new labels, before validation.
+
+    Only a label the extra repair named (D249) is touched, and only when its claims cite pairwise disjoint passages,
+    so every anchor of that label belongs to exactly the claim that cites its passage. The first claim keeps the label;
+    each later one gets the next unused number. Claim text, passages, quotes and order are unchanged. Anything else
+    (an anchor whose passage none or several of them cite, no free number) leaves the draft as it is for the validator.
+    """
+    if not isinstance(draft, dict) or not isinstance(draft.get("claims"), list) or not isinstance(draft.get("citation_anchors"), list):
+        return draft, {}
+    claims, anchors = draft["claims"], draft["citation_anchors"]
+    if not all(isinstance(c, dict) and isinstance(c.get("claim_label"), str) and isinstance(c.get("passage_ids"), list)
+               and all(isinstance(pid, str) for pid in c["passage_ids"]) for c in claims):
+        return draft, {}
+    if not all(isinstance(a, dict) and isinstance(a.get("claim_label"), str) and isinstance(a.get("passage_id"), str) for a in anchors):
+        return draft, {}
+    used = {c["claim_label"] for c in claims} | {a["claim_label"] for a in anchors}
+    numbers = [int(m.group(1)) for label in used if (m := re.fullmatch(r"c([0-9]{1,3})", label))]
+    following = max(numbers, default=0) + 1
+    plan: dict[int, str] = {}
+    anchor_plan: dict[int, str] = {}
+    renamed: dict[str, list[str]] = {}
+    for label in dict.fromkeys(labels):
+        parts = [i for i, c in enumerate(claims) if c["claim_label"] == label]
+        if len(parts) < 2:
+            continue
+        cited = [set(claims[i]["passage_ids"]) for i in parts]
+        if sum(map(len, cited)) != len(set().union(*cited)):  # a passage cited by two parts
+            continue
+        owners = {}
+        for j, anchor in enumerate(anchors):
+            if anchor["claim_label"] != label:
+                continue
+            owner = [i for i, passages in zip(parts, cited) if anchor["passage_id"] in passages]
+            if len(owner) != 1:
+                break
+            owners[j] = owner[0]
+        else:
+            if following + len(parts) - 2 > 999:  # the new labels are following .. following + len(parts) - 2
+                continue
+            new = {parts[0]: label} | {i: f"c{following + k}" for k, i in enumerate(parts[1:])}
+            following += len(parts) - 1
+            plan.update(new)
+            anchor_plan.update({j: new[i] for j, i in owners.items()})
+            renamed[label] = [new[i] for i in parts]
+    if not renamed:
+        return draft, {}
+    draft = copy.deepcopy(draft)
+    for i, label in plan.items():
+        draft["claims"][i]["claim_label"] = label
+    for j, label in anchor_plan.items():
+        draft["citation_anchors"][j]["claim_label"] = label
+    return draft, renamed
+
+
 def salvage_answer_draft(step_input: dict[str, Any], draft: dict[str, Any]) -> tuple[dict[str, Any], list[Issue]]:
     """D244: prune only anchor defects; require a revalidated answer with at least one claim."""
     if step_input["task_type"] != "grounded_answer":

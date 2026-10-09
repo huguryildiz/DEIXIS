@@ -365,13 +365,14 @@ async def _render_candidate(store: Store, candidate: dict[str, Any],
 
 async def _attach_rendition(store: Store, source_version_id: str, candidate: dict[str, Any], data: bytes,
                             papers_dir: Any, *, research_id: str | None = None,
-                            recovery_dir: Path | None = None) -> str:
+                            recovery_dir: Path | None = None,
+                            before_publish: Callable[[], Awaitable[None]] | None = None) -> str:
     # The asset names the fullTextXML address it was drawn from, not the address the XML finally came from, and the
     # file name code gives it, so the rendition is recognised on every surface (`jats.RENDITION_SQL`).
     url = candidate["candidate_url"]
     return await _attach_pdf(store, source_version_id, data, papers_dir, "download", url,
                              filename=jats.filename(url.rsplit("/", 2)[-2]), research_id=research_id,
-                             recovery_dir=recovery_dir)
+                             recovery_dir=recovery_dir, before_publish=before_publish)
 
 
 def _title_key(text: str | None) -> str:
@@ -430,7 +431,8 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                              xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml, *,
                              recovery_dir: Path | None = None,
                              openalex_budget: OpenAlexBudget | None = None,
-                             workflow_run_id: str | None = None) -> dict[str, Any]:
+                             workflow_run_id: str | None = None,
+                             before_publish: Callable[[], Awaitable[None]] | None = None) -> dict[str, Any]:
     """Look this record's DOI up in Unpaywall, OpenAlex, Crossref and CORE and retrieve a copy of its own version.
 
     When none of their verified copies gave a file, Europe PMC is asked once (SW21, D106): its open-access full text
@@ -468,6 +470,8 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     record("crossref", cr)
     record("core", await core_lookup(client, doi, core_key))
     if cr.record is not None:
+        if before_publish is not None:
+            await before_publish()
         store.enrich_source("crossref", source_version_id, cr.record)
 
     asset_id = None
@@ -487,7 +491,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                 continue
             asset_id = await _attach_pdf(store, source_version_id, result.data, papers_dir, "download",
                                          result.final_url or candidate["candidate_url"], research_id=research_id,
-                                         recovery_dir=recovery_dir)
+                                         recovery_dir=recovery_dir, before_publish=before_publish)
             break
 
     # Europe PMC only for a record still without a file, after the four lookups and their verified copies (SW21).
@@ -505,13 +509,15 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
             tried.add(candidate["candidate_url"])
             if (data := await _render_candidate(store, candidate, xml_fetcher)) is not None:
                 asset_id = await _attach_rendition(store, source_version_id, candidate, data, papers_dir,
-                                                  research_id=research_id, recovery_dir=recovery_dir)
+                                                  research_id=research_id, recovery_dir=recovery_dir,
+                                                  before_publish=before_publish)
                 break
 
     lookup_version_id = None
     if other_versions and not store.has_asset(source_version_id):
         asset_id, lookup_version_id = await _attach_other_version(
-            store, research_id, source_version_id, papers_dir, fetcher, xml_fetcher, recovery_dir=recovery_dir)
+            store, research_id, source_version_id, papers_dir, fetcher, xml_fetcher, recovery_dir=recovery_dir,
+            before_publish=before_publish)
 
     # A listed URL is not a found PDF: it may be gated, dead, HTML, or a different version. Make the fallback explicit
     # and retain its uncertain-version candidates for manual review/upload; never silently attach them.
@@ -539,7 +545,8 @@ VERSION_ORDER = ("publishedVersion", "acceptedVersion", "submittedVersion")
 async def _attach_other_version(store: Store, research_id: str, source_version_id: str, papers_dir: Any,
                                 fetcher: Callable[[str], Awaitable[fetch.FetchResult]],
                                 xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml, *,
-                                recovery_dir: Path | None = None
+                                recovery_dir: Path | None = None,
+                                before_publish: Callable[[], Awaitable[None]] | None = None
                                 ) -> tuple[str | None, str | None]:
     """Attach a verified copy of another declared version to its own row under the same work; (asset, row) or (None, None).
 
@@ -556,32 +563,40 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
         if existing and store.has_asset(existing):
             # Already fetched, perhaps by another research that holds the same record: the row joins this research
             # and the file is not asked for again.
+            if before_publish is not None:
+                await before_publish()
             store.open_lookup_version(research_id, source_version_id, candidate["version_label"], candidate["landing_url"])
             return None, existing
         if candidate["provider"] == "europepmc":
             # Europe PMC's copy under the same rule; its row is opened only for a drawing that succeeded.
             if (data := await _render_candidate(store, candidate, xml_fetcher)) is None:
                 continue
+            if before_publish is not None:
+                await before_publish()
             version_id = store.open_lookup_version(research_id, source_version_id, candidate["version_label"],
                                                    candidate["landing_url"])
             return await _attach_rendition(store, version_id, candidate, data, papers_dir,
-                                           research_id=research_id, recovery_dir=recovery_dir), version_id
+                                           research_id=research_id, recovery_dir=recovery_dir,
+                                           before_publish=before_publish), version_id
         result = await fetcher(candidate["candidate_url"])
         store.record_pdf_attempt(candidate["id"], result)
         if result.status != "ok":
             continue
+        if before_publish is not None:
+            await before_publish()
         version_id = store.open_lookup_version(research_id, source_version_id, candidate["version_label"],
                                                candidate["landing_url"])
         asset_id = await _attach_pdf(store, version_id, result.data, papers_dir, "download",
                                      result.final_url or candidate["candidate_url"], research_id=research_id,
-                                     recovery_dir=recovery_dir)
+                                     recovery_dir=recovery_dir, before_publish=before_publish)
         return asset_id, version_id
     return None, None
 
 
 async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_dir: Any, origin: str,
                       retrieved_from: str | None, filename: str | None = None, *, research_id: str | None = None,
-                      recovery_dir: Path | None = None) -> str:
+                      recovery_dir: Path | None = None,
+                      before_publish: Callable[[], Awaitable[None]] | None = None) -> str:
     from deixis.workflow import text_retry
 
     recovery_dir = file_restore.resolve_recovery_dir(store, papers_dir, recovery_dir)
@@ -591,6 +606,8 @@ async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_
     read = await text_retry.read_verified(store, papers_dir, recovery_dir, storage_path=path.name,
                                           sha256=sha, byte_size=len(data), lock=True)
     extraction = read.extraction
+    if before_publish is not None:
+        await before_publish()
     return store.add_asset_with_pages(source_version_id, sha, len(data), path.name, origin, retrieved_from, filename,
                                       extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
                                       input_observation=read.observation)

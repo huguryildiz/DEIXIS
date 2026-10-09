@@ -939,7 +939,11 @@ class Store:
                 f"SELECT 1 FROM runs WHERE research_id = ? AND id != ? AND status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",
                 (run["research_id"], run_id, *ACTIVE_RUN_STATUSES),
             ).fetchone()
-            if active:
+            background_active = self.conn.execute(
+                "SELECT 1 FROM fast_path_background_fetches WHERE run_id = ?"
+                " AND status IN ('queued', 'running') LIMIT 1", (run_id,)
+            ).fetchone()
+            if active or background_active:
                 raise RunInProgress(run["research_id"])
             # A search closed because its query's share was spent before it asked is retried too: the retry adds
             # to every query's share, which is what it lacked (D89; review of 13f, 2026-09-23).

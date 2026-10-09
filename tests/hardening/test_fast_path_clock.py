@@ -144,7 +144,7 @@ def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, 
         assert policy["total_ms"] == sum(bases) * 1000
         assert policy["mode"] == ("deep" if effort == "detailed" else effort)
         assert policy["policy_hash"] == canonical.sha256_hex({k: v for k, v in policy.items() if k != "policy_hash"})
-        assert policy["enforcement"] == "none" and policy["runner_version"] == 1
+        assert policy["enforced_stages"] == ["read"] and policy["runner_version"] == 2
         ledger = app.state.store.conn.execute("SELECT * FROM fast_path_ledgers WHERE ledger_run_id = ?", (run_id,)).fetchone()
         assert (ledger["research_id"], ledger["scope_revision"], ledger["started_at"], ledger["policy_hash"]) == (
             rid, 1, run["created_at"], policy["policy_hash"])
@@ -530,6 +530,7 @@ def test_21_chain_activity_overlaps_read_without_double_charging(library):
 
 
 def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
+    from deixis.workflow import fast_read
     clock = FakeClock()
     for method in ("_vocabulary", "_search_round", "_ranking", "_semantic_ranking", "_review"):
         original = getattr(ResearchFlow, method)
@@ -537,11 +538,11 @@ def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
             clock.advance(2)
             return await _original(self, *args, **kwargs)
         monkeypatch.setattr(ResearchFlow, method, timed)
-    execute = small_batch.execute
+    execute = fast_read.execute
     async def read(flow, *args, **kwargs):
         clock.advance(3)
         return await execute(flow, *args, **kwargs)
-    monkeypatch.setattr(small_batch, "execute", read)
+    monkeypatch.setattr(fast_read, "execute", read)
     app = app_for(tmp_path, clock, "on")
     with client_of(app) as client:
         rid, discovery_id, _, discovery = discover(client)

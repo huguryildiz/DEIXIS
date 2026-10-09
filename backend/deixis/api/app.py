@@ -679,9 +679,10 @@ def create_app(
         builtin = EmbeddingService(builtin_paths, embedder, http)
         await builtin.start()  # recovers an install a closed DEIXIS left running, then checks the files in full
         local_embedding.register(builtin.integrity)
+        from deixis.workflow.background_fetch import FetchSlots
         flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf, equations,
                                      limiter=ModelCallLimiter(settings.model_concurrency), local_embedder=embedder,
-                                     fetch_xml=xml_fetcher or acquisition.fetch_xml, clock=store.clock))
+                                     fetch_xml=xml_fetcher or acquisition.fetch_xml, clock=store.clock, fetch_slots=FetchSlots(12)))
         app.state.builtin = builtin
         worker = Worker(store, flow, settings.lock_path)
         owner = start_worker and worker.acquire()

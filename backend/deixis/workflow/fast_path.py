@@ -1,4 +1,4 @@
-"""D250: frozen policy metadata and active wall time; no deadline enforcement."""
+"""Frozen policy, durable active wall time and stage-specific soft deadlines."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from deixis.domain import canonical
 from deixis.storage.db import new_id, transaction
 
 POLICY = "fast_path_v1"
-RUNNER_VERSION = 1
+RUNNER_VERSION = 2
 STAGES = ("plan", "search", "ranking", "read", "answer")
 MODES = {
     "quick": ((30, 30, 30, 60, 30), 25, 10, 450, 10, 2, 2),
@@ -45,7 +45,8 @@ def elapsed(start: str, end: str) -> int:
 def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
     bases, n, k, cap, seeds, backward, forward = MODES[effort]
     policy = {
-        "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": "none",
+        "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["read"],
+        "enforced_stages": ["read"], "background_fetch_slots": 4,
         "mode": "deep" if effort == "detailed" else effort,
         "stage_base_ms": dict(zip(STAGES, (s * 1000 for s in bases))), "total_ms": sum(bases) * 1000,
         "N": n, "K": k, "keyword_record_cap": cap, "semantic_top": 50,
@@ -59,6 +60,31 @@ def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
 
 def enabled(budget: dict[str, Any]) -> bool:
     return (budget.get("fast_path") or {}).get("policy") == POLICY
+
+
+def enforces(budget: dict[str, Any], stage: str) -> bool:
+    stages = (budget.get("fast_path") or {}).get("enforced_stages")
+    return enabled(budget) and isinstance(stages, list) and stage in stages
+
+
+def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | None:
+    if not enforces(run["budget"], stage):
+        return None
+    ledger = run["budget"]["fast_path"].get("ledger_run_id", run["id"])
+    row = store.conn.execute(
+        "SELECT i.started_at, s.alloc_ms, s.used_ms FROM fast_path_stages s"
+        " JOIN fast_path_intervals i ON i.ledger_run_id = s.ledger_run_id AND i.stage = s.stage"
+        " WHERE s.ledger_run_id = ? AND s.stage = ? AND s.status = 'open'"
+        " AND i.run_id = ? AND i.closed_at IS NULL AND i.rework = 0",
+        (ledger, stage, run["id"])).fetchone()
+    if row is None:
+        return None
+    return datetime.fromisoformat(row["started_at"]) + timedelta(milliseconds=row["alloc_ms"] - row["used_ms"])
+
+
+def past_deadline(store: Any, run: dict[str, Any], stage: str) -> bool:
+    deadline = stage_deadline(store, run, stage)
+    return deadline is not None and store.clock.now() >= deadline
 
 
 def answer_budget(store: Any, rid: str, revision: int, budget: dict[str, Any]) -> dict[str, Any]:
@@ -240,7 +266,7 @@ def view(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
         stage["rework_ms"] += sum(elapsed(i["started_at"], ts) for i in opened if i["rework"])
         stage["overrun_ms"] = max(0, stage["used_ms"] - stage["alloc_ms"])
         stages.append(stage)
-    return {
+    result = {
         "policy": ledger["policy"], "policy_hash": ledger["policy_hash"], "enforcement": "none",
         "ledger_run_id": ledger_id, "role": binding.get("role"), "stages": stages,
         "balance_ms": sum(s["base_ms"] - s["used_ms"] for s in stages if s["seq"] > 0),
@@ -251,3 +277,8 @@ def view(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
         "rerun_used_ms": sum(elapsed(i["started_at"], i["closed_at"] or ts) for i in intervals
                              if i["run_id"] == run["id"] and i["stage"] == "answer_rerun"),
     }
+    policy = store.run(ledger_id)["budget"]["fast_path"]
+    if "enforced_stages" in policy:
+        result["enforced_stages"] = policy["enforced_stages"]
+        result["enforcement"] = policy["enforced_stages"]
+    return result

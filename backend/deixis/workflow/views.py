@@ -495,6 +495,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         run["steps"] = store.run_steps(run["id"])
         if fast_path.enabled(run["budget"]):
             run["fast_path"] = fast_path.view(store, run)
+            if fast_path.enforces(run["budget"], "read"):
+                from deixis.workflow import fast_read
+                run["fast_path"]["read"] = fast_read.view(store, run)
         if (run["budget"].get("inspection") or {}).get("policy") == "small_batch_fused_v1":
             run["inspection_progress"] = inspection_progress(store, run)
         # The protocol this run froze; a run that froze none (an answer run) ran under the revision's latest one.

@@ -339,6 +339,7 @@ class FlowDeps:
     local_embedder: Any = None  # documents.local_embedding.LocalEmbedder: the built-in embedding model (slice 21)
     fetch_xml: Callable[[str], Awaitable[fetch_module.FetchResult]] = acquisition.fetch_xml  # Europe PMC (SW21)
     clock: fast_path.Clock | None = None
+    fetch_slots: Any = None
 
 
 class ResearchFlow:
@@ -351,6 +352,10 @@ class ResearchFlow:
         self._held: dict[str, _Held] = {}
         self._quota_out: dict[str, set[str]] = {}
         self._openalex_budget: dict[str, acquisition.OpenAlexBudget] = {}
+        from deixis.workflow.background_fetch import BackgroundFetchLane, FetchSlots
+        if getattr(deps, "fetch_slots", None) is None:
+            deps.fetch_slots = FetchSlots()
+        self.background_fetch = BackgroundFetchLane(self)
 
     async def execute(self, run_id: str) -> None:
         # Resume and retry use the same flow and run ID; quota may have reset between executions.
@@ -580,11 +585,15 @@ class ResearchFlow:
         self._enter_clock_stage(run, "ranking")
         await self._source_similarity(run, scope, pool)
         await self._ranking(run, scope, vocabulary)
-        self._close_clock_stage(run, "ranking")
+        read_enforced = fast_path.enforces(run["budget"], "read")
+        if not read_enforced:
+            self._close_clock_stage(run, "ranking")
         self.store.update_run(run_id, stage="screening")
-        self._enter_clock_stage(run, "read")
+        if not read_enforced:
+            self._enter_clock_stage(run, "read")
         await small_batch.execute(self, run, scope, vocabulary)
-        self._close_clock_stage(run, "read")
+        if not read_enforced:
+            self._close_clock_stage(run, "read")
 
         # Derive a short title from the question and the included sources once screening is done. A structurally valid
         # answer later replaces it (store.save_answer). Optional: the run continues with the provisional title on failure.
@@ -1356,7 +1365,8 @@ class ResearchFlow:
     async def _abstract_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                               order: list[str], chain: list[str] | None = None, *,
                               batch_key: str | None = None, read_limit: int | None = None,
-                              frozen_plan: dict[str, Any] | None = None) -> None:
+                              frozen_plan: dict[str, Any] | None = None,
+                              cutoff: Callable[[], bool] | None = None) -> None:
         """Classify every record by code, then ask the model twice about the works code left open (K3, D81).
 
         Nothing is included here: the abstract stage has no `include` outcome (SW1.2). A work is included only by
@@ -1391,6 +1401,7 @@ class ResearchFlow:
         collected: dict[int, dict[int, dict[str, Any] | None]] = {}
         rows_of: dict[int, list[dict[str, Any]]] = {}
         closed: set[int] = set()
+        cutoff_batches: set[int] = set()
 
         # Read, not opened: a batch the budget never reaches must not be left with a pending step of its own.
         # The chain's read is optional (D95): a call of it that failed is answered too, and reads as nothing, so a
@@ -1419,6 +1430,8 @@ class ResearchFlow:
                 # answers unused and later batches unread while the budget still held them.
                 owed = [run_no for run_no in range(1, runs + 1)
                         if f"{prefix}:{number}:{run_no}" not in answered]
+                if owed and cutoff is not None and cutoff():
+                    return
                 if owed and not self._reserve_model_pair(run,
                         [f"{prefix}:{number}:{n}" for n in owed], submitted, spent_before):
                     # The budget stopped short of this batch. Its records are unread, which is a state the workflow
@@ -1439,6 +1452,10 @@ class ResearchFlow:
 
         async def call(job: _AbstractJob) -> dict[str, Any] | None:
             nonlocal submitted
+            if job.key not in answered and cutoff is not None and cutoff():
+                cutoff_batches.add(job.number)
+                submitted -= 1
+                return None
             # Checked again once the limiter let the call through, and once more before every send (`_model_step`): a
             # person may have decided a record's work while the call waited. Those records are not sent; a call left
             # with none is not made or charged (slice 16).
@@ -1456,6 +1473,10 @@ class ResearchFlow:
             for number in sorted(collected):
                 if number in closed or len(collected[number]) < runs:
                     continue
+                if number in cutoff_batches:
+                    unread.extend(row["source_version_id"] for row in rows_of[number])
+                    closed.add(number)
+                    continue
                 self._checkpoint(run_id, revision)
                 closed.add(number)
                 # A record one run of the batch was not sent gets nothing from the batch, even if the person's
@@ -1466,6 +1487,9 @@ class ResearchFlow:
                 self._wake_fetch(run_id, prefix, number)
 
         stop = await self._send_through_limiter(run, jobs(), call, close_ready)
+        if cutoff is not None:
+            unread.extend(svid for n, batch in enumerate(batches) if n not in closed for svid in batch
+                          if svid not in self._human_decided_records(run["research_id"], batch))
         if unread and stop is None:
             key = "chain_abstract_stage" if chain is not None else "abstract_stage"
             if batch_key:
@@ -3336,6 +3360,9 @@ class ResearchFlow:
             return
         path = placement.path
         extraction = read.extraction
+        if fast_path.enforces(run["budget"], "read"):
+            from deixis.workflow.background_fetch import before_publish
+            await before_publish(self, run, source["work_id"])
         asset_id = self.store.add_asset_with_pages(
             source["id"], sha, len(result.data), path.name, "download", result.final_url, None,
             extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
@@ -3373,6 +3400,8 @@ class ResearchFlow:
                 self.deps.fetch_pdf, core_key=CONNECTORS["core"].api_key(), web_search=False, other_versions=other_versions,
                 xml_fetcher=self.deps.fetch_xml, recovery_dir=settings.recovery_dir,
                 openalex_budget=self._openalex_budget_of(run["id"]), workflow_run_id=run["id"],
+                **({"before_publish": lambda: self._fast_fetch_publish(run, source["work_id"])}
+                   if fast_path.enforces(run["budget"], "read") else {}),
             )
         except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
             refused = isinstance(exc, file_restore.FileRestoreRefused)
@@ -3394,6 +3423,10 @@ class ResearchFlow:
                                                              if found.get("lookup_version_id") else {})},
                                error_code=None if status == "succeeded" else f"extraction_{asset['extraction_status']}")
         return found
+
+    async def _fast_fetch_publish(self, run: dict[str, Any], work_id: str | None = None) -> None:
+        from deixis.workflow.background_fetch import before_publish
+        await before_publish(self, run, work_id)
 
 
     def _stop_requested(self, run_id: str, revision: int) -> bool:
@@ -3712,6 +3745,12 @@ class ResearchFlow:
                                    error={"head": head, "error": f"{type(exc).__name__}: {exc}"})
             return
         output["claim"] = claim
+        if fast_path.enforces(run["budget"], "read"):
+            try:
+                await self._fast_fetch_publish(run, work_id)
+            except RunStopped:
+                self.store.finish_step(step["id"], "cancelled", output=output, error_code="run_stopped")
+                raise
         if output["code"] is None:
             # Waiting for OpenAlex's budget is its own cause: nothing was tried that could settle the work, and the
             # work stays open for the first run after the reset.
@@ -3742,7 +3781,8 @@ class ResearchFlow:
 
     async def _fulltext_adjudication(self, run: dict[str, Any], scope: dict[str, Any], *,
                                     batch_key: str | None = None, order: list[str] | None = None,
-                                    read_limit: int | None = None) -> None:
+                                    read_limit: int | None = None,
+                                    cutoff: Callable[[], bool] | None = None) -> None:
         """Two model runs per work, then a code decision from the pair (D85).
 
         The plan is frozen before any call. A work is sent only when every call it still owes fits in the run's
@@ -3766,6 +3806,7 @@ class ResearchFlow:
         submitted = 0
         collected: dict[str, dict[int, dict[str, Any] | None]] = {}
         closed: set[str] = set()
+        cutoff_heads: set[str] = set()
         items = {item["head"]: item for item in works}
         answered = {s["operation_key"] for s in self.store.run_steps(run_id)
                     if s["kind"] == "model:fulltext_adjudication"
@@ -3785,6 +3826,8 @@ class ResearchFlow:
                     continue  # the file the plan froze is no longer in use as it was: not read here (slice 18b)
                 owed = [run_no for run_no in range(1, FULLTEXT_RUNS + 1)
                         if f"fulltext_adjudication:{head}:{run_no}" not in answered]
+                if owed and cutoff is not None and cutoff():
+                    return
                 if owed and not self._reserve_model_pair(run,
                         [f"fulltext_adjudication:{head}:{n}" for n in owed], submitted, spent_before):
                     return
@@ -3801,6 +3844,10 @@ class ResearchFlow:
 
         async def call(job: _AdjudicationJob) -> dict[str, Any] | None:
             nonlocal submitted
+            if job.key not in answered and cutoff is not None and cutoff():
+                cutoff_heads.add(job.head)
+                submitted -= 1
+                return None
             if not self._adjudication_member(run["research_id"], job.head, job.read_version):
                 return None
             # Checked again once the limiter let the call through: a person may have decided the work while it
@@ -3828,6 +3875,9 @@ class ResearchFlow:
                 collected.setdefault(job.head, {})[job.run_no] = output
             for head in sorted(collected):
                 if head in closed or len(collected[head]) < FULLTEXT_RUNS:
+                    continue
+                if head in cutoff_heads:
+                    closed.add(head)
                     continue
                 if any(self._unsent(run_id, f"fulltext_adjudication:{head}:{run_no}")
                        for run_no in range(1, FULLTEXT_RUNS + 1)):

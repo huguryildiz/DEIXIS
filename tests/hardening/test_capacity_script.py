@@ -408,8 +408,11 @@ def test_a_prepared_library_is_reused_only_at_the_codes_highest_migration(librar
         conn.execute("DELETE FROM schema_migrations WHERE version = ?", (want,))
         conn.commit()
         conn.close()
-        assert capacity.library_migration(scratch / "n100") == want - 1
-        assert any(f"highest migration is {want - 1}" in p and "generate --force" in p for p in capacity.ready_problems(scratch / "n100"))
+        previous = max(int(p.name.split("_", 1)[0]) for p in
+                       (REPO / "backend" / "deixis" / "storage" / "migrations").glob("*.sql")
+                       if int(p.name.split("_", 1)[0]) < want)
+        assert capacity.library_migration(scratch / "n100") == previous
+        assert any(f"highest migration is {previous}" in p and "generate --force" in p for p in capacity.ready_problems(scratch / "n100"))
         with pytest.raises(capacity.GuardError, match="regenerate it with `generate --force`"):
             capacity.require_ready(scratch / "n100")
         started = []

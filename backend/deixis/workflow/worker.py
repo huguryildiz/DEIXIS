@@ -43,6 +43,7 @@ class Worker:
         self._stop = asyncio.Event()
         self._failed: tuple[str, str, dict] | None = None  # (run id, pause reason, error) not yet written
         self._reconcile_errors: set[type[Exception]] = set()
+        self._background_task: asyncio.Task | None = None
 
     def acquire(self) -> bool:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,6 +72,8 @@ class Worker:
             from deixis.workflow import fast_path
 
             fast_path.recover(self.store)
+            from deixis.workflow import background_fetch
+            background_fetch.recover(self.store)
             steps = conn.execute(
                 "UPDATE run_steps SET status = 'outcome_unknown', finished_at = ? WHERE status = 'running'", (now(),)
             ).rowcount
@@ -123,6 +126,17 @@ class Worker:
         return len(removed)
 
     async def run_forever(self) -> None:
+        lane = getattr(self.flow, "background_fetch", None)
+        if lane is not None:
+            self._background_task = asyncio.create_task(lane.run_forever())
+        try:
+            await self._run_forever()
+        finally:
+            if lane is not None:
+                lane.stop()
+                await self._background_task
+
+    async def _run_forever(self) -> None:
         try:
             # A person's files that were waiting when the last instance stopped (slice 18b, decision 5).
             self.flow.queue_person_readings()
@@ -201,6 +215,9 @@ class Worker:
         self._run_ended(run_id)
 
     def _run_ended(self, run_id: str) -> None:
+        lane = getattr(self.flow, "background_fetch", None)
+        if lane is not None:
+            lane.wake()
         # Whichever way the run returned, a person's waiting files get their reading run now (slice 18b).
         try:
             self.flow.person_run_ended(run_id)

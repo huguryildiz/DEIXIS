@@ -453,6 +453,14 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                                           key="small_batch:v1:chain_similarity", identity_step="source_similarity")
         flow._chain_summary(run)
     listing = freeze_list(flow, run, scope, vocabulary)
+    from deixis.workflow import fast_path
+    if fast_path.enforces(run["budget"], "read"):
+        from deixis.workflow import fast_read
+        flow._close_clock_stage(run, "ranking")
+        flow._enter_clock_stage(run, "read")
+        await fast_read.execute(flow, run, scope, vocabulary, listing)
+        flow._close_clock_stage(run, "read")
+        return
     if run["budget"]["inspection"].get("runner_version", 1) >= 4:
         await execute_pipeline(flow, run, scope, vocabulary, listing)
         return

@@ -319,7 +319,8 @@ def file_facts(folder: Path, names=("library.sqlite", "library.sqlite-wal", "lib
     return {n: ((folder / n).stat().st_size, sha256_file(folder / n)) if (folder / n).exists() else None for n in names}
 
 
-LAST = max(db.packaged_versions())
+PACKAGED_VERSIONS = db.packaged_versions()
+LAST = max(PACKAGED_VERSIONS)
 UNKNOWN_CASES = {"a_next": ([LAST + 1], [f"{LAST + 1:04d}"]), "b_far": ([9999], ["9999"]),
                  "c_below_range": ([0], ["0000"]),
                  "d_two": ([LAST + 1, 9999], [f"{LAST + 1:04d}", "9999"])}
@@ -351,10 +352,10 @@ def test_b03_library_from_an_older_code_opens_and_migrate_applies_exactly_the_mi
     path = tmp_path / "lib" / "library.sqlite"
     monkeypatch.setattr(db, "MIGRATIONS_DIR", older)
     conn = db.connect(path)
-    assert db.migrate(conn) == list(range(1, LAST))
+    assert db.migrate(conn) == sorted(PACKAGED_VERSIONS - {LAST})
     conn.close()
     monkeypatch.setattr(db, "MIGRATIONS_DIR", real_dir)
-    assert db.packaged_versions() == set(range(1, LAST + 1))
+    assert db.packaged_versions() == PACKAGED_VERSIONS
     db.check_schema_known(path)  # known ids only: nothing to refuse
     conn = db.connect(path)
     try:
@@ -418,7 +419,7 @@ def library_with_id_only_in_the_wal(folder: Path) -> Path:
     assert (folder / "library.sqlite-wal").stat().st_size > 0 and (folder / "library.sqlite-shm").exists()
     with sqlite3.connect(path.resolve().as_uri() + "?mode=ro&immutable=1", uri=True) as conn:
         in_main = {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
-    assert in_main == set(range(1, LAST + 1)),"the main file alone must not hold the unknown id"
+    assert in_main == PACKAGED_VERSIONS,"the main file alone must not hold the unknown id"
     return path
 
 
@@ -689,6 +690,7 @@ EMPTY_BECAUSE = {
     "arxiv_sources": "arXiv source reading is off in the test settings",
     "asset_arxiv_versions": "written only by the optional equation reader (Marker), which is not installed",
     "chain_links": "citation chaining is off in the test settings",
+    "fast_path_background_fetches": "fast-path reading (D251) is off in the test settings",
     "fast_path_intervals": "fast-path accounting (D250) is off in the test settings",
     "fast_path_ledgers": "fast-path accounting (D250) is off in the test settings",
     "fast_path_stages": "fast-path accounting (D250) is off in the test settings",

@@ -133,6 +133,8 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",
               sw_options={"reference_count": True, "references": True}, options=("sort", "publication_date"),
               host=_host(openalex.WORKS_URL), adapter_revision=3,
+              endpoints={"semantic": Endpoint("single_page", 50, 50,
+                         options=("reference_count", "references"), query_syntax=QuerySyntax("plain"))},
               capabilities={"id_lookup": CapabilityBinding(_openalex_lookup, openalex.MAX_IDS_PER_REQUEST),
                             "citing_works": CapabilityBinding(_openalex_citing, openalex.MAX_RESULTS,
                                 options=(OptionDescriptor("sort", "str", None),

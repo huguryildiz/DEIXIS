@@ -78,7 +78,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                    criterion: dict[str, Any] | None = None,
                    approval: dict[str, Any] | None = None,
                    embedding_model: str | None = None,
-                   routing: dict[str, Any] | None = None) -> dict[str, Any]:
+                   routing: dict[str, Any] | None = None,
+                   fast_path_search: dict[str, Any] | None = None) -> dict[str, Any]:
     """The body a research freezes. `vocabulary` is the sw workflow's code vocabulary step output (SW2).
 
     Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
@@ -248,4 +249,5 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "skill_package_hash": skill_package_hash,
         "code_version": f"deixis/{version('deixis')} {compiler_version}",
         "query_strategy": settings.query_strategy,
+        **({"fast_path_search": fast_path_search} if fast_path_search is not None else {}),
     }

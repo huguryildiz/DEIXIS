@@ -144,7 +144,7 @@ def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, 
         assert policy["total_ms"] == sum(bases) * 1000
         assert policy["mode"] == ("deep" if effort == "detailed" else effort)
         assert policy["policy_hash"] == canonical.sha256_hex({k: v for k, v in policy.items() if k != "policy_hash"})
-        assert policy["enforced_stages"] == ["read"] and policy["runner_version"] == 2
+        assert policy["enforced_stages"] == ["search", "ranking", "read"] and policy["runner_version"] == 2
         ledger = app.state.store.conn.execute("SELECT * FROM fast_path_ledgers WHERE ledger_run_id = ?", (run_id,)).fetchone()
         assert (ledger["research_id"], ledger["scope_revision"], ledger["started_at"], ledger["policy_hash"]) == (
             rid, 1, run["created_at"], policy["policy_hash"])
@@ -529,8 +529,25 @@ def test_21_chain_activity_overlaps_read_without_double_charging(library):
     assert fast_path.view(lib.store, lib.run)["used_ms"] == 10000
 
 
+@pytest.mark.parametrize("enforced", [None, ["read"], ["search", "ranking", "read"]])
+@pytest.mark.parametrize("name", ["search", "ranking", "read"])
+def test_deadlines_use_only_frozen_enforced_stages(library, enforced, name):
+    lib = library
+    policy = lib.run["budget"]["fast_path"]
+    if enforced is None:
+        policy.pop("enforced_stages")
+    else:
+        policy["enforced_stages"] = enforced
+    fast_path.enter_stage(lib.store, lib.run, name)
+    applies = enforced is not None and name in enforced
+    assert fast_path.enforces(lib.run["budget"], name) is applies
+    assert (fast_path.stage_deadline(lib.store, lib.run, name) is not None) is applies
+    lib.clock.advance(1000)
+    assert fast_path.past_deadline(lib.store, lib.run, name) is applies
+
+
 def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
-    from deixis.workflow import fast_read
+    from deixis.workflow import fast_read, fast_search
     clock = FakeClock()
     for method in ("_vocabulary", "_search_round", "_ranking", "_semantic_ranking", "_review"):
         original = getattr(ResearchFlow, method)
@@ -543,6 +560,11 @@ def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
         clock.advance(3)
         return await execute(flow, *args, **kwargs)
     monkeypatch.setattr(fast_read, "execute", read)
+    search = fast_search.execute
+    async def bounded_search(*args, **kwargs):
+        clock.advance(2)
+        return await search(*args, **kwargs)
+    monkeypatch.setattr(fast_search, "execute", bounded_search)
     app = app_for(tmp_path, clock, "on")
     with client_of(app) as client:
         rid, discovery_id, _, discovery = discover(client)
@@ -553,14 +575,14 @@ def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
         assert run["status"] == "completed", run
         assert app.state.worker.flow.store.clock is clock
         assert app.state.worker.flow.deps.clock is clock
-        stages = app.state.store.conn.execute("SELECT stage, used_ms, status FROM fast_path_stages ORDER BY seq").fetchall()
-        assert [tuple(row) for row in stages] == [("plan", 2000, "done"), ("search", 4000, "done"),
+        stages = app.state.store.conn.execute("SELECT stage, used_ms, status FROM fast_path_stages WHERE seq > 0 ORDER BY seq").fetchall()
+        assert [tuple(row) for row in stages] == [("plan", 2000, "done"), ("search", 2000, "done"),
                                                  ("ranking", 2000, "done"), ("read", 3000, "done"), ("answer", 2000, "done")]
         rows = app.state.store.conn.execute("SELECT stage, close_reason FROM fast_path_intervals ORDER BY rowid").fetchall()
-        assert [tuple(row) for row in rows] == [(s, "stage_done") for s in fast_path.STAGES]
+        assert [tuple(row) for row in rows] == [(s, "stage_done") for s in ("plan", "search", "lookups", "ranking", "read", "answer")]
         assert run["budget"]["inspection"]["list_run_id"] == discovery_id
-        assert run["fast_path"]["used_ms"] == 13000
-        assert run["fast_path"]["latency_ms"] == 113000
+        assert run["fast_path"]["used_ms"] == 11000
+        assert run["fast_path"]["latency_ms"] == 111000
         assert not app.state.worker.flow._clock_tasks
 
 

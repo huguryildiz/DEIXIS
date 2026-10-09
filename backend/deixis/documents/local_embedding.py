@@ -20,6 +20,8 @@ POSIX only in this slice: ownership and use are `fcntl.flock` locks handed to ch
 
 from __future__ import annotations
 
+from contextvars import ContextVar
+
 import asyncio
 import base64
 import hashlib
@@ -167,10 +169,14 @@ def builtin_paths(data_dir: Path) -> BuiltinPaths:
     return BuiltinPaths(data_dir / "tools")
 
 
-def runner_argv(paths: BuiltinPaths) -> list[str]:
+RUNNER_THREADS: ContextVar[int | None] = ContextVar("deixis_embedding_threads", default=None)
+
+
+def runner_argv(paths: BuiltinPaths, threads: int | None = None) -> list[str]:
     """The runner inherits the in-use lock's descriptor through `pass_fds` and keeps it open while it lives."""
     return [str(paths.python), str(RUNNER), "--model-dir", str(paths.models), "--max-tokens", str(LOCAL_MAX_TOKENS),
-            "--manifest", json.dumps(manifest()), "--model-name", FASTEMBED_MODEL]
+            "--manifest", json.dumps(manifest()), "--model-name", FASTEMBED_MODEL] + (
+                ["--threads", str(threads)] if threads is not None else [])
 
 
 # ---- the model files ---------------------------------------------------------------------
@@ -393,12 +399,13 @@ class LocalEmbedder:
         self.ready_info: dict[str, Any] | None = None
         self._idle: asyncio.TimerHandle | None = None
         self._requests = 0
+        self._threads: int | None = None
 
     def blocked(self) -> bool:
         return self.removing or self.installing
 
     def _argv(self) -> list[str]:
-        argv = runner_argv(self.paths)
+        argv = runner_argv(self.paths, self._threads)
         if self.python is not None:  # tests run a fake runner with the test's own interpreter
             argv[0] = self.python
         argv[1] = str(self.runner)
@@ -455,6 +462,10 @@ class LocalEmbedder:
             if self._idle:
                 self._idle.cancel()
                 self._idle = None
+            threads = RUNNER_THREADS.get()
+            if self._threads != threads:
+                await self._kill()
+                self._threads = threads
             if self.process is None or self.process.returncode is not None:
                 self.process = None
                 await self.start()  # a runner that died is started again once, at the next request

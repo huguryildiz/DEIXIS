@@ -45,8 +45,8 @@ def elapsed(start: str, end: str) -> int:
 def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
     bases, n, k, cap, seeds, backward, forward = MODES[effort]
     policy = {
-        "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["read"],
-        "enforced_stages": ["read"], "background_fetch_slots": 4,
+        "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["search", "ranking", "read"],
+        "enforced_stages": ["search", "ranking", "read"], "background_fetch_slots": 4,
         "mode": "deep" if effort == "detailed" else effort,
         "stage_base_ms": dict(zip(STAGES, (s * 1000 for s in bases))), "total_ms": sum(bases) * 1000,
         "N": n, "K": k, "keyword_record_cap": cap, "semantic_top": 50,
@@ -85,6 +85,20 @@ def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | No
 def past_deadline(store: Any, run: dict[str, Any], stage: str) -> bool:
     deadline = stage_deadline(store, run, stage)
     return deadline is not None and store.clock.now() >= deadline
+
+
+def ranking_similarities(store: Any, run: dict[str, Any], model: str) -> dict[str, float]:
+    scores = store.source_similarities(run["research_id"], run["scope_revision"], model)
+    if not enabled(run["budget"]) or run["kind"] != "discovery":
+        return scores
+    heads = store.work_heads(run["research_id"])
+    for row in store.conn.execute(
+            "SELECT q.source_version_id, v.work_id FROM fast_path_embedding_queue q"
+            " JOIN source_versions v ON v.id = q.source_version_id"
+            " WHERE q.run_id = ? AND q.status = 'unembedded_at_cutoff'", (run["id"],)):
+        scores.pop(row["source_version_id"], None)
+        scores.pop(heads.get(row["work_id"]), None)
+    return scores
 
 
 def answer_budget(store: Any, rid: str, revision: int, budget: dict[str, Any]) -> dict[str, Any]:

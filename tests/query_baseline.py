@@ -87,12 +87,14 @@ def invoke(function, provider, endpoint, arguments):
         return {"raised": {"type": type(exc).__name__, "message": str(exc)}}
 
 
-def coverage(frozen):
+def coverage(frozen, *, historical=False):
     required = {"_render", "_rendered", "_fit_blocks", "render_query", "syntax_issues",
                 "boolean_part", "query_issues", "facade_query_issues", "compile_block_queries"}
     recorded = {(entry["function"], entry["provider"], entry["endpoint"]) for entry in frozen["entries"]}
     for pid, connector in registry.CONNECTORS.items():
         for endpoint in (None, *connector.endpoints):
+            if historical and (pid, endpoint) == ("openalex", "semantic"):
+                continue  # Added after the immutable e19a7f7 snapshot; tested separately.
             for function in sorted(required):
                 assert (function, pid, endpoint) in recorded, f"{pid}/{endpoint}: missing {function}"
 

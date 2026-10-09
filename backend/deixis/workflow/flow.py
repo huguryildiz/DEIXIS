@@ -349,6 +349,7 @@ class ResearchFlow:
         if getattr(deps, "clock", None) is not None:
             self.store.clock = deps.clock
         self._clock_tasks: dict[str, dict[str, tuple[str, asyncio.Task]]] = {}
+        self._fast_consumers: dict[str, Any] = {}
         self._held: dict[str, _Held] = {}
         self._quota_out: dict[str, set[str]] = {}
         self._openalex_budget: dict[str, acquisition.OpenAlexBudget] = {}
@@ -363,6 +364,9 @@ class ResearchFlow:
         try:
             await self._execute_run(run_id)
         finally:
+            consumer = self._fast_consumers.pop(run_id, None)
+            if consumer is not None:
+                await consumer.stop()
             tasks = self._clock_tasks.pop(run_id, {})
             for _, task in tasks.values():
                 task.cancel()
@@ -521,7 +525,12 @@ class ResearchFlow:
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         if scope["source_scope"] == "attached":
             return
+        from deixis.workflow import fast_search
+        use_fast_search = fast_search.applicable(self.store, run)
         self._enter_clock_stage(run, "plan")
+        if use_fast_search:
+            from deixis.workflow.fast_embedding import Consumer
+            self._fast_consumers[run_id] = Consumer(self, run, scope)
         self._checkpoint(run_id, revision)
         if scope["seed_mode"] == "uploaded_seed" and self.store.seed_status(rid, scope) != "ready":
             self._pause(run_id, "seed_unavailable")
@@ -539,10 +548,14 @@ class ResearchFlow:
             # A later discovery run of the same scope revision may plan other queries; that is a new protocol revision
             # with its reason, never an edit of the first one (SW14.2).
             reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
+            fast_plan = None
+            if use_fast_search:
+                fast_plan = fast_search.build_plan(self.store, run, scope, queries)
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                 scope, run["budget"], None, queries,
                 self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
                 approval=approval, embedding_model=self._embedding_model(), routing=self._routing(run_id),
+                fast_path_search=fast_plan,
             ), reason=reason)
             self.store.finish_step(protocol_step["id"], "succeeded",
                                    output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
@@ -562,7 +575,11 @@ class ResearchFlow:
         # Each query is read page by page up to its effort's read limit.
         effort = scope["effort"]
         self._checkpoint(run_id, revision)
-        failure = await self._search_round(run, list(enumerate(queries)), retry_failed, effort)
+        if use_fast_search:
+            self._fast_consumers[run_id].start()
+            failure = await fast_search.execute(self, run, scope, fast_search.stored_plan(self.store, run), retry_failed)
+        else:
+            failure = await self._search_round(run, list(enumerate(queries)), retry_failed, effort)
         if failure and not searched():
             self._pause(run_id, *failure)
         if not searched() and self._allowance_ended_searches(run_id):
@@ -571,10 +588,16 @@ class ResearchFlow:
             # adds to every query's share (review of 13f, 2026-09-23).
             self._pause(run_id, "budget_exhausted", {"limit": "query_requests"})
         # Expansion reads the first round's records and searches only additional phrases.
-        more = await self._expansion(run, scope, vocabulary, queries, criterion, approval)
-        await self._search_round(run, list(enumerate(more, start=len(queries))), retry_failed, effort)
-        await self._second_sources(run, scope, vocabulary)
-        self._close_clock_stage(run, "search")
+        if use_fast_search:
+            self._close_clock_stage(run, "search")
+            self._enter_clock_stage(run, "lookups")
+            await self._second_sources(run, scope, vocabulary)
+            self._close_clock_stage(run, "lookups")
+        else:
+            more = await self._expansion(run, scope, vocabulary, queries, criterion, approval)
+            await self._search_round(run, list(enumerate(more, start=len(queries))), retry_failed, effort)
+            await self._second_sources(run, scope, vocabulary)
+            self._close_clock_stage(run, "search")
 
         self._checkpoint(run_id, revision)
         # A work is screened once, through its head; its other versions follow the head's selection (D46, D48).
@@ -583,6 +606,8 @@ class ResearchFlow:
                 if c["origin"] != "user" and c["source_version_id"] in heads]
         # Rank the full pool before deciding which abstracts to read.
         self._enter_clock_stage(run, "ranking")
+        if use_fast_search:
+            await self._fast_consumers[run_id].drain(pool)
         await self._source_similarity(run, scope, pool)
         await self._ranking(run, scope, vocabulary)
         read_enforced = fast_path.enforces(run["budget"], "read")
@@ -1354,6 +1379,8 @@ class ResearchFlow:
         """
         step = self.store.existing_step(run["id"], "source_similarity")
         output = (step or {}).get("output") or {}
+        if output.get("fast_path_queue") and output.get("embedding_off_reason"):
+            return None, output["embedding_off_reason"]
         if output.get("stored_model") or output.get("model"):
             return output.get("stored_model") or output["model"], None
         provider, model = embeddings.chosen(self.store.setting("semantic_search"))
@@ -2225,6 +2252,8 @@ class ResearchFlow:
         (earlier batches stay) or `failed`; either way the run goes on and the four code signals rank the same.
         """
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        if key == "source_similarity" and run_id in getattr(self, "_fast_consumers", {}):
+            return  # The durable consumer owns this step, including failed/partial cutoffs.
         step, embedder, identity_from = self._embedding_choice(run_id, key)
         if identity_step and step is None:
             frozen = self.store.existing_step(run_id, identity_step)
@@ -2297,6 +2326,8 @@ class ResearchFlow:
         local = getattr(self.deps, "local_embedder", None)
         step = self.store.existing_step(run_id, key)
         output = (step or {}).get("output") or {}
+        if output.get("fast_path_queue") and output.get("provider") == "off":
+            return step, None, None
         if output.get("provider") and output.get("stored_model"):
             return step, embeddings.Embedder.from_identity(output["provider"], output["stored_model"], local), None
         provider, model = embeddings.chosen(self.store.setting("semantic_search"))
@@ -2417,7 +2448,8 @@ class ResearchFlow:
                        limit: int, page: Page | None = None, stop_reason: str | None = None,
                        finished_at: str | None = None,
                        dispatched: facade.Dispatched | None = None,
-                       transport: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]] | None:
+                       transport: dict[str, Any] | None = None,
+                       admission: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]] | None:
         """Write one answered request: its payload, its search run, its records and its step's ending together.
 
         For an sw page, `stop_reason` is the one the read decided when the page arrived (`_read_query`).
@@ -2429,6 +2461,8 @@ class ResearchFlow:
         if isinstance(outcome, facade.Dispatched):
             dispatched, outcome = outcome, outcome.outcome
         transport_output = {"transport": transport} if transport and transport.get("dispatches") else {}
+        if admission is not None:
+            transport_output["fast_path_request"] = admission
         if outcome.status in ("adapter_revision_changed", "connector_provenance_invalid"):
             self.store.finish_step(step["id"], "failed", output={"status": outcome.status, "result_count": 0} | transport_output,
                                    error_code=outcome.status, error={"error": outcome.error},

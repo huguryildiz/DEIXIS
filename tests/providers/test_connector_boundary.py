@@ -89,7 +89,12 @@ def test_constructor_refuses_incompatible_descriptor(change):
 
 
 def test_descriptors_frozen():
-    assert baseline.descriptors() == FROZEN["descriptors"]
+    actual = baseline.descriptors()
+    # D252 is additive: freeze every old endpoint and revision unchanged.
+    for descriptor in actual:
+        if descriptor["provider_id"] == "openalex":
+            descriptor["endpoints"] = [e for e in descriptor["endpoints"] if e["endpoint_id"] != "semantic"]
+    assert actual == FROZEN["descriptors"]
 
 
 def test_descriptors_registry_and_module_policy():
@@ -292,7 +297,7 @@ def test_lookup_unsupported_without_search_outcome(pid, lookup_request):
 
 
 def test_baseline_coverage():
-    baseline.coverage(FROZEN["cases"])
+    baseline.coverage(FROZEN["cases"], historical=True)
     assert FROZEN["contract_id"] == c.CONTRACT_ID and FROZEN["query_rules_revision"] == c.QUERY_RULES_REVISION
     assert FROZEN["base_commit"] == "5990b02"
     assert baseline.SYNTHETIC_KEY not in baseline.BASELINE.read_text()
@@ -327,7 +332,7 @@ def test_unreadable_body_shapes_are_required(case):
         assert case["script"][0]["body_file"] == "pubmed-1.json"
         assert case["script"][1]["url"] == registry.pubmed.FETCH_URL
     with pytest.raises(AssertionError, match=case["shape"]):
-        baseline.coverage([other for other in FROZEN["cases"] if other["id"] != case["id"]])
+        baseline.coverage([other for other in FROZEN["cases"] if other["id"] != case["id"]], historical=True)
 
 
 @pytest.mark.provider_pacing

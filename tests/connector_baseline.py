@@ -15,7 +15,7 @@ from unittest.mock import patch
 import httpx
 
 from deixis.domain import canonical
-from deixis.providers import arxiv, common, pacing, query_compiler, query_rules, registry, semantic_scholar
+from deixis.providers import arxiv, common, openalex, pacing, query_compiler, query_rules, registry, semantic_scholar
 from deixis.providers import contract, facade
 
 FIXTURES = Path(__file__).parent / "fixtures" / "connectors"
@@ -144,6 +144,7 @@ def fake_clock():
         now[0] += seconds
 
     with ExitStack() as stack:
+        stack.enter_context(patch.object(openalex.SEMANTIC_PACER, "_last_finished", 0.0))
         for module in (common, arxiv, pacing):
             stack.enter_context(patch.object(module.asyncio, "sleep", sleep))
         stack.enter_context(patch.object(arxiv.time, "monotonic", lambda: now[0]))
@@ -207,10 +208,14 @@ def required_shapes(connector, endpoint):
     return shapes
 
 
-def coverage(cases):
+def coverage(cases, *, historical=False):
     """Registry-derived; a newly registered pair cannot disappear from the freeze."""
     # Coverage must identify missing fixtures even before the new provider has a display-name admission.
     pairs = {(pid, eid) for pid, connector in registry.CONNECTORS.items() for eid in (None, *connector.endpoints)}
+    if historical:
+        # D252's new endpoint has a separate full conformance fixture. This
+        # historical snapshot still freezes every pre-existing request/result.
+        pairs.discard(("openalex", "semantic"))
     recorded = {(c["provider_id"], c["endpoint_id"]) for c in cases}
     assert recorded == pairs, f"missing pairs: {pairs - recorded}; unexpected pairs: {recorded - pairs}"
     for pid, eid in pairs:

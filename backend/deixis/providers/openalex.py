@@ -20,6 +20,8 @@ from typing import Any
 
 import httpx
 
+from deixis.providers.pacing import SerialRequestPacer
+
 from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, OtherVersion, ProviderRecord, SearchOutcome,
                                      normalize_doi, send)
 
@@ -28,6 +30,7 @@ __all__ = ["OtherVersion", "ProviderRecord", "SearchOutcome", "citing_works", "c
 
 PROVIDER_ID = "openalex"
 WORKS_URL = "https://api.openalex.org/works"
+SEMANTIC_PACER = SerialRequestPacer(1.0)
 SEARCH_PARAM = "search.title_and_abstract"
 SELECT = ",".join(
     [
@@ -121,8 +124,13 @@ async def search_works(
     reference_count: bool = False,
     references: bool = False,
     max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
-    *, sort: str | None = None, publication_date: bool = False,
+    *, sort: str | None = None, publication_date: bool = False, endpoint: str | None = None,
 ) -> SearchOutcome:
+    if endpoint == "semantic":
+        return await search_semantic(client, query, per_page, api_key, contact_email, reference_count,
+                                     references, max_rate_limit_retries)
+    if endpoint is not None:
+        raise ValueError(f"unknown OpenAlex endpoint: {endpoint!r}")
     per_page = min(per_page, MAX_RESULTS)
     select = SELECT + "".join(f",{field}" for field, asked in
                               ((REFERENCE_COUNT_FIELD, reference_count), (REFERENCES_FIELD, references)) if asked)
@@ -147,6 +155,28 @@ async def search_works(
     response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
                                    (api_key,), max_rate_limit_retries=max_rate_limit_retries)
     return _works_page(response, outcome, cursor)
+
+
+async def search_semantic(client, query, per_page, api_key=None, contact_email=None,
+                          reference_count=False, references=False,
+                          max_rate_limit_retries=MAX_RATE_LIMIT_RETRIES):
+    """Single-page meaning search; ordinary fields include the source-owned abstract.
+
+    OpenAlex Help, semantic-search/authentication/example-costs, read 2026-10-09:
+    50 results, 2,000 characters, select supported, Bearer accepted. No live probe.
+    """
+    select = SELECT + "".join(f",{field}" for field, asked in
+                             ((REFERENCE_COUNT_FIELD, reference_count), (REFERENCES_FIELD, references)) if asked)
+    params = {"search.semantic": query[:2000], "per_page": min(per_page, 50), "select": select}
+    if contact_email:
+        params["mailto"] = contact_email
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    access = "api_key" if api_key else "keyless"
+    description = f"GET {WORKS_URL} search.semantic={query[:2000]!r} per_page={params['per_page']} access={access}"
+    response, outcome = await SEMANTIC_PACER.run(lambda: send(client, WORKS_URL, params, headers, description, access,
+                                   RATE_LIMIT_HEADERS + ("x-ratelimit-credits-used",), (api_key,),
+                                   max_rate_limit_retries=max_rate_limit_retries))
+    return _works_page(response, outcome, None)
 
 
 def _works_page(response: httpx.Response | None, outcome: SearchOutcome, cursor: str | None) -> SearchOutcome:

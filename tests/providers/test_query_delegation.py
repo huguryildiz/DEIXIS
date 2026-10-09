@@ -43,21 +43,21 @@ def test_freeze_replay(entry):
 
 
 def test_freeze_registry_coverage():
-    baseline.coverage(FROZEN)
+    baseline.coverage(FROZEN, historical=True)
 
 
 def test_registration_without_freeze_fails_by_name(monkeypatch):
     monkeypatch.setitem(registry.CONNECTORS, "synthetic_missing_freeze",
                         replace(registry.CONNECTORS["openalex"], provider_id="synthetic_missing_freeze"))
     with pytest.raises(AssertionError, match="synthetic_missing_freeze"):
-        baseline.coverage(FROZEN)
+        baseline.coverage(FROZEN, historical=True)
 
 
 def test_freeze_contains_required_classes():
     assert FROZEN["base_commit"] == "e19a7f7"
     assert baseline.BASELINE.stat().st_size < 4_000_000
     assert FROZEN["term_classes"] == baseline.TERMS
-    assert len(FROZEN["length_boundaries"]) == 3 * sum(1 + len(c.endpoints) for c in registry.CONNECTORS.values())
+    assert len(FROZEN["length_boundaries"]) == 3 * (sum(1 + len(c.endpoints) for c in registry.CONNECTORS.values()) - 1)
     for entry in FROZEN["entries"]:
         if entry["function"] == "_render" and entry["provider"] in registry.CONNECTORS:
             lengths = {len(FROZEN["outputs"][o]) for _, o in baseline.samples(entry)
@@ -81,6 +81,18 @@ def test_declarations_complete(provider):
     declaration = registry.resolve_query_syntax(provider)
     with pytest.raises(FrozenInstanceError):
         declaration.kind = "mutated"
+
+
+def test_semantic_endpoint_uses_plain_queries_without_changing_keyword_syntax():
+    assert registry.resolve_query_syntax("openalex", "semantic").kind == "plain"
+    assert registry.resolve_query_syntax("openalex").kind == "boolean"
+    groups = [["alpha", "beta"], ["gamma", "delta"]]
+    rendered = facade.connectors()["openalex"].render_query(groups, "semantic")
+    assert rendered.native_query == "alpha gamma"
+    assert list(rendered.dropped) == ["beta", "delta"]
+    assert compiler.fit_block_counts("openalex", groups, "semantic") == ("alpha gamma", [1, 1])
+    assert rules.query_issues("openalex", "alpha gamma", "semantic") == []
+    assert rules.query_issues("openalex", '"alpha" AND gamma', "semantic")
 
 
 @pytest.mark.parametrize("kind", ["Plain", "bulk "])

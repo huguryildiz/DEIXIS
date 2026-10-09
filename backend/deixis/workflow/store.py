@@ -2477,6 +2477,26 @@ class Store:
                 links.link_records(self, search_fields["research_id"], found)  # D48's narrow rule widens to SW6
             else:
                 self._flag_suspected_duplicates(search_fields["research_id"], found)
+            admission = (step_output or {}).get("fast_path_request")
+            from deixis.workflow import fast_path
+            run = self.run(search_fields["run_id"]) if admission else None
+            if run and fast_path.enabled(run["budget"]) and run["kind"] == "discovery":
+                similarity = self.existing_step(run["id"], "source_similarity")
+                identity = (similarity or {}).get("output") or {}
+                model = identity.get("stored_model")
+                stored = self.source_similarities(run["research_id"], run["scope_revision"], model) if model else {}
+                cut = identity.get("cutoff_at")
+                heads = self.work_heads(run["research_id"])
+                ts = fast_path.timestamp(self.clock)
+                for position, svid in enumerate(found):
+                    head = heads.get(self.source(svid)["work_id"], svid)
+                    status = "unembedded_at_cutoff" if cut else "from_store" if head in stored else "pending"
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO fast_path_embedding_queue"
+                        " (run_id, class, request_index, position, source_version_id, search_run_id, enqueued_at,"
+                        " status, embedded_at, cutoff_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (run["id"], admission["class"], admission["request_index"], position, svid, srid, ts,
+                         status, ts if status == "from_store" else None, cut))
             output = {**step_output, "search_run_id": srid} if step_output is not None else None
             self.finish_step(step_id, step_status, output=output, **step_fields)
         return srid

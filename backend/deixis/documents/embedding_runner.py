@@ -64,6 +64,7 @@ def main():
     parser.add_argument("--max-tokens", type=int, required=True)
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--model-name", required=True)
+    parser.add_argument("--threads", type=int)
     args = parser.parse_args()
 
     wrong = check_files(args.model_dir, json.loads(args.manifest))
@@ -74,7 +75,8 @@ def main():
         import fastembed
         from fastembed import TextEmbedding
 
-        model = TextEmbedding(args.model_name, specific_model_path=args.model_dir, local_files_only=True)
+        model = TextEmbedding(args.model_name, specific_model_path=args.model_dir, local_files_only=True,
+                              **({"threads": args.threads} if args.threads is not None else {}))
         model.model.tokenizer.enable_truncation(max_length=args.max_tokens)
         probe = next(iter(model.embed(["ready"], batch_size=1)))
     except Exception as exc:  # noqa: BLE001 - reported to DEIXIS as the reason the model is unavailable

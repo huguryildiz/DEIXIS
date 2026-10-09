@@ -11,7 +11,7 @@ from deixis.domain import canonical
 from deixis.domain.reason_codes import reason
 from deixis.domain.rules import ABSTRACT_READ_LIMIT, CHAIN_ABSTRACT_READ, FULLTEXT_RUNS
 from deixis.storage.db import now, transaction
-from deixis.workflow import adjudication, chaining, fulltext, ranking
+from deixis.workflow import adjudication, chaining, fast_path, fulltext, ranking
 from deixis.workflow.decisions import DecisionStore
 
 POLICY = "small_batch_fused_v1"
@@ -336,7 +336,7 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
                     "pool": sorted(pool.values(), key=lambda row: row["id"]), "priority_pool": priority_pool,
                     "versions": versions,
                     "verified": verified, "query_words": query, "blocks": blocks, "embedding_model": model,
-                    "similarities": store.source_similarities(rid, run["scope_revision"], model) if model else {},
+                    "similarities": fast_path.ranking_similarities(store, run, model) if model else {},
                     "off_reason": off, "compared_terms": ranking.joint_terms(store, scope, vocabulary),
                     "user_priority": list(dict.fromkeys(priority)),
                     "provenance": store.candidates(rid, run["scope_revision"]),

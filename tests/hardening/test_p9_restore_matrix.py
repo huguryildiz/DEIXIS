@@ -691,6 +691,7 @@ EMPTY_BECAUSE = {
     "asset_arxiv_versions": "written only by the optional equation reader (Marker), which is not installed",
     "chain_links": "citation chaining is off in the test settings",
     "fast_path_background_fetches": "fast-path reading (D251) is off in the test settings",
+    "fast_path_embedding_queue": "fast-path search (D252) is off in the test settings",
     "fast_path_intervals": "fast-path accounting (D250) is off in the test settings",
     "fast_path_ledgers": "fast-path accounting (D250) is off in the test settings",
     "fast_path_stages": "fast-path accounting (D250) is off in the test settings",

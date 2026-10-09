@@ -276,10 +276,15 @@ class Embedder:
         if self.provider == "builtin":
             if self.local is None:
                 raise EmbeddingError("builtin_unavailable: the built-in model is not set up in this process")
+            threads = self.model.rsplit(":threads=", 1)[1] if ":threads=" in self.model else None
+            token = local_embedding.RUNNER_THREADS.set(int(threads)) if threads is not None else None
             try:
                 vectors = await self.local.embed(texts, "query" if task_type == "RETRIEVAL_QUERY" else "document")
             except local_embedding.LocalEmbeddingError as exc:
                 raise EmbeddingError(str(exc)) from exc
+            finally:
+                if token is not None:
+                    local_embedding.RUNNER_THREADS.reset(token)
             return _checked([_vector(list(v)) for v in vectors], len(texts))
         if self.provider in KEY_ENVS:
             key = os.environ.get(KEY_ENVS[self.provider])

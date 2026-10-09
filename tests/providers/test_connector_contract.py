@@ -386,7 +386,9 @@ def check_case(provider_id, endpoint_id, fixture, case):
         shape = "next_page" if case["name"] == "second_page" else "first_page" if case["name"] == "first_page" else "kill_search" if endpoint_id else "unpaged"
         assert baseline.recorded_request(requests[0])["params"] == endpoint_fixture(fixture, endpoint_id)["request_params"][shape]
     if case["name"].startswith("identity_"):
-        mismatch = IDENTITY_KNOWN_MISMATCHES.get((provider_id, endpoint_id, case["name"]))
+        # D252 semantic search uses the identical OpenAlex record parser.
+        identity_endpoint = None if provider_id == "openalex" and endpoint_id == "semantic" else endpoint_id
+        mismatch = IDENTITY_KNOWN_MISMATCHES.get((provider_id, identity_endpoint, case["name"]))
         if mismatch:
             assert expected == mismatch["expected"] and case["ledger"] == mismatch["ledger"]
         else:

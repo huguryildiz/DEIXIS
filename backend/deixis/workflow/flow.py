@@ -12,6 +12,7 @@ on the review and does not pause the run: the answer never depends on its review
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import json
 import logging
@@ -78,6 +79,7 @@ CAPABILITIES = {
     "unsupported_tasks": ["synthesis", "candidate_development", "claim_check", "experiment"],
 }
 MAX_DOWNLOADS_PER_RUN = 8
+RESPLIT_KEY = "grounded_answer_resplit"  # D249: the one extra repair of an answer that fails only on D247's rule
 # The reason an sw answer records when neither included works nor eligible abstracts are available (D234).
 NO_INCLUDABLE_SOURCE = "no_includable_source"
 MAX_ABSTRACT_CHARS = 2500
@@ -2789,10 +2791,45 @@ class ResearchFlow:
                                    selection_revision=selection_revision)
             return
         source_ids = list(dict.fromkeys(p["source_version_id"] for p in passages))
-        output = await self._model_step(run, scope, "grounded_answer", "grounded_answer", source_ids=source_ids, passage_rows=passages,
-                                        selection_revision=selection_revision)
-        self._checkpoint(run_id)
-        step = self.store.step(run_id, "grounded_answer", "model:grounded_answer")
+        key, extra_repair = "grounded_answer", None
+        later = self.store.existing_step(run_id, RESPLIT_KEY)
+        if later is not None and later["status"] == "succeeded":
+            output, key = later["output"], RESPLIT_KEY  # resumed after the extra repair: nothing is sent again
+            extra_repair = output.get("resplit")
+        else:
+            output = await self._model_step(run, scope, "grounded_answer", "grounded_answer", source_ids=source_ids, passage_rows=passages,
+                                            selection_revision=selection_revision)
+            self._checkpoint(run_id)
+            labels = None
+            if output.get("invalid") and output.get("raw_output"):
+                failed_input = self.store.step_input_payload(output["step_input_id"])
+                labels = contracts.resplit_labels(
+                    output["issues"], contracts.resolve_citation_handles(failed_input, output["raw_output"]), failed_input)
+            if labels and not output.get("repair_skipped"):
+                # D249: one extra repair, only when D247's several-sources rule (and D244-salvageable anchor defects) is all
+                # that still blocks the answer; a call the budget no longer holds is skipped, never a pause.
+                seed = {"issues": output["issues"], "raw_output": output["raw_output"],
+                        "step_input_id": output["step_input_id"], "labels": labels}
+                # Built from the failed attempt's stored StepInput: its passages, allowlist and handle mapping are the
+                # ones its draft was written against, whatever retrieval returns now.
+                frozen = self.store.step_input_payload(output["step_input_id"])
+                connection, requested, effort = step_model(scope, "grounded_answer")
+                if frozen["model"]["requested_model"] is not None:
+                    connection, requested = frozen["model"]["connection"], frozen["model"]["requested_model"]
+
+                def same_input(step_id: str, frozen=frozen) -> dict[str, Any]:
+                    return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now()}
+                second = await self._model_step(run, scope, RESPLIT_KEY, "grounded_answer", step_input_builder=same_input,
+                                                model=(connection, requested, effort),
+                                                selection_revision=self.store.step_input_selection_revision(output["step_input_id"]),
+                                                budget_short="skip", resplit=seed)
+                self._checkpoint(run_id)
+                if not second.get("repair_skipped"):
+                    output, key = second, RESPLIT_KEY
+                    extra_repair = {"labels": labels, "outcome": "rejected" if second.get("invalid") else "published"}
+                else:
+                    extra_repair = {"labels": labels, "outcome": "skipped_budget"}
+        step = self.store.step(run_id, key, "model:grounded_answer")
         # The revision recorded with the StepInput the output came from; a resumed run may reuse an earlier output.
         step_selection = self.store.step_input_selection_revision(output["step_input_id"])
         if output.get("invalid"):
@@ -2802,12 +2839,14 @@ class ResearchFlow:
             except json.JSONDecodeError:
                 draft = None
             self.store.save_answer(rid, run_id, step["id"], output["step_input_id"], run["scope_revision"], "unverified_draft",
-                                   draft, {"ok": False, "issues": output["issues"]}, selection_revision=step_selection)
+                                   draft, {"ok": False, "issues": output["issues"]} | ({"extra_repair": extra_repair} if extra_repair else {}),
+                                   selection_revision=step_selection)
             return
         payload = self.store.step_input_payload(output["step_input_id"])
         links = contracts.derive_evidence_links(payload, output["result"])
         answer_id = self.store.save_answer(rid, run_id, step["id"], output["step_input_id"], run["scope_revision"], "structurally_valid",
-                                           output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", [])}, links,
+                                           output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", [])}
+                                           | ({"extra_repair": extra_repair} if extra_repair else {}), links,
                                            selection_revision=step_selection)
         await self._review(run, scope, answer_id, output["result"])
 
@@ -5450,6 +5489,22 @@ class ResearchFlow:
             if resend is not None and not resend():
                 return None, result
 
+    def _answer_repair_state(self, step_id: str, resplit: dict[str, Any] | None, max_repairs: int) -> tuple[int | None, dict[str, Any] | None, int, bool]:
+        """D249: what an answer step's stored sessions say. (last attempt number, last failed session, repairs used, cap reached)
+
+        The cap is one repair for the answer step and, for the extra-repair step, that one call after the repair it follows.
+        """
+        stored = self.store.conn.execute(
+            "SELECT si.attempt, si.id, m.raw_output, m.validation_json FROM step_inputs si"
+            " LEFT JOIN model_sessions m ON m.step_input_id = si.id WHERE si.step_id = ?"
+            " ORDER BY si.rowid, m.rowid", (step_id,)).fetchall()
+        failed = [r for r in stored if r["validation_json"] and json.loads(r["validation_json"]).get("ok") is False]
+        attempt = max((r["attempt"] for r in stored), default=None)
+        if not failed:
+            return attempt, None, 0, False
+        used = (max_repairs if resplit is not None else 0) + len({r["id"] for r in failed})
+        return attempt, failed[-1], min(used, max_repairs), used > max_repairs
+
     async def _model_step(self, run: dict[str, Any], scope: dict[str, Any], operation_key: str, task_type: str,
                           candidate_rows: list[dict[str, Any]] | None = None, source_ids: list[str] | None = None,
                           passage_rows: list[dict[str, Any]] | None = None, selection_revision: int | None = None,
@@ -5471,6 +5526,7 @@ class ResearchFlow:
                           step_input_builder: Callable[[str], dict] | None = None,
                           max_request_chars: int | None = None,
                           advice_target: dict[str, Any] | None = None,
+                          resplit: dict[str, Any] | None = None,
                           ) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
@@ -5490,6 +5546,19 @@ class ResearchFlow:
                 raise OptionalStepFailed(reason, detail)
             (self._fail if fail else self._pause)(run_id, reason, detail)
 
+        if task_type == "grounded_answer" and attempt_record is None:
+            # D249: an answer already judged invalid by its stored sessions is recovered without the connection; the
+            # run and revision guards still apply.
+            _, last, _, capped = self._answer_repair_state(step["id"], resplit, schema_repairs(task_type))
+            if capped:
+                self._checkpoint(run_id, run["scope_revision"])
+                output = {"step_input_id": last["id"]} | (
+                    {"resplit": {"labels": resplit["labels"], "outcome": "rejected"}} if resplit is not None else {})
+                self.store.start_step(step["id"])
+                self.store.finish_step(step["id"], "failed", output=output, error_code="invalid_model_output",
+                                       error=json.loads(last["validation_json"])["issues"])
+                return {"invalid": True, "raw_output": last["raw_output"], "issues": json.loads(last["validation_json"])["issues"],
+                        "step_input_id": last["id"]} | output
         adapter = self.deps.adapters.get(connection)
         if adapter is None:
             halt("model_connection_unavailable", {"connection": connection})
@@ -5512,6 +5581,14 @@ class ResearchFlow:
         # `attempt` numbers every call this step sends; `repairs` counts only the schema repairs among them, so the
         # one resend after a turn timeout (slice 13e) takes nothing from the repairs the step is allowed.
         attempt, repairs, timeout_resent = -1, 0, False
+        if resplit is not None:
+            # D249: this step is the one extra repair of a failed answer, so its first call is a repair and it has
+            # none left; the failed output and its issues come from the step before.
+            repair_issues, invalid_raw, invalid_input, repairs = (
+                resplit["issues"], resplit["raw_output"], resplit["step_input_id"], max_repairs)
+
+        def resplit_meta(outcome: str) -> dict[str, Any]:
+            return {"resplit": {"labels": resplit["labels"], "outcome": outcome}} if resplit is not None else {}
         extra = step_output_extra or {}
         sent_extra, sent_input = None, None
         attempt_records = {}
@@ -5542,12 +5619,29 @@ class ResearchFlow:
                         sent_extra = attempt_records[sent_input]
                         break
 
+        used_up = False
+        if task_type == "grounded_answer" and attempt_record is None:
+            # D249: a resumed answer step keeps the repairs its stored sessions already used, so the cap (one repair,
+            # and the one extra repair of the step after it) holds across a stop and a resume, and a failed answer is
+            # recovered from its stored sessions instead of being asked for again.
+            last_attempt, last, used, used_up = self._answer_repair_state(step["id"], resplit, max_repairs)
+            if last_attempt is not None:
+                attempt = last_attempt
+            if last is not None:
+                repairs = used
+                repair_issues = json.loads(last["validation_json"])["issues"]
+                invalid_raw, invalid_input = last["raw_output"], last["id"]
+
         def sent_output() -> dict[str, Any]:
             # finish_step clears output by default. Only the attempt-record hook preserves
             # provenance. A prepared input is sent only once it owns a model session.
             return {"output": (sent_extra or {}) | {"step_input_id": sent_input,
                     "attempt_records": attempt_records}} if attempt_record is not None else {}
 
+        if used_up:
+            output = {"step_input_id": invalid_input} | resplit_meta("rejected")
+            self.store.finish_step(step["id"], "failed", output=output, error_code="invalid_model_output", error=repair_issues)
+            return {"invalid": True, "raw_output": invalid_raw, "issues": repair_issues, "step_input_id": invalid_input} | output
         while True:
             attempt += 1
             # All opt-in gates, payload/record construction and session start share a synchronous
@@ -5571,7 +5665,7 @@ class ResearchFlow:
                 if repair_issues is not None and budget_short == "skip":
                     # A repair the budget no longer holds is skipped (D86): the invalid answer stands for this run,
                     # as an unrepaired one does, and the run goes on to what it can still afford.
-                    output = sent_output().get("output", {"step_input_id": invalid_input})
+                    output = sent_output().get("output", {"step_input_id": invalid_input}) | resplit_meta("skipped_budget")
                     self.store.finish_step(step["id"], "failed", output=output,
                                            error_code="invalid_model_output", error=repair_issues)
                     return {"invalid": True, "raw_output": invalid_raw, "issues": repair_issues,
@@ -5624,7 +5718,9 @@ class ResearchFlow:
                     for pair in shown_context:
                         pair["cell_id"] = handles[pair["cell_id"]]
                 shown_issues = contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues
-                if task_type == "report_section":
+                if resplit is not None:
+                    message = prompt.resplit_message(shown, shown_issues, resplit["raw_output"], resplit["labels"])
+                elif task_type == "report_section":
                     message = prompt.repair_message(shown, shown_issues, shown_context,
                                                     failed_output=invalid_raw, anchor_patch=anchor_patch)
                 else:
@@ -5761,6 +5857,7 @@ class ResearchFlow:
                     output = output | extra
                 if attempt_record is not None:
                     output = output | sent_output()["output"]
+                output = output | resplit_meta("published")
                 complete("succeeded", output=output)
                 return output
             repair_issues = [vars(i) for i in report.issues]
@@ -5768,7 +5865,8 @@ class ResearchFlow:
                 repair_issues = first_anchor_issues + repair_issues
             invalid_raw, invalid_input = result.raw_text, payload["step_input_id"]
             if after_invalid_output(repairs, max_repairs) == "store_unverified_draft":
-                provenance = sent_output()["output"] if attempt_record is not None else {"step_input_id": payload["step_input_id"]}
+                provenance = (sent_output()["output"] if attempt_record is not None else {"step_input_id": payload["step_input_id"]}
+                              ) | resplit_meta("rejected")
                 complete("failed",
                                                output=provenance,
                                                error_code="invalid_model_output", error=repair_issues)

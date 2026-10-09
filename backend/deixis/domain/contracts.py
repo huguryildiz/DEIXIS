@@ -2666,13 +2666,34 @@ def name_sources_in_prose(step_input: dict[str, Any], data: dict[str, Any]) -> d
     return data
 
 
+ANCHOR_SALVAGE_CODES = frozenset({"duplicate_citation_anchor", "anchor_not_in_passage", "missing_citation_anchor",
+                                  "anchor_passage_not_cited"})
+SEVERAL_SOURCES = "source_stated_several_sources"
+
+
+def resplit_labels(issues: list[dict[str, Any]], draft: Any, step_input: dict[str, Any]) -> list[str] | None:
+    """D249: labels of the claims to split when the answer is still invalid only on D247's several-sources rule.
+
+    Every remaining blocker must be that rule or an anchor defect D244 salvage handles; any other issue code, or no
+    several-sources claim at all, gives None and the draft is stored unverified as before. `draft` is the failed output
+    with its handles resolved; like D244, an anchor naming a passage outside the StepInput allowlist is never repaired.
+    """
+    codes = {issue.get("code") for issue in issues}
+    if SEVERAL_SOURCES not in codes or not codes <= ANCHOR_SALVAGE_CODES | {SEVERAL_SOURCES}:
+        return None
+    anchors = draft.get("citation_anchors") if isinstance(draft, dict) else None
+    allowed = set(step_input["allowlist"]["passage_ids"])
+    if not isinstance(anchors, list) or any(not isinstance(a, dict) or a.get("passage_id") not in allowed for a in anchors):
+        return None
+    return [issue["message"].split(":", 1)[0] for issue in issues if issue.get("code") == SEVERAL_SOURCES]
+
+
 def salvage_answer_draft(step_input: dict[str, Any], draft: dict[str, Any]) -> tuple[dict[str, Any], list[Issue]]:
     """D244: prune only anchor defects; require a revalidated answer with at least one claim."""
     if step_input["task_type"] != "grounded_answer":
         return draft, []
     report = validate_model_output(step_input, draft)
-    eligible = {"duplicate_citation_anchor", "anchor_not_in_passage", "missing_citation_anchor",
-                "anchor_passage_not_cited"}
+    eligible = ANCHOR_SALVAGE_CODES
     if report.ok or any(issue.code not in eligible for issue in report.issues):
         return draft, []
     # An uncited anchor can carry an unknown ID without the existing validator naming it as such.

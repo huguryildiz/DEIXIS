@@ -93,6 +93,22 @@ Do not write identifiers or claims that are not asked for. Code applies your cho
 REPORT_SECTION_FULL_REPAIR_GUIDANCE = """Keep every claim's claim_key; change only what the issues require. A claim you remove must be named by its claim_key in an insufficient_evidence entry whose context starts with exactly <claim_key>: followed by a space and a non-empty explanation. Keep every insufficient_evidence entry of the failed output unchanged."""
 
 
+def resplit_message(step_input: dict[str, Any], issues: list[dict[str, str]], failed_output: str, labels: list[str]) -> str:
+    """The one extra repair (D249): only D247's several-sources rule (and anchor defects) still blocks the answer."""
+    return (
+        step_message(step_input)
+        + "\n\nThe previous output for this StepInput was repaired once and still fails validation only on these issues:\n"
+        + json.dumps(issues, ensure_ascii=False, indent=1)
+        + "\n\nPrevious output (as received):\n" + failed_output
+        + f"\n\nThe source_stated claims {', '.join(labels)} cite passages of more than one source. For each of them, "
+        "either split it into one source_stated claim per source, each citing only that source's passages and stating only "
+        "what that source states, or, when the point is a comparison or synthesis that no single source states, make it an "
+        "analyst_inference claim. Give every new claim a new unused claim_label and its own citation anchors, and keep a "
+        "section's claims consecutive. Do not change any other claim, citation or quote, and do not add identifiers that "
+        "are not in the allowlist. Return the complete corrected JSON object."
+    )
+
+
 def repair_message(step_input: dict[str, Any], issues: list[dict[str, str]],
                    anchor_context: list[dict[str, Any]] | None = None,
                    failed_output: str | None = None, *, anchor_patch: bool = False) -> str:

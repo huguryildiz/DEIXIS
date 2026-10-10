@@ -90,7 +90,10 @@ test.describe.serial('M: the flow of an sw research and its search report', () =
     await expect(block).toContainText('Incomplete: code and model runs did the screening')
     // A work two agreeing runs included is never called verified (a reason code such as include_quote_unverified may show).
     expect((await block.textContent()) ?? '').not.toMatch(/(?<![_a-z])verified/)
-    await expect(block.locator('.flow-list li', { hasText: 'Records returned by citation requests' })).toContainText('0')
+    // The fast path runs its own citation chain; the line shows the stored count of what those requests returned.
+    const chain = ((await viewOf(api, rid)).counts.flow_boxes.boxes as { key: string; count: number }[]).find(b => b.key === 'chain_rows_returned')!.count
+    expect(chain).toBeGreaterThan(0)
+    await expect(block.locator('.flow-list li', { hasText: 'Records returned by citation requests' })).toContainText(String(chain))
     await shot(page, 'M-flow-sources-1440')
   })
 
@@ -108,26 +111,30 @@ test.describe.serial('M: the flow of an sw research and its search report', () =
   })
 
   test('an answer shows where the flow stood when it started, apart from what the model was given', async () => {
-    const run = await post(api, `/api/researches/${rid}/runs`, { kind: 'answer' })
-    expect(run.ok()).toBe(true)
+    // The fast path wrote this answer by itself when discovery ended. It gives the model the abstracts of the screened
+    // candidates beside the included work's full text, so "given" counts more works than "included".
     await expect.poll(async () => (await viewOf(api, rid)).answers.length, { timeout: 60_000 }).toBe(1)
+    const given = (await viewOf(api, rid)).answers[0].inputs_given as { sources: number; passages: number }
+    expect(given.sources).toBeGreaterThan(1)
     await page.goto('about:blank')
     await page.goto(`${server.url()}/#/research/${rid}`)
     const line = page.getByRole('group', { name: 'Flow at the start of this answer' }).first()
     await expect(line).toContainText('When the answer started: included 1 (two agreeing runs 1, you confirmed 0); in your queue, not looked at 4')
-    await expect(line).toContainText('Given to the model: works 1, passages')
+    await expect(line).toContainText(`Given to the model: works ${given.sources}, passages ${given.passages}.`)
     await expect(line.locator('.is-attention')).toHaveCount(0)
     await shot(page, 'M-answer-flow-1440')
   })
 
   test('the Home screen gives the depth of an sw search in the numbers the server reads', async () => {
     const limits = await (await api.context.get('/api/effort-limits')).json()
-    expect(limits.search_workflow).toBe('sw')
+    // The fast path's modes (`fast_path.MODES`, slice 5a): the stage deadlines summed, and the ranking top a run reads.
     const quick = limits.efforts.quick
+    expect(quick.minutes).toBeGreaterThan(0)
+    expect(quick.papers).toBeGreaterThan(0)
     await page.goto('about:blank')
     await page.goto(`${server.url()}/#/`)
     await page.getByRole('combobox', { name: 'Research depth' }).click()
-    await expect(page.getByRole('option').first()).toContainText(`Each search reads up to ${quick.read} records; the model screens ${quick.abstracts} abstracts`)
+    await expect(page.getByRole('option').first()).toContainText(`About ${quick.minutes} min · up to ${quick.papers} papers`)
     await shot(page, 'M-home-depth-1440')
     await page.keyboard.press('Escape')
   })

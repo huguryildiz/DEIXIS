@@ -151,7 +151,8 @@ test.describe.serial('P: pages of Europe PMC’s drawn text say "rendered" on ev
     const report = page.locator('.report-sheet')
     const reference = report.locator('.reference-list li', { hasText: AGREED })
     await expect(reference.locator('.ref-pills')).toContainText(RENDERED)
-    await expect(report.locator('.cite-chip').first()).toHaveAttribute('title', new RegExp(RENDERED))
+    // The fast answer also cites the abstracts of the works it did not read in full, so the chip is the drawn work's.
+    await expect(report.locator(`.cite-chip[title^="${AGREED}"]`).first()).toHaveAttribute('title', new RegExp(RENDERED))
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
     await report.getByRole('button', { name: 'Copy' }).click()
     const copied = await page.evaluate(() => navigator.clipboard.readText())

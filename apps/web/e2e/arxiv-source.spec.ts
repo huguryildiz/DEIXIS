@@ -13,7 +13,8 @@ import { nextPort } from './ports'
 //
 // Its own fixture server with DEIXIS_FIXTURE_ARXIV_SOURCE=fake: Settings(arxiv_source="auto"), Marker not installed
 // (a fresh temp data directory has no equation-reader environment), and deixis.documents.fetch.fetch_file
-// monkeypatched to return the SYNTHETIC source archive instead of a network request.
+// monkeypatched to return the SYNTHETIC source archive instead of a network request. DEIXIS_FIXTURE_FULLTEXT=on: discovery
+// fetches and reads the work's PDF, and a table fill reads its equations (the fast path's answer reads none, D253).
 
 const REPO = path.resolve(process.cwd(), '..', '..')
 const PYTHON = path.join(REPO, '.venv', 'bin', 'python')
@@ -29,7 +30,7 @@ class ArxivSourceServer {
   constructor(readonly port: number) {}
 
   private env() {  // no real provider keys or user data directory reach the fixture
-    return { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), DEIXIS_FIXTURE_ARXIV_SOURCE: 'fake' }
+    return { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), DEIXIS_FIXTURE_ARXIV_SOURCE: 'fake', DEIXIS_FIXTURE_FULLTEXT: 'on' }
   }
 
   async start() {
@@ -73,17 +74,26 @@ test.describe.serial('O: the arXiv source route', () => {
   })
   test.afterAll(async () => { await page?.close(); await server.stop() })
 
-  test('generating an answer fetches the PDF and reads its equations from the arXiv source', async () => {
-    // The PDF is fetched and its equations are read as part of the answer run's inspection step; the source row
-    // shows nothing until then (D104's route runs where equations are read today: background, answer, table, cell).
+  test('filling a table cell of the arXiv work reads its equations from the arXiv source', async () => {
+    // Discovery fetches the open PDF (full-text retrieval on, as the app ships). The fast path's answer reads no
+    // equations (D253); a table fill does (D104's table route), so the source row shows nothing until a cell is filled.
     await startResearch(page, server, 'SYNTHETIC signal detection threshold study')
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
     await page.getByRole('tab', { name: /Sources/ }).click()
-    await row(page, TITLE).getByRole('button', { name: 'Include' }).click()
-    await expect(row(page, TITLE).getByRole('button', { name: 'Include' })).toBeDisabled()
-    await page.getByRole('tab', { name: /Answer/ }).click()
-    await page.getByRole('button', { name: 'Generate answer now' }).click()
-    await expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 })
+    // Both readings include it when its PDF names its DOI; otherwise the person includes it.
+    const include = row(page, TITLE).getByRole('button', { name: 'Include' })
+    if (await include.isEnabled()) await include.click()
+    await expect(include).toBeDisabled()
+    await expect(row(page, TITLE).locator('.source-status')).not.toContainText('Equations from the arXiv source')
+    await page.getByRole('tab', { name: /Evidence/ }).click()
+    await page.getByRole('button', { name: /Add a column/ }).click()
+    const editor = page.getByRole('dialog', { name: 'Add column' })
+    await editor.getByLabel('Short name').fill('Threshold')
+    await editor.getByLabel('Instruction').fill('The detection threshold the source states.')
+    await editor.getByRole('button', { name: 'Add column' }).click()
+    await expect(editor).toHaveCount(0)
+    await page.getByRole('button', { name: /^Fill empty cells/ }).click()
+    await expect(page.locator('.evidence-run')).toHaveCount(0, { timeout: 60_000 })
   })
 
   test('the source row reports equations matched to the page by their numbers, from the arXiv source', async () => {
@@ -99,7 +109,29 @@ test.describe.serial('O: the arXiv source route', () => {
     await page.setViewportSize({ width: 1280, height: 900 })
   })
 
-  test('the answer citation shows the "arXiv source" badge, and opening it shows the passage notice with a rendered equation', async () => {
+  test('a citation of the passage with placed equations shows the "arXiv source" badge, and opening it shows the passage notice with a rendered equation', async () => {
+    // The fast answer reads no equations and cites the passages frozen at its read cutoff (D253), read before the table
+    // fill placed the equations. So the answer view is served with its first citation pointing at the stored passage the
+    // arXiv source route wrote (SYNTHETIC API state); the passage, its equations and every rendering are the app's own.
+    const rid = page.url().match(/#\/research\/([^/]+)/)?.[1]
+    if (!rid) throw new Error('research id missing from URL')
+    const base = server.url(`api/researches/${rid}`)
+    const view = await (await page.request.get(base)).json()
+    const source = view.sources.find((s: { title: string; access: { assets: unknown[] } }) => s.title === TITLE && s.access.assets.length)
+    const text = await (await page.request.get(`${base}/assets/${source.access.assets[0].id}/text`)).json()
+    const latex = text.passages.find((p: { text_source: string }) => p.text_source === 'latex_source')
+    expect(latex, 'the arXiv source route stored a passage with placed equations').toBeTruthy()
+    await page.route(base, async route => {
+      const response = await route.fetch()
+      const body = await response.json()
+      const evidence = body.answers[0].claims[0].evidence
+      evidence[0] = { ...evidence[0], passage_id: latex.id, source_version_id: source.source_version_id, title: TITLE,
+        source_key: source.source_key ?? evidence[0].source_key, version_label: source.version_label, kind: 'pdf_page',
+        reading_depth: 'selected_sections', physical_page: latex.physical_page, printed_label: latex.printed_label,
+        text_source: 'latex_source', anchor_text: null }
+      await route.fulfill({ response, json: body })
+    })
+    await page.reload()
     await page.getByRole('tab', { name: /Answer/ }).click()
     const artifact = page.getByRole('button', { name: /Open report:/ })
     await expect(artifact).toBeVisible()

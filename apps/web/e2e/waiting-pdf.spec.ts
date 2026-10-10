@@ -281,7 +281,18 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
       { data: { state: 'included', expected_version: record.selection.version, reason: 'SYNTHETIC included by the person' }, headers: { 'x-deixis-csrf': token } })
     expect(included.ok()).toBe(true)
     await api.dispose()
+    // The readiness panel is shown before a research's first answer. The fast path writes that answer by itself when
+    // discovery ends, so the panel is read from this research's view served without its answers (SYNTHETIC API state).
+    const withoutAnswers = (p: Page, change: (view: any) => void = () => {}) => p.route(`**/api/researches/${failing}`, async route => {
+      const response = await route.fetch()
+      const body = await response.json()
+      body.answers = []
+      change(body)
+      await route.fulfill({ response, json: body })
+    })
     const unreadInPanel = async (p: Page, name: string) => {
+      await p.unroute(`**/api/researches/${failing}`)
+      await withoutAnswers(p)
       await p.goto(`${FAIL_URL}/#/research/${failing}/answer`)
       const listed = p.getByRole('list', { name: 'Your PDF, not read yet' }).getByRole('listitem').filter({ hasText: WAITING_TITLE })
       await expect(listed).toContainText('Your PDF is attached and not read yet: the answer leaves this work out until the model reads it.')
@@ -302,12 +313,7 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
     // width), and during a collection (the unread work counted apart, and a running step for it shown first).
     const served = async (p: Page, change: (view: any) => void) => {
       await p.unroute(`**/api/researches/${failing}`)
-      await p.route(`**/api/researches/${failing}`, async route => {
-        const response = await route.fetch()
-        const body = await response.json()
-        change(body)
-        await route.fulfill({ response, json: body })
-      })
+      await withoutAnswers(p, change)
       await p.goto('about:blank')
       await p.goto(`${FAIL_URL}/#/research/${failing}/answer`)
     }

@@ -209,9 +209,8 @@ test('recent research moves to Trash, restores, then can be permanently deleted'
   try {
     await startResearch(page, server, 'SYNTHETIC trash flow research')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    // In sw, the person requests a short title after discovery.
-    await page.getByRole('button', { name: 'Suggest a short title' }).click()
-    const title = 'Synthetic short research title'
+    // The fast path's own answer names the research when it is published.
+    const title = 'Synthetic evidence for release scheduling and optimization in constrained molecular communication networks'
     await expect(page.locator('.recent-row', { hasText: title })).toBeVisible()
     await page.getByRole('button', { name: `Actions for ${title}` }).click()
     await page.getByRole('menuitem', { name: 'Move to Trash' }).click()
@@ -259,8 +258,11 @@ test('a research title is renamed in place and from its sidebar row', async ({ b
   await server.start()
   const page = await browser.newPage()
   try {
-    await startResearch(page, server, 'SYNTHETIC rename flow research')
+    // Only a valid answer names a research. The fast path's own answer to this question keeps asserting a page and is
+    // never published, so the heading stays the question until the person asks the model for a short title.
+    await startResearch(page, server, 'SYNTHETIC [invent-locator] rename flow research')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
+    await expect(page.getByText('The model output failed validation after one repair attempt')).toBeVisible()
     await page.getByRole('button', { name: 'Suggest a short title' }).click()
     const discovery = 'Synthetic short research title'
     const renamed = 'Own wording for the synthetic rename research'
@@ -367,7 +369,9 @@ async function startResearch(page: Page, server: FixtureServer, question: string
 async function openTab(page: Page, name: RegExp) { await page.getByRole('tab', { name }).click() }
 
 test.describe.serial('Main flow: A, B, C, D, F, G', () => {
-  const server = new FixtureServer(nextPort())
+  // Full-text retrieval and reading on, as the app ships: the fast path reads the open PDFs before its cutoff, so the
+  // answer it writes by itself cites PDF pages (A, C) beside abstracts (B).
+  const server = new FixtureServer(nextPort(), { DEIXIS_FIXTURE_FULLTEXT: 'on' })
   let page: Page
   let claimsBefore: string[] = []
 
@@ -382,6 +386,9 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await expect(page.getByText('Ran search & screening')).toBeVisible()
     await expect(page.locator('.research-seed')).toContainText('PDF passages from')
     for (const fact of ['Files + academic search', 'Standard depth']) await expect(page.locator('.research-facts')).toContainText(fact)
+    // The answer the fast path starts after discovery is the latest run, so the finished discovery run is folded: open it.
+    const discovery = page.locator('.chat-toggle', { hasText: 'Ran search & screening' })
+    if (await discovery.getAttribute('aria-expanded') !== 'true') await discovery.click()
     for (const model of ['Codex', 'fixture-model']) await expect(page.locator('.chat-run-models').first()).toContainText(model)
     await shot(page, '00-search-completed')
     await page.setViewportSize({ width: 390, height: 844 })
@@ -441,10 +448,12 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
 
   test('A: an answer citation opens the stored passage of the cited source version', async () => {
     await openTab(page, /Answer/)
-    await page.getByRole('button', { name: 'Generate answer now' }).click()
-    await expect(page.getByText('Ran answer generation')).toBeVisible()
+    // The fast path wrote V1 by itself when discovery ended; the choices made since (D excluded a source, G added a
+    // file) reach the model in a new answer, V2.
     const artifact = page.getByRole('button', { name: /Open report:/ })
     await expect(artifact).toContainText('Report · V1')
+    await page.getByRole('button', { name: 'Generate a new answer' }).click()
+    await expect(artifact).toContainText('Report · V2')
     await shot(page, 'answer-report-artifact')
     const dismiss = page.getByRole('button', { name: 'Dismiss notification' })
     if (await dismiss.isVisible()) await dismiss.click()
@@ -466,7 +475,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     expect(copiedReport).toMatch(/\[Synthetic(\d\d|nd)[a-z]{0,2}[\],]/)  // citations name the source key (D59)
     const download = page.waitForEvent('download')
     await report.getByRole('button', { name: 'Download' }).click()
-    expect((await download).suggestedFilename()).toBe('synthetic-evidence-for-release-scheduling-and-optimization-in-constrained-molecu-v1.md')
+    expect((await download).suggestedFilename()).toBe('synthetic-evidence-for-release-scheduling-and-optimization-in-constrained-molecu-v2.md')
     claimsBefore = await report.locator('.claim').allInnerTexts()
     expect(claimsBefore.length).toBeGreaterThan(0)
     await expect(report.locator('.claim', { hasText: 'hospital' })).toHaveCount(0)  // the excluded source was not given to the model
@@ -599,9 +608,12 @@ test.describe.serial('Failures: E and B (code check)', () => {
     await startResearch(page, server, 'SYNTHETIC [rate-limit] How is molecule release scheduling optimized?')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
     await openTab(page, /Sources/)
+    // The fast path also lists its citation-chain requests (chain:fast:…) to OpenAlex, which the keyword rate limit
+    // does not reach; the limited request is the keyword search, and no OpenAlex row reads as zero results.
     const openAlex = page.locator('.search-summary:not(.flow-block) .search-summary-list > div', { hasText: 'OpenAlex' })
-    await expect(openAlex).toContainText('OpenAlex is receiving too many requests right now.')
-    await expect(openAlex).not.toContainText('zero results')
+    const limited = openAlex.filter({ hasText: 'OpenAlex is receiving too many requests right now.' })
+    await expect(limited).not.toHaveCount(0)
+    for (const request of await openAlex.all()) await expect(request).not.toContainText('zero results')
     await shot(page, 'E-provider-rate-limited')
   })
 
@@ -622,13 +634,16 @@ test.describe.serial('Failures: E and B (code check)', () => {
     // The run's name and model live in the timeline, so the finished run is read on the Answer tab.
     await openTab(page, /Answer/)
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 30000 })
+    // The fast path's own answer follows the resumed discovery, which is then folded: open it to read its model.
+    const discovery = page.locator('.chat-toggle', { hasText: 'Ran search & screening' })
+    if (await discovery.getAttribute('aria-expanded') !== 'true') await discovery.click()
     await expect(page.locator('.chat-run-models').first()).toContainText('fixture-model')
   })
 
   test('B: an answer that keeps asserting a page is never shown as a cited answer', async () => {
     await startResearch(page, server, 'SYNTHETIC [invent-locator] How is molecule release scheduling optimized?')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    await page.getByRole('button', { name: 'Generate answer now' }).click()
+    // The fast path starts the answer by itself after discovery; its drafts assert a page every time.
     await expect(page.getByText('Ran answer generation')).toBeVisible()
     const boundary = page.getByText('The model output failed validation after one repair attempt')
     await expect(boundary).toBeVisible()
@@ -909,7 +924,7 @@ test.describe.serial('Evidence table runs and templates', () => {
 })
 
 test.describe.serial('Replacing a source PDF (P5 slice 2, D45)', () => {
-  const server = new FixtureServer(nextPort())
+  const server = new FixtureServer(nextPort(), { DEIXIS_FIXTURE_FULLTEXT: 'on' })
   let page: Page
   const title = 'SYNTHETIC molecule release scheduling with bisection'
   test.beforeAll(async ({ browser }: { browser: Browser }) => { await server.start(); page = await browser.newPage() })
@@ -918,8 +933,8 @@ test.describe.serial('Replacing a source PDF (P5 slice 2, D45)', () => {
   test('the confirmation names what cites the file; the answer and its quote keep the previous file', async () => {
     await startResearch(page, server, 'SYNTHETIC: How is molecule release scheduling optimized?')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
+    // The fast path read the open PDF before its cutoff and its own answer cites it.
     await openTab(page, /Answer/)
-    await page.getByRole('button', { name: 'Generate answer now' }).click()
     await expect(page.getByText('Ran answer generation')).toBeVisible()
     await page.getByRole('button', { name: /Open report:/ }).click()
     await expect(page.locator('.report-sheet .notice', { hasText: 'A PDF this answer read' })).toHaveCount(0)
@@ -1079,7 +1094,7 @@ test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)'
 
   test('a quote of a removed source opens with a label and can restore it', async () => {
     await openTab(page, /Answer/)
-    await page.getByRole('button', { name: 'Generate answer now' }).click()
+    // The answer the fast path wrote by itself after discovery quotes the source removed below.
     await expect(page.getByText('Ran answer generation')).toBeVisible()
     await openTab(page, /Sources/)
     await toastsOff()

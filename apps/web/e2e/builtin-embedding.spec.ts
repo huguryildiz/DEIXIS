@@ -219,8 +219,9 @@ test.describe.serial('N: a failed passage ranking still says where uploaded text
     await option(page, 'Gemini').getByRole('radio').check()
     await semanticSection(page).getByRole('button', { name: 'Save' }).click()
     await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
-    await startResearch(page, server, 'SYNTHETIC [embed-fails] comparison of molecular release schedules', 'Files + academic search')
-    await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
+    // The fast path's own answer ranks passages by keyword alone (fast_path_lexical). The answer of an attached-files
+    // research still ranks the attached PDF's passages by meaning, so a failed ranking is shown there.
+    await startResearch(page, server, 'SYNTHETIC [embed-fails] comparison of molecular release schedules', 'Attached files')
     await page.getByRole('button', { name: 'Generate source-linked answer' }).click()
     await expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 })
     await page.getByRole('button', { name: /Ran answer generation/ }).click()

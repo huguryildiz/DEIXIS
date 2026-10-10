@@ -334,7 +334,7 @@ test('3 apply: checked editor save, dependency recovery and identical retry with
 test('4 source-linked answer review records acceptance without an editor', async ({ page }) => {
   const rid = await includedResearch(page, '')
   await page.getByRole('tab', { name: 'Answer' }).click()
-  await page.getByRole('button', { name: 'Generate answer now' }).click()
+  // The fast path writes the answer by itself when discovery ends.
   await expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 })
   const research = await view(page, rid)
   const answer = research.answers[0]
@@ -479,7 +479,8 @@ test('7 transcript uses derived review state and does not relist a found run on 
   await page.keyboard.press('Escape')
   let listCalls = 0
   await page.route(`${base(f)}?*`, async route => {
-    listCalls++
+    // The research also holds the answer the fast path wrote after discovery; only the report's review list is counted.
+    if (new URL(route.request().url()).searchParams.get('target_kind') === 'report') listCalls++
     const response = await route.fetch()
     const cards: ReviewCard[] = await response.json()
     // SYNTHETIC derived partial state despite the completed run status.
@@ -498,8 +499,6 @@ test('7 transcript uses derived review state and does not relist a found run on 
   const heading = page.locator('.chat-toggle').filter({ hasText: 'Review by another model' })
   await check(heading).toContainText('Partial')
   await check(heading).not.toContainText('Completed')
-  const research = await view(page, f.rid)
-  expect(research.answers).toHaveLength(0) // No answer summary is refreshing this route independently.
   const before = listCalls
   await refreshByTitleEvent(page, f, 'SYNTHETIC: event refresh with unchanged review run')
   await check(heading).toContainText('Partial')

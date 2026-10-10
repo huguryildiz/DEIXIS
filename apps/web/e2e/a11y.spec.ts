@@ -67,11 +67,15 @@ class Fixture {
 }
 
 const main = new Fixture(nextPort())  // scan and keyboard walk do not share a server: the scan leaves a Trash item and error toasts behind
+// Full-text retrieval and reading on, as the app ships: the fast path reads the open PDFs before its cutoff, so the answer it
+// writes by itself cites PDF pages (the passage sheet's highlight and PDF tab need one).
+const FULLTEXT = { DEIXIS_FIXTURE_FULLTEXT: 'on' }
+const reading = new Fixture(nextPort(), FULLTEXT)
 const queue = new Fixture(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
-const keys = new Fixture(nextPort())
+const keys = new Fixture(nextPort(), FULLTEXT)
 const motion = new Fixture(nextPort())
-const zoom = new Fixture(nextPort())
-const all = [main, queue, keys, motion, zoom]
+const zoom = new Fixture(nextPort(), FULLTEXT)
+const all = [main, reading, queue, keys, motion, zoom]
 test.afterAll(async () => { await Promise.all(all.map(server => server.stop())) })
 
 const dismissToasts = async (page: Page) => { for (const button of await page.getByRole('button', { name: 'Dismiss notification' }).all()) await button.click().catch(() => {}) }
@@ -454,7 +458,8 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
     await reach(['2a sources tab', '2b sources exclude-reason form', '3a answer tab before an answer', '3b answer tab after an answer', '4a answer report sheet', '5 passage sheet with citation highlight', '6a source sheet PDF tab', '6b source sheet plain-text document'], async () => {
-      await startResearch(page, main, 'SYNTHETIC: How is molecule release scheduling optimized?', 'Files + academic search')
+      await reading.ensure()
+      await startResearch(page, reading, 'SYNTHETIC: How is molecule release scheduling optimized?', 'Files + academic search')
       await dismissToasts(page)
       await openTab(page, /Sources/)
       await expect(row(page, 'SYNTHETIC optimization of hospital visiting hours')).toBeVisible()
@@ -464,13 +469,30 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       await expect(hospital.getByLabel('Reason for excluding this source')).toBeVisible()
       await scan(page, '2b sources exclude-reason form')
 
+      // The fast path writes the first answer by itself when discovery ends, so the answer tab as it is before any
+      // answer (the PDF readiness panel and its answer button) is read from this research's view served without its
+      // answer runs and answers (SYNTHETIC API state; the rendering is the app's own).
+      const rid = page.url().match(/#\/research\/([^/]+)/)?.[1]
+      if (!rid) throw new Error('research id missing from URL')
+      const viewUrl = `${reading.url()}api/researches/${rid}`
+      await page.route(viewUrl, async route => {
+        const response = await route.fetch()
+        const body = await response.json()
+        body.answers = []
+        body.runs = body.runs.filter((r: { kind: string }) => r.kind !== 'answer' && r.kind !== 'answer_review')
+        await route.fulfill({ response, json: body })
+      })
+      await page.reload()
       await openTab(page, /Answer/)
       await expect(page.getByRole('button', { name: 'Generate answer now' })).toBeVisible()
       await scan(page, '3a answer tab before an answer')
-      await page.getByRole('button', { name: 'Generate answer now' }).click()
-      await expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 })
+      await page.unroute(viewUrl)
+      await page.reload()
+      await openTab(page, /Answer/)
       const artifact = page.getByRole('button', { name: /Open report:/ })
-      await expect(artifact).toBeVisible()
+      await expect(artifact).toContainText('Report · V1')
+      await page.getByRole('button', { name: 'Generate a new answer' }).click()
+      await expect(artifact).toContainText('Report · V2', { timeout: 60_000 })
       await dismissToasts(page)
       await scan(page, '3b answer tab after an answer', () => dismissToasts(page))
 
@@ -731,7 +753,7 @@ test.describe('X01-X04: verdicts on the scan output', () => {
   const labelOf = (h: { selector: string; ratio?: number; ownTextOnly?: boolean; why?: string; kind?: string }) =>
     h.ratio !== undefined ? (h.ownTextOnly ? 'own text only' : 'measured')
       : h.kind === 'behind-modal' ? 'behind an open sheet'
-        : h.why?.startsWith('node is not in the hit-test stack') && h.selector.startsWith('.report-artifact-preview') ? 'decorative thumbnail' : 'unnamed'
+        : h.why?.startsWith('node is not in the hit-test stack') && /(^|[\s>])\.report-artifact-preview(?![\w-])/.test(h.selector) ? 'decorative thumbnail' : 'unnamed'
   test('X01-X04: every color-contrast "incomplete" node was measured by hand, or is counted as ölçülmedi, and none measured is below 4.5:1', () => {
     const found = readFindings()
     const low: string[] = []
@@ -1214,8 +1236,11 @@ test.describe.serial('X05: A to G by keyboard', () => {
   test('A, B, C: generate the answer, open the report, citation chip and references open stored passages', async () => {
     test.setTimeout(300_000)
     await keyTab(page, /Answer/, 'Answer')
-    await tabTo(page, page.getByRole('button', { name: 'Generate answer now' }), 'Generate answer now')
-    await press(page, 'Enter', 'Generate answer now', () => expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 }))
+    // The fast path wrote V1 by itself after discovery; the choices made since go to the model in a new answer.
+    const again = page.getByRole('button', { name: 'Generate a new answer' })
+    await expect(again).toBeEnabled({ timeout: 60_000 })
+    await tabTo(page, again, 'Generate a new answer')
+    await press(page, 'Enter', 'Generate a new answer', () => expect(page.getByRole('button', { name: /Open report:/ })).toContainText('Report · V2', { timeout: 60_000 }))
     await expect(page.locator('.chat-turn .chat-toggle', { hasText: 'Ran answer generation' }).last()).toBeFocused()
     await dismissToastsByKeyboard(page)
     const artifact = page.getByRole('button', { name: /Open report:/ })
@@ -1430,9 +1455,10 @@ test.describe.serial('X05: A to G by keyboard', () => {
     const summary = page.locator('.search-summary:not(.flow-block) summary')
     await tabTo(page, summary, 'Search details')
     await press(page, 'Enter', 'Search details', () => expect(page.locator('.search-summary:not(.flow-block)')).toHaveAttribute('open', ''))
+    // The fast path also lists its citation-chain requests to OpenAlex, which the keyword rate limit does not reach.
     const openAlex = page.locator('.search-summary:not(.flow-block) .search-summary-list > div', { hasText: 'OpenAlex' })
-    await expect(openAlex).toContainText('OpenAlex is receiving too many requests right now.')
-    await expect(openAlex).not.toContainText('zero results')
+    await expect(openAlex.filter({ hasText: 'OpenAlex is receiving too many requests right now.' })).not.toHaveCount(0)
+    for (const request of await openAlex.all()) await expect(request).not.toContainText('zero results')
     // The stored list is plain text under a <details>: no role=alert (blocking errors only) and no role=status (live text only).
     expect(await page.locator('.search-summary:not(.flow-block) .search-summary-list').getAttribute('role')).toBeNull()
   })
@@ -1519,11 +1545,16 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
           }
         }).observe(document, { childList: true, subtree: true })
       })
+      // The fast path's own answer after discovery is let through; the answer the person starts next is held.
+      writeFileSync(releaseFile, 'SYNTHETIC release of the automatic answer\n')
       await startResearch(page, keys, 'SYNTHETIC [answer-hold]: How is molecule release scheduling optimized?')
       researchId = page.url().match(/#\/research\/([^/]+)/)?.[1]
       if (!researchId) throw new Error('research id missing from URL')
       await openTab(page, /Answer/)
-      await tabTo(page, page.getByRole('button', { name: 'Generate answer now' }), 'held answer start')
+      const again = page.getByRole('button', { name: 'Generate a new answer' })
+      await expect(again).toBeEnabled({ timeout: 60_000 })
+      rmSync(releaseFile, { force: true })
+      await tabTo(page, again, 'held answer start')
       const posted = page.waitForResponse(response => response.url() === `${keys.url()}api/researches/${researchId}/runs`
         && response.request().method() === 'POST')
       await page.keyboard.press('Enter')
@@ -1690,13 +1721,15 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
     await expect(page.locator('[data-cell="0:0"]')).not.toBeFocused()
   })
 
-  for (const status of [409, 503]) test(`failed answer start (${status}) returns focus to Generate answer now, leaving the previous run alone`, async ({ page }) => {
+  for (const status of [409, 503]) test(`failed answer start (${status}) returns focus to Generate a new answer, leaving the previous run alone`, async ({ page }) => {
     await startResearch(page, keys, `SYNTHETIC failed start ${status}: How is molecule release scheduling optimized?`)
     await openTab(page, /Answer/)
+    // The fast path's own answer is the previous run; the person's next answer start is the one refused.
+    const retry = page.getByRole('button', { name: 'Generate a new answer' })
+    await expect(retry).toBeEnabled({ timeout: 60_000 })
     const previous = await page.locator('.chat-turn .chat-toggle').count()
     await page.route('**/api/researches/*/runs', route => route.request().method() === 'POST'
       ? route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ detail: 'SYNTHETIC answer start rejected' }) }) : route.continue())
-    const retry = page.getByRole('button', { name: 'Generate answer now' })
     await tabTo(page, retry, 'answer retry control')
     await page.keyboard.press('Enter')
     await expect(page.locator('.toast')).toContainText('SYNTHETIC answer start rejected')
@@ -1804,9 +1837,19 @@ async function motionScenario(browser: Browser, reduced: boolean, label: string)
     await page.waitForTimeout(400)
     await measure('source sheet open')
     await page.keyboard.press('Escape')
-    // Typewriter title: with reduced motion the full title appears at once.
-    await expect(page.getByRole('button', { name: 'Suggest a short title' })).toBeVisible()
-    const titles = await sequenceOfTitles(page, () => page.getByRole('button', { name: 'Suggest a short title' }).click(), FULL_TITLE)
+    // Typewriter title: with reduced motion the full title appears at once. The fast path's answer has already named
+    // the research, so the stored title is changed once more (through the API, as a rename elsewhere would) and the
+    // heading follows it.
+    const rid = page.url().match(/#\/research\/([^/]+)/)?.[1]
+    if (!rid) throw new Error('research id missing from URL')
+    const token = (await (await page.request.get(`${motion.url()}api/session`)).json()).csrf_token
+    const stored = await (await page.request.get(`${motion.url()}api/researches/${rid}`)).json()
+    expect(stored.research.title).not.toBe(FULL_TITLE)
+    const titles = await sequenceOfTitles(page, async () => {
+      const renamed = await page.request.post(`${motion.url()}api/researches/${rid}/title`, {
+        headers: { 'x-deixis-csrf': token }, data: { title: FULL_TITLE, expected_version: stored.research.version } })
+      expect(renamed.ok()).toBe(true)
+    }, FULL_TITLE)
     results[`${label}: typewriter`] = { offenders: titles, offenderCount: titles.length, infinite: [], running: 0, scrollBehavior: '' }
   } finally { await context.close() }
   return results
@@ -1944,7 +1987,7 @@ test.describe.serial('X06: reduced motion and the 200% layout', () => {
       await expect(row(page, 'SYNTHETIC molecule release scheduling with bisection')).toBeVisible()
       await layout(page, log, 'research, Sources', { 'Sources tab': page.getByRole('tab', { name: /Sources/ }), 'Answer tab': page.getByRole('tab', { name: /Answer/ }), 'Evidence tab': page.getByRole('tab', { name: /Evidence/ }), 'first Read abstract': page.getByRole('button', { name: 'Read abstract' }) })
       await openTab(page, /Answer/)
-      await page.getByRole('button', { name: 'Generate answer now' }).click()
+      // The answer the fast path wrote by itself after discovery.
       const artifact = page.getByRole('button', { name: /Open report:/ })
       await expect(artifact).toBeVisible({ timeout: 60_000 })
       await dismissToasts(page)

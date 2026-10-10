@@ -114,37 +114,64 @@ def test_limitations_core_counts_saved_valid_claims_latest_repairs_and_distinct_
 
 
 SNAPSHOT = {"corpus": {"found": 17, "unique": 11, "screened": 9, "included": 4, "full_text": 2}}
+SUMMARY = {"sent": 5, "accepted": 1, "returned": 40, "raw_returned": 44, "admitted_returned": 40, "failed": 2,
+           "passed_filter": 12, "late_records": 3, "unknown": 1, "unsent": {"cutoff": 1}}
 
 
-def chain_steps(store, research_id, *, summary=True):
-    """A SYNTHETIC fast chain on the fixture's discovery run: three semantic seeds, one the ranking added, and the
-    summary `fast_chain.Round.summary` writes."""
+def chain_steps(store, research_id, requests=(), *, summary=True):
+    """A SYNTHETIC fast chain on the fixture's discovery run: three semantic seeds, one the ranking added, the request
+    steps given as (status, output, delivery_class), and the summary `fast_chain.Round.summary` writes. The summary's
+    `sent` counts every request not cancelled, a failure before sending too; the report must not read it."""
     run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = 'discovery'", (research_id,)).fetchone()[0]
     for key, seeds in (("fast_chain:seeds", 3), ("fast_chain:seeds_fallback", 1)):
         store.finish_step(store.step(run_id, key, "code:fast_chain")["id"], "succeeded",
                           output={"seeds": [{"source_version_id": f"sv{i}", "references": ["W1", "W2"]} for i in range(seeds)]})
+    for i, (status, output, delivery) in enumerate(requests):
+        store.finish_step(store.step(run_id, f"chain:fast:{i}", "provider_chain:openalex")["id"], status, output=output,
+                          delivery_class=delivery)
     if summary:
-        store.finish_step(store.step(run_id, "fast_chain:summary", "code:fast_chain")["id"], "succeeded", output={
-            "sent": 5, "accepted": 3, "returned": 40, "raw_returned": 44, "admitted_returned": 40, "failed": 1,
-            "passed_filter": 12, "late_records": 0, "unknown": 1, "unsent": {"cutoff": 2, "request_budget": 1}})
+        store.finish_step(store.step(run_id, "fast_chain:summary", "code:fast_chain")["id"], "succeeded", output=SUMMARY)
+
+
+EVERY_OUTCOME = (
+    ("succeeded", {"late": False, "transport": {"sends": 1}}, None),
+    ("succeeded", {"late": True, "transport": {"sends": 1}}, None),
+    ("failed", {"returned": 0, "transport": {"attempts": 1, "sends": 0}}, "before_send"),  # failed before sending
+    ("failed", {"returned": 0, "transport": {"attempts": 1, "sends": 1}}, None),
+    ("outcome_unknown", {"unsent": None, "unknown": True, "returned": 0}, None),
+    ("cancelled", {"unsent": "cutoff", "returned": 0}, None),
+)
 
 
 @pytest.mark.parametrize("language,sentence", [
-    ("en", "Citation searching followed the references and the citing works of 4 seed works in OpenAlex: 5 requests "
-           "sent (2 did not complete, 3 not sent), 12 returned records kept by the gate-term filter."),
-    ("tr", "Atıf taraması 4 tohum eserin referanslarını ve onlara atıf yapan eserleri OpenAlex'te izledi: 5 istek "
-           "gönderildi (2 tamamlanmadı, 3 gönderilmedi); dönen kayıtlardan 12 tanesini kapı terimi süzgeci tuttu."),
+    ("en", "4 seed works were chosen for citation searching in OpenAlex (their references and the works citing them). "
+           "Of its requests, 3 were sent: 1 answered before the cutoff, 1 after it, 1 failed after sending and 1 with an "
+           "unknown outcome; 2 were not sent. 12 returned records were kept by the gate-term filter."),
+    ("tr", "OpenAlex'te atıf taraması için 4 tohum eser seçildi (referansları ve onlara atıf yapan eserler). "
+           "İsteklerinden 3 tanesi gönderildi: 1 tanesi kesim zamanından önce, 1 tanesi sonra yanıtlandı, 1 tanesi "
+           "gönderildikten sonra başarısız oldu, 1 tanesinin sonucu bilinmiyor; 2 tanesi gönderilmedi. Dönen "
+           "kayıtlardan 12 tanesini kapı terimi süzgeci tuttu."),
 ])
-def test_the_method_section_reports_the_fast_chain_from_its_seed_and_summary_steps(lib, language, sentence):
+def test_the_method_section_counts_each_fast_chain_request_by_its_own_step(lib, language, sentence):
     store, reports, report_id, research_id = lib
-    chain_steps(store, research_id)
+    chain_steps(store, research_id, EVERY_OUTCOME)
     store.conn.execute("UPDATE reports SET language = ? WHERE id = ?", (language, report_id))
     write_review_methodology(store, reports, report_id, research_id, SNAPSHOT)
     assert sentence in reports.section(report_id, "II")["draft"]["text"]
 
 
+def test_a_request_that_failed_before_sending_is_not_counted_as_sent(lib):
+    store, reports, report_id, research_id = lib
+    chain_steps(store, research_id, [("failed", {"returned": 0, "transport": {"attempts": 1, "sends": 0}}, "before_send")])
+    write_review_methodology(store, reports, report_id, research_id, SNAPSHOT)
+    text = reports.section(report_id, "II")["draft"]["text"]
+    assert "4 seed works were chosen for citation searching" in text
+    assert "Of its requests, 0 were sent" in text and "1 were not sent" in text
+    assert "followed" not in text and "traced" not in text
+
+
 def test_a_fast_chain_without_its_summary_writes_no_citation_searching_sentence(lib):
     store, reports, report_id, research_id = lib
-    chain_steps(store, research_id, summary=False)
+    chain_steps(store, research_id, EVERY_OUTCOME, summary=False)
     write_review_methodology(store, reports, report_id, research_id, SNAPSHOT)
-    assert "Citation searching" not in reports.section(report_id, "II")["draft"]["text"]
+    assert "citation searching" not in reports.section(report_id, "II")["draft"]["text"]

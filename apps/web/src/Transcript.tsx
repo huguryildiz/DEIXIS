@@ -259,9 +259,11 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
   const chainCount = (test: (s: Step) => boolean) => chainRequests.filter(test).length
   const answered = chainCount(s => s.status === 'succeeded' && !s.output?.late)
   const late = chainCount(s => s.status === 'succeeded' && Boolean(s.output?.late))
-  const failedRequests = chainCount(s => s.status === 'failed')
+  // A failure before sending (`before_send`, or a transport trace with no send) was never sent (`chaining.request_outcomes`).
+  const beforeSend = (s: Step) => s.delivery_class === 'before_send' || (s.output?.transport !== undefined && !s.output.transport.sends)
+  const failedRequests = chainCount(s => s.status === 'failed' && !beforeSend(s))
   const unknownRequests = chainCount(s => s.status === 'outcome_unknown')
-  const notSent = chainCount(s => s.status === 'cancelled')
+  const notSent = chainCount(s => s.status === 'cancelled' || (s.status === 'failed' && beforeSend(s)))
   const chainLine = [
     plural(chainSeeds, '{n} seed paper chosen', '{n} seed papers chosen'),
     plural(answered, '{n} request answered', '{n} requests answered'),

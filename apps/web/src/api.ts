@@ -144,8 +144,9 @@ export type Step = {
     image_pages?: number[]; blank_pages?: number[]; asset_id?: string; outcome?: 'current' | 'rejected' | 'unchanged' | 'file_busy'; rejection_reason?: string | null
     // The fast chain's seed steps: how many works it started from (their reference lists stay out of the view).
     seed_count?: number
-    // A fast-chain request step (`chain:fast:{n}`): whether its reply came after the cutoff (its works are not kept).
-    late?: boolean
+    // A fast-chain request step (`chain:fast:{n}`): whether its reply came after the cutoff (its works are not kept), and
+    // how many times it actually went out.
+    late?: boolean; transport?: { sends?: number }
     // The full-text retrieval summary (D83), also written by a discovery run that fetched beside its screening (17a).
     fetched?: number
     // An embedding step (slice 21): the model it froze, what it read from the store, what it still misses, its 429 waits,

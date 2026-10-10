@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from deixis.providers.registry import CONNECTORS
+from deixis.workflow.chaining import request_outcomes
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import Store
 
@@ -44,15 +45,18 @@ def failed_reason_text(reason: str, language: str) -> str:
 
 
 # Citation searching (PRISMA-S item 5), written only when a discovery run of this revision closed its fast chain (D95).
-# `kept` counts returned records that passed the gate-term filter in a reply that arrived before the cutoff; they are
-# records, not new works, and a record a keyword query also found is among them.
+# Choosing a seed is not tracing it: the request outcomes say what was traced. Each request is counted by its own step
+# (`chaining.request_outcomes`). `kept` counts returned records that passed the gate-term filter in a reply that arrived
+# before the cutoff; they are records, not new works, and a record a keyword query also found is among them.
 _CHAIN_TEMPLATES = {
-    "en": (" Citation searching followed the references and the citing works of {seeds} seed works in OpenAlex: "
-           "{requests} requests sent ({failed} did not complete, {unsent} not sent), {kept} returned records kept by "
-           "the gate-term filter."),
-    "tr": (" Atıf taraması {seeds} tohum eserin referanslarını ve onlara atıf yapan eserleri OpenAlex'te izledi: "
-           "{requests} istek gönderildi ({failed} tamamlanmadı, {unsent} gönderilmedi); dönen kayıtlardan {kept} "
-           "tanesini kapı terimi süzgeci tuttu."),
+    "en": (" {seeds} seed works were chosen for citation searching in OpenAlex (their references and the works citing "
+           "them). Of its requests, {sent} were sent: {answered} answered before the cutoff, {late} after it, "
+           "{failed} failed after sending and {unknown} with an unknown outcome; {not_sent} were not sent. {kept} "
+           "returned records were kept by the gate-term filter."),
+    "tr": (" OpenAlex'te atıf taraması için {seeds} tohum eser seçildi (referansları ve onlara atıf yapan eserler). "
+           "İsteklerinden {sent} tanesi gönderildi: {answered} tanesi kesim zamanından önce, {late} tanesi sonra "
+           "yanıtlandı, {failed} tanesi gönderildikten sonra başarısız oldu, {unknown} tanesinin sonucu bilinmiyor; "
+           "{not_sent} tanesi gönderilmedi. Dönen kayıtlardan {kept} tanesini kapı terimi süzgeci tuttu."),
 }
 
 
@@ -184,16 +188,14 @@ def limitations_core(store: Store, reports: ReportStore, report_id: str,
 
 def _chain_provenance(steps: list[dict[str, Any]], language: str) -> str:
     """The fast chain of every discovery run of the revision that wrote its summary (`fast_chain.Round.summary`): the
-    seeds its seed steps chose, and the request counts and filter count the summary recorded."""
+    seeds its seed steps chose, what became of each request by its own step, and the filter count the summary recorded."""
     summaries = {step["run_id"]: step["output"] for step in steps
                  if step["operation_key"] == "fast_chain:summary" and step["status"] == "succeeded" and step["output"]}
     if not summaries:
         return ""
     total = {"seeds": sum((step["output"] or {}).get("seed_count", 0) for step in steps if step["run_id"] in summaries
                           and step["operation_key"] in ("fast_chain:seeds", "fast_chain:seeds_fallback")),
-             "requests": sum(out.get("sent", 0) for out in summaries.values()),
-             "failed": sum(out.get("failed", 0) + out.get("unknown", 0) for out in summaries.values()),
-             "unsent": sum(sum((out.get("unsent") or {}).values()) for out in summaries.values()),
+             **request_outcomes(step for step in steps if step["run_id"] in summaries),
              "kept": sum(out.get("passed_filter", 0) for out in summaries.values())}
     return _CHAIN_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**total)
 

@@ -86,3 +86,31 @@ def chained_heads(linked_heads: Iterable[str], keyword_pool: set[str]) -> list[s
     keyword path already has it, and the chain adds nothing but a hit (slice 15, global constraint "one record path").
     """
     return sorted({head for head in linked_heads if head not in keyword_pool})
+
+
+def request_outcomes(steps: Iterable[dict[str, Any]]) -> dict[str, int]:
+    """What became of each recorded fast-chain request (`chain:fast:{n}` steps, as `Store.run_steps` gives them).
+
+    Whether a request was sent is read from its own step, not from the summary's `sent` (which counts every request
+    that was not cancelled): a reply means it was sent; a failure before sending (`before_send`, or a transport trace
+    that recorded zero sends) counts as not sent, any other failure as sent; an outcome-unknown request stays unknown,
+    whatever was recorded.
+    """
+    counts = {"sent": 0, "answered": 0, "late": 0, "failed": 0, "unknown": 0, "not_sent": 0}
+    for step in steps:
+        if not step["operation_key"].startswith("chain:fast:"):
+            continue
+        output = step.get("output") or {}
+        if step["status"] == "outcome_unknown":
+            counts["unknown"] += 1
+        elif step["status"] == "succeeded":
+            counts["sent"] += 1
+            counts["late" if output.get("late") else "answered"] += 1
+        elif step["status"] == "failed":
+            transport = output.get("transport")
+            before = step.get("delivery_class") == "before_send" or (transport is not None and not transport.get("sends"))
+            counts["not_sent" if before else "failed"] += 1
+            counts["sent"] += 0 if before else 1
+        elif step["status"] == "cancelled":
+            counts["not_sent"] += 1
+    return counts

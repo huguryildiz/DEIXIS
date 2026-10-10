@@ -540,3 +540,88 @@ def test_wrong_previously_read_pdf_uses_its_screened_abstract_decision(tmp_path,
     assert row["route"] == "abstract"
     assert row["decision_id"] == frozen["items"][-1]["abstract_decision_id"]
     assert all(lib.store.passage(pid)["kind"] == "abstract" for pid in plan["passage_ids"])
+
+
+def test_d48_answer_reads_one_version_per_work_and_cites_the_version_it_read(tmp_path):
+    # D48: a published record without text and its accepted manuscript with a PDF are one work. The answer reads the
+    # manuscript only; the model input and the published evidence point at that version, never at both.
+    store, rid = library(tmp_path)
+    plain = candidate(store, rid, "plain", "SYNTHETIC exercise improves fatigue.", "runs_agree_candidate")
+    record = ProviderRecord(provider_record_id="published", title="SYNTHETIC published letter", authors=[], year=2024,
+                            venue=None, publication_type=None, doi="10.5555/synthetic.d48", landing_url=None,
+                            oa_pdf_url=None, oa_pdf_version=None, version_label="publishedVersion",
+                            abstract="SYNTHETIC exercise improves fatigue in the published abstract.",
+                            abstract_origin="provider", identifiers={}, raw={})
+    published, _ = store.upsert_provider_source("known_list", record, None)
+    store.add_to_corpus(rid, published, "search")
+    decisions = DecisionStore(store)
+    decisions.record(rid, published, "runs_agree_candidate")
+    manuscript = store.open_lookup_version(rid, published, "acceptedVersion", None)
+    extraction = SimpleNamespace(status="succeeded", error=None, page_count=3, pages=[
+        SimpleNamespace(text=TOPIC_PAGE, physical_page=n, printed_label=None) for n in (1, 2, 3)])
+    store.add_asset_with_pages(manuscript, "sha-manuscript", 100, "manuscript.pdf", "user_upload", None,
+                               "manuscript.pdf", extraction, "test", lambda t: [(0, len(t), t)])
+    work_id = store.source(published)["work_id"]
+    decisions.derive_selection(rid, work_id)
+    assert store.source(manuscript)["work_id"] == work_id
+    assert store.work_heads(rid)[work_id] == published  # the published record heads the work
+    assert store.answer_versions(rid)[published] == manuscript  # but only the manuscript has text to read
+
+    heads = [plain, published]
+    budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["quick"].__dict__, "quick", "off")
+    budget["fast_path"] = fast_path.freeze_budget(budget, "quick")
+    discovery = store.create_run(rid, "discovery", budget, None)
+    store.update_run(discovery["id"], status="running")
+    listing = {"policy": small_batch.POLICY, "order": heads, "order_hash": "synthetic", "manifest_hash": "synthetic",
+               "manifest": {"scope_revision": 1, "versions": {svid: store.source(svid) for svid in heads}},
+               "items": [{"work_id": store.source(plain)["work_id"], "head": plain, "position": 1,
+                          "versions": [plain], "user_priority": False},
+                         {"work_id": work_id, "head": published, "position": 2,
+                          "versions": [published, manuscript], "user_priority": False}]}
+    step = store.step(discovery["id"], small_batch.LIST_KEY, "code:small_batch_list")
+    store.finish_step(step["id"], "succeeded", output=listing)
+    sent = []
+    def cite_manuscript(si):
+        if si["task_type"] != "grounded_answer":
+            return valid_response(si)
+        sent.append(si)  # the model sees short handles (D12), so the version is told by its label
+        handle = next(s["source_id"] for s in si["sources"] if s["version_label"] == "acceptedVersion")
+        return valid_response(si | {"passages": [p for p in si["passages"] if p["source_id"] == handle]})
+    flow = ResearchFlow(FlowDeps(Settings(data_dir=tmp_path / "data", port=8878), store,
+                                 {"fake": FakeAdapter(cite_manuscript)}, skill.load_skill_package(), None))
+    lib = SimpleNamespace(store=store, rid=rid, sources=[plain, manuscript], discovery=store.run(discovery["id"]),
+                          listing=listing, flow=flow)
+    inspected_pdf(lib)  # two full-text reads of the manuscript's file, then its full-text decision
+
+    frozen = cutoff(lib)
+    row = next(r for r in frozen["items"] if r["work_id"] == work_id)
+    assert (row["head"], row["source_version_id"], row["route"]) == (published, manuscript, "fulltext")
+    assert row["version"]["version_label"] == "acceptedVersion"
+    run = answer_run(lib)
+    asyncio.run(flow.execute(run["id"]))
+    assert store.run(run["id"])["status"] == "completed", store.run(run["id"])
+
+    # The model input, as stored before the call: one version per work, the manuscript's pages for this one.
+    stored = json.loads(store.conn.execute(
+        "SELECT i.payload_json FROM step_inputs i JOIN run_steps s ON s.id = i.step_id"
+        " WHERE s.run_id = ? AND s.operation_key = 'grounded_answer' ORDER BY i.attempt DESC, i.rowid DESC",
+        (run["id"],)).fetchone()[0])
+    assert {s["source_id"] for s in stored["sources"]} == {plain, manuscript}
+    assert [s["version_label"] for s in stored["sources"] if s["source_id"] == manuscript] == ["acceptedVersion"]
+    by_source = {}
+    for p in stored["passages"]:
+        by_source.setdefault(p["source_id"], []).append(p)
+    assert set(by_source) == {plain, manuscript}
+    assert {p["locator"]["kind"] for p in by_source[manuscript]} == {"pdf_page"}
+    assert {store.passage(p["passage_id"])["source_version_id"] for p in by_source[manuscript]} == {manuscript}
+    assert [s["version_label"] for s in sent[-1]["sources"]].count("publishedVersion") == 0
+
+    # The published answer: every citation resolves to the manuscript passage the model was given.
+    answer = views.research_view(store, rid)["answers"][0]
+    assert answer["status"] == "structurally_valid"
+    evidence = [e for claim in answer["claims"] for e in claim["evidence"]]
+    assert evidence and {e["source_version_id"] for e in evidence} == {manuscript}
+    given = {p["passage_id"] for p in by_source[manuscript]}
+    for e in evidence:
+        assert e["passage_id"] in given and e["kind"] == "pdf_page"
+        assert e["anchor_text"] and e["anchor_text"] in store.passage(e["passage_id"])["text"]

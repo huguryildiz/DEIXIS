@@ -15,7 +15,10 @@ a `comparator_exclusion_withheld` row), "[read-fails]" (the first reading run of
 person's file of case L answers nothing usable, so the file is not read until the person asks again),
 "[fill-fails-one-row]" (every extraction for the fixed bisection study returns invalid JSON, including its bounded
 repair; the other rows fill normally, so the missing-row report choice can be exercised),
-"[answer-hold]" (a grounded-answer call waits for `answer-release` in the fixture data directory, failing after 60 s).
+"[answer-hold]" (a grounded-answer call waits for `answer-release` in the fixture data directory, failing after 60 s),
+"[vocab-empty]" and "[vocab-broad]" (clean start, decision B: every count probe answers 0, or more than
+`VERY_LARGE_COUNT`, so the discovery run ends with `vocabulary_empty` or `vocabulary_too_broad` before any search; each
+vocabulary-labels call of such a question waits 0.5 s so the page sees the run running before it fails).
 
 `DEIXIS_FIXTURE_QUEUE=on` (case J, slice 17) switches on retrieval and reading and serves the queue works below instead
 of the A–I records; every other case leaves it unset and gets the server it always had. `DEIXIS_FIXTURE_AUDIT=on` (cases
@@ -81,6 +84,7 @@ from deixis.documents.fetch import FetchResult  # noqa: E402
 from deixis.models.adapter import ModelStepResult  # noqa: E402
 from deixis.storage import db  # noqa: E402
 from deixis.workflow.store import Store  # noqa: E402
+from deixis.workflow.vocabulary import VERY_LARGE_COUNT  # noqa: E402
 from fakes import parse_step_input, valid_response  # noqa: E402
 from keyring.backend import KeyringBackend  # noqa: E402
 from keyring.errors import PasswordDeleteError  # noqa: E402
@@ -387,6 +391,7 @@ def queue_reading(si: dict[str, Any], output: dict[str, Any], question: str = ""
 # for the gate never to be narrowed. SYNTHETIC, like everything else here.
 PROBE_COUNT = 800
 RATE_LIMIT_MODE = False
+PROBE_MODE: str | None = None  # "[vocab-empty]" / "[vocab-broad]": what every count probe answers instead
 
 
 def openalex(request: httpx.Request) -> httpx.Response:
@@ -409,7 +414,8 @@ def openalex(request: httpx.Request) -> httpx.Response:
     if params.get("per_page") == "1" and params.get("select") == "id":
         # A count-only request reads `meta.count` and no record; answering it with the whole fixture list would
         # make every phrase worth the same handful of works (slice 04a).
-        return httpx.Response(200, json={"meta": {"count": PROBE_COUNT}, "results": []})
+        count = {"empty": 0, "broad": VERY_LARGE_COUNT + 1}.get(PROBE_MODE or "", PROBE_COUNT)
+        return httpx.Response(200, json={"meta": {"count": count}, "results": []})
     if RATE_LIMIT_MODE and request.url.host == "api.openalex.org" and "search.title_and_abstract" in params:
         return httpx.Response(429, headers={"retry-after": "0"})
     works = LINEAGE_REJECT_WORKS if LINEAGE_REJECT_MODE else LINEAGE_WORKS if LINEAGE_MODE else QUEUE_WORKS if QUEUE_MODE else WORKS
@@ -472,6 +478,11 @@ class ScriptedCodex:
             else:
                 return ModelStepResult("failed", error="SYNTHETIC hold timed out")
         RATE_LIMIT_MODE = "[rate-limit]" in question
+        global PROBE_MODE
+        # The vocabulary labels are the run's first model call and come before its count probes.
+        PROBE_MODE = "empty" if "[vocab-empty]" in question else "broad" if "[vocab-broad]" in question else None
+        if PROBE_MODE and task == "vocabulary_labels":
+            await asyncio.sleep(0.5)
         global LINEAGE_MODE, LINEAGE_REJECT_MODE
         LINEAGE_REJECT_MODE = '[lineage-reject]' in question
         LINEAGE_MODE = '[lineage]' in question or LINEAGE_REJECT_MODE

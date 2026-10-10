@@ -19,7 +19,7 @@ Model boundary
 - Each model step gets a stored `StepInput` (records, allowlisted IDs, `step_input_id`, `scope_revision`, `skill_package_hash`) and a strict JSON output schema. Everything sent is stored before the call.
 - The model has no tools. A tool item in the output fails the step with `model_isolation_violation`.
 - Output from a model other than the requested one is recorded and never used (`model_mismatch`). No other model or connection is tried in its place.
-- Schema repair is bounded: one repair call (`MAX_SCHEMA_REPAIRS = 1`), none for `vocabulary_labels` and `abstract_screening`. The answer step has one exception: when only the several-sources rule for a `source_stated` claim (and anchor defects code may salvage) still fails after that repair, it makes one more call, `grounded_answer_resplit` (old D249). If repair fails, the answer is stored as an unverified draft and is not shown as a cited answer.
+- Schema repair is bounded: one repair call (`MAX_SCHEMA_REPAIRS = 1`), none for `vocabulary_labels` and `abstract_screening`. The answer step has one exception: when only the several-sources rule for a `source_stated` claim (and anchor defects code may salvage) still fails after that repair, it makes one more call, `grounded_answer_resplit` (old D249), if the model-call budget still allows it. If repair fails, the answer is stored as an unverified draft and is not shown as a cited answer.
 - Answer and review steps see short citation handles instead of record IDs (old D12). Code resolves them back to record IDs before validation.
 - Editing a runtime file of `methods/deixis-research/` changes `skill_package_hash`. The app refuses to start when the package fails its integrity check.
 
@@ -49,7 +49,7 @@ Fast-path policy (`fast_path.py`, `fast_path_v1`)
 - Search: one OpenAlex semantic page (up to 50 records) and OpenAlex keyword pages of 100, read page by page across queries under the keyword cap. Detailed also sends one Semantic Scholar bulk query. No other provider is searched and there is no second search round.
 - Chain: one round, OpenAlex only (backward references and the first cited-by page per seed), overlapping the search and cut off before the ranking deadline.
 - Ranking embeds the pool and freezes the list.
-- Read: Semantic Scholar and Crossref look up missing abstracts for the top N; when Scopus is in scope, configured, reachable from this network and the lookup budget allows, it completes the abstracts still missing. Each batch of abstracts is screened by two model calls. At most K works get full text; a slot whose work found no text passes to the next work in list order.
+- Read: Semantic Scholar and Crossref look up missing abstracts for the top N; when Scopus is in scope, configured, its institutional COMPLETE view is confirmed (`complete_view_entitled`) and the lookup budget allows, it completes the abstracts still missing. Each batch of abstracts is screened by two model calls. At most K works get full text; a slot whose work found no text passes to the next work in list order.
 - PDF retrieval uses 12 shared slots. At the read cutoff, fetches already running are handed to the background lane and go on; queued works start from the background queue only while fewer than 4 background fetches run.
 - When discovery completes, one answer run starts on its own. It answers from the evidence the read stage owned at its cutoff, then queues a separate `answer_review` run.
 - Late full text can produce one new answer revision (`max_revisions: 1`). The first answer stays as it was.

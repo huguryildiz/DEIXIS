@@ -82,6 +82,7 @@ CAPABILITIES = {
 }
 MAX_DOWNLOADS_PER_RUN = 8
 RESPLIT_KEY = "grounded_answer_resplit"  # D249: the one extra repair of an answer that fails only on D247's rule
+INFERENCE_CAP_KEY = "grounded_answer_inference_cap"  # D260: one rewrite of a valid answer that is mostly analyst inference
 # The reason an sw answer records when neither included works nor eligible abstracts are available (D234).
 NO_INCLUDABLE_SOURCE = "no_includable_source"
 MAX_ABSTRACT_CHARS = 2500
@@ -3043,6 +3044,9 @@ class ResearchFlow:
                         extra_repair["relabelled"] = stored["resplit"]["relabelled"]
                 else:
                     extra_repair = {"labels": labels, "outcome": "skipped_budget"}
+        inference_cap = None
+        if not output.get("invalid"):
+            output, key, inference_cap = await self._cap_inference(run, scope, output, key)
         step = self.store.step(run_id, key, "model:grounded_answer")
         if fast_path.enforces(run["budget"], "answer"):
             self._checkpoint(run_id, run["scope_revision"])
@@ -3062,7 +3066,8 @@ class ResearchFlow:
         links = contracts.derive_evidence_links(payload, output["result"])
         answer_id = self.store.save_answer(rid, run_id, step["id"], output["step_input_id"], run["scope_revision"], "structurally_valid",
                                            output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", [])}
-                                           | ({"extra_repair": extra_repair} if extra_repair else {}), links,
+                                           | ({"extra_repair": extra_repair} if extra_repair else {})
+                                           | ({"inference_cap": inference_cap} if inference_cap else {}), links,
                                            selection_revision=step_selection)
         for _, task in self._clock_tasks.get(run_id, {}).values():
             task.cancel()
@@ -5767,6 +5772,58 @@ class ResearchFlow:
             if resend is not None and not resend():
                 return None, result
 
+    async def _cap_inference(self, run: dict[str, Any], scope: dict[str, Any], output: dict[str, Any],
+                             key: str) -> tuple[dict[str, Any], str, dict[str, Any] | None]:
+        """D260: a valid answer whose claims are mostly analyst_inference gets one rewrite call.
+
+        The rewrite is published only when it is valid and no longer over the cap; otherwise the valid answer stands.
+        It never makes an answer unpublished. A resumed run gets the stored step back, so nothing is sent twice.
+        """
+        labels = contracts.inference_cap_labels(output["result"])
+        if not labels:
+            return output, key, None
+        run_id = run["id"]
+        record = {"labels": labels, "claims": len(output["result"]["claims"])}
+        if (self.store.existing_step(run_id, INFERENCE_CAP_KEY) is None
+                and self.store.run(run_id)["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"]):
+            self._checkpoint(run_id, run["scope_revision"])
+            return output, key, record | {"outcome": "skipped_budget"}  # checked before the connection is touched
+        frozen = self.store.step_input_payload(output["step_input_id"])
+        # The accepted answer (after any D244 salvage or D259 relabelling) is quoted, in the handles the model was shown.
+        seed = {"kind": "inference_cap", "labels": labels, "claim_count": len(output["result"]["claims"]),
+                "raw_output": contracts.answer_with_handles(frozen, output["result"]), "step_input_id": output["step_input_id"],
+                "issues": [{"code": "too_many_inference_claims", "path": "/claims",
+                            "message": f"{len(labels)} of {len(output['result']['claims'])} claims are analyst_inference"}]}
+        connection, requested, effort = step_model(scope, "grounded_answer")
+        if frozen["model"]["requested_model"] is not None:
+            connection, requested = frozen["model"]["connection"], frozen["model"]["requested_model"]
+
+        def same_input(step_id: str, frozen=frozen) -> dict[str, Any]:
+            return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now()}
+        try:
+            # Optional: a connection or call failure keeps the valid answer instead of pausing the run; a stop or a
+            # newer scope revision still stops it.
+            second = await self._model_step(run, scope, INFERENCE_CAP_KEY, "grounded_answer", step_input_builder=same_input,
+                                            model=(connection, requested, effort), optional=True,
+                                            selection_revision=self.store.step_input_selection_revision(output["step_input_id"]),
+                                            budget_short="skip", resplit=seed)
+        except OptionalStepFailed as failed:
+            self._checkpoint(run_id, run["scope_revision"])  # a question changed meanwhile stops the run, not publishes
+            return output, key, record | {"outcome": "call_failed", "reason": failed.reason}
+        self._checkpoint(run_id, run["scope_revision"])
+        if second.get("repair_skipped"):
+            return output, key, record | {"outcome": "skipped_budget"}
+        stored = (self.store.existing_step(run_id, INFERENCE_CAP_KEY) or {}).get("output") or {}
+        if (stored.get("inference_cap") or {}).get("relabelled"):
+            record["relabelled"] = stored["inference_cap"]["relabelled"]
+        if second.get("invalid"):
+            return output, key, record | {"outcome": "kept_first"}
+        record["rewrite"] = {"inference": len([c for c in second["result"]["claims"] if c["support_type"] == "analyst_inference"]),
+                             "claims": len(second["result"]["claims"])}
+        if contracts.over_inference_share(second["result"]):  # the share alone decides, whatever the claim count
+            return output, key, record | {"outcome": "kept_first"}
+        return second, INFERENCE_CAP_KEY, record | {"outcome": "published"}
+
     def _answer_repair_state(self, step_id: str, resplit: dict[str, Any] | None, max_repairs: int) -> tuple[int | None, dict[str, Any] | None, int, bool]:
         """D249: what an answer step's stored sessions say. (last attempt number, last failed session, repairs used, cap reached)
 
@@ -5832,7 +5889,8 @@ class ResearchFlow:
                 self._checkpoint(run_id, run["scope_revision"])
                 relabelled = json.loads(last["validation_json"]).get("relabelled")  # D259: kept across the recovery
                 output = {"step_input_id": last["id"]} | (
-                    {"resplit": {"labels": resplit["labels"], "outcome": "rejected"} | ({"relabelled": relabelled} if relabelled else {})}
+                    {resplit.get("kind", "resplit"): {"labels": resplit["labels"], "outcome": "rejected"}
+                     | ({"relabelled": relabelled} if relabelled else {})}
                     if resplit is not None else {})
                 self.store.start_step(step["id"])
                 self.store.finish_step(step["id"], "failed", output=output, error_code="invalid_model_output",
@@ -5888,7 +5946,10 @@ class ResearchFlow:
         def resplit_meta(outcome: str) -> dict[str, Any]:
             if resplit is None:
                 return {}
-            return {"resplit": {"labels": resplit["labels"], "outcome": outcome} | ({"relabelled": split_relabel} if split_relabel else {})}
+            if resplit.get("kind") == "inference_cap" and outcome == "published":
+                outcome = "valid"  # D260: whether the rewrite replaces the answer is decided by _cap_inference
+            return {resplit.get("kind", "resplit"): {"labels": resplit["labels"], "outcome": outcome}
+                    | ({"relabelled": split_relabel} if split_relabel else {})}
         extra = step_output_extra or {}
         sent_extra, sent_input = None, None
         attempt_records = {}
@@ -6018,7 +6079,9 @@ class ResearchFlow:
                     for pair in shown_context:
                         pair["cell_id"] = handles[pair["cell_id"]]
                 shown_issues = contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues
-                if resplit is not None:
+                if resplit is not None and resplit.get("kind") == "inference_cap":
+                    message = prompt.inference_cap_message(shown, resplit["raw_output"], resplit["labels"], resplit["claim_count"])
+                elif resplit is not None:
                     message = prompt.resplit_message(shown, shown_issues, resplit["raw_output"], resplit["labels"])
                 elif task_type == "report_section":
                     message = prompt.repair_message(shown, shown_issues, shown_context,

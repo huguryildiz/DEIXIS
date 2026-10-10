@@ -2688,6 +2688,38 @@ def resplit_labels(issues: list[dict[str, Any]], draft: Any, step_input: dict[st
     return [issue["message"].split(":", 1)[0] for issue in issues if issue.get("code") == SEVERAL_SOURCES]
 
 
+INFERENCE_CAP_MIN_CLAIMS = 4
+
+
+def inference_cap_labels(answer: Any) -> list[str] | None:
+    """D260: labels of the analyst_inference claims of a valid answer when they are more than half of its claims.
+
+    Answers with fewer than INFERENCE_CAP_MIN_CLAIMS claims are never capped.
+    """
+    claims = answer.get("claims") if isinstance(answer, dict) else None
+    if not isinstance(claims, list) or len(claims) < INFERENCE_CAP_MIN_CLAIMS:
+        return None
+    labels = [c["claim_label"] for c in claims if isinstance(c, dict) and c.get("support_type") == "analyst_inference"]
+    return labels if 2 * len(labels) > len(claims) else None
+
+
+def over_inference_share(answer: dict[str, Any]) -> bool:
+    """D260: more than half of the answer's claims are analyst_inference (any claim count)."""
+    claims = answer.get("claims") or []
+    return 2 * sum(1 for c in claims if c.get("support_type") == "analyst_inference") > len(claims)
+
+
+def answer_with_handles(step_input: dict[str, Any], answer: dict[str, Any]) -> str:
+    """D260: an accepted answer as the model would write it, with passage IDs back in their citation handles."""
+    handles = citation_handles(step_input)
+    shown = copy.deepcopy(answer)
+    for claim in shown.get("claims", []):
+        claim["passage_ids"] = [handles.get(pid, pid) for pid in claim.get("passage_ids", [])]
+    for anchor in shown.get("citation_anchors", []):
+        anchor["passage_id"] = handles.get(anchor.get("passage_id"), anchor.get("passage_id"))
+    return json.dumps(shown, ensure_ascii=False)
+
+
 def relabel_split_claims(draft: Any, labels: list[str]) -> tuple[Any, dict[str, list[str]]]:
     """D259: give the parts of a split claim that kept the offending label new labels, before validation.
 

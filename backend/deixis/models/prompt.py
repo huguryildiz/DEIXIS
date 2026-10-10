@@ -109,6 +109,22 @@ def resplit_message(step_input: dict[str, Any], issues: list[dict[str, str]], fa
     )
 
 
+def inference_cap_message(step_input: dict[str, Any], valid_output: str, labels: list[str], claim_count: int) -> str:
+    """D260: one rewrite of a valid answer whose claims are mostly analyst_inference."""
+    return (
+        step_message(step_input)
+        + "\n\nThe previous output for this StepInput is valid, but " + f"{len(labels)} of its {claim_count} claims "
+        + f"({', '.join(labels)}) are analyst_inference. An answer should report mainly what its sources state.\n\n"
+        "Previous output (as received):\n" + valid_output
+        + "\n\nRewrite those claims so that at most half of all claims are analyst_inference: wherever a cited passage "
+        "states a finding itself, write it as a source_stated claim that cites only that one source's passages and states "
+        "only what that source states (one claim per source). Keep analyst_inference only for a comparison or synthesis that "
+        "no single source states. Give every new claim a new unused claim_label and its own citation anchors, and keep a "
+        "section's claims consecutive. Do not change any other claim, citation or quote, and do not add identifiers that "
+        "are not in the allowlist. Return the complete corrected JSON object."
+    )
+
+
 def repair_message(step_input: dict[str, Any], issues: list[dict[str, str]],
                    anchor_context: list[dict[str, Any]] | None = None,
                    failed_output: str | None = None, *, anchor_patch: bool = False) -> str:

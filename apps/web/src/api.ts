@@ -144,9 +144,6 @@ export type Step = {
     image_pages?: number[]; blank_pages?: number[]; asset_id?: string; outcome?: 'current' | 'rejected' | 'unchanged' | 'file_busy'; rejection_reason?: string | null
     // The fast chain's seed steps: how many works it started from (their reference lists stay out of the view).
     seed_count?: number
-    // A fast-chain request step (`chain:fast:{n}`): whether its reply came after the cutoff (its works are not kept), and
-    // how many times it actually went out.
-    late?: boolean; transport?: { sends?: number }
     // The full-text retrieval summary (D83), also written by a discovery run that fetched beside its screening (17a).
     fetched?: number
     // An embedding step (slice 21): the model it froze, what it read from the store, what it still misses, its 429 waits,
@@ -186,6 +183,9 @@ export type Run = {
   // What each source brought in this discovery run and how much of it no other source did (D93).
   // counted false: the run was searched before these were kept, which is not the same as zero.
   source_counts?: SourceCounts | null
+  // What became of the fast chain's requests in this discovery run (`chaining.request_outcomes`): sent = answered + late
+  // + failed + unknown; not_sent was never sent; unproven has an unknown outcome and no record that it was sent.
+  chain_requests?: { sent: number; answered: number; late: number; failed: number; unknown: number; not_sent: number; unproven: number } | null
   // Where the person's confirmed works stood in this discovery run's keyword ranking, descriptively (slice 19); null
   // for another run kind, or a run that ranked nothing.
   signals?: SignalTable | null

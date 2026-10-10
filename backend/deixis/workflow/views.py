@@ -14,7 +14,7 @@ from deixis.workflow import approval as approval_rules
 from deixis.workflow import flow_counts as flow_rules
 from deixis.workflow import overrides as override_rules
 from deixis.workflow import probes as probe_rules
-from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy
+from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy, request_outcomes
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import chunk_numbers, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts, inspection_progress
@@ -384,6 +384,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         run["approval"] = approval_view(store, run["id"])
         # What each source brought in this run, and how much of it no other source did (D93).
         run["source_counts"] = source_counts(store, run["id"], probe) if run["kind"] == "discovery" else None
+        # What became of the fast chain's requests, by the one rule the report's method section uses too.
+        run["chain_requests"] = request_outcomes(run["steps"]) if run["kind"] == "discovery" else None
         # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).
         run["signals"] = probe_rules.signal_table(store, run["id"], probe) if run["kind"] == "discovery" else None
         run["screening_notes"] = [

@@ -88,29 +88,44 @@ def chained_heads(linked_heads: Iterable[str], keyword_pool: set[str]) -> list[s
     return sorted({head for head in linked_heads if head not in keyword_pool})
 
 
-def request_outcomes(steps: Iterable[dict[str, Any]]) -> dict[str, int]:
-    """What became of each recorded fast-chain request (`chain:fast:{n}` steps, as `Store.run_steps` gives them).
 
-    Whether a request was sent is read from its own step, not from the summary's `sent` (which counts every request
-    that was not cancelled): a reply means it was sent; a failure before sending (`before_send`, or a transport trace
-    that recorded zero sends) counts as not sent, any other failure as sent; an outcome-unknown request stays unknown,
-    whatever was recorded.
+
+def request_sent(step: dict[str, Any]) -> bool | None:
+    """Whether one fast-chain request step went out. Its transport trace decides first: one recorded send or more is
+    sent, none is not sent. Without a trace: a reply is sent, a failure is sent unless it failed before sending
+    (`before_send`), a cancelled request is not sent, and an outcome-unknown one is unproven (None)."""
+    trace = (step.get("output") or {}).get("transport")
+    if trace is not None:
+        return (trace.get("sends") or 0) > 0
+    if step["status"] == "succeeded":
+        return True
+    if step["status"] == "failed":
+        return step.get("delivery_class") != "before_send"
+    return None if step["status"] == "outcome_unknown" else False
+
+
+def request_outcomes(steps: Iterable[dict[str, Any]]) -> dict[str, int]:
+    """What became of each recorded fast-chain request (`chain:fast:{n}` steps, as `Store.run_steps` gives them),
+    counted by its own step and not by the summary's `sent` (which counts every request that was not cancelled).
+
+    `sent` = `answered` + `late` + `failed` + `unknown`: a sent request answered before the cutoff, after it, without a
+    usable reply, or with an unknown outcome. `not_sent` was never sent. `unproven` has an unknown outcome and no
+    record that it was sent, so it is in neither of the two.
     """
-    counts = {"sent": 0, "answered": 0, "late": 0, "failed": 0, "unknown": 0, "not_sent": 0}
+    counts = dict.fromkeys(("sent", "answered", "late", "failed", "unknown", "not_sent", "unproven"), 0)
     for step in steps:
-        if not step["operation_key"].startswith("chain:fast:"):
+        # A request still pending or running is not settled yet and is not counted until it is.
+        if not step["operation_key"].startswith("chain:fast:") or step["status"] in ("pending", "running"):
             continue
-        output = step.get("output") or {}
-        if step["status"] == "outcome_unknown":
-            counts["unknown"] += 1
-        elif step["status"] == "succeeded":
-            counts["sent"] += 1
-            counts["late" if output.get("late") else "answered"] += 1
-        elif step["status"] == "failed":
-            transport = output.get("transport")
-            before = step.get("delivery_class") == "before_send" or (transport is not None and not transport.get("sends"))
-            counts["not_sent" if before else "failed"] += 1
-            counts["sent"] += 0 if before else 1
-        elif step["status"] == "cancelled":
+        sent = request_sent(step)
+        if sent is None:
+            counts["unproven"] += 1
+        elif not sent:
             counts["not_sent"] += 1
+        else:
+            counts["sent"] += 1
+            if step["status"] == "succeeded":
+                counts["late" if (step.get("output") or {}).get("late") else "answered"] += 1
+            else:
+                counts["unknown" if step["status"] == "outcome_unknown" else "failed"] += 1
     return counts

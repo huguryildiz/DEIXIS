@@ -48,16 +48,26 @@ def failed_reason_text(reason: str, language: str) -> str:
 # Choosing a seed is not tracing it: the request outcomes say what was traced. Each request is counted by its own step
 # (`chaining.request_outcomes`). `kept` counts returned records that passed the gate-term filter in a reply that arrived
 # before the cutoff; they are records, not new works, and a record a keyword query also found is among them.
-_CHAIN_TEMPLATES = {
-    "en": (" {seeds} seed works were chosen for citation searching in OpenAlex (their references and the works citing "
-           "them). Of its requests, {sent} were sent: {answered} answered before the cutoff, {late} after it, "
-           "{failed} failed after sending and {unknown} with an unknown outcome; {not_sent} were not sent. {kept} "
-           "returned records were kept by the gate-term filter."),
-    "tr": (" OpenAlex'te atıf taraması için {seeds} tohum eser seçildi (referansları ve onlara atıf yapan eserler). "
-           "İsteklerinden {sent} tanesi gönderildi: {answered} tanesi kesim zamanından önce, {late} tanesi sonra "
-           "yanıtlandı, {failed} tanesi gönderildikten sonra başarısız oldu, {unknown} tanesinin sonucu bilinmiyor; "
-           "{not_sent} tanesi gönderilmedi. Dönen kayıtlardan {kept} tanesini kapı terimi süzgeci tuttu."),
-}
+def _chain_sentence(total: dict[str, int], language: str) -> str:
+    if language.startswith("tr"):
+        text = (f" OpenAlex'te atıf taraması için {total['seeds']} tohum eser seçildi (referansları ve onlara atıf yapan "
+                f"eserler). İsteklerinden {total['sent']} tanesi gönderildi: {total['answered']} tanesi kesim zamanından "
+                f"önce, {total['late']} tanesi sonra yanıtlandı, {total['failed']} tanesi gönderildikten sonra başarısız "
+                f"oldu, {total['unknown']} tanesinin sonucu bilinmiyor; {total['not_sent']} tanesi gönderilmedi.")
+        if total["unproven"]:
+            text += f" {total['unproven']} isteğin hem sonucu hem de gönderilip gönderilmediği bilinmiyor."
+        return text + f" Dönen kayıtlardan {total['kept']} tanesini kapı terimi süzgeci tuttu."
+
+    def was(n: int, one: str, many: str) -> str:
+        return f"{n} {one if n == 1 else many}"
+    text = (f" {was(total['seeds'], 'seed work was', 'seed works were')} chosen for citation searching in OpenAlex "
+            f"(their references and the works citing them). Of its requests, {was(total['sent'], 'was', 'were')} sent: "
+            f"{total['answered']} answered before the cutoff, {total['late']} after it, {total['failed']} failed after "
+            f"sending and {total['unknown']} with an unknown outcome; {was(total['not_sent'], 'was', 'were')} not sent.")
+    if total["unproven"]:
+        text += (f" For {was(total['unproven'], 'request', 'requests')}, neither the outcome nor whether it was sent "
+                 "is recorded.")
+    return text + f" {was(total['kept'], 'returned record was', 'returned records were')} kept by the gate-term filter."
 
 
 def render_review_methodology(numbers: dict[str, Any], language: str, *, providers: str, queries: str,
@@ -197,7 +207,7 @@ def _chain_provenance(steps: list[dict[str, Any]], language: str) -> str:
                           and step["operation_key"] in ("fast_chain:seeds", "fast_chain:seeds_fallback")),
              **request_outcomes(step for step in steps if step["run_id"] in summaries),
              "kept": sum(out.get("passed_filter", 0) for out in summaries.values())}
-    return _CHAIN_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**total)
+    return _chain_sentence(total, language)
 
 
 def _all_steps(store: Store, research_id: str, scope_revision: int) -> list[dict[str, Any]]:

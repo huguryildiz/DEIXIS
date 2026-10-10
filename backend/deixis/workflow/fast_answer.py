@@ -322,6 +322,10 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
         plan = late_revision.revision_plan(flow, run, scope)
     else:
         plan = input_plan(flow, run, scope)
+    # Where the flow stood as this answer started (slice 20), apart from what the plan gives the model. No await since
+    # the included set and selection revision were read, so the snapshot is the state they describe.
+    rid = run["research_id"]
+    flow._answer_start_snapshot(run, flow.store.included_works(rid), flow.store.selection_revision(rid))
     flow._small_batch_guard = {"run_id": run["id"], "rid": run["research_id"],
         "user_signature": plan["user_signature"], "fast_answer": True, "input": plan}
     if run["budget"].get("late_revision_id"):

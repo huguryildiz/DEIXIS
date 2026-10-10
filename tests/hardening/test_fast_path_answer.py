@@ -157,6 +157,24 @@ def test_no_evidence_does_not_call_model_and_records_terminal_outcome(tmp_path):
     assert lib.store.conn.execute("SELECT answer_outcome FROM fast_path_ledgers").fetchone()[0] == "no_evidence_at_cutoff"
     assert not lib.store.conn.execute("SELECT 1 FROM model_sessions").fetchone()
     assert lib.store.run(run["id"])["status"] == "completed"
+    assert lib.store.existing_step(run["id"], "answer_start_snapshot")["status"] == "succeeded"
+
+
+def test_answer_records_where_the_flow_stood_when_it_started(tmp_path):
+    # The answer's "flow at the start" line reads this step; without it every fast answer said "not recorded".
+    lib = setup(tmp_path, 2)
+    cutoff(lib)
+    user(lib, lib.sources[0], "included")
+    run = answer_run(lib)
+    asyncio.run(lib.flow.execute(run["id"]))
+    assert lib.store.run(run["id"])["status"] == "completed"
+    step = lib.store.existing_step(run["id"], "answer_start_snapshot")
+    assert step["status"] == "succeeded"
+    assert step["output"]["included"] == 1
+    assert step["output"]["selection_revision"] == lib.store.selection_revision(lib.rid)
+    answer = views.research_view(lib.store, lib.rid)["answers"][0]
+    assert answer["start_snapshot"]["included"] == 1
+    assert answer["start_snapshot"]["included_state_changed"] is False
 
 
 def test_answer_avoids_inspection_embedding_and_in_run_review(tmp_path, monkeypatch):

@@ -189,14 +189,14 @@ def not_found(store: Store, research_id: str, probe: dict[str, Any]) -> dict[str
 
 
 def arm_counts(store: Store, run_id: str, searches: list[dict[str, Any]], works: dict[str, set[str]],
-               first: int | None, card: dict[str, Any] | None, probe: dict[str, Any]) -> dict[str, Any]:
+               card: dict[str, Any] | None, probe: dict[str, Any]) -> dict[str, Any]:
     """What slice 19 adds beside one counted run's source counts, row for row in D93's order: rows returned,
     included and confirmed works in D93's "only" universe, the query origin split, and the arm-kind line.
     `views.source_counts` hands over what it read. `chain` is absent when the run chained nothing.
     """
     included, verified = set(probe["included"]), set(probe["verified"])
     queries = (((card or {}).get("output") or {}).get("approved") or {}).get("queries") or []
-    rounds: dict[int, dict[str, dict[str, Any]]] = {}
+    rows: dict[str, dict[str, Any]] = {}
     chain = {"rows": 0, "works": set()}
     for search in searches:
         found = works.get(search["id"], set())
@@ -204,48 +204,37 @@ def arm_counts(store: Store, run_id: str, searches: list[dict[str, Any]], works:
             chain["rows"] += search["result_count"] or 0
             chain["works"] |= found
             continue
-        index = re.match(r"search:(\d+)", search["operation_key"])
-        number = 2 if first is not None and index and int(index.group(1)) >= first else 1
-        row = rounds.setdefault(number, {}).setdefault(search["provider"], {"rows": 0, "works": set(), "origins": {}})
+        row = rows.setdefault(search["provider"], {"rows": 0, "works": set(), "origins": {}})
         row["rows"] += search["result_count"] or 0
         row["works"] |= found
-        # The origin is read by the step's index in the approved list, never by the query text, which can recur in
-        # the second round; a card that names no origin gives no split.
-        origin = (queries[int(index.group(1))].get("origin")
-                  if number == 1 and index and int(index.group(1)) < len(queries) else None)
+        # The origin is read by the step's index in the approved list, never by the query text; a card that names no
+        # origin gives no split.
+        index = re.match(r"search:(\d+)", search["operation_key"])
+        origin = queries[int(index.group(1))].get("origin") if index and int(index.group(1)) < len(queries) else None
         row["origins"].setdefault(origin, set()).update(found)
-    everywhere: dict[str, set[str]] = {}
-    for providers in rounds.values():
-        for provider, row in providers.items():
-            everywhere.setdefault(provider, set()).update(row["works"])
-    keyword_works = set().union(*everywhere.values()) if everywhere else set()
+    keyword_works = set().union(*(row["works"] for row in rows.values()))
 
     def counted(found: set[str], only: set[str]) -> dict[str, int]:
         return {"included": len(found & included), "included_only": len(only & included),
                 "verified": len(found & verified), "verified_only": len(only & verified)}
 
-    extended = []
-    for number, providers in sorted(rounds.items()):
-        sources = []
-        for provider, row in providers.items():
-            others = set().union(*(w for p, w in everywhere.items() if p != provider))
-            fields = {"provider_id": provider, "rows": row["rows"], **counted(row["works"], row["works"] - others)}
-            origins = row["origins"]
-            if number == 1 and None not in origins and len(origins) > 1:
-                fields["by_origin"] = [{"origin": origin, "works": len(found), "included": len(found & included)}
-                                       for origin, found in sorted(origins.items())]
-            sources.append(fields)
-        extended.append({"round": number, "sources": sources})
+    sources = []
+    for provider, row in rows.items():
+        others = set().union(*(r["works"] for p, r in rows.items() if p != provider))
+        fields = {"provider_id": provider, "rows": row["rows"], **counted(row["works"], row["works"] - others)}
+        origins = row["origins"]
+        if None not in origins and len(origins) > 1:
+            fields["by_origin"] = [{"origin": origin, "works": len(found), "included": len(found & included)}
+                                   for origin, found in sorted(origins.items())]
+        sources.append(fields)
     chain_fields = ({"rows": chain["rows"], **counted(chain["works"], chain["works"] - keyword_works)}
                     if any(s["operation_key"].startswith(CHAIN_PREFIX) for s in searches) else None)
 
     # The arm kinds in run order: what each found that no kind before it in this run had (SW13.4's input, no rule).
     kinds = []
     seen: set[str] = set()
-    for kind, ran, found in (
-            ("keyword", 1 in rounds, set().union(*(r["works"] for r in rounds.get(1, {}).values()))),
-            ("expansion", 2 in rounds, set().union(*(r["works"] for r in rounds.get(2, {}).values()))),
-            ("chain", chain_fields is not None, chain["works"])):
+    for kind, ran, found in (("keyword", bool(rows), keyword_works),
+                             ("chain", chain_fields is not None, chain["works"])):
         if not ran:
             kinds.append({"kind": kind, "ran": False})
             continue
@@ -254,7 +243,7 @@ def arm_counts(store: Store, run_id: str, searches: list[dict[str, Any]], works:
         kinds.append({"kind": kind, "ran": True, "works": len(found), "new_works": len(new),
                       "included": len(found & included), "new_included": len(new & included),
                       "verified": len(found & verified), "new_verified": len(new & verified)})
-    arms: dict[str, Any] = {"rounds": extended, "kinds": kinds, "read": probe["read"]}
+    arms: dict[str, Any] = {"sources": sources, "kinds": kinds, "read": probe["read"]}
     if chain_fields is not None:
         arms["chain"] = chain_fields
     return arms

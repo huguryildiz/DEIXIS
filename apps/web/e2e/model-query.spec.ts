@@ -72,7 +72,7 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
 
   test('the run searches without asking, and the folded protocol lists the model query it sent', async () => {
     await startResearch(page, server, QUESTION)
-    const approved = page.locator('.approval-card.is-approved')
+    const approved = page.locator('.approval-card')
     await expect(approved).toBeVisible({ timeout: 60_000 })
     await expect(approved).toContainText('not reviewed, fast path')
     await approved.locator('.approval-toggle').click()
@@ -129,7 +129,7 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
     await shot(page, 'I-model-query-failed-desktop')
     await note.getByRole('button', { name: 'Search with the query built from the question’s words' }).click()
     // The run goes on without asking; the queries it sent are the code's, not the model's.
-    const approved = page.locator('.approval-card.is-approved')
+    const approved = page.locator('.approval-card')
     await expect(approved).toBeVisible({ timeout: 60_000 })
     await approved.locator('.approval-toggle').click()
     await expect(approved.locator('.approval-diff-group', { hasText: 'Queries sent' })).not.toContainText(MODEL_QUERY)

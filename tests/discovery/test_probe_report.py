@@ -72,11 +72,11 @@ def test_arm_and_signal_counts_match_a_hand_count_and_two_runs_are_byte_identica
     assert (positives["graph"]["top_100"], positives["fused"]["top_100"]) == (2, 2)
     negatives = {row["signal"]: row for row in research["negatives"]["rows"]}
     assert negatives["graph"]["top_100"] == 0 and negatives["bm25"]["top_100"] == 1  # unscored in graph: not counted
-    arms = research["arms_reference_positives"]["rounds"][0]["sources"][0]
+    arms = research["arms_reference_positives"]["sources"][0]
     assert arms["included"] == 2 and arms["by_origin"] == [{"origin": "code", "included": 0, "works": 3},
                                                            {"origin": "model", "included": 2, "works": 4}]
-    assert research["arms"]["arms"]["rounds"][0]["sources"][0]["included"] == 1
-    assert research["arms"]["arms"]["rounds"][0]["sources"][0]["rows"] == 70
+    assert research["arms"]["arms"]["sources"][0]["included"] == 1
+    assert research["arms"]["arms"]["sources"][0]["rows"] == 70
     assert research["included_not_in_reference"] == 0
     loo = research["leave_one_out_top200"]
     assert set(loo) == {"bm25", "graph"} and all(v["condition"] == probe_report.CONDITION for v in loo.values())

@@ -375,10 +375,9 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'model:screening') return t('Screening proposal (model)')
   if (kind === 'code:abstract_stage') return t('Abstract screening (code)')
   if (kind === 'model:abstract_screening') return t('Abstract screening proposal (model)')
-  if (kind === 'code:chain_abstract_stage') return t('Abstract screening of chained works (code)')
-  if (kind === 'provider_chain:openalex') return t('Citation chaining request, {direction}', { direction: t(key.split(':')[1] === 'backward' ? 'references' : 'citing works') })
-  if (kind === 'provider_chain:semantic_scholar') return t('Citation chaining request to Semantic Scholar, {direction}', { direction: t(key.split(':')[2] === 'backward' ? 'references' : 'citing works') })
-  if (kind.startsWith('code:chain_')) return t('Citation chaining (code)')
+  // A fast-chain request's key names its number, not its direction (`chain:fast:{n}`).
+  if (kind === 'provider_chain:openalex') return t('Citation chaining request')
+  if (kind.startsWith('code:fast_chain')) return t('Citation chaining (code)')
   if (kind === 'model:grounded_answer') return t('Source-linked answer (model)')
   if (kind === 'model:answer_review') return t('Claim review (reviewer model)')
   if (kind === 'model:cell_extraction') return t('Cell extraction (model)')
@@ -580,8 +579,8 @@ export const queueAnsweredText: Record<QueueAnswer, string> = {
   pdf_wrong: 'you marked the PDF as wrong', pdf_confirmed: 'you confirmed the PDF; it waits for a reading run',
 }
 
-// Slice 19: the arm kinds of an sw discovery run, in run order, and the origin of a first-round query (D92).
-export const armKindLabels: Record<string, string> = { keyword: 'Keywords', expansion: 'Term expansion', chain: 'Citation chaining' }
+// Slice 19: the arm kinds of a discovery run, in run order, and the origin of a query (D92).
+export const armKindLabels: Record<string, string> = { keyword: 'Keywords', chain: 'Citation chaining' }
 export const queryOriginLabels: Record<string, string> = { model: 'the model’s query', code: 'the code’s query' }
 // The ranking signals (D79) and the two stored orders the signal table reads beside them.
 export const signalLabels: Record<string, string> = {

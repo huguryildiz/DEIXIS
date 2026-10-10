@@ -112,7 +112,7 @@ for (const width of [1440, 390]) {
       await page.getByRole('button', { name: 'Save revision' }).click()
       await expect(page.locator('.toast')).toContainText('Question revised.')
       await page.getByRole('button', { name: 'Search providers' }).click()
-      await expect(page.locator('.approval-card.is-approved')).toContainText('not reviewed, fast path', { timeout: 60_000 })
+      await expect(page.locator('.approval-card')).toContainText('not reviewed, fast path', { timeout: 60_000 })
       await expect.poll(async () => {
         current = await view(page, rid)
         return current.runs.find(r => r.kind === 'discovery' && r.scope_revision === 2)?.status

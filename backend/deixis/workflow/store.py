@@ -35,7 +35,7 @@ ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint wi
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
 STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze", "read_equations", "equations_skipped",
                      "code:fulltext_plan", "code:fulltext_work", "code:fulltext_summary", "code:criterion_phrases",
-                     "code:adjudication_plan", "code:adjudication_summary", "code:chain_summary")
+                     "code:adjudication_plan", "code:adjudication_summary")
 STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
 MAX_SEED_PASSAGES = 4
 MAX_SEED_CHARS = 5600
@@ -48,9 +48,12 @@ def _step_view_output(row: Any) -> dict[str, Any] | None:
         return None
     if row["operation_key"] == "fast_chain:summary" or row["operation_key"].startswith("chain:fast:"):
         return json.loads(row["output_json"])
+    # The fast chain's seeds carry their reference lists; the timeline needs only how many there were.
+    if row["operation_key"] in ("fast_chain:seeds", "fast_chain:seeds_fallback"):
+        return {"seed_count": len(json.loads(row["output_json"]).get("seeds") or [])}
     if row["kind"] in STEP_OUTPUT_KINDS or row["operation_key"] in STEP_OUTPUT_KEYS:
         return json.loads(row["output_json"])
-    if row["kind"] in ("code:abstract_stage", "code:chain_abstract_stage"):
+    if row["kind"] == "code:abstract_stage":
         return {"batch_sizes": [len(batch) for batch in json.loads(row["output_json"]).get("batches", [])]}
     if row["kind"] == "model:abstract_screening" and row["status"] == "succeeded":
         records = (json.loads(row["output_json"]).get("result") or {}).get("records") or []

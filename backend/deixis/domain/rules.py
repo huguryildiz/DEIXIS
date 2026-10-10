@@ -97,10 +97,7 @@ FULLTEXT_PASSAGES_PER_CALL = 12
 # `detailed` 1 in one run at 150 / 75. The chain's own abstract read and its own room in the full-text plan sit on top
 # of the keyword limits above, which do not change. 15 seeds cost 17-24 requests in the replay; the request limit
 # leaves room for seeds whose citing works take two pages. Hand-picked from one topic's replay, not optimised.
-# The old chain is gone (clean start, slice 3a): CHAIN_SEEDS and CHAIN_ABSTRACT_READ only feed Home's depth text
-# (`effort_limits`) until that text is rewritten; the fast chain's own numbers are in `fast_path.MODES`.
-CHAIN_SEEDS = 15
-CHAIN_ABSTRACT_READ = {"quick": 20, "standard": 50, "detailed": 50}
+# The old chain is gone (clean start, slice 3a); the fast chain's own numbers are in `fast_path.MODES`.
 # Plan room 25 -> 12 in standard and detailed on 2026-09-23, after the first acceptance (D95): the chain's own time was
 # 3.50 / 3.81 / 3.30 min against 3.0 with 25; 12 is the smallest room that kept the three chained verified works
 # that were read (places 4, 8 and 12). `quick` 20 -> 12 after the second acceptance: the package question's chain time
@@ -214,14 +211,3 @@ def effective_selection(
             state = {"include": "included", "exclude": "excluded"}.get(proposal, "pending")
             result[cid] = {"state": state, "origin": "model_proposal"}
     return result
-
-
-def effort_limits() -> dict[str, Any]:
-    """What each research depth lets an `sw` run read, from the constants above at the moment of asking (slice 20,
-    decision 9): Home's depth text says these numbers, so the next change of a limit cannot leave the text behind.
-    """
-    return {"search_workflow": "sw", "efforts": {effort: {
-        "read": SW_READ_LIMIT[effort], "abstracts": ABSTRACT_READ_LIMIT[effort], "fetch": FULLTEXT_WORK_LIMIT[effort],
-        "reads": FULLTEXT_READ_LIMIT[effort], "runs": FULLTEXT_RUNS, "chain_seeds": CHAIN_SEEDS,
-        "chain_abstracts": CHAIN_ABSTRACT_READ[effort],
-        "passages": TEST_EFFORT_BUDGETS[effort].max_answer_passages} for effort in ("quick", "standard", "detailed")}}

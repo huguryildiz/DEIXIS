@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from deixis.documents import embeddings, local_embedding, pdf
@@ -12,7 +11,6 @@ from deixis.domain.contracts import locate_anchor
 from deixis.domain.rules import effective_reviewer, result_applicability
 from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
-from deixis.workflow import expansion as expansion_rules
 from deixis.workflow import flow_counts as flow_rules
 from deixis.workflow import overrides as override_rules
 from deixis.workflow import probes as probe_rules
@@ -77,20 +75,8 @@ def _card_chaining(store: Store, run: dict[str, Any]) -> dict[str, Any] | None:
     return chain_policy(run["budget"], store.scope(run["research_id"], run["scope_revision"])["effort"])
 
 
-def _first_round_size(store: Store, run_id: str) -> int | None:
-    """How many queries the approval closed on: the first round. What the second round added is numbered after them."""
-    card = store.existing_step(run_id, "protocol_approval")
-    return len((((card or {}).get("output") or {}).get("approved") or {}).get("queries") or []) or None
-
-
-def _search_round(operation_key: str, first: int | None) -> int:
-    """The keyword round a search step belongs to: 2 for the term expansion's queries, otherwise 1."""
-    index = re.match(r"search:(\d+)", operation_key)
-    return 2 if first is not None and index and int(index.group(1)) >= first else 1
-
-
 def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    """Per round, what each source brought in this run: how many works, and how many no other source brought (D93).
+    """What each source brought in this run: how many works, and how many no other source brought (D93).
 
     Works are counted after the DOI and work merge, through the candidate each record became, and a source's work is
     its own when no other source's search found that work anywhere in this run. The numbers come from
@@ -99,8 +85,8 @@ def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None
     searched nothing.
 
     With an `sw` research's probe set (slice 19), a counted run also gets `arms`: for each of these rows the records
-    it returned and the included and confirmed works it found, in the same "only" universe, the first round's split
-    of a source by query origin, and the arm-kind line. Without one the result is exactly D93's.
+    it returned and the included and confirmed works it found, in the same "only" universe, the split of a source by
+    query origin, and the arm-kind line. Without one the result is exactly D93's.
     """
     conn = store.conn
     searches = [dict(r) for r in conn.execute(
@@ -114,33 +100,26 @@ def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None
             " JOIN source_versions v ON v.id = h.source_version_id WHERE sr.run_id = ?", (run_id,)):
         works.setdefault(row["search_run_id"], set()).add(row["work_id"])
     if any(s["result_count"] and s["status"] == "completed" and s["id"] not in works for s in searches):
-        return {"counted": False, "rounds": []}
+        return {"counted": False, "sources": []}
     card = store.existing_step(run_id, "protocol_approval")
-    first = _first_round_size(store, run_id)
-    by_round: dict[int, dict[str, set[str]]] = {}
     everywhere: dict[str, set[str]] = {}
-    # Citation chaining is not a round of a source's searches (D95): its works are counted apart, with the works no
+    # Citation chaining is not one of a source's searches (D95): its works are counted apart, with the works no
     # keyword search of this run found.
     chained: set[str] = set()
     for search in searches:
         if search["operation_key"].startswith(CHAIN_PREFIX):
             chained |= works.get(search["id"], set())
             continue
-        number = _search_round(search["operation_key"], first)
-        found = works.get(search["id"], set())
-        by_round.setdefault(number, {}).setdefault(search["provider"], set()).update(found)
-        everywhere.setdefault(search["provider"], set()).update(found)
-    counts: dict[str, Any] = {"counted": True, "rounds": [
-        {"round": number, "sources": [
-            {"provider_id": provider, "works": len(found),
-             "only": len(found - set().union(*(w for p, w in everywhere.items() if p != provider)))}
-            for provider, found in providers.items()]}
-        for number, providers in sorted(by_round.items())]}
+        everywhere.setdefault(search["provider"], set()).update(works.get(search["id"], set()))
+    counts: dict[str, Any] = {"counted": True, "sources": [
+        {"provider_id": provider, "works": len(found),
+         "only": len(found - set().union(*(w for p, w in everywhere.items() if p != provider)))}
+        for provider, found in everywhere.items()]}
     if any(search["operation_key"].startswith(CHAIN_PREFIX) for search in searches):
         counts["chain"] = {"works": len(chained), "only": len(chained - set().union(*everywhere.values()))}
     if probe is not None:
         # Beside D93's rows, not inside them: their fields and meaning stay exactly as D93 wrote them.
-        counts["arms"] = probe_rules.arm_counts(store, run_id, searches, works, first, card, probe)
+        counts["arms"] = probe_rules.arm_counts(store, run_id, searches, works, card, probe)
     return counts
 
 
@@ -403,12 +382,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         # Screening runs in batches; each batch's note is its own line, timed by its step.
         # What this run asked the user to approve before it froze its protocol (slice 08a).
         run["approval"] = approval_view(store, run["id"])
-        # What each source brought in each round of this run, and how much of it no other source did (D93).
+        # What each source brought in this run, and how much of it no other source did (D93).
         run["source_counts"] = source_counts(store, run["id"], probe) if run["kind"] == "discovery" else None
-        # The phrases the second round searched with, so the timeline can name them under its heading.
-        expansion = (store.existing_step(run["id"], "vocabulary_expansion") or {}).get("output") if run["kind"] == "discovery" else None
-        run["expansion_terms"] = [term for block in expansion_rules.expansion_blocks(expansion.get("expansion"), expansion.get("queries")).values()
-                                  for term in block] if expansion else []
         # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).
         run["signals"] = probe_rules.signal_table(store, run["id"], probe) if run["kind"] == "discovery" else None
         run["screening_notes"] = [
@@ -419,15 +394,11 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         ]
         runs.append(run)
 
-    first_rounds: dict[str, int | None] = {}
     search_runs = [
         {**{k: r[k] for k in ("id", "run_id", "scope_revision", "provider", "query_text", "access_mode", "status", "result_count", "provider_total", "page_limit", "retrieved_at",
                               "page_number", "read_limit", "read_total", "stop_reason", "unread_count")},
-         "error": _json(r["error_json"]),
-         # Which keyword round the query belongs to, so the timeline can mark where the term expansion begins.
-         "round": _search_round(r["operation_key"] or "", first_rounds.setdefault(r["run_id"], _first_round_size(store, r["run_id"])))}
-        for r in conn.execute("SELECT sr.*, st.operation_key FROM search_runs sr LEFT JOIN run_steps st ON st.id = sr.step_id"
-                              " WHERE sr.research_id = ? ORDER BY sr.retrieved_at", (research_id,))
+         "error": _json(r["error_json"])}
+        for r in conn.execute("SELECT * FROM search_runs WHERE research_id = ? ORDER BY retrieved_at", (research_id,))
     ]
     # What a paged query left unread is the count on its last stopped page; a page read again replaces the earlier
     # row rather than adding to it, and an unknown provider total is skipped instead of counted as zero (slice 04c).

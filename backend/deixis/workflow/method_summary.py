@@ -62,7 +62,7 @@ def _search(store: Store, research_id: str, revision: int, until: str) -> dict[s
     return {
         "queries": [{"provider": g["provider"], "query": g["query_text"], "records_read": g["rows_returned"],
                      "provider_total": g["provider_total"], "date": g["first_retrieved_at"],
-                     "complete": g["ended_complete"], "origin": g["origin"], "round": g["round"]} for g in keyword],
+                     "complete": g["ended_complete"], "origin": g["origin"]} for g in keyword],
         "records_read": sum(g["rows_returned"] for g in keyword),
         "planned": len(planned),
         "planned_not_sent": sum((q.get("provider_id"), q.get("query_text")) not in sent for q in planned),

@@ -61,6 +61,16 @@ def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
     return policy | {"policy_hash": canonical.sha256_hex(policy)}
 
 
+def effort_limits() -> dict[str, Any]:
+    """What each research depth gives a run, read from MODES at the moment of asking: Home's depth text says these
+    numbers, so a changed mode cannot leave the text behind. `minutes` is the stage bases summed and rounded, the
+    stages' soft deadlines rather than a promise of how long a run takes; `papers` is N, the top of the ranking a run
+    reads.
+    """
+    return {"efforts": {effort: {"minutes": round(sum(bases) / 60), "papers": n}
+                        for effort, (bases, n, *_) in MODES.items()}}
+
+
 def enabled(budget: dict[str, Any]) -> bool:
     return (budget.get("fast_path") or {}).get("policy") == POLICY
 

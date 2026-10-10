@@ -142,10 +142,8 @@ export type Step = {
   output: { pdfs_read?: number; pdfs_skipped?: number; page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number
     // A pdf_ocr run (D51): the pages without text it found, and whether the merged OCR text was taken into use.
     image_pages?: number[]; blank_pages?: number[]; asset_id?: string; outcome?: 'current' | 'rejected' | 'unchanged' | 'file_busy'; rejection_reason?: string | null
-    // Citation chaining (D95): what its summary counted, with the seeds it froze.
-    seed_list?: { source_version_id: string; kind: 'code' | 'user' }[]; new_works?: number; read_by_model?: number
-    requests?: { sent?: number; failed?: number; not_reached_seeds?: number }
-    semantic_scholar?: { status?: string; reason?: string | null; seeds_without_doi?: number }
+    // The fast chain's seed steps: how many works it started from (their reference lists stay out of the view).
+    seed_count?: number
     // The full-text retrieval summary (D83), also written by a discovery run that fetched beside its screening (17a).
     fetched?: number
     // An embedding step (slice 21): the model it froze, what it read from the store, what it still misses, its 429 waits,
@@ -182,18 +180,16 @@ export type Run = {
   screening_notes: { step_id: string; text: string }[]
   // The protocol this run froze before it searched; null when it froze none (D80).
   approval: RunApproval | null
-  // Per round, what each source brought in this discovery run and how much of it no other source did (D93).
+  // What each source brought in this discovery run and how much of it no other source did (D93).
   // counted false: the run was searched before these were kept, which is not the same as zero.
   source_counts?: SourceCounts | null
-  // The phrases the second keyword round searched with; empty when it did not search.
-  expansion_terms?: string[]
   // Where the person's confirmed works stood in this discovery run's keyword ranking, descriptively (slice 19); null
   // for another run kind, or a run that ranked nothing.
   signals?: SignalTable | null
 }
 export type SourceCounts = {
   counted: boolean
-  rounds: { round: number; sources: { provider_id: string; works: number; only: number }[] }[]
+  sources: { provider_id: string; works: number; only: number }[]
   // What citation chaining brought in this run, and how much of it no keyword search did (D95); absent when it
   // sent nothing.
   chain?: { works: number; only: number }
@@ -203,11 +199,11 @@ export type SourceCounts = {
 // Counted in D93's "only" universe: a source row against the other sources' searches, the chain against every search.
 // `included`: two agreeing model runs included the work (never called verified); `verified`: the person confirmed it.
 export type ArmCount = { rows: number; included: number; included_only: number; verified: number; verified_only: number }
-export type ArmKind = 'keyword' | 'expansion' | 'chain'
+export type ArmKind = 'keyword' | 'chain'
 export type SourceArms = {
-  rounds: { round: number; sources: (ArmCount & { provider_id: string
-    // The first round's works by the query that found them (D92), when a source was queried by both origins.
-    by_origin?: { origin: string; works: number; included: number }[] })[] }[]
+  sources: (ArmCount & { provider_id: string
+    // A source's works by the query that found them (D92), when it was queried by both origins.
+    by_origin?: { origin: string; works: number; included: number }[] })[]
   chain?: ArmCount
   // The arm kinds in run order; `new_*` is what no earlier kind of this run found. Counts only: no stopping rule.
   kinds: ({ kind: ArmKind; ran: false } | { kind: ArmKind; ran: true; works: number; new_works: number; included: number
@@ -291,8 +287,6 @@ export type CitationChaining = {
 export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null; service_kind?: string; error_kind?: string; reset_at?: string | null; retries?: number } | null
-  // 1: the approved queries; 2: the term expansion's, searched with phrases the first round's records brought.
-  round?: number
 }
 export type Asset = {
   text_recovery?: TextRecoveryCapability | null
@@ -533,9 +527,9 @@ export type AuditView = {
 }
 export type AuditRowView = { row: AuditRow | AuditAbstractRow | null; detail: QueueDetail & { cues: unknown } | null }
 export type AuditResult = { row: AuditRow | null; selection: QueueAnswerResult['selection']; undo_token: string | null }
-export type EffortLimits = { search_workflow: 'sw'
-  efforts: Record<'quick' | 'standard' | 'detailed', { read: number; abstracts: number; fetch: number; reads: number; runs: number
-    chain_seeds: number; chain_abstracts: number; passages: number }> | null }
+// What each depth gives a run, from the fast path's modes: about how many minutes (the stage deadlines summed) and how
+// many papers at the top of the ranking it reads.
+export type EffortLimits = { efforts: Record<'quick' | 'standard' | 'detailed', { minutes: number; papers: number }> }
 // The human queue of an sw research (slice 16, D96). Rows are derived from stored decisions each time they are read.
 export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'confirm_absent' | 'find_part' | 'confirm_results' | 'look_again'
 export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong' | 'pdf_confirmed'
@@ -1324,7 +1318,7 @@ export const api = {
 // The Method box under an answer (workflow/method_summary.py): stored counts only; null means the rows do not say.
 export type AnswerMethod = {
   answer_id: string; scope_revision: number
-  search: { queries: { provider: string; query: string; records_read: number; provider_total: number | null; date: string; complete: boolean; origin: string | null; round: number | null }[]
+  search: { queries: { provider: string; query: string; records_read: number; provider_total: number | null; date: string; complete: boolean; origin: string | null }[]
     records_read: number; planned: number; planned_not_sent: number; chaining: { ran: boolean; requests: number; records_read: number } }
   selection: { snapshot: boolean; works_found: number | null; screened: number; abstract_read: number; full_text_attempted: number; full_text_read: number; person_decisions: number; included: number | null; not_met: number | null
     waiting_for_pdf: number | null; not_read: number | null; criterion: string | null

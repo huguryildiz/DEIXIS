@@ -22,21 +22,19 @@ export const scopeOptions: Record<SourceScope, { icon: LucideIcon; detail: strin
   attached: { icon: Paperclip, detail: 'Only the PDFs you add; no search runs' },
   attached_and_academic: { icon: Layers, detail: 'Search scholarly providers using a selected PDF and your question' },
 }
-export const effortOptions: Record<Effort, { icon: LucideIcon; detail: string }> = {
-  quick: { icon: Zap, detail: 'Up to 3 searches of 400 results, 20 candidates, 16 passages' },
-  standard: { icon: Gauge, detail: 'Up to 8 searches (the core search 100 results, the others 1,000), 250 candidates, 48 passages' },
-  detailed: { icon: Telescope, detail: 'Up to 12 searches (the core search 100 results, the others 2,000), 300 candidates, 80 passages' },
+export const effortOptions: Record<Effort, { icon: LucideIcon }> = {
+  quick: { icon: Zap },
+  standard: { icon: Gauge },
+  detailed: { icon: Telescope },
 }
 
-// An sw server's depth text, from the limits in rules.py (slice 20, decision 9): the same numbers the run reads, so a
-// changed limit cannot leave this text behind. Without an answer from the server the text carries no number at all.
+// The depth text, from the fast path's modes (`fast_path.MODES`): the same numbers the run is given, so a changed mode
+// cannot leave this text behind. Without an answer from the server the depth carries no text at all.
 function effortDetail(effort: Effort, limits: EffortLimits | null | undefined): string | undefined {
-  if (!limits) return undefined
-  if (!limits.efforts) return undefined
-  const e = limits.efforts[effort]
+  const e = limits?.efforts?.[effort]
+  if (!e) return undefined
   const number = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
-  return t('Each search reads up to {read} records; the model screens {abstracts} abstracts, fetches up to {fetch} full texts and reads {reads} of them twice; the answer uses up to {passages} passages.', {
-    read: number(e.read), abstracts: number(e.abstracts), fetch: number(e.fetch), reads: number(e.reads), passages: number(e.passages) })
+  return t('About {minutes} min · up to {papers} papers', { minutes: number(e.minutes), papers: number(e.papers) })
 }
 
 export function Option({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail?: ReactNode }) {

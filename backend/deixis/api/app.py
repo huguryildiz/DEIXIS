@@ -39,7 +39,7 @@ from deixis.workflow import abstract_stage
 from deixis.workflow import fast_path, small_batch
 from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
-                                 TEST_EFFORT_BUDGETS, RevisionConflict, effort_limits)
+                                 TEST_EFFORT_BUDGETS, RevisionConflict)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
 from deixis.models.deepseek import DeepSeekAdapter
@@ -1534,7 +1534,7 @@ def create_app(
 
     @app.get("/api/effort-limits")
     async def effort_limits_view() -> dict[str, Any]:
-        return effort_limits()
+        return fast_path.effort_limits()
 
     @app.delete("/api/researches/{research_id}/sources")
     async def remove_sources(research_id: str, body: SourceRemoval, request: Request) -> dict[str, Any]:

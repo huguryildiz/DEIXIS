@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, ListPlus, LoaderCircle, Minus, RotateCw, Search, Sparkles, TriangleAlert, Waypoints } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert, Waypoints } from 'lucide-react'
 import { api, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
@@ -61,8 +61,8 @@ function phaseOf(kind: string): PhaseKey | null {
   if (kind === 'model:screening') return 'screen'
   // An sw run screens abstracts in two steps: code classifies every record, then the model proposes.
   if (kind === 'code:abstract_stage' || kind === 'model:abstract_screening') return 'screen'
-  // Citation chaining follows the abstract stage and reads its new works the same way, so it is part of screening (D95).
-  if (kind.startsWith('code:chain_') || kind.startsWith('provider_chain:')) return 'screen'
+  // The fast chain's requests are not searches of the question; screening reports what they brought (D95).
+  if (kind.startsWith('provider_chain:')) return 'screen'
   if (kind === 'fetch_pdf' || kind === 'pdf_other_copy') return 'pdf'
   // An answer run reads equations out of its PDFs before it answers; the PDF phase shows that work under its own title.
   if (kind === 'read_equations') return 'pdf'
@@ -248,8 +248,11 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
   const included = view.sources.filter(s => s.selection.state === 'included')
   // The similarity step belongs to no phase of its own; the screening phase reports it.
   const similarity = steps.find(s => s.kind.startsWith('similarity:'))
-  // What the citation chain did in this run, once its summary is written (D95).
-  const chain = steps.find(s => s.kind === 'code:chain_summary' && s.status === 'succeeded')
+  // What the fast chain did in this run, once its summary is written: the works it started from (the semantic search's
+  // seeds and any the ranking added) and the works no keyword search of the run found.
+  const chainDone = steps.some(s => s.operation_key === 'fast_chain:summary' && s.status === 'succeeded')
+  const chainSeeds = steps.reduce((sum, s) => sum + (s.kind === 'code:fast_chain' ? s.output?.seed_count ?? 0 : 0), 0)
+  const chainNew = run.source_counts?.counted ? run.source_counts.chain?.only : undefined
   // A pdf_ocr run (D51): its PDF, the pages without text it found, and what became of the merged text.
   const ocrSource = run.kind === 'pdf_ocr' ? view.sources.find(s => s.source_version_id === run.target?.source_version_id) : undefined
   const ocrAsset = ocrSource?.access.assets.find(a => a.id === run.target?.asset_id)
@@ -354,11 +357,10 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
         if (state === 'running') {
           // Abstracts the model has read: each batch is read twice, so a work counts once however many reads of it are done.
           const read = new Set(group.flatMap(s => s.kind === 'model:abstract_screening' && s.status === 'succeeded' ? s.output?.candidate_ids ?? [] : [])).size
-          const stages = group.filter(s => (s.kind === 'code:abstract_stage' || s.kind === 'code:chain_abstract_stage') && s.output?.batch_sizes)
-          const chainRead = group.some(s => s.operation_key.startsWith('abstract_screening:chain:'))
+          const stages = group.filter(s => s.kind === 'code:abstract_stage' && s.output?.batch_sizes)
           const total = stages.reduce((sum, s) => sum + (s.output?.batch_sizes ?? []).reduce((a, b) => a + b, 0), 0)
-          // Without the code's list of what it queued (an older run) or with a chain stage not listed yet, no total is claimed.
-          if (!stages.length || (chainRead && !stages.some(s => s.kind === 'code:chain_abstract_stage'))) return read ? plural(read, '{n} abstract read', '{n} abstracts read') : ''
+          // Without the code's list of what it queued, no total is claimed.
+          if (!stages.length) return read ? plural(read, '{n} abstract read', '{n} abstracts read') : ''
           return t('{read} of {total} abstracts read', { read, total })
         }
         const outcome = t('{included} included · {excluded} excluded · {pending} undecided', { included: view.counts.included, excluded: view.counts.excluded, pending: view.counts.pending })
@@ -461,8 +463,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
           perProvider.set(s.provider, { taken: seen.taken + (s.status === 'completed' ? s.result_count : 0),
             total: s.provider_total === null ? seen.total : (seen.total ?? 0) + s.provider_total })
         })
-        // Per round, the works each source brought after the DOI and work merge, and how many no other source did
-        // (D93). A run searched before these were kept says so instead of showing zeros.
+        // The works each source brought after the DOI and work merge, and how many no other source did (D93). A run
+        // whose counts were not kept says so instead of showing zeros.
         const counts = run.source_counts
         // An sw research's rows also carry what each arm found that was later included or confirmed (slice 19).
         const arms = counts?.counted && counts.arms ? <ArmReport counts={counts} probes={view.probes}
@@ -471,13 +473,12 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
         const notFound = view.probes && view.runs.find(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision)?.id === run.id
           ? <NotFoundReport probes={view.probes} /> : null
         const perSource = !arms && counts && (counts.counted
-          ? counts.rounds.map(round => <p key={round.round} className="chat-provider-totals">
-            <span>{t('Round {n}', { n: round.round })}</span>
-            {round.sources.map(source => <span key={source.provider_id}>
+          ? counts.sources.length > 0 && <p className="chat-provider-totals">
+            {counts.sources.map(source => <span key={source.provider_id}>
               <ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)} {t('{works} works, {only} no other source’s search found', { works: source.works, only: source.only })}
-            </span>)}</p>)
+            </span>)}</p>
           : <p className="chat-report-line"><span>{t('Works per source were not counted for this run')}</span></p>)
-        // What the citation chain brought, counted the same way, beside the searches rather than as a round of them.
+        // What the citation chain brought, counted the same way, beside the searches rather than as one of them.
         const chained = !arms && counts?.counted && counts.chain ? <p className="chat-provider-totals">
           <span>{t('Citation chaining')}</span>
           <span><ConnectionIcon id="openalex" />{t('{works} works, {only} not found by any search', { works: counts.chain.works, only: counts.chain.only })}</span>
@@ -527,7 +528,6 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
           </p>}
           {lines.length > 0 && <p className="chat-report-line"><span>{lines.join(' · ')}</span></p>}
           {run.signals && <SignalReport table={run.signals} probes={view.probes} />}
-          {chain && <ChainReport steps={steps} view={view} />}
           {run.screening_notes.map(note => <p key={note.step_id} className="chat-report-line"><span>{note.text}</span>{timed(steps.find(s => s.id === note.step_id))}</p>)}
         </>
       }
@@ -662,34 +662,24 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
           {note && detailsOpen && <div className="chat-step-note">{note}</div>}
           {hasQueries && detailsOpen && <ul className="chat-list">
             {/* A query read page by page has one search row per page; the list shows it once, with its pages summed. */}
-            {/* When the term expansion searched too, a heading in plain words marks where each round's queries begin. */}
-            {[...searches.reduce((byQuery, s) => byQuery.set(`${s.provider}\n${s.query_text}`, [...(byQuery.get(`${s.provider}\n${s.query_text}`) ?? []), s]), new Map<string, SearchRun[]>()).values()].map((pages, i, all) => {
+            {[...searches.reduce((byQuery, s) => byQuery.set(`${s.provider}\n${s.query_text}`, [...(byQuery.get(`${s.provider}\n${s.query_text}`) ?? []), s]), new Map<string, SearchRun[]>()).values()].map(pages => {
               const s = pages[0]
-              const round = s.round ?? 1
-              const heading = all.some(p => (p[0].round ?? 1) > 1) && (i === 0 || (all[i - 1][0].round ?? 1) !== round)
-                ? <li key={`round-${round}`} className="chat-list-round">
-                  <b>{round > 1 ? <ListPlus size={13} aria-hidden /> : <Search size={13} aria-hidden />}{t(round > 1 ? 'Second search' : 'First search')}</b>
-                  <span>{round > 1
-                    ? run.expansion_terms?.length
-                      ? t('Also searched with terms that came up in the first results: {terms}', { terms: run.expansion_terms.map(term => `“${term}”`).join(', ') })
-                      : t('New terms that came up in the first results were searched as well')
-                    : t('The searches planned from your question')}</span>
-                </li> : null
               const failed = pages.find(p => p.status !== 'completed' && p.status !== 'zero_results')
               const count = pages.reduce((sum, p) => sum + p.result_count, 0)
               const total = pages.find(p => p.provider_total !== null)?.provider_total ?? null
               const retryCount = pages.reduce((sum, page) => sum + (page.error?.retries ?? 0), 0)
-              return <Fragment key={s.id}>{heading}<li className={failed ? 'is-attention' : undefined}>
+              return <li key={s.id} className={failed ? 'is-attention' : undefined}>
                 <span className="chat-list-text"><code>{s.query_text}</code></span>
                 <span className="chat-list-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · <b>{failed && count === 0 ? t(failed.status.replace('_', ' ')) : total === null ? plural(count, '{n} result taken', '{n} results taken') : t('{count} of {total} results taken', { count, total: compact(total) })}</b>{pages.length > 1 && <> · {plural(pages.length, '{n} page', '{n} pages')}</>}{failed && count > 0 && <> · {t(failed.status.replace('_', ' '))}</>}{retryCount > 0 && <> · {providerRetryText(retryCount)}</>}</span>
-              </li></Fragment>
+              </li>
             })}
-            {/* The citation chain is not a search round (D95); one line says it follows, so all three steps read in one place. */}
-            {(chain || run.approval?.chaining?.enabled) && <li className="chat-list-round">
-              <b><Waypoints size={13} aria-hidden />{t('Then: citation chaining')}</b>
-              <span>{chain?.output?.seed_list
-                ? t('The reference lists and citing papers of {seeds} papers were checked · {works} new works', { seeds: chain.output.seed_list.length, works: chain.output.new_works ?? 0 })
-                : t('After screening, the reference lists and citing papers of the best matches are checked')}</span>
+            {/* The fast chain is not a search of the question (D95); one line says what it checked and what it added. */}
+            {(chainDone || run.approval?.chaining?.enabled) && <li className="chat-list-round">
+              <b><Waypoints size={13} aria-hidden />{t('Citation chaining')}</b>
+              <span>{chainDone
+                ? [plural(chainSeeds, 'Checked the reference lists and citing papers of {n} paper', 'Checked the reference lists and citing papers of {n} papers'),
+                  chainNew === undefined ? '' : plural(chainNew, '{n} new work', '{n} new works')].filter(Boolean).join(' · ')
+                : t('While the search runs, the reference lists and citing papers of the best matches are checked')}</span>
             </li>}
             {runningSearch && active && <li className="is-running">
               <span className="chat-list-text shimmer-text">{t('Searching')}</span>
@@ -740,43 +730,4 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
     {children}
     {!children && answer && run.kind === 'answer' && <div className="answer-history-note"><span className="answer-history-icon" aria-hidden="true"><TriangleAlert size={14} /></span><span>{t('An earlier answer: {status}.', { status: t(answer.status.replaceAll('_', ' ')) })}</span></div>}
   </section>
-}
-
-// The citation chain of one discovery run (D95): what it asked, what it kept, and the seeds it started from, which
-// open under the line. Counted from the chain's own steps, so a resumed run reads the same.
-function ChainReport({ steps, view }: { steps: Step[]; view: ResearchView }) {
-  const [open, setOpen] = useState(false)
-  const chainSteps = steps.filter(s => s.kind.startsWith('code:chain_') || s.kind.startsWith('provider_chain:') || s.operation_key.startsWith('abstract_screening:chain:'))
-  const summary = steps.find(s => s.kind === 'code:chain_summary')?.output ?? {}
-  const seeds = summary.seed_list ?? []
-  const starts = present(chainSteps.map(s => s.started_at))
-  const ends = present(chainSteps.map(s => s.finished_at))
-  const seconds = starts.length && ends.length ? secondsBetween(starts[0], Date.parse(ends[ends.length - 1])) : null
-  const requests = summary.requests ?? {}
-  const s2 = summary.semantic_scholar
-  const titleOf = (svid: string) => view.sources.find(s => s.source_version_id === svid)?.title ?? svid
-  const line = [
-    plural(seeds.length, 'Checked the reference lists and citing papers of {n} paper', 'Checked the reference lists and citing papers of {n} papers'),
-    plural(requests.sent ?? 0, '{n} lookup', '{n} lookups'),
-    plural(summary.new_works ?? 0, '{n} new work', '{n} new works'),
-    plural(summary.read_by_model ?? 0, '{n} abstract read by the model', '{n} abstracts read by the model'),
-    requests.failed ? plural(requests.failed, '{n} lookup did not complete', '{n} lookups did not complete') : '',
-    requests.not_reached_seeds ? plural(requests.not_reached_seeds, '{n} paper not reached (request limit)', '{n} papers not reached (request limit)') : '',
-    s2?.status === 'skipped' ? t('Semantic Scholar skipped ({reason})', { reason: t(s2.reason === 'not_configured' ? 'not configured' : 'not in the research sources') }) : '',
-    s2?.seeds_without_doi ? plural(s2.seeds_without_doi, '{n} paper without a DOI was not looked up in Semantic Scholar', '{n} papers without a DOI were not looked up in Semantic Scholar') : '',
-  ].filter(Boolean).join(' · ')
-  return <>
-    <p className="chat-report-line">
-      <button type="button" className="chat-step-title" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span>{line}</span>{open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
-      </button>
-      {seconds !== null && <time>{durationText(seconds)}</time>}
-    </p>
-    {open && <ul className="chat-list">
-      {seeds.map(seed => <li key={seed.source_version_id}>
-        <span className="chat-list-text">{titleOf(seed.source_version_id)}</span>
-        <small>{t(seed.kind === 'user' ? 'your seed' : 'ranking seed')}</small>
-      </li>)}
-    </ul>}
-  </>
 }

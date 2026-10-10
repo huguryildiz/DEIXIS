@@ -13,9 +13,8 @@ import re
 
 import pytest
 
-from deixis.domain import rules
 from deixis.storage import db
-from deixis.workflow import prisma_s
+from deixis.workflow import fast_path, prisma_s
 from deixis.workflow.store import Store
 from test_probes import Probe
 from test_queue import body, provider_record
@@ -283,22 +282,18 @@ def test_the_endpoint_gives_both_formats(tmp_path, monkeypatch):
 # ---- decision 9: the depth text's limits --------------------------------------------------------------------------
 
 
-def test_effort_limits_come_from_the_rules_and_follow_a_changed_constant(tmp_path, monkeypatch):
+def test_effort_limits_come_from_the_fast_path_modes_and_follow_a_changed_mode(tmp_path, monkeypatch):
     app, client = quiet_app(tmp_path, monkeypatch)
     try:
         first = client.get("/api/effort-limits").json()
-        monkeypatch.setitem(rules.SW_READ_LIMIT, "quick", 123)
+        bases, _, *rest = fast_path.MODES["quick"]
+        monkeypatch.setitem(fast_path.MODES, "quick", (bases, 123, *rest))
         changed = client.get("/api/effort-limits").json()
     finally:
         client.__exit__(None, None, None)
-    assert first["search_workflow"] == "sw"
-    assert first["efforts"]["standard"] == {
-        "read": rules.SW_READ_LIMIT["standard"], "abstracts": rules.ABSTRACT_READ_LIMIT["standard"],
-        "fetch": rules.FULLTEXT_WORK_LIMIT["standard"], "reads": rules.FULLTEXT_READ_LIMIT["standard"],
-        "runs": rules.FULLTEXT_RUNS, "chain_seeds": rules.CHAIN_SEEDS,
-        "chain_abstracts": rules.CHAIN_ABSTRACT_READ["standard"],
-        "passages": rules.TEST_EFFORT_BUDGETS["standard"].max_answer_passages}
-    assert changed["efforts"]["quick"]["read"] == 123
+    assert first == {"efforts": {"quick": {"minutes": 3, "papers": 25}, "standard": {"minutes": 5, "papers": 50},
+                                 "detailed": {"minutes": 10, "papers": 100}}}
+    assert changed["efforts"]["quick"] == {"minutes": 3, "papers": 123}
 
 
 # ---- what the frozen protocol planned against what was sent -------------------------------------------------------

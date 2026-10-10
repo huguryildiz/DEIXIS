@@ -10,7 +10,7 @@ import { t } from './i18n'
 export function ProtocolApproval({ approval }: { approval: RunApproval }) {
   const [open, setOpen] = useState(false)
   const approved = approval.approved
-  return <section className="approval-card is-approved">
+  return <section className="approval-card">
     <button type="button" className="approval-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
       {open ? <ChevronDown size={15} aria-hidden /> : <ChevronRight size={15} aria-hidden />}
       <span>{approvedByText(approval.approved_by)}</span>
@@ -31,12 +31,12 @@ export function ProtocolApproval({ approval }: { approval: RunApproval }) {
 
 // The fast chain this run will follow (`fast_chain_v1`), as its budget froze it: OpenAlex only. It starts during the
 // search, from the first works of OpenAlex's semantic search (the ranking fills in when that search gives fewer), and
-// only replies that arrive before the arrival cutoff (the ranking deadline minus `arrival_margin_ms`) add works. The seeds themselves are listed in the run view.
+// only replies that arrive before the arrival cutoff (the ranking deadline minus `arrival_margin_ms`) add works. The run view says how many seeds it used.
 function ChainingSection({ chaining }: { chaining: CitationChaining }) {
   return <div className="approval-chaining">
     <div className="approval-block-head">
       <strong>{t('Citation chaining')}</strong>
-      <small>{t('OpenAlex only. While the search runs, OpenAlex is asked for the works that the first {seeds} works of its semantic search cite, and for the works that cite them; when that search gives fewer works, the ranking fills the list. Works you verified are not used as seeds. A new work is kept when a setting or task term stands in its title or abstract and its reply arrives a few seconds before the ranking stage ends; the seeds are listed in the run once the search is done.', { seeds: chaining.seeds })}</small>
+      <small>{t('OpenAlex only. While the search runs, OpenAlex is asked for the works that the first {seeds} works of its semantic search cite, and for the works that cite them; when that search gives fewer works, the ranking fills the list. Works you verified are not used as seeds. A new work is kept when a setting or task term stands in its title or abstract and its reply arrives a few seconds before the ranking stage ends; the run says how many seeds it used once the search is done.', { seeds: chaining.seeds })}</small>
     </div>
     <p className="approval-hint">{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: chaining.backward_requests, forward: chaining.forward_requests, cap: chaining.citing_cap, attempts: chaining.attempt_limit })}</p>
   </div>

@@ -63,11 +63,11 @@ def test_each_source_counts_the_works_it_brought_and_those_no_other_source_did(s
     search(store, rid, run_id, "search:1", "pubmed", "q2", [record("pubmed", 1, "10.9/both"), record("pubmed", 2),
                                                             record("pubmed", 3)])
     counts = views.source_counts(store, run_id)
-    assert counts == {"counted": True, "rounds": [{"round": 1, "sources": [
-        {"provider_id": "openalex", "works": 2, "only": 1}, {"provider_id": "pubmed", "works": 3, "only": 2}]}]}
+    assert counts == {"counted": True, "sources": [
+        {"provider_id": "openalex", "works": 2, "only": 1}, {"provider_id": "pubmed", "works": 3, "only": 2}]}
 
 
-def test_the_second_round_is_counted_apart_after_the_queries_the_approval_closed_on(store):
+def test_every_query_of_one_source_is_counted_in_its_one_row(store):
     rid, run_id = research(store)
     card = store.step(run_id, "protocol_approval", "code:protocol_approval")
     store.start_step(card["id"])
@@ -75,14 +75,13 @@ def test_the_second_round_is_counted_apart_after_the_queries_the_approval_closed
     search(store, rid, run_id, "search:0", "openalex", "q1", [record("openalex", 1)])
     search(store, rid, run_id, "search:1", "openalex", "q2", [record("openalex", 2), record("openalex", 1)])
     counts = views.source_counts(store, run_id)
-    assert counts["rounds"] == [{"round": 1, "sources": [{"provider_id": "openalex", "works": 1, "only": 1}]},
-                                {"round": 2, "sources": [{"provider_id": "openalex", "works": 2, "only": 2}]}]
+    assert counts["sources"] == [{"provider_id": "openalex", "works": 2, "only": 2}]
 
 
 def test_a_run_searched_before_the_hit_table_says_its_counts_were_not_kept_rather_than_zero(store):
     rid, run_id = research(store)
     search(store, rid, run_id, "search:0", "openalex", "q1", [record("openalex", 1)])
     store.conn.execute("DELETE FROM candidate_hits")  # as a research searched before migration 0049 has none
-    assert views.source_counts(store, run_id) == {"counted": False, "rounds": []}
+    assert views.source_counts(store, run_id) == {"counted": False, "sources": []}
     other_rid, other_run = research(store)
     assert views.source_counts(store, other_run) is None  # searched nothing

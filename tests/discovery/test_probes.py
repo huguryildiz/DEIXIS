@@ -258,9 +258,9 @@ def test_d93s_fields_stay_as_they_were_and_the_arm_rows_count_rows_included_and_
     plain = views.source_counts(store, lib.run)
     assert {k: v for k, v in counts.items() if k != "arms"} == plain
     arms = counts["arms"]
-    assert arms["rounds"] == [{"round": 1, "sources": [
+    assert arms["sources"] == [
         {"provider_id": "openalex", "rows": 25, "included": 2, "included_only": 1, "verified": 0, "verified_only": 0},
-        {"provider_id": "arxiv", "rows": 10, "included": 1, "included_only": 0, "verified": 1, "verified_only": 1}]}]
+        {"provider_id": "arxiv", "rows": 10, "included": 1, "included_only": 0, "verified": 1, "verified_only": 1}]
 
 
 def test_only_is_d93s_universe_a_keyword_work_the_chain_also_found_is_still_the_sources_own(store):
@@ -270,30 +270,24 @@ def test_only_is_d93s_universe_a_keyword_work_the_chain_also_found_is_still_the_
               query="chain:backward:W1")
     lib.include(work)
     arms = arms_of(lib)["arms"]
-    assert arms["rounds"][0]["sources"][0]["included_only"] == 1  # no other source's search found it
+    assert arms["sources"][0]["included_only"] == 1  # no other source's search found it
     assert arms["chain"]["included"] == 1 and arms["chain"]["included_only"] == 0  # a search found it
 
 
-def test_the_origin_is_read_by_the_step_index_so_a_second_round_query_with_the_same_text_is_expansion(store):
+def test_the_origin_is_read_by_the_step_index_so_two_queries_with_the_same_text_keep_their_own(store):
     lib = Probe(store)
     lib.card([{"provider_id": "openalex", "query_text": "same", "origin": "model"},
-              {"provider_id": "openalex", "query_text": "other", "origin": "code"}])
+              {"provider_id": "openalex", "query_text": "same", "origin": "code"}])
     model = lib.keyed("search:0", lib.records(2), query="same")
-    code = lib.keyed("search:1", lib.records(1), query="other")
-    second = lib.keyed("search:2", lib.records(3), query="same")
+    code = lib.keyed("search:1", lib.records(1), query="same")
     lib.include(model[0])
-    lib.include(second[0])
     arms = arms_of(lib)["arms"]
-    first, expansion = arms["rounds"]
-    assert first["sources"][0]["by_origin"] == [{"origin": "code", "works": 1, "included": 0},
-                                                {"origin": "model", "works": 2, "included": 1}]
-    assert expansion["round"] == 2 and "by_origin" not in expansion["sources"][0]
-    assert [k["kind"] for k in arms["kinds"]] == ["keyword", "expansion", "chain"]
-    keyword, expanded, chain = arms["kinds"]
+    assert arms["sources"][0]["by_origin"] == [{"origin": "code", "works": 1, "included": 0},
+                                               {"origin": "model", "works": 2, "included": 1}]
+    assert [k["kind"] for k in arms["kinds"]] == ["keyword", "chain"]
+    keyword, chain = arms["kinds"]
     assert keyword == {"kind": "keyword", "ran": True, "works": 3, "new_works": 3, "included": 1, "new_included": 1,
                        "verified": 0, "new_verified": 0}
-    assert expanded == {"kind": "expansion", "ran": True, "works": 3, "new_works": 3, "included": 1,
-                        "new_included": 1, "verified": 0, "new_verified": 0}
     assert chain == {"kind": "chain", "ran": False}
     assert len(code) == 1
 
@@ -303,7 +297,7 @@ def test_a_card_that_names_no_origin_gives_no_split(store):
     lib.card([{"provider_id": "openalex"}, {"provider_id": "openalex"}])
     lib.keyed("search:0", lib.records(1))
     lib.keyed("search:1", lib.records(1))
-    assert "by_origin" not in arms_of(lib)["arms"]["rounds"][0]["sources"][0]
+    assert "by_origin" not in arms_of(lib)["arms"]["sources"][0]
 
 
 def test_the_kind_line_counts_what_each_kind_found_that_no_earlier_kind_did(store):
@@ -315,9 +309,8 @@ def test_the_kind_line_counts_what_each_kind_found_that_no_earlier_kind_did(stor
     (chained,) = lib.keyed("chain:backward:0", lib.records(1), query="chain:backward:W1")
     lib.include(chained)
     lib.list_edit(first, "included")
-    keyword, expansion, chain = arms_of(lib)["arms"]["kinds"]
-    assert (keyword["new_works"], keyword["new_verified"]) == (1, 1)
-    assert (expansion["works"], expansion["new_works"], expansion["verified"], expansion["new_verified"]) == (2, 1, 1, 0)
+    keyword, chain = arms_of(lib)["arms"]["kinds"]
+    assert (keyword["works"], keyword["new_works"], keyword["verified"], keyword["new_verified"]) == (2, 2, 1, 1)
     assert (chain["ran"], chain["new_works"], chain["new_included"]) == (True, 1, 1)
 
 
@@ -326,13 +319,13 @@ def test_read_is_false_before_any_reading_and_the_counts_move_with_a_reading_wit
     (svid,) = lib.keyed("search:0", lib.records(1))
     lib.ds.record(lib.rid, svid, "no_fulltext")  # a retrieval outcome is not a reading
     arms = arms_of(lib)["arms"]
-    assert arms["read"] is False and arms["rounds"][0]["sources"][0]["included"] == 0
+    assert arms["read"] is False and arms["sources"][0]["included"] == 0
     tables = [row[0] for row in store.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
     lib.include(svid)
     before = {t: store.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
     changes = store.conn.total_changes
     arms = arms_of(lib)["arms"]
-    assert arms["read"] is True and arms["rounds"][0]["sources"][0]["included"] == 1
+    assert arms["read"] is True and arms["sources"][0]["included"] == 1
     assert {t: store.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables} == before
     assert store.conn.total_changes == changes
 
@@ -341,7 +334,7 @@ def test_a_run_whose_counts_were_not_kept_gets_no_arms(store):
     lib = Probe(store)
     lib.keyed("search:0", lib.records(1))
     store.conn.execute("DELETE FROM candidate_hits")
-    assert arms_of(lib) == {"counted": False, "rounds": []}
+    assert arms_of(lib) == {"counted": False, "sources": []}
 
 
 # ---- decision 6: the signal table --------------------------------------------------------------------------------
@@ -525,7 +518,7 @@ def test_the_view_derives_the_facts_once_calls_no_verified_records_and_changes_n
     assert view["probes"]["verified"] == 2 and view["probes"]["included_by_agreement"] == 1
     (run,) = [r for r in view["runs"] if r["id"] == lib.run]
     assert run["signals"]["person"]["denominator"] == 1 and run["signals"]["person"]["status"] == "too_few"
-    assert [s["included"] for s in run["source_counts"]["arms"]["rounds"][0]["sources"]] == [1, 0]
+    assert [s["included"] for s in run["source_counts"]["arms"]["sources"]] == [1, 0]
     assert view["counts"]["queue"] == 0
 
 

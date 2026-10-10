@@ -10,7 +10,7 @@ import { armKindLabels, providerName, queryOriginLabels, signalLabels, signalRea
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const count = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
 
-// Per round, per source: the works, what no other source's search found, and what was included and confirmed.
+// Per source: the works, what no other source's search found, and what was included and confirmed.
 export function ArmReport({ counts, probes, modelTerms }: { counts: SourceCounts; probes: Probes | null | undefined; modelTerms: boolean }) {
   const arms = counts.arms
   if (!arms) return null
@@ -22,18 +22,15 @@ export function ArmReport({ counts, probes, modelTerms }: { counts: SourceCounts
     confirmedAnywhere ? t(chain ? '{n} you confirmed, {only} not found by any search' : '{n} you confirmed, {only} no other source’s search found', { n: count(arm.verified), only: count(arm.verified_only) }) : '',
   ].filter(Boolean)
   return <div className="chat-arms">
-    {counts.rounds.map((round, r) => <div key={round.round}>
-      <p className="chat-arm-head">{t('Round {n}', { n: round.round })}</p>
-      <ul className="chat-arm-list">{round.sources.map((source, i) => {
-        const arm = arms.rounds[r]?.sources[i]
-        return <li key={source.provider_id}>
-          <span className="chat-arm-source"><ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)}</span>
-          <span>{t('{works} works from {rows} records, {only} no other source’s search found', { works: count(source.works), rows: count(arm?.rows ?? 0), only: count(source.only) })}</span>
-          {arm && found(arm, false).map(text => <span key={text}>{text}</span>)}
-          {arm?.by_origin && <span className="chat-arm-origin">{t('By query: {list}', { list: arm.by_origin.map(o => t(arms.read ? '{origin} {works} works, {included} included' : '{origin} {works} works', { origin: t(queryOriginLabels[o.origin] ?? o.origin), works: count(o.works), included: count(o.included) })).join(' · ') })}</span>}
-        </li>
-      })}</ul>
-    </div>)}
+    <ul className="chat-arm-list">{counts.sources.map((source, i) => {
+      const arm = arms.sources[i]
+      return <li key={source.provider_id}>
+        <span className="chat-arm-source"><ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)}</span>
+        <span>{t('{works} works from {rows} records, {only} no other source’s search found', { works: count(source.works), rows: count(arm?.rows ?? 0), only: count(source.only) })}</span>
+        {arm && found(arm, false).map(text => <span key={text}>{text}</span>)}
+        {arm?.by_origin && <span className="chat-arm-origin">{t('By query: {list}', { list: arm.by_origin.map(o => t(arms.read ? '{origin} {works} works, {included} included' : '{origin} {works} works', { origin: t(queryOriginLabels[o.origin] ?? o.origin), works: count(o.works), included: count(o.included) })).join(' · ') })}</span>}
+      </li>
+    })}</ul>
     {counts.chain && arms.chain && <div>
       <p className="chat-arm-head">{t('Citation chaining')}</p>
       <ul className="chat-arm-list"><li>

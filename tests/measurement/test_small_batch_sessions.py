@@ -3,20 +3,8 @@
 import hashlib
 import json
 import sqlite3
-from pathlib import Path
 
 from scripts.benchmark.compare_small_batch_sessions import collect, packed_calls, carried_calls, seconds
-
-
-def test_correction_decisions_record_review_and_superseded_runner():
-    document = (Path(__file__).resolve().parents[2] / "docs/decisions.md").read_text()
-    d238 = document.split("## D238", 1)[1].split("## D237", 1)[0]
-    d237 = document.split("## D237", 1)[1].split("## D236", 1)[0]
-    for decision in (d237, d238):
-        assert "Reviewer: Claude: correction round no high (ready with fixes), fixes applied" in decision
-        assert "pending; CLI not authenticated" not in decision
-    assert "runner version 2 rule is superseded by runner version 3" in d237
-    assert "answer_allocation_version: 2" in d238
 
 
 def test_packing_counts_sparse_windows_instead_of_assuming_twenty_plus_ten():

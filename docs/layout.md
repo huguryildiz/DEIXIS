@@ -14,11 +14,11 @@ DEIXIS/
 ├── methods/deixis-research/  app-loaded method package
 ├── tests/                 deterministic tests and fixtures
 ├── scripts/               probes, evaluation kits, real-model case runners
-└── .local/                ignored: run evidence and docs/ (design records, plans, closed-phase archives)
+└── .local/                ignored: INDEX.md, LESSONS.md, p10-plan.md, baseline-2026-10-10/
 ```
 
-- `docs/product/` keeps the connector ledger read by `tests/providers/test_connector_contract.py`, the P8 expectation sheets, the P9 owed-measurement freeze, results and JSON inputs read by `scripts/` and `tests/`, and `providers.env.example`. Nothing else goes there.
-- Design documents, implementation plans, prompts, acceptance records and phase archives live in `.local/docs/`, outside git. Their committed versions remain in Git history up to the commit that removed them.
-- Links in `decisions.md` and `STATUS.md` that point into `.local/docs/` resolve only on the owner's machine.
+- `docs/product/` keeps the connector ledger read by `tests/providers/test_connector_contract.py`, the P8 expectation sheets that the runners hash, and `providers.env.example`. Nothing else goes there.
+- `.local/` is outside git. `INDEX.md` says what is where, `LESSONS.md` holds one-sentence lessons from past work, `p10-plan.md` is the waiting macOS packaging plan, and `baseline-2026-10-10/` holds the frozen 10 Oct measurement numbers, the scoring rule and the live-run tools for search work after P10. New design records and plans for current work go there, not in `docs/`. Older design documents and archives remain in Git history.
+- Links in `decisions.md` and `STATUS.md` that point into `.local/` resolve only on the owner's machine.
 - The decision entries before the clean start (old D1 to D261) are in Git history; `docs/decisions.md` at commit `26c8214` is the last full copy.
 - Runtime data (database, PDFs, provider payloads, Codex home) lives in the app-data directory, never in the repository.

@@ -109,7 +109,7 @@ test.describe.serial('O: the arXiv source route', () => {
     await page.setViewportSize({ width: 1280, height: 900 })
   })
 
-  test('a citation of the passage with placed equations shows the "arXiv source" badge, and opening it shows the passage notice with a rendered equation', async () => {
+  test('a citation of the passage with placed equations shows the "arXiv source" badge, and opening it shows the passage notice with a rendered equation (SYNTHETIC API state)', async () => {
     // The fast answer reads no equations and cites the passages frozen at its read cutoff (D253), read before the table
     // fill placed the equations. So the answer view is served with its first citation pointing at the stored passage the
     // arXiv source route wrote (SYNTHETIC API state); the passage, its equations and every rendering are the app's own.

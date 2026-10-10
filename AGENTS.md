@@ -136,10 +136,8 @@ tests, and—when relevant—the running local service.
 - `scripts/`: isolated probes and evaluation utilities; a successful probe is not
   an integrated product feature.
 - `docs/decisions.md`: durable accepted decisions and their evidence/limits.
-- `docs/product/`: current product design and contracts.
-- `docs/methods/`: methodological design and bounded examples.
-- `docs/desktop/`: dated handoff and historical material; do not place new specs
-  there.
+- `docs/product/`: only files that code or tests read (connector ledger, P8
+  expectation sheets, provider env template).
 - `.impeccable.md`: canonical interface and interaction design context.
 
 Keep implemented behavior, accepted decisions, proposals, and historical records

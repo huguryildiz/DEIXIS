@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 DEIXIS is a local, single-user research workspace: question → scholarly search or attached PDFs → screening → passage inspection → source-linked answer with highlightable citation anchors. A FastAPI backend (`backend/deixis`) serves a React/Vite UI (`apps/web`) on loopback.
 
-**Read [AGENTS.md](AGENTS.md) first.** It is the working agreement for the whole repo (evidence semantics, timeline states, UI hierarchy); read [.impeccable.md](.impeccable.md) too before touching `apps/web`. All providers in `providers/registry.py` and the Codex, Claude Code, Gemini and DeepSeek model connections are implemented, and the README's status paragraph says so (P9 H1).
+**Read [AGENTS.md](AGENTS.md) first.** It is the working agreement for the whole repo (evidence semantics, timeline states, UI hierarchy); read [.impeccable.md](.impeccable.md) too before touching `apps/web`. All providers in `providers/registry.py` and the Codex, Claude Code, Gemini and DeepSeek model connections are implemented, and the README's status paragraph says so.
 
 ## Commands
 
@@ -25,7 +25,7 @@ npm run lint         # oxlint
 DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance   # Playwright A–G in Chrome; needs a fresh build
 ```
 
-Real-model behavior cases (not part of pytest) run against the Codex connection: `PYTHONPATH=backend uv run --no-sync python scripts/model_behavior/run_cases.py --model gpt-5.6-luna`. Results go to ignored `.local/`. `scripts/p4_eval/measure.py` is the P4 measurement kit (see README).
+Real-model behavior cases (not part of pytest) run against the Codex connection: `PYTHONPATH=backend uv run --no-sync python scripts/model_behavior/run_cases.py --model gpt-5.6-luna`. Results go to ignored `.local/`. `scripts/p4_eval/measure.py` is an older measurement kit, kept because a test uses it.
 
 Runtime data (SQLite `library.sqlite`, PDFs, provider payloads, `codex-home`) lives in `DEIXIS_DATA_DIR` (default `~/Library/Application Support/DEIXIS`), never in the repo. Provider/model keys come from an untracked `.env` (template: `docs/product/providers.env.example`) or the system keychain via `credentials.py`.
 
@@ -60,4 +60,4 @@ Every step is a row keyed by `operation_key`; a step that already `succeeded` re
 
 ## Decisions and docs
 
-Durable decisions go in [docs/decisions.md](docs/decisions.md) as `## DNN — title`, newest at the top, with Status/Date/Context/Decision/Limits. The log restarted on 10 Oct 2026 at `D1 — Baseline`, which lists the decisions in force; the next entry is D2. Older D numbers in code and test comments point to the old log in Git history. An accepted decision is not the same as a verified implementation. `docs/layout.md` says where each kind of file belongs. Design records, plans and closed-phase archives live in the ignored `.local/docs/` (local only, not in git); do not add new ones to `docs/`.
+Durable decisions go in [docs/decisions.md](docs/decisions.md) as `## DNN — title`, newest at the top, with Status/Date/Context/Decision/Limits. The log restarted on 10 Oct 2026 at `D1 — Baseline`, which lists the decisions in force; the next entry is D2. Older D numbers in code and test comments point to the old log in Git history. An accepted decision is not the same as a verified implementation. `docs/layout.md` says where each kind of file belongs. The ignored `.local/` (local only, not in git) holds `INDEX.md` (what is where), `LESSONS.md`, the waiting P10 packaging plan `p10-plan.md` and `baseline-2026-10-10/` (the frozen 10 Oct measurement numbers, scoring rule and live-run tools for search work after P10); put new design records and plans there and do not add them to `docs/`.

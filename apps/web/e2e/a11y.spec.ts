@@ -453,7 +453,7 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     })
   })
 
-  test('2 to 6: research with a PDF seed, sources, answer, report sheet, passage sheet, PDF tab', async () => {
+  test('2 to 6: research with a PDF seed, sources, answer, report sheet, passage sheet, PDF tab (readiness panel: SYNTHETIC API state)', async () => {
     test.setTimeout(600_000)
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })

@@ -1,155 +1,60 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 10 Ekim 2026 (temiz başlangıç Chat 3 bitti).
+**Son güncelleme:** 11 Ekim 2026. Ayrıntılı kararlar [docs/decisions.md](docs/decisions.md) içinde; eski D numaraları git'teki eski kayda gider (commit 26c8214).
 
 ## Şu an
 
-Arama kalitesi işi kapandı (10 Eki, sahip kuralı: son ölçüm 8 Ekim'in 83,8'inin en çok 3 puan altındaysa kapat): 10 soru × 2 tekrar, Standart ayar, hızlı yol, main 45a306d. Ölçülen: cevap puanı ortalaması 90,7 (4 geliştirme sorusu 89,0, diğer 6 soru 91,8), katı atıf doğruluğu 0,92, süre ortancası 4,7 dk (20 koşudan 8'i 5 dakikayı geçti). Bir denemede cevap adımındaki model çağrısı iki kez zaman aşımına uğradı ve koşu cevapsız kaldı; tekrarlandı. En zayıf soru dbr_vbf (69–79). Ölçülmeyen: insan kontrolü; diğer 6 soru gerçek anlamda hiç görülmemiş değil. Sıradaki iş: sahibin gözle kontrolü; P10 (macOS paketi) bu kontrol bitene kadar bekliyor.
-
-D260 sentez iddiası sınırı (10 Eki; Claude yazdı, Sol üç turda inceledi: 5 kusur düzeltildi): bir cevabın iddialarının yarısından fazlası "analist çıkarımı" (birkaç kaynaktan derlenen sentez cümlesi) ise model bir kez daha çağrılıyor ve kaynakların kendisinin söylediği bulguları tek kaynaklı iddialar olarak yeniden yazması isteniyor. Yeni yazım geçerli ve sınırın altındaysa yayınlanıyor; değilse, bütçe yetmezse ya da model bağlantısı düşerse ilk geçerli cevap aynen yayınlanıyor ve koşu duraklamıyor. Pilotta 36 cevabın 1'inde (kurt2017 Derin, 12 iddianın 9'u sentez, atıf doğruluğu 0,10) devreye girerdi. Ölçülen: yapay testler ve kurt2017 cevabıyla 3 gerçek yeniden yazım (Luna): 1'i geçersiz (ilk cevap kalırdı), 2'si geçerli; katı atıf doğruluğu 0,10'dan 0,80 ve 0,47'ye çıktı (iki kör etiketleyici). Ölçülmeyen: tek cevapla sınandı, ne sıklıkla ve ne kadar işe yaradığı genel olarak bilinmiyor.
-
-D259 bölünen iddiaların etiket düzeltmesi (10 Eki; Claude yazdı, Sol iki turda inceledi: 3 kusur düzeltildi): 36 koşuluk canlı denemede bir cevap (irs2021, Derin) hiç yayınlanmadı. Model fazladan onarımda birden çok kaynağa dayanan iddiayı doğru şekilde üç tek kaynaklı iddiaya böldü ama üçüne de aynı etiketi (c12) verdi; doğrulayıcı tüm cevabı reddetti. Artık bölünen parçalar, hangi alıntının hangi parçaya ait olduğu kesinse, yeni etiket alıyor; metin, kaynak ve alıntılar değişmiyor. Ölçülen: yapay testler ve gerçek başarısız çıktının yeniden doğrulanması (geçerli çıkıyor). Ölçülmeyen: canlıda ne sıklıkla olduğu (36 koşuda 1).
-
-D258 asılı model çağrısı düzeltmesi main'de (9 Eki; Claude yazdı, Sol üç turda inceledi): canlı pilotta bir Codex okuma çağrısı ~5 dakika yanıt vermedi ve okuma aşaması payını 252 sn aştı. Artık okuma aşamasında yanıt vermeyen çağrı süre dolduktan en çok 5 sn sonra kesiliyor; koşu duraklamıyor, o makale özetten cevaba giriyor. Ölçülen: yapay testler. Ölçülmeyen: canlıda ne sıklıkla olduğu (ilk 8 koşuda 1).
-
-D257 hızlı yol okuma yeri düzeltmesi main'de (9 Eki; Claude yazdı, Sol üç turda inceledi: 2 kusur düzeltildi): ilk gerçek Hızlı koşu (dbr_vbf) 86 saniyede cevap verdi ama hiç tam metin okumadı, çünkü 10 okuma yeri listedeki ilk 10 makaleye gidiyordu ve PDF'i olmayan makale de yer tutuyordu. Artık metni alınamayan makale (PDF yok, okunamıyor ya da kaynak yanıt vermedi) yerini kalıcı olarak sıradaki makaleye bırakıyor (taranan ilk 25/50/100 makale içinde). Ölçülen: yapay testler. Ölçülmeyen: gerçek koşuda kaç tam metin kazandırdığı.
-
-D256 anlaşılır servis hataları main'de (9 Eki; Sol yazdı, Claude inceledi ve 5 kusuru düzeltti, Sol düzeltmeleri onayladı): model ya da akademik kaynak hata verince (kota bitti, hız sınırı, anahtar geçersiz, hatalı istek, servis çöktü, ağ yok) zaman çizelgesinde ve ayarlarda hangi servisin, neden durduğu, ne zaman tekrar denenebileceği ve araştırmanın ne durumda kaldığı Türkçe/İngilizce cümleyle görünüyor. Yeniden deneme kuralları ve run durumları değişmedi; yeni migration yok. Ölçülen: sentetik yanıtlarla testler. Ölçülmeyen: gerçek sağlayıcıların hata biçimleri, tarayıcı kabul testi.
-
-D255 hızlı yol dilim 6 main'de (9 Eki; Sol yazdı, Claude inceledi: 4 kusur düzeltildi): yeni `fast_path_v1` politikaları geç tam metinden kesim başına tek yeni cevap sürümü üretiyor. İlk cevap ve kanıt bağlantıları korunuyor; V2 kendi `answer_review` run'ını alıyor. Scope/kullanıcı seçimi/kaynak/sürüm/asset korumaları, kalıcı durum geçişleri, çökmeden dönüş, ilk cevabın zaman defterinden ayrılma ve tabloyu yenilememe sınırı uygulandı. Migration 0077 ve i18n üzerinden “Tam metinle güncellendi” etiketi eklendi; D254/D256 paralel işlerine dokunulmadı. Ayrı kod incelemesi bekliyor.
-
-D255 kontrolü: 31 yeni vaka dahil son kodla 315 odaklı test geçti. Son tam tur 13.622 geçti, 14 başarısız, 2 atlandı, 15 P9 teardown hatası: süreç/socket izinleri, eksik yerel yöntem belgeleri ve fixture'da `Path(int)`. İlk turdaki SQLite InterfaceError son tam turda ve odaklı turda tekrarlanmadı; kesin nedeni kanıtlanmadı. Build geçti (chunk uyarısı), lint geçti (16 mevcut uyarı), `git diff --check` geçti. Yeni Playwright testi fixture portuna bind sırasında sandbox engeline takıldı: 1 başarısız, 1 çalışmadı; 1440/390 px görsel kontrol tamamlanmadı. Tam turdan sonraki son düzenlemeler odaklı turla doğrulandı. Ayrıntı ve hata adları ana checkout'ta `.local/docs/product/fast-path-slice6-verification-2026-10-09.md`. Gerçek gecikme/maliyet/kalite ve D254/D256 ile birleşim ölçülmedi. Canlı servis/model/sağlayıcı, restart, commit ve push yok.
-D254 hızlı yol dilim 3 main'de (9 Eki; Sol yazdı, Claude inceledi: varış sırası kusuru düzeltildi): semantik tohumlardan sınırlı tek zincir turu, en çok 5 eşzamanlı istek, istek sırasıyla atomik kayıt/kuyruk yazımı, ranking kesimi ve donmuş ilk N'e lookup. Yeni `chain_rule` işareti olmayan run'lar eski dallarda kalıyor. Plan tek turda gerçek D252 koduna göre düzeltildi; D18'in tekrar göndermeme kuralı korundu. Migration gerekmedi; 0076 paralel dilim 5'e ayrılmış durumda. Sentetik kontroller ve tam pytest sonuçları `.local/docs/product/fast-path-slice3-verification-2026-10-09.md` dosyasında. B3 replay yeni tohumların gerçek ilk cited-by sayfalarını içermiyor; kesin çevrimdışı recall kapısı ve bağımsız kod incelemesi açık. Canlı servis/sağlayıcı/model kullanılmadı; commit/push yok.
-
-D253 hızlı yol dilim 5 main'de (9 Eki, tek plan incelemesi): yeni politikaların `answer` işareti kesim pasajlarını donduruyor, PDF dosyası ve okuma kaydı eşleşmesini doğruluyor, her uygun işe bir pasaj ayırıyor. Gözetimsiz keşif tek otomatik cevap açıyor; özet kanıtını backend etiketliyor; inceleme ayrı `answer_review` run'ında, tablo onun ardından ilerliyor. Migration 0076; paralel dilim 2 için 0075/D252 ayrıldı. Eski donmuş politikalar ve politikasız cevap yolu korunuyor. Canlı kalite, gecikme ve lexical atıf kaybı ölçülmedi; geç PDF revizyonu dilim 6'da. Commit, push ve canlı servis restartı yok.
-
-D253 doğrulaması: yeni 26 test ve ilgili 4.167 test geçti. Tam turda 13.359 geçti, 2 atlandı; süreç/socket izinleri, eksik yerel yöntem belgeleri ve P9 teardown kaynaklı 14 başarısızlık/15 hata var. Build geçti; lint 16 uyarıyla geçti; `git diff --check` geçti. Chrome açılamadığı için tek yeni tarayıcı testi ve görsel kontrol tamamlanamadı. İsimler, komutlar ve sınırlar: `.local/docs/product/fast-path-slice5-verification-2026-10-09.md`. Paralel dilim 2 ile birleşim henüz doğrulanmadı.
-D252 hızlı yol dilim 2 main'de (9 Eki; Sol yazdı, Claude inceledi: hazır; çevrimdışı v5 deneme Hızlı 30/56/70, Standart 31/59/73, Derin 29/60/74, eşik 27/52/69): donmuş OpenAlex semantik/anahtar kelime planı, sayfa ve süre sınırı, Deep'te ayrı S2 bulk slotu, sayfayla atomik kalıcı embedding kuyruğu ve sıralama kesiminde eksik benzerlik kaydı uygulandı. Politikasız ve dilim 1'de protokolü donmuş koşular eski arama yolunu koruyor. Plan tek turda incelendi; kod incelemesi ve düzeltilmiş v5 çevrimdışı replay kapısı bekliyor. Thread vektör eşdeğerliği ve canlı gecikme/recall ölçülmedi; 3/5/10 dakika hedefi doğrulanmadı. D252 ve migration 0075: **verify before commit** (dilim 4 paralel). Canlı servis/sağlayıcı/model kullanılmadı; commit/push yok.
-
-D251 hızlı yol dilim 4 main'de (9 Eki; Sol yazdı, Claude inceledi: 4 kusur düzeltildi): yeni run'ların `enforced_stages` listesine yalnız `read` giriyor; dilim 1 kayıtları uygulanmadan kalıyor. Ranking saati zincir ve liste dondurmayı içeriyor, ilk N özet paralel taranıyor, liste sırasındaki ilk K uygun iş (cached PDF dahil) seçiliyor. Ortak 12 fetch yuvası, okuma kesimi ve migration 0074'ün ayrı arka plan kuyruğu uygulandı. Kesim, kuyruk, olay ve read kapanışı tek transaction'da; worker'ın ayrı şeridi geç PDF'leri okuma yapmadan topluyor, cevap sırasında corpus yayınını bekletiyor. Plan incelemesi tek turda işlendi. Son odaklı kontrol 232 geçti (28 yeni okuma vakası dahil); migration/saat/okuma kontrolü 125 geçti. Tam pytest 13.332 geçti, 15 başarısız, 2 atlandı, 15 P9 teardown hatası: sandbox ps/socket izinleri, eksik .local/node_modules ve Path(int) fixture hatası. Migration numaralarının kesintisiz olduğunu varsayan testler düzeltildi; eski migration'lar değişmedi. `git diff --check` geçti. Canlı süre, PDF verimi ve cevap kalitesi ölçülmedi; dilim 2 bu çalışma ağacında uygulanmadı. Ayrıntı: `.local/docs/product/fast-path-slice4-verification-2026-10-09.md` (ana checkout). Commit/push ve canlı servis restartı yok.
-
-D250 hızlı yol dilim 1 main'de (9 Eki): `DEIXIS_FAST_PATH` bayrağı (varsayılan kapalı) yeni sw aramasına `fast_path_v1` süre politikasını donduruyor; migration 0073 her aşamanın çalışma süresini duraklatma, çökme ve yeniden başlatmadan sağ çıkacak biçimde kaydediyor. Süre sınırı yok; kayıtlar bugünkü akışı ölçüyor. Plan: Sol 3 tur; kod: Sol yazdı, Claude inceledi (1 tur, iptal sonrası açık kalan aralık düzeltildi). Tam pytest 14.196 geçti; kalan 5 başarısızlık worktree'de olmayan `.local`/`node_modules` yüzünden, 15 P9 teardown hatası main'de de var. Sonraki: dilim 2 (sınırlı OpenAlex araması + embedding kuyruğu) ve dilim 4 (okuma aşaması) paralel; plan incelemesi tek tur (sahip, 9 Eki).
-
-D242 Dilim 1–3 (7 Eki): dilim 1–2 main’de (`cf15bdd`, Sol; Claude iki turda inceledi); dilim 3 çalışma ağacında tamamlandı, ayrı kod incelemesi bekliyor. Eski sw answer alternasyonu/kotası ve boş rescue çıktısı kaldırıldı; attached/D119 ortak retrieval ve D238 passage dağıtımı korundu. Test eşlemesi `.local/docs/product/legacy-removal-test-map.md` dilim 3 bölümünde: sekiz test frozen-list’e taşındı, beş eski test silindi, iki test güncel davranışla değiştirildi. Tam pytest: 14.025 geçti, 2 atlandı; bilinen 15 P9 teardown hatası ve 18 sandbox socket/ps/pkill hatası, yeni düşüş yok. Lint geçti (16 mevcut uyarı), `git diff --check` geçti. Commit, canlı veri erişimi ve servis restartı yok. D239’daki `off` geri dönüşü kaldırıldı; geri dönüş `git revert`. Ardından D241’in kurt/uwsn etkisi canlı ölçülecek.
-
-**P9 kapandı, P10’a hazır** ([D218](docs/decisions.md#d218--p9-exit)). Son matris çifti `0af3216` üzerinde iki kez geçti: pytest 14.265 toplandı, 0 başarısız, 23 atlandı; süreç 45/45; tarayıcı 212/212. Bu, tek macOS arm64 makinede sentetik kayıt ve betikli model kanıtıdır; kapasite satırları paralel yük altında koştu. H9e ilk kabul edilen gerçek model raporunu tamamladı; kalite koşullarının çoğu aralık dışında. D217 ölçüm kümesini kapattı, bütün borçları kapatmadı.
-
-Kural (sahip, 3 Ekim): yazan ve inceleyen farklı şirketin modeli; Sol yazarsa Claude, Claude yazarsa Sol inceler. Sahip adına kararlar Sol medium ile ortak verilir.
+- Temiz başlangıç bitti (10–11 Eki): hızlı yol tek arama yolu, eski arama/cevap yolları ve eski veri desteği silindi, şema tek baseline'dan başlıyor. Bugünkü yapı yeni başlangıç noktası. Temizlikten sonra testler ve tarayıcı testleri geçiyor. Canlı kontrol (11 Eki, gpt-5.6-luna, gerçek OpenAlex, boş veri klasörü): irs2021 ve dbr_vbf, Hızlı 2,8 / 1,7 dk, Standart 4,2 / 3,0 dk; dört cevap da yapısal kontrolden geçti (`structurally_valid`). Her biri tek koşu; kaynakların iddiaları gerçekten desteklediği puanlanmadı.
+- Sahip uygulamayı gözle kontrol ediyor; bulduğu sorunlar sırayla düzeltilir. P10 (macOS paketi) bu kontrol bitene kadar bekliyor.
 
 ## Sıradaki
 
-0. Hızlı yol: kapandı (10 Eki). D250–D260 main'de; Hızlı/Standart/Derin süre, makale bulma ve cevap puanı eşikleri tuttu (canlı deneme 36 koşu). Kanıt `.local/benchmark/2026-10-09-fastpath-live/RESULT.md`.
-0. Arama kalitesi: kapandı (10 Eki, sahip kuralı). Son ölçüm 10 soru × 2 tekrar: cevap puanı 90,7 (8 Ekim 83,8; bu puanlama kuralıyla; eski kuralla 68,2 idi). Kalan iş "Açık işler → Arama" altında, P10'dan sonra. Kanıt `.local/benchmark/2026-10-09-fastpath-live/RESULT_final.md`.
-0. Küçük partili arama (7 Eki, Sol + Claude): donmuş birleşik liste ve partili inceleme (D237), saklı politikayla cevap girdisi dağıtımı (D238) uygulandı; yeni koşularda varsayılan `on`, eski koşular saklı politikalarıyla, yeni aramada `off` geri dönüşü (D239). Gate2 maliyet medyanları geçti, hedef kimliği kapısı geçmedi; D239 ölçüm sonrası kapı revizyonudur. Açık işler: Hakim atıf seçimi, UWSN 09 recall, cevap derinliği ödünü, bütçe sonunda öncelik bölümünün ortasında kalma; P@20 etiketleri sahipte. 1–2 haftalık kullanımda kaynak kaybı/işlem sorunu görülürse `off` (D242 ile geçersiz; geri dönüş `git revert`). Kanıt: `.local/benchmark/2026-10-07-small-batch-gate2/SUMMARY.md`. 7 Eki sonrası: model etiketli isabet (Sol + Claude kör, insan etiketi yok) uzlaşı P@20 eski→yeni dbr 0,65→1,00, kurt 0,00→0,25, uwsn 0,00→0,05, irs 0,55→0,90 (`.local/benchmark/2026-10-07-precision/SUMMARY.md`); cevap derinliği darboğaz değil, iki aşamalı cevap ertelendi; kurt/uwsn sıfır include nedeni hedeflerin tam metne ulaşamaması (sağlayıcı 429, açık tam metin yok) ve koşudan koşuya değişen criterion rolleri (D241 ile düzeltildi, kayıtlı veride tutarlı; canlı ölçüm bekliyor); bekleyen PDF listesi küçük parti run'larında da çalışıyor (D240); Playwright 217/218 (candidate.spec.ts:590 kararsız).
-1. Temiz başlangıç (sahip, 10 Eki): hızlı yol tek arama yolu. Plan `.local/docs/product/clean-start-plan-2026-10-10.md`. Chat 1–3 bitti: bayrak, eski veri kodu, eski arama/zincir/genişletme/cevap kurma ve etkileşimli terim onayı silindi; şema tek baseline'da; `docs/decisions.md` "D1 — Baseline" ile yeniden başladı (eski kayıt git'te, 26c8214; yeni kararlar D2'den). Ekranlar: derinlik menüsü "yaklaşık 3/5/10 dk · en çok 25/50/100 makale"; iki arama turu başlığı ve eski zincir raporu gitti, yerine atıf zincirinin tek satırlık özeti (seçilen makale, gönderilen/yanıt alan/başarısız istek, yeni makale) geldi; rapordaki yöntem cümlesi aynı sayıları kullanıyor. Düzeltilen hata: hızlı cevap, başladığı andaki akış özetini kaydetmiyordu. Sol her dilimde "hazır" dedi (5a dört tur, 5b ve 6 iki tur). Ölçülen: pytest 13.386 geçti, 0 kırık, 15 bilinen P9 hatası; Playwright 210 geçti, 0 kırık, hepsi koştu. Sıradaki: Chat 4 (dilim 7 doğrulama + canlı kontrol, dilim 8 dosya temizliği ve kısa STATUS).
-1. Sahibin gözle kontrolü (10 Eki): sahip uygulamayı elle deniyor; bulduğu sorunlar sırayla düzeltilir.
-2. P10: macOS paketi — bekletiliyor (sahip, 10 Eki). Sebep: paket çıktıktan sonra her düzeltme yeni sürüm ve güncelleme gerektirir; önce gözle kontrol bitecek. Rapor kalitesi çalışması (kanıt kesilmesi, çok parçalı iddialar) isteğe bağlı ve sahip kararıyla.
+1. Sahibin gözle kontrolü ve bulduğu düzeltmeler.
+2. P10: macOS paketi (plan yerelde, `.local/p10-plan.md`); ardından arama işi (aşağıda "Arama").
 
-## Tamamlanan fazlar
+## Baseline (10 Eki)
 
-Her faz için ne yapıldığı ve neyin ölçülmediği. Ayrıntı [karar kaydında](docs/decisions.md).
-
-- **P0 Plan ve denetim:** Uygulama planı yazıldı, Fable incelemesinden geçti, bulgular yanıtlandı. (D1)
-- **P1 Yöntem ve sözleşme:** Model adımlarına giden yöntem paketi (`methods/deixis-research/`) ve adım girdi/çıktı şemaları (`contracts/`) kuruldu.
-- **P2 Yerel temel:** FastAPI arka uç, worker, SQLite ve Codex bağlantısı çalışıyor; model, DEIXIS'e ait ayrı bir Codex dizininde açık model adıyla çağrılıyor. (D2, D3)
-- **P3 Arama ve kaynak işleme:** Akademik arama, PDF bulma ve sürüm kontrolü, pasaj sıralaması kuruldu. Uzun SW dilim serisinden sonra tek arama akışı `sw` oldu, eski akış kaldırıldı; aramanın bilimsel başarı ölçümleri geçmedi. (D119, D114)
-- **P4 İlk web dilimi:** Sorudan kaynaklı cevaba, vurgulanabilir atıfa ve araştırmayı yeniden açmaya kadar web arayüzü çalışıyor; dar bir gerçek kaynak ölçümüyle kapandı. (D34)
-- **P5 Kütüphane ve kanıt tablosu:** Kaynak sürümleri, kanıt tablosu hücre geçmişi, çöp kutusu ve OCR eklendi; iki soruluk gerçek model ölçümüyle kapandı, genelleme değil. (D55)
-- **P6 Sentez ve rapor:** Beş dilim uygulandı: kaynak bağlı rapor, gelişim çizgileri (lineage), aday fikir ve kill-search, rapor düzenleme, LaTeX. Kod tamam; gerçek modelde yararlılık ölçümleri P9'a taşındı ve çoğu hâlâ açık. (D142, D154, D157)
-- **P7 Bağlantı kapsamı:** Bütün akademik sağlayıcılar tek bir iç bağlayıcı sözleşmesinden geçiyor; istekler sayılıyor ve bütçeleniyor, kota ile hız sınırı ayrı. Canlı hata ve kota biçimleri ölçülmedi. (D201)
-- **P8 İnceleme ve takip:** Cevap, rapor ve aday fikirler başka bir modele incelettirilebiliyor; araştırmalar yeni yayınlar için zamanlanmış takipte tutulabiliyor. Sentetik vakalarda yerleştirilen hataların hepsi bulundu; gerçek raporda inceleme kalitesi ölçülmedi. (D189)
-- **P9 Web sağlamlaştırma:** Kurulum, çökme ve kurtarma, disk dolu, yedek/geri yükleme, erişilebilirlik ve kapasite sınandı; tam test matrisi iki kez üst üste geçti. Gerçek modelle ilk kez bir rapor baştan sona tamamlandı, ama kalitesi hedeflerin altında. (D218, D202)
+- **Arama:** OpenAlex anlam ve kelime araması, OpenAlex atıf zinciri; Derin ayarda ek Semantic Scholar bulk araması. Hızlı/Standart/Derin yaklaşık 3/5/10 dk, en çok 25/50/100 makale taranır.
+- **Okuma:** ilk N makalenin özeti iki model okumasıyla taranır; en çok 10/20/40 makale tam metne gider, kalan PDF'ler arka planda iner.
+- **Cevap ve atıf:** cevap, okuma kesimindeki kanıttan kendiliğinden yazılır; her iddia kendi pasajına bağlı, çapası kodla bulunur. Geç gelen tam metin bir yeni cevap sürümü üretebilir; ayrı bir model incelemesi koşar. Yalnız ekli PDF'lerden cevap da çalışıyor.
+- **Rapor ve fikir araçları:** kanıt tablosu, kaynak bağlı rapor, LaTeX, rapor düzenleme; gelişim çizgileri (lineage), aday fikir ve kill-search, yayın takibi (watch).
+- **Sağlayıcılar ve modeller:** OpenAlex, Semantic Scholar, Crossref, arXiv, bioRxiv, PubMed, IEEE Xplore, Scopus, SerpApi, CORE, Zotero; Codex, Claude Code, Gemini, DeepSeek. Anahtarlar Ayarlar'da ya da `.env`'de; model adı her adımda kaydedilir. Bir servis durunca hangisinin, neden durduğu ve ne zaman tekrar denenebileceği Türkçe/İngilizce yazılır.
+- **Son ölçüm (10 Eki):** 10 soru × 2, Standart: cevap puanı 90,7, katı atıf 0,92, süre ortancası 4,7 dk. Etiketler iki modelin kör etiketi; insan bakmadı.
 
 ## Açık işler
+### Temiz başlangıçtan kalan
 
-Bütün eksikler burada; ayrı TODO dosyası yok. Parantezdeki D numaraları [karar kaydına](docs/decisions.md) gider.
+- Watch ve PRISMA-S yöntem metni hâlâ eski sorgu derleyicisinin alanlarını (`_source_routing`, `compiled_queries`) okuyor; hızlı aramaya uyarlanacak.
+- Zincir istekleri tarama aşamasında sayıldığı için arama sürerken arama aşaması bitmiş görünebilir.
+- Test boşlukları: Playwright hız sınırı vakaları her başarısız OpenAlex isteğini kendi satırıyla eşlemiyor; hızlı cevap akış özetinin duraklat/sürdür testi yok.
 
-### Temiz başlangıçtan kalan (10 Eki)
+### Arama (P10'dan sonra)
 
-- `_source_routing` / `compiled_queries` / PRISMA-S madde 5 / yöntem metnindeki derleyici sürümü / watch hızlı aramaya uyarlanacak.
-- Cevaptan önceki PDF hazırlık paneli ve cevap çipindeki arXiv kaynağı rozeti hızlı yolda neredeyse hiç görünmüyor. Karar (sahip, 11 Eki): ikisi de kalır; panel otomatik cevap başarısız olunca tek çıkış yolu. Chat 4'te Playwright test adlarına "sahte API verisi" ibaresi eklenecek. Hızlı cevabın denklemleri arXiv kaynağından okuyup okumaması ayrı ürün sorusu (P10 sonrası).
-- Playwright hız sınırı vakaları her başarısız OpenAlex isteğini kendi satırıyla eşlemiyor (en az bir satıra bakıyor); hızlı cevap akış özetinin duraklat/yeniden başlat testi yok (Sol, küçük).
-- Zincir istekleri tarama aşamasında sayıldığı için, arama sürerken arama aşaması bitmiş gibi görünebilir (5a'da fark edildi, eskiden de vardı).
+1. Geniş sorularda bilinen önemli makaleler üstte değil (battery_soh'ta ilk 50'de 15 hedeften 3'ü); cevap puanı bunu ölçmüyor. Ölçüt: hedeflerin ilk 50'ye girme oranı.
+2. dbr_vbf en zayıf soru (69–79): cevap insan değerlendirmesi gibi boyutları kapsamıyor; Hızlı ayarda kilit makale Maulana 2019 bulunmuyor.
+3. Ücretli makalelerin tam metni okunamıyor; mühendislik makalelerinin çoğu özetten giriyor.
+4. Derleme (survey) makalelerin cevaba katkısı ölçülmedi; başlığında derleme kelimesi geçen makale listeden çıkıyor.
+5. Standart'ta 20 koşudan 7'si 5 dakikayı geçti (nedenine bakılmadı); Derin ayarda atıf doğruluğu düzeltmelerden sonra yeniden ölçülmedi; örneklem küçük (10 soru × 2).
+6. Ortam: OpenAlex günlük ücretsiz kotası ~20 araştırmada bitiyor; cevap çağrısı ara sıra zaman aşımıyla araştırmayı cevapsız bırakıyor (21 denemede 1).
 
-### Arama (P10'dan sonra; sahip, 10 Eki)
+### Ölçülmedi (gerçek model ya da gerçek kullanım gerekiyor)
 
-Durum: arama işi kapandı (son ölçüm 10 soru × 2 tekrar, cevap puanı 90,7, katı atıf 0,92, Standart ortanca 4,7 dk). Aşağıdakiler P10'dan sonra ayrı bir iş olarak açılacak. Kanıt `.local/benchmark/2026-10-09-fastpath-live/RESULT_final.md`.
-
-Eksikler, önem sırasıyla:
-
-1. Geniş sorularda bilinen önemli makaleler üstte değil: battery_soh'ta ilk 50'de 15 hedeften yalnız 3'ü, materials_ml'de 13'ten 5–6'sı var. Cevap yine iyi çıkıyor, çünkü listede başka ilgili makaleler var; ama alanın "klasik" makaleleri kaçabiliyor. Cevap puanı bunu ölçmüyor. Ölçüt: hedef makalelerin ilk 50'ye girme oranı, 10 soruda.
-2. dbr_vbf (Elicit kıyası) hâlâ en zayıf soru (69–79 puan, 8 Ekim'in altında). Cevap insan değerlendirmesi gibi bazı boyutları kapsamıyor. Hızlı ayarda kilit makale Maulana 2019 hiç bulunmuyor.
-3. Ücretli makalelerin tam metni okunamıyor (erişim sınırı). Açık PDF'lerin yaklaşık %90'ı süresinde okunuyor, ama mühendislik makalelerinin çoğunun açık PDF'i yok; o makaleler özetten giriyor.
-4. Survey'ler: ayrı survey araması yok; başlığında güçlü derleme kelimesi geçen makale listeden çıkıyor (4 Ekim'de dbr_vbf'te 90 eleme, 60'ı yönlendirme derlemesi). 6 Ekim'de survey kaynakçasından makale çekme kolu eşiği geçmedi (4 soruda 1 yeni hedef, eşik 2; `.local/benchmark/2026-10-06/SUMMARY.md`). Açık soru: karşılaştırma sorularında survey'in kendisi cevaba kaynak olarak yardım ediyor mu? Ölçüt: survey'li ve survey'siz cevap puanı ve kapsanan boyutlar, aynı sorularda.
-5. Süre sınırda: Standart'ta 20 koşudan 8'i 5 dakikayı geçti (en uzun 5,8 dk). Bir önceki gün ortanca 3,5 dk idi; yavaşlamanın nedenine bakılmadı.
-
-Ölçülmeyenler:
-
-- Derin ayarda atıf doğruluğu: 0,68 çıkmıştı; düşüren iki sebep düzeltildi (D259, D260), ama yeniden ölçülmedi.
-- İnsan kontrolü: bütün puanlar iki modelin (Claude ve Sol) kör etiketlerinden geliyor; hiçbir sonuca insan bakmadı.
-- Örneklem: 10 soru, her biri 2 tekrar. Koşudan koşuya 8–30 puan oynama görülmüştü.
-
-Ortam riskleri:
-
-- OpenAlex kotası: günlük ücretsiz kota (1 dolar) yaklaşık 20 araştırmada bitiyor. Yoğun kullanımda ön ödemeli kredi gerekiyor.
-- Cevapsız kalma: 21 denemenin 1'inde cevap adımındaki model çağrısı yanıt vermedi ve araştırma cevapsız durakladı; tekrarlayınca cevap geldi.
-
-### Ölçülmedi (gerçek model veya gerçek kullanım gerekiyor)
-
-- Rapor kalitesi: H9e'de R1a, R2, R4b, R5, R7 süre, R8, R11 aralık dışında. R2'de 4 yanlış atıf, 18 kısmi destek; iki model okudu, insan bakmadı. Gözlenen nedenler: bölüm girdisi tablo hücrelerinin çoğunu kesiyor (H9b B'de 117 hücre), çok parçalı iddialarda çapa alıntısı çoğu zaman tek parçayı taşıyor, özet ve sonuç gövdede olmayan ayrıntı ekliyor. Tek konu, tek koşu. (D202, D218)
-- Denklem, çift ve inceleme: R6'da denklem birimi yok, R9'un yedi çifti ölçülemedi, R10 hiç ölçülmedi. (D202, D218)
-- Rapor düzenleme E06–E18: 18 işlemden 5'i ölçüldü; kabul, kaldırma, geri yükleme, dışa aktarım, yedek/geri yükleme sınanmadı. (D215, D217)
-- Soy zinciri L9 (R12–R15): hiçbir korpusta ölçülmedi; yeniden hazırlanmayacak. (D216, D217)
-- Kill-search K6/S2: S2 paydası sıfır, en yakın işler hiç bulunmadı; sorgu biçiminin suçlu olduğu gösterilmedi. (D212)
-- Çöküş kurtarma H10: gerçek Codex ile hiç koşulmadı; tekrar çağrı ve fatura bilinmiyor. (D218)
-- Günlük kullanım: sahibin yedi günlük kullanım günlüğü yok; H7 bulguları test ve kod okumasından. (D165)
-- Planted prior-art ölçümü: yayımlanmış bir makalenin fikrini aday diye ver, kill-search onu bulup `closed` diyor mu bak. Bu koşulana kadar "Novelty Checker'dan iyi" yalnız tasarım iddiası.
+- Rapor kalitesi: tek gerçek raporda (H9e) çoğu ölçüt aralık dışında; tablo hücreleri bölüm girdisinde kesiliyor, çok parçalı iddiada çapa tek parçayı taşıyor.
+- Denklem, soy zinciri, kill-search'ün en yakın işleri bulması ve gerçek Codex ile çökme kurtarma ölçülmedi; rapor düzenlemede 18 işlemden 5'i ölçüldü; sahibin günlük kullanım kaydı yok. Yayımlanmış bir makalenin fikri aday diye verilince kill-search'ün onu bulup bulmadığı denenmedi.
 
 ### Ortam ve platform
 
-- İkinci kullanıcı kurulumu (temiz hesap, başka makine, proxy) ölçülmedi. (D161, D168)
-- Erişilebilirlik: VoiceOver ve diğer ekran okuyucular, okuma sırası, yüzde 400 yakınlaştırma ölçülmedi. (D167)
-- Kapasite: sessiz makinede tekrar, gerçek PDF karışımı, canlı model gecikmesi, yük altında eş zamanlılık yok; H8 K02c N=100 eksik. (D166, D170)
-- Hata sınırları: elektrik kesintisi, kernel panic, APFS disk dolu ölçülmedi; OCR/JATS çocuk süreç sınırları sürüyor. (D159, D162, D164)
-- Platform: eski macOS, Intel, Linux, Windows desteklenmiyor; başka makineye geri yükleme ölçülmedi. P10'da ele alınacak.
+- Kurulu ikinci kullanıcı, ekran okuyucu, sessiz makinede kapasite, elektrik kesintisi ve disk dolu durumu ölçülmedi; eski macOS, Intel, Linux ve Windows desteklenmiyor.
 
-### Kod düzeltmeleri
+### Kod
 
-- K03 sürücüsü: kuyruk geçişi prompt boyutunda düşüyor; bayt bütçesi eklenmedi. Paketleme engeli sayılmadı. (D216, D217)
-- Yeniden çıkarım R5: T10 arka plan okuyucuyu (D52) yürütmüyor (T10 matris satırı yok); aday/soy güncellik görünümü (`recovery_view.py`, `TextRecovery.tsx`). Türkçe Zotero notları (D222) ve PDF önbelleği (D223) kapandı; geri yükleme sırasında açık PDF görüntüleyici eski belgeyi göstermeyi sürdürür, kapatıp açınca yenisi gelir. (D208)
-- İlk cevap taslağı atıf çapası kurallarını hep bozuyor (9/9); onarım turu düzeltiyor ama cevap başına 46–134 s ekliyor. Nedeni bulunmadı.
-- `detailed` süre: tam metin alma ve okuma tek başına 20 dakika hedefini aşıyor (23 Eylül ölçümü).
-- Test borcu: dilim 31'den kalan uçtan uca iddialar tam karşılanmadı; aralıklı paralel test hataları; CI yok. (D119, D175)
+- Kuyruk sürücüsü (K03) prompt boyutunda düşüyor; yeniden çıkarımın arka plan okuyucusu matriste sınanmıyor; geri yüklemeden sonra açık PDF görüntüleyici eski belgeyi gösteriyor.
+- İlk cevap taslağı atıf çapası kurallarını sık bozuyor; onarım cevap başına 1–2 dk ekliyor. CI yok; paralel testlerde ara sıra hata; P9 yükseltme kontrolünde 15 bilinen teardown hatası.
 
-### Canlı deneme bulguları (4–5 Eki, sualtı DBR/VBF sorusu)
+### Canlı deneme bulguları (4–5 Eki)
 
-Tek soru, GPT-5.6 Luna, Standard derinlik, üniversite VPN'i açık (`res_qqOHHl3hGsZWrihkkwBW`). Sahip sırası: önce sayaçlar.
-
-- Sayaçlar ve etiketler: tam metin satırı çalışırken "135 downloaded" diyor, gerçek 26 (`Transcript.tsx` `detail()` 'pdf' her başarılı adımı topluyor); okuma koşusu "Downloaded 54 open-access PDFs" diyor (52 model okuması + 2 kod adımı); tam metin okuma ve Marker denklem okuması da "Downloading open-access PDFs" başlığıyla görünüyor (`Transcript.tsx:71`); "provider requests 15/8" bütçeyi aşmış görünüyor.
-- Arama onay ekranı karışık; sadeleştirilmiş mockup onaylandı (claude.ai/artifact/VR863qYoKQoapvVnrUw6n8). Model "sensor networks"ü tek başına Setting bloğuna koydu, eşleşme 535'ten 18.369'a çıktı, ekran uyarmadı; uygulama "bu terim olmadan" sayısını kendi hesaplamalı.
-- Tam metin karar ekranı karışık: makale başına tek soru olmalı; listedeki başlık kaynak çekmecesini açmalı (.impeccable.md §3 kuralı, uygulanmamış). Sources'taki "Undecided 1323" çoğunlukla "okunmadı" demek, etiket yanıltıcı.
-- Ölçüt önerisi sorudaki karşılaştırmayı her makaleye şart yaptı; tek protokol anlatan VBF/ADBR makaleleri takıldı, 24 kararı sahip verdi. Başlıkta survey/review geçen 90 iş elendi, 60'ı yönlendirme derlemesi.
-- Tam metin sınırı (~112) yüzünden 689 adaydan 579'u hiç denenmedi, 57'sinin başlığı DBR/VBF ailesinden. Cevap sıralamanın tepesinden kuruluyor ve ekran bunu söylemiyor.
-- Cevap koşusu her dahil PDF için Marker'ı bekliyor (PDF başına saniyelerden ~5 dakikaya); kapatma düğmesi yok, Remove okuma sürerken kilitli (`Connections.tsx:242`). Öneri: "PDF metniyle şimdi cevapla" düğmesi.
-- MDPI, SAGE ve ScienceDirect PDF'leri 403 (ULAKBİM çıkışı, tarayıcı kimliğiyle de); VPN'siz karşılaştırma yapılmadı.
-- Cevap (GPT-6 Sol, 17 iddia, 12 pasaj, 25 kaynak): Luna incelemesinde 16 destekli, 1 kısmi; insan bakmadı. Asıl soruya sayısal cevap yok: "aynı koşullarda DBR–VBF karşılaştırması pasajlarda yok" diyor. Doğrudan karşılaştıran Lee & Seah 2007 (OCEANS) PDF'iyle dahildi ama cevap ondan yalnız PDR ve enerji tanımlarını aldı, sonuçlarını almadı (seçilen pasajlara sonuçlar girmemiş olabilir; bakılmadı). 17 iddianın 15'i "It has been reported that…" kalıbıyla başlıyor: `methods/deixis-research/references/source-grounded-answer.md` yalnız phrasebank çerçevelerine izin veriyor ve kaynak aktarımı için örnek olarak tam bu kalıbı veriyor; tekrar sınırı yok. Sahip cevabın bölümlü rapor (Abstract, Introduction, Bulgular…) olarak çıkmasını bekliyordu; rapor ayrı akış ve kanıt tablosu gerektiriyor (Evidence sekmesi), ekran bunu söylemiyor. Sahip tablo akışını da karışık buldu (sütun öner → ekle → satır doldur → boş hücre → Write report); öneri: Answer ekranında tek "Bölümlü rapor yaz" yolu, sütunları ve doldurmayı kendisi yapsın, kullanıcıya yalnız sütun listesini bir kez onaylatsın. Aynı ekranda 26 dahil kaynağın yalnız 16'sı modele verildi, 11'i atıf aldı (48 pasaj sınırı).
-- Elicit karşılaştırması (5 Eki, aynı soru, "Draft report", GPT-6 Sol low): ~40 s, onay ekranı yok; "16 kaynak bul → 19 kaynakta doğrudan simülasyon kanıtını karşılaştır → rapor yaz". Rapor (Özet / Neden değişiyor / Yorum, 6 atıf, takip soruları) asıl soruya sayısal cevap verdi: DBR, VBF'den %33,6 daha enerji verimli ve %19,8 daha iyi PDR (Maulana 2019), Hakim 2018 da aynı yönde; özetten çalıştığını açıkça söylüyor. **Bu iki doğrudan karşılaştırma DEIXIS'te de vardı** ("Analysis of VBF and DBR Performance… Aquasim at NS-3" 2019 ve "Energy Consumption Analysis of DBR and VBF Protocols… Aqua-Sim" 2018): ikisi de özet aşamasında aday oldu, tam metin sınırına takılıp hiç denenmedi, cevaba girmedi. Ders: cevap aday özetlerini de kullanabilmeli; sıralama iki aileyi birlikte anan doğrudan karşılaştırmaları öne almalı.
-- Elicit'in 6 atfı DEIXIS'te: 5'i bulundu, 1'i bulunamadı (Memon 2018, "Performance Comparison of Routing Protocols for Underwater Sensor Networks"). Bulunan 5'ten yalnız Xie 2010 cevaba girdi; Maulana 2019 ve Hakim 2018 aday kalıp denenmedi, Yan 2008 (DBR) ve Nicolaou 2007 (HH-VBF) açık tam metin bulamadı. Arama geri çağırımı yeterli; kayıp cevap politikasında.
-- Hangi sorgu buldu (sağlayıcı yüklerinden): Maulana 2019'u yalnız sorunun kelimelerinden kurulan geniş sorgu buldu; modelin `"underwater acoustic" AND …` sorgusu getirmedi (makale "underwater wireless sensor network" diyor). Hakim 2018'i iki sorgu da buldu; genişletme ve atıf zinciri ikisini de getirmedi. Geniş sorgu gürültülü ama kapatılmamalı; modelin tek tam ifadesi fazla dar.
-- Derleme kaynakçası ölçümü (5 Eki, OpenAlex, model yok): kenara konan en ilgili 8 yönlendirme derlemesinin hiçbiri Maulana 2019, Hakim 2018 ya da Memon 2018'e atıf vermiyor (3'ünün OpenAlex'te kaynakçası boş). Anahtar makaleler az atıf almış (8, 7, 0) bölgesel konferans/dergi işleri. Derlemeleri atıf zinciri tohumu yapmak bu soruda kazandırmazdı. Buna karşılık Maulana, Hakim'e atıf veriyor: iki sorgunun da bulduğu Hakim'den ileri atıf zinciri Maulana'ya ulaşırdı; zincir yalnız sıralamanın ilk 15'inden başladığı için denemedi.
-- Ölçüm dersi: adımlar hatasız bitti, alıntılar bulundu, ikinci model 16/17 "destekli" dedi, yine de cevap soruyu cevaplamadı. Bugünkü ölçütler cevabın dürüstlüğünü ölçüyor, işe yararlığını ölçmüyor.
-
-**İlerleme (5 Eki):** (1) kıyas testi `scripts/benchmark/check.py` (2b6e0d7); eski koşuda geçmiyor. (2) özet adayları cevaba giriyor (D225): yeniden koşulan cevapta Maulana 2019 sayılarıyla atıf aldı, Hakim 2018 girmedi, kapı (a) hâlâ geçmiyor. Sahip adım 3'e geçilmesini seçti. (3) karşılaştırma sorusunda task terimlerini birlikte anan kayıtlar sıralamada yükseliyor (D226): çevrimdışı Maulana 105 → 51, Hakim 233 → 73; ilk 50 hedefi tutmadı, yeni keşif koşusu yapılmadı. Adım 4 bitti (sahip "uygun şekilde ilerle" dedi; kararlar Sol ile): onay ekranı yalnız terim şişirme uyarısında (D227), karşılaştırma ölçütü tek alternatifi kabul ediyor (D228), tam metin kararında makale başına tek soru, cevap 3–5 kısa paragraf + otomatik çalışma tablosu + yöntem kutusu, 11 bölümlü rapor Evidence'ta "Makale taslağı" (D230), "PDF metniyle şimdi cevapla" düğmesi. Uçtan uca canlı kıyas koşusu (9f5583b, ~26 dk, ~140 model çağrısı): 6 makalenin 6'sı bulundu (Memon 2018 sıra 46, D231 gerçek koşuda da tuttu), ama kapı (a) yine geçmedi: Maulana 2019 sayılarıyla atıf aldı (c1, c3), Hakim 2018 (sıra 24, özet adayı, tam metin yok) modele verilmedi; Memon tam metni doğrulandığı hâlde 24 kaynaklık cevap girdisine girmedi. Onay ekranı çıkmadı, 16 satır karar kuyruğunda kaldı, tablo 27 satır × 8 sütun otomatik doldu. (4) Memon 2018'i hiçbir sorgu bulmuyordu, çünkü protokolleri yalnız "DBR" ve "VBF" diye anıyor. İkinci tur artık birinci turun özetlerinin tanımladığı kısaltmaları kodun geniş ortam terimiyle arıyor (D231): bugünkü koşunun kopyasında `underwater AND (DBR OR VBF)` 6 makalenin 6'sını buldu, önce 5/6'ydı. Gerçek bir keşif koşusunda denenmedi.
-
-**6 Eki, D233:** Kelime önerisi artık yalnız bilgi: `warn` modunda hiçbir terim silinmiyor, öneri başarısız olsa da kart açılmıyor; eksik öneri geçersiz. Zaman çizelgesi ham "1.340 kaynak" yerine huni gösteriyor (aramayla gelen kayıt · zincirle eklenen · benzersiz çalışma → okunan özet → aday → dahil). Kod sorgusunu daraltma (varyant D) son koşunun kayıtlarında 1.336 → 1.131 verdi, 6/6 ve 28/28 dahil korundu, ama OpenAlex sınırlarını (5 operatör, 2 zorunlu parça) aştığı için ertelendi; 1.336'nın 590'ı atıf zincirinden. Canlı koşu yok.
-
-**Sahip kararı (5 Eki), sırayla:** (1) bu soru + Elicit'in 6 makalesi kıyas testi olsun; geçme: Maulana 2019 ve Hakim 2018 cevaba girer, cevap DBR–VBF yönünü sayıyla söyler; (2) tam metni olmayan adaylar özetiyle cevaba girsin, iddiada "yalnız özet" yazsın; (3) iki aileyi birlikte anan doğrudan karşılaştırmalar sıralamada öne çıksın; (4) 2–3 testi geçince akışı sadeleştir: onay ve karar ekranları yalnız uyarıda, kanıt tablosu beklemeden Özet/Bulgular/Yorum raporu, Marker cevabı bekletmesin; (5) kalan ekranlarda sayaç ve etiket düzeltmesi; (6) sahibin vereceği 2–3 soru daha kıyas testine. Baştan yazım ve katı rapor formatı şimdilik yok. Plan: `.local/docs/product/elicit-convergence-plan.md` (yerel, git dışında).
+- MDPI/SAGE/ScienceDirect PDF'leri ULAKBİM çıkışında 403; cevapta "It has been reported that…" kalıbı çok tekrarlanıyor. Hızlı yolda yeniden bakılmadı.
 
 ### Ertelenmiş fikirler (sahip kararı bekler)
 
-- Örnek sorular: soru kutusunun altında yalnız kutuyu dolduran 2–3 tıklanabilir örnek.
-- Kütüphaneden süreklilik: "bu kaynak X araştırmasına dahil edilmişti" gibi veritabanından hesaplanan ipuçları. Sohbet tarzı gizli "bellek" planlanmıyor.
-- PDF indirme teşhisi: HTML veya 403 dönen en fazla 20 açık erişim vakasını düz Chromium ile aç, nedeni sınıflandır (`citation_pdf_url`, JavaScript, çerez duvarı, bot engeli). Bot engelini aşmak planlanmıyor.
-- Sorgu örtüşme uyarısı: iki sorgunun terimleri büyük ölçüde örtüşüyorsa uyarı (onarım değil).
-- Tanıtım sayfası (landing page): tıklanabilir demo, yöntem, sınırlar, kurulum ve atıf blokları. Mockup `.local/docs/site/landing-mockup.html` (4 Eki). Örnek kayıtlar sentetik; BibTeX'te yazar adı yer tutucu. "Download" butonu imzalı macOS paketi (Apple Developer hesabı + notarization) çıkana kadar kaynaktan kurulumu gösteriyor. P10 sonrası yayın (GitHub Pages); yayından önce içerik kesinleşince bir `/impeccable` inceleme ve cila turu.
-- Kill-search: aday kartındaki iddia öğelerini RRF'de ayrı sinyal olarak kullanmak; Semantic Scholar snippet search'ü dördüncü yol olarak eklemek; `answer_review`'u geliştirirken kullanılmayan bir modelle değerlendirmek.
+- Örnek sorular; kütüphaneden "bu kaynak X araştırmasına dahil edilmişti" ipuçları; 403 dönen açık erişim PDF'lerinin nedenini sınıflandırmak; tanıtım sayfası (P10 sonrası); hızlı cevabın denklemleri arXiv kaynağından okuması; kill-search için ek sinyaller; iki sorgunun terimleri büyük ölçüde örtüşünce uyarı.

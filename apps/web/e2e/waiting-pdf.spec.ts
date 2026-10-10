@@ -255,7 +255,7 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
     rmSync(dataDir, { recursive: true, force: true })
   })
 
-  test('L failure: a reading that decides nothing leaves the file unread until the person asks again', async ({ browser }) => {
+  test('L failure: a reading that decides nothing leaves the file unread until the person asks again (readiness panel: SYNTHETIC API state)', async ({ browser }) => {
     await page.goto('about:blank')
     await page.goto(`${FAIL_URL}/#/research/${failing}/waiting`)
     await expect(rows(page)).toBeVisible()

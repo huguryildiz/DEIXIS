@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
 import { nextPort } from './ports'
 
-// A–G acceptance cases (.local/docs/product/first-slice-plan.md) in a real browser against the fixture server.
+// A–G acceptance cases (the first web slice) in a real browser against the fixture server.
 // Records are SYNTHETIC and the model is scripted: this checks application behavior, not model quality.
 
 const REPO = path.resolve(process.cwd(), '..', '..')

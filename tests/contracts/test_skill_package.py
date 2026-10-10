@@ -58,8 +58,8 @@ def test_candidate_tasks_load_candidate_check_md_and_the_hash_moved():
     assert package.package_hash != before
     assert skill.integrity_issues() == []
     text = " ".join((SKILL_DIR / "SKILL.md").read_text().split())
-    assert ("Literature synthesis across idea chains, candidate research-question development, "
-            "claim-specific kill-search, and experiment design or execution are **not available**.") in text
+    assert ("In those tasks, literature synthesis across idea chains, candidate research-question development, "
+            "claim-specific kill-search, and experiment design or execution are **not available**;") in text
     assert ("That includes proposing research gaps, directions or candidate questions in a `grounded_answer`: "
             "do not offer them as claims, not even as `analyst_inference`; name them in `unanswered_aspects` instead.") in text
     assert "`grounded_answer`, `answer_review` and the report tasks" in text
@@ -81,8 +81,8 @@ def test_lineage_links_loads_synthesis_md_and_the_hash_moved():
     assert '<method-file path="references/synthesis.md">' in package.runtime_text("lineage_links")
     text = " ".join((SKILL_DIR / "SKILL.md").read_text().split())
     # These two existing prohibition sentences remain verbatim for answer/report tasks.
-    assert ("Literature synthesis across idea chains, candidate research-question development, "
-            "claim-specific kill-search, and experiment design or execution are **not available**.") in text
+    assert ("In those tasks, literature synthesis across idea chains, candidate research-question development, "
+            "claim-specific kill-search, and experiment design or execution are **not available**;") in text
     assert ("That includes proposing research gaps, directions or candidate questions in a `grounded_answer`: "
             "do not offer them as claims, not even as `analyst_inference`; name them in `unanswered_aspects` instead.") in text
     provenance = json.loads((SKILL_DIR / "provenance.json").read_text())

@@ -360,7 +360,7 @@ def test_limitations_input_contract_accepts_seven_and_eight_but_refuses_bad_eigh
         bad["report_target"]["limitations_core"]["items"][7][field] = value
         assert "step_input_schema_invalid" in {i.code for i in contracts.check_step_input(bad)}
     # D243 changes shared answer instructions and the clean start (D1) the method cleanup; failed-row input rules stay fixed.
-    assert skill.load_skill_package().package_hash == "sha256:06b463687e76afea3861f9138a8a2ba7a29bd5d40ef87e49a8aa57b6112488be"
+    assert skill.load_skill_package().package_hash == "sha256:51ee72d5ed714d6ebd298dbdda6a655349e2fe002f198a2602cbce5d21ba9dad"
 
 
 def test_three_full_text_absence_rows_have_identical_candidates_with_failed_row(state):

@@ -90,10 +90,11 @@ through these three tasks. The availability limits that follow continue to
 apply to `grounded_answer`, `answer_review` and the report tasks. Free candidate
 development and experiment design or execution remain unavailable everywhere.
 
-This version supports only source-grounded question answering and, for a report run, the fixed report
-skeleton described in [report.md](references/report.md). Literature synthesis across idea chains, candidate
-research-question development, claim-specific kill-search, and experiment design or execution are **not
-available**. If the question asks for them outside a report's VI and VII sections, answer what the supplied
+For `grounded_answer`, `answer_review` and the report tasks, this version supports only source-grounded
+question answering and, for a report run, the fixed report skeleton described in [report.md](references/report.md).
+In those tasks, literature synthesis across idea chains, candidate research-question development,
+claim-specific kill-search, and experiment design or execution are **not available**; claim-specific
+kill-search runs only through the three candidate tasks above. If the question asks for them outside a report's VI and VII sections, answer what the supplied
 sources support, set `capability_notice` to say which requested part is not supported here, and do not
 simulate the unsupported workflow. That includes proposing research gaps, directions or candidate questions
 in a `grounded_answer`: do not offer them as claims, not even as `analyst_inference`; name them in

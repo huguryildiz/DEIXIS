@@ -19,7 +19,7 @@ Model boundary
 - Each model step gets a stored `StepInput` (records, allowlisted IDs, `step_input_id`, `scope_revision`, `skill_package_hash`) and a strict JSON output schema. Everything sent is stored before the call.
 - The model has no tools. A tool item in the output fails the step with `model_isolation_violation`.
 - Output from a model other than the requested one is recorded and never used (`model_mismatch`). No other model or connection is tried in its place.
-- Schema repair is bounded: one repair call (`MAX_SCHEMA_REPAIRS = 1`), none for `vocabulary_labels` and `abstract_screening`. If repair fails, the answer is stored as an unverified draft and is not shown as a cited answer.
+- Schema repair is bounded: one repair call (`MAX_SCHEMA_REPAIRS = 1`), none for `vocabulary_labels` and `abstract_screening`. The answer step has one exception: when only the several-sources rule for a `source_stated` claim (and anchor defects code may salvage) still fails after that repair, it makes one more call, `grounded_answer_resplit` (old D249). If repair fails, the answer is stored as an unverified draft and is not shown as a cited answer.
 - Answer and review steps see short citation handles instead of record IDs (old D12). Code resolves them back to record IDs before validation.
 - Editing a runtime file of `methods/deixis-research/` changes `skill_package_hash`. The app refuses to start when the package fails its integrity check.
 
@@ -39,25 +39,25 @@ Fast-path policy (`fast_path.py`, `fast_path_v1`)
 - Stage time is active wall time that survives pauses and restarts. Unused time carries to the next stage, overrun is recorded as debt, and each stage keeps at least 25% of its base.
 - Search, ranking, read and answer have soft deadlines. Submitted model calls drain; a read-stage call still out 5 s after the deadline is cut (`model_read_cutoff`).
 - Plan:
-  - code takes search words from the question, and three optional `vocabulary_labels` calls sort them into blocks;
+  - code takes search words from the question, three optional `vocabulary_labels` calls sort them into blocks, and OpenAlex count requests check the terms;
   - a `search_query` model call writes the query blocks (`DEIXIS_SEARCH_QUERY=model` by default); if it fails, the run stops with `search_query_failed`;
-  - one OpenAlex request routes the sources;
+  - at most one OpenAlex request routes the sources (none when no domain source needs it);
   - three optional `criterion_proposal` calls vote the inclusion criterion;
   - the approval is recorded as `unattended`, and nobody is asked.
-- The protocol, with its search plan, freezes before the first provider request.
+- The protocol, with its search plan, freezes after these planning requests and before the first request that fetches search results.
 - An empty vocabulary (`vocabulary_empty`) or a too-broad one (`vocabulary_too_broad`) ends the run with that message. There is no approval card; the user rewrites the question, which makes a new scope revision.
 - Search: one OpenAlex semantic page (up to 50 records) and OpenAlex keyword pages of 100, read page by page across queries under the keyword cap. Detailed also sends one Semantic Scholar bulk query. No other provider is searched and there is no second search round.
 - Chain: one round, OpenAlex only (backward references and the first cited-by page per seed), overlapping the search and cut off before the ranking deadline.
 - Ranking embeds the pool and freezes the list.
-- Read: Semantic Scholar and Crossref look up the top N, and each batch of abstracts is screened by two model calls. At most K works get full text; a slot whose work found no text passes to the next work in list order.
-- PDF retrieval uses 12 slots. Works still waiting at the read cutoff go to a background fetch queue that runs at most 4 at a time.
+- Read: Semantic Scholar and Crossref look up missing abstracts for the top N; when Scopus is in scope, configured, reachable from this network and the lookup budget allows, it completes the abstracts still missing. Each batch of abstracts is screened by two model calls. At most K works get full text; a slot whose work found no text passes to the next work in list order.
+- PDF retrieval uses 12 shared slots. At the read cutoff, fetches already running are handed to the background lane and go on; queued works start from the background queue only while fewer than 4 background fetches run.
 - When discovery completes, one answer run starts on its own. It answers from the evidence the read stage owned at its cutoff, then queues a separate `answer_review` run.
 - Late full text can produce one new answer revision (`max_revisions: 1`). The first answer stays as it was.
 - An answer over attached PDFs only (no completed discovery) uses the inspection route: PDF fetch, lexical and semantic passage ranking, then `grounded_answer`.
 
 Providers
 - All connectors in `providers/registry.py` stay: OpenAlex, Semantic Scholar, Crossref (lookup only), arXiv, bioRxiv (through OpenAlex), PubMed, IEEE Xplore, Scopus, CORE, SerpApi (supplementary), plus the Zotero collection import. Keys come from the untracked `.env` or the system keychain.
-- The research search uses only OpenAlex and Semantic Scholar, and abstract lookups use Semantic Scholar and Crossref. The other connectors stay registered and configurable.
+- The research search uses only OpenAlex and Semantic Scholar. Abstract lookups use Semantic Scholar and Crossref, then Scopus under the conditions above. The other connectors stay registered and configurable.
 
 Storage
 - One SQLite connection is shared by the API and the worker on the event-loop thread. Writes are short synchronous transactions with no `await` inside, and a UI-visible event is written in the same transaction as the state it describes.
@@ -68,7 +68,7 @@ One-time reset (old D261)
 - The 77 old migrations were squashed once into the baseline, and the code that kept earlier libraries working was removed. A library written before the reset is refused at startup, and its app data folder is to be deleted. This reset is not repeated.
 
 Limits:
-- This entry restates decisions made, reviewed and tested under their old numbers. It adds no behavior; the commit that wrote it only removed two method files no step loaded.
+- This entry restates decisions made, reviewed and tested under their old numbers and adds no behavior. The commit that wrote it also removed two method files no step loaded and corrected method and project docs to match the code.
 - The tests run on synthetic records and a scripted model. They show workflow behavior, not answer quality or live latency. Live measurements are in STATUS.md and the old log.
 - The anchor locator accepts a near match at a provisional 0.9 ratio over one contiguous region.
 - Stage deadlines are soft, so a run can exceed its target time.

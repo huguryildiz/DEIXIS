@@ -175,7 +175,7 @@
    "derived_from": [],
    "date": "2026-10-10",
    "decision": "D1",
-   "change": "Clean start (slice 6): removed references/term-suggestions.md and references/term-advice.md and their SKILL.md sections, because no step runs term_suggestions or term_advice since the interactive term approval was deleted; their earlier provenance entries are in Git history. references/search-query.md now says the query is frozen in the search protocol without a person editing it, and references/evidence-table.md says the automatic study table adds suggested columns without review. No real-model measurement."
+   "change": "Clean start (slice 6): removed references/term-suggestions.md and references/term-advice.md and their SKILL.md sections, because no step runs term_suggestions or term_advice since the interactive term approval was deleted; their earlier provenance entries are in Git history. references/search-query.md now says the query is frozen in the search protocol without a person editing it, and references/evidence-table.md says the automatic study table adds suggested columns without review. The SKILL.md availability paragraph is now scoped to grounded_answer, answer_review and the report tasks, and says claim-specific kill-search runs only through the three candidate tasks. No real-model measurement."
   }
  ],
  "phrasebank": {

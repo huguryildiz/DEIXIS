@@ -152,8 +152,10 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 if not work:
                     continue
                 has_text = any(v["has_text"] for v in work["versions"])
-                if (fetch_allowed and not has_text and wid not in fetches
-                        and (wid not in claims or claims[wid]["status"] not in ("succeeded", "failed"))):
+                # A claim a stop or crash left open after its text was published is settled too, or its work would
+                # never get its code (the attempt finds the stored text and downloads nothing).
+                unsettled = wid in claims and claims[wid]["status"] not in ("succeeded", "failed")
+                if fetch_allowed and wid not in fetches and (unsettled or (not has_text and wid not in claims)):
                     # Claims are bounded by K, independently of task completion order; with slot refill, by the N
                     # screened works in list order.
                     if wid not in claims:
@@ -249,6 +251,11 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             kind, why, detail = held.stop
             del flow._held[run_id]
             (flow._fail if kind == "fail" else flow._pause)(run_id, why, detail)
+        # An unexpected error in one arm halts the others, whose checkpoint then reads as a stop: the error, not
+        # that stop, ends the run, so the worker records it as a failure instead of leaving the run `running`.
+        failure = next((r for r in [error, *results] if isinstance(r, Exception) and not isinstance(r, RunStopped)), None)
+        if failure is not None:
+            raise failure
         if isinstance(error, RunStopped) or any(isinstance(result, RunStopped) for result in results):
             flow._held.pop(run_id, None)
             flow._checkpoint(run_id, run["scope_revision"])

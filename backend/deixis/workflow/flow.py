@@ -2285,21 +2285,32 @@ class ResearchFlow:
         step = self.store.step(run["id"], f"fetch:{source['id']}", "fetch_pdf")
         if step["status"] in ("succeeded", "failed"):
             return
-        self.store.start_step(step["id"])
-        self.store.add_usage(run["id"], "downloads")
-        result = await self.deps.fetch_pdf(source["oa_pdf_url"])
-        if result.status != "ok":
-            self.store.finish_step(step["id"], "failed", error_code=f"fetch_{result.status}",
-                                   error={"http_status": result.http_status, "error": result.error, "url": source["oa_pdf_url"]})
-            return
-        sha = hashlib.sha256(result.data).hexdigest()
         papers = self.deps.settings.papers_dir
+        # A stop before publication kept the downloaded file (below): a resumed run reads it rather than asking the
+        # link again, while the stored file is still whole.
+        kept = (step["output"] or {}).get("kept_download") if step["status"] == "cancelled" else None
+        data = None
+        if kept:
+            from deixis.documents import pdf_files
+            kept_path = papers / f"{kept['sha256']}.pdf"
+            if await text_retry.drained_thread(pdf_files.file_is_whole, kept_path, kept["sha256"], kept["byte_size"]):
+                data, final_url = await text_retry.drained_thread(kept_path.read_bytes), kept["final_url"]
+        self.store.start_step(step["id"])
+        if data is None:
+            self.store.add_usage(run["id"], "downloads")
+            result = await self.deps.fetch_pdf(source["oa_pdf_url"])
+            if result.status != "ok":
+                self.store.finish_step(step["id"], "failed", error_code=f"fetch_{result.status}",
+                                       error={"http_status": result.http_status, "error": result.error, "url": source["oa_pdf_url"]})
+                return
+            data, final_url = result.data, result.final_url
+        sha = hashlib.sha256(data).hexdigest()
         papers.mkdir(parents=True, exist_ok=True)
         try:
-            placement = await file_restore.store_pdf_file(self.store, papers, self.deps.settings.recovery_dir, result.data,
+            placement = await file_restore.store_pdf_file(self.store, papers, self.deps.settings.recovery_dir, data,
                                                           caller="run_fetch", research_id=run["research_id"])
             read = await text_retry.read_verified(self.store, papers, self.deps.settings.recovery_dir,
-                storage_path=placement.path.name, sha256=sha, byte_size=len(result.data), lock=True)
+                storage_path=placement.path.name, sha256=sha, byte_size=len(data), lock=True)
         except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
             refused = isinstance(exc, file_restore.FileRestoreRefused)
             self.store.finish_step(step["id"], "failed",
@@ -2310,9 +2321,16 @@ class ResearchFlow:
         extraction = read.extraction
         if fast_path.enforces(run["budget"], "read"):
             from deixis.workflow.background_fetch import before_publish
-            await before_publish(self, run, source["work_id"])
+            try:
+                await before_publish(self, run, source["work_id"])
+            except RunStopped:
+                # Stopped after the download: nothing is published and the step does not stay `running` under a
+                # stopped run. It keeps the stored file's identity, so the link that answered is not asked twice.
+                self.store.finish_step(step["id"], "cancelled", error_code="run_stopped", output={"kept_download": {
+                    "sha256": sha, "byte_size": len(data), "final_url": final_url}})
+                raise
         asset_id = self.store.add_asset_with_pages(
-            source["id"], sha, len(result.data), path.name, "download", result.final_url, None,
+            source["id"], sha, len(data), path.name, "download", final_url, None,
             extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
             input_observation=read.observation,
         )
@@ -2351,6 +2369,11 @@ class ResearchFlow:
                 **({"before_publish": lambda: self._fast_fetch_publish(run, source["work_id"])}
                    if fast_path.enforces(run["budget"], "read") else {}),
             )
+        except RunStopped:
+            # Stopped before publication: the step does not stay `running` under a stopped run; the lookup rows keep
+            # what answered, and a resumed run asks only what did not (D248).
+            self.store.finish_step(step["id"], "cancelled", error_code="run_stopped")
+            raise
         except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
             refused = isinstance(exc, file_restore.FileRestoreRefused)
             self.store.finish_step(step["id"], "failed",

@@ -145,13 +145,13 @@ def still(tmp_path, monkeypatch):
     """An app whose worker never runs, with an `sw` research built at its store and a flow to write through."""
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
 
-    def make(workflow="sw", reading="auto"):
-        app = create_app(Settings(data_dir=tmp_path / workflow / "data", port=8765,
+    def make(reading="auto"):
+        app = create_app(Settings(data_dir=tmp_path / "sw" / "data", port=8765,
                                   fulltext_adjudication=reading),
                          adapters={"fake": FakeAdapter(valid_response)}, start_worker=False,
                          extra_hosts=("testserver",), trusted_clients=("testclient",))
         client = client_of(app)
-        lib = Lib(app.state.store, workflow=workflow)
+        lib = Lib(app.state.store)
         made.append(client)
         return app, client, lib
 
@@ -192,7 +192,7 @@ def test_a_source_row_upload_in_sw_writes_the_same_code_request_and_run(still):
     assert run["status"] == "queued" and ":person:" in run["idempotency_key"]
 
 
-def test_a_source_row_upload_to_an_excluded_work_writes_nothing_and_a_legacy_upload_neither(still):
+def test_a_source_row_upload_to_an_excluded_work_writes_nothing(still):
     app, client, lib = still()
     store = app.state.store
     svid = candidate(lib)
@@ -201,11 +201,6 @@ def test_a_source_row_upload_to_an_excluded_work_writes_nothing_and_a_legacy_upl
     assert DecisionStore(store).current(lib.rid, svid, "fulltext") is None
     assert store.conn.execute("SELECT COUNT(*) FROM person_pdf_requests").fetchone()[0] == 0
     assert runs(store, lib.rid) == []
-    legacy_app, legacy_client, legacy = still(workflow="legacy")
-    other = legacy.work()
-    assert upload(legacy_client, legacy.rid, other).status_code == 201
-    assert DecisionStore(legacy_app.state.store).current(legacy.rid, other, "fulltext") is None
-    assert runs(legacy_app.state.store, legacy.rid) == []
 
 
 def test_a_queued_run_the_api_pauses_holds_the_reading_and_cancelling_it_opens_it(still):

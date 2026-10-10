@@ -15,23 +15,21 @@ import './followup.css'
 function EnableEntry({ id, kind, view, watchList, onEnable }: { id: string; kind: WatchKind; view: ResearchView; watchList: string; onEnable: () => void }) {
   const [state, setState] = useState<{ ready: boolean; reason: string; retry: boolean }>({ ready: false, reason: '', retry: false })
   const [attempt, setAttempt] = useState(0)
-  const readOnly = Boolean(view.research.read_only_reason)
   const noIncluded = kind === 'citing_works' && !view.sources.some(source => source.selection.state === 'included')
   useEffect(() => {
-    if (readOnly || noIncluded) return
+    if (noIncluded) return
     let live = true
     api.previewWatch(id, kind).then(() => { if (live) setState({ ready: true, reason: '', retry: false }) }, cause => {
       if (live) setState({ ready: false, reason: cause instanceof Error ? cause.message : String(cause),
-        retry: !(cause instanceof ApiError && ['no_protocol', 'legacy_research_read_only', 'no_included_sources'].includes(cause.code ?? cause.message)) })
+        retry: !(cause instanceof ApiError && ['no_protocol', 'no_included_sources'].includes(cause.code ?? cause.message)) })
     })
     return () => { live = false }
-  }, [id, kind, readOnly, noIncluded, view.research.current_scope_revision, watchList, attempt])
-  const reason = readOnly ? t('This research used an earlier search method. Start a new research to search again.')
-    : noIncluded ? t('Include a source before following citing works.') : state.reason
+  }, [id, kind, noIncluded, view.research.current_scope_revision, watchList, attempt])
+  const reason = noIncluded ? t('Include a source before following citing works.') : state.reason
   return <section className="followup-enable-entry" aria-label={t(kindLabels[kind])}>
     <p>{t(kindLabels[kind])}</p>
-    {reason ? <Notice tone={state.retry && !readOnly && !noIncluded ? 'error' : 'attention'}>{reason}
-      {state.retry && !readOnly && !noIncluded && <Button variant="outline" onClick={() => setAttempt(value => value + 1)}>{t('Retry')}</Button>}
+    {reason ? <Notice tone={state.retry && !noIncluded ? 'error' : 'attention'}>{reason}
+      {state.retry && !noIncluded && <Button variant="outline" onClick={() => setAttempt(value => value + 1)}>{t('Retry')}</Button>}
     </Notice> : state.ready ? <Button variant="outline" onClick={onEnable}>{t('Follow…')}</Button> : <p role="status">{t('Loading follow-up…')}</p>}
   </section>
 }

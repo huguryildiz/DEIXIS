@@ -1,68 +1,10 @@
-"""0068 keeps every old row/object/key and closes immutable read histories."""
+"""The watch run kind and tables, and their immutable read histories."""
 
-import json
-from pathlib import Path
-import shutil
 import sqlite3
 
 import pytest
 
-from deixis.storage import db
-from deixis.workflow.store import Store
 from tests.watch.watch_helpers import api, watch_offline, create, now_check, turn, rows
-
-
-def objects(conn):
-    return {(r["type"], r["name"]): (r["tbl_name"], r["sql"]) for r in conn.execute(
-        "SELECT * FROM sqlite_master WHERE type IN ('index','trigger')")}
-
-
-@pytest.mark.parametrize("populated", [False, True])
-def test_runs_rebuild_preserves_every_row_trigger_index_and_foreign_key(tmp_path, monkeypatch, populated):
-    real = db.MIGRATIONS_DIR
-    old = tmp_path / "migrations"; old.mkdir()
-    for path in real.glob("*.sql"):
-        if int(path.name[:4]) <= 67:
-            shutil.copy(path, old / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
-    fixture = None
-    if populated:
-        from tests.review.test_review_migration import dependencies
-        from tests.report.test_report_assembly import report_with_sections
-        from tests.report.test_report_edit_check import finish
-        fixture = report_with_sections.__wrapped__(tmp_path)
-        lib = next(fixture)
-        lib["rid"] = finish(lib); lib["conn"] = lib["store"].conn
-        conn = lib["conn"]
-        dependencies(lib)
-        # Populate the owner-review trigger and its run/snapshot dependency too.
-        from tests.review.review_helpers import stored_review
-        from deixis.workflow.review.snapshot import ReviewReader
-        from deixis.workflow.review.store import ReviewStore
-        lib["reader"] = ReviewReader(lib["store"], lib["reports"])
-        lib["reviews"] = ReviewStore(conn, lib["reader"])
-        stored_review(lib)
-    else:
-        conn = db.connect(tmp_path / "empty.sqlite"); db.migrate(conn)
-    try:
-        before = rows(conn); before.pop("schema_migrations")
-        schema = objects(conn)
-        keys = {t: [tuple(r) for r in conn.execute(f'PRAGMA foreign_key_list("{t}")')] for t in before}
-        original_runs = conn.execute("SELECT sql FROM sqlite_master WHERE name='runs'").fetchone()[0]
-        shutil.copy(real / "0068_watches.sql", old / "0068_watches.sql")
-        assert db.migrate(conn) == [68]
-        assert {t: rows(conn)[t] for t in before} == before
-        assert {k: objects(conn)[k] for k in schema} == schema
-        assert {t: [tuple(r) for r in conn.execute(f'PRAGMA foreign_key_list("{t}")')] for t in before} == keys
-        changed_runs = conn.execute("SELECT sql FROM sqlite_master WHERE name='runs'").fetchone()[0]
-        assert "'watch_check'" not in original_runs and "'watch_check'" in changed_runs
-        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-    finally:
-        if fixture:
-            with pytest.raises(StopIteration): next(fixture)
-        else:
-            conn.close()
 
 
 def test_watch_run_kind_stage_and_eight_tables(api):

@@ -10,7 +10,7 @@ import { nextPort, readingDone } from './ports'
 // event stream.
 //
 // Its own fixture server, with retrieval and reading switched on (DEIXIS_FIXTURE_QUEUE) and four SYNTHETIC works the
-// scripted reading model answers so that each gives one row kind. A second server holds a stored legacy research.
+// scripted reading model answers so that each gives one row kind.
 // A passing case shows application behavior, not whether a person reads a paper well.
 
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -94,13 +94,12 @@ test.describe.serial('J: the human queue of an sw research', () => {
   // DEIXIS_FIXTURE_AUDIT adds one work both reading runs include (slice 20): it is no queue row, and the audit sample's
   // group of agreeing includes shows it.
   const server = new QueueServer(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
-  const legacy = new QueueServer(nextPort(), { DEIXIS_FIXTURE_STORED_LEGACY: 'on' })
   let api: Api
   let rid = ''
   let page: Page
 
   test.beforeAll(async ({ browser }) => {
-    await Promise.all([server.start(), legacy.start()])
+    await server.start()
     api = await apiOf(server)
     rid = await createResearch(api, QUESTION)
     expect((await post(api, `/api/researches/${rid}/runs`, { kind: 'discovery' })).ok()).toBe(true)
@@ -114,17 +113,9 @@ test.describe.serial('J: the human queue of an sw research', () => {
     for (const kind of Object.keys(TITLES)) if (!kinds.has(kind)) throw new Error(`fixture failure: no ${kind} row in the queue (${[...kinds].join(', ')})`)
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   })
-  test.afterAll(async () => { await page?.close(); await api?.context.dispose(); await Promise.all([server.stop(), legacy.stop()]) })
+  test.afterAll(async () => { await page?.close(); await api?.context.dispose(); await server.stop() })
 
-  test('the tab and its count are in an sw research and not in a legacy one', async () => {
-    const other = await apiOf(legacy)
-    const stored = await (await other.context.get('/api/researches')).json() as { id: string }[]
-    const legacyId = stored[0].id
-    expect((await (await other.context.get(`/api/researches/${legacyId}`)).json()).scope.search_workflow).toBe('legacy')
-    await other.context.dispose()
-    await page.goto(`${legacy.url()}/#/research/${legacyId}`)
-    await expect(page.getByRole('tab', { name: /^Sources/ })).toBeVisible()
-    await expect(page.getByRole('tab', { name: /Awaiting your decision/ })).toHaveCount(0)
+  test('the tab and its count are in the research', async () => {
     await page.goto(`${server.url()}/#/research/${rid}`)
     await expect(page.getByRole('tab', { name: 'Awaiting your decision 4' })).toBeVisible()
     // The reading run's turn names the rows once and opens the tab.

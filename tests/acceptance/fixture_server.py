@@ -81,7 +81,6 @@ from deixis.documents import fetch as fetch_module  # noqa: E402
 from deixis.documents.fetch import FetchResult  # noqa: E402
 from deixis.models.adapter import ModelStepResult  # noqa: E402
 from deixis.storage import db  # noqa: E402
-from deixis.storage.db import now  # noqa: E402
 from deixis.workflow.store import Store  # noqa: E402
 from fakes import parse_step_input, valid_response  # noqa: E402
 from keyring.backend import KeyringBackend  # noqa: E402
@@ -765,27 +764,6 @@ def fake_arxiv_source() -> None:
     fetch_module.fetch_file = fake_fetch_file
 
 
-def seed_stored_legacy(data_dir: Path) -> None:
-    """A completed historical run for browser read-only checks; no legacy discovery is executed."""
-    conn = db.connect(data_dir / "library.sqlite")
-    db.migrate(conn)
-    store = Store(conn)
-    rid = store.create_research("SYNTHETIC stored legacy research", "attached_and_academic", "quick", ["openalex"],
-                                "codex", MODEL, "en", search_workflow="legacy")
-    source = store.create_upload_source("SYNTHETIC historical source")
-    store.add_to_corpus(rid, source, "user_upload", selection_state="included", selection_origin="user")
-    run_id = "run_stored_legacy_fixture"
-    conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
-                 " VALUES (?, ?, 1, 'discovery', 'completed', 'discovery', '{}', ?, ?)", (run_id, rid, now(), now()))
-    plan = store.step(run_id, "search_plan", "model:search_plan")
-    store.finish_step(plan["id"], "succeeded", output={"output_type": "SearchPlan", "result": {
-        "question_interpretation": "SYNTHETIC stored search interpretation", "search_rationale": "SYNTHETIC stored rationale",
-        "scope_boundaries": [], "concepts": [{"label": "SYNTHETIC stored concept", "role": "core", "synonyms": []}]}})
-    screening = store.step(run_id, "screening", "model:screening")
-    store.finish_step(screening["id"], "succeeded", output={"result": {"notes": "SYNTHETIC stored screening note"}})
-    conn.close()
-
-
 def seed_reextract(data_dir: Path, *, write_pdfs_dir: Path | None = None) -> None:
     """R4's legacy reads and damaged files; no model, provider or live library."""
     import hashlib
@@ -895,8 +873,6 @@ def main() -> None:
                         fulltext_fetch="auto" if QUEUE_MODE else "off",
                         fulltext_adjudication="auto" if QUEUE_MODE else "off",
                         arxiv_source="auto" if ARXIV_SOURCE_MODE else "off")
-    if os.environ.get("DEIXIS_FIXTURE_STORED_LEGACY") == "on":
-        seed_stored_legacy(args.data_dir)
     if os.environ.get("DEIXIS_FIXTURE_STORED_SW") == "on":
         from stored_inspection import seed
         conn = db.connect(args.data_dir / "library.sqlite")

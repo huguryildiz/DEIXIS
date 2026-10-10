@@ -28,9 +28,9 @@ class MemoryKeyring(KeyringBackend):
 
 @pytest.fixture(scope="session", autouse=True)
 def migrated_template(tmp_path_factory):
-    """Running all 71 migrations costs about 0.1 s per new library and was close to half of the suite's time. Each
-    worker migrates one template library once; an empty library migrated from the real migrations folder is then a
-    page copy of it (sqlite backup). A test that points MIGRATIONS_DIR elsewhere, or a library that already has
+    """Migrating every new library (today one baseline file, 0001_baseline.sql, with the whole schema) was close to half
+    of the suite's time when the chain had 71 files. Each worker migrates one template library once; an empty library
+    migrated from the real migrations folder is then a page copy of it (sqlite backup). A test that points MIGRATIONS_DIR elsewhere, or a library that already has
     tables, goes through the real migrate."""
     from deixis.storage import db
 

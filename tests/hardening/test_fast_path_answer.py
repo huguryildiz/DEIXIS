@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import shutil
 from types import SimpleNamespace
 
 import httpx
@@ -13,9 +12,7 @@ from deixis.config import Settings
 from deixis.domain import canonical, skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.storage.db import transaction
-from deixis.storage import db
 from deixis.workflow import fast_answer, fast_path, small_batch, views, report_pipeline
-from deixis.workflow.store import Store
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
 from fakes import FakeAdapter, valid_response
@@ -301,32 +298,6 @@ def test_d249_repairs_keep_cutoff_input_and_overrun(tmp_path):
     assert json.loads(answer["validation_json"])["extra_repair"]["outcome"] == "published"
     stage = lib.store.conn.execute("SELECT used_ms, alloc_ms FROM fast_path_stages WHERE stage = 'answer'").fetchone()
     assert stage["used_ms"] == 240000 > stage["alloc_ms"]
-
-
-@pytest.mark.parametrize("populated", [False, True])
-def test_migration_0076_preserves_existing_runs_and_foreign_keys(tmp_path, monkeypatch, populated):
-    original = db.MIGRATIONS_DIR
-    copies = tmp_path / "migrations"
-    copies.mkdir()
-    for path in original.glob("*.sql"):
-        if not path.name.startswith("0076"):
-            shutil.copyfile(path, copies / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", copies)
-    conn = db.connect(tmp_path / "existing.sqlite")
-    try:
-        db.migrate(conn)
-        store = Store(conn)
-        if populated:
-            rid = store.create_research("SYNTHETIC preserved", "academic", "quick", [], "fake", "fake-model", None)
-            store.create_run(rid, "discovery", {}, None)
-        before = [tuple(row) for row in conn.execute("SELECT * FROM runs")]
-        shutil.copyfile(original / "0076_fast_path_answer_review.sql", copies / "0076_fast_path_answer_review.sql")
-        assert db.migrate(conn) == [76]
-        assert before == [tuple(row) for row in conn.execute("SELECT * FROM runs")]
-        assert not conn.execute("PRAGMA foreign_key_check").fetchall()
-        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
-    finally:
-        conn.close()
 
 
 def test_human_decision_after_cutoff_is_applied_before_input_freeze(tmp_path):

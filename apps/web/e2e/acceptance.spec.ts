@@ -58,32 +58,6 @@ const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT
 const row = (page: Page, title: string, other = false) =>
   page.locator(other ? '.source-row.is-other-version' : '.source-row:not(.is-other-version)', { has: page.getByText(title, { exact: true }) })
 
-test('stored legacy research opens with its plan and notes, and discovery controls stay closed', async ({ browser }) => {
-  const server = new FixtureServer(nextPort(), { DEIXIS_FIXTURE_STORED_LEGACY: 'on' })
-  await server.start()
-  const page = await browser.newPage()
-  try {
-    const listing = await (await page.request.get(`${server.url()}api/researches`)).json()
-    const rid = listing[0].id
-    const stored = await (await page.request.get(`${server.url()}api/researches/${rid}`)).json()
-    expect(stored.research.read_only_reason).toBe('legacy_research_read_only')
-    expect(stored.runs[0].plan.question_interpretation).toBe('SYNTHETIC stored search interpretation')
-    expect(stored.runs[0].screening_notes[0].text).toBe('SYNTHETIC stored screening note')
-    await page.goto(server.url(`#/research/${rid}`))
-    await expect(page.getByText('This research used an earlier search method. Start a new research to search again.')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Search again' })).toHaveCount(0)
-    await expect(page.locator('.research-seed')).toHaveCount(0)
-    await expect(page.getByText('Revise the question')).toHaveCount(0)
-    await expect(page.getByRole('tab', { name: /Awaiting your decision/ })).toHaveCount(0)
-    await page.locator('.chat-step-title', { hasText: 'Planned the searches' }).click()
-    await expect(page.getByText('SYNTHETIC stored search interpretation')).toBeVisible()
-    await page.locator('.chat-step-title', { hasText: 'Screened the candidates' }).click()
-    await expect(page.getByText('SYNTHETIC stored screening note')).toBeVisible()
-    await page.setViewportSize({ width: 390, height: 844 })
-    await expect(page.getByText('This research used an earlier search method. Start a new research to search again.')).toBeVisible()
-  } finally { await page.close(); await server.stop() }
-})
-
 test('stored old sw inspection keeps answer, evidence, transcript and waiting without executing a run', async ({ browser }) => {
   const server = new FixtureServer(nextPort(), { DEIXIS_FIXTURE_STORED_SW: 'on' })
   await server.start()

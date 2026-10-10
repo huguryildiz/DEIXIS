@@ -22,29 +22,6 @@ from tests.reextract.test_reextract_r2a_store import reserve, record
 from tests.reextract.test_reextract_r2b_store import CommitFailure
 
 
-def test_r7_pre_recovery_schema_uses_no_table_or_lock_new_contract(tmp_path, monkeypatch):
-    from deixis.workflow import reconcile
-    from deixis.workflow.store import Store
-    conn = db.connect(tmp_path / "historical.sqlite")
-    try:
-        conn.execute("CREATE TABLE asset_extractions (id TEXT PRIMARY KEY)")
-        store = Store(conn)
-        calls = []
-        conn.set_trace_callback(calls.append)
-        forbid_calls(monkeypatch)
-        def forbidden(*args):
-            raise AssertionError("A pre-recovery schema attempted a file lock")
-        monkeypatch.setattr(text_retry, "file_lock", forbidden)
-        for call in (reconcile.reconcile_hash, reconcile.reconcile_try_hash):
-            assert asyncio.run(call(store, tmp_path / "papers", tmp_path / "recovery", "a" * 64)) == {
-                "text_retries": 0, "file_restores": 0, "live": 0}
-        assert asyncio.run(reconcile.reconcile_stale(store, tmp_path / "papers", tmp_path / "recovery")) == {
-            "text_retries": 0, "file_restores": 0, "live": 0}
-        assert calls == [] and not (tmp_path / "recovery").exists()
-    finally:
-        conn.close()
-
-
 @pytest.mark.parametrize("entry", ["missing", "symlink", "fifo", "present", "torn"])
 def test_r6_no_body_checks_same_profile_file_red_on_old_and_guards(tmp_path, entry):
     with api_library(tmp_path) as lib:

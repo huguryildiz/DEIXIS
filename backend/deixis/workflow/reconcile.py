@@ -19,8 +19,6 @@ async def reconcile_hash(store, papers_dir, recovery_dir, sha256) -> dict:
     """The caller holds this hash's lock, including while observations are drained."""
     store.flush_text_retry_interruptions()
     result = _counts()
-    if not store._extraction_has_recovery_metadata:
-        return result
     rows = store.conn.execute(
         "SELECT * FROM asset_recovery_operations WHERE expected_sha256 = ? AND lifecycle = 'running'",
         (sha256,)).fetchall()
@@ -54,8 +52,6 @@ async def reconcile_hash(store, papers_dir, recovery_dir, sha256) -> dict:
 async def reconcile_try_hash(store, papers_dir, recovery_dir, sha256) -> dict:
     store.flush_text_retry_interruptions()
     result = _counts()
-    if not store._extraction_has_recovery_metadata:
-        return result
     if not store.conn.execute(
             "SELECT 1 FROM asset_recovery_operations WHERE expected_sha256 = ? AND lifecycle = 'running'",
             (sha256,)).fetchone():
@@ -86,8 +82,6 @@ async def reconcile_try_hash(store, papers_dir, recovery_dir, sha256) -> dict:
 async def reconcile_stale(store, papers_dir, recovery_dir) -> dict:
     store.flush_text_retry_interruptions()
     result = _counts()
-    if not store._extraction_has_recovery_metadata:
-        return result
     hashes = [row[0] for row in store.conn.execute(
         "SELECT DISTINCT expected_sha256 FROM asset_recovery_operations WHERE lifecycle = 'running'")]
     for sha256 in hashes:

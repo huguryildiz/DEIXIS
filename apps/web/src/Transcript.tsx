@@ -266,7 +266,6 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const retrying = run.kind === 'discovery' && !active && (run.status === 'completed' || run.status === 'paused')
     && steps.some(s => s.kind.startsWith('provider_search') && troubled(s))
   const runningSearch = groups[order.indexOf('search')]?.find(s => s.status === 'running')
-  const plan = run.plan
   // The screening the run itself proposed on, and the sources the answer run reads.
   const screened = view.sources.filter(s => s.found_in_revision === run.scope_revision)
   const included = view.sources.filter(s => s.selection.state === 'included')
@@ -278,7 +277,6 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const ocrSource = run.kind === 'pdf_ocr' ? view.sources.find(s => s.source_version_id === run.target?.source_version_id) : undefined
   const ocrAsset = ocrSource?.access.assets.find(a => a.id === run.target?.asset_id)
   const ocrPages = steps.find(s => s.kind === 'ocr_pages')?.output?.image_pages
-  const rationaleOf = (provider: string, query: string) => plan?.queries.find(q => q.provider_id === provider && q.query_text === query)?.rationale ?? ''
 
   // With the fetch beside it, screening is over only once its final retrieval plan is written; both phases can run at once.
   const fetchPlanned = steps.some(s => s.kind === 'code:fulltext_plan' && s.status === 'succeeded')
@@ -361,11 +359,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
     if (state === 'waiting') return t('Waiting')
     if (state === 'skipped') return t(key === 'pdf' && run.status === 'completed' ? (attachedOnly ? 'No attached PDF to read' : 'No open-access PDF to download') : key === 'semantic' && run.status === 'completed' ? 'Not used' : run.status === 'completed' ? 'Not needed' : 'Not run')
     switch (key) {
-      case 'plan': {
-        if (state !== 'done' || !plan) return attemptText
-        const synonyms = plan.concepts.reduce((sum, c) => sum + c.synonyms.length, 0)
-        return [plural(plan.concepts.length, '{n} concept', '{n} concepts'), plural(synonyms, '{n} synonym', '{n} synonyms')].join(' · ')
-      }
+      case 'plan':
+        return attemptText
       case 'search': {
         if (!searches.length) return ''
         // The line keeps the totals only; the per-provider figures are in the phase details, on the query rows.
@@ -517,14 +512,6 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         if (!totals && !perSource && !chained && !arms && !notFound) return null
         return <>{totals}{perSource}{chained}{arms}{notFound}</>
       }
-      case 'plan': {
-        if (!plan) return null
-        return <>
-          <p className="chat-phase-summary">{plan.question_interpretation}</p>
-          <p>{plan.search_rationale}</p>
-          {plan.scope_boundaries.length > 0 && <p className="chat-scope-note"><span>{t('Scope limits')}</span>{plan.scope_boundaries.join(' · ')}</p>}
-        </>
-      }
       case 'screen': {
         const basis = tally(present(screened.map(s => s.selection.proposal_basis)))
         const changed = screened.filter(s => s.selection.origin === 'user' && s.selection.proposal !== null).length
@@ -667,9 +654,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         const seconds = phaseSeconds(group, state)
         const text = detail(key, state, group)
         const hasQueries = key === 'search' && (searches.length > 0 || Boolean(runningSearch && active))
-        const hasConcepts = key === 'plan' && state === 'done' && Boolean(plan?.concepts.length)
         const note = report(key, state, group)
-        const hasDetails = hasQueries || hasConcepts || Boolean(note)
+        const hasDetails = hasQueries || Boolean(note)
         // Closed by default; a search in progress shows its queries so the live row can be read.
         const detailsOpen = openPhases[key] ?? (run.kind === 'review' || hasQueries && state === 'running')
         // A search that did not complete belongs to the search line itself, in the attention colour, not to a paragraph after the run (D18).
@@ -698,12 +684,6 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
             <small>{t('stage {n} of {total}', { n: i + 1, total: order.length })}</small>
           </div>}
           {note && detailsOpen && <div className="chat-step-note">{note}</div>}
-          {hasConcepts && detailsOpen && <ul className="chat-list">
-            {plan?.concepts.map(c => <li key={c.label}>
-              <span className="chat-list-text"><b>{c.label}</b>{c.synonyms.length ? ` · ${c.synonyms.join(', ')}` : ''}</span>
-              <small>{t(c.role.replace('_', ' '))}</small>
-            </li>)}
-          </ul>}
           {hasQueries && detailsOpen && <ul className="chat-list">
             {/* A query read page by page has one search row per page; the list shows it once, with its pages summed. */}
             {/* When the term expansion searched too, a heading in plain words marks where each round's queries begin. */}
@@ -723,9 +703,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
               const count = pages.reduce((sum, p) => sum + p.result_count, 0)
               const total = pages.find(p => p.provider_total !== null)?.provider_total ?? null
               const retryCount = pages.reduce((sum, page) => sum + (page.error?.retries ?? 0), 0)
-              const why = rationaleOf(s.provider, s.query_text)
               return <Fragment key={s.id}>{heading}<li className={failed ? 'is-attention' : undefined}>
-                <span className="chat-list-text"><code>{s.query_text}</code>{why && <small>{why}</small>}</span>
+                <span className="chat-list-text"><code>{s.query_text}</code></span>
                 <span className="chat-list-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · <b>{failed && count === 0 ? t(failed.status.replace('_', ' ')) : total === null ? plural(count, '{n} result taken', '{n} results taken') : t('{count} of {total} results taken', { count, total: compact(total) })}</b>{pages.length > 1 && <> · {plural(pages.length, '{n} page', '{n} pages')}</>}{failed && count > 0 && <> · {t(failed.status.replace('_', ' '))}</>}{retryCount > 0 && <> · {providerRetryText(retryCount)}</>}</span>
               </li></Fragment>
             })}

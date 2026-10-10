@@ -46,7 +46,7 @@ def page(*records, cursor=None):
 
 
 @contextmanager
-def watch_api(tmp_path, *, queries=None, handler=None, legacy=False, headers=None, start_worker=False):
+def watch_api(tmp_path, *, queries=None, handler=None, headers=None, start_worker=False):
     sent = []
     state = SimpleNamespace(payload=page(work()), status=200, handler=handler)
     async def serve(request):
@@ -68,10 +68,9 @@ def watch_api(tmp_path, *, queries=None, handler=None, legacy=False, headers=Non
         session(client)
         store = app.state.store
         rid = store.create_research("SYNTHETIC follow-up question", "academic", "standard", ["openalex"], "fake",
-                                    "fake-model", "en", search_workflow="legacy" if legacy else "sw")
+                                    "fake-model", "en")
         queries = queries if queries is not None else [{"provider_id": "openalex", "query_text": "SYNTHETIC query"}]
-        if not legacy:
-            store.freeze_protocol(rid, 1, {"compiled_queries": queries})
+        store.freeze_protocol(rid, 1, {"compiled_queries": queries})
         yield SimpleNamespace(client=client, app=app, store=store, conn=store.conn, rid=rid, sent=sent, state=state,
             watches=WatchStore(store), settings=settings, url=f"/api/researches/{rid}/watches")
 

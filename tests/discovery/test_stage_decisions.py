@@ -33,12 +33,10 @@ def record(record_id, title="SYNTHETIC release scheduling for diffusion channels
     )
 
 
-def research(store, search_workflow="sw"):
+def research(store):
     rid = store.create_research("SYNTHETIC question?", "academic", "standard", ["openalex", "arxiv"], "fake", "m", "en")
     run = store.create_run(rid, "discovery", {"max_model_calls": 4, "max_provider_requests": 4, "max_candidates": 50,
                                               "max_answer_passages": 8}, None)
-    if search_workflow == "legacy":
-        store.conn.execute("UPDATE scope_revisions SET search_workflow = 'legacy' WHERE research_id = ?", (rid,))
     return rid, run["id"]
 
 
@@ -214,14 +212,6 @@ def test_a_replayed_step_proposes_and_ranks_without_adding_rows(store):
 
 
 # ---- from decisions to a selection ------------------------------------------------------------
-def test_a_legacy_research_derives_no_selection(store):
-    rid, run_id = research(store, search_workflow="legacy")
-    svid, work_id = one_record(store, rid, run_id)
-    decisions = DecisionStore(store)
-    decisions.record(rid, svid, "all_parts_verified")
-    assert decisions.derive_selection(rid, work_id) is None
-    assert store.conn.execute("SELECT state, origin FROM selections WHERE source_version_id = ?",
-                              (svid,)).fetchone()["origin"] == "default"
 
 
 def test_a_verified_record_becomes_an_included_selection_the_history_explains(store):

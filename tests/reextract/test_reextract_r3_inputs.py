@@ -2,17 +2,14 @@
 
 import asyncio
 import hashlib
-import shutil
 import threading
 from dataclasses import replace
 
 import pytest
 
 from deixis.documents import acquisition, pdf
-from deixis.storage import db
-from deixis.workflow.store import Store
 from tests.helpers import make_pdf
-from tests.reextract.reextract_r2a_helpers import api_library, child_lock, head, store_library, url
+from tests.reextract.reextract_r2a_helpers import api_library, child_lock, head, url
 from tests.reextract.reextract_r2b_helpers import source
 from tests.reextract.test_reextract_r2b_writers import call_writer, configure
 from tests.reextract.reextract_r3_helpers import no_external_calls
@@ -129,47 +126,6 @@ def test_s6_busy_verified_initial_read_new_contract(tmp_path, monkeypatch, write
                     assert result.status_code == 409 and result.json()["code"] == "file_busy"
             assert input_row(lib) is None
         assert lib.path.read_bytes() == lib.data
-
-
-@pytest.mark.parametrize("legacy", ["nonhex", "pre0066"])
-def test_s6_legacy_reads_and_occurrence_nulls_new_contract(tmp_path, monkeypatch, legacy):
-    """Paired with S6 and S4's unchanged dependency oracle; private-read legacy branches."""
-    from deixis.workflow import text_retry
-    from deixis.workflow.views import passage_view
-    with store_library(tmp_path, "partial") as lib:
-        if legacy == "pre0066":
-            lib.conn.close()
-            # A separate historical synthetic library, not a downgrade of stored rows.
-            migrations = tmp_path / "migrations"
-            migrations.mkdir()
-            for path in db.MIGRATIONS_DIR.glob("*.sql"):
-                if int(path.name.split("_")[0]) <= 65:
-                    shutil.copyfile(path, migrations / path.name)
-            monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
-            conn = db.connect(tmp_path / "historical.sqlite")
-            db.migrate(conn)
-            lib.conn = conn
-            lib.store = Store(conn)
-        sha = "sha-synthetic" if legacy == "nonhex" else lib.sha
-        calls = []
-        extraction = pdf.Extraction("partial", 1, [pdf.PageText(1, None, "SYNTHETIC historical text")])
-        def parse(path):
-            calls.append(path)
-            return extraction
-        monkeypatch.setattr(pdf, "extract_pdf", parse)
-        read = asyncio.run(text_retry.read_verified(lib.store, lib.settings.papers_dir, lib.settings.recovery_dir,
-            storage_path=lib.path.name, sha256=sha, byte_size=len(lib.data), lock=True))
-        assert read.observation is None and calls == [lib.path]
-        if legacy == "pre0066":
-            rid = lib.store.create_research("SYNTHETIC historical", "attached", "quick", [], "fake", "fake", None)
-            svid = lib.store.create_upload_source("SYNTHETIC historical")
-            lib.store.add_to_corpus(rid, svid, "user_upload")
-            aid = lib.store.add_asset_with_pages(svid, sha, len(lib.data), lib.path.name, "user_upload", None, None,
-                read.extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page)
-            value = passage_view(lib.store, rid, lib.store.passages_for(svid)[0]["id"])["occurrence"]
-            assert value["extractor_profile"] is None and value["input"] is None and value["latest_file_restore"] is None
-            assert value["input_relation"] == "input_not_recorded" and not value["file_restored_after"]
-            conn.close()
 
 
 def test_s7_torn_upgrade_red_on_old(tmp_path, monkeypatch):

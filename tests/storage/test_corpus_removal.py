@@ -16,7 +16,6 @@ from deixis.workflow.views import library_view, passage_view, research_view
 from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
 from test_evidence_tables import PACKET_SIZE
-from test_source_versions import library_at
 from test_table_extraction import cell, execute, fill, library
 
 
@@ -97,24 +96,6 @@ def upload(client, rid, name, text):
     response = client.post(f"/api/researches/{rid}/uploads", files={"file": (name, make_pdf([text]), "application/pdf")})
     assert response.status_code == 201, response.text
     return next(s for s in response.json()["sources"] if s["access"]["assets"] and s["access"]["assets"][0]["original_filename"] == name)
-
-
-# ---- migration 29 ---------------------------------------------------------------------------
-def test_migration_on_a_library_written_at_28_keeps_memberships_and_guards_evidence_deletes(tmp_path, monkeypatch):
-    conn, store = library_at(tmp_path, monkeypatch, 28)
-    rid = store.create_research("SYNTHETIC question", "attached", "quick", [], "fake", "fake-model", None)
-    svids = [store.create_upload_source(f"SYNTHETIC source {n}") for n in range(3)]
-    with db.transaction(conn):  # rows as code at 28 wrote them
-        for svid in svids:
-            conn.execute("INSERT INTO corpus_memberships (research_id, source_version_id, added_by, created_at) VALUES (?, ?, 'user_upload', ?)",
-                         (rid, svid, db.now()))
-    assert 29 in db.migrate(conn)
-    rows = conn.execute("SELECT removed_at, removal_note FROM corpus_memberships WHERE research_id = ?", (rid,)).fetchall()
-    assert [tuple(r) for r in rows] == [(None, None)] * 3
-    assert conn.execute("SELECT COUNT(*) FROM table_purge_authorizations").fetchone()[0] == 0
-    triggers = dict(conn.execute("SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND name IN"
-                                 " ('column_revisions_no_delete', 'cell_revisions_no_delete', 'cell_evidence_links_no_delete')").fetchall())
-    assert len(triggers) == 3 and all("table_purge_authorizations" in sql and "research_purge_authorizations" in sql for sql in triggers.values())
 
 
 def test_a_table_purge_authorization_opens_the_delete_triggers_for_that_table_only(tmp_path):

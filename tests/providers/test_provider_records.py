@@ -1,4 +1,4 @@
-"""Cross-provider records (DOI merge, suspected duplicates, candidate ranks) and per-provider query rules."""
+"""Cross-provider records (DOI merge, preprint and published versions, candidate ranks) and per-provider query rules."""
 
 from dataclasses import replace
 
@@ -37,12 +37,9 @@ def search(store, rid, run_id, index, provider, records):
 
 
 def research(store):
-    # Rebuild a stored pre-removal scope after its run row exists; current discovery is sw-only.
     rid = store.create_research("SYNTHETIC question?", "academic", "standard", ["openalex", "ieee_xplore", "arxiv"], "fake", "m", "en")
     run = store.create_run(rid, "discovery", {"max_model_calls": 4, "max_provider_requests": 4, "max_candidates": 50,
                                                "max_answer_passages": 8}, None)
-    if any(row[1] == "search_workflow" for row in store.conn.execute("PRAGMA table_info(scope_revisions)")):
-        store.conn.execute("UPDATE scope_revisions SET search_workflow = 'legacy' WHERE research_id = ?", (rid,))
     return rid, run["id"]
 
 
@@ -78,7 +75,7 @@ def test_arxiv_doi_never_merges_and_a_preprint_naming_the_published_doi_joins_it
     unversioned = store.find_source_by_identifier("openalex", "W5")
     assert len({published, arxiv_source, unversioned}) == 3  # separate source versions, never merged
     assert store.source(published)["work_id"] == store.source(arxiv_source)["work_id"] == store.source(unversioned)["work_id"]
-    assert store.suspected_duplicates(rid) == {} and store.work_heads(rid) == {store.source(published)["work_id"]: published}
+    assert store.work_heads(rid) == {store.source(published)["work_id"]: published}
 
 
 def test_records_of_one_arxiv_preprint_are_versions_of_one_work_with_one_candidate(store):
@@ -89,17 +86,7 @@ def test_records_of_one_arxiv_preprint_are_versions_of_one_work_with_one_candida
     unversioned, arxiv_source = store.find_source_by_identifier("openalex", "W5"), store.find_source_by_identifier("arxiv", "2101.00001v1")
     assert unversioned != arxiv_source and store.source(unversioned)["work_id"] == store.source(arxiv_source)["work_id"]
     assert [c["source_version_id"] for c in store.candidates(rid)] == [unversioned]  # screened once, as the first found
-    assert store.is_active_member(rid, arxiv_source) and store.suspected_duplicates(rid) == {}
-
-
-def test_same_title_without_shared_doi_is_flagged_not_merged(store):
-    rid, run_id = research(store)
-    search(store, rid, run_id, 0, "openalex", [record("W1", title="SYNTHETIC Release Scheduling: for diffusion channels", doi=None)])
-    search(store, rid, run_id, 1, "serpapi", [record("r1", doi=None), record("r2", title="Short", doi=None)])
-    first, second = store.find_source_by_identifier("openalex", "W1"), store.find_source_by_identifier("serpapi", "r1")
-    assert first != second
-    assert store.suspected_duplicates(rid)[first] == [{"source_version_id": second, "basis": "same_title"}]
-    assert store.find_source_by_identifier("serpapi", "r2") not in store.suspected_duplicates(rid)
+    assert store.is_active_member(rid, arxiv_source)
 
 
 AUTHORS = ["Tu N. Nguyen", "Dung H. P. Nguyen", "Dang H. Pham", "Bing-Hong Liu"]
@@ -133,7 +120,7 @@ def test_a_published_record_heads_the_work_of_its_screened_preprint(store):
     search(store, rid, run_id, 1, "openalex", [published_record(authors=["T. N. Nguyen", "D. H. P. Nguyen", "D. H. Pham"])])
     published = store.find_source_by_identifier("openalex", "W9")
     wid = store.source(published)["work_id"]
-    assert store.source(preprint)["work_id"] == wid and store.suspected_duplicates(rid) == {}
+    assert store.source(preprint)["work_id"] == wid
     assert store.work_heads(rid) == {wid: published} and store.included_works(rid) == [published]
     head = store.conn.execute("SELECT state, origin, proposal FROM selections WHERE source_version_id = ?", (published,)).fetchone()
     assert tuple(head) == ("included", "model_proposal", "include")  # taken from the screened preprint, not screened again
@@ -150,42 +137,12 @@ def test_a_preprint_found_after_its_published_record_follows_it(store):
     assert set(store.work_heads(rid).values()) == {published} and store.included_works(rid) == []
 
 
-@pytest.mark.parametrize("other", [
-    published_record("W9", authors=["Alice Other", "Tu N. Nguyen"]),  # another first author
-    published_record("W9", authors=["Tu N. Nguyen", "Xu Li", "Yan Zhao", "Ken Ito"]),  # too few shared authors
-])
-def test_same_title_without_matching_authors_stays_a_suspected_duplicate(store, other):
-    rid, run_id = research(store)
-    search(store, rid, run_id, 0, "arxiv", [preprint_record()])
-    search(store, rid, run_id, 1, "openalex", [other])
-    preprint, published = store.find_source_by_identifier("arxiv", "2207.11821v1"), store.find_source_by_identifier("openalex", "W9")
-    assert store.source(preprint)["work_id"] != store.source(published)["work_id"]
-    assert store.suspected_duplicates(rid)[preprint] == [{"source_version_id": published, "basis": "same_title"}]
-
-
 def test_two_published_records_with_one_title_stay_separate_works(store):
     rid, run_id = research(store)
     search(store, rid, run_id, 0, "openalex", [published_record("W1", doi="10.1/conference")])
     search(store, rid, run_id, 1, "ieee_xplore", [published_record("123", doi="10.1/journal")])
     first, second = store.find_source_by_identifier("openalex", "W1"), store.find_source_by_identifier("ieee_xplore", "123")
-    assert store.source(first)["work_id"] != store.source(second)["work_id"] and store.suspected_duplicates(rid)[first]
-
-
-def test_flags_stored_before_d48_are_joined_at_startup(store, monkeypatch):
-    from deixis.workflow import store as store_module
-
-    rid, run_id = research(store)
-    monkeypatch.setattr(store_module, "same_publication", lambda *args: False)  # linking as before D48
-    search(store, rid, run_id, 0, "openalex", [published_record()])
-    search(store, rid, run_id, 1, "arxiv", [preprint_record()])
-    published, preprint = store.find_source_by_identifier("openalex", "W9"), store.find_source_by_identifier("arxiv", "2207.11821v1")
-    screen(store, rid, run_id, published)
-    screen(store, rid, run_id, preprint)
-    assert store.suspected_duplicates(rid)
-    monkeypatch.undo()
-    assert store.link_published_versions() == 1 and store.link_published_versions() == 0
-    assert store.source(preprint)["work_id"] == store.source(published)["work_id"] and store.suspected_duplicates(rid) == {}
-    assert store.included_works(rid) == [published]  # the preprint's own earlier selection no longer counts
+    assert store.source(first)["work_id"] != store.source(second)["work_id"]
 
 
 def test_answer_order_facts_count_providers_and_user_choices(store):
@@ -349,43 +306,3 @@ def test_well_formed_queries_for_every_provider_pass():
 ])
 def test_malformed_queries_are_refused(provider, query):
     assert query_rules.query_issues(provider, query)
-
-
-def test_migration_joins_records_of_one_arxiv_preprint_found_before_d46(tmp_path, monkeypatch):
-    import shutil
-
-    from deixis.workflow import store as store_module
-    from deixis.workflow.views import research_view
-
-    real = db.MIGRATIONS_DIR
-    old = tmp_path / "migrations"
-    old.mkdir()
-    for path in real.glob("*.sql"):
-        # Today's code writes memberships with 0029's columns (D50), so that migration comes along.
-        # So does 0049's hit table, which today's code writes with every candidate (D93).
-        if int(path.name.split("_", 1)[0]) <= 25 or path.name.startswith(("0029_", "0049_")):
-            shutil.copy(path, old / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
-    monkeypatch.setattr(store_module, "ARXIV_DOI_PREFIX", "not-linked-before-d46")
-    conn = db.connect(tmp_path / "library.sqlite")
-    db.migrate(conn)
-    old_store = Store(conn)
-    rid, run_id = research(old_store)
-    # The pre-0037 schema has no workflow column; its historical search behavior was legacy.
-    old_scope = old_store.scope
-    old_store.scope = lambda research_id, revision=None: old_scope(research_id, revision) | {"search_workflow": "legacy"}
-    arxiv_doi = "10.48550/arxiv.2101.00001"
-    search(old_store, rid, run_id, 0, "arxiv", [record("2101.00001v1", doi=arxiv_doi, merge_by_doi=False)])
-    search(old_store, rid, run_id, 1, "openalex", [record("W5", doi=arxiv_doi)])
-    arxiv_source, unversioned = old_store.find_source_by_identifier("arxiv", "2101.00001v1"), old_store.find_source_by_identifier("openalex", "W5")
-    assert len(old_store.candidates(rid)) == 2 and old_store.suspected_duplicates(rid)[arxiv_source]
-
-    monkeypatch.undo()
-    db.migrate(conn)
-    new_store = Store(conn)
-    assert new_store.source(unversioned)["work_id"] == new_store.source(arxiv_source)["work_id"]
-    assert conn.execute("SELECT COUNT(*) FROM works").fetchone()[0] == 1 and new_store.suspected_duplicates(rid) == {}
-    view = research_view(new_store, rid)
-    assert [(s["source_version_id"], s["version_role"]) for s in view["sources"]] == [(arxiv_source, "record"), (unversioned, "other_version")]
-    assert view["counts"]["unique"] == 1
-    conn.close()

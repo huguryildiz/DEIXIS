@@ -27,9 +27,8 @@ def after_answer(store: Store, run: dict[str, Any]) -> None:
     if answer is None:
         return
     research = store.research(run["research_id"])
-    # An answer to an earlier revision of the question, or of a research outside the sw workflow, opens no table.
-    if (answer["scope_revision"] != research["current_scope_revision"]
-            or store.scope(run["research_id"]).get("search_workflow") != "sw"):
+    # An answer to an earlier revision of the question opens no table.
+    if answer["scope_revision"] != research["current_scope_revision"]:
         return
     try:
         start(store, run["research_id"], f"answer:{answer['id']}")

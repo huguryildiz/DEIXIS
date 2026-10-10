@@ -3,8 +3,6 @@
 Records are SYNTHETIC. Passing these tests shows that a search on the `sw` workflow stores every verdict with its rule
 and scores, merges only a preprint with its published record, and can take a merge back; it says nothing about how
 often the rule is right on real records, which was measured on one topic outside the product.
-
-A `legacy` research is checked here too, because nothing about it may change.
 """
 
 import json
@@ -52,12 +50,10 @@ def preprint(record_id="2601.00001v1", doi=ARXIV_DOI, **fields):
     return record(record_id, doi=doi, merge_by_doi=False, version_label="submittedVersion", **fields)
 
 
-def research(store, search_workflow="sw"):
+def research(store):
     rid = store.create_research("SYNTHETIC question?", "academic", "standard", ["openalex", "arxiv"], "fake", "m", "en")
     run = store.create_run(rid, "discovery", {"max_model_calls": 4, "max_provider_requests": 4, "max_candidates": 50,
                                               "max_answer_passages": 8}, None)
-    if search_workflow == "legacy":
-        store.conn.execute("UPDATE scope_revisions SET search_workflow = 'legacy' WHERE research_id = ?", (rid,))
     return rid, run["id"]
 
 
@@ -92,22 +88,9 @@ def joined_preprint(store, rid, run_id, published_abstract=None, preprint_abstra
     return store.find_source_by_identifier("openalex", "W1"), store.find_source_by_identifier("arxiv", "2601.00001v1")
 
 
-# ---- the legacy workflow is untouched ----------------------------------------------------
-
-
-def test_a_legacy_research_still_flags_suspected_duplicates_and_stores_no_links(store):
-    rid, run_id = research(store, search_workflow="legacy")
-    search(store, rid, run_id, 0, "openalex", [record("W1"), record("W2", doi="10.1145/synth.2026.9")])
-    a = store.find_source_by_identifier("openalex", "W1")
-    b = store.find_source_by_identifier("openalex", "W2")
-    assert store.suspected_duplicates(rid)[a] == [{"source_version_id": b, "basis": "same_title"}]
-    assert links.research_links(store, rid) == []
-
-
-def test_an_sw_research_stores_links_and_no_suspected_duplicates(store):
+def test_an_sw_research_stores_links(store):
     rid, run_id = research(store)
     search(store, rid, run_id, 0, "openalex", [record("W1"), record("W2", doi="10.1145/synth.2026.9")])
-    assert store.suspected_duplicates(rid) == {}
     assert [row["rule"] for row in links.research_links(store, rid)] == ["two_published_similar_title"]
 
 

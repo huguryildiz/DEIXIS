@@ -200,16 +200,14 @@ def test_route_refusals_revision_active_paused_old_scope_and_strict_bodies(api):
     assert listing[0]["follows_old_scope"] and listing[0]["follows_old_scope_reason"] == "scope_revised"
 
 
-@pytest.mark.parametrize("legacy", [True, False])
-def test_legacy_and_missing_protocol_refused(tmp_path, legacy):
-    with watch_api(tmp_path, legacy=legacy) as api:
-        if not legacy:
-            api.conn.execute("INSERT INTO scope_revisions SELECT " + ",".join(
-                "2" if r[1] == "revision" else '"'+r[1]+'"' for r in api.conn.execute("PRAGMA table_info(scope_revisions)")) + " FROM scope_revisions")
-            api.conn.execute("UPDATE researches SET current_scope_revision=2")
-        response = post(api, api.url, {"kind": "protocol_queries", "mode": "manual", "expected_scope_revision": 2 if not legacy else 1})
-        assert response.status_code == (409 if legacy else 422)
-        assert response.json().get("code", response.json()["detail"]) == ("legacy_research_read_only" if legacy else "no_protocol")
+def test_missing_protocol_refused(tmp_path):
+    with watch_api(tmp_path) as api:
+        api.conn.execute("INSERT INTO scope_revisions SELECT " + ",".join(
+            "2" if r[1] == "revision" else '"'+r[1]+'"' for r in api.conn.execute("PRAGMA table_info(scope_revisions)")) + " FROM scope_revisions")
+        api.conn.execute("UPDATE researches SET current_scope_revision=2")
+        response = post(api, api.url, {"kind": "protocol_queries", "mode": "manual", "expected_scope_revision": 2})
+        assert response.status_code == 422
+        assert response.json().get("code", response.json()["detail"]) == "no_protocol"
 
 
 def test_unknown_trashed_foreign_research_404_and_csrf(api):

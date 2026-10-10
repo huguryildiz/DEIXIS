@@ -252,9 +252,6 @@ def close_run(store: Any, run_id: str, reason: str) -> None:
 
 
 def recover(store: Any) -> None:
-    # A library opened below migration 0073 (the old-schema migration tests) has no interval to close.
-    if not store.conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'fast_path_intervals'").fetchone():
-        return
     for row in store.conn.execute("SELECT * FROM fast_path_intervals WHERE closed_at IS NULL").fetchall():
         close_interval(store, row, row["last_checkpoint_at"], "recovered")
 

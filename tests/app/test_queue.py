@@ -74,14 +74,12 @@ def provider_record(record_id, title, doi, version_label="publishedVersion", mer
 class Lib:
     """One SYNTHETIC `sw` research and the rows a reading run would have left in it."""
 
-    def __init__(self, store, field="channels", workflow="sw", elements=None):
+    def __init__(self, store, field="channels", elements=None):
         self.store, self.field = store, FIELDS[field]
         self.ds = DecisionStore(store)
         self.rid = store.create_research(self.field["question"], "academic", "standard", ["openalex", "arxiv"],
                                          "fake", "m", "en")
         self.run = self.new_run("discovery")
-        if workflow == "legacy":
-            store.conn.execute("UPDATE scope_revisions SET search_workflow = 'legacy' WHERE research_id = ?", (self.rid,))
         store.freeze_protocol(self.rid, 1, body(self.field, elements=elements))
         self.n = 0
         self.reading: str | None = None
@@ -628,15 +626,12 @@ def test_a_row_token_is_rejected_after_a_head_change_or_the_records_removal(stor
     assert lib.code(removed) == "part_without_evidence"
 
 
-def test_a_record_that_was_never_a_source_or_a_legacy_research_is_refused(store):
+def test_a_record_that_was_never_a_source_is_refused(store):
     lib = Lib(store)
     other = Lib(store, "irrigation")
     stranger = queued(other)
     with pytest.raises(NotASource):
         queue.decide(store, lib.rid, stranger, "include", None, "x")
-    legacy = Lib(store, workflow="legacy")
-    with pytest.raises(queue.QueueUnavailable):
-        queue.queue_rows(store, legacy.rid)
 
 
 # ---- the fifth answer ----------------------------------------------------------------------------------------------

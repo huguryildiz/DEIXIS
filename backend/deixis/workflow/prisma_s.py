@@ -97,10 +97,6 @@ def _code_source(key: str, **extra: Any) -> dict[str, Any]:
             "verified": on_disk == pinned["sha256"], "fact": pinned["fact"], **extra}
 
 
-class NotAnSwResearch(Exception):
-    """The export belongs to the search workflow; the API answers 422."""
-
-
 # ---- reading the stored rows -----------------------------------------------------------------------------------------
 
 
@@ -269,8 +265,6 @@ def _ended_counts(groups: list[dict[str, Any]]) -> dict[str, Any]:
 def export(store: Store, research_id: str) -> dict[str, Any]:
     """The PRISMA-S export of the research's current revision as JSON-ready data."""
     scope = store.scope(research_id)
-    if scope.get("search_workflow") != "sw":
-        raise NotAnSwResearch("The PRISMA-S export belongs to the search workflow")
     with queue._snapshot(store.conn):
         return _export(store, research_id, scope)
 

@@ -24,18 +24,16 @@ class FrozenDependencyUnreadable(ValueError):
 def frozen_source_versions(conn, source_ids, *, research_id=None) -> set[str]:
     """Read frozen records only where these sources could have entered research work."""
     sources = json.dumps(sorted(set(source_ids)))
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     queries = [f"SELECT research_id FROM {table} WHERE source_version_id IN chosen"
-               for table in ("corpus_memberships", "candidates") if table in tables]
+               for table in ("corpus_memberships", "candidates")]
     for table in ("kill_search_query_records", "kill_search_hits"):
-        if table in tables:
-            queries.append(f"SELECT c.research_id FROM {table} q"
-                           " JOIN kill_searches s ON s.id = q.kill_search_id"
-                           " JOIN candidate_versions v ON v.id = s.candidate_version_id"
-                           " JOIN research_candidates c ON c.id = v.candidate_id WHERE q.source_version_id IN chosen")
+        queries.append(f"SELECT c.research_id FROM {table} q"
+                       " JOIN kill_searches s ON s.id = q.kill_search_id"
+                       " JOIN candidate_versions v ON v.id = s.candidate_version_id"
+                       " JOIN research_candidates c ON c.id = v.candidate_id WHERE q.source_version_id IN chosen")
     linked = {r[0] for r in conn.execute(
         "WITH chosen AS (SELECT value FROM json_each(?)) " + " UNION ".join(queries), (sources,),
-    )} if queries else set()
+    )}
     if research_id is not None:
         linked.add(research_id)
     if not linked:
@@ -61,8 +59,6 @@ def frozen_source_versions(conn, source_ids, *, research_id=None) -> set[str]:
                 collect(item)
 
     for table, column in (("step_inputs", "payload_json"), ("report_snapshot", "snapshot_json"), ("report_gaps", "basis_json")):
-        if table not in tables:
-            continue
         if table == "step_inputs":
             query = "SELECT payload_json FROM step_inputs WHERE research_id IN (SELECT value FROM json_each(?))"
         else:
@@ -104,11 +100,6 @@ def waited_hash_lock(recovery_dir, sha256):
 
 def purge_asset_history(conn, source_id) -> list[str]:
     """Compute the surviving FK closure before deleting any row of this source."""
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    if "asset_file_observations" not in tables:
-        conn.execute("DELETE FROM asset_extractions WHERE asset_id IN"
-                     " (SELECT id FROM source_assets WHERE source_version_id = ?)", (source_id,))
-        return []
     assets = list(conn.execute("SELECT id, sha256 FROM source_assets WHERE source_version_id = ?", (source_id,)))
     deleting_assets = {r["id"] for r in assets}
     hashes = {r["sha256"] for r in assets}
@@ -186,15 +177,12 @@ def purge_asset_history(conn, source_id) -> list[str]:
     operations, observations = records["o"], records["obs"]
     touched = {operations[oid]["expected_sha256"] for oid in deleting_o} | {
         observations[oid]["expected_sha256"] for oid in deleting_obs}
-    guarded = "recovery_purge_authorizations" in tables
-    if guarded:
-        conn.executemany("INSERT INTO recovery_purge_authorizations (sha256) VALUES (?)", [(sha,) for sha in sorted(touched)])
+    conn.executemany("INSERT INTO recovery_purge_authorizations (sha256) VALUES (?)", [(sha,) for sha in sorted(touched)])
     retained = {observations[oid]["retained_filename"] for oid in deleting_obs if observations[oid]["retained_filename"]}
     conn.execute("DELETE FROM asset_extractions WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(sorted(deleting_e)),))
     conn.execute("DELETE FROM asset_file_observations WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(sorted(deleting_obs)),))
     conn.execute("DELETE FROM asset_recovery_operations WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(sorted(deleting_o)),))
-    if guarded:
-        conn.executemany("DELETE FROM recovery_purge_authorizations WHERE sha256 = ?", [(sha,) for sha in sorted(touched)])
+    conn.executemany("DELETE FROM recovery_purge_authorizations WHERE sha256 = ?", [(sha,) for sha in sorted(touched)])
     return sorted(name for name in retained if not conn.execute(
         "SELECT 1 FROM asset_file_observations WHERE retained_filename = ?", (name,),
     ).fetchone())

@@ -546,8 +546,6 @@ button.chat-step-title svg{color:var(--muted)}
 .source-fact.is-cited{--fact:var(--accent)}
 .source-fact.is-unstated{--fact:var(--muted)}
 .source-fact.is-similarity{--fact:var(--attr-similarity);font-variant-numeric:tabular-nums;cursor:help}
-.source-fact.is-duplicate{color:var(--tone-uncertain);text-decoration:underline dotted;text-underline-offset:3px;cursor:help}
-.duplicate-tip{margin:0;padding:0;list-style:none;display:grid;gap:3px}
 .source-main .proposal>svg{display:inline;vertical-align:-2px;margin-right:5px;color:var(--muted)}
 .legacy-research .proposal{font-size:12px!important;margin:8px 0 0!important;line-height:1.55}
 .legacy-research .proposal.is-model{display:flex;gap:10px;margin-top:11px!important;padding:8px 11px;border-radius:8px;background:var(--hover-surface,color-mix(in srgb,var(--ink),transparent 96%));color:var(--muted)}

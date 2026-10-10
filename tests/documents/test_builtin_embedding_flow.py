@@ -648,11 +648,11 @@ def test_gemini_takes_the_question_as_written_and_never_the_sentence(session, sm
     s.store.save_english_question(rid, s.store.research(rid)["version"], ENGLISH_SENTENCE)
     run_id, view, run = s.again(rid)
     assert texts == [TURKISH] and s.step(run_id)["output"]["query_origin"] == "question"
-def test_an_older_library_migrates_with_no_sentences(tmp_path):
+def test_a_migrated_library_starts_with_no_sentences(tmp_path):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     assert conn.execute("SELECT COUNT(*) FROM scope_english_questions").fetchone()[0] == 0
-    assert max(int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations")) >= 53  # 0054 (slice 22) came after
+    assert {int(row[0]) for row in conn.execute("SELECT version FROM schema_migrations")} == db.packaged_versions()
 
 
 # ---- task 7: the view, the uploaded-PDF line and the protocol ------------------------------------------

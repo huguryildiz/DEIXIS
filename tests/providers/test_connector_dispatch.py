@@ -7,7 +7,6 @@ equivalence remains separate from admission, secrecy and version refusal.
 import asyncio
 import copy
 import json
-import shutil
 import socket
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -22,7 +21,6 @@ import test_connector_facade as equality
 from test_connector_contract import dispatch_flow, candidate_lib, prepare_kill
 from test_provider_records import record
 from deixis.providers import common, contract, facade, lookup, registry
-from deixis.storage import db
 from deixis.domain import canonical
 from deixis.workflow import flow as flow_module, lookups
 from deixis.workflow.flow import Page, _QueryRead
@@ -585,34 +583,6 @@ def test_resume_changed_descriptor(dispatch_flow, monkeypatch):
     asyncio.run(flow._read_query(run, read, False, "standard"))
     assert flow._write_query(run, read)[0] == "provider_adapter_revision_changed"
     assert flow.store.run(run["id"])["usage"] == before
-
-
-def test_migration_0067_preserves_0066_rows(tmp_path, monkeypatch):
-    real = db.MIGRATIONS_DIR
-    migrations = tmp_path / "migrations"
-    migrations.mkdir()
-    numbers = [int(p.name.split("_")[0]) for p in real.glob("*.sql")]
-    assert len(numbers) == len(set(numbers)) and 67 in numbers
-    for path in real.glob("*.sql"):
-        if int(path.name.split("_")[0]) <= 66:
-            shutil.copy(path, migrations / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
-    generator = conformance.dispatch_flow.__wrapped__(tmp_path)
-    flow, new_run = next(generator)
-    try:
-        run = new_run(("openalex",))
-        from test_provider_records import search
-        search(flow.store, run["research_id"], run["id"], 0, "openalex", [record("W1")])
-        columns = [r[1] for r in flow.store.conn.execute("PRAGMA table_info(search_runs)")]
-        before = [tuple(r) for r in flow.store.conn.execute("SELECT * FROM search_runs")]
-        shutil.copy(real / "0067_search_run_connector.sql", migrations)
-        assert db.migrate(flow.store.conn) == [67]
-        assert [tuple(r) for r in flow.store.conn.execute(f"SELECT {','.join(columns)} FROM search_runs")] == before
-        assert rows(flow)[0]["connector_json"] is None
-        assert flow.store.conn.execute("PRAGMA foreign_key_check").fetchall() == []
-    finally:
-        with pytest.raises(StopIteration):
-            next(generator)
 
 
 def test_new_row_current_provenance(dispatch_flow):

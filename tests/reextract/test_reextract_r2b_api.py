@@ -97,12 +97,9 @@ def test_removed_sharer_still_blocks_red_on_old(tmp_path):
         assert lib.store.run(run["id"])["status"] == "queued"
 
 
-@pytest.mark.parametrize("sw", [False, True])
-def test_t2_matching_never_places_files_red_on_old(tmp_path, sw):
+def test_t2_matching_never_places_files_red_on_old(tmp_path):
     with api_library(tmp_path) as lib:
         tear(lib)
-        lib.conn.execute("UPDATE scope_revisions SET search_workflow = ? WHERE research_id = ?",
-                         ("sw" if sw else "legacy", lib.rid))
         response = lib.client.post(f"/api/researches/{lib.rid}/uploads/match",
                                    files=[("files", ("same.pdf", lib.data, "application/pdf"))])
         assert lib.path.read_bytes() == lib.torn, f"Old matching placed bytes before confirmation (HTTP {response.status_code})"

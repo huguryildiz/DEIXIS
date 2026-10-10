@@ -345,7 +345,7 @@ class DecisionStore:
         once instead of four statements per work, and the rows go in one transaction rather than one each. The
         whole batch carries one timestamp, which is what a single write would have given it anyway.
         """
-        if not work_ids or self.store.scope(research_id)["search_workflow"] != "sw":
+        if not work_ids:
             return {}
         facts = self.facts(research_id, work_ids[0] if len(work_ids) == 1 else None)
         selections = {row["source_version_id"]: dict(row) for row in self.conn.execute(

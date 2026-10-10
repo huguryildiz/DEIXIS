@@ -241,8 +241,8 @@ def store_answer(store: Store, source_version_id: str, provider: str, answer: lo
 def _store_links(store: Store, source_version_id: str, provider: str, answer: lookup.LookupAnswer) -> int:
     """Store the DOIs this source names as another version of the record, under their own scheme.
 
-    `linked_doi` is a scheme of its own so that the `published_doi` path a `legacy` research reads (D48) cannot see
-    it: an external link is an `sw` signal and changes nothing in a legacy research.
+    `linked_doi` is a scheme of its own, kept apart from the `published_doi` that arXiv's author-supplied field
+    writes at search time (D48).
     """
     ts, written = now(), 0
     for value in answer.linked_dois:

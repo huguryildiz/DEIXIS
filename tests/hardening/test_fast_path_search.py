@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import json
 import sqlite3
-import shutil
 from dataclasses import replace
 from array import array
 from datetime import timedelta
@@ -17,12 +16,10 @@ from deixis.config import Settings
 from deixis.documents import embeddings, local_embedding
 from deixis.providers import facade, openalex, registry
 from deixis.providers.common import ProviderRecord, SearchOutcome
-from deixis.storage import db
 from deixis.storage.db import transaction
 from deixis.workflow import fast_embedding, fast_path, fast_search, ranking
 from deixis.workflow.flow import ResearchFlow, RunStopped
 from deixis.workflow.worker import Worker
-from deixis.workflow.store import Store
 from test_fast_path_clock import library, stage
 
 
@@ -553,34 +550,3 @@ def test_merge_resolves_head_and_cutoff_cache_without_new_batch(library, tmp_pat
     consumer = asyncio.run(execute())
     assert all(r['status'] == ('from_store' if cached else 'unembedded_at_cutoff') for r in rows(lib))
     assert fast_path.ranking_similarities(lib.store, lib.run, consumer.embedder.stored_model) == ({head: .5} if cached else {})
-
-
-@pytest.mark.parametrize('populated', [False, True])
-def test_migration_preserves_existing_rows_and_queue_foreign_keys(tmp_path, monkeypatch, populated):
-    real = db.MIGRATIONS_DIR
-    prefix = tmp_path / 'migrations'
-    prefix.mkdir()
-    for path in real.glob('*.sql'):
-        if int(path.name.split('_', 1)[0]) <= 73:
-            shutil.copy(path, prefix / path.name)
-    monkeypatch.setattr(db, 'MIGRATIONS_DIR', prefix)
-    conn = db.connect(tmp_path / 'old.sqlite')
-    try:
-        db.migrate(conn)
-        if populated:
-            Store(conn).create_research('SYNTHETIC preserved library', 'academic', 'quick', ['openalex'], 'fake', 'fake-model', 'en')
-        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name != 'schema_migrations'")]
-        def snapshot():
-            return {t: [tuple(r) for r in conn.execute(f'SELECT * FROM "{t}"')] for t in tables}
-        before = snapshot()
-        shutil.copy(real / '0074_fast_path_background_fetches.sql', prefix / '0074_fast_path_background_fetches.sql')
-        shutil.copy(real / '0075_fast_path_embedding_queue.sql', prefix / '0075_fast_path_embedding_queue.sql')
-        assert db.migrate(conn) == [74, 75]
-        assert snapshot() == before
-        assert conn.execute("SELECT name FROM sqlite_master WHERE name = 'fast_path_embedding_queue'").fetchone()
-        db.migrate(conn)
-        assert conn.execute('SELECT COUNT(*) FROM fast_path_embedding_queue').fetchone()[0] == 0
-        with pytest.raises(sqlite3.IntegrityError):
-            conn.execute("INSERT INTO fast_path_embedding_queue (run_id, class, request_index, position, source_version_id, enqueued_at, status) VALUES ('missing', 0, 0, 0, 'missing', 'SYNTHETIC', 'pending')")
-    finally:
-        conn.close()

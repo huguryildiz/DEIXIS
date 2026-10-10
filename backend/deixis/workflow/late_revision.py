@@ -16,10 +16,8 @@ OPEN = ("waiting_fetch", "reading", "answering")
 
 
 def available(store: Any) -> bool:
-    # Old-schema libraries and policies frozen before D255 have no late lane.
+    # Policies frozen before D255 have no late lane.
     return bool(store.conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fast_path_late_revisions'"
-    ).fetchone() and store.conn.execute(
         "SELECT 1 FROM runs WHERE kind = 'discovery'"
         " AND json_extract(budget_json, '$.fast_path.policy') = ?"
         " AND json_extract(budget_json, '$.fast_path.late_revision.mode') = 'auto'"

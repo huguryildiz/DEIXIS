@@ -147,19 +147,6 @@ def test_abstract_heavy_prefix_fills_depth_then_widens_to_48(tmp_path):
             if item["reason"] == "answer_budget_deferred"] == extra[42:]
 
 
-def test_old_policy_answer_is_refused_before_any_answer_input(tmp_path):
-    store, rid = library(tmp_path)
-    discovery = store.create_run(rid, "discovery", {}, None)
-    store.update_run(discovery["id"], status="completed")
-    run = answer_run(store, rid)
-    from deixis.workflow.store import LegacyInspectionPolicyRemoved
-    with pytest.raises(LegacyInspectionPolicyRemoved):
-        small_batch.answer_budget(store, rid, run["scope_revision"], run["budget"])
-    with pytest.raises(LegacyInspectionPolicyRemoved):
-        store._guard_legacy_run(run)
-    assert store.run_steps(run["id"]) == []
-
-
 def test_mixed_input_has_no_abstract_quarter_quota(tmp_path):
     store, rid = library(tmp_path)
     main = page_source(store, rid, "main", [TOPIC_PAGE] * 5, "SYNTHETIC abstract.")

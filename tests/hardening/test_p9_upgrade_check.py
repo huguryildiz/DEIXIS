@@ -8,7 +8,6 @@ its own test and, in the refusal tests, to show that it relaxes nothing it must 
 from __future__ import annotations
 
 import os
-import shutil
 import sqlite3
 import sys
 from pathlib import Path
@@ -18,7 +17,7 @@ import pytest
 from deixis import config
 from deixis.storage import db
 from deixis.workflow.store import Store
-from test_p9_restore_matrix import add_versions, make_source_library, migrated_library
+from test_p9_restore_matrix import add_versions, make_source_library, migrated_library, newer_code_migrations
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "p9"))
 import upgrade_check as uc  # noqa: E402
@@ -179,25 +178,20 @@ def test_open_copy_refuses_the_products_directories_and_the_marked_live_folder_e
 
 
 def test_open_copy_counts_before_and_after_are_equal_and_a_pending_migration_is_applied_and_reported(dirs, monkeypatch):
-    """A restored library written by earlier code (every migration but the last): opening applies exactly the last and loses nothing."""
-    real_dir = db.MIGRATIONS_DIR
-    last = max(db.packaged_versions())
-    older = dirs["scratch"] / "older-migrations"
-    older.mkdir(parents=True)
-    for p in sorted(real_dir.glob("*.sql")):
-        if int(p.name.split("_", 1)[0]) < last:
-            shutil.copyfile(p, older / p.name)
+    """A restored library written by earlier code (today's migrations, opened by a code with one more SYNTHETIC
+    migration): opening applies exactly that one and loses nothing."""
+    packaged = sorted(db.packaged_versions())
+    newer, pending = newer_code_migrations(dirs["scratch"])
     work = staged(dirs, restored=False)
     target = work / uc.RESTORED / "library.sqlite"
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", older)
     conn = db.connect(target)
     db.migrate(conn)
     Store(conn).create_research("SYNTHETIC question", "attached", "quick", [], "fake", "fake-model", "en")
     conn.close()
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", real_dir)
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", newer)
     result = uc.open_copy(str(work))
-    assert result["applied_before"] == f"1-{last - 1}" and result["pending"] == str(last)
-    assert result["applied_after"] == f"1-{last}"
+    assert result["applied_before"] == uc.compact(packaged) and result["pending"] == str(pending)
+    assert result["applied_after"] == f"1-{pending}"
     assert result["applied_by_open"] == 1 and result["unknown"] == "none"
     assert result["sql_before"] == result["sql_after"] and result["sql_before"]["researches"] == 1
 

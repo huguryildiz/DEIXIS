@@ -4,7 +4,6 @@ Model outputs are written straight through TableStore.save_model_output with syn
 extraction step itself is tested separately. These are data-rule tests, not evidence of model quality.
 """
 
-import shutil
 import sqlite3
 from types import SimpleNamespace
 
@@ -21,40 +20,12 @@ from deixis.workflow.tables import InvalidTableInput, TableStore, check_value, c
 from helpers import make_pdf
 from test_api_flow import app_for, create, session
 
-REAL_MIGRATIONS = db.MIGRATIONS_DIR
 PACKET_SIZE = {"name": "Packet size", "instruction": "Report the packet size the study evaluates, as stated.",
                "answer_format": "number_unit", "options": None, "allow_multiple": False, "unit_hint": "byte"}
 VALUE = {"number": 128, "unit": "byte", "as_stated": "128 bytes"}
 
 
 # ---- migration ------------------------------------------------------------------------------
-def test_runs_rebuild_keeps_rows_and_foreign_keys(tmp_path, monkeypatch):
-    old = tmp_path / "migrations"
-    old.mkdir()
-    for path in REAL_MIGRATIONS.glob("*.sql"):
-        if int(path.name.split("_", 1)[0]) <= 18:
-            shutil.copy(path, old / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
-    conn = db.connect(tmp_path / "library.sqlite")
-    db.migrate(conn)
-    store = Store(conn)
-    rid = store.create_research("Question?", "academic", "quick", [], "fake", "fake-model", None)
-    run_id = "run_P4ERA0000000001"  # written as P4 code wrote it, before runs had target_json
-    conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, created_at, updated_at)"
-                 " VALUES (?, ?, 1, 'discovery', 'queued', 'discovery', '{}', 'key-1', ?, ?)", (run_id, rid, now(), now()))
-    store.step(run_id, "search:0", "provider_search:openalex")
-
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", REAL_MIGRATIONS)
-    assert db.migrate(conn)[:2] == [19, 20]  # later migrations may follow
-    assert store.run(run_id)["idempotency_key"] == "key-1" and store.run(run_id)["target"] is None
-    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
-    assert "REFERENCES runs(id)" in conn.execute("SELECT sql FROM sqlite_master WHERE name = 'run_steps'").fetchone()[0]
-    with pytest.raises(sqlite3.IntegrityError):
-        conn.execute("INSERT INTO run_steps (id, run_id, operation_key, kind, status) VALUES ('stp_x', 'run_missing', 'k', 'x', 'pending')")
-    conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
-                 " VALUES ('run_table', ?, 1, 'cell_recheck', 'queued', 'extraction', '{}', ?, ?)", (rid, now(), now()))
-
-
 def test_foreign_keys_off_migration_rolls_back_on_a_violation(tmp_path, monkeypatch):
     folder = tmp_path / "migrations"
     folder.mkdir()
@@ -266,33 +237,6 @@ def test_a_revision_links_several_quotes_of_one_passage_and_refuses_a_repeated_o
     with pytest.raises(sqlite3.IntegrityError):
         lib.conn.execute("INSERT INTO cell_evidence_links (cell_revision_id, passage_id, source_version_id, anchor_text) VALUES (?, ?, ?, '128 bytes')",
                          (accepted, passage, lib.published))
-
-
-def test_evidence_links_rebuild_keeps_links_and_their_rules(tmp_path, monkeypatch):
-    old = tmp_path / "migrations"
-    old.mkdir()
-    for path in REAL_MIGRATIONS.glob("*.sql"):
-        # Today's code writes memberships with 0029's columns (D50), so that migration comes along.
-        if int(path.name.split("_", 1)[0]) <= 23 or path.name.startswith("0029_"):
-            shutil.copy(path, old / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
-    lib = make_lib(tmp_path)
-    revision = model_output(lib)
-    with pytest.raises(sqlite3.IntegrityError):  # before 0024 a passage is linked once per revision
-        lib.conn.execute("INSERT INTO cell_evidence_links (cell_revision_id, passage_id, source_version_id, anchor_text) VALUES (?, ?, ?, 'Packets')",
-                         (revision, lib.abstracts[lib.published], lib.published))
-
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", REAL_MIGRATIONS)
-    assert 24 in db.migrate(lib.conn)
-    (evidence,) = cell(lib)["current"]["evidence"]
-    assert (evidence["passage_id"], evidence["anchor_text"], evidence["anchor_match"]) == (lib.abstracts[lib.published], "128 bytes", "exact")
-    lib.conn.execute("INSERT INTO cell_evidence_links (cell_revision_id, passage_id, source_version_id, anchor_text) VALUES (?, ?, ?, 'Packets')",
-                     (revision, lib.abstracts[lib.published], lib.published))
-    with pytest.raises(sqlite3.DatabaseError, match="immutable"):
-        lib.conn.execute("DELETE FROM cell_evidence_links WHERE cell_revision_id = ?", (revision,))
-    with pytest.raises(sqlite3.DatabaseError, match="source version"):
-        lib.conn.execute("INSERT INTO cell_evidence_links (cell_revision_id, passage_id, source_version_id) VALUES (?, ?, ?)",
-                         (revision, lib.abstracts[lib.preprint], lib.preprint))
 
 
 def test_rows_are_explicit_and_removing_one_keeps_its_cells(lib):

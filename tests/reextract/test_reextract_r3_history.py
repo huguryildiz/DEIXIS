@@ -4,7 +4,6 @@ import asyncio
 import copy
 import hashlib
 import json
-import shutil
 import sqlite3
 import threading
 from types import SimpleNamespace
@@ -378,30 +377,6 @@ def test_s12_delete_guard_red_on_old(tmp_path, table):
             lib.conn.execute("DELETE FROM asset_file_observations WHERE expected_sha256 = ?", (lib.sha,))
             lib.conn.execute("DELETE FROM asset_recovery_operations WHERE expected_sha256 = ?", (lib.sha,))
             lib.conn.execute("DELETE FROM recovery_purge_authorizations")
-        assert not lib.conn.execute("PRAGMA foreign_key_check").fetchall()
-
-
-def test_s12_0068_to_0069_preservation_new_contract(tmp_path, monkeypatch):
-    """Paired with S12; only the new table and delete guards are introduced."""
-    real = db.MIGRATIONS_DIR
-    old = tmp_path / "migrations"
-    old.mkdir()
-    for path in real.glob("*.sql"):
-        if int(path.name[:4]) <= 68:
-            shutil.copyfile(path, old / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
-    with store_library(tmp_path, "partial") as lib:
-        rich(lib)
-        tear(lib)
-        write(lib)
-        retry(lib)
-        before = all_rows(lib.conn)
-        objects = list(lib.conn.execute("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL"))
-        shutil.copyfile(real / "0069_recovery_purge_authorization.sql", old / "0069_recovery_purge_authorization.sql")
-        assert db.migrate(lib.conn) == [69]
-        after = all_rows(lib.conn)
-        assert all(after[t] == rows for t, rows in before.items() if t != "schema_migrations")
-        assert set(map(tuple, objects)) <= set(map(tuple, lib.conn.execute("SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL")))
         assert not lib.conn.execute("PRAGMA foreign_key_check").fetchall()
 
 

@@ -3,16 +3,12 @@
 Records are SYNTHETIC. Passing shows how keys are formed, kept and exposed; it says nothing about provider metadata quality.
 """
 
-import shutil
-
 import pytest
 
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
 from deixis.workflow.source_keys import key_stem
 from deixis.workflow.store import Store
-
-REAL_MIGRATIONS = db.MIGRATIONS_DIR
 
 
 def record(rid, authors, year, doi=None, title="SYNTHETIC molecular channel", version_label="publishedVersion", merge_by_doi=True):
@@ -75,26 +71,3 @@ def test_an_upload_title_key_gives_way_to_authors_but_an_author_key_is_kept(stor
 
     store.enrich_source("crossref", svid, record("10.1/y", ["Someone Else"], 1999))
     assert key_of(store, svid) == "Turing52"
-
-
-def test_works_stored_before_the_migration_are_keyed_oldest_first(tmp_path, monkeypatch):
-    old = tmp_path / "migrations"
-    old.mkdir()
-    for path in REAL_MIGRATIONS.glob("*.sql"):
-        if int(path.name.split("_", 1)[0]) <= 32:
-            shutil.copy(path, old / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
-    conn = db.connect(tmp_path / "library.sqlite")
-    db.migrate(conn)
-    with db.transaction(conn):
-        for n, created in (("1", "2026-01-02"), ("2", "2026-01-01")):
-            conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (f"wrk_{n}", created))
-            conn.execute("INSERT INTO source_versions (id, work_id, title, authors_json, year, origin, created_at)"
-                         " VALUES (?, ?, 'SYNTHETIC', '[\"Ada Lovelace\"]', 2020, 'provider', ?)", (f"srv_{n}", f"wrk_{n}", created))
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", REAL_MIGRATIONS)
-    db.migrate(conn)
-    store = Store(conn)
-
-    assert store.assign_source_keys() == 2
-    assert (store.source_key("wrk_2"), store.source_key("wrk_1")) == ("Lovelace20", "Lovelace20b")
-    assert store.assign_source_keys() == 0

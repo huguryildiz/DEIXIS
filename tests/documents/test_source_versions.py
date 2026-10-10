@@ -4,8 +4,6 @@ Records are SYNTHETIC. Passing these tests shows that storage keeps old passages
 file and extraction in use; it says nothing about extraction quality.
 """
 
-import shutil
-import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -16,8 +14,6 @@ from deixis.workflow.store import PdfInUse, Store
 from helpers import make_pdf
 from test_api_flow import app_for, create, session
 
-REAL_MIGRATIONS = db.MIGRATIONS_DIR
-
 
 def extraction(pages, status="succeeded"):
     return SimpleNamespace(status=status, error=None, page_count=len(pages),
@@ -27,19 +23,6 @@ def extraction(pages, status="succeeded"):
 def add_pdf(store, svid, pages, sha, version="test-v1"):
     return store.add_asset_with_pages(svid, sha, 10, f"{sha}.pdf", "user_upload", None, "p.pdf", extraction(pages), version,
                                       lambda text: [(0, len(text), text)])
-
-
-def library_at(tmp_path, monkeypatch, last):
-    old = tmp_path / "migrations"
-    old.mkdir()
-    for path in REAL_MIGRATIONS.glob("*.sql"):
-        if int(path.name.split("_", 1)[0]) <= last:
-            shutil.copy(path, old / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
-    conn = db.connect(tmp_path / "library.sqlite")
-    db.migrate(conn)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", REAL_MIGRATIONS)
-    return conn, Store(conn)
 
 
 def raw_asset(conn, svid, sha, pages, version):
@@ -56,39 +39,6 @@ def raw_asset(conn, svid, sha, pages, version):
 
 
 # ---- migration 27 ---------------------------------------------------------------------------
-def test_migration_records_the_extraction_each_existing_pdf_has(tmp_path, monkeypatch):
-    conn, store = library_at(tmp_path, monkeypatch, 26)
-    kept = store.create_upload_source("A SYNTHETIC study")
-    removed = store.create_upload_source("B SYNTHETIC study")
-    kept_asset = raw_asset(conn, kept, "1" * 64, ["SYNTHETIC page one.", "", "SYNTHETIC page three."], "pypdf-6.18.1-chunks-v1")
-    removed_asset = raw_asset(conn, removed, "2" * 64, ["SYNTHETIC wrong file."], "pymupdf-1.28.2-chunks-v1")
-    conn.execute("UPDATE source_assets SET removed_at = ? WHERE id = ?", (db.now(), removed_asset))
-    passages = conn.execute("SELECT COUNT(*) FROM passages").fetchone()[0]
-
-    assert 27 in db.migrate(conn)
-    rows = {r["asset_id"]: dict(r) for r in conn.execute("SELECT * FROM asset_extractions")}
-    assert set(rows) == {kept_asset, removed_asset}
-    assert {k: rows[kept_asset][k] for k in ("extraction_version", "status", "page_count", "text_pages", "passage_count", "outcome")} == {
-        "extraction_version": "pypdf-6.18.1-chunks-v1", "status": "succeeded", "page_count": 3, "text_pages": 2, "passage_count": 2,
-        "outcome": "current"}
-    assert rows[removed_asset]["outcome"] == "current"
-    assert store.asset(removed_asset)["removal_reason"] is None  # the reason of an earlier removal was not recorded
-    assert conn.execute("SELECT COUNT(*) FROM passages").fetchone()[0] == passages
-    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-
-
-def test_migration_stops_when_a_source_version_has_two_pdfs_in_use(tmp_path, monkeypatch):
-    conn, store = library_at(tmp_path, monkeypatch, 26)
-    svid = store.create_upload_source("A SYNTHETIC study")
-    raw_asset(conn, svid, "1" * 64, ["SYNTHETIC page one."], "test-v1")
-    raw_asset(conn, svid, "2" * 64, ["SYNTHETIC page one."], "test-v1")
-
-    with pytest.raises(sqlite3.IntegrityError):
-        db.migrate(conn)
-    assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 26
-    assert conn.execute("SELECT COUNT(*) FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,)).fetchone()[0] == 2
-
-
 # ---- storage --------------------------------------------------------------------------------
 @pytest.fixture
 def store(tmp_path):

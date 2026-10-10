@@ -82,8 +82,7 @@ def enqueue(store: Any, run: dict[str, Any], item: dict[str, Any], origin: str) 
 
 
 def recover(store: Any) -> None:
-    if store.conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'fast_path_background_fetches'").fetchone():
-        store.conn.execute("UPDATE fast_path_background_fetches SET status = 'queued' WHERE status = 'running'")
+    store.conn.execute("UPDATE fast_path_background_fetches SET status = 'queued' WHERE status = 'running'")
 
 
 class BackgroundFetchLane:

@@ -30,7 +30,7 @@ from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
 from deixis.documents import embeddings
 from deixis.documents import figures
-from deixis.documents.identity import MATCH_TEXT_CHARS, match_pdf_to_source
+from deixis.documents.identity import MATCH_TEXT_CHARS
 from deixis.documents import local_embedding, math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
@@ -69,8 +69,7 @@ from deixis.workflow.report.store import ReportStore
 from deixis.workflow.report import export as report_export
 from deixis.workflow.report import latex_export
 from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
-                                   SeedUnavailable, Store, LegacyResearchReadOnly, DISCOVERY_RUN_KINDS,
-                                   legacy_research_read_only, LegacyInspectionPolicyRemoved,
+                                   SeedUnavailable, Store, LegacyInspectionPolicyRemoved,
                                    RequestConflict, RecoveryConflict, NotRetryable)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow.lineage.run import LineagePlanner, stale_link_revisions
@@ -658,8 +657,6 @@ def create_app(
         db.migrate(conn)
         store = Store(conn, clock=clock)
         store.recovery_dir = settings.recovery_dir
-        store.link_published_versions()  # preprints flagged beside their published record before D48
-        store.assign_source_keys()  # works stored before D59
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent()})
         adapter_map = adapters if adapters is not None else {
             "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace"),
@@ -707,8 +704,6 @@ def create_app(
                 logging.getLogger(__name__).exception("Recovery reconciliation failed at startup; continuing")
 
         if owner:
-            app.state.legacy_cancelled = worker.cancel_legacy_discovery()
-            app.state.legacy_inspection_cancelled = worker.cancel_legacy_inspection()
             await reconcile_recovery()
 
         from deixis.workflow.watch.scheduler import WatchScheduler
@@ -725,8 +720,6 @@ def create_app(
             while not worker.acquire():
                 await asyncio.sleep(1.0)
             app.state.recovered = worker.recover()
-            app.state.legacy_cancelled = worker.cancel_legacy_discovery()
-            app.state.legacy_inspection_cancelled = worker.cancel_legacy_inspection()
             await reconcile_recovery()
             app.state.owner = True
             equations.start()
@@ -874,10 +867,6 @@ def create_app(
     async def queue_unavailable(_: Request, exc: human_queue.QueueUnavailable):
         return JSONResponse({"detail": str(exc)}, status_code=422)
 
-    @app.exception_handler(prisma_s.NotAnSwResearch)
-    async def not_an_sw_research(_: Request, exc: prisma_s.NotAnSwResearch):
-        return JSONResponse({"detail": str(exc)}, status_code=422)
-
     @app.exception_handler(RevisionConflict)
     async def conflict(_: Request, exc: RevisionConflict):
         return JSONResponse({"detail": str(exc)}, status_code=409)
@@ -893,13 +882,6 @@ def create_app(
     @app.exception_handler(WatchRefusal)
     async def watch_refusal(_: Request, exc: WatchRefusal):
         return JSONResponse({"detail": exc.detail, "code": exc.code}, status_code=exc.status)
-
-    @app.exception_handler(LegacyResearchReadOnly)
-    async def legacy_read_only(_: Request, exc: LegacyResearchReadOnly):
-        return JSONResponse({"detail": "legacy_research_read_only"}, status_code=409)
-
-    def guard_legacy_discovery(store: Store, run: dict[str, Any]) -> None:
-        store._guard_legacy_run(run)
 
     @app.exception_handler(LegacyInspectionPolicyRemoved)
     async def removed_inspection(_: Request, exc: LegacyInspectionPolicyRemoved):
@@ -922,10 +904,6 @@ def create_app(
     @app.exception_handler(person_reading.RetryRefused)
     async def retry_refused(_: Request, exc: person_reading.RetryRefused):
         return JSONResponse({"detail": str(exc)}, status_code=409)
-
-    @app.exception_handler(pdf_waiting.WaitingUnavailable)
-    async def waiting_unavailable(_: Request, exc: pdf_waiting.WaitingUnavailable):
-        return JSONResponse({"detail": str(exc)}, status_code=422)
 
     @app.exception_handler(proxy.ProxyRefused)
     async def proxy_refused(_: Request, exc: proxy.ProxyRefused):
@@ -1369,9 +1347,7 @@ def create_app(
                         idempotency_key: str | None = Header(default=None, max_length=200)) -> dict[str, Any]:
         store = store_of(request)
         scope = store.scope(research_id)
-        if body.kind in DISCOVERY_RUN_KINDS and legacy_research_read_only(scope):
-            raise LegacyResearchReadOnly("legacy_research_read_only")
-        if body.kind in ("fulltext_fetch", "fulltext_adjudication") and scope.get("search_workflow") == "sw":
+        if body.kind in ("fulltext_fetch", "fulltext_adjudication"):
             raise LegacyInspectionPolicyRemoved("legacy_inspection_policy_removed")
         if body.kind == "discovery" and scope["source_scope"] == "attached":
             raise HTTPException(422, "Academic search is not part of this research's source scope")
@@ -1382,20 +1358,15 @@ def create_app(
                                     "Choose a readable PDF seed before searching" if seed_status == "missing"
                                     else "The selected PDF changed; select it again before searching")
         if body.kind in ("answer", "pdf_collection") and not store.included_works(research_id):
-            # An sw research whose search finished may still ask: its answer records that no work was included when
-            # it started (SW22, D106). A legacy research and a PDF collection keep the refusal.
-            if not (body.kind == "answer" and scope.get("search_workflow") == "sw"
-                    and store.discovery_completed(research_id)):
+            # A research whose search finished may still ask: its answer records that no work was included when
+            # it started (SW22, D106). A PDF collection keeps the refusal.
+            if not (body.kind == "answer" and store.discovery_completed(research_id)):
                 raise HTTPException(422, "Include at least one source before generating an answer")
-        if body.kind == "fulltext_fetch" and scope.get("search_workflow") != "sw":
-            raise HTTPException(422, "Full-text retrieval runs belong to the search workflow")
-        if body.kind == "fulltext_adjudication" and scope.get("search_workflow") != "sw":
-            raise HTTPException(422, "Full-text reading runs belong to the search workflow")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
         if body.kind == "discovery":
             # The criterion proposal before the first search (D78) and the abstract stage's two runs over the
-            # works the read limit reaches (D81) are given on top of the preset, so the preset itself — which a
-            # legacy run and an answer run read — is what it always was (slice 06 review).
+            # works the read limit reaches (D81) are given on top of the preset, so the preset itself — which an
+            # answer run reads — is what it always was (slice 06 review).
             # SUGGESTION_CALLS is the one term-suggestion call the user may ask for on the approval card (D82); a
             # run that never asks spends none of it.
             extra = CRITERION_CALLS + SUGGESTION_CALLS + ADVICE_CALLS + abstract_stage.model_calls(
@@ -1418,9 +1389,8 @@ def create_app(
                 # The full text is fetched inside this run, beside its screening, with the room a retrieval run
                 # would have had (slice 17a); the mode is frozen here, so a run keeps the path it was queued with.
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
-            if scope.get("search_workflow") == "sw":
-                budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
-                budget["fast_path"] = fast_path.freeze_budget(budget, scope["effort"])
+            budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
+            budget["fast_path"] = fast_path.freeze_budget(budget, scope["effort"])
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}
@@ -1434,7 +1404,7 @@ def create_app(
         elif body.kind == "fulltext_adjudication":
             # Two model calls per work the read limit reaches (D85). The same function the flow's auto-queue calls.
             budget = adjudication.read_budget(scope["effort"])
-        elif body.kind == "answer" and scope.get("search_workflow") == "sw":
+        elif body.kind == "answer":
             from deixis.workflow.fast_answer import answer_run_budget
             budget = answer_run_budget(store, research_id, scope)
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
@@ -1452,7 +1422,6 @@ def create_app(
         store = store_of(request)
         run = store.run(run_id)
         store.research(run["research_id"])
-        guard_legacy_discovery(store, run)
         step = store.approval_step(run_id)
         if step is None or not step["output"]:
             raise HTTPException(409, "This run has not proposed a protocol to approve")
@@ -1479,7 +1448,6 @@ def create_app(
         store = store_of(request)
         run = store.run(run_id)
         store.research(run["research_id"])
-        guard_legacy_discovery(store, run)
         step = store.approval_step(run_id)
         if step is None or not step["output"]:
             raise HTTPException(409, "This run has not proposed a protocol to suggest terms for")
@@ -1513,7 +1481,6 @@ def create_app(
         store = store_of(request)
         run = store.run(run_id)
         store.research(run["research_id"])
-        guard_legacy_discovery(store, run)
         if run["status"] != "paused" or run["pause_reason"] != "search_query_failed":
             raise HTTPException(409, f"Cannot choose the code's query on a run in status {run['status']}")
         run = store.choose_code_query(run_id)
@@ -1535,8 +1502,6 @@ def create_app(
         store = store_of(request)
         run = store.run(run_id)
         store.research(run["research_id"])
-        if action in ("resume", "retry_failed"):
-            guard_legacy_discovery(store, run)
         status = run["status"]
         worker = request.app.state.worker
         if action == "retry_failed":
@@ -1615,8 +1580,6 @@ def create_app(
     async def audit(research_id: str, request: Request) -> dict[str, Any]:
         store = store_of(request)
         store.research(research_id)
-        if store.scope(research_id).get("search_workflow") != "sw":
-            raise human_queue.QueueUnavailable("The audit sample belongs to the search workflow")
         return audit_rules.audit_view(store, research_id)
 
     @app.get("/api/researches/{research_id}/audit/{source_version_id}")
@@ -1750,11 +1713,10 @@ def create_app(
                 asset_id = store.add_asset_with_pages(source_version_id, sha, size, path.name, "user_upload", None,
                                                       filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
                                                       input_observation=read.observation)
-                if store.scope(research_id).get("search_workflow") == "sw":
-                    # The same code, request and queue as a file confirmed from the waiting list (slice 18b,
-                    # decision 10), with the same check whether the work may be read at all; legacy is unchanged.
-                    flow.attach_person_file(research_id, source_version_id, asset_id)
-                    flow.queue_person_reading(research_id)
+                # The same code, request and queue as a file confirmed from the waiting list (slice 18b,
+                # decision 10), with the same check whether the work may be read at all.
+                flow.attach_person_file(research_id, source_version_id, asset_id)
+                flow.queue_person_reading(research_id)
             request.app.state.worker.wake()
         return research_view(store, research_id) | {
             "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
@@ -1767,22 +1729,7 @@ def create_app(
         with its versions for the person to pick from and what the confirmation checks (slice 18a)."""
         store = store_of(request)
         store.research(research_id)
-        if store.scope(research_id).get("search_workflow") == "sw":
-            return await match_waiting(store, research_id, files, request.app.state.worker.flow)
-        candidates = [store.source(svid) for head in store.included_works(research_id)
-                      for svid in [head, *store.work_versions(research_id, head)]]
-        with disk_full_refused():
-            settings.papers_dir.mkdir(parents=True, exist_ok=True)
-        matches = []
-        for file in files[:50]:
-            staged = await store_upload(file, settings.papers_dir)
-            try:
-                extraction = await text_retry.drained_thread(pdf.extract_pdf, staged.path, MATCH_TEXT_CHARS)
-            finally:
-                file_restore.cleanup(staged.path)
-            svid, basis = match_pdf_to_source("\n".join(page.text for page in extraction.pages), candidates)
-            matches.append({"filename": Path(file.filename or "document.pdf").name, "source_version_id": svid, "basis": basis})
-        return {"matches": matches}
+        return await match_waiting(store, research_id, files, request.app.state.worker.flow)
 
     async def match_waiting(store: Store, research_id: str, files: list[UploadFile], request_flow: Any) -> dict[str, Any]:
         revision = store.research(research_id)["current_scope_revision"]
@@ -1831,7 +1778,6 @@ def create_app(
         Checked before the text is extracted, and again with the write, so nothing that moved meanwhile slips in."""
         store = store_of(request)
         store.research(research_id)
-        pdf_waiting.require_sw(store, research_id)
         with disk_full_refused():
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
             staged = await store_upload(file, settings.papers_dir)
@@ -1874,7 +1820,6 @@ def create_app(
         research; the view shows only the run that was opened."""
         store = store_of(request)
         store.research(research_id)
-        pdf_waiting.require_sw(store, research_id)
         person_reading.retry(store, research_id, request_id)
         run = request.app.state.worker.flow.queue_person_reading(research_id)
         request.app.state.worker.wake()

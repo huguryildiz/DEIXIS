@@ -1,11 +1,8 @@
 """R4 read projections; HTTP assertions precede any import of the new module."""
 
-import shutil
-
 import pytest
 
 from deixis.documents import pdf
-from deixis.storage import db
 from deixis.workflow import text_retry
 from deixis.workflow.store import Store
 from tests.reextract.reextract_r2a_helpers import PUBLIC_RETRY_FIELDS, api_library, body, counts, head, seed, url
@@ -18,33 +15,6 @@ def projected(lib):
     assert "text_recovery" in asset  # V1 red on 03422d7: public behavior, not a missing import.
     assert "sha256" not in asset and "storage_path" not in asset
     return asset["text_recovery"]
-
-
-def test_pre_0066_research_view_loads_with_null_recovery_for_every_asset(tmp_path, monkeypatch):
-    migrations = tmp_path / "migrations-0065"
-    migrations.mkdir()
-    for path in db.MIGRATIONS_DIR.glob("*.sql"):
-        if int(path.name.split("_", 1)[0]) < 66:
-            shutil.copy(path, migrations / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
-
-    def forbidden(*args, **kwargs):
-        raise AssertionError("A historical research view called the recovery projection")
-
-    monkeypatch.setattr("deixis.workflow.recovery_view.text_recovery", forbidden)
-    with api_library(tmp_path, raise_errors=True) as lib:
-        assert not lib.store._extraction_has_recovery_metadata
-        assert lib.conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 65
-        assert lib.conn.execute("SELECT name FROM sqlite_master WHERE name IN"
-                                " ('asset_recovery_operations', 'asset_file_observations')").fetchall() == []
-        other = seed(lib.store, lib.settings, status="partial", version="synthetic-older-profile")
-        lib.store.add_to_corpus(lib.rid, other.svid, "user_upload")
-        response = lib.client.get(f"/api/researches/{lib.rid}")
-        assert response.status_code == 200
-        assets = [asset for source in response.json()["sources"] for asset in source["access"]["assets"]]
-        assert {asset["id"] for asset in assets} == {lib.aid, other.aid}
-        assert all("text_recovery" in asset and asset["text_recovery"] is None for asset in assets)
-        assert next(asset for asset in assets if asset["id"] == other.aid)["current_extraction"] is False
 
 
 @pytest.mark.parametrize("status,reason,checked", [

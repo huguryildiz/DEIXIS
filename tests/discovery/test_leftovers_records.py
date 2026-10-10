@@ -76,7 +76,7 @@ def test_sw_records_freeze_stamp_digest_merge_and_open_a_later_revision(tmp_path
         assert [(s["provider"], s["result_count"]) for s in view["search_runs"]] == [("openalex", 1), ("biorxiv", 2)]
         assert run["usage"]["provider_requests"] == 2 and view["counts"]["unique"] == 2
         merged = next(s for s in view["sources"] if s["doi"] == "10.1/a")
-        assert merged["provider_records"] == ["biorxiv", "openalex"] and merged["suspected_duplicates"] == []
+        assert merged["provider_records"] == ["biorxiv", "openalex"]
         assert "crossref" in view["scope"]["providers"] and "crossref" not in [q["provider_id"] for q in queries]
         assert lookups.in_scope(view["scope"], "crossref") is True
         assert adapter.calls and all("crossref" not in call["enabled_providers"] for call in adapter.calls)

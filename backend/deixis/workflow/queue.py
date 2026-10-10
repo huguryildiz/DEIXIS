@@ -100,8 +100,6 @@ class _Context:
 
     def __init__(self, store: Store, research_id: str, work_id: str | None = None):
         scope = store.scope(research_id)
-        if scope.get("search_workflow") != "sw":
-            raise QueueUnavailable("The queue belongs to the search workflow")
         self.store, self.rid = store, research_id
         self.decisions = DecisionStore(store)
         self.facts = self.decisions.facts(research_id, work_id)
@@ -640,8 +638,6 @@ def _versions(ctx: _Context, row: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _require_source(store: Store, research_id: str, svid: str) -> None:
     """A record that was never a source of the research is refused (422); one removed since reaches the token (409)."""
-    if store.scope(research_id).get("search_workflow") != "sw":
-        raise QueueUnavailable("The queue belongs to the search workflow")
     if not store.was_member(research_id, svid):
         raise NotASource(svid)
 

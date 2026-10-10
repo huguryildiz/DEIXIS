@@ -335,7 +335,7 @@ def term_yields(store: Any, research_id: str, scope_revision: int) -> list[dict[
     """The yield of every term this research's frozen protocol names; an empty list when it names none."""
     protocol = store.current_protocol(research_id, scope_revision)
     body = protocol["body"] if protocol else {}
-    terms = body.get("vocabulary") if body.get("search_workflow") == "sw" else None
+    terms = body.get("vocabulary")
     if not terms or not all("phrase" in term for term in terms):
         return []
     return count_yields(store, research_id, scope_revision, term_rows(terms, body.get("expansion")))

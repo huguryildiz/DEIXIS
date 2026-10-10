@@ -114,7 +114,6 @@ class WatchStore:
 
     def _scope(self, research_id, kind):
         research = self.main.research(research_id)
-        self.main._guard_legacy_scope(research_id, research["current_scope_revision"])
         protocol = self.main.current_protocol(research_id, research["current_scope_revision"])
         if kind == "protocol_queries" and protocol is None:
             raise WatchRefusal("no_protocol", "Freeze a protocol before following its queries.", 422)

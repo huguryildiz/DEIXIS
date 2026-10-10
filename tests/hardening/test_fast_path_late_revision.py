@@ -3,17 +3,13 @@
 import asyncio
 import copy
 import json
-import shutil
 from dataclasses import replace
 
 import pytest
 
-from deixis.storage import db
-from deixis.storage.db import transaction
 from deixis.workflow import fast_answer, late_revision, views
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import RunStopped
-from deixis.workflow.store import legacy_inspection_policy_removed
 from deixis.workflow.worker import Worker
 from test_fast_path_answer import setup, cutoff, answer_run, user
 from test_criterion_passage_flow import body_with, TOPIC_PAGE, page_source
@@ -71,7 +67,6 @@ def read_late(lib):
     late_revision.advance(lib.flow, lib.rid)
     assert row(lib)["status"] == "reading"
     run = lib.store.run(row(lib)["read_run_id"])
-    assert not legacy_inspection_policy_removed(lib.store, run)
     assert run["budget"]["max_provider_requests"] == 0
     lib.store.update_run(run["id"], status="running")
     asyncio.run(lib.flow.execute(run["id"]))
@@ -278,29 +273,6 @@ def test_atomic_transition_rolls_back(tmp_path, monkeypatch):
     assert lib.store.conn.execute("SELECT COUNT(*) FROM runs WHERE kind = 'fulltext_adjudication'").fetchone()[0] == 0
 
 
-def test_migration_preserves_existing_rows(tmp_path, monkeypatch):
-    conn = db.connect(tmp_path / "upgrade.sqlite")
-    original = db.MIGRATIONS_DIR
-    old = tmp_path / "migrations"
-    old.mkdir()
-    for path in original.glob("*.sql"):
-        if int(path.name[:4]) <= 76:
-            shutil.copyfile(path, old / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
-    db.migrate(conn)
-    from deixis.workflow.store import Store
-    store = Store(conn)
-    rid = store.create_research("SYNTHETIC migration", "attached", "quick", [], "fake", "fake-model", None)
-    before = dict(store.research(rid))
-    runs_sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'runs'").fetchone()[0]
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", original)
-    assert db.migrate(conn) == [77]
-    assert store.research(rid) == before
-    assert conn.execute("SELECT sql FROM sqlite_master WHERE name = 'runs'").fetchone()[0] == runs_sql
-    assert 77 in {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
-    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-
-
 @pytest.mark.parametrize("all_excluded", [False, True])
 def test_read_exclusions_only_trigger_revision_with_an_inclusion(tmp_path, all_excluded):
     lib = prepared(tmp_path, pdfs=2)
@@ -326,15 +298,11 @@ def test_read_exclusions_only_trigger_revision_with_an_inclusion(tmp_path, all_e
         assert excluded_source not in {lib.store.passage(pid)["source_version_id"] for pid in plan["passage_ids"]}
 
 
-@pytest.mark.parametrize("policy,table", [(False, True), (True, False), (False, False)])
-def test_late_lane_does_not_query_table_without_policy_or_migration(tmp_path, policy, table):
+def test_late_lane_does_not_query_table_without_policy(tmp_path):
     lib = setup(tmp_path, pdf=True)
-    if not policy:
-        lib.discovery["budget"]["fast_path"].pop("late_revision")
-        lib.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?",
-                               (json.dumps(lib.discovery["budget"]), lib.discovery["id"]))
-    if not table:
-        lib.store.conn.execute("DROP TABLE fast_path_late_revisions")
+    lib.discovery["budget"]["fast_path"].pop("late_revision")
+    lib.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?",
+                           (json.dumps(lib.discovery["budget"]), lib.discovery["id"]))
     statements = []
     lib.store.conn.set_trace_callback(statements.append)
     try:

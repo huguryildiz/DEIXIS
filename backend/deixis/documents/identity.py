@@ -1,8 +1,7 @@
 """Which record a PDF belongs to, read from the file's own first pages (D49, SW10.2).
 
-One matcher for both callers: the user dropping a file on a research asks `match_pdf_to_source` which record to
-propose, and a full-text retrieval run asks `check` whether the file it just downloaded really is the work it asked
-for. Neither writes anything; both read only the head of the extracted text, because a paper names itself on its
+One matcher for both callers: the user dropping a file on a research asks `propose` which work to propose, and a
+full-text retrieval run asks `check` whether the file it just downloaded really is the work it asked for. Neither writes anything; both read only the head of the extracted text, because a paper names itself on its
 first page and a later page may quote any number of other papers.
 """
 
@@ -27,27 +26,10 @@ def identifiers_in(text: str) -> set[str]:
     return dois | {f"10.48550/arxiv.{a}" for a in ARXIV_IN_TEXT.findall(head)}
 
 
-def match_pdf_to_source(text: str, sources: list[dict[str, Any]]) -> tuple[str | None, str | None]:
-    """The source a dropped PDF belongs to, from a DOI or arXiv identifier in its first pages, else its title (D49).
-
-    Returns (source_version_id, basis). The user confirms every match before the file is attached.
-    """
-    dois = identifiers_in(text)
-    for source in sources:
-        if normalize_doi(source["doi"]) in dois:
-            return source["id"], "doi"
-    body = f" {title_key(text[:MATCH_TEXT_CHARS])} "
-    titled = [s for s in sources if len(title_key(s["title"]).split()) >= MIN_TITLE_WORDS and f" {title_key(s['title'])} " in body]
-    # One work only; its versions share a title, so the first listed (the included record) is proposed for the user to check.
-    if len({s["work_id"] for s in titled}) == 1:
-        return titled[0]["id"], "title"
-    return None, None
-
-
 def propose(text: str, sources: list[dict[str, Any]]) -> tuple[str | None, str | None]:
     """The work a file dropped on an `sw` research is proposed for, as one of its versions, and why (slice 18a).
 
-    `match_pdf_to_source`'s rule with one change: a first page that names the DOI of more than one candidate work (a
+    D49's matching rule with one change: a first page that names the DOI of more than one candidate work (a
     reference list that starts early, a companion paper cited on the title page) does not let the DOI decide, and the
     title is asked instead. A title that points at one work proposes it; otherwise nothing is proposed and the person
     picks the work. The person picks the version in every case, so the version named here is only marked.

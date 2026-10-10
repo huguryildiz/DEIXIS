@@ -31,7 +31,6 @@ ENDED_RUN_STATUSES = ("completed", "failed", "cancelled")
 TEXT_RETRY_REFUSALS = ("asset_removed", "no_holding_research", "membership_changed", "asset_replaced",
                       "baseline_changed", "run_active", "input_not_verified", "file_missing", "file_mismatch")
 TEXT_RETRY_INTERRUPTIONS = ("storage_full", "storage_unavailable", "cancelled", "unexpected_error", "process_ended")
-MIN_TITLE_KEY_CHARS = 12  # shorter normalized titles ("Introduction") say too little to suspect a duplicate
 ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
 STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze", "read_equations", "equations_skipped",
@@ -91,23 +90,6 @@ def is_published(source: dict[str, Any]) -> bool:
     return bool(source.get("doi")) and not is_preprint(source)
 
 
-def _surnames(authors: list[str]) -> list[str]:
-    return [re.sub(r"\W+", "", name.split()[-1].casefold()) for name in authors if name.split()]
-
-
-def same_publication(a: dict[str, Any], b: dict[str, Any], basis: str) -> bool:
-    """A preprint and a published record of one paper (D48): the preprint names the published DOI, or the two share the
-    title, the first author and at least half of the shorter author list. Two published records never qualify."""
-    if is_preprint(a) == is_preprint(b) or not (is_published(a) or is_published(b)):
-        return False
-    if basis == "published_doi":
-        return True
-    first, second = _surnames(a["authors"]), _surnames(b["authors"])
-    if not first or not second or first[0] != second[0]:
-        return False
-    return len(set(first) & set(second)) * 2 >= min(len(set(first)), len(set(second)))
-
-
 # The history reason a new head writes when it takes over another version's selection. It is reserved: a person's own
 # reason may not be this text (the API refuses it), so the probe set can tell the copy from a real edit (slice 19).
 COPIED_SELECTION_REASON = "taken from another version of the same work"
@@ -148,43 +130,8 @@ class SeedUnavailable(Exception):
     """The selected seed is not a readable, current PDF in this research."""
 
 
-class LegacyResearchReadOnly(Exception):
-    """Stored legacy research cannot start or revise discovery work."""
-
-
 class LegacyInspectionPolicyRemoved(Exception):
-    """D242: stored sw inspection records remain readable, but cannot execute."""
-
-
-def legacy_inspection_policy_removed(store: Any, run: dict[str, Any]) -> bool:
-    from deixis.workflow import small_batch
-
-    scope = store.scope(run["research_id"], run["scope_revision"])
-    if scope.get("search_workflow") != "sw":
-        return False  # D119 answers retain their own stored policy.
-    if run["kind"] == "fulltext_adjudication":
-        from deixis.workflow import late_revision
-        if late_revision.row_for_run(store, run):
-            return False
-        return not (run.get("idempotency_key") or "").startswith("fulltext_adjudication:person:")
-    if run["kind"] == "fulltext_fetch":
-        return True
-    if run["kind"] == "discovery":
-        return not small_batch.enabled(run["budget"])
-    if run["kind"] != "answer" or scope.get("source_scope") == "attached":
-        return False
-    if scope.get("source_scope") == "attached_and_academic":
-        searched = store.conn.execute(
-            "SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'discovery'"
-            " AND status = 'completed' ORDER BY created_at DESC, id DESC LIMIT 1",
-            (run["research_id"], run["scope_revision"])).fetchone()
-        if searched is None or small_batch.enabled(store.run(searched["id"])["budget"]):
-            return False  # Match answer_budget's completed-discovery policy selection.
-    return not small_batch.enabled(run["budget"])
-
-
-def legacy_research_read_only(scope: dict[str, Any]) -> bool:
-    return scope.get("search_workflow") == "legacy"
+    """D242: an inspection run the current policy cannot execute; the API answers 409."""
 
 
 def provisional_title(question: str) -> str:
@@ -208,10 +155,6 @@ class Store:
         self.pending_text_retry_interruptions: dict[str, str] = {}
         self.pending_file_restore_interruptions: dict[str, str] = {}
         self._text_retry_probe_errors: set[tuple[str, int | None]] = set()
-        self._columns: dict[str, set[str]] = {}
-        # Migrations precede Store construction; historical fixtures retain their schema.
-        self._extraction_has_recovery_metadata = any(
-            row[1] == "extractor_profile" for row in conn.execute("PRAGMA table_info(asset_extractions)"))
         # Pure functions of rows that are never rewritten, kept for the life of this store (slice 18b): a file's page
         # digest by (asset, extraction version) — an extraction's passages are written once and shadowed, never
         # changed — and the file each work of a frozen reading plan read, by run.
@@ -279,20 +222,9 @@ class Store:
                 "literature_connection": literature_connection, "review_connection": review_connection,
                 "created_at": ts,
             }
-            # Historical migration tests create a Store before migration 0034 exists.
-            has_seed_mode = any(row[1] == "seed_mode" for row in self.conn.execute("PRAGMA table_info(scope_revisions)"))
-            if has_seed_mode:
-                columns["seed_mode"] = seed_mode
-            elif seed_mode != "question_only":
-                raise SeedUnavailable("Seed-guided search requires the current database schema")
-            # Historical migration tests create a Store before migration 0037 exists; those libraries run `legacy` only.
-            if any(row[1] == "search_workflow" for row in self.conn.execute("PRAGMA table_info(scope_revisions)")):
-                columns["search_workflow"] = search_workflow
-            # Historical migration tests create a Store before migration 0040 exists.
-            if any(row[1] == "key_terms" for row in self.conn.execute("PRAGMA table_info(scope_revisions)")):
-                columns["key_terms"] = key_terms
-            elif key_terms:
-                raise ValueError("Key terms require the current database schema")
+            columns["seed_mode"] = seed_mode
+            columns["search_workflow"] = search_workflow
+            columns["key_terms"] = key_terms
             names = ", ".join(columns)
             placeholders = ", ".join("?" for _ in columns)
             self.conn.execute(
@@ -405,8 +337,7 @@ class Store:
             from deixis.workflow.review.store import purge_owner_reviews
             source_ids.extend(purge_owner_reviews(self.conn, research_id))
             from deixis.workflow.watch.store import purge_watches
-            if self.conn.execute("SELECT 1 FROM sqlite_master WHERE name='watches'").fetchone():
-                payloads.extend(purge_watches(self.conn, research_id))
+            payloads.extend(purge_watches(self.conn, research_id))
             self.conn.execute(
                 "DELETE FROM report_edit_checks WHERE report_id IN"
                 " (SELECT id FROM reports WHERE research_id = ?)", (research_id,),
@@ -506,9 +437,8 @@ class Store:
                 " UNION SELECT 1 FROM kill_search_queries WHERE raw_payload_path = ?"
                 " UNION SELECT 1 FROM passages WHERE payload_ref = ?", (p, p, p, p)
             ).fetchone()]
-            if self.conn.execute("SELECT 1 FROM sqlite_master WHERE name='watch_reads'").fetchone():
-                payloads = [p for p in payloads if not self.conn.execute(
-                    "SELECT 1 FROM watch_reads WHERE raw_payload_path=?", (p,)).fetchone()]
+            payloads = [p for p in payloads if not self.conn.execute(
+                "SELECT 1 FROM watch_reads WHERE raw_payload_path=?", (p,)).fetchone()]
         return orphan_files, payloads
 
     def selection_revision(self, research_id: str) -> int:
@@ -557,9 +487,6 @@ class Store:
         scope = dict(row)
         scope["providers"] = json.loads(scope.pop("providers_json"))
         snapshot = scope.pop("seed_snapshot_json", None)
-        scope.setdefault("seed_mode", "question_only")
-        scope.setdefault("search_workflow", "sw")
-        scope.setdefault("key_terms", None)
         scope["seed_snapshot"] = json.loads(snapshot) if snapshot else None
         return scope
 
@@ -568,7 +495,6 @@ class Store:
         """The next scope revision. `key_terms` given replaces the previous terms; left out, they carry over."""
         with transaction(self.conn):
             research = self.research(research_id)
-            self._guard_legacy_scope(research_id, research["current_scope_revision"])
             check_expected_version(expected_version, research["version"])
             current = dict(self.conn.execute(
                 "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?",
@@ -656,7 +582,6 @@ class Store:
         """Freeze a bounded reading of one uploaded PDF in a new scope revision."""
         with transaction(self.conn):
             research = self.research(research_id)
-            self._guard_legacy_scope(research_id, research["current_scope_revision"])
             check_expected_version(expected_version, research["version"])
             scope = self.scope(research_id)
             if scope["source_scope"] != "attached_and_academic":
@@ -800,23 +725,11 @@ class Store:
         return None
 
     # ---- runs -------------------------------------------------------------------------
-    def _guard_legacy_scope(self, research_id: str, revision: int) -> None:
-        if legacy_research_read_only(self.scope(research_id, revision)):
-            raise LegacyResearchReadOnly("legacy_research_read_only")
-
-    def _guard_legacy_run(self, run: dict[str, Any]) -> None:
-        if legacy_inspection_policy_removed(self, run):
-            raise LegacyInspectionPolicyRemoved("legacy_inspection_policy_removed")
-        if run["kind"] in DISCOVERY_RUN_KINDS:
-            self._guard_legacy_scope(run["research_id"], run["scope_revision"])
-
     def create_run(self, research_id: str, kind: str, budget: dict[str, Any], idempotency_key: str | None,
                    target: dict[str, Any] | None = None) -> dict[str, Any]:
         """Queue a run. Evidence table runs carry their target (table, columns, planned sources or cell)."""
         with transaction(self.conn):
             research = self.research(research_id)
-            if kind in DISCOVERY_RUN_KINDS:
-                self._guard_legacy_scope(research_id, research["current_scope_revision"])
             if idempotency_key:
                 existing = self.conn.execute("SELECT * FROM runs WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
                 if existing:
@@ -851,7 +764,6 @@ class Store:
         """Resume any kind without renewing usage or bypassing the single-active-run rule."""
         with transaction(self.conn):
             run = self.run(run_id)
-            self._guard_legacy_run(run)
             if run["status"] != "paused":
                 raise RevisionConflict("Only a paused run can resume")
             active = self.conn.execute(
@@ -897,7 +809,7 @@ class Store:
                 " OR (o.kind = 'file_restore' AND a.sha256 = o.expected_sha256)"
                 " JOIN corpus_memberships m ON m.source_version_id = a.source_version_id"
                 " WHERE m.research_id = ? AND o.lifecycle = 'running'",
-                (row["research_id"],)).fetchall() if self._extraction_has_recovery_metadata else []
+                (row["research_id"],)).fetchall()
             live = False
             for operation in operations:
                 try:
@@ -922,8 +834,6 @@ class Store:
         columns["updated_at"] = now()
         with transaction(self.conn):
             run = self.run(run_id)
-            if fields.get("status") in ("queued", "running"):
-                self._guard_legacy_run(run)
             if (run["status"] in ("running", "pause_requested") and "status" in fields
                     and fields["status"] not in ("running", "pause_requested")):
                 from deixis.workflow import fast_path
@@ -945,7 +855,6 @@ class Store:
         """Queue only the failed provider searches of a completed or paused discovery run."""
         with transaction(self.conn):
             run = self.run(run_id)
-            self._guard_legacy_run(run)
             if run["kind"] != "discovery" or run["status"] not in ("completed", "paused"):
                 raise RevisionConflict("Only a completed or paused discovery run can retry failed searches")
             active = self.conn.execute(
@@ -1022,11 +931,9 @@ class Store:
                 columns = {"id": sid, "run_id": run_id, "operation_key": operation_key, "kind": kind, "status": "pending"}
                 if output is not None:
                     columns["output_json"] = dumps(output)
-                # Historical migration tests create a Store before migration 0037 exists.
-                if any(row[1] == "protocol_hash" for row in self.conn.execute("PRAGMA table_info(run_steps)")):
-                    run = self.conn.execute("SELECT research_id, scope_revision FROM runs WHERE id = ?", (run_id,)).fetchone()
-                    frozen = self.current_protocol(run["research_id"], run["scope_revision"]) if run else None
-                    columns["protocol_hash"] = frozen["hash"] if frozen else None
+                run = self.conn.execute("SELECT research_id, scope_revision FROM runs WHERE id = ?", (run_id,)).fetchone()
+                frozen = self.current_protocol(run["research_id"], run["scope_revision"]) if run else None
+                columns["protocol_hash"] = frozen["hash"] if frozen else None
                 self.conn.execute(
                     f"INSERT INTO run_steps ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
                     tuple(columns.values()),
@@ -1186,7 +1093,7 @@ class Store:
         step key, so a repeat after a failure opens a new step instead of reopening the failed one.
         """
         with transaction(self.conn):
-            self._guard_legacy_run(self.run(run_id))
+            self.run(run_id)  # NotFound for an unknown run
             row = self.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = 'protocol_approval'",
                 (run_id,)).fetchone()
@@ -1210,7 +1117,7 @@ class Store:
         request cannot hold the request open or leave the run queued with half of the work done.
         """
         with transaction(self.conn):
-            self._guard_legacy_run(self.run(run_id))
+            self.run(run_id)  # NotFound for an unknown run
             row = self.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = 'protocol_approval'",
                 (run_id,)).fetchone()
@@ -1231,7 +1138,7 @@ class Store:
         Written on the model-query step, which the worker reads when it picks the run up; nothing is compiled here.
         """
         with transaction(self.conn):
-            self._guard_legacy_run(self.run(run_id))
+            self.run(run_id)  # NotFound for an unknown run
             row = self.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = 'search_query'",
                 (run_id,)).fetchone()
@@ -1268,9 +1175,7 @@ class Store:
             "payload_json": dumps(payload), "base_instructions": base, "developer_instructions": developer,
             "user_message": message, "output_schema_json": dumps(output_schema), "created_at": now(),
         }
-        # Historical migration tests create a Store before migration 0037 exists.
-        if any(row[1] == "payload_sha256" for row in self.conn.execute("PRAGMA table_info(step_inputs)")):
-            columns["payload_sha256"] = sha256_hex(payload)
+        columns["payload_sha256"] = sha256_hex(payload)
         with transaction(self.conn):
             self.conn.execute(
                 f"INSERT INTO step_inputs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
@@ -1295,9 +1200,7 @@ class Store:
 
     def finish_model_session(self, session_id: str, *, accept: Callable[[], bool] | None = None, **fields: Any) -> bool:
         encoded = {k: (dumps(v) if k.endswith("_json") and v is not None else v) for k, v in fields.items()}
-        # Historical migration tests create a Store before migration 0037 exists.
-        if fields.get("raw_output") is not None and any(
-                row[1] == "output_sha256" for row in self.conn.execute("PRAGMA table_info(model_sessions)")):
+        if fields.get("raw_output") is not None:
             encoded["output_sha256"] = _output_digest(fields["raw_output"])
         encoded["finished_at"] = now()
         with transaction(self.conn):
@@ -1389,10 +1292,9 @@ class Store:
         """Fill the record's author keywords while the column is empty, as a missing abstract is filled.
 
         One provider's list is never merged into another's: a keyword list belongs to the record the provider
-        described, and the first list read stands. Historical migration tests run today's code against a schema
-        from before 0042, where the column does not exist yet (`step` does the same for 0037).
+        described, and the first list read stands.
         """
-        if not record.author_keywords or not self._has_column("source_versions", "author_keywords_json"):
+        if not record.author_keywords:
             return
         self.conn.execute(
             "UPDATE source_versions SET author_keywords_json = ? WHERE id = ? AND author_keywords_json IS NULL",
@@ -1404,9 +1306,8 @@ class Store:
 
         A paper's bibliography does not change, so this is not dated and not overwritten the way the citation count
         is: the first source that names a count settles it, whether that was a search or a DOI lookup (SW5.1).
-        Historical migration tests run today's code against a schema from before 0043, where the column is absent.
         """
-        if count is None or not self._has_column("source_versions", "reference_count"):
+        if count is None:
             return
         self.conn.execute("UPDATE source_versions SET reference_count = ? WHERE id = ? AND reference_count IS NULL",
                           (count, svid))
@@ -1415,25 +1316,15 @@ class Store:
         """Add the works this record's bibliography names and mark its list read; the caller holds the transaction.
 
         A list is added to, never replaced: a second provider that names none must not unread what the first read
-        (SW7.4). Historical migration tests run today's code against a schema from before 0044.
+        (SW7.4).
         """
-        if record.references is None or not self._has_column("source_versions", "references_read"):
+        if record.references is None:
             return
         self.conn.executemany(
             "INSERT OR IGNORE INTO record_references (source_version_id, referenced_id) VALUES (?, ?)",
             [(svid, referenced) for referenced in record.references],
         )
         self.conn.execute("UPDATE source_versions SET references_read = 1 WHERE id = ?", (svid,))
-
-    def _has_column(self, table: str, column: str) -> bool:
-        """Whether this database has already been migrated far enough to hold the column. Only a present column is
-        remembered, so a store whose database is migrated further still sees it."""
-        if column in self._columns.setdefault(table, set()):
-            return True
-        if any(row[1] == column for row in self.conn.execute(f"PRAGMA table_info({table})")):
-            self._columns[table].add(column)
-            return True
-        return False
 
     def other_version_ids(self, provider: str, record: Any) -> list[str]:
         return [self.find_source_by_identifier(f"{provider}_version", f"{record.provider_record_id}:{o.version_label}")
@@ -1622,8 +1513,6 @@ class Store:
     def _assign_source_key(self, work_id: str, replace_title_key: bool = False) -> None:
         """Give a work its short author–year key (D59): from its published record's authors when it has one, else from
         another version's authors, else from the title. A key is kept once given; only a title key may be replaced."""
-        if not any(col[1] == "source_key" for col in self.conn.execute("PRAGMA table_info(works)")):
-            return  # a library opened at a schema before migration 33, as the migration tests do
         work = self.conn.execute("SELECT source_key, source_key_basis FROM works WHERE id = ?", (work_id,)).fetchone()
         if work is None or (work["source_key"] and not (replace_title_key and work["source_key_basis"] == "title")):
             return
@@ -1640,14 +1529,6 @@ class Store:
             if not self.conn.execute("SELECT 1 FROM works WHERE source_key = ? COLLATE NOCASE AND id != ?", (key, work_id)).fetchone():
                 self.conn.execute("UPDATE works SET source_key = ?, source_key_basis = ? WHERE id = ?", (key, basis, work_id))
                 return
-
-    def assign_source_keys(self) -> int:
-        """Key every work stored without one, oldest first; returns how many were keyed."""
-        with transaction(self.conn):
-            missing = [r[0] for r in self.conn.execute("SELECT id FROM works WHERE source_key IS NULL ORDER BY created_at, id")]
-            for work_id in missing:
-                self._assign_source_key(work_id)
-        return len(missing)
 
     def _insert_passage(self, svid: str, asset_id: str | None, kind: str, page: int | None, label: str | None,
                         abstract_origin: str | None, payload_ref: str | None, extraction_version: str | None, text: str,
@@ -1740,16 +1621,6 @@ class Store:
              dumps(math) if math is not None else None, dumps(ocr) if ocr is not None else None,
              recovery.profile_of(extraction_version), baseline_extraction_id, input_observation_id,
              recovery_operation_id, int(diagnostic_only), decision_code)
-        if not self._extraction_has_recovery_metadata:
-            # Historical migration fixtures still exercise initial attachment at
-            # schema 0053. Recovery metadata cannot be silently lost there.
-            if baseline_extraction_id or input_observation_id or recovery_operation_id or diagnostic_only or decision_code:
-                raise ValueError("Recovery metadata requires migration 0066")
-            statement = statement.replace(
-                ", extractor_profile, baseline_extraction_id, input_observation_id, recovery_operation_id, diagnostic_only, decision_code", "")
-            statement = statement.replace(
-                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?", "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?")
-            values = values[:13]
         self.conn.execute(statement, values)
         return extraction_id
 
@@ -2439,10 +2310,7 @@ class Store:
         )]
 
     def pdf_discoveries(self, research_id: str, svid: str, *, retry_after: bool = False) -> list[dict[str, Any]]:
-        """Lookup rows; migrated runtime views can request the 0072 retry-time field.
-
-        Migration probes can omit it while inspecting an earlier schema.
-        """
+        """Lookup rows; `retry_after` adds each row's retry time for the callers that show or use it."""
         return [dict(r) for r in self.conn.execute(
             "SELECT provider, query_text, status, result_count, other_title_count, http_status, error_code,"
             f" {'retry_after,' if retry_after else ''} created_at, finished_at FROM pdf_discovery_runs"
@@ -2493,10 +2361,7 @@ class Store:
                     self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
                 for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
                     self.add_to_corpus(search_fields["research_id"], other, "search", srid, candidate=False)
-            if self.scope(search_fields["research_id"])["search_workflow"] == "sw":
-                links.link_records(self, search_fields["research_id"], found)  # D48's narrow rule widens to SW6
-            else:
-                self._flag_suspected_duplicates(search_fields["research_id"], found)
+            links.link_records(self, search_fields["research_id"], found)  # D48's narrow rule widens to SW6
             admission = (step_output or {}).get("fast_path_request")
             from deixis.workflow import fast_path
             run = self.run(search_fields["run_id"]) if admission else None
@@ -2536,58 +2401,6 @@ class Store:
             return None
         return None if is_published(self.source(svid)) and not is_published(self.source(row[0])) else row[0]
 
-    def _flag_suspected_duplicates(self, research_id: str, svids: list[str]) -> None:
-        """Record candidates of other works that may be the same publication; nothing is merged.
-
-        A preprint and its published record become versions of one work instead of being flagged (D48).
-        """
-        rows = {r["id"]: r for r in self.conn.execute(
-            "SELECT v.id, v.work_id, v.title, v.doi FROM candidates c JOIN source_versions v ON v.id = c.source_version_id"
-            " WHERE c.research_id = ?", (research_id,)
-        )}
-        by_title: dict[str, list[str]] = {}
-        for row in rows.values():
-            by_title.setdefault(title_key(row["title"]), []).append(row["id"])
-        pairs = set()
-        for svid in dict.fromkeys(svids):
-            if svid not in rows:
-                continue
-            key = title_key(rows[svid]["title"])
-            if len(key) >= MIN_TITLE_KEY_CHARS:
-                pairs |= {(svid, other, "same_title") for other in by_title[key]}
-            doi = rows[svid]["doi"]
-            linked = self.conn.execute(
-                "SELECT source_version_id FROM identifier_mappings WHERE scheme = 'published_doi' AND value = ?", (doi,)
-            ).fetchall() if doi else []
-            linked += self.conn.execute(
-                "SELECT d.source_version_id FROM identifier_mappings p JOIN identifier_mappings d"
-                " ON d.scheme = 'doi' AND d.value = p.value WHERE p.scheme = 'published_doi' AND p.source_version_id = ?", (svid,)
-            ).fetchall()
-            pairs |= {(svid, r[0], "published_doi") for r in linked}
-        ts = now()
-        for a, b, basis in sorted(pairs, key=lambda pair: pair[2] != "published_doi"):
-            if b in rows and not self._join_if_same_publication(a, b, basis):
-                first, second = sorted((a, b))
-                self.conn.execute(
-                    "INSERT OR IGNORE INTO suspected_duplicates (research_id, source_version_id, other_source_version_id, basis, created_at)"
-                    " VALUES (?, ?, ?, ?, ?)", (research_id, first, second, basis, ts),
-                )
-
-    def _join_if_same_publication(self, a: str, b: str, basis: str) -> bool:
-        """Put a preprint and its published record in one work, headed by the published record (D48).
-
-        True when the two already share a work or were joined; false when they stay separate works. The versions stay
-        separate source versions: nothing about either record is merged, and evidence never moves between them.
-        """
-        first, second = self.source(a), self.source(b)
-        if first["work_id"] == second["work_id"]:
-            return True
-        if not same_publication(first, second, basis):
-            return False
-        keep, drop = (first, second) if is_published(first) else (second, first)
-        self._join_works(keep["work_id"], drop["work_id"])
-        return True
-
     def _join_works(self, keep_work_id: str, drop_work_id: str) -> dict[str, Any]:
         """Move every version of one work into another and drop the emptied work; the caller holds the transaction.
 
@@ -2608,18 +2421,6 @@ class Store:
         ).fetchall():
             self._settle_work_head(research_id, keep_work_id)
         return {"dropped_work": dropped, "moved": moved}
-
-    def link_published_versions(self) -> int:
-        """Join preprints and published records flagged as suspected duplicates before D48; returns the pairs joined."""
-        joined = 0
-        with transaction(self.conn):
-            for r in self.conn.execute(
-                "SELECT source_version_id, other_source_version_id, basis FROM suspected_duplicates ORDER BY basis != 'published_doi'"
-            ).fetchall():
-                a, b = self.source(r[0]), self.source(r[1])
-                if a["work_id"] != b["work_id"] and self._join_if_same_publication(r[0], r[1], r[2]):
-                    joined += 1
-        return joined
 
     def chain_only_works(self, research_id: str, scope_revision: int) -> set[str]:
         """The works of this question revision that only citation chaining found (D95): each has a hit from a chain
@@ -2883,15 +2684,6 @@ class Store:
 
     def has_pdf_text(self, svid: str) -> bool:
         return any(p["kind"] == "pdf_page" for p in self.passages_for(svid))
-
-    def suspected_duplicates(self, research_id: str) -> dict[str, list[dict[str, str]]]:
-        result: dict[str, list[dict[str, str]]] = {}
-        for r in self.conn.execute(
-            "SELECT source_version_id, other_source_version_id, basis FROM suspected_duplicates WHERE research_id = ?", (research_id,)
-        ):
-            result.setdefault(r[0], []).append({"source_version_id": r[1], "basis": r[2]})
-            result.setdefault(r[1], []).append({"source_version_id": r[0], "basis": r[2]})
-        return result
 
     def add_search_run(self, **fields: Any) -> str:
         srid = new_id("srn")

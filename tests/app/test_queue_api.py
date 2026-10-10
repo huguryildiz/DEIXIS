@@ -156,24 +156,7 @@ def test_research_view_counts_the_queue(tmp_path, monkeypatch):
     assert (after["queue"], after["look_again"]) == (1, 0)
 
 
-def test_queue_endpoints_refuse_legacy_and_mutations_need_the_csrf_header(tmp_path, monkeypatch):
-    legacy = app_for(tmp_path / "legacy", monkeypatch, Transport(papers(1)[0]), papers(1)[1], workflow="legacy")
-    client = client_of(legacy)
-    try:
-        rid, _, view, _ = discover(client)
-        legacy.state.store.conn.execute("UPDATE scope_revisions SET search_workflow = 'legacy' WHERE research_id = ?", (rid,))
-        svid = view["sources"][0]["source_version_id"]
-        listed = client.get(f"/api/researches/{rid}/queue")
-        row = client.get(f"/api/researches/{rid}/queue/{svid}")
-        posted = client.post(f"/api/researches/{rid}/queue/{svid}/decision",
-                             json={"decision": "include", "note": None, "row_token": "x"})
-        undone = client.post(f"/api/researches/{rid}/queue/{svid}/undo", json={"row_token": "x"})
-        counts = client.get(f"/api/researches/{rid}").json()["counts"]
-    finally:
-        client.__exit__(None, None, None)
-    assert [r.status_code for r in (listed, row, posted, undone)] == [422, 422, 422, 422]
-    assert "queue" not in counts and "look_again" not in counts  # a legacy view is what it was
-
+def test_queue_mutations_need_the_csrf_header(tmp_path, monkeypatch):
     works, fetcher = papers(1)
     app = app_for(tmp_path / "sw", monkeypatch, Transport(works), fetcher, adapter=FakeAdapter(disagree_response))
     client = client_of(app)

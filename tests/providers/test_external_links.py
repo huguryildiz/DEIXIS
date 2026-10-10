@@ -4,8 +4,6 @@ Records are SYNTHETIC. Passing these tests shows that a named link confirms a me
 rewritten, that a link naming a different published version blocks one, and that a merge made this way goes through
 exactly the same guards and undo path as a merge made from the text; it says nothing about how often the external
 sources are right, which was measured on one topic outside the product.
-
-A `legacy` research is checked here too, because nothing about it may change.
 """
 
 import pytest
@@ -50,12 +48,10 @@ def preprint(record_id="2601.00001v1", doi=ARXIV_DOI, **fields):
     return record(record_id, doi=doi, merge_by_doi=False, version_label="submittedVersion", **fields)
 
 
-def research(store, search_workflow="sw"):
+def research(store):
     rid = store.create_research("SYNTHETIC question?", "academic", "standard", ["openalex", "arxiv"], "fake", "m", "en")
     run = store.create_run(rid, "discovery", {"max_model_calls": 4, "max_provider_requests": 4, "max_candidates": 50,
                                               "max_answer_passages": 8}, None)
-    if search_workflow == "legacy":
-        store.conn.execute("UPDATE scope_revisions SET search_workflow = 'legacy' WHERE research_id = ?", (rid,))
     return rid, run["id"]
 
 
@@ -245,19 +241,3 @@ def test_a_pair_is_read_again_when_a_lookup_fills_an_abstract(store):
     assert link_between(store, rid, published, pre)["rule"] == "title_authors_abstract"
     closed = [row for row in links.links_for(store, pre, include_closed=True) if row["closed_at"]]
     assert [(row["rule"], row["closed_reason"]) for row in closed] == [("similar_title_same_authors", "superseded")]
-
-
-# ---- the legacy workflow is untouched ------------------------------------------------------------
-
-
-def test_a_legacy_research_does_not_read_a_linked_doi(store):
-    """`legacy` reads `published_doi` alone (D48), so the scheme this slice writes is invisible to it."""
-    rid, run_id = research(store, search_workflow="legacy")
-    search(store, rid, run_id, 0, "openalex", [record("W1", title=TITLE)])
-    search(store, rid, run_id, 1, "openalex", [record("W2", title=RETITLED, doi=OTHER_DOI)])
-    first = store.find_source_by_identifier("openalex", "W1")
-    second = store.find_source_by_identifier("openalex", "W2")
-    name_link(store, first, OTHER_DOI)
-    assert store.suspected_duplicates(rid) == {}  # the titles differ and a linked DOI is not a duplicate signal
-    assert links.research_links(store, rid) == []
-    assert store.source(first)["work_id"] != store.source(second)["work_id"]

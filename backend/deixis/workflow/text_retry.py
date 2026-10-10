@@ -241,7 +241,7 @@ def _input_observation(storage_path, sha256, byte_size, observed):
 
 async def read_verified(store, papers_dir: Path, recovery_dir: Path, *, storage_path: str,
                         sha256: str, byte_size: int, lock: bool) -> VerifiedRead:
-    if not HASH.fullmatch(sha256) or not store._extraction_has_recovery_metadata:
+    if not HASH.fullmatch(sha256):
         return VerifiedRead(await drained_thread(pdf.extract_pdf, papers_dir / storage_path), None)
     if lock:
         from deixis.workflow.file_restore import writer_lock
@@ -263,7 +263,7 @@ async def read_verified(store, papers_dir: Path, recovery_dir: Path, *, storage_
 def read_verified_sync(store, papers_dir: Path, recovery_dir: Path, *, storage_path: str,
                        sha256: str, byte_size: int) -> VerifiedRead:
     """Library-wide CLI read; the caller already owns the non-blocking hash lock."""
-    if not HASH.fullmatch(sha256) or not store._extraction_has_recovery_metadata:
+    if not HASH.fullmatch(sha256):
         return VerifiedRead(pdf.extract_pdf(papers_dir / storage_path), None)
     copy_path = _read_copy(recovery_dir, sha256, owned=True)
     try:

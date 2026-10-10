@@ -160,7 +160,6 @@ ROWS: list[dict[str, Any]] = [
             ("tests.watch.test_watch_recovery", "test_*"),
             ("tests.watch.test_watch_separation", "test_*"),
             ("tests.watch.test_watch_schedule_migration", "test_*"),
-            ("tests.watch.test_watch_schedule_old_entrypoints", "test_*"),
             ("tests.watch.test_watch_scheduler", "test_*"),
             ("tests.watch.test_watch_scheduler_lifespan", "test_*"),
             ("tests.watch.test_watch_process_driver", "test_*"),

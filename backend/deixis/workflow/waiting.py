@@ -27,10 +27,6 @@ from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.store import Store
 
 
-class WaitingUnavailable(Exception):
-    """The research is not on the `sw` workflow; the API answers 422."""
-
-
 class AttachRefused(RevisionConflict):
     """A confirmation the state no longer allows (409), with why: `file_changed`, `scope_revised`,
     `not_a_candidate`, `not_a_member`, `versions_changed` or `pdf_in_use`."""
@@ -38,11 +34,6 @@ class AttachRefused(RevisionConflict):
     def __init__(self, reason: str, message: str):
         super().__init__(message)
         self.reason = reason
-
-
-def require_sw(store: Store, research_id: str) -> None:
-    if store.scope(research_id).get("search_workflow") != "sw":
-        raise WaitingUnavailable("The PDF waiting list belongs to the search workflow")
 
 
 def _plans(store: Store, research_id: str, revision: int) -> list[dict[str, Any]]:
@@ -172,7 +163,6 @@ def work_view(store: Store, research_id: str, work_id: str, head: str, proposed:
 def waiting_view(store: Store, research_id: str) -> dict[str, Any]:
     """The list in reading order: each work's record, why it waits, its links (through the proxy when one is set),
     the version "Find PDF" asks for, and its versions for a confirmation."""
-    require_sw(store, research_id)
     found, plans, revision = _rows(store, research_id)
     address = store.setting(proxy.SETTING)
     rows = []
@@ -238,7 +228,6 @@ def propose(store: Store, research_id: str, text: str) -> dict[str, Any]:
 def check_attach(store: Store, research_id: str, *, work_id: str, source_version_id: str, scope_revision: int,
                  versions_digest: str, sha256: str, uploaded_sha256: str) -> None:
     """Refuse a confirmation whose file, question revision, work or version moved since the match (decision 5)."""
-    require_sw(store, research_id)
     if uploaded_sha256 != sha256:
         raise AttachRefused("file_changed", "This is not the file that was matched; drop it again")
     if store.research(research_id)["current_scope_revision"] != scope_revision:

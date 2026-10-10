@@ -271,7 +271,7 @@ def test_the_markdown_opens_with_the_statement_and_says_not_performed_and_not_re
     assert strip(prisma_s.markdown(data)) == strip(prisma_s.markdown(again))
 
 
-def test_the_endpoint_gives_both_formats_and_refuses_a_legacy_research(tmp_path, monkeypatch):
+def test_the_endpoint_gives_both_formats(tmp_path, monkeypatch):
     app, client = quiet_app(tmp_path, monkeypatch)
     try:
         store = app.state.store
@@ -279,15 +279,12 @@ def test_the_endpoint_gives_both_formats_and_refuses_a_legacy_research(tmp_path,
         searched(lib)
         as_json = client.get(f"/api/researches/{lib.rid}/prisma-s?format=json")
         as_md = client.get(f"/api/researches/{lib.rid}/prisma-s?format=md")
-        legacy = Search(store, workflow="legacy")
-        refused = client.get(f"/api/researches/{legacy.rid}/prisma-s?format=md")
     finally:
         client.__exit__(None, None, None)
     assert as_json.status_code == 200 and len(as_json.json()["items"]) == 16
     assert as_json.headers["content-disposition"].endswith('.json"')
     assert as_md.status_code == 200 and as_md.headers["content-type"].startswith("text/markdown")
     assert as_md.text.splitlines()[2] == prisma_s.STATEMENT
-    assert refused.status_code == 422
 
 
 # ---- decision 9: the depth text's limits --------------------------------------------------------------------------

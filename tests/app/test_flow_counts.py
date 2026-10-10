@@ -174,13 +174,6 @@ def test_a_stale_person_include_still_included_is_counted_as_read_by_the_answer(
     assert flow_of(lib)["look_again_in_answer"] == 0
 
 
-def test_a_legacy_research_has_no_flow_no_boxes_and_no_override_count(store):
-    lib = Probe(store, workflow="legacy")
-    lib.work()
-    counts = views.research_view(store, lib.rid)["counts"]
-    assert counts["flow"] is None and counts["flow_boxes"] is None and counts["overrides"] is None
-
-
 # ---- decision 2: the boxes ---------------------------------------------------------------------------------------
 
 

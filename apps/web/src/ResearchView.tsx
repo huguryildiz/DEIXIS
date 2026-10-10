@@ -450,11 +450,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // Table cards sit under the report card, or at the end of the conversation before the first answer.
   const tableCards = tables && tables.length > 0 && <div className="table-artifacts">{tables.map(table => <TableCard key={table.id} table={table} onOpen={() => openTable(table.id)} />)}</div>
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
-  // The human queue is an sw research's own surface (slice 17); a legacy research has no such tab.
-  const hasQueue = view.scope.search_workflow === 'sw'
-  const discoveryReadOnly = view.research.read_only_reason === 'legacy_research_read_only'
-  // An sw research whose current search finished may answer with nothing included: the answer records that (SW22).
-  const answersWithoutInclude = hasQueue && view.scope.discovery_completed === true
+  // A research whose current search finished may answer with nothing included: the answer records that (SW22).
+  const answersWithoutInclude = view.scope.discovery_completed === true
   const queueCount = (view.counts.queue ?? 0) + (view.counts.look_again ?? 0)
   const showQueue = () => { goTab('queue'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
   // Files dropped on the PDF panel of an sw research go to the waiting view's version-checked match (slice 18a).
@@ -506,11 +503,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <span title={t('Where DEIXIS looks for sources')}><ScopeIcon size={13} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
       <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>
-    {discoveryReadOnly && <p className="legacy-mini-note" role="status">{t('This research used an earlier search method. Start a new research to search again.')}</p>}
 
     <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { goTab(String(value)); setPicked([]) }}>
       <div className="research-tabs-bar">
-        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger>{hasQueue && <TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger>}{hasQueue && <TabsTrigger value="waiting">{t('Waiting for your PDF')} <span className="research-tab-count">{waitingCount}</span></TabsTrigger>}<TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="followup">{t('Follow-up')}{(followupCount.loading || followupCount.count !== null) && <span className="research-tab-count" aria-label={followupCount.loading ? t('Loading follow-up') : undefined} title={followupCount.loading ? t('Loading follow-up') : undefined}>{followupCount.loading ? '…' : followupCount.count}</span>}</TabsTrigger><TabsTrigger value="candidates" tabIndex={0}>{t('Candidates')} <span className="research-tab-count" title={candidateCount === null ? t('Loading candidates…') : undefined}>{candidateCount ?? '…'}</span></TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + view.reportRuns.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
+        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger><TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger><TabsTrigger value="waiting">{t('Waiting for your PDF')} <span className="research-tab-count">{waitingCount}</span></TabsTrigger><TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="followup">{t('Follow-up')}{(followupCount.loading || followupCount.count !== null) && <span className="research-tab-count" aria-label={followupCount.loading ? t('Loading follow-up') : undefined} title={followupCount.loading ? t('Loading follow-up') : undefined}>{followupCount.loading ? '…' : followupCount.count}</span>}</TabsTrigger><TabsTrigger value="candidates" tabIndex={0}>{t('Candidates')} <span className="research-tab-count" title={candidateCount === null ? t('Loading candidates…') : undefined}>{candidateCount ?? '…'}</span></TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + view.reportRuns.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
         {/* The live run carries its own quiet Pause; these controls ride with the tabs so pause, resume and cancel stay reachable from every tab.
             A table run is controlled on the Evidence tab above its table; elsewhere the bar only links there. */}
         {candidateRun && tab !== 'candidates' && <button type="button" className="run-chip" aria-label={t('Open the Candidates tab to control this run')} onClick={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); goTab('candidates') }}>
@@ -536,11 +532,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <TabsContent value="answer">
         {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
         <Transcript view={{ ...view, runs: view.runs.filter(r => TRANSCRIPT_KINDS.has(r.kind)) }} modelText={modelText}
-          onRetryFailedSearches={discoveryReadOnly ? undefined : async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
+          onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
           onProtocolApproved={async () => { toast('success', t('Correction recorded. The run is queued again.')); await load(); onChanged() }}
           onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
           onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}
-          queueCount={hasQueue ? queueCount : 0} onOpenQueue={showQueue}
+          queueCount={queueCount} onOpenQueue={showQueue}
           emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
           latestAnswer={answer ? <><AnswerBlock eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
         {!answer && tableCards}
@@ -549,7 +545,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           <span className="report-artifact-copy"><span className="report-artifact-meta"><FileText size={13} aria-hidden />{view.reportRuns[0].status === 'valid' ? t('Evidence report · V{n}', { n: view.reportRuns[0].report_version ?? '' }) : view.reportRuns[0].status === 'draft' ? t('Evidence report · draft') : t('Evidence report · being written')}</span><strong>{heading}</strong>{view.reportRuns[0].status === 'in_progress' && <small role="status">{t(latestEvidenceReportRun?.status === 'paused' ? 'Report paused' : 'The report is being written.')}</small>}</span>
           <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
         </button>}
-        {view.scope.source_scope === 'attached_and_academic' && !discoveryReadOnly && <div className="research-seed">
+        {view.scope.source_scope === 'attached_and_academic' && <div className="research-seed">
           <div><strong>{t('PDF guiding the search')}</strong><p>{view.scope.seed_status === 'ready'
             ? t('{n} PDF passages from {title} guided the search.', { n: view.scope.seed?.passage_count ?? 0, title: view.scope.seed?.title ?? '' })
             : view.scope.seed_status === 'question_only'
@@ -572,13 +568,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
         </div>}
         {/* Before the first answer, the next step is getting the included sources' PDFs (D49); the panel carries the answer button. */}
-        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady && !discoveryReadOnly} act={async (action, success) => { await act(action, success) }} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={hasQueue ? dropForWaiting : undefined} /> :
+        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady} act={async (action, success) => { await act(action, success) }} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={dropForWaiting} /> :
         /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
            While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */
         active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
           <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
           {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
-          {hasAcademic && !discoveryReadOnly && (view.search_runs.length
+          {hasAcademic && (view.search_runs.length
             ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
             : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
         </div><UploadedTextNote semantic={view.semantic} /></>}
@@ -615,13 +611,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         </section>
       </TabsContent>
 
-      {hasQueue && <TabsContent value="queue">
+      <TabsContent value="queue">
         <HumanQueue researchId={id} view={view} dark={dark} onChanged={async () => { await load(); onChanged() }} onShowInSources={showInSources} />
-      </TabsContent>}
+      </TabsContent>
 
-      {hasQueue && <TabsContent value="waiting">
+      <TabsContent value="waiting">
         <WaitingForPdf researchId={id} view={view} busy={busy} incoming={waitingFiles} onIncomingTaken={takeWaitingFiles} onChanged={async (announced?: string) => { if (announced) announcedRuns.current.add(announced); await load(); onChanged() }} />
-      </TabsContent>}
+      </TabsContent>
 
       <TabsContent value="evidence">
         <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
@@ -653,9 +649,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <input ref={sourceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void uploadToSource(e.target.files); e.target.value = '' }} />
     <input ref={replaceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void reviewReplacement(e.target.files); e.target.value = '' }} />
 
-    {!discoveryReadOnly && <RevisionForm key={view.research.version} question={view.scope.question} disabled={busy || active}
-      keyTerms={view.scope.search_workflow === 'sw' ? view.scope.key_terms ?? '' : null} keyTermsRef={keyTerms}
-      onSubmit={(text, terms) => act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />}
+    <RevisionForm key={view.research.version} question={view.scope.question} disabled={busy || active}
+      keyTerms={view.scope.key_terms ?? ''} keyTermsRef={keyTerms}
+      onSubmit={(text, terms) => act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
     <ConfirmDialog open={Boolean(removeTarget)} dark={dark} title={t('Remove PDF?')}
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}
@@ -1079,7 +1075,6 @@ function SourceList({ sources, busy, filter, onFilter, focus, onFocus, picked, o
     {focused && <p className="source-focus">{t('Showing the one work the audit sample sent you to.')} <button type="button" onClick={() => { onFocus(null); onFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
     <div className={`source-list${picked.length ? ' has-selection-bar' : ''}`}>{shown.flat().map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
       picked={picked.includes(source.source_version_id)} onPick={on => togglePick(source.source_version_id, on)} onRemoveFromResearch={() => onRemoveFromResearch(source)}
-      duplicates={source.suspected_duplicates.map(d => ({ basis: d.basis, source: sources.find(s => s.source_version_id === d.source_version_id) }))}
       readsVersion={sources.find(s => s.source_version_id === source.answer_reads_version_id)}
       onSelect={state => onSelect(source, state)} onReason={reason => onReason(source, reason)} onAbstract={() => onAbstract(source)}
       onDiscoverPdf={() => onDiscoverPdf(source)} onAttachPdf={() => onAttachPdf(source)} onAttachCandidate={candidateId => onAttachCandidate(source, candidateId)} onOpenPdf={assetId => onOpenPdf(source, assetId)}
@@ -1122,7 +1117,7 @@ function PdfSearchStatus() {
   </p>
 }
 
-function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplicates, readsVersion, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, finding, ocr }: { source: Source; busy: boolean; picked: boolean; onPick: (on: boolean) => void; onRemoveFromResearch: () => void; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; onReplaceAsset: (assetId: string) => void; onReextract: (assetId: string) => void; onRereadEquations: (assetId: string) => void; finding: boolean; ocr: OcrContext; duplicates: { basis: Source['suspected_duplicates'][number]['basis']; source?: Source }[]; readsVersion?: Source }) {
+function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, readsVersion, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, finding, ocr }: { source: Source; busy: boolean; picked: boolean; onPick: (on: boolean) => void; onRemoveFromResearch: () => void; onSelect: (state: Source['selection']['state']) => void; onReason: (reason: string) => void; onAbstract: () => void; onDiscoverPdf: () => void; onAttachPdf: () => void; onAttachCandidate: (candidateId: string) => void; onOpenPdf: (assetId: string) => void; onRemoveAsset: (assetId: string) => void; onReplaceAsset: (assetId: string) => void; onReextract: (assetId: string) => void; onRereadEquations: (assetId: string) => void; finding: boolean; ocr: OcrContext; readsVersion?: Source }) {
   const s = source.selection
   const other = source.version_role === 'other_version'
   const authors = source.authors.join(', ')
@@ -1155,7 +1150,6 @@ function SourceRow({ source, busy, picked, onPick, onRemoveFromResearch, duplica
         {source.cited_in_latest_answer && <span className="source-fact is-cited">{t('cited in the latest answer')}</span>}
         {source.similarity !== null && <Tooltip content={t(source.access.abstract_passage_id ? 'Embedding similarity between the research question and this source’s title and stored abstract. Used for ordering only; it is not a relevance judgment.' : 'Embedding similarity between the research question and this source’s title. No abstract was available. Used for ordering only; it is not a relevance judgment.')}><span className="source-fact is-similarity" tabIndex={0}>{t('Similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</span></Tooltip>}
         {source.provider_records.length > 0 && <span className="source-fact is-plain">{t('Found in {providers}', { providers: source.provider_records.map(providerName).join(', ') })}</span>}
-        {duplicates.length > 0 && <Tooltip content={<ul className="duplicate-tip">{duplicates.map((d, i) => <li key={i}>{d.source ? [versionText(d.source.version_label), d.source.provider_records.map(providerName).join(', ')].filter(Boolean).join(' · ') : t('a source not in this list')} — {t(d.basis === 'published_doi' ? 'a preprint that names the other record’s DOI' : 'same title')}</li>)}</ul>}><span className="source-fact is-plain is-duplicate" tabIndex={0}>{t(duplicates.length === 1 ? 'may duplicate {n} other source · not merged' : 'may duplicate {n} other sources · not merged', { n: duplicates.length })}</span></Tooltip>}
       </div>
       {source.applicability === 'stale_scope' && <p className="proposal is-stale">{t(s.proposal ? 'Found for question revision {n}; the proposal below was made for that question. Search again to screen it for the current question.' : 'Found for question revision {n}. Search again to screen it for the current question.', { n: source.found_in_revision ?? '?' })}</p>}
       {s.proposal && !other && <p className="proposal is-model"><span className="proposal-tag">{t('Model proposal:')}</span> <span><em className={`verdict is-${s.proposal}`}>{t(s.proposal)}</em> — {s.proposal_reason} <span>({t(s.proposal_basis?.replaceAll('_', ' ') ?? '')})</span>{s.origin === 'user' ? ` ${t('· overridden by you')}` : ''}</span></p>}

@@ -18,7 +18,7 @@ from pathlib import Path
 
 from deixis.storage.db import describe_failure, now, transaction
 from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.store import Store, legacy_inspection_policy_removed
+from deixis.workflow.store import Store
 
 try:
     import fcntl
@@ -89,41 +89,8 @@ class Worker:
                 self.store._event(run["research_id"], "run_paused", {"status": "paused", "pause_reason": "backend_restarted"}, run["id"])
         return {"runs": len(runs), "steps": steps, "model_sessions": sessions}
 
-    def cancel_legacy_discovery(self) -> int:
-        """Close unfinished discovery-side runs after recovery and before work is picked."""
-        with transaction(self.store.conn):
-            rows = self.store.conn.execute(
-                "SELECT r.id, r.research_id FROM runs r JOIN scope_revisions s"
-                " ON s.research_id = r.research_id AND s.revision = r.scope_revision"
-                " WHERE s.search_workflow = 'legacy'"
-                " AND r.kind IN ('discovery', 'fulltext_fetch', 'fulltext_adjudication')"
-                " AND r.status IN ('queued', 'running', 'pause_requested', 'paused')"
-            ).fetchall()
-            for row in rows:
-                self.store.conn.execute(
-                    "UPDATE runs SET status = 'cancelled', pause_reason = 'legacy_workflow_removed',"
-                    " version = version + 1, updated_at = ? WHERE id = ?", (now(), row["id"]),
-                )
-                self.store._event(row["research_id"], "run_cancelled",
-                                  {"status": "cancelled", "reason": "legacy_workflow_removed"}, row["id"])
-        return len(rows)
-
     def wake(self) -> None:
         self._wake.set()
-
-    def cancel_legacy_inspection(self) -> int:
-        """Cancel removed sw execution and its event in one transaction; retain all inputs."""
-        with transaction(self.store.conn):
-            runs = [self.store.run(row[0]) for row in self.store.conn.execute(
-                "SELECT id FROM runs WHERE status IN ('queued', 'running', 'pause_requested', 'paused')"
-                " AND kind IN ('discovery', 'fulltext_fetch', 'fulltext_adjudication', 'answer')")]
-            removed = [run for run in runs if legacy_inspection_policy_removed(self.store, run)]
-            for run in removed:
-                self.store.update_run(run["id"], status="cancelled",
-                                      pause_reason="legacy_inspection_policy_removed")
-                self.store._event(run["research_id"], "run_cancelled",
-                                  {"status": "cancelled", "reason": "legacy_inspection_policy_removed"}, run["id"])
-        return len(removed)
 
     async def run_forever(self) -> None:
         lane = getattr(self.flow, "background_fetch", None)
@@ -189,7 +156,7 @@ class Worker:
             self._run_ended(run["id"])
 
     async def reconcile_recovery(self) -> dict[str, int] | None:
-        if self.store.recovery_dir is None or not self.store._extraction_has_recovery_metadata:
+        if self.store.recovery_dir is None:
             return None
         from deixis.workflow import reconcile
 

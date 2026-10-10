@@ -17,14 +17,12 @@ def instrument(monkeypatch):
     def record(instance, event):
         events[instance].append((next(sequence), event))
     original_init, original_run = WatchScheduler.__init__, WatchScheduler.run_forever
-    recover, cancel, tick = Worker.recover, Worker.cancel_legacy_discovery, WatchScheduler.tick
+    recover, tick = Worker.recover, WatchScheduler.tick
     def init(self, store, wake, **kwargs):
         clocks[self] = Clock()
         original_init(self, store, wake, clocks[self])
     def recovery(self):
         record(self, "recover"); return recover(self)
-    def legacy(self):
-        record(self, "cancel_legacy"); return cancel(self)
     def observed_tick(self):
         record(self, "tick"); return tick(self)
     async def run(self, stop):
@@ -34,7 +32,6 @@ def instrument(monkeypatch):
     monkeypatch.setattr(WatchScheduler, "run_forever", run)
     monkeypatch.setattr(WatchScheduler, "tick", observed_tick)
     monkeypatch.setattr(Worker, "recover", recovery)
-    monkeypatch.setattr(Worker, "cancel_legacy_discovery", legacy)
     queue_person_readings = ResearchFlow.queue_person_readings
     def queued(self):
         result = queue_person_readings(self)
@@ -71,7 +68,7 @@ def test_owner_recovers_before_first_tick_and_shutdown_stops_scheduler_before_re
         loop(api, asyncio.sleep, .01)
         observed = app_events(api, events)
         assert clocks[api.app.state.watch_scheduler].calls == 1
-        assert observed[:4] == ["recover", "cancel_legacy", "queue_person_readings", "tick"]
+        assert observed[:3] == ["recover", "queue_person_readings", "tick"]
     observed = app_events(api, events)
     assert observed.index("scheduler_stopped") < observed.index("worker_released")
     assert observed.index("scheduler_stopped") < observed.index("worker_stopped")
@@ -92,7 +89,7 @@ def test_nonowner_no_scheduler_until_takeover_then_recovers_ticks_and_stops(tmp_
             pytest.fail("takeover did not start scheduler")
         loop(api, wait)
         assert api.app.state.owner
-        assert app_events(api, events)[:4] == ["recover", "cancel_legacy", "queue_person_readings", "tick"]
+        assert app_events(api, events)[:3] == ["recover", "queue_person_readings", "tick"]
     observed = app_events(api, events)
     assert observed.index("scheduler_stopped") < observed.index("worker_released")
     assert observed.index("scheduler_stopped") < observed.index("worker_stopped")
@@ -107,4 +104,4 @@ def test_startup_person_readings_before_first_tick_ignores_other_app_instances(t
             loop(api, asyncio.sleep, .01)
             assert clocks[foreign].calls == clocks[api.app.state.watch_scheduler].calls == 1
             assert [name for _, name in events[foreign]] == ["tick"]
-            assert app_events(api, events)[:4] == ["recover", "cancel_legacy", "queue_person_readings", "tick"]
+            assert app_events(api, events)[:3] == ["recover", "queue_person_readings", "tick"]

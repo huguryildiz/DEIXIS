@@ -1,7 +1,6 @@
 """D250 active-time accounting with isolated libraries, a fake clock and scripted models."""
 
 import asyncio
-import shutil
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -306,40 +305,6 @@ def test_13_answer_binds_selected_list_and_publication_requires_validity(library
     assert bool(ledger["answer_published_at"]) is (outcome == "structurally_valid")
     assert stage(lib, "answer")["status"] == "done"
     assert stage(lib, "answer")["used_ms"] == 2000
-
-
-@pytest.mark.parametrize("populated", [False, True])
-def test_14_migration_applies_to_empty_and_existing_library(tmp_path, monkeypatch, populated):
-    original = db.MIGRATIONS_DIR
-    migrations = tmp_path / "migrations"
-    migrations.mkdir()
-    for path in original.glob("*.sql"):
-        if not path.name.startswith("0073"):
-            shutil.copyfile(path, migrations / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
-    conn = db.connect(tmp_path / "old.sqlite")
-    try:
-        db.migrate(conn)
-        store = Store(conn)
-        if populated:
-            rid = store.create_research("SYNTHETIC preserved", "academic", "quick", [], "fake", "fake-model", None)
-        tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name != 'schema_migrations'")]
-        before = {t: [tuple(row) for row in conn.execute(f"SELECT * FROM {t}")] for t in tables}
-        shutil.copyfile(original / "0073_fast_path_clock.sql", migrations / "0073_fast_path_clock.sql")
-        assert db.migrate(conn) == [73]
-        assert before == {t: [tuple(row) for row in conn.execute(f"SELECT * FROM {t}")] for t in tables}
-        if not populated:
-            rid = store.create_research("SYNTHETIC new", "academic", "quick", [], "fake", "fake-model", None)
-        budget = {"fast_path": fast_path.freeze_budget({}, "quick")}
-        run = store.create_run(rid, "discovery", budget, None)
-        conn.execute("UPDATE runs SET status = 'running' WHERE id = ?", (run["id"],))
-        fast_path.enter_stage(store, run, "plan")
-        with pytest.raises(sqlite3.IntegrityError):
-            conn.execute("INSERT INTO fast_path_intervals SELECT 'duplicate', ledger_run_id, run_id, stage, 2, generation,"
-                         " rework, started_at, last_checkpoint_at, max_checkpoint_gap_ms, closed_at, close_reason FROM fast_path_intervals")
-        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-    finally:
-        conn.close()
 
 
 @pytest.mark.parametrize("name", ["ranking", "read"])

@@ -38,7 +38,7 @@ def test_multipart_spool_failure(tmp_path, monkeypatch, error_number, status):
     app = app_for(tmp_path)
     with TestClient(app, raise_server_exceptions=False) as client:
         session(client)
-        rid = create(client, source_scope="attached", search_workflow="legacy")
+        rid = create(client, source_scope="attached")
 
         def fail(self):
             raise OSError(error_number, "SYNTHETIC spool unavailable")
@@ -70,7 +70,7 @@ def test_http_defaults_keep_status_detail_headers_and_validation(tmp_path):
         assert response.status_code == 404
         assert response.json() == {"detail": "SYNTHETIC missing"}
         assert response.headers["x-synthetic"] == "retained"
-        rid = create(client, source_scope="attached", search_workflow="legacy")
+        rid = create(client, source_scope="attached")
         invalid = client.post(f"/api/researches/{rid}/uploads")
         assert invalid.status_code == 422
         assert invalid.json()["detail"][0]["loc"] == ["body", "file"]
@@ -113,8 +113,7 @@ def test_request_directory_failure_at_each_site(tmp_path, monkeypatch, site, err
     target = settings.payloads_dir if site == "zotero_import_payload" else settings.papers_dir
     with TestClient(app, raise_server_exceptions=False) as client:
         session(client)
-        rid = create(client, source_scope="attached", search_workflow=(
-            "sw" if site in ("match_waiting", "attach_waiting_pdf") else "legacy"))
+        rid = create(client, source_scope="attached")
         store = app.state.store
         svid = store.create_upload_source("SYNTHETIC source")
         store.add_to_corpus(rid, svid, "user_upload", selection_state="included", selection_origin="user")
@@ -167,13 +166,13 @@ def test_request_directory_failure_at_each_site(tmp_path, monkeypatch, site, err
             assert response.json()["code"] == "disk_full"
 
 
-def test_all_nine_request_directory_calls_are_guarded():
+def test_every_request_directory_call_is_guarded():
     tree = ast.parse((Path(__file__).parents[2] / "backend/deixis/api/app.py").read_text())
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
              and isinstance(node.func, ast.Attribute) and node.func.attr == "mkdir"
              and isinstance(node.func.value, ast.Attribute) and node.func.value.attr in ("papers_dir", "payloads_dir")]
-    assert len(calls) == 9  # No startup/lifespan calls use these two attributes in this checkout.
+    assert len(calls) == 8  # No startup/lifespan calls use these two attributes in this checkout.
     unguarded = []
     for call in calls:
         node, guarded, function = call, False, None

@@ -223,8 +223,6 @@ def test_two_works_dois_on_the_first_page_let_the_title_decide():
     text = ("SYNTHETIC moisture threshold irrigation of greenhouse benches\nhttps://doi.org/10.5555/irrigation.1\n"
             "see also https://doi.org/10.5555/bakery.2")
     assert identity.propose(text, SOURCES) == ("sv1", "title")
-    # The rule `match_pdf_to_source` keeps for `legacy`: the first DOI found in candidate order decides.
-    assert identity.match_pdf_to_source(text, [BAKERY, IRRIGATION]) == ("sv2", "doi")
 
 
 def test_two_works_dois_and_no_single_title_propose_nothing():

@@ -57,7 +57,6 @@ export function FlowBlock({ researchId, counts }: { researchId: string; counts: 
 
 // Under an sw answer: where the flow stood when its run started, and what was given to the model, on separate lines.
 export function AnswerFlowNote({ answer }: { answer: Answer }) {
-  if (answer.start_snapshot === undefined) return null  // a legacy view
   const snapshot = answer.start_snapshot
   const given = answer.inputs_given
   return <div className="answer-flow" role="group" aria-label={t('Flow at the start of this answer')}>

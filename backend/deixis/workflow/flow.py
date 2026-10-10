@@ -433,7 +433,6 @@ class ResearchFlow:
 
     async def _execute_run(self, run_id: str) -> None:
         run = self.store.run(run_id)
-        self.store._guard_legacy_run(run)
         scope = {} if run["kind"] == "review" else self.store.scope(run["research_id"], run["scope_revision"])
         try:
             if run["kind"] == "discovery":
@@ -2961,19 +2960,18 @@ class ResearchFlow:
                     "note": "The completed discovery has no successful frozen list; run discovery again."})
         heads = self.store.included_works(rid)  # one per included work
         selection_revision = self.store.selection_revision(rid)  # read together with the included set it describes
-        if scope.get("search_workflow") == "sw":
-            # No await between the two reads above and this step's write: the snapshot is the state they describe.
-            self._answer_start_snapshot(run, heads, selection_revision)
-            if not heads and not self._abstract_sources(run, heads):
-                # Neither evidence route is available (D234). Keep D106's recorded no-evidence result;
-                # the snapshot describes inclusion, not a finding about the literature.
-                self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
-                                       {"ok": True, "issues": [], "reason": NO_INCLUDABLE_SOURCE,
-                                        "note": "No work was included at full text when this answer started;"
-                                                " no model was asked."},
-                                       selection_revision=selection_revision)
-                return
-        if heads or scope.get("search_workflow") != "sw":
+        # No await between the two reads above and this step's write: the snapshot is the state they describe.
+        self._answer_start_snapshot(run, heads, selection_revision)
+        if not heads and not self._abstract_sources(run, heads):
+            # Neither evidence route is available (D234). Keep D106's recorded no-evidence result;
+            # the snapshot describes inclusion, not a finding about the literature.
+            self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
+                                   {"ok": True, "issues": [], "reason": NO_INCLUDABLE_SOURCE,
+                                    "note": "No work was included at full text when this answer started;"
+                                            " no model was asked."},
+                                   selection_revision=selection_revision)
+            return
+        if heads:
             await self._inspect(run, limit=MAX_DOWNLOADS_PER_RUN)
         # A work whose only PDF text is a person's file not read under this criterion, with no abstract-only version
         # to give instead, gives the answer nothing (slice 18b, decision 8).
@@ -2983,11 +2981,10 @@ class ResearchFlow:
         self._checkpoint(run_id)
         self.store.update_run(run_id, stage="answer")
         # Candidates the full-text stage never reached, or found no open text for, give their abstracts (D225).
-        extra = self._abstract_sources(run, heads) if scope.get("search_workflow") == "sw" else []
+        extra = self._abstract_sources(run, heads)
         semantic = await self._semantic_ranking(run, scope, included + extra)
-        # An sw research fills part of the input from the cue phrases its criterion was approved with (D84); a
-        # legacy research passes nothing and keeps the hand-written formulation quota it had.
-        patterns = self._criterion_phrases(run, scope) if scope.get("search_workflow") == "sw" else None
+        # Part of the input comes from the cue phrases the criterion was approved with (D84).
+        patterns = self._criterion_phrases(run, scope)
         if small_batch.enabled(run["budget"]):
             passages = self._small_batch_answer_passages(run, scope, included, extra, semantic, patterns)
         else:
@@ -4399,7 +4396,7 @@ class ResearchFlow:
     def person_reading_on(self, research_id: str) -> bool:
         """Whether a person's file can be read here: reading is `auto` and the research has a frozen criterion."""
         scope = self.store.scope(research_id)
-        return (scope.get("search_workflow") == "sw" and self.deps.settings.fulltext_adjudication == "auto"
+        return (self.deps.settings.fulltext_adjudication == "auto"
                 and self.store.frozen_criterion(research_id, scope["question"], scope.get("steering")) is not None)
 
     def attach_outcomes(self, research_id: str, work_ids: list[str]) -> dict[str, dict[str, str]]:
@@ -4442,7 +4439,7 @@ class ResearchFlow:
         revision, the criterion, the waiting files and the attempt; when a run with that key already ended — before
         its plan took them — those requests are `unread` and no run is opened again, so nothing loops.
         """
-        if self.store.scope(research_id).get("search_workflow") != "sw" or not self.person_reading_on(research_id):
+        if not self.person_reading_on(research_id):
             return None
         with transaction(self.store.conn):
             waiting = person_reading.live_waiting(self.store, research_id)
@@ -4627,13 +4624,7 @@ class ResearchFlow:
         What `_retrieve` selects from them is unchanged. Claim words stay out: they are the criterion (slice 11).
         """
         terms = [t for t in re.findall(r"\w+", scope["question"].lower()) if len(t) > 2 and t not in STOPWORDS]
-        # Only an already stored legacy plan can supply these answer-side concepts.
-        plan = self.store.latest_step_output(research_id, "search_plan", scope["revision"])
-        if plan and plan.get("output_type") == "SearchPlan":
-            for concept in plan["result"]["concepts"]:
-                for phrase in [concept["label"], *concept["synonyms"]]:
-                    terms += [t for t in re.findall(r"\w+", phrase.lower()) if len(t) > 2 and t not in STOPWORDS]
-        elif code_words := self.store.latest_step_output(research_id, "vocabulary", scope["revision"]):
+        if code_words := self.store.latest_step_output(research_id, "vocabulary", scope["revision"]):
             built = code_words["vocabulary"]
             queried = [t["root"] if t["in_query"] == "root" else t["phrase"] for t in built["terms"] if not t["dropped"]]
             for phrase in queried + built["outcome_terms"]:
@@ -5969,11 +5960,6 @@ class ResearchFlow:
                 invalid_raw, invalid_input = last["raw_output"], last["id"]
             if step["output"]:
                 attempt_records = dict(step["output"].get("attempt_records", {}))
-                # Older outputs keep only one record. It still needs a session to count as sent.
-                legacy_id = step["output"].get("step_input_id")
-                if legacy_id and "send_record" in step["output"]:
-                    attempt_records.setdefault(legacy_id, (step_output_extra or {}) |
-                                               {"send_record": step["output"]["send_record"]})
                 for row in reversed(previous):
                     if row["id"] in attempt_records:
                         sent_input = row["id"]

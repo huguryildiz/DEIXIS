@@ -209,8 +209,7 @@ def named_dois(store: Store, source_version_id: str) -> list[str]:
     """Every DOI this record names as another version of itself, whoever named it (SW6.4).
 
     Two schemes together: `published_doi`, which arXiv's author-supplied field writes at search time, and
-    `linked_doi`, which the DOI lookups of slice 05 write. A `legacy` research reads only the first one, so an
-    external link changes nothing there.
+    `linked_doi`, which the DOI lookups of slice 05 write.
     """
     return [row[0] for row in store.conn.execute(
         "SELECT DISTINCT value FROM identifier_mappings WHERE source_version_id = ?"
@@ -265,7 +264,7 @@ def _title_neighbours(found: list[str], grams: dict[str, frozenset[str]]) -> set
 
 
 def _published_doi_pairs(store: Store, found: list[str], records: dict[str, Any]) -> set[tuple[str, str]]:
-    """Pairs where one record names the other's registered DOI, as `_flag_suspected_duplicates` finds them (D48)."""
+    """Pairs where one record names the other's registered DOI, (D48)."""
     pairs = set()
     for svid in found:
         doi = records[svid]["doi"]

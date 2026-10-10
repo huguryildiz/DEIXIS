@@ -50,10 +50,6 @@ class ResolvedFinding:
         return self.finding_json[key]
 
 
-def _table_exists(conn, name):
-    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
-
-
 def _snapshot_source_ids(snapshot_id, content_json):
     try:
         content = json.loads(content_json)
@@ -93,8 +89,6 @@ def _snapshot_source_ids(snapshot_id, content_json):
 
 
 def snapshot_referenced_source_versions(conn, svids) -> set[str]:
-    if not _table_exists(conn, "owner_review_snapshots"):
-        return set()
     referenced = set()
     for row in conn.execute("SELECT id, content_json FROM owner_review_snapshots"):
         referenced.update(_snapshot_source_ids(*row))
@@ -102,8 +96,6 @@ def snapshot_referenced_source_versions(conn, svids) -> set[str]:
 
 
 def purge_owner_reviews(conn, research_id):
-    if not _table_exists(conn, "owner_review_snapshots"):
-        return set()
     # A reviewed version need not have its own corpus membership (for example an
     # alternate version read by an answer). Its owner purge must collect it too.
     source_ids = set()

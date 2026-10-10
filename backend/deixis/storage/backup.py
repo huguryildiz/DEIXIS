@@ -41,17 +41,6 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _column(conn: sqlite3.Connection, sql: str) -> list[tuple]:
-    """Rows of one reference source. A library written by older code has not got every table or column yet (the current
-    migrations run at the first start, after a backup may already have been asked for): that source holds no references."""
-    try:
-        return conn.execute(sql).fetchall()
-    except sqlite3.OperationalError as exc:
-        if "no such table" in str(exc) or "no such column" in str(exc):
-            return []
-        raise
-
-
 def _referenced_files(conn: sqlite3.Connection) -> dict[str, dict[str, str | None]]:
     """File name -> recorded sha256 (None when the record has no hash), per backup subfolder."""
     papers = {}
@@ -62,10 +51,10 @@ def _referenced_files(conn: sqlite3.Connection) -> dict[str, dict[str, str | Non
         if sha is not None or name not in papers:
             papers[name] = sha
 
-    for name, sha in _column(conn, "SELECT storage_path, sha256 FROM source_assets"):
+    for name, sha in conn.execute("SELECT storage_path, sha256 FROM source_assets").fetchall():
         add(name, sha)
-    for oid, name, sha in _column(conn, "SELECT id, retained_filename, observed_sha256 FROM asset_file_observations"
-                                      " WHERE retained_filename IS NOT NULL"):
+    for oid, name, sha in conn.execute("SELECT id, retained_filename, observed_sha256 FROM asset_file_observations"
+                                      " WHERE retained_filename IS NOT NULL").fetchall():
         if not recovery_history.RETAINED.fullmatch(name) or name[9:-4] != sha:
             raise BackupError(f"invalid retained file identity recorded by observation {oid}")
         add(name, sha)
@@ -75,8 +64,8 @@ def _referenced_files(conn: sqlite3.Connection) -> dict[str, dict[str, str | Non
                 "SELECT provider_payload_path FROM source_versions WHERE provider_payload_path IS NOT NULL",
                 "SELECT raw_payload_path FROM kill_search_queries WHERE raw_payload_path IS NOT NULL",
                 "SELECT payload_ref FROM passages WHERE kind = 'abstract' AND payload_ref IS NOT NULL"):
-        payloads.update({row[0]: None for row in _column(conn, sql)})
-    for name, digest in _column(conn, "SELECT raw_payload_path, payload_file_sha256 FROM watch_reads WHERE raw_payload_path IS NOT NULL"):
+        payloads.update({row[0]: None for row in conn.execute(sql).fetchall()})
+    for name, digest in conn.execute("SELECT raw_payload_path, payload_file_sha256 FROM watch_reads WHERE raw_payload_path IS NOT NULL").fetchall():
         if name in payloads and payloads[name] is not None and payloads[name] != digest:
             raise BackupError(f"conflicting recorded payload hashes: {name}")
         payloads[name] = digest

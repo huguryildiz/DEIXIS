@@ -305,26 +305,6 @@ def test_no_other_run_kind_opens_the_step_and_reading_a_run_leaves_none_pending(
         client.__exit__(None, None, None)
     assert "criterion_phrases" not in collection_keys and before == []
     assert [s["status"] for s in after] == ["succeeded"]
-def test_an_sw_answer_opens_the_same_number_of_model_sessions_as_a_legacy_one(tmp_path, monkeypatch):
-    """Lesson D: the new step is code, so it spends nothing of the run's budget."""
-    calls = {}
-    for workflow in ("legacy", "sw"):
-        adapter = FakeAdapter()
-        app = app_for(tmp_path / workflow, monkeypatch, workflow=workflow, adapter=adapter)
-        client = client_of(app)
-        try:
-            rid = research_with_pdf(client)
-            app.state.store.freeze_protocol(rid, 1, body_with(QUESTION, PHRASES))
-            _, run, _ = answer(client, rid)
-            assert run["status"] == "completed", run
-            budget = run["budget"]["max_answer_passages"]
-            sent = [len(json.loads(row["payload_json"])["passages"]) for row in app.state.store.conn.execute(
-                "SELECT payload_json FROM step_inputs WHERE task_type = 'grounded_answer'")]
-        finally:
-            client.__exit__(None, None, None)
-        calls[workflow] = [(c["task_type"], c["model"]) for c in adapter.calls]
-        assert sent and max(sent) <= budget
-    assert calls["sw"] == calls["legacy"]
 
 
 # ---- the two quotas: `_retrieve` on a store built here -------------------------------------------------------
@@ -366,13 +346,6 @@ def compiled(phrases=PHRASES):
 
 def texts(passages):
     return [p["text"] for p in passages]
-
-
-def test_a_legacy_answer_still_gives_room_to_a_formulation_page(tmp_path):
-    """The legacy branch is what it was: the hand-written list still earns a page the question's words do not."""
-    store, rid = library(tmp_path, workflow="legacy")
-    svid = page_source(store, rid, "one", [TOPIC_PAGE, OFF_PAGE, FORMULATION_PAGE], ABSTRACT)
-    assert FORMULATION_PAGE in texts(retrieve(store, rid, [svid], 48))
 
 
 def test_a_page_holding_an_approved_phrase_and_no_question_word_enters_an_sw_answer(tmp_path):

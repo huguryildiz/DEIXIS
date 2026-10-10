@@ -31,8 +31,6 @@ from deixis.workflow import recovery_view
 from deixis.workflow import fast_path
 
 
-# What the transcript reports from a search plan; the rest of the stored output stays out of the view.
-PLAN_FIELDS = ("question_interpretation", "search_rationale", "scope_boundaries", "concepts")
 # What the approval card shows of a vocabulary. The probes stay out: they are large, and the screen shows a term's
 # own counts, which are already in the term row.
 APPROVAL_VOCABULARY_FIELDS = ("claim_words", "exclusion_words", "outcome_terms", "gate_count", "too_broad")
@@ -472,11 +470,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     conn = store.conn
     research = store.research(research_id)
     scope = store.scope(research_id)
-    sw = scope.get("search_workflow") == "sw"
-    research["read_only_reason"] = None if sw else "legacy_research_read_only"
-    # One queue context: the facts and every work's outcome, read once for all four (slice 19). Legacy has none.
-    ctx = queue_context(store, research_id) if sw else None
-    probe = probe_rules.probe_set(ctx) if ctx is not None else None
+    # One queue context: the facts and every work's outcome, read once for all four (slice 19).
+    ctx = queue_context(store, research_id)
+    probe = probe_rules.probe_set(ctx)
     seed = scope["seed_snapshot"]
     scope_view = {key: value for key, value in scope.items() if key != "seed_snapshot"}
     scope_view["seed"] = ({key: seed[key] for key in ("source_version_id", "asset_id", "asset_sha256",
@@ -489,8 +485,6 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     # research (D91).
     scope_view["search_providers"] = search_providers(scope["providers"], scope.get("search_workflow"))
 
-    # A library viewed before migration 0072 has no lookup retry time.
-    discovery_retry = store._has_column("pdf_discovery_runs", "retry_after")
     service_waits = {row["run_id"]: json.loads(row["payload_json"]) for row in conn.execute(
         "SELECT run_id, payload_json FROM events WHERE research_id = ? AND type = 'service_waiting' ORDER BY id",
         (research_id,))}
@@ -510,23 +504,17 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         own = next((s["output"] for s in run["steps"] if s["operation_key"] == "protocol" and s["output"]), None)
         frozen = own or store.current_protocol(research_id, run["scope_revision"])
         run["protocol_hash"] = (frozen.get("protocol_hash") or frozen.get("hash")) if frozen else None
-        output = next((o for o in _model_outputs(store, run["id"], "model:search_plan") if o.get("output_type") == "SearchPlan"), None)
-        # A v1 plan holds the queries the model wrote; a v2 plan's queries were compiled from its concepts and stored beside it (D44).
-        run["plan"] = ({k: output["result"][k] for k in PLAN_FIELDS}
-                       | {"queries": output["result"].get("queries", output.get("queries", []))}) if output else None
         # Screening runs in batches; each batch's note is its own line, timed by its step.
-        # What this run asked the user to approve before it froze its protocol; None for a legacy run (slice 08a).
+        # What this run asked the user to approve before it froze its protocol (slice 08a).
         run["approval"] = approval_view(store, run["id"])
         # What each source brought in each round of this run, and how much of it no other source did (D93).
         run["source_counts"] = source_counts(store, run["id"], probe) if run["kind"] == "discovery" else None
-        if run["source_counts"] and run["source_counts"]["counted"] and probe is None:
-            run["source_counts"]["arms"] = None  # a legacy research has no probe set
         # The phrases the second round searched with, so the timeline can name them under its heading.
         expansion = (store.existing_step(run["id"], "vocabulary_expansion") or {}).get("output") if run["kind"] == "discovery" else None
         run["expansion_terms"] = [term for block in expansion_rules.expansion_blocks(expansion.get("expansion"), expansion.get("queries")).values()
                                   for term in block] if expansion else []
         # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).
-        run["signals"] = probe_rules.signal_table(store, run["id"], probe) if probe and run["kind"] == "discovery" else None
+        run["signals"] = probe_rules.signal_table(store, run["id"], probe) if run["kind"] == "discovery" else None
         run["screening_notes"] = [
             {"step_id": r["id"], "text": note} for r in store.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND kind = 'model:screening' AND status = 'succeeded'"
@@ -628,7 +616,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                              "source_ids": [s["source_id"] for s in given["sources"]]} if given else None,
             # Where the flow stood when this answer's run started (slice 20); null for an answer whose run kept none,
             # never today's counts in its place. Beside `inputs_given`, not instead of it.
-            "start_snapshot": _start_snapshot(store, a) if sw else None,
+            "start_snapshot": _start_snapshot(store, a),
             "review": review,
             **({"abstract_only_sources": len({e["source_version_id"] for c in claims for e in c["evidence"]
                 if e["kind"] == "abstract"} - {e["source_version_id"] for c in claims for e in c["evidence"]
@@ -638,7 +626,6 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                 and answers[-1]["applicability"] == "current"):
             # Pending abstract candidates can be excluded without bumping the included-source revision.
             answers[-1]["applicability"] = "stale_selection"
-    duplicates = store.suspected_duplicates(research_id)
     # Similarity from the chosen semantic search model only; with semantic search off, no source has one (D30).
     provider, model = embeddings.chosen(store.setting("semantic_search"))
     similarity_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None
@@ -659,8 +646,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         # The PDF in use, whether its text comes from the current extractor, and a later extraction that was not taken (D45).
         # A math extraction (D52) or an arXiv source reading (D104) builds on the current extractor's text; its own
         # "nothing to read" or failed attempts are reported as the PDF's equation state, not as a rejected re-extraction.
-        assets = [dict(r) | {"text_recovery": recovery_view.text_recovery(store, store.asset(r["id"]), svid, None)
-                             if store._extraction_has_recovery_metadata else None,
+        assets = [dict(r) | {"text_recovery": recovery_view.text_recovery(store, store.asset(r["id"]), svid, None),
                              "current_extraction": (r["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION,
                              "equations": equation_state(store, r["id"]), "ocr": ocr_state(store, r["id"]), "rejected_extraction": dict(rejected) if (rejected := conn.execute(
             "SELECT extraction_version, rejection_reason, created_at FROM asset_extractions WHERE asset_id = ? AND outcome = 'rejected'"
@@ -717,7 +703,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                        "oa_pdf_url": row["oa_pdf_url"], "oa_pdf_version": row["oa_pdf_version"], "assets": assets, "replaced_assets": replaced_assets,
                        "fetch": dict(fetch) if fetch else None, "other_copy": dict(other_copy) if other_copy else None,
                        "pdf_candidates": pdf_candidates,
-                       "pdf_discoveries": store.pdf_discoveries(research_id, svid, retry_after=discovery_retry)},
+                       "pdf_discoveries": store.pdf_discoveries(research_id, svid, retry_after=True)},
             "selection": {"state": row["state"], "origin": row["selection_origin"], "version": row["selection_version"],
                           "proposal": row["proposal"], "proposal_reason": row["proposal_reason"],
                           "proposal_basis": row["proposal_basis"], "user_reason": row["user_reason"],
@@ -729,8 +715,6 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "provider_records": [r[0] for r in conn.execute(
                 "SELECT DISTINCT provider FROM identifier_mappings WHERE source_version_id = ? AND scheme = provider ORDER BY provider", (svid,)
             )],
-            # Possibly the same publication as another source (same title, or a preprint naming its DOI); never merged.
-            "suspected_duplicates": duplicates.get(svid, []),
         })
 
     # A work has one record, its head: a published record, else the first (D46, D48). Another candidate of the same work
@@ -789,19 +773,18 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " WHERE m.research_id = ? AND m.removed_at IS NOT NULL", (research_id,)).fetchone())),
     }
-    if sw:
-        # The human queue's open rows and the decisions to look at again (slice 16); a legacy view is unchanged.
-        counts |= queue_counts(store, research_id, ctx)
-        # The works waiting for the person's PDF (slice 18a).
-        counts["waiting_for_pdf"] = len(waiting_rules.for_context(ctx)[1])
+    # The human queue's open rows and the decisions to look at again (slice 16).
+    counts |= queue_counts(store, research_id, ctx)
+    # The works waiting for the person's PDF (slice 18a).
+    counts["waiting_for_pdf"] = len(waiting_rules.for_context(ctx)[1])
     # Every work of the revision in one bucket, PRISMA 2020-style boxes and the override count (slice 20), from the
-    # same context and probe set as the queue counts; null for a legacy research.
-    flow = flow_rules.flow_counts(ctx, probe) if ctx is not None and probe is not None else None
+    # same context and probe set as the queue counts.
+    flow = flow_rules.flow_counts(ctx, probe)
     counts["flow"] = flow
-    counts["flow_boxes"] = flow_rules.flow_boxes(ctx, flow) if flow is not None else None
+    counts["flow_boxes"] = flow_rules.flow_boxes(ctx, flow)
     # Provider rows → unique works → abstracts read → candidates → included, for the search step's headline (D233).
-    counts["funnel"] = flow_rules.funnel(ctx, flow, counts["flow_boxes"]) if flow is not None else None
-    counts["overrides"] = override_rules.overrides_view(ctx, probe) if ctx is not None and probe is not None else None
+    counts["funnel"] = flow_rules.funnel(ctx, flow, counts["flow_boxes"])
+    counts["overrides"] = override_rules.overrides_view(ctx, probe)
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
     reviewer = effective_reviewer(scope, store.setting("reviewer"))
     report_runs = [dict(row) for row in conn.execute(
@@ -812,8 +795,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "answers": answers, "reportRuns": report_runs, "counts": counts, "last_event_id": last_event,
             # The semantic search arm for this research's current revision (slice 21); no count of what will be sent.
             "semantic": semantic_view(store, research_id, scope),
-            # The probe set's columns and the probes no arm found (slice 19); null for a legacy research.
-            "probes": probe_rules.probes_view(store, research_id, probe) if probe is not None else None,
+            # The probe set's columns and the probes no arm found (slice 19).
+            "probes": probe_rules.probes_view(store, research_id, probe),
             # The reviewer the next answer would get: the research's own setting, else the app-wide default.
             "reviewer": {"mode": scope["review_mode"], "connection": reviewer[0] if reviewer else None, "model": reviewer[1] if reviewer else None,
                          "reasoning_effort": reviewer[2] if reviewer else None}}
@@ -1058,8 +1041,6 @@ def occurrence_view(store: Store, asset: dict, extraction: dict | None, *, extra
               "current_extraction_id": current["id"] if current else None,
               "input": None, "input_relation": "input_not_recorded",
               "file_restored_after": False, "latest_file_restore": None}
-    if not store._extraction_has_recovery_metadata:
-        return result
     observation_id = extraction.get("input_observation_id") if extraction else None
     observation = store.conn.execute(
         "SELECT id, integrity, observed_sha256 FROM asset_file_observations WHERE id = ?", (observation_id,),

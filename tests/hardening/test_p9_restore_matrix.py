@@ -342,24 +342,30 @@ def test_b03_unknown_migration_id_is_refused_and_no_file_changes(tmp_path, case)
     assert file_facts(folder) == before_files and folder_names(folder) == before_names
 
 
-def test_b03_library_from_an_older_code_opens_and_migrate_applies_exactly_the_missing_migration(tmp_path, monkeypatch):
-    real_dir = db.MIGRATIONS_DIR
-    older = tmp_path / "older-migrations"
-    older.mkdir()
+def newer_code_migrations(tmp_path: Path) -> tuple[Path, int]:
+    """The packaged migrations plus one SYNTHETIC later one: the migration set of the next DEIXIS, for which a library
+    written by today's code is the older library."""
+    newer = tmp_path / "newer-migrations"
+    newer.mkdir(parents=True)
     for p in sorted(db.MIGRATIONS_DIR.glob("*.sql")):
-        if int(p.name.split("_", 1)[0]) < LAST:
-            shutil.copyfile(p, older / p.name)
+        shutil.copyfile(p, newer / p.name)
+    version = max(db.packaged_versions()) + 1
+    (newer / f"{version:04d}_synthetic_next.sql").write_text("CREATE TABLE synthetic_next (id TEXT PRIMARY KEY);\n")
+    return newer, version
+
+
+def test_b03_library_from_an_older_code_opens_and_migrate_applies_exactly_the_missing_migration(tmp_path, monkeypatch):
+    newer, pending = newer_code_migrations(tmp_path)
     path = tmp_path / "lib" / "library.sqlite"
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", older)
     conn = db.connect(path)
-    assert db.migrate(conn) == sorted(PACKAGED_VERSIONS - {LAST})
+    assert db.migrate(conn) == sorted(PACKAGED_VERSIONS)
     conn.close()
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", real_dir)
-    assert db.packaged_versions() == PACKAGED_VERSIONS
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", newer)
+    assert db.packaged_versions() == PACKAGED_VERSIONS | {pending}
     db.check_schema_known(path)  # known ids only: nothing to refuse
     conn = db.connect(path)
     try:
-        assert db.migrate(conn) == [LAST]
+        assert db.migrate(conn) == [pending]
     finally:
         conn.close()
 
@@ -942,35 +948,24 @@ def test_a_restored_library_shows_the_model_connection_as_not_ready_and_pauses_i
 
 # ---- B02: a backup of a library that the current code has not migrated yet ------------------------------------------
 
-OLD_LAST = 40  # the schema of a library written on 22 September 2026: no kill_search_queries, passages without later columns
-
-
 def old_library(tmp_path: Path, monkeypatch, with_paper_file: bool = True) -> Settings:
-    """A library migrated only up to 0040 with one paper row; its file is in papers/ unless `with_paper_file` is False."""
-    real_dir = db.MIGRATIONS_DIR
-    older = tmp_path / "older-migrations"
-    older.mkdir()
-    for p in sorted(real_dir.glob("*.sql")):
-        if int(p.name.split("_", 1)[0]) <= OLD_LAST:
-            shutil.copyfile(p, older / p.name)
+    """A library migrated by today's code with one paper row, then opened by a code with one more (SYNTHETIC) migration,
+    which stays set as `db.MIGRATIONS_DIR`; the paper's file is in papers/ unless `with_paper_file` is False."""
+    newer, _ = newer_code_migrations(tmp_path)
     settings = Settings(data_dir=tmp_path / "data", port=8765)
     settings.data_dir.mkdir()
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", older)
-    try:
-        conn = db.connect(settings.db_path)
-        assert db.migrate(conn) == list(range(1, OLD_LAST + 1))
-        assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'kill_search_queries'").fetchone() is None
-        data = b"%PDF SYNTHETIC old paper " * 40
-        conn.execute("INSERT INTO works (id, created_at) VALUES ('work-old', 'SYNTHETIC')")
-        conn.execute("INSERT INTO source_versions (id, work_id, title, origin, created_at)"
-                     " VALUES ('sv-old', 'work-old', 'SYNTHETIC old paper', 'user_upload', 'SYNTHETIC')")
-        conn.execute("INSERT INTO source_assets (id, source_version_id, sha256, byte_size, media_type, storage_path, retrieved_at,"
-                     " origin, extraction_status) VALUES ('asset-old', 'sv-old', ?, ?, 'application/pdf', 'old-paper.pdf', 'SYNTHETIC',"
-                     " 'user_upload', 'succeeded')", (hashlib.sha256(data).hexdigest(), len(data)))
-        conn.commit()
-        conn.close()
-    finally:
-        monkeypatch.setattr(db, "MIGRATIONS_DIR", real_dir)
+    conn = db.connect(settings.db_path)
+    assert db.migrate(conn) == sorted(PACKAGED_VERSIONS)
+    data = b"%PDF SYNTHETIC old paper " * 40
+    conn.execute("INSERT INTO works (id, created_at) VALUES ('work-old', 'SYNTHETIC')")
+    conn.execute("INSERT INTO source_versions (id, work_id, title, origin, created_at)"
+                 " VALUES ('sv-old', 'work-old', 'SYNTHETIC old paper', 'user_upload', 'SYNTHETIC')")
+    conn.execute("INSERT INTO source_assets (id, source_version_id, sha256, byte_size, media_type, storage_path, retrieved_at,"
+                 " origin, extraction_status) VALUES ('asset-old', 'sv-old', ?, ?, 'application/pdf', 'old-paper.pdf', 'SYNTHETIC',"
+                 " 'user_upload', 'succeeded')", (hashlib.sha256(data).hexdigest(), len(data)))
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", newer)
     if with_paper_file:
         settings.papers_dir.mkdir(parents=True, exist_ok=True)
         (settings.papers_dir / "old-paper.pdf").write_bytes(data)
@@ -981,7 +976,7 @@ def test_b02_backup_of_a_library_older_than_the_code_lists_its_paper_restores_an
     settings = old_library(tmp_path, monkeypatch)
     backup = create_backup(settings, tmp_path / "backups")
     assert "papers/old-paper.pdf" in [e["path"] for e in manifest_of(backup)["files"]]
-    assert manifest_of(backup)["schema_versions"] == list(range(1, OLD_LAST + 1))
+    assert manifest_of(backup)["schema_versions"] == sorted(PACKAGED_VERSIONS)
 
     restored = Settings(data_dir=tmp_path / "restored", port=8765)
     restore_backup(backup, restored)
@@ -990,7 +985,8 @@ def test_b02_backup_of_a_library_older_than_the_code_lists_its_paper_restores_an
 
     conn = db.connect(restored.db_path)
     try:
-        assert db.migrate(conn) == sorted(v for v in db.packaged_versions() if v > OLD_LAST)
+        assert db.migrate(conn) == sorted(db.packaged_versions() - PACKAGED_VERSIONS)
+        assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'synthetic_next'").fetchone() is not None
         assert conn.execute("SELECT storage_path FROM source_assets").fetchall()[0][0] == "old-paper.pdf"
     finally:
         conn.close()
@@ -1001,16 +997,3 @@ def test_b02_a_paper_row_of_an_older_library_whose_file_is_missing_still_fails_t
     with pytest.raises(BackupError, match="referenced file is missing: papers/old-paper.pdf"):
         create_backup(settings, tmp_path / "backups")
     assert not any((tmp_path / "backups").glob("deixis-backup-*"))
-
-
-def test_b02_a_database_without_source_assets_is_not_checked_for_being_a_library(tmp_path):
-    """Pinned as it is, not as a wish: with `source_assets` read as optional (asked for), a database that has only an empty
-    `schema_migrations` table backs up as just its database file; backup does not decide what a library is."""
-    settings = Settings(data_dir=tmp_path / "data", port=8765)
-    settings.data_dir.mkdir()
-    conn = sqlite3.connect(settings.db_path)
-    conn.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)")
-    conn.commit()
-    conn.close()
-    backup = create_backup(settings, tmp_path / "backups")
-    assert [e["path"] for e in manifest_of(backup)["files"]] == ["library.sqlite"]

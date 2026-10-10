@@ -1,8 +1,7 @@
-"""0066's additive migration and SQL guards, using isolated synthetic libraries."""
+"""The asset recovery tables' SQL guards (first added by migration 0066), using isolated synthetic libraries."""
 
 import ast
 import re
-import shutil
 import sqlite3
 from pathlib import Path
 
@@ -10,10 +9,7 @@ import pytest
 
 from deixis.storage import db
 from deixis.workflow import recovery
-from deixis.workflow.store import Store
 from tests.reextract.test_reextract_r1_store import lib, setup, extraction, chunk, observe, reserve, head, complete
-from tests.documents.test_source_versions import raw_asset
-from tests.review.review_helpers import all_rows
 
 ROOT = Path(__file__).resolve().parents[2]
 PROTECTED_PASSAGE_COLUMNS = ("text", "source_version_id", "kind", "physical_page", "asset_id", "printed_label",
@@ -37,134 +33,6 @@ def operation_values(lib, kind="file_restore"):
         "idempotency_key": db.new_id("key"), "request_fingerprint": "SYNTHETIC", "lifecycle": "running", "created_at": "now",
         **({"asset_id": lib.aid, "baseline_extraction_id": head(lib)["id"], "baseline_profile": head(lib)["extractor_profile"],
             "mode": "retry_failed_or_partial"} if kind == "text_retry" else {})}
-
-
-def old_library(tmp_path, monkeypatch, last):
-    real = db.MIGRATIONS_DIR; old = tmp_path / "migrations"; old.mkdir()
-    for path in real.glob("*.sql"):
-        if int(path.name[:4]) <= last: shutil.copy(path, old / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
-    conn = db.connect(tmp_path / "library.sqlite"); db.migrate(conn)
-    return real, old, conn
-
-
-@pytest.mark.parametrize("last", [53, 66])
-def test_extraction_schema_capability_is_read_once_for_repeated_writes(tmp_path, monkeypatch, last):
-    _, _, conn = old_library(tmp_path, monkeypatch, last)
-    statements = []
-    conn.set_trace_callback(statements.append)
-    try:
-        store = Store(conn)
-        for index in range(2):
-            svid = store.create_upload_source(f"SYNTHETIC cached schema {index}")
-            store.add_asset_with_pages(svid, str(index) * 64, 10, f"synthetic-{index}.pdf", "user_upload", None, None,
-                extraction(), "synthetic-v1", chunk)
-        assert sum(sql.upper() == "PRAGMA TABLE_INFO(ASSET_EXTRACTIONS)" for sql in statements) == 1
-        rows = conn.execute("SELECT * FROM asset_extractions").fetchall()
-        assert len(rows) == 2 and all(row["passage_count"] == 2 for row in rows)
-        if last == 66:
-            assert all(row["extractor_profile"] == "synthetic-v1" for row in rows)
-        else:
-            assert "extractor_profile" not in rows[0].keys()
-    finally:
-        conn.set_trace_callback(None)
-        conn.close()
-
-
-@pytest.mark.parametrize("last", [26, 53, 65])
-def test_migration_preserves_old_rows_profiles_fts_and_schema(tmp_path, monkeypatch, last):
-    real, old, conn = old_library(tmp_path, monkeypatch, last)
-    store = Store(conn)
-    versions = ["unknown", "B", "B+ocr-tesseract-5-eng-v1", "B+marker-v1", "B+arxiv-latex-v1"]
-    for index, version in enumerate(versions):
-        svid = store.create_upload_source(f"SYNTHETIC source {index}")
-        aid = raw_asset(conn, svid, str(index) * 64, ["SYNTHETIC relays."], version)
-        if last >= 27:
-            conn.execute("INSERT INTO asset_extractions (id, asset_id, extraction_version, status, page_count, text_pages,"
-                " passage_count, outcome, created_at) VALUES (?, ?, ?, 'partial', 1, 1, 1, 'current', 'now')",
-                ("ext_" + aid, aid, version))
-            if last >= 30 and index in (2, 3, 4):
-                # Immutable passage provenance is set on insertion in the fixture.
-                conn.execute("DELETE FROM passages WHERE asset_id = ?", (aid,))
-                store._insert_passage(svid, aid, "pdf_page", 1, "i", None, "chars:0-17", version,
-                    "SYNTHETIC relays.", ("ocr", "marker", "latex_source" if last >= 54 else "marker")[index - 2])
-            conn.execute("INSERT INTO asset_extractions (id, asset_id, extraction_version, status, page_count, text_pages,"
-                " passage_count, outcome, created_at) VALUES (?, ?, ?, 'failed', 0, 0, 0, 'rejected', 'now')",
-                ("ext_rejected" + str(index), aid, version + "+rejected"))
-    if last == 65:
-        # All four B1 tables and B2's decision request fields hold records before R1.
-        from tests.report.test_report_assembly import report_with_sections
-        from tests.report.test_report_edit_check import finish
-        from tests.review.review_helpers import stored_review
-        from deixis.workflow.review.reader import ReviewReader
-        from deixis.workflow.review.store import ReviewStore
-        fixture = report_with_sections.__wrapped__(tmp_path / "review")
-        reviewed = next(fixture)
-        reviewed["rid"] = finish(reviewed); reviewed["conn"] = reviewed["store"].conn
-        reviewed["reader"] = ReviewReader(reviewed["store"], reviewed["reports"])
-        reviewed["reviews"] = ReviewStore(reviewed["conn"])
-        saved, review, payload, fid = stored_review(reviewed)
-        reviewed["reviews"].add_decision(fid, "dismissed", "SYNTHETIC dismissal", None,
-            idempotency_key="SYNTHETIC-decision-key", request_hash="1" * 64)
-        # Copying is unnecessary: migrate the populated review connection as a second library.
-        review_before = all_rows(reviewed["conn"])
-    before = all_rows(conn); before.pop("schema_migrations")
-    old_columns = {table: [r[1] for r in conn.execute(f"PRAGMA table_info({table})")] for table in before}
-    objects = {(r["type"], r["name"]): (r["tbl_name"], r["sql"]) for r in conn.execute("SELECT * FROM sqlite_master")}
-    fts_before = [r[0] for r in conn.execute("SELECT rowid FROM passages_fts WHERE passages_fts MATCH 'relays' ORDER BY rowid")]
-    assert all("+reextract-" not in r[0] for r in conn.execute("SELECT extraction_version FROM source_assets"))
-    if last == 65:
-        shutil.copy(real / "0066_asset_recovery.sql", old / "0066_asset_recovery.sql")
-        assert db.migrate(conn) == [66]
-        assert db.migrate(reviewed["conn"]) == [66]
-        for table, rows in review_before.items():
-            if table in ("schema_migrations", "asset_extractions"): continue
-            assert all_rows(reviewed["conn"])[table] == rows
-        with pytest.raises(StopIteration): next(fixture)
-    else:
-        monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
-        assert 66 in db.migrate(conn)
-    for table, columns in old_columns.items():
-        projected = ", ".join('"' + column + '"' for column in columns)
-        actual = sorted((tuple(r) for r in conn.execute(f'SELECT {projected} FROM "{table}"')), key=repr)
-        assert actual == before[table]
-    assert all(r["extractor_profile"] == r["extraction_version"] and r["input_observation_id"] is None
-               and r["diagnostic_only"] == 0 for r in conn.execute("SELECT * FROM asset_extractions"))
-    assert conn.execute("SELECT COUNT(*) FROM asset_file_observations").fetchone()[0] == 0
-    assert [r[0] for r in conn.execute("SELECT rowid FROM passages_fts WHERE passages_fts MATCH 'relays' ORDER BY rowid")] == fts_before
-    if last == 65:
-        after = {(r["type"], r["name"]): (r["tbl_name"], r["sql"]) for r in conn.execute("SELECT * FROM sqlite_master")}
-        changed = {key for key in objects if objects[key] != after[key]}
-        assert changed == {("table", "asset_extractions"), ("trigger", "passages_no_update")}
-        expected_added = {
-            ("table", "asset_recovery_operations"), ("table", "asset_file_observations"),
-            ("index", "sqlite_autoindex_asset_recovery_operations_2"),
-            ("index", "asset_recovery_operations_asset_created"), ("index", "asset_recovery_operations_one_running"),
-            ("index", "asset_file_observations_operation"), ("index", "asset_extractions_recovery_operation"),
-            *(("trigger", name) for name in ("asset_file_observations_no_update", "asset_file_observations_no_conflicting_insert",
-                "asset_extractions_no_update", "asset_extractions_baseline_same_asset", "asset_extractions_recovery_shape",
-                "asset_extractions_no_conflicting_insert", "asset_recovery_operations_no_conflicting_insert",
-                "asset_recovery_operations_frozen")),
-        }
-        assert after.keys() - objects.keys() == expected_added
-        ddl = after[("table", "asset_extractions")][1]
-        additions = [
-            "extractor_profile TEXT NOT NULL DEFAULT 'unknown'",
-            "recovery_operation_id TEXT REFERENCES asset_recovery_operations(id)",
-            "baseline_extraction_id TEXT REFERENCES asset_extractions(id)",
-            "input_observation_id TEXT REFERENCES asset_file_observations(id)",
-            "diagnostic_only INTEGER NOT NULL DEFAULT 0 CHECK (diagnostic_only IN (0, 1))",
-            "decision_code TEXT CHECK (decision_code IS NULL OR decision_code IN (" +
-                ", ".join(repr(code) for code in recovery.DECISION_CODES) + "))"]
-        expected = objects[("table", "asset_extractions")][1]
-        for definition in additions:
-            ddl = ddl.replace(", " + definition, "")
-        assert ddl == expected
-        trigger = after[("trigger", "passages_no_update")][1]
-        assert all(column in trigger for column in PROTECTED_PASSAGE_COLUMNS)
-    assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-    conn.close()
 
 
 def test_vocabulary_foreign_keys_without_rowid_and_deferral(lib):

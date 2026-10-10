@@ -254,15 +254,6 @@ def test_an_abstract_stratum_work_is_refused_by_the_answer_endpoint(store):
         queue.audit_decide(store, lib.rid, a1, "include", None, "x.y")
 
 
-def test_a_legacy_research_has_no_audit(store):
-    lib = Lib(store, workflow="legacy")
-    svid = lib.work()
-    with pytest.raises(QueueUnavailable):
-        audit.audit_view(store, lib.rid)
-    with pytest.raises(QueueUnavailable):
-        queue.audit_decide(store, lib.rid, svid, "include", None, "x.y")
-
-
 # ---- the origin, read from the event tied to the decision id, on both undo paths ---------------------------------
 
 
@@ -366,12 +357,10 @@ def test_a_d96_event_without_via_stays_d96s_and_a_missing_mixed_or_other_via_is_
     assert lib.ds.current(lib.rid, plain, "fulltext")["decided_by"] != "human"
 
 
-def test_the_endpoints_keep_to_the_search_workflow_and_mutations_need_the_csrf_header(tmp_path, monkeypatch):
+def test_the_endpoints_refuse_wrong_answers_and_mutations_need_the_csrf_header(tmp_path, monkeypatch):
     app, client = quiet_app(tmp_path, monkeypatch)
     try:
         store = app.state.store
-        legacy = Lib(store, workflow="legacy")
-        refused = client.get(f"/api/researches/{legacy.rid}/audit")
         lib = Lib(store)
         svid = read_work(lib)
         a1 = coded(lib, "runs_agree_out_of_scope")
@@ -384,7 +373,6 @@ def test_the_endpoints_keep_to_the_search_workflow_and_mutations_need_the_csrf_h
                                 json={"decision": "pdf_confirmed", "note": None, "audit_token": "x.y"})
     finally:
         client.__exit__(None, None, None)
-    assert refused.status_code == 422
     assert no_csrf.status_code == 403
     assert abstract.status_code == 422
     assert confirmed.status_code == 422  # `pdf_confirmed` is not an audit answer

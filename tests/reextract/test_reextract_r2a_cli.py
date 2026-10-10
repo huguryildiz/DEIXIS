@@ -3,6 +3,7 @@
 import errno
 import hashlib
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -174,18 +175,21 @@ def test_dry_run_copy_and_parser_errors_leave_library_unchanged(tmp_path, monkey
         assert file_state(lib.settings.data_dir) == before
 
 
-def test_dry_run_old_0065_schema_refuses_without_migrating(tmp_path, monkeypatch, capsys):
-    from tests.reextract.test_reextract_r1_migration import old_library
-    real, old, conn = old_library(tmp_path, monkeypatch, 65)
-    conn.close()
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
+def test_dry_run_with_a_pending_migration_refuses_without_migrating(tmp_path, monkeypatch, capsys):
     settings = cli.Settings(data_dir=tmp_path)
+    conn = db.connect(settings.db_path); db.migrate(conn); conn.close()
+    # The code now ships one more migration than the library has applied.
+    pending = tmp_path / "migrations"; pending.mkdir()
+    for path in db.MIGRATIONS_DIR.glob("*.sql"): shutil.copy(path, pending / path.name)
+    version = max(db.packaged_versions()) + 1
+    (pending / f"{version:04d}_synthetic_pending.sql").write_text("CREATE TABLE synthetic_pending (id TEXT PRIMARY KEY);\n")
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", pending)
     before = file_state(tmp_path)
     assert cli.plan_text_retry(settings, "ast_missing", "ext_missing") == 2
     assert "this library needs a migration" in capsys.readouterr().err
     assert file_state(tmp_path) == before
     check = sqlite3.connect(settings.db_path.as_uri() + "?immutable=1", uri=True)
-    assert check.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 65
+    assert version not in {r[0] for r in check.execute("SELECT version FROM schema_migrations")}
     check.close()
 
 

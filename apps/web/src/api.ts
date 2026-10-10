@@ -123,7 +123,7 @@ export type Scope = {
   literature_connection: string | null; review_connection: string | null
   steering: string | null; created_at: string
   // Which search workflow this revision runs under, and the English key terms the user gave for it (SW2.1).
-  search_workflow: 'legacy' | 'sw'; key_terms: string | null
+  search_workflow: 'sw'; key_terms: string | null
 }
 export type ReviewMode = 'default' | 'custom' | 'off'
 export type Verdict = 'supported' | 'partially_supported' | 'not_supported' | 'cannot_assess'
@@ -158,12 +158,6 @@ export type Step = {
     // The full-text reading plan: the works it froze.
     works?: unknown[] } | null
 }
-// What the search plan step reported, as the model wrote it.
-export type SearchPlan = {
-  question_interpretation: string; search_rationale: string; scope_boundaries: string[]
-  concepts: { label: string; role: string; synonyms: string[] }[]
-  queries: { provider_id: string; query_text: string; rationale: string }[]
-}
 export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
@@ -184,9 +178,9 @@ export type Run = {
   pause_reason: string | null; error: unknown; budget: Record<string, number>; usage: Record<string, number>
   service_wait?: { connection: string; attempt: number; seconds: number } | null
   created_at: string; updated_at: string; version: number; steps?: Step[]; target: RunTarget | null
-  // plan null: this run wrote no search plan. screening_notes: the note of each screening batch, in order, with its step.
-  plan: SearchPlan | null; screening_notes: { step_id: string; text: string }[]
-  // What this run asked the user to approve before freezing its protocol; null for a legacy run (D80).
+  // screening_notes: the note of each screening batch, in order, with its step.
+  screening_notes: { step_id: string; text: string }[]
+  // What this run asked the user to approve before freezing its protocol; null when it asked nothing (D80).
   approval: RunApproval | null
   // Per round, what each source brought in this discovery run and how much of it no other source did (D93).
   // counted false: the run was searched before these were kept, which is not the same as zero.
@@ -194,7 +188,7 @@ export type Run = {
   // The phrases the second keyword round searched with; empty when it did not search.
   expansion_terms?: string[]
   // Where the person's confirmed works stood in this discovery run's keyword ranking, descriptively (slice 19); null
-  // for a legacy research, another run kind, or a run that ranked nothing.
+  // for another run kind, or a run that ranked nothing.
   signals?: SignalTable | null
 }
 export type SourceCounts = {
@@ -203,7 +197,7 @@ export type SourceCounts = {
   // What citation chaining brought in this run, and how much of it no keyword search did (D95); absent when it
   // sent nothing.
   chain?: { works: number; only: number }
-  // Beside D93's rows, row for row (slice 19); null in a legacy research, absent when the counts were not kept.
+  // Beside D93's rows, row for row (slice 19); absent when the counts were not kept.
   arms?: SourceArms | null
 }
 // Counted in D93's "only" universe: a source row against the other sources' searches, the chain against every search.
@@ -520,7 +514,7 @@ export type Source = {
   access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; replaced_assets: ReplacedAsset[]; fetch: { status: string; error_code: string | null; http_status: number | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'code_rule' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null; queue_answer: 'include' | 'criterion_not_met' | null }
   cited_in_latest_answer: boolean
-  provider_records: string[]; suspected_duplicates: { source_version_id: string; basis: 'same_title' | 'published_doi' }[]
+  provider_records: string[]
 }
 export type Evidence = {
   passage_id: string; source_version_id: string; source_key: string | null; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
@@ -554,8 +548,8 @@ export type Answer = {
   model: { connection: string; requested_model: string | null; resolved_model: string | null; token_usage: unknown } | null
   inputs_given: { sources: number; passages: number; source_ids: string[] } | null
   source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D45)
-  // Where the flow stood when this sw answer's run started (slice 20); null when that run kept none, and in legacy.
-  start_snapshot?: AnswerStartSnapshot | null
+  // Where the flow stood when this answer's run started (slice 20); null when that run kept none.
+  start_snapshot: AnswerStartSnapshot | null
   review: AnswerReview | null
 }
 // Slice 20, decision 1: every work of the revision in one bucket, from the person's decisions first.
@@ -585,13 +579,13 @@ export type Counts = {
   found: number; unique: number; included: number; excluded: number; pending: number; inspected: number; cited: number
   // Works the user removed from this research, and those of them a later search found again; neither is listed (D50).
   removed: number; removed_found_again: number
-  // An sw research's human queue: open rows, and decisions made under an earlier criterion (slice 16). Absent in legacy.
+  // The human queue: open rows, and decisions made under an earlier criterion (slice 16).
   queue?: number; look_again?: number
-  // An sw research's works waiting for the person's PDF (slice 18a). Absent in legacy.
+  // The works waiting for the person's PDF (slice 18a).
   waiting_for_pdf?: number
-  // Slice 20: the flow buckets, the PRISMA 2020-style boxes and the override count; null in legacy.
+  // Slice 20: the flow buckets, the PRISMA 2020-style boxes and the override count.
   flow?: FlowCounts | null; flow_boxes?: FlowBoxes | null; overrides?: Overrides | null
-  // The search step's funnel for the current revision (D233); null in legacy. A candidate passed the abstract stage; nothing here is "relevant".
+  // The search step's funnel for the current revision (D233). A candidate passed the abstract stage; nothing here is "relevant".
   funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; included: number } | null
 }
 // The audit sample of an sw research (slice 20, decisions 5–7): F1 / F2 answered here, A1 / A2 for viewing only.
@@ -619,7 +613,7 @@ export type AuditView = {
 }
 export type AuditRowView = { row: AuditRow | AuditAbstractRow | null; detail: QueueDetail & { cues: unknown } | null }
 export type AuditResult = { row: AuditRow | null; selection: QueueAnswerResult['selection']; undo_token: string | null }
-export type EffortLimits = { search_workflow: 'sw' | 'legacy'
+export type EffortLimits = { search_workflow: 'sw'
   efforts: Record<'quick' | 'standard' | 'detailed', { read: number; abstracts: number; fetch: number; reads: number; runs: number
     chain_seeds: number; chain_abstracts: number; passages: number }> | null }
 // The human queue of an sw research (slice 16, D96). Rows are derived from stored decisions each time they are read.
@@ -670,10 +664,10 @@ export type QueueAnswerResult = {
   selection: { source_version_id: string; state: Source['selection']['state']; origin: Source['selection']['origin']; version: number } | null
 }
 export type ResearchView = {
-  research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string; read_only_reason: string | null }
+  research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string }
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
   reportRuns: ReportSummary[]
-  // null for a legacy research (slice 19).
+  // The probe set's columns and the probes no arm found (slice 19).
   probes?: Probes | null
   // The reviewer the next answer gets: the research's own setting, else the app-wide default. model null: no review.
   reviewer: { mode: ReviewMode; connection: string | null; model: string | null; reasoning_effort: string | null }

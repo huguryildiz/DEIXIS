@@ -49,9 +49,6 @@ def answer_budget(store: Any, rid: str, revision: int, budget: dict[str, Any]) -
             from deixis.workflow.store import LegacyInspectionPolicyRemoved
             raise LegacyInspectionPolicyRemoved("legacy_inspection_policy_removed")
         return budget
-    if not enabled(store.run(row["id"])["budget"]):
-        from deixis.workflow.store import LegacyInspectionPolicyRemoved
-        raise LegacyInspectionPolicyRemoved("legacy_inspection_policy_removed")
     step = store.existing_step(row["id"], LIST_KEY)
     if step is None or step["status"] != "succeeded":
         return budget | {"inspection": {"policy": POLICY, "list_run_id": row["id"],

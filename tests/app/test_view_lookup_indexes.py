@@ -6,7 +6,6 @@ SYNTHETIC; passing shows plans and unchanged view JSON, not speed on a real libr
 """
 
 import json
-import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -182,41 +181,3 @@ def test_the_view_is_the_same_with_and_without_the_indexes(tmp_path):
     assert any(s["version_role"] == "other_version" for s in view["sources"])
     drop_indexes(conn)
     assert view_json(store, rid) == with_indexes
-
-
-def test_migration_0063_applies_on_an_old_library_once_and_changes_no_rows(tmp_path):
-    old = tmp_path / "migrations"
-    old.mkdir()
-    for path in db.MIGRATIONS_DIR.glob("*.sql"):
-        if int(path.name.split("_", 1)[0]) <= 62:
-            shutil.copy(path, old / path.name)
-    real = db.MIGRATIONS_DIR
-    try:
-        db.MIGRATIONS_DIR = old
-        conn = db.connect(tmp_path / "library.sqlite")
-        db.migrate(conn)
-    finally:
-        db.MIGRATIONS_DIR = real
-    store = Store(conn)
-    rid = store.create_research("SYNTHETIC old library", "academic", "standard", ["openalex"], "codex", None, None)
-    svid, _ = store.upsert_provider_source("openalex", record(1), None)
-    store.add_to_corpus(rid, svid, "search", None, 0, selection_state="pending", scope_revision=1)
-    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")]
-    before = {t: sorted((tuple(r) for r in conn.execute(f"SELECT * FROM {t}")), key=repr) for t in tables}
-    assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'run_steps_operation'").fetchone()
-
-    shutil.copy(real / "0063_view_lookup_indexes.sql", old / "0063_view_lookup_indexes.sql")
-    try:
-        db.MIGRATIONS_DIR = old
-        assert db.migrate(conn) == [63]
-        assert db.migrate(conn) == []  # an applied migration is not run again
-    finally:
-        db.MIGRATIONS_DIR = real
-    after = {t: sorted((tuple(r) for r in conn.execute(f"SELECT * FROM {t}")), key=repr) for t in tables}
-    migrations = {t: rows for t, rows in after.items() if t != "schema_migrations"}
-    assert migrations == {t: rows for t, rows in before.items() if t != "schema_migrations"}
-    names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
-    assert {"identifier_mappings_view_lookup", "run_steps_operation", "source_assets_replaced", "passages_asset"} <= names
-    # The file is written to be run twice without harm as well.
-    sql = (real / "0063_view_lookup_indexes.sql").read_text()
-    conn.executescript(sql)

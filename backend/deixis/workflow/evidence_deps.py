@@ -33,8 +33,6 @@ def passage_dependencies(conn, passage_ids) -> dict[str, dict | None]:
 
 
 def latest_completed_restore(conn, sha256):
-    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'asset_recovery_operations'").fetchone():
-        return None
     row = conn.execute(
         "SELECT id, finished_at FROM asset_recovery_operations WHERE expected_sha256 = ?"
         " AND kind = 'file_restore' AND lifecycle = 'completed' AND outcome = 'file_restored'"

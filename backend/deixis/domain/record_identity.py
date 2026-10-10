@@ -20,7 +20,7 @@ ABSTRACT_MERGE = 0.8  # SW6.3, SW6.6
 TITLE_RELATED = 0.6  # SW6.6: below this a pair is not examined at all
 AUTHOR_OVERLAP = 0.5  # share of the shorter surname list that must match (the measured rule)
 MAX_YEAR_GAP = 5  # SW6.7: a wider gap blocks an automatic merge, it does not decide anything on its own
-MIN_TITLE_CHARS = 12  # as store.MIN_TITLE_KEY_CHARS: "Editorial" says too little to link two records by
+MIN_TITLE_CHARS = 12  # "Editorial" says too little to link two records by
 THRESHOLDS = {"title_merge": TITLE_MERGE, "abstract_merge": ABSTRACT_MERGE, "title_related": TITLE_RELATED,
               "author_overlap": AUTHOR_OVERLAP, "max_year_gap": MAX_YEAR_GAP}
 
@@ -149,7 +149,7 @@ def author_agreement(a: list[str], b: list[str]) -> str:
     Unknown is not the same as different: an empty or placeholder list says nothing, so the pair stays suspected
     instead of being thrown away. Reversed name order is tried on either side, so the answer does not depend on which
     record was passed first. D48's stricter "the first author must be the same" is not applied here; this is the rule
-    the measurement supports, and D48 keeps its own rule for `legacy` researches.
+    the measurement supports.
     """
     first, second = set(surnames(a)), set(surnames(b))
     if not first or not second:

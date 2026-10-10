@@ -267,7 +267,4 @@ def test_an_answer_to_an_earlier_question_revision_opens_no_table(tmp_path, monk
     store.research = lambda rid: {"current_scope_revision": 2}
     store.scope = lambda rid: {"search_workflow": "sw"}
     report_pipeline.after_answer(store, {"id": "run_1", "research_id": "res_1"})
-    store.research = lambda rid: {"current_scope_revision": 1}
-    store.scope = lambda rid: {"search_workflow": "legacy"}
-    report_pipeline.after_answer(store, {"id": "run_1", "research_id": "res_1"})
     assert calls == []

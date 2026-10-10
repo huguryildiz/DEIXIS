@@ -238,16 +238,6 @@ def test_a_confirmed_work_found_only_by_the_citation_chain_leaves_the_view_list_
     assert shown["verified"] == 1 and shown["not_found"] == {"status": "counted", "works": []}
 
 
-def test_a_legacy_research_has_no_probe_set_no_arms_and_no_signal_table(store):
-    lib = Probe(store, workflow="legacy")
-    lib.keyed("search:0", lib.records(2))
-    view = lib.view()
-    assert view["probes"] is None
-    (run,) = [r for r in view["runs"] if r["id"] == lib.run]
-    assert run["signals"] is None and run["source_counts"]["arms"] is None
-    assert run["source_counts"]["rounds"] == views.source_counts(store, lib.run)["rounds"]
-
-
 # ---- decisions 3–4: the arm rows ---------------------------------------------------------------------------------
 
 

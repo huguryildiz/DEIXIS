@@ -67,6 +67,7 @@ Bütün eksikler burada; ayrı TODO dosyası yok. Parantezdeki D numaraları [ka
 
 - Geniş sorularda alanın bilinen önemli makaleleri listenin üstüne az giriyor: son ölçümde battery_soh ilk 50'de 15 hedeften 3'ü, materials_ml 13'ten 5–6'sı. Cevap puanı bunu ölçmüyor (ilk 20'nin çoğu yine ilgili). Ölçüt: hedef makalelerin ilk 50'ye girme oranı, 10 soruda. (RESULT_final.md)
 - dbr_vbf (Elicit kıyası) her ayarda 8 Ekim'in altında (69–79): cevap insan değerlendirmesi gibi boyutları kapsamıyor; Hızlı ayarda bir kilit makale (maulana2019) hiç bulunmuyor.
+- Survey makaleleri: ayrı survey araması yok; başlığında güçlü derleme kelimesi geçen makale listeden çıkıyor (4 Ekim'de dbr_vbf'te 90 eleme, 60'ı yönlendirme derlemesi). 6 Ekim'de survey kaynakçasından makale çekme kolu eşiği geçmedi (4 soruda 1 yeni hedef, eşik 2). Açık soru: karşılaştırma sorularında survey'in kendisi cevaba kaynak olarak yardım ediyor mu? Ölçüt: survey'li ve survey'siz cevap puanı ve kapsanan boyutlar, aynı sorularda. (`.local/benchmark/2026-10-06/SUMMARY.md`)
 
 ### Ölçülmedi (gerçek model veya gerçek kullanım gerekiyor)
 

@@ -253,6 +253,24 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
   const chainDone = steps.some(s => s.operation_key === 'fast_chain:summary' && s.status === 'succeeded')
   const chainSeeds = steps.reduce((sum, s) => sum + (s.kind === 'code:fast_chain' ? s.output?.seed_count ?? 0 : 0), 0)
   const chainNew = run.source_counts?.counted ? run.source_counts.chain?.only : undefined
+  // What became of each recorded request (`chain:fast:{n}`): answered in time, answered after the cutoff (its works are
+  // not kept), failed, sent with an unknown outcome, or not sent at all.
+  const chainRequests = steps.filter(s => s.operation_key.startsWith('chain:fast:'))
+  const chainCount = (test: (s: Step) => boolean) => chainRequests.filter(test).length
+  const answered = chainCount(s => s.status === 'succeeded' && !s.output?.late)
+  const late = chainCount(s => s.status === 'succeeded' && Boolean(s.output?.late))
+  const failedRequests = chainCount(s => s.status === 'failed')
+  const unknownRequests = chainCount(s => s.status === 'outcome_unknown')
+  const notSent = chainCount(s => s.status === 'cancelled')
+  const chainLine = [
+    plural(chainSeeds, '{n} seed paper chosen', '{n} seed papers chosen'),
+    plural(answered, '{n} request answered', '{n} requests answered'),
+    late ? plural(late, '{n} answered after the cutoff, its works not kept', '{n} answered after the cutoff, their works not kept') : '',
+    failedRequests ? plural(failedRequests, '{n} request failed', '{n} requests failed') : '',
+    unknownRequests ? plural(unknownRequests, '{n} request with an unknown outcome', '{n} requests with an unknown outcome') : '',
+    notSent ? plural(notSent, '{n} request not sent', '{n} requests not sent') : '',
+    chainNew === undefined ? '' : plural(chainNew, '{n} new work', '{n} new works'),
+  ].filter(Boolean).join(' · ')
   // A pdf_ocr run (D51): its PDF, the pages without text it found, and what became of the merged text.
   const ocrSource = run.kind === 'pdf_ocr' ? view.sources.find(s => s.source_version_id === run.target?.source_version_id) : undefined
   const ocrAsset = ocrSource?.access.assets.find(a => a.id === run.target?.asset_id)
@@ -677,8 +695,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
             {(chainDone || run.approval?.chaining?.enabled) && <li className="chat-list-round">
               <b><Waypoints size={13} aria-hidden />{t('Citation chaining')}</b>
               <span>{chainDone
-                ? [plural(chainSeeds, 'Checked the reference lists and citing papers of {n} paper', 'Checked the reference lists and citing papers of {n} papers'),
-                  chainNew === undefined ? '' : plural(chainNew, '{n} new work', '{n} new works')].filter(Boolean).join(' · ')
+                ? chainLine
                 : t('While the search runs, the reference lists and citing papers of the best matches are checked')}</span>
             </li>}
             {runningSearch && active && <li className="is-running">

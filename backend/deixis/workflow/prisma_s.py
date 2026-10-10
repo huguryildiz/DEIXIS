@@ -129,13 +129,13 @@ def _groups(store: Store, research_id: str, revision: int, until: str | None = N
             queries = cards[row["run_id"]]
             index = re.match(r"search:(\d+)", row["operation_key"] or "")
             number = int(index.group(1)) if index else None
-            second = bool(queries) and number is not None and number >= len(queries)
-            origin = ("chain" if chain else "expansion" if second else
-                      (queries[number].get("origin") if number is not None and number < len(queries) else None))
+            origin = ("chain" if chain else
+                      queries[number].get("origin") if number is not None and number < len(queries) else None)
             group = groups[key] = {
                 "kind": "chain" if chain else "keyword", "run_id": row["run_id"], "provider": row["provider"],
                 "through": THROUGH.get(row["provider"]), "origin": origin,
-                "round": None if chain else 2 if second else 1, "query_text": row["query_text"],
+                # The fast path searches one frozen plan: every keyword group is the first and only round.
+                "round": None if chain else 1, "query_text": row["query_text"],
                 "request": _request_parts(row["request_description"]), "request_description": row["request_description"],
                 "search_run_ids": [], "first_retrieved_at": row["retrieved_at"], "last_retrieved_at": row["retrieved_at"],
                 "rows_returned": 0, "provider_total": None, "read_limit": row["read_limit"], "unread_by_limit": 0,

@@ -175,15 +175,14 @@ def test_item_5_names_the_frozen_chain_policy_and_a_bioRxiv_query_is_still_a_sep
     assert item(data, 1)["values"]["databases"] == [{"provider": "biorxiv", "access": "direct API", "through": "openalex"}]
 
 
-def test_brought_works_are_other_methods_and_the_expansion_round_is_a_search_round(store):
+def test_brought_works_are_other_methods_and_every_keyword_group_is_round_one(store):
     lib = Search(store)
     lib.card([{"provider_id": "openalex", "query_text": "SYNTHETIC query", "origin": "model"}])
     lib.page("search:0", lib.records(1), stop="exhausted")
-    lib.page("search:1", lib.records(1), query="SYNTHETIC expanded", stop="exhausted")  # second round
     data = lib.export()
     assert item(data, 7)["status"] == "not_recorded" and item(data, 7)["text"] == "No other source was recorded in DEIXIS."
-    assert [(g["round"], g["origin"]) for g in data["search_table"]] == [(1, "model"), (2, "expansion")]
-    assert item(data, 8)["values"]["rounds"] == [1, 2]
+    assert [(g["round"], g["origin"]) for g in data["search_table"]] == [(1, "model")]
+    assert item(data, 8)["values"]["rounds"] == [1]
     uploaded = store.create_upload_source("SYNTHETIC my own notes")
     store.add_to_corpus(lib.rid, uploaded, "user_upload", candidate=False)
     seven = item(lib.export(), 7)

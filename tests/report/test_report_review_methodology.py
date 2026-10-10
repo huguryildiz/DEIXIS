@@ -111,3 +111,40 @@ def test_limitations_core_counts_saved_valid_claims_latest_repairs_and_distinct_
     rendered = render_limitations(numbers, language)
     assert all(item["text"] in rendered for item in numbers["items"])
     assert "2" in rendered and "1" in rendered and "50.0%" in rendered
+
+
+SNAPSHOT = {"corpus": {"found": 17, "unique": 11, "screened": 9, "included": 4, "full_text": 2}}
+
+
+def chain_steps(store, research_id, *, summary=True):
+    """A SYNTHETIC fast chain on the fixture's discovery run: three semantic seeds, one the ranking added, and the
+    summary `fast_chain.Round.summary` writes."""
+    run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = 'discovery'", (research_id,)).fetchone()[0]
+    for key, seeds in (("fast_chain:seeds", 3), ("fast_chain:seeds_fallback", 1)):
+        store.finish_step(store.step(run_id, key, "code:fast_chain")["id"], "succeeded",
+                          output={"seeds": [{"source_version_id": f"sv{i}", "references": ["W1", "W2"]} for i in range(seeds)]})
+    if summary:
+        store.finish_step(store.step(run_id, "fast_chain:summary", "code:fast_chain")["id"], "succeeded", output={
+            "sent": 5, "accepted": 3, "returned": 40, "raw_returned": 44, "admitted_returned": 40, "failed": 1,
+            "passed_filter": 12, "late_records": 0, "unknown": 1, "unsent": {"cutoff": 2, "request_budget": 1}})
+
+
+@pytest.mark.parametrize("language,sentence", [
+    ("en", "Citation searching followed the references and the citing works of 4 seed works in OpenAlex: 5 requests "
+           "sent (2 did not complete, 3 not sent), 12 returned records kept by the gate-term filter."),
+    ("tr", "Atıf taraması 4 tohum eserin referanslarını ve onlara atıf yapan eserleri OpenAlex'te izledi: 5 istek "
+           "gönderildi (2 tamamlanmadı, 3 gönderilmedi); dönen kayıtlardan 12 tanesini kapı terimi süzgeci tuttu."),
+])
+def test_the_method_section_reports_the_fast_chain_from_its_seed_and_summary_steps(lib, language, sentence):
+    store, reports, report_id, research_id = lib
+    chain_steps(store, research_id)
+    store.conn.execute("UPDATE reports SET language = ? WHERE id = ?", (language, report_id))
+    write_review_methodology(store, reports, report_id, research_id, SNAPSHOT)
+    assert sentence in reports.section(report_id, "II")["draft"]["text"]
+
+
+def test_a_fast_chain_without_its_summary_writes_no_citation_searching_sentence(lib):
+    store, reports, report_id, research_id = lib
+    chain_steps(store, research_id, summary=False)
+    write_review_methodology(store, reports, report_id, research_id, SNAPSHOT)
+    assert "Citation searching" not in reports.section(report_id, "II")["draft"]["text"]

@@ -43,14 +43,16 @@ def failed_reason_text(reason: str, language: str) -> str:
     return reason.replace("_", " ")
 
 
-# Citation searching (PRISMA-S item 5), written only when a discovery run of this revision chained citations (D95).
+# Citation searching (PRISMA-S item 5), written only when a discovery run of this revision closed its fast chain (D95).
+# `kept` counts returned records that passed the gate-term filter in a reply that arrived before the cutoff; they are
+# records, not new works, and a record a keyword query also found is among them.
 _CHAIN_TEMPLATES = {
     "en": (" Citation searching followed the references and the citing works of {seeds} seed works in OpenAlex: "
-           "{requests} requests ({failed} did not complete), {new_works} new works kept by the gate-term filter, "
-           "{read} of them read at the abstract stage."),
+           "{requests} requests sent ({failed} did not complete, {unsent} not sent), {kept} returned records kept by "
+           "the gate-term filter."),
     "tr": (" Atıf taraması {seeds} tohum eserin referanslarını ve onlara atıf yapan eserleri OpenAlex'te izledi: "
-           "{requests} istek ({failed} tamamlanmadı), kapı terimi süzgecinin tuttuğu {new_works} yeni eser, bunların "
-           "{read} tanesi özet aşamasında okundu."),
+           "{requests} istek gönderildi ({failed} tamamlanmadı, {unsent} gönderilmedi); dönen kayıtlardan {kept} "
+           "tanesini kapı terimi süzgeci tuttu."),
 }
 
 
@@ -181,15 +183,18 @@ def limitations_core(store: Store, reports: ReportStore, report_id: str,
 
 
 def _chain_provenance(steps: list[dict[str, Any]], language: str) -> str:
-    summaries = [step["output"] for step in steps
-                 if step["kind"] == "code:chain_summary" and step["status"] == "succeeded" and step["output"]]
+    """The fast chain of every discovery run of the revision that wrote its summary (`fast_chain.Round.summary`): the
+    seeds its seed steps chose, and the request counts and filter count the summary recorded."""
+    summaries = {step["run_id"]: step["output"] for step in steps
+                 if step["operation_key"] == "fast_chain:summary" and step["status"] == "succeeded" and step["output"]}
     if not summaries:
         return ""
-    total = {"seeds": sum(sum((out.get("seeds") or {}).get(key, 0) for key in ("code", "user")) for out in summaries),
-             "requests": sum((out.get("requests") or {}).get("sent", 0) for out in summaries),
-             "failed": sum((out.get("requests") or {}).get("failed", 0) for out in summaries),
-             "new_works": sum(out.get("new_works", 0) for out in summaries),
-             "read": sum(out.get("read_by_model", 0) for out in summaries)}
+    total = {"seeds": sum((step["output"] or {}).get("seed_count", 0) for step in steps if step["run_id"] in summaries
+                          and step["operation_key"] in ("fast_chain:seeds", "fast_chain:seeds_fallback")),
+             "requests": sum(out.get("sent", 0) for out in summaries.values()),
+             "failed": sum(out.get("failed", 0) + out.get("unknown", 0) for out in summaries.values()),
+             "unsent": sum(sum((out.get("unsent") or {}).values()) for out in summaries.values()),
+             "kept": sum(out.get("passed_filter", 0) for out in summaries.values())}
     return _CHAIN_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**total)
 
 

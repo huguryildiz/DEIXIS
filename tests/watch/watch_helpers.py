@@ -60,7 +60,7 @@ def watch_api(tmp_path, *, queries=None, handler=None, headers=None, start_worke
     def no_model(payload):
         raise AssertionError("A watch never calls a model")
     directory = tmp_path / db.new_id("watch")
-    settings = Settings(data_dir=directory, port=8879, fulltext_fetch="off", citation_chaining="off")
+    settings = Settings(data_dir=directory, port=8879, fulltext_fetch="off")
     http = httpx.AsyncClient(transport=httpx.MockTransport(serve), headers=headers)
     app = create_app(settings, adapters={"fake": FakeAdapter(responder=no_model)}, http_client=http,
                      start_worker=start_worker, trusted_clients=("testclient",))

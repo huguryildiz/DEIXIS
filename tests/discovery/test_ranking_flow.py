@@ -218,10 +218,10 @@ def test_the_screening_list_follows_the_inspection_order_and_not_the_provider_s(
 
 
 def test_the_read_limit_cuts_by_the_frozen_list_order_deletes_nothing_and_max_candidates_cuts_nothing(tmp_path, monkeypatch):
-    """The read limit follows the frozen small-batch list, and what it leaves out stays unread.
+    """The read window follows the frozen small-batch list, and what it leaves out stays unread.
 
-    A pool of 45 at quick effort, whose read limit is 40 and whose `max_candidates` is 20: if the old limit still
-    cut, 25 works would never be looked at.
+    A pool of 45 at quick effort, whose fast-path read window N is 25 (D251) and whose `max_candidates` is 20: if the
+    old limit still cut, 25 works would never be looked at.
     """
     from deixis.workflow import small_batch
 
@@ -235,6 +235,7 @@ def test_the_read_limit_cuts_by_the_frozen_list_order_deletes_nothing_and_max_ca
         listing = store.existing_step(run_id, small_batch.LIST_KEY)["output"]
         frozen_order = listing["order"]
         plan = step_output(store, run_id, "abstract_stage")
+        window = store.run(run_id)["budget"]["fast_path"]["N"]
         decided = {row["source_version_id"]: decision_of(store, rid, row["source_version_id"])
                    for row in candidates}
         states = {row["state"] for row in candidates}
@@ -242,11 +243,12 @@ def test_the_read_limit_cuts_by_the_frozen_list_order_deletes_nothing_and_max_ca
         client.__exit__(None, None, None)
     assert len(candidates) == 45 and len(order) == 45  # nothing was removed and everything was ranked
     assert len(frozen_order) == 45 and set(frozen_order) == set(order)
-    assert plan["limit"] == 40 and sum(len(batch) for batch in plan["batches"]) + plan["not_read"] == 44
-    # D245's frozen list can differ from the keyword ranking; decisions must follow the list's tail.
-    unread = {svid for svid, row in decided.items() if row["reason_code"] == "abstract_not_read"}
-    assert unread == set(frozen_order[-plan["not_read"]:])
-    assert plan["not_read"] == 4 and states == {"pending"}
+    # Code closes one work of the window; the model reads every other one of it.
+    assert window == 25 and sum(len(batch) for batch in plan["batches"]) + sum(plan["decisions"].values()) == window
+    # D245's frozen list can differ from the keyword ranking; the works past the window follow the list's tail.
+    unread = {svid for svid, row in decided.items() if row["reason_code"] is None}
+    assert unread == set(frozen_order[window:])
+    assert states == {"pending"}
 
 
 def test_the_ranking_step_writes_no_row_in_any_decision_table(tmp_path, monkeypatch):
@@ -412,24 +414,19 @@ def test_an_sw_run_scores_the_whole_pool_before_it_ranks_and_not_again_after_scr
 
 # ---- the protocol -----------------------------------------------------------------------------
 
-def test_the_frozen_body_names_the_signals_and_the_expansion_revision_carries_them(tmp_path, monkeypatch):
-    from test_expansion_flow import Field, app_for as expansion_app, client_of as expansion_client, discover as expand
-
-    app = expansion_app(tmp_path, monkeypatch, Field())
-    client = expansion_client(app)
+def test_the_frozen_body_names_the_signals(tmp_path, monkeypatch):
+    # The second (expansion) revision is gone with the fast path (slice 1); the one frozen body still names them.
+    app = app_for(tmp_path, monkeypatch, Pool())
+    client = client_of(app)
     try:
-        rid, run_id, view, run = expand(client)
+        rid, run_id, view, run = discover(client)
         bodies = [json.loads(row["body_json"]) for row in app.state.store.conn.execute(
             "SELECT body_json FROM protocol_records WHERE research_id = ? ORDER BY protocol_revision", (rid,))]
     finally:
         client.__exit__(None, None, None)
-    assert len(bodies) == 2
-    for body in bodies:
-        assert [s["signal"] for s in body["signals"]] == list(ranking.SIGNALS)
-        assert body["thresholds"]["ranking"] == ranking.THRESHOLDS
-    # Both revisions name the same embedding model, so the expansion revision never reads as "ordered without one".
-    assert {json.dumps(body["signals"], sort_keys=True) for body in bodies} == {
-        json.dumps(bodies[0]["signals"], sort_keys=True)}
+    assert len(bodies) == 1
+    assert [s["signal"] for s in bodies[0]["signals"]] == list(ranking.SIGNALS)
+    assert bodies[0]["thresholds"]["ranking"] == ranking.THRESHOLDS
 
 
 def test_changing_the_embedding_setting_makes_no_decision_stale(tmp_path, monkeypatch):

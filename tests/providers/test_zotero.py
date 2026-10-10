@@ -57,7 +57,7 @@ async def no_fetch(url):
 
 def app_for(tmp_path, http_client, fetcher=no_fetch):
     settings = Settings(data_dir=tmp_path / "data", port=8765, protocol_approval="as_proposed", search_query="code",
-                        fulltext_fetch="off", citation_chaining="off")
+                        fulltext_fetch="off")
     return create_app(settings, adapters={"fake": FakeAdapter()}, http_client=http_client, fetcher=fetcher,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))
 

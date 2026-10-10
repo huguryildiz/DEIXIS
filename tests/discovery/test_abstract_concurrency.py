@@ -32,9 +32,13 @@ def screening_steps(store, run_id):
     for step in store.run_steps(run_id):
         if step["kind"] != "model:abstract_screening":
             continue
-        payload = json.loads(store.conn.execute(
-            "SELECT payload_json FROM step_inputs WHERE step_id = ? ORDER BY rowid DESC LIMIT 1",
-            (step["id"],)).fetchone()[0])
+        row = store.conn.execute(
+            "SELECT payload_json FROM step_inputs WHERE step_id = ? ORDER BY rowid DESC LIMIT 1", (step["id"],)).fetchone()
+        if row is None:
+            # The fast path opens a group's steps before it sends them; a pause in between leaves them unsent.
+            assert step["status"] == "pending"
+            continue
+        payload = json.loads(row[0])
         group = tuple(sorted(c["title"] for c in payload["candidates"]))
         records.append((group, payload["screening_target"]["run"], step["status"]))
     groups = sorted({group for group, _, _ in records})

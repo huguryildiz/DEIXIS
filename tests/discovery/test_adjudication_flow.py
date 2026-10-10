@@ -310,6 +310,10 @@ def test_two_not_met_runs_exclude_and_a_disagreement_stays_pending(tmp_path, mon
 
 
 def test_a_human_fulltext_decision_is_not_read(tmp_path, monkeypatch):
+    from deixis.workflow import fast_answer, small_batch
+
+    # No automatic answer, so no late revision (D255) reads W1's file before the person decides.
+    monkeypatch.setattr(fast_answer, "auto_answer", lambda store, run: None)
     works, fetcher = papers(1)
     adapter = FakeAdapter(valid_response)
     app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, reading="off", adapter=adapter)
@@ -319,15 +323,18 @@ def test_a_human_fulltext_decision_is_not_read(tmp_path, monkeypatch):
         wait_fetch(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
+        assert fulltext_code(store, rid, head) == "not_read_yet"
         DecisionStore(store).record(rid, head, "human_include")
+        # The second discovery reads full text (the fast path reads inside discovery, D251); W1 alone has a file.
+        freeze = small_batch.freeze_budget
+        monkeypatch.setattr(small_batch, "freeze_budget", lambda budget, effort, reading: freeze(budget, effort, "auto"))
         run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
         _, reading = wait(client, rid, run_id)
-        plan = step_output(store, run_id, "adjudication_plan")
         code = fulltext_code(store, rid, head)
     finally:
         client.__exit__(None, None, None)
-    assert reading["status"] == "completed" and plan["works"] == [] and code == "human_include"
-    assert adj_calls(adapter, run_id) == []
+    assert reading["status"] == "completed" and reading["budget"]["inspection"]["read_limit"] > 0
+    assert code == "human_include" and adj_calls(adapter, run_id) == []
 
 
 
@@ -358,31 +365,6 @@ def test_a_fresh_decision_is_not_reread_until_the_question_is_revised(tmp_path, 
         client.__exit__(None, None, None)
     assert first["status"] == "completed" and reread["status"] == "completed" and skipped == 0
     assert revised["status"] == "completed" and revised_calls == 2
-
-
-def test_a_work_past_the_limit_is_not_reached_and_the_next_run_reads_it(tmp_path, monkeypatch):
-    monkeypatch.setattr(adjudication, "read_budget", budget_of(2, 1))
-    works, fetcher = papers(2)
-    adapter = FakeAdapter(valid_response)
-    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
-    client = client_of(app)
-    try:
-        rid, _, _, _ = discover(client)
-        _, first = wait_kind(client, rid, "fulltext_adjudication")
-        store = app.state.store
-        summary = step_output(store, first["id"], "adjudication_summary")
-        codes = {key: fulltext_code(store, rid, svid) for key, svid in records_of(store, rid).items()}
-        monkeypatch.setattr(adjudication, "read_budget", budget_of(4, 2))
-        second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
-        _, again = wait(client, rid, second)
-        later = {key: fulltext_code(store, rid, svid) for key, svid in records_of(store, rid).items()}
-        calls = len(adj_calls(adapter, second))
-    finally:
-        client.__exit__(None, None, None)
-    assert first["status"] == "completed" and summary["not_reached"] == 1 and summary["include"] == 1
-    assert sorted(codes.values()) == ["all_parts_verified", "not_read_yet"]
-    assert again["status"] == "completed" and calls == 2
-    assert set(later.values()) == {"all_parts_verified"}
 
 
 def test_a_paused_run_whose_plan_is_exactly_the_limit_finishes_without_repeating_a_call(tmp_path, monkeypatch):
@@ -431,7 +413,10 @@ def test_a_paused_run_whose_plan_is_exactly_the_limit_finishes_without_repeating
         client.__exit__(None, None, None)
     assert paused["status"] == "paused" and paused_calls == 2
     assert reading["status"] == "completed" and calls == whole_calls == 4
-    assert summary == whole
+    # `whole_text` and `model_calls` are run-wide counts taken as each work's read closes; the fast path reads work by
+    # work beside the run's other calls (D251), so the sums of those snapshots depend on timing and are left out.
+    counts = lambda s: {key: value for key, value in s.items() if key not in ("whole_text", "model_calls")}
+    assert counts(summary) == counts(whole)
 
 
 
@@ -533,9 +518,8 @@ def test_a_grounded_answer_cut_off_once_pauses_the_run_as_before(tmp_path, monke
     client = client_of(app)
     try:
         rid, _, _, _ = discover(client)
-        wait_kind(client, rid, "fulltext_adjudication")
-        answer_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()["id"]
-        _, answer = wait(client, rid, answer_id)
+        # The fast-path discovery queues the answer run itself (D254); its one grounded-answer call is cut off.
+        _, answer = wait_kind(client, rid, "answer")
         calls = [call for call in adapter.calls if call["task_type"] == "grounded_answer"]
     finally:
         client.__exit__(None, None, None)

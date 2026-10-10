@@ -38,7 +38,7 @@ def review_api(lib, tmp_path, *, adapter=None, start_worker=False):
         raise AssertionError(f"No HTTP allowed: {request.url.host}")
 
     http = httpx.AsyncClient(transport=httpx.MockTransport(no_network))
-    app = create_app(Settings(data_dir=directory, port=8878, fulltext_fetch="off", citation_chaining="off"),
+    app = create_app(Settings(data_dir=directory, port=8878, fulltext_fetch="off"),
         adapters={"fake": adapter}, http_client=http, start_worker=start_worker, trusted_clients=("testclient",))
     with TestClient(app, base_url="http://127.0.0.1:8878", raise_server_exceptions=False) as client:
         session(client)

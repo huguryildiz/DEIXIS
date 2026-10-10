@@ -550,29 +550,6 @@ def test_new_read_keeps_chain_and_list_freeze_in_ranking(tmp_path, monkeypatch):
         assert stages["ranking"]["used_ms"] == 3000 and stages["read"]["used_ms"] == 0
 
 
-def test_slice1_policy_keeps_legacy_batches_and_clock_boundaries(tmp_path, monkeypatch):
-    freeze = fast_path.freeze_budget
-    def old(*args):
-        from deixis.domain import canonical
-        policy = freeze(*args)
-        policy.pop("enforced_stages")
-        policy.pop("background_fetch_slots")
-        policy["runner_version"] = 1
-        policy["enforcement"] = "none"
-        policy.pop("policy_hash")
-        policy["policy_hash"] = canonical.sha256_hex(policy)
-        return policy
-    monkeypatch.setattr(fast_path, "freeze_budget", old)
-    app, _ = app_for(tmp_path, monkeypatch, 60, fetch="off", reading="off")
-    with client_of(app) as client:
-        _, run_id, _, run = discover(client, "standard")
-        assert run["status"] == "completed", run
-        plans = [s["output"] for s in small_batch.steps(app.state.store, run_id) if s["kind"] == "code:small_batch_plan"]
-        assert [len(p["items"]) for p in plans] == [40, 20]
-        assert run["fast_path"]["enforcement"] == "none" and "read" not in run["fast_path"]
-        assert app.state.store.conn.execute("SELECT COUNT(*) FROM fast_path_background_fetches").fetchone()[0] == 0
-
-
 def test_real_fetch_and_adjudication_are_bounded_by_top_k(tmp_path, monkeypatch):
     adapter = FakeAdapter(valid_response, delay=0.005)
     app, fetcher = app_for(tmp_path, monkeypatch, 30, pdf=True, adapter=adapter)

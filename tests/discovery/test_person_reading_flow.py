@@ -92,7 +92,9 @@ def test_a_file_the_model_could_not_read_is_unread_and_read_again_on_the_person_
         asset = confirm(client, rid, data, found, records["W3"]).json()["attached"]["asset_id"]
         settle(client, rid)
         unread = client.get(f"/api/researches/{rid}/waiting").json()["files"]["rows"]
-        runs_after_unread = len(client.get(f"/api/researches/{rid}").json()["runs"])
+        # The fast-path discovery also queued its answer and that answer's review; only the person's runs count here.
+        runs_after_unread = len([r for r in client.get(f"/api/researches/{rid}").json()["runs"]
+                                 if "person" in (store.run(r["id"])["idempotency_key"] or "")])
         adapter.responder = valid_response
         request_id = request_of(store, asset)["id"]
         retried = client.post(f"/api/researches/{rid}/waiting/requests/{request_id}/retry")
@@ -106,7 +108,7 @@ def test_a_file_the_model_could_not_read_is_unread_and_read_again_on_the_person_
     assert retried.status_code == 200 and retried.json()["run"]["idempotency_key"].endswith(":1")
     assert (request["status"], request["attempt"]) == ("read", 1)
     assert again.status_code == 409
-    assert runs_after_unread == 2
+    assert runs_after_unread == 1
 
 
 def test_a_file_with_no_text_keeps_its_work_waiting_and_the_only_version_takes_no_other(tmp_path, monkeypatch):

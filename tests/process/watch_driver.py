@@ -112,7 +112,7 @@ def main():
     log_ticks()
     if os.environ.get("P9_HOLD_COMPLETION") == "1": hold_completion()
     settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1, protocol_approval="as_proposed",
-        search_query="code", fulltext_fetch="off", fulltext_adjudication="off", citation_chaining="off", arxiv_source="off")
+        search_query="code", fulltext_fetch="off", fulltext_adjudication="off", arxiv_source="off")
     deixis_main.create_app = functools.partial(create_app, adapters={"fake": NoModel()},
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(openalex)), fetcher=no_fetch, xml_fetcher=no_fetch)
     raise SystemExit(deixis_main.serve(settings, False, ()))

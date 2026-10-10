@@ -28,19 +28,19 @@ import httpx
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, identity, math_reader, ocr, pdf
-from deixis.domain import canonical, contracts, expansion as phrase_candidates, phrasebank, vocabulary as question_words
+from deixis.domain import canonical, contracts, phrasebank, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
-                                 CHAIN_ABSTRACT_READ, CHAIN_CITING_CAP, CHAIN_CITING_PAGE, FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
+                                 FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
                                  FULLTEXT_RUNS, MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES,
-                                 PROVIDER_WAIT, SEARCH_PARALLEL_HOSTS, SW_READ_LIMIT,
+                                 PROVIDER_WAIT, SW_READ_LIMIT,
                                  after_invalid_output, effective_reviewer, schema_repairs, step_model)
-from deixis.domain.rules import CHAIN_S2_BACKWARD_LIMIT, RevisionConflict
+from deixis.domain.rules import RevisionConflict
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
-from deixis.providers import openalex, query_compiler, facade, contract, semantic_scholar
-from deixis.providers.common import FIRST_PAGE, MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi
+from deixis.providers import openalex, query_compiler, facade, contract
+from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi
 from deixis.providers.registry import CONNECTORS, Connector, endpoint_options, reading, search_providers
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.concurrency import ModelCallLimiter
@@ -249,50 +249,6 @@ def page_allowance(query: dict[str, Any], effort: str, budget: dict[str, Any]) -
 
 
 @dataclass
-class _PageRead:
-    """One page a host's task read, held until every query before its own has been written (D89)."""
-
-    key: str                 # the page's step key
-    page: Page
-    outcome: SearchOutcome
-    limit: int               # records asked for
-    stop_reason: str | None  # decided when the page arrived
-    started_at: str          # the request's own clock, which its step carries
-    finished_at: str
-    dispatched: facade.Dispatched | None = None
-    transport: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class _QueryRead:
-    """What one sw query read in this round, in page order, and whether its read has ended (D89)."""
-
-    index: int
-    query: dict[str, Any]
-    pages: list[_PageRead] = field(default_factory=list)
-    allowance_ended: str | None = None  # the step key of a page not asked because the query's share was spent
-    ended: bool = False
-
-
-def _stop_reason(connector: Connector, outcome: SearchOutcome, ok: bool, read_total: int, read_limit: int,
-                 returned_count: int | None = None) -> str | None:
-    """Why this page ends the query's read, or None while another page follows."""
-    if not ok:
-        return "page_failed"
-    if connector.paging == "single_page":
-        return "single_page"
-    if outcome.next_cursor is None or not (len(outcome.records) if returned_count is None else returned_count):
-        # The provider has no more. An empty page ends the read even when it carries a cursor: the read total would
-        # not grow, and the query would ask for empty pages until its request allowance ran out.
-        return "exhausted"
-    if read_total >= read_limit:
-        return "read_limit"
-    if connector.max_reachable is not None and read_total >= connector.max_reachable:
-        return "provider_cap"
-    return None
-
-
-@dataclass
 class _FillJob:
     key: str
     svid: str
@@ -483,13 +439,11 @@ class ResearchFlow:
                 self._fail(run_id, "unknown_run_kind", {"kind": run["kind"]})
         except RunStopped:
             return
-        if (self.store.run(run_id)["status"] in ("running", "pause_requested")
-                and run["kind"] == "discovery" and small_batch.enabled(run["budget"])):
+        if self.store.run(run_id)["status"] in ("running", "pause_requested") and run["kind"] == "discovery":
             with transaction(self.store.conn):
                 self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
-                if fast_path.enforces(run["budget"], "answer"):
-                    from deixis.workflow import fast_answer
-                    fast_answer.auto_answer(self.store, run)
+                from deixis.workflow import fast_answer
+                fast_answer.auto_answer(self.store, run)
         elif self.store.run(run_id)["status"] in ("running", "pause_requested"):
             if ((run["kind"] == "answer" and fast_path.enforces(run["budget"], "answer"))
                     or run["kind"] == "answer_review"):
@@ -576,11 +530,9 @@ class ResearchFlow:
         if scope["source_scope"] == "attached":
             return
         from deixis.workflow import fast_search
-        use_fast_search = fast_search.applicable(self.store, run)
+        from deixis.workflow.fast_embedding import Consumer
         self._enter_clock_stage(run, "plan")
-        if use_fast_search:
-            from deixis.workflow.fast_embedding import Consumer
-            self._fast_consumers[run_id] = Consumer(self, run, scope)
+        self._fast_consumers[run_id] = Consumer(self, run, scope)
         self._checkpoint(run_id, revision)
         if scope["seed_mode"] == "uploaded_seed" and self.store.seed_status(rid, scope) != "ready":
             self._pause(run_id, "seed_unavailable")
@@ -598,9 +550,7 @@ class ResearchFlow:
             # A later discovery run of the same scope revision may plan other queries; that is a new protocol revision
             # with its reason, never an edit of the first one (SW14.2).
             reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
-            fast_plan = None
-            if use_fast_search:
-                fast_plan = fast_search.build_plan(self.store, run, scope, queries)
+            fast_plan = fast_search.build_plan(self.store, run, scope, queries)
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                 scope, run["budget"], None, queries,
                 self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
@@ -621,18 +571,11 @@ class ResearchFlow:
         # A deliberate retry action reuses the stored plan and retries only failed provider searches. A normal resume
         # retries failures only when the whole search stage had no successful query (D18).
         retry_failed = bool(run["budget"].get("retry_failed_searches_only")) or not searched()
-        failure = None
-        # Each query is read page by page up to its effort's read limit.
-        effort = scope["effort"]
         self._checkpoint(run_id, revision)
-        if use_fast_search:
-            if fast_path.chain_on(run["budget"]):
-                from deixis.workflow.fast_chain import Round
-                self._fast_chains[run_id] = Round(self, run, scope, vocabulary)
-            self._fast_consumers[run_id].start()
-            failure = await fast_search.execute(self, run, scope, fast_search.stored_plan(self.store, run), retry_failed)
-        else:
-            failure = await self._search_round(run, list(enumerate(queries)), retry_failed, effort)
+        from deixis.workflow.fast_chain import Round
+        self._fast_chains[run_id] = Round(self, run, scope, vocabulary)
+        self._fast_consumers[run_id].start()
+        failure = await fast_search.execute(self, run, scope, fast_search.stored_plan(self.store, run), retry_failed)
         if failure and not searched():
             self._pause(run_id, *failure)
         if not searched() and self._allowance_ended_searches(run_id):
@@ -640,22 +583,10 @@ class ResearchFlow:
             # a crash). Going on would screen a round that searched nothing (D18); asked to search again, the retry
             # adds to every query's share (review of 13f, 2026-09-23).
             self._pause(run_id, "budget_exhausted", {"limit": "query_requests"})
-        # Expansion reads the first round's records and searches only additional phrases.
-        if use_fast_search:
-            self._close_clock_stage(run, "search")
-            if fast_path.chain_on(run["budget"]):
-                self._enter_clock_stage(run, "ranking")
-                self._fast_chains[run_id].fallback()
-                self._fast_chains[run_id].admit.set()
-            else:
-                self._enter_clock_stage(run, "lookups")
-                await self._second_sources(run, scope, vocabulary)
-                self._close_clock_stage(run, "lookups")
-        else:
-            more = await self._expansion(run, scope, vocabulary, queries, criterion, approval)
-            await self._search_round(run, list(enumerate(more, start=len(queries))), retry_failed, effort)
-            await self._second_sources(run, scope, vocabulary)
-            self._close_clock_stage(run, "search")
+        self._close_clock_stage(run, "search")
+        self._enter_clock_stage(run, "ranking")
+        self._fast_chains[run_id].fallback()
+        self._fast_chains[run_id].admit.set()
 
         self._checkpoint(run_id, revision)
         # A work is screened once, through its head; its other versions follow the head's selection (D46, D48).
@@ -664,19 +595,11 @@ class ResearchFlow:
                 if c["origin"] != "user" and c["source_version_id"] in heads]
         # Rank the full pool before deciding which abstracts to read.
         self._enter_clock_stage(run, "ranking")
-        if use_fast_search:
-            await self._fast_consumers[run_id].drain(pool)
+        await self._fast_consumers[run_id].drain(pool)
         await self._source_similarity(run, scope, pool)
         await self._ranking(run, scope, vocabulary)
-        read_enforced = fast_path.enforces(run["budget"], "read")
-        if not read_enforced:
-            self._close_clock_stage(run, "ranking")
         self.store.update_run(run_id, stage="screening")
-        if not read_enforced:
-            self._enter_clock_stage(run, "read")
         await small_batch.execute(self, run, scope, vocabulary)
-        if not read_enforced:
-            self._close_clock_stage(run, "read")
 
         # Derive a short title from the question and the included sources once screening is done. A structurally valid
         # answer later replaces it (store.save_answer). Optional: the run continues with the provisional title on failure.
@@ -1360,11 +1283,6 @@ class ResearchFlow:
         approved = ((card or {}).get("output") or {}).get("approved") or {}
         return approved.get("routing") or self._routing_step(run_id)
 
-    def _providers(self, run_id: str, scope: dict[str, Any]) -> list[str]:
-        """The providers this run's queries are compiled for: the routed ones (D93), else the scope's."""
-        routing = self._routing(run_id)
-        return routing["providers"] if routing else scope["providers"]
-
     def _searchable(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Stop the run when its vocabulary cannot be searched. A resumed run reads the same stored vocabulary, so it
         stops for the same reason again instead of going on with no query or with the query that was refused; the way
@@ -1453,7 +1371,7 @@ class ResearchFlow:
 
     # ---- the abstract stage of an sw run (slice 09, SW9, SW1, SW11) ----------------------
     async def _abstract_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                              order: list[str], chain: list[str] | None = None, *,
+                              order: list[str], *,
                               batch_key: str | None = None, read_limit: int | None = None,
                               frozen_plan: dict[str, Any] | None = None,
                               cutoff: Callable[[], bool] | None = None) -> None:
@@ -1471,17 +1389,11 @@ class ResearchFlow:
         and a batch is closed on the event loop as soon as both of its runs are back: which order the answers
         arrive in does not reach the decisions, because the batches hold no work in common and what a pair of runs
         means is read from that pair alone (Task 5).
-
-        With `chain`, the same stage reads the works citation chaining brought, and only those, in the chain's own
-        order, up to its own limit and under its own keys (`abstract_screening:chain:…`; D95). The contract, the
-        prompt and the rules are the keyword stage's: the model is not told where a work came from.
         """
         run_id, revision = run["id"], run["scope_revision"]
-        prefix = "abstract_screening:chain" if chain is not None else "abstract_screening"
-        if batch_key:
-            prefix = f"{batch_key}:abstract_screening"
+        prefix = f"{batch_key}:abstract_screening" if batch_key else "abstract_screening"
         plan = frozen_plan if frozen_plan is not None else self._abstract_code_stage(
-            run, scope, vocabulary, order, chain, batch_key=batch_key, read_limit=read_limit)
+            run, scope, vocabulary, order, batch_key=batch_key, read_limit=read_limit)
         self._wake_fetch(run_id)  # the code's decisions are written: more works may be certain now (slice 17a)
         batches, runs = plan["batches"], plan["runs"]
         by_svid = {c["source_version_id"]: c for c in self.store.candidates(run["research_id"])}
@@ -1494,13 +1406,9 @@ class ResearchFlow:
         cutoff_batches: set[int] = set()
 
         # Read, not opened: a batch the budget never reaches must not be left with a pending step of its own.
-        # The chain's read is optional (D95): a call of it that failed is answered too, and reads as nothing, so a
-        # resumed run does not send and charge it again.
         answered = {s["operation_key"] for s in self.store.run_steps(run_id)
                     if s["kind"] == "model:abstract_screening"
-                    and (s["status"] == "succeeded" or s["error_code"] in ("invalid_model_output", "model_read_cutoff")
-                         or (chain is not None and s["operation_key"].startswith(f"{prefix}:")
-                             and s["status"] in ("failed", "outcome_unknown")))}
+                    and (s["status"] == "succeeded" or s["error_code"] in ("invalid_model_output", "model_read_cutoff"))}
 
         def jobs() -> Iterator[_AbstractJob]:
             """The (batch, run) calls in plan order, up to the batch the budget no longer holds whole.
@@ -1585,9 +1493,7 @@ class ResearchFlow:
             unread.extend(svid for n, batch in enumerate(batches) if n not in closed for svid in batch
                           if svid not in self._human_decided_records(run["research_id"], batch))
         if unread and stop is None:
-            key = "chain_abstract_stage" if chain is not None else "abstract_stage"
-            if batch_key:
-                key = f"{batch_key}:abstract_stage"
+            key = f"{batch_key}:abstract_stage" if batch_key else "abstract_stage"
             step_id = self.store.step(run_id, key, f"code:{key}")["id"]
             self._write_abstract_codes(run, step_id, [(svid, "abstract_not_read") for svid in unread])
             if frozen_plan is not None:
@@ -1668,38 +1574,22 @@ class ResearchFlow:
         `_extraction` uses), so an unusable answer is paid for once.
         """
         key = f"{prefix}:{number}:{run_no}"
-        optional = prefix == "abstract_screening:chain"
         step = self.store.step(run["id"], key, "model:abstract_screening")
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
             return None
         if step["error_code"] == "model_read_cutoff":
             return {"cutoff": True}  # D258: a resumed run does not send it again
-        if optional and step["status"] in ("failed", "outcome_unknown"):
-            return None
-        try:
-            # The chain's read is optional (D95): a failed call is recorded and its works stay unread, the run goes on.
-            output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
-                                            screening_target={"runs": ABSTRACT_RUNS, "run": run_no}, limiter=limiter,
-                                            budget_short="skip", optional=optional, recheck=recheck)
-        except OptionalStepFailed as failure:
-            # A call stopped before it was sent (no connection, or one not ready) is closed as failed here, so a
-            # resumed run reads it as answered like any other failed chain call.
-            if self.store.step(run["id"], key, "model:abstract_screening")["status"] in ("pending", "running"):
-                self.store.finish_step(step["id"], "failed", error_code=failure.reason, error=failure.detail)
-            return None
+        output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
+                                        screening_target={"runs": ABSTRACT_RUNS, "run": run_no}, limiter=limiter,
+                                        budget_short="skip", recheck=recheck)
         return None if output.get("invalid") else output
 
     def _abstract_code_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                             order: list[str], chain: list[str] | None = None, *,
+                             order: list[str], *,
                              batch_key: str | None = None, read_limit: int | None = None) -> dict[str, Any]:
-        """Write what code decides about every record, then freeze the read plan in this step's output.
-
-        With `chain`, only the chained works are classified and planned, with the chain's own read limit (D95).
-        """
+        """Write what code decides about every record, then freeze the read plan in this step's output."""
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-        key = "chain_abstract_stage" if chain is not None else "abstract_stage"
-        if batch_key:
-            key = f"{batch_key}:abstract_stage"
+        key = f"{batch_key}:abstract_stage" if batch_key else "abstract_stage"
         step = self.store.step(run_id, key, f"code:{key}")
         if step["status"] == "succeeded":
             return step["output"]
@@ -1724,16 +1614,13 @@ class ResearchFlow:
 
         works, writes = [], []
         fulltext_human = decisions.human_decided_works(rid, "fulltext")
-        chained = set(chain) if chain is not None else None
-        # The keyword stage leaves out what only an earlier run's chain found (D95); the chain reads its own.
-        chain_only = self.store.chain_only_works(rid, revision) if chain is None else set()
+        # The keyword stage leaves out what only an earlier run's chain found (D95).
+        chain_only = self.store.chain_only_works(rid, revision)
         for candidate in self.store.candidates(rid, revision):
             svid = candidate["source_version_id"]
             if batch_key and svid not in order:
                 continue
             if candidate["origin"] == "user" or svid not in versions or heads.get(versions[svid]["work_id"]) != svid:
-                continue
-            if chained is not None and svid not in chained:
                 continue
             if not batch_key and versions[svid]["work_id"] in chain_only:
                 continue
@@ -1764,10 +1651,7 @@ class ResearchFlow:
                 work["fulltext_human"] = True
             works.append(work)
 
-        limit = (run["budget"].get("chain_abstract_read", CHAIN_ABSTRACT_READ[scope["effort"]]) if chain is not None
-                 else ABSTRACT_READ_LIMIT[scope["effort"]])
-        if read_limit is not None:
-            limit = read_limit
+        limit = ABSTRACT_READ_LIMIT[scope["effort"]] if read_limit is None else read_limit
         plan = abstract_stage.read_plan(order, works, limit, ABSTRACT_BATCH)
         writes += [(svid, "abstract_not_read") for svid in plan["not_read"]]
         written = self._write_abstract_codes(run, step["id"], writes)
@@ -1878,225 +1762,14 @@ class ResearchFlow:
         _, blocks = ranking_rules.query_vocabulary(scope, vocabulary, terms)
         return ranking_rules.block_forms({block: blocks.get(block) or [] for block in vocabulary_rules.GATE_BLOCKS})
 
-    def _chain_seeds(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
-        """Freeze the seeds, their identifiers and reference lists, and the backward batches (decision 2)."""
-        run_id, rid = run["id"], run["research_id"]
-        step = self.store.step(run_id, "chain_seeds", "code:chain_seeds")
-        if step["status"] == "succeeded":
-            return step["output"]
-        self.store.start_step(step["id"])
-        decisions = DecisionStore(self.store)
-        ranking_step = self.store.step(run_id, "ranking", "code:ranking")
-        pool_heads = decisions.ranking_order(ranking_step["id"])
-        order = ranking_rules.fuse(decisions.signal_ranks(ranking_step["id"], ("bm25", "blocks")), ("bm25", "blocks"))
-        versions = ranking_rules._versions(self.store, rid)
-        by_work: dict[str, list[dict[str, Any]]] = {}
-        for version in versions.values():
-            by_work.setdefault(version["work_id"], []).append(version)
-        rows = {head: ranking_rules._work_row(head, by_work[versions[head]["work_id"]])
-                for head in pool_heads if head in versions}
-        user = [row for svid in ranking_rules.verified_seeds(self.store, rid, scope)
-                if (row := rows.get(svid) or ranking_rules._seed_row(svid, versions)) is not None]
-        by_id = rows | {row["id"]: row for row in user}
-        seeds = [entry | {"openalex_ids": sorted(by_id[entry["source_version_id"]]["own_ids"]),
-                          "references": (sorted(by_id[entry["source_version_id"]]["references"])
-                                         if by_id[entry["source_version_id"]]["references"] is not None else None)}
-                 for entry in chaining.seed_list(order, rows, user)]
-        held = set().union(*[version["own_ids"] for version in versions.values()]) if versions else set()
-        output = {"seeds": seeds, "code": sum(s["kind"] == "code" for s in seeds),
-                  "user": sum(s["kind"] == "user" for s in seeds),
-                  "without_openalex_id": sum(not s["openalex_ids"] for s in seeds),
-                  "without_references": sum(not s["references"] for s in seeds),
-                  "references_held": len({ref for s in seeds for ref in s["references"] or () if ref in held}),
-                  "backward_batches": chaining.backward_batches(seeds, held)}
-        self.store.finish_step(step["id"], "succeeded", output=output)
-        return output
-
-    def _chain_requests_left(self, run: dict[str, Any]) -> bool:
-        return self.store.run(run["id"])["usage"].get("chain_requests", 0) < run["budget"]["max_chain_requests"]
-
-    async def _chain_requests(self, run: dict[str, Any], scope: dict[str, Any], seeds: dict[str, Any],
-                              forms: dict[str, list[str]]) -> None:
-        """Send the backward batches, then every seed's citing pages, one request at a time through the host gate."""
-        rows = seeds["seeds"]
-        for number, batch in enumerate(seeds["backward_batches"]):
-            links = chaining.backward_links(rows, batch)
-            await self._chain_request(run, scope, f"chain:backward:{number}", "backward", forms, links, batch=batch)
-        forward: dict[str, list[str]] = {}
-        for seed in rows:
-            for work_id in seed["openalex_ids"]:
-                forward.setdefault(work_id, []).append(seed["source_version_id"])
-        for work_id, of in forward.items():
-            cursor, read, page = FIRST_PAGE, 0, 1
-            while cursor is not None and read < CHAIN_CITING_CAP:
-                done = await self._chain_request(run, scope, f"chain:forward:{work_id}:{page}", "forward", forms,
-                                                 of, cites=work_id, cursor=cursor, page=page,
-                                                 per_page=min(CHAIN_CITING_PAGE, CHAIN_CITING_CAP - read))
-                if done is None:
-                    break
-                cursor, read, page = done.get("next_cursor"), read + done.get("returned", 0), page + 1
-        # Semantic Scholar goes second, with whatever room OpenAlex left under the same limit (D229).
-        if chaining.s2_planned(run["budget"]):
-            await self._chain_requests_s2(run, scope, forms)
-
-    def _chain_s2_plan(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
-        """Freeze whether Semantic Scholar is asked and about which seeds: those with a DOI (D229).
-
-        Skipped, with the reason stored, when the research's sources do not include it or it has no access it needs. A
-        seed without a DOI is not asked about and is counted, so the summary can say how many the arm could not use.
-        """
-        run_id = run["id"]
-        step = self.store.step(run_id, "chain_s2_plan", "code:chain_s2_plan")
-        if step["status"] == "succeeded":
-            return step["output"]
-        self.store.start_step(step["id"])
-        seeds = (self.store.step(run_id, "chain_seeds", "code:chain_seeds")["output"] or {}).get("seeds") or []
-        connector = CONNECTORS[chaining.S2_SOURCE]
-        reason = ("not_in_scope" if chaining.S2_SOURCE not in scope["providers"]
-                  else "not_configured" if connector.access_mode() == "not_configured" else None)
-        dois: dict[str, str | None] = {}
-        for seed in seeds:
-            svid = seed["source_version_id"]
-            row = self.store.conn.execute(
-                "SELECT doi FROM source_versions WHERE doi IS NOT NULL AND work_id ="
-                " (SELECT work_id FROM source_versions WHERE id = ?) ORDER BY id = ? DESC, id LIMIT 1",
-                (svid, svid)).fetchone()
-            dois[svid] = normalize_doi(row["doi"]) if row else None
-        asked, without_doi = chaining.s2_seed_links(seeds, dois)
-        output = {"status": "skipped" if reason else "planned", "reason": reason,
-                  "seeds": [] if reason else asked, "with_doi": len(asked), "without_doi": without_doi}
-        self.store.finish_step(step["id"], "succeeded", output=output)
-        return output
-
-    async def _chain_requests_s2(self, run: dict[str, Any], scope: dict[str, Any], forms: dict[str, list[str]]) -> None:
-        """Each seed's references, then each seed's citing works, from Semantic Scholar, one request at a time.
-
-        A rate-limited answer ends this arm (the pacer and the bounded retries already waited), recorded as a failed
-        request; the run and the OpenAlex arm are untouched.
-        """
-        plan = self._chain_s2_plan(run, scope)
-        seeds = plan["seeds"]
-        for direction in chaining.DIRECTIONS:
-            for seed in seeds:
-                svid, doi = seed["source_version_id"], seed["doi"]
-                # One page a seed and direction: its references up to 1,000, its citing works up to the 400 cap.
-                cap = CHAIN_S2_BACKWARD_LIMIT if direction == "backward" else CHAIN_CITING_CAP
-                key = f"{chaining.S2_KEY}{direction}:{svid}" + (":1" if direction == "forward" else "")
-                done = await self._chain_request_s2(run, scope, key, direction, forms, svid, doi, 0, 1, cap)
-                if done is not None and done.get("status") == "rate_limited":
-                    return
-
-    async def _chain_request_s2(self, run: dict[str, Any], scope: dict[str, Any], key: str, direction: str,
-                                forms: dict[str, list[str]], seed: str, doi: str, offset: int, page: int,
-                                per_page: int) -> dict[str, Any] | None:
-        """One Semantic Scholar chain request, sent once as a step of its own and recorded as a search row whose
-        query text starts `chain:`. Returns the step's output, or None when nothing more should follow it. A rate-limited
-        answer is returned too, so the caller can end the arm."""
-        run_id = run["id"]
-        step = self.store.step(run_id, key, chaining.STEP_KIND_S2)
-        if step["status"] == "succeeded":
-            return step["output"]
-        if step["status"] == "failed" and step["error_code"] == "rate_limited":
-            return {"status": "rate_limited"}  # a resumed run ends the arm where the first pass did
-        if step["status"] != "pending":
-            return None  # failed, or unknown after a crash: recorded, and not sent a second time (D18)
-        self._checkpoint(run_id, run["scope_revision"])
-        connector = CONNECTORS[chaining.S2_SOURCE]
-        if direction == "forward" and page > 1:
-            previous = self.store.existing_step(run_id, key.rpartition(":")[0] + f":{page - 1}")
-            refusal = self._continuation_error(previous or {"id": ""}, connector)
-            if refusal:
-                self.store.finish_step(step["id"], "failed", error_code=refusal, delivery_class="before_send")
-                return None
-        if not self._chain_requests_left(run):
-            return None  # counted `not_reached` by the summary
-        self.store.start_step(step["id"])
-        attempts = 0
-        while True:
-            api_key = connector.api_key()
-            left = run["budget"]["max_chain_requests"] - self.store.run(run_id)["usage"].get("chain_requests", 0)
-            retries = max(0, min(PROVIDER_WAIT[scope["effort"]], left - 1))
-            reserved = 1 + retries
-            self.store.add_usage(run_id, "chain_requests", reserved)
-            async with fetch_module.host_gate(semantic_scholar.SEARCH_URL):
-                dispatched = await facade.dispatch_s2_chain(self.deps.http, doi, direction, per_page, offset, api_key,
-                                                            retries)
-            lookups.settle_dispatch(self.store, run_id, step, dispatched, reserved, "chain_requests", "chain_sends")
-            outcome = dispatched.outcome
-            if (outcome.status == "failed" and outcome.delivery_class == "before_send"
-                    and attempts < MAX_TRANSIENT_NETWORK_RETRIES and self._chain_requests_left(run)):
-                attempts += 1
-                await asyncio.sleep(1.5 * attempts)
-                continue
-            break
-        self._record_chain(run, step, key, direction, dispatched, forms, [seed], cites=None, page=page,
-                           per_page=per_page, provider=chaining.S2_SOURCE,
-                           query_text=key.rpartition(":")[0] if direction == "forward" else key)
-        if outcome.status == "rate_limited":
-            return {"status": "rate_limited"}
-        return (self.store.step(run_id, key, chaining.STEP_KIND_S2)["output"]
-                if outcome.status in ("completed", "zero_results") else None)
-
-    async def _chain_request(self, run: dict[str, Any], scope: dict[str, Any], key: str, direction: str,
-                             forms: dict[str, list[str]], links: list[Any], *, batch: list[str] | None = None,
-                             cites: str | None = None, cursor: str | None = None,
-                             page: int | None = None, per_page: int = CHAIN_CITING_PAGE) -> dict[str, Any] | None:
-        """One chain request: sent once, its passing records written through the search's record path with their
-        links, in one transaction. Returns the step's output, or None when nothing more should follow it (the
-        request failed, was not sent, or the chain's request limit is spent)."""
-        run_id = run["id"]
-        step = self.store.step(run_id, key, chaining.STEP_KIND)
-        if step["status"] == "succeeded":
-            return step["output"]
-        if step["status"] != "pending":
-            return None  # failed, or unknown after a crash: recorded, and not sent a second time (D18)
-        self._checkpoint(run_id, run["scope_revision"])
-        connector = CONNECTORS["openalex"]
-        if cites is not None and page is not None and page > 1:
-            previous = self.store.existing_step(run_id, f"chain:forward:{cites}:{page - 1}")
-            refusal = self._continuation_error(previous or {"id": ""}, connector)
-            if refusal:
-                self.store.finish_step(step["id"], "failed", error_code=refusal, delivery_class="before_send")
-                return None
-        if not self._chain_requests_left(run):
-            return None  # counted `not_reached` by the summary
-        self.store.start_step(step["id"])
-        attempts = 0
-        while True:
-            operation_key = connector.api_key()
-            # The provider's own rate-limit retries are requests too: they get only what the chain's limit leaves.
-            left = run["budget"]["max_chain_requests"] - self.store.run(run_id)["usage"].get("chain_requests", 0)
-            retries = max(0, min(PROVIDER_WAIT[scope["effort"]], left - 1))
-            reserved = 1 + retries
-            self.store.add_usage(run_id, "chain_requests", reserved)
-            async with fetch_module.host_gate(openalex.WORKS_URL):
-                if cites is not None:
-                    dispatched = await facade.dispatch_citing("openalex", self.deps.http, cites, cursor or FIRST_PAGE,
-                        per_page, operation_key, self.deps.settings.contact_email, retries)
-                else:
-                    dispatched = await facade.dispatch_lookup("openalex", "id_lookup", self.deps.http,
-                        tuple(batch or []), operation_key, self.deps.settings.contact_email, retries)
-            lookups.settle_dispatch(self.store, run_id, step, dispatched, reserved, "chain_requests", "chain_sends")
-            outcome = dispatched.outcome
-            if (outcome.status == "failed" and outcome.delivery_class == "before_send"
-                    and attempts < MAX_TRANSIENT_NETWORK_RETRIES and self._chain_requests_left(run)):
-                attempts += 1
-                await asyncio.sleep(1.5 * attempts)
-                continue
-            break
-        self._record_chain(run, step, key, direction, dispatched, forms, links, cites=cites, page=page, batch=batch,
-                           per_page=per_page)
-        return self.store.step(run_id, key, chaining.STEP_KIND)["output"] if outcome.status in ("completed", "zero_results") else None
-
     def _record_chain(self, run: dict[str, Any], step: dict[str, Any], key: str, direction: str,
                       outcome: SearchOutcome | facade.Dispatched | facade.DispatchedLookup,
                       forms: dict[str, list[str]], links: list[Any], *, cites: str | None, page: int | None,
-                      batch: list[str] | None = None, per_page: int = CHAIN_CITING_PAGE,
-                      provider: str = "openalex", query_text: str | None = None,
-                      fast_request: int | None = None, fast_arrival: dict[str, Any] | None = None) -> None:
-        """Write one answered chain request: the filter runs first, and only the records that pass are written, as a
-        search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is kept, passing
-        or not, in `chain_links`."""
+                      batch: list[str] | None, per_page: int, fast_request: int, fast_arrival: dict[str, Any]) -> None:
+        """Write one answered fast-chain request (OpenAlex): the filter runs first, and only the records that pass are
+        written, as a search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is
+        kept, passing or not, in `chain_links`."""
+        provider = "openalex"
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         dispatched = outcome if isinstance(outcome, (facade.Dispatched, facade.DispatchedLookup)) else None
         outcome = dispatched.outcome if dispatched is not None else outcome
@@ -2109,13 +1782,12 @@ class ResearchFlow:
             (settings.payloads_dir / payload_path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
             payload_digest = canonical.sha256_hex(outcome.raw_payload)
         passed = [record for record in outcome.records if chaining.passes(forms, record.title, record.abstract)]
-        if fast_arrival and fast_arrival["late"]:
+        if fast_arrival["late"]:
             passed = []
         ok = outcome.status in ("completed", "zero_results")
         search_fields = dict(
             research_id=rid, run_id=run_id, step_id=step["id"], scope_revision=revision, provider=provider,
-            query_text=query_text or (f"chain:fast:{direction}:{fast_request}" if fast_request is not None
-                                     else key.rpartition(":")[0] if cites is not None else key),
+            query_text=f"chain:fast:{direction}:{fast_request}",
             request_description=f"citation chaining, {direction}: {outcome.request_description}",
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
             result_count=len(passed), provider_total=outcome.provider_total, page_limit=per_page,
@@ -2128,14 +1800,12 @@ class ResearchFlow:
         )
         output = {"status": outcome.status, "direction": direction, "returned": returned_count,
                   "passed_filter": len(passed),
-                  "next_cursor": outcome.next_cursor if cites is not None or provider != "openalex" else None,
+                  "next_cursor": outcome.next_cursor if cites is not None else None,
                   "provider_total": outcome.provider_total}
-        output = lookups.transport_output(self.store, step, output)
-        if fast_arrival is not None:
-            output |= fast_arrival
+        output = lookups.transport_output(self.store, step, output) | fast_arrival
         if dispatched is not None and dispatched.dropped_records:
             output["dropped_records"] = dispatched.dropped_records
-        if cites is None and provider == "openalex":
+        if cites is None:
             # A reference OpenAlex did not return has no record to link and no title to filter: it is named here, and
             # the summary counts it, rather than stored as a link that failed the filter.
             answered = {record.provider_record_id for record in outcome.records}
@@ -2145,7 +1815,7 @@ class ResearchFlow:
                 # A chained record ranks after every keyword record: a record a keyword query already found keeps the
                 # rank and the search its candidate row names, and only gains a hit (D93's `candidate_hits`).
                 self.store.record_search(search_fields, provider, passed, payload_path, step["id"], "succeeded",
-                                         step_output=output, first_rank=CHAIN_RANK_BASE + (fast_request or 0) * 1000)
+                                         step_output=output, first_rank=CHAIN_RANK_BASE + fast_request * 1000)
             else:
                 final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
                 self.store.record_search(search_fields, provider, [], payload_path, step["id"], final,
@@ -2155,34 +1825,30 @@ class ResearchFlow:
                                          | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {}),
                                          delivery_class=outcome.delivery_class)
                 return
-            if fast_arrival and fast_arrival["late"]:
+            if fast_arrival["late"]:
                 return
-            # A Semantic Scholar paper id is kept apart from OpenAlex's in `chain_links` by its `s2:` front.
-            front = "" if provider == "openalex" else chaining.S2_PREFIX
-            became = {front + record.provider_record_id: self.store.find_source_by_identifier(provider, record.provider_record_id)
+            became = {record.provider_record_id: self.store.find_source_by_identifier(provider, record.provider_record_id)
                       for record in passed}
-            returned = {front + record.provider_record_id for record in outcome.records}
-            pairs = ([(seed, linked) for seed, linked in links if linked in returned]
-                     if direction == "backward" and provider == "openalex"
+            returned = {record.provider_record_id for record in outcome.records}
+            pairs = ([(seed, linked) for seed, linked in links if linked in returned] if direction == "backward"
                      else [(seed, linked) for seed in links for linked in sorted(returned)])
             self.store.conn.executemany(
                 "INSERT OR IGNORE INTO chain_links (research_id, scope_revision, run_id, seed_source_version_id,"
                 " linked_openalex_id, direction, passed_filter, source_version_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 [(rid, revision, run_id, seed, linked, direction, int(linked in became), became.get(linked))
                  for seed, linked in pairs])
-            if fast_request is not None:
-                search = self.store.conn.execute("SELECT id FROM search_runs WHERE step_id = ?", (step["id"],)).fetchone()
-                queued = set()
-                for position, record in enumerate(outcome.records):
-                    svid = became.get(record.provider_record_id)
-                    if svid and svid not in queued:
-                        queued.add(svid)
-                        self.store.conn.execute("UPDATE candidates SET rank = ? WHERE search_run_id = ? AND source_version_id = ?",
-                                                (CHAIN_RANK_BASE + fast_request * 1000 + position, search[0], svid))
-                        self.store.conn.execute(
-                            "INSERT OR IGNORE INTO fast_path_embedding_queue (run_id, class, request_index, position,"
-                            " source_version_id, search_run_id, enqueued_at, status) VALUES (?, 2, ?, ?, ?, ?, ?, 'pending')",
-                            (run_id, fast_request, position, svid, search[0], fast_path.timestamp(self.store.clock)))
+            search = self.store.conn.execute("SELECT id FROM search_runs WHERE step_id = ?", (step["id"],)).fetchone()
+            queued = set()
+            for position, record in enumerate(outcome.records):
+                svid = became.get(record.provider_record_id)
+                if svid and svid not in queued:
+                    queued.add(svid)
+                    self.store.conn.execute("UPDATE candidates SET rank = ? WHERE search_run_id = ? AND source_version_id = ?",
+                                            (CHAIN_RANK_BASE + fast_request * 1000 + position, search[0], svid))
+                    self.store.conn.execute(
+                        "INSERT OR IGNORE INTO fast_path_embedding_queue (run_id, class, request_index, position,"
+                        " source_version_id, search_run_id, enqueued_at, status) VALUES (?, 2, ?, ?, ?, ?, ?, 'pending')",
+                        (run_id, fast_request, position, svid, search[0], fast_path.timestamp(self.store.clock)))
 
     def _chain_filter(self, run: dict[str, Any]) -> list[str]:
         """Freeze the chained works: the heads of the records that passed, after the record path merged them, that
@@ -2205,130 +1871,16 @@ class ResearchFlow:
         keyword_pool = set(self._current_heads(rid, ranked))
         linked_heads = {heads[work_of[svid]] for svid in written if work_of.get(svid) in heads}
         chained = chaining.chained_heads(linked_heads, keyword_pool)
-        # A run whose chain asked Semantic Scholar too counts by work: a link both sources found is one link, and a
-        # work both brought is one work (they merged by DOI into one record). Without it the count is by identifier.
-        both = any(row["linked_openalex_id"].startswith(chaining.S2_PREFIX) for row in linked)
-        work_key = (lambda row: work_of.get(row["source_version_id"]) or row["source_version_id"]
-                    or row["linked_openalex_id"]) if both \
-            else (lambda row: row["linked_openalex_id"])
         output = {"chained": chained,
-                  "links": {direction: (len({(row["seed_source_version_id"], work_key(row)) for row in linked
-                                             if row["direction"] == direction}) if both
-                                        else sum(row["direction"] == direction for row in linked))
+                  "links": {direction: sum(row["direction"] == direction for row in linked)
                             for direction in chaining.DIRECTIONS},
-                  "linked_works": len({work_key(row) for row in linked}),
-                  "passed_filter": len({work_key(row) for row in linked if row["passed_filter"]}),
-                  "failed_filter": len({work_key(row) for row in linked if not row["passed_filter"]}),
+                  "linked_works": len({row["linked_openalex_id"] for row in linked}),
+                  "passed_filter": len({row["linked_openalex_id"] for row in linked if row["passed_filter"]}),
+                  "failed_filter": len({row["linked_openalex_id"] for row in linked if not row["passed_filter"]}),
                   "records": len(written), "in_keyword_pool": len(linked_heads & keyword_pool),
                   "new_works": len(chained)}
         self.store.finish_step(step["id"], "succeeded", output=output)
         return chained
-
-    def _chain_ranking(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                       chained: list[str]) -> list[str]:
-        """Rank the keyword pool and the chained works together and store the chained works' places alone (Task 3.6).
-
-        The keyword ranking step is not touched: its rows stay what they were, and `latest_ranking` never reads this
-        step. The joint pool only gives the chained works a scale the keyword works set.
-        """
-        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-        decisions = DecisionStore(self.store)
-        step = self.store.step(run_id, "chain_ranking", "code:chain_ranking")
-        if step["status"] == "succeeded":
-            return decisions.ranking_order(step["id"])
-        self.store.start_step(step["id"])
-        stored = self.store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")["output"] or {}
-        terms = expansion_rules.expansion_blocks(stored.get("expansion"), stored.get("queries"))
-        query_words, blocks = ranking_rules.query_vocabulary(scope, vocabulary, terms)
-        versions = ranking_rules._versions(self.store, rid)
-        by_work: dict[str, list[dict[str, Any]]] = {}
-        for version in versions.values():
-            by_work.setdefault(version["work_id"], []).append(version)
-        keyword = decisions.ranking_order(self.store.step(run_id, "ranking", "code:ranking")["id"])
-        pool = [ranking_rules._work_row(head, by_work[versions[head]["work_id"]])
-                for head in [*keyword, *chained] if head in versions]
-        in_pool = {row["id"]: row for row in pool}
-        verified = [row for svid in ranking_rules.verified_seeds(self.store, rid, scope)
-                    if (row := in_pool.get(svid) or ranking_rules._seed_row(svid, versions)) is not None]
-        model, off_reason = self._ranking_embedding(run, scope)
-        similarities = self.store.source_similarities(rid, revision, model) if model else {}
-        ranked = ranking_rules.rank_pool(pool, verified, query_words, blocks, model, similarities, off_reason,
-                                         ranking_rules.joint_terms(self.store, scope, vocabulary))
-        keep = set(chained) & set(in_pool)
-        decisions.save_ranks(step["id"], rid, ranking_rules.rank_rows(ranked, keep))
-        self.store.finish_step(step["id"], "succeeded", output={
-            "pool": len(pool), "chained": len(keep),
-            "signals": {name: ranked["ranks"].get(name) is not None for name in ranking_rules.SIGNALS}})
-        return decisions.ranking_order(step["id"])
-
-    def _chain_summary(self, run: dict[str, Any]) -> None:
-        """What the chain did in this run, totalled from its stored steps and rows so a resumed run matches."""
-        run_id, rid = run["id"], run["research_id"]
-        step = self.store.step(run_id, "chain_summary", "code:chain_summary")
-        if step["status"] == "succeeded":
-            return
-        self.store.start_step(step["id"])
-        steps = [s for s in self.store.run_steps(run_id) if s["kind"] == chaining.STEP_KIND]
-        seeds = self.store.step(run_id, "chain_seeds", "code:chain_seeds")["output"] or {}
-        filtered = self.store.step(run_id, "chain_filter", "code:chain_filter")["output"] or {}
-        stage = self.store.existing_step(run_id, "chain_abstract_stage")
-        plan = (stage or {}).get("output") or {}
-        refused = [s for s in steps if s["error_code"] in ("connector_provenance_invalid", "adapter_revision_changed")]
-        sent = [s for s in steps if s["status"] != "pending" and s not in refused]
-        forward_seeds = {work_id for seed in seeds.get("seeds") or [] for work_id in seed["openalex_ids"]}
-        reached = {s["operation_key"].split(":")[2] for s in sent if s["operation_key"].startswith("chain:forward:")}
-        s2 = self._chain_s2_summary(run) if chaining.s2_planned(run["budget"]) else None
-        chained = filtered.get("chained") or []
-        decisions = DecisionStore(self.store)
-        facts = decisions.facts(rid)
-        # What the chained works read as once their abstract stage is done: the reason code that speaks for each.
-        outcomes: Counter[str] = Counter(
-            decisions.work_outcome(rid, work_id, facts).get("reason_code") or "none"
-            for work_id in self.store.work_ids(chained).values())
-        summary = {
-            "seeds": {key: seeds.get(key, 0) for key in ("code", "user", "without_openalex_id", "without_references")},
-            # The seeds alone, for the run view: the seed step's own output also carries every reference list.
-            "seed_list": [{"source_version_id": seed["source_version_id"], "kind": seed["kind"]}
-                          for seed in seeds.get("seeds") or []],
-            "requests": {"backward": sum(s["operation_key"].startswith("chain:backward:") for s in sent),
-                         "forward": sum(s["operation_key"].startswith("chain:forward:") for s in sent),
-                         "failed": sum(s["status"] in ("failed", "outcome_unknown") for s in sent)
-                         + (s2["requests"]["failed"] if s2 else 0),
-                         "sent": self.store.run(run_id)["usage"].get("chain_requests", 0),
-                         "continuation_refused": len(refused),
-                         "limit": run["budget"].get("max_chain_requests"),
-                         "not_reached_batches": len(seeds.get("backward_batches") or [])
-                         - sum(s["operation_key"].startswith("chain:backward:") for s in sent),
-                         "not_reached_seeds": len(forward_seeds - reached)},
-            "unresolved_links": sum(len(json.loads(row[0] or "{}").get("unresolved") or []) for row in self.store.conn.execute(
-                "SELECT output_json FROM run_steps WHERE run_id = ? AND kind = ? AND operation_key LIKE 'chain:backward:%'",
-                (run_id, chaining.STEP_KIND))),
-            "links": filtered.get("links") or {}, "passed_filter": filtered.get("passed_filter", 0),
-            "failed_filter": filtered.get("failed_filter", 0), "in_keyword_pool": filtered.get("in_keyword_pool", 0),
-            "new_works": len(chained),
-            "read_by_model": sum(len(batch) for batch in plan.get("batches") or []),
-            "not_read": plan.get("not_read", 0),
-            "outcomes": dict(sorted(outcomes.items())),
-        }
-        if s2 is not None:
-            summary["semantic_scholar"] = s2  # absent for a run queued before D229: its summary is what it was
-        self.store.finish_step(step["id"], "succeeded", output=summary)
-
-    def _chain_s2_summary(self, run: dict[str, Any]) -> dict[str, Any]:
-        """What the Semantic Scholar arm did, from its stored plan and steps (D229)."""
-        plan = self.store.existing_step(run["id"], "chain_s2_plan")
-        plan = (plan or {}).get("output") or {}
-        steps = [x for x in self.store.run_steps(run["id"]) if x["kind"] == chaining.STEP_KIND_S2]
-        sent = [x for x in steps if x["status"] != "pending"]
-        count = lambda direction: sum(f"{chaining.S2_KEY}{direction}:" in x["operation_key"] for x in sent)
-        asked = {x["operation_key"].split(":")[3] for x in sent if x["operation_key"].startswith(chaining.S2_KEY)}
-        planned = {seed["source_version_id"] for seed in plan.get("seeds") or []}
-        return {"status": plan.get("status", "not_planned"), "reason": plan.get("reason"),
-                "seeds_with_doi": plan.get("with_doi", 0), "seeds_without_doi": plan.get("without_doi", 0),
-                "requests": {"backward": count("backward"), "forward": count("forward"),
-                             "failed": sum(x["status"] in ("failed", "outcome_unknown") for x in sent),
-                             "rate_limited": sum(x["error_code"] == "rate_limited" for x in sent)},
-                "not_reached_seeds": len(planned - asked)}
 
     async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]], *,
                                  key: str = "source_similarity", identity_step: str | None = None) -> None:
@@ -2467,22 +2019,6 @@ class ResearchFlow:
         """The step's 429 wait budget, from what its stored output says it has waited; each second is written back."""
         return embeddings.RateBudget.from_output(
             self.store.step_output(step_id), on_wait=lambda b: self._merge_step_output(step_id, b.counts(), identity))
-
-    def _skip_unsearchable(self, run: dict[str, Any], index: int, query: dict[str, Any]) -> bool:
-        """Whether this query names a connector no query goes to, and the step that records the skip (D87).
-
-        A plan stored before the connector's role changed keeps the query it named; the request is not sent, the step
-        says why, and the rest of the run goes on exactly as it does past a failed search (D18). Nothing is written
-        to `search_runs`, so the record counts and the earlier searches of the research stand untouched.
-        """
-        connector = CONNECTORS[query["provider_id"]]
-        if connector.searchable:
-            return False
-        step = self.store.step(run["id"], f"search:{index}", f"provider_search:{connector.provider_id}")
-        if step["status"] in ("pending", "running"):  # a step that already ended keeps its ending on a resumed run
-            self.store.finish_step(step["id"], "cancelled", output={"status": "skipped", "result_count": 0},
-                                   error_code="provider_not_searchable")
-        return True
 
     async def _send_search(self, run_id: str, connector: Connector, query: dict[str, Any], limit: int,
                            page: Page | None = None, stop: Callable[[], bool] | None = None,
@@ -2634,98 +2170,6 @@ class ResearchFlow:
         """Requests this sw query has sent in this run, retries included (D89)."""
         return self.store.run(run_id)["usage"].get("query_requests", {}).get(query_key, 0)
 
-    async def _search_round(self, run: dict[str, Any], queries: list[tuple[int, dict[str, Any]]], retry_failed: bool,
-                            effort: str) -> tuple[str, dict[str, Any]] | None:
-        """Read one round of sw queries, hosts side by side, and write what they read in query order (D89, slice 13f).
-
-        The queries are grouped by the host their requests go to, in the order of each host's first query. A host's
-        queries and pages are read one at a time, in query and page order, and at most `SEARCH_PARALLEL_HOSTS` hosts
-        are read at once; the pacing each connector already has (its gap between pages, arXiv's interval, the
-        Semantic Scholar gate, the effort's 429 waiting) runs inside its host's task, unchanged. A host's task writes
-        nothing but request counts. What it reads is held until every query before it has been written, and the
-        pages are then written here, in query order and page order: the same rows, records, outputs and events, in
-        the same order, as reading the queries one by one wrote. The one thing that differs is the clock of each
-        page's step, which is the request's own.
-
-        A stop (a pause, a cancellation, a newer question revision) is looked at before each request and written
-        only after the requests in flight have finished: every page read is written, in query order, so a half-read
-        query goes on from its stored cursor when the run is resumed and no page is asked twice. A page read but not
-        written when the process dies has no step at all, and a resumed run asks for it again.
-
-        A failed page is recorded and ends its own query's read (D18); the failure returned is the last one in query
-        order, as the one-by-one loop returned it.
-        """
-        run_id, revision = run["id"], run["scope_revision"]
-        reads = [_QueryRead(index, query) for index, query in queries]
-        hosts: dict[str, list[_QueryRead]] = {}
-        for read in reads:
-            connector = CONNECTORS[read.query["provider_id"]]
-            if connector.searchable:
-                hosts.setdefault(connector.host, []).append(read)
-        waiting = iter(hosts.values())
-        pending: set[asyncio.Future[bool]] = set()
-        progress = asyncio.Event()
-        abort = asyncio.Event()  # set on an error: the other hosts stop before their next request
-        stopping = False
-        error: BaseException | None = None
-        written = 0
-        failure = None
-
-        def write(ended_only: bool) -> None:
-            nonlocal written, failure
-            while written < len(reads):
-                read = reads[written]
-                if self._skip_unsearchable(run, read.index, read.query):
-                    pass
-                elif ended_only and not read.ended:
-                    return
-                else:
-                    failure = self._write_query(run, read) or failure
-                written += 1
-
-        while True:
-            while not stopping and error is None and len(pending) < SEARCH_PARALLEL_HOSTS:
-                group = next(waiting, None)
-                if group is None:
-                    break
-                pending.add(asyncio.ensure_future(self._read_host(run, group, retry_failed, effort, progress, abort)))
-            if not pending:
-                break
-            woken = asyncio.ensure_future(progress.wait())
-            done, _ = await asyncio.wait(pending | {woken}, return_when=asyncio.FIRST_COMPLETED)
-            woken.cancel()
-            progress.clear()
-            for task in done - {woken}:
-                pending.discard(task)
-                try:
-                    stopping = task.result() or stopping
-                except Exception as exc:
-                    error = error or exc
-                    abort.set()
-            if error is None:
-                write(ended_only=True)
-        write(ended_only=False)  # after a stop or an error: the pages of queries left half read, in query order
-        if error is not None:
-            # What the other hosts had read is written first, so the requests they spent are not lost with it
-            # (review of 13f, 2026-09-23).
-            raise error
-        self._checkpoint(run_id, revision)
-        if stopping:
-            # The stop was taken back before it was written (a resume of a pause still being requested): read on,
-            # from the pages just written.
-            return await self._search_round(run, queries, retry_failed, effort) or failure
-        return failure
-
-    async def _read_host(self, run: dict[str, Any], group: list[_QueryRead], retry_failed: bool, effort: str,
-                         progress: asyncio.Event, abort: asyncio.Event | None = None) -> bool:
-        """Read one host's queries in query order; True when a stop ended the reading before the last of them."""
-        for read in group:
-            if await self._read_query(run, read, retry_failed, effort, abort):
-                return True
-            read.ended = True
-            progress.set()
-        return False
-
     def _continuation_error(self, step, connector):
         row = self.store.conn.execute("SELECT connector_json FROM search_runs WHERE step_id = ?", (step["id"],)).fetchone()
         if row is None:
@@ -2744,205 +2188,6 @@ class ResearchFlow:
                 or recorded["adapter_revision"] != current.adapter_revision):
             return "adapter_revision_changed"
         return None
-
-    async def _read_query(self, run: dict[str, Any], read: _QueryRead, retry_failed: bool, effort: str,
-                          abort: asyncio.Event | None = None) -> bool:
-        """Read one sw query page by page up to this effort's read limit, holding each page for `_write_query`.
-
-        A page whose step already ended is not asked again: its stored output gives the next cursor, as it always
-        did (04c). A failed page ends the query's read (D18); so does a page after which the query has no request
-        left of its own share (`budget_exhausted`, D89). True when a stop was requested before a page was sent.
-        """
-        run_id, revision = run["id"], run["scope_revision"]
-        connector = reading(read.query)  # a query stored before D93 names no endpoint and reads as it did
-        query_key = f"search:{read.index}"
-        allowance = page_allowance(read.query, effort, run["budget"])
-        cursor, before, number, known_total = FIRST_PAGE, 0, 0, None
-        continuation_step = None
-        while True:
-            key = query_key if number == 0 else f"{query_key}:page:{number}"
-            step = self.store.existing_step(run_id, key)
-            status = step["status"] if step else "pending"
-            if status == "succeeded" or (status in ("failed", "outcome_unknown") and not retry_failed):
-                output = (step["output"] or {}) if status == "succeeded" else {}
-                if status != "succeeded" or output.get("stop_reason") or not output.get("next_cursor"):
-                    return False
-                continuation_step = step
-                before = output.get("read_total", before)
-                if output.get("provider_total") is not None:
-                    known_total = output["provider_total"]
-                cursor, number = output["next_cursor"], number + 1
-                continue
-            if (abort is not None and abort.is_set()) or self._stop_requested(run_id, revision):
-                return True
-            if before >= min(SW_READ_LIMIT[effort], connector.max_reachable or SW_READ_LIMIT[effort]):
-                # A query resumed after its read limit was lowered (13g halved `detailed`) has read what it may:
-                # asking for the rest would ask for a page of no or minus records (review of 13f and 13g, 2026-09-23).
-                return False
-            if self._query_requests(run_id, query_key) >= allowance:
-                # Only a query resumed after its last page was read, or one asked to search again, reaches this:
-                # nothing is sent, and the step of the page it would have asked for says why (D89).
-                read.allowance_ended = key
-                return False
-            if continuation_step is not None:
-                error = self._continuation_error(continuation_step, connector)
-                if error is not None:
-                    refused_page = Page(number, cursor, before, known_total, SW_READ_LIMIT[effort],
-                                        PROVIDER_WAIT[effort], query_key, allowance)
-                    read.pages.append(_PageRead(key, refused_page,
-                        SearchOutcome(error, "before_send", "Continuation refused", "keyless", error=error),
-                        0, "page_failed", now(), now()))
-                    read.ended = True
-                    return False
-                continuation_step = None
-            if number and connector.page_gap:
-                await asyncio.sleep(connector.page_gap)  # only before a page that is really requested
-                if (abort is not None and abort.is_set()) or self._stop_requested(run_id, revision):
-                    return True  # a stop asked during the gap (arXiv's is 3 s) sends no further page
-            page = Page(number, cursor, before, known_total, SW_READ_LIMIT[effort], PROVIDER_WAIT[effort], query_key,
-                        allowance)
-            # A paged read is bounded by the read limit, not by results_per_query, and its last page asks only for
-            # what is left of that limit.
-            ceiling = min(page.read_limit, connector.max_reachable or page.read_limit)
-            limit = min(connector.max_results, ceiling - page.read_before)
-            started = now()
-            transport: dict[str, Any] = {}
-            outcome = await self._send_search(
-                run_id, connector, read.query, limit, page,
-                stop=lambda: (abort is not None and abort.is_set()) or self._stop_requested(run_id, revision),
-                transport=transport)
-            if outcome is None:
-                return True
-            dispatched = outcome if isinstance(outcome, facade.Dispatched) else None
-            returned_count = dispatched.returned_count if dispatched else len(outcome.records)
-            outcome = dispatched.outcome if dispatched else outcome
-            ok = outcome.status in ("completed", "zero_results")
-            read_total = before + returned_count
-            stop_reason = _stop_reason(connector, outcome, ok, read_total, page.read_limit, returned_count)
-            if stop_reason is None and self._query_requests(run_id, query_key) >= allowance:
-                stop_reason = "budget_exhausted"  # the next page would need a request the query no longer has (D89)
-            read.pages.append(_PageRead(key, page, outcome, limit, stop_reason, started, now(), dispatched, transport))
-            if stop_reason:
-                return False
-            before = read_total
-            if outcome.provider_total is not None:
-                known_total = outcome.provider_total
-            cursor, number = outcome.next_cursor, number + 1
-
-    def _write_query(self, run: dict[str, Any], read: _QueryRead) -> tuple[str, dict[str, Any]] | None:
-        """Write the pages one query read, in page order; each page's step, search run and records in one transaction.
-
-        A page's step is opened, started and ended together, so no search step is ever left `running` while its
-        request is on the network, and none can end up `outcome_unknown` without having been written.
-        """
-        kind = f"provider_search:{CONNECTORS[read.query['provider_id']].provider_id}"
-        failure = None
-        for held in read.pages:
-            with transaction(self.store.conn):
-                step = self.store.step(run["id"], held.key, kind)
-                self.store.start_step(step["id"], started_at=held.started_at)
-                failure = self._record_search(run, step, read.query, held.outcome, held.limit, held.page,
-                                              held.stop_reason, held.finished_at, held.dispatched, held.transport) or failure
-        if read.allowance_ended is not None:
-            step = self.store.step(run["id"], read.allowance_ended, kind)
-            if step["status"] != "cancelled":  # a resumed run finds it already closed and writes nothing again
-                self.store.finish_step(step["id"], "cancelled", error_code="budget_exhausted", output={
-                    "status": "skipped", "result_count": 0, "stop_reason": "budget_exhausted"})
-        return failure
-
-    async def _expansion(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                         queries: list[dict[str, Any]], criterion: dict[str, Any] | None = None,
-                         approval: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        """The second round's queries, taken from the first round's own records by code (SW2.4, slice 04b).
-
-        No model is called: the candidate phrases are the authors' keywords and the titles' repeated n-grams, and a
-        count probe decides which of them the field really uses. A step that already succeeded returns its stored
-        queries, so a resumed run sends no count request and reads no page twice, and the counts are stored before
-        the run can stop.
-        """
-        run_id, rid, revision, budget = run["id"], run["research_id"], run["scope_revision"], run["budget"]
-        step = self.store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")
-        if step["status"] == "succeeded":
-            result, more = step["output"]["expansion"], step["output"]["queries"]
-        else:
-            # The second round grows from the model's own query where one was written, as it was measured: the
-            # code's query beside it has no second round, and its records are not what the candidates are read from
-            # (D92). A vocabulary with no origin marks reads every first-round record, as before.
-            own = search_query_rules.model_queries(queries)
-            records = expansion_rules.first_round_records(
-                self.store, rid, revision,
-                {(q["provider_id"], q["query_text"]) for q in own} if len(own) < len(queries) else None)
-            found = phrase_candidates.candidates(
-                records, [expansion_rules.queried_form(term) for term in expansion_rules.queried_terms(vocabulary)],
-                [*vocabulary["claim_words"], *vocabulary["exclusion_words"]])
-            self.store.start_step(step["id"])
-            result = await expansion_rules.expand(vocabulary, found, self._count_probe(scope, run_id))
-            # Abbreviations the first round's abstracts define for the task terms (D231): every first-round record is
-            # read, the code query's too, since a paper naming a method only by its abbreviation is often one the
-            # model's query did not find.
-            task_terms = [term["phrase"] for term in expansion_rules.searched_terms(vocabulary, expansion_rules.TASK_BLOCK)]
-            short = await expansion_rules.expand_abbreviations(
-                vocabulary, expansion_rules.abbreviation_candidates(
-                    expansion_rules.first_round_records(self.store, rid, revision), task_terms),
-                self._count_probe(scope, run_id))
-            result["abbreviations"] = short
-            second = expansion_rules.second_round_vocabulary(vocabulary, result["terms"], own)
-            # Where each accepted phrase went (D90); the protocol body keeps the compiled queries, not this.
-            result["second_round"] = {key: second[key] for key in ("setting_synonyms", "task_additions", "setting_width")}
-            # One query allowance for the whole second round. The abbreviation queries take theirs first: they were
-            # measured on the benchmark (D231), the phrase arm's thresholds on one topic only (`expansion` module).
-            # A run from before D93 compiles its second round as its first was (review of slice 14, 2026-09-23).
-            limit, routed = budget["max_provider_requests"], self._routing(run_id) is not None
-            shorts = expansion_rules.abbreviation_vocabulary(vocabulary, short["terms"])
-            short_queries = [query | {"origin": "abbreviation"} for query in query_compiler.compile_block_queries(
-                shorts, self._providers(run_id, scope), limit, routed=routed)] if shorts["terms"] else []
-            room = limit - len(short_queries)
-            more = query_compiler.compile_block_queries(
-                second, self._providers(run_id, scope), room, routed=routed) if second["terms"] and room > 0 else []
-            result["searched"] = expansion_rules.searched_additions(result, more)
-            # An abbreviation counts as searched where one of its queries kept it, as an accepted phrase does.
-            result["searched"][expansion_rules.TASK_BLOCK] += [
-                term for term in short["terms"]
-                if any(term not in (query.get("dropped_terms") or []) for query in short_queries)
-                and term not in result["searched"][expansion_rules.TASK_BLOCK]]
-            more += [query for query in short_queries
-                     if (query["provider_id"], query["query_text"]) not in {(q["provider_id"], q["query_text"]) for q in more}]
-            # What each term had brought in by the time the expansion ended: one dated photograph, never a number
-            # the research keeps as its own (the live figure is derived by `term_yields`).
-            result["yield_at_expansion"] = expansion_rules.count_yields(
-                self.store, rid, revision, expansion_rules.term_rows(vocabulary["terms"], result))
-            self.store.finish_step(step["id"], "succeeded", output={
-                "expansion": result, "queries": more, "query_compiler": query_compiler.BLOCKS_VERSION})
-        self._checkpoint(run_id, revision)
-        if more:
-            self._freeze_expansion(run, scope, vocabulary, queries + more, result, criterion, approval)
-        return more
-
-    def _freeze_expansion(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                          queries: list[dict[str, Any]], expansion: dict[str, Any],
-                          criterion: dict[str, Any] | None = None,
-                          approval: dict[str, Any] | None = None) -> None:
-        """Freeze the protocol again, before the second round's first provider request.
-
-        The first record is never edited: a query the research did not have when it started is a new revision with
-        its reason (SW14.2). With no accepted term there is no second revision at all. The criterion is carried over
-        unchanged: a revision that dropped it would mark every decision made under it stale (SW11.10). So is the
-        approval, and with it the corrected vocabulary: a revision built from the proposal instead would undo the
-        user's correction and, by changing the criterion fields, mark every decision stale as well (SW2.6).
-        """
-        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-        step = self.store.step(run_id, "protocol_expansion", "protocol:expansion")
-        if step["status"] == "succeeded":
-            return
-        self.store.start_step(step["id"])
-        # The same embedding model the first revision named: a revision that dropped it would say this research
-        # ordered its records without one, which is not what happened (the criterion is carried over for the same reason).
-        record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
-            scope, run["budget"], None, queries, self.deps.package.package_hash, self.deps.settings,
-            vocabulary=vocabulary, expansion=expansion, criterion=criterion, approval=approval,
-            embedding_model=self._embedding_model(), routing=self._routing(run_id)), reason="data_expansion")
-        self.store.finish_step(step["id"], "succeeded",
-                               output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
 
     # ---- answer ---------------------------------------------------------------------
     async def _answer(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
@@ -3891,12 +3136,11 @@ class ResearchFlow:
                                    error={"head": head, "error": f"{type(exc).__name__}: {exc}"})
             return
         output["claim"] = claim
-        if fast_path.enforces(run["budget"], "read"):
-            try:
-                await self._fast_fetch_publish(run, work_id)
-            except RunStopped:
-                self.store.finish_step(step["id"], "cancelled", output=output, error_code="run_stopped")
-                raise
+        try:
+            await self._fast_fetch_publish(run, work_id)
+        except RunStopped:
+            self.store.finish_step(step["id"], "cancelled", output=output, error_code="run_stopped")
+            raise
         if output["code"] is None:
             # Waiting for OpenAlex's budget is its own cause: nothing was tried that could settle the work, and the
             # work stays open for the first run after the reset.

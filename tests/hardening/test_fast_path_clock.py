@@ -509,7 +509,7 @@ def test_deadlines_use_only_frozen_enforced_stages(library, enforced, name):
 def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
     from deixis.workflow import fast_read, fast_search
     clock = FakeClock()
-    for method in ("_vocabulary", "_search_round", "_ranking", "_semantic_ranking", "_review"):
+    for method in ("_vocabulary", "_ranking", "_semantic_ranking", "_review"):
         original = getattr(ResearchFlow, method)
         async def timed(self, *args, _original=original, **kwargs):
             clock.advance(2)

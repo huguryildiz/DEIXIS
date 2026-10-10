@@ -695,13 +695,7 @@ def rich_library(tmp_path: Path):
 EMPTY_BECAUSE = {
     "arxiv_sources": "arXiv source reading is off in the test settings",
     "asset_arxiv_versions": "written only by the optional equation reader (Marker), which is not installed",
-    "chain_links": "citation chaining is off in the test settings",
-    "fast_path_background_fetches": "fast-path reading (D251) is off in the test settings",
-    "fast_path_embedding_queue": "fast-path search (D252) is off in the test settings",
-    "fast_path_intervals": "fast-path accounting (D250) is off in the test settings",
-    "fast_path_ledgers": "fast-path accounting (D250) is off in the test settings",
-    "fast_path_late_revisions": "fast-path late revisions (D255) are off in the test settings",
-    "fast_path_stages": "fast-path accounting (D250) is off in the test settings",
+    "fast_path_background_fetches": "written by fast-path background PDF fetches (D251); full-text fetch is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",
     "openalex_budget_runs": "written only when OpenAlex's daily budget refuses a PDF lookup; the fake providers never do",
     "owner_review_snapshots": "no review can be started until B2",
@@ -870,7 +864,7 @@ def test_b01_backup_while_the_app_runs_restores_every_table_and_file_and_every_v
     assert sorted(p.name for p in data.iterdir()) == ["library.sqlite", "papers", "provider-payloads"]
 
     with TestClient(restored_app(Settings(data_dir=data, port=8765, model_concurrency=1, protocol_approval="as_proposed",
-                                          search_query="code", fulltext_fetch="off", citation_chaining="off"))) as raw:
+                                          search_query="code", fulltext_fetch="off"))) as raw:
         views_after = collect_views(raw, ids)
         assert set(views_after) == set(views_before)
         changed = [path for path in views_before

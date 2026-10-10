@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from deixis.config import Settings
@@ -440,37 +441,26 @@ def test_shortlist_plans_and_legacy_output(library, tmp_path, monkeypatch, provi
     assert limited['outside_shortlist'] == 2
 
 
-@pytest.mark.parametrize('marker', [False, True])
-def test_integrated_new_and_slice2_frozen_paths(tmp_path, monkeypatch, marker):
-    original = fast_path.freeze_budget
-    if not marker:
-        def old(*args):
-            policy = original(*args)
-            for key in ('chain_rule', 'chain_in_flight', 'policy_hash'):
-                policy.pop(key)
-            return policy | {'policy_hash': canonical.sha256_hex(policy)}
-        monkeypatch.setattr(fast_path, 'freeze_budget', old)
+def test_integrated_chain_path(tmp_path, monkeypatch):
     app = app_for(tmp_path, FakeClock())
-    if marker:
-        fallback = fast_chain.Round.fallback
-        def charged(self):
-            assert fast_path.stage_deadline(self.store, self.run, 'ranking') is not None
-            return fallback(self)
-        monkeypatch.setattr(fast_chain.Round, 'fallback', charged)
+    fallback = fast_chain.Round.fallback
+    def charged(self):
+        assert fast_path.stage_deadline(self.store, self.run, 'ranking') is not None
+        return fallback(self)
+    monkeypatch.setattr(fast_chain.Round, 'fallback', charged)
     with client_of(app) as client:
         rid, run_id, _, run = discover(client)
         assert run['status'] == 'completed', run
         store = app.state.store
         steps = store.run_steps(run_id)
-        assert any(s['operation_key'] == 'fast_chain:summary' for s in steps) == marker
+        assert any(s['operation_key'] == 'fast_chain:summary' for s in steps)
         listing = store.existing_step(run_id, small_batch.LIST_KEY)['output']
-        assert ('fast_path' in listing['manifest']) == marker
+        assert 'fast_path' in listing['manifest']
         assert small_batch.replay(listing['manifest'])['fused'] == listing['automatic_order']
         intervals = [r[0] for r in store.conn.execute('SELECT stage FROM fast_path_intervals WHERE run_id=? ORDER BY rowid', (run_id,))]
-        assert ('lookups' in intervals) != marker
-        if marker:
-            plans = [store.step_output(s['id']) for s in steps if s['operation_key'].startswith('lookup_plan:')]
-            assert all('outside_shortlist' in p for p in plans if p.get('skipped') != 'out_of_scope')
+        assert 'lookups' not in intervals
+        plans = [store.step_output(s['id']) for s in steps if s['operation_key'].startswith('lookup_plan:')]
+        assert all('outside_shortlist' in p for p in plans if p.get('skipped') != 'out_of_scope')
 
 
 def test_cutoff_collects_early_buffer_behind_interrupted_request(library, tmp_path, monkeypatch):
@@ -716,3 +706,218 @@ def test_read_snapshot_admits_only_lookup_enrichment_and_keeps_ranking_frozen(li
     lib.conn.execute("UPDATE source_versions SET title='SYNTHETIC changed' WHERE id=?", (svid,))
     assert not small_batch.unchanged_heads(lib.store, lib.rid, listing, listing['items'], versions=snapshot['versions'])
     assert fast_chain.read_versions(flow, lib.run, listing) == snapshot
+
+
+# ---- the chain's attempt budget: logical requests vs. HTTP attempts (review of slice 3a) ----------
+# Ported from the old chain's total-limit tests (`test_chaining_flow.py` before slice 3a): the limit the protocol
+# records (`chaining.policy()["attempt_limit"]`) is the one `fast_chain.Round.fetch` enforces, per effort.
+
+@pytest.fixture(params=['quick', 'standard', 'detailed'])
+def effort_library(request, tmp_path):
+    from deixis.domain.rules import TEST_EFFORT_BUDGETS
+    effort = request.param
+    conn = db.connect(tmp_path / 'library.sqlite')
+    db.migrate(conn)
+    clock = FakeClock()
+    store = Store(conn, clock)
+    clock.store = store
+    rid = store.create_research('SYNTHETIC chain budget', 'academic', effort, ['openalex'], 'fake', 'fake-model', 'en')
+    budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS[effort].__dict__, effort, 'off')
+    budget['fast_path'] = fast_path.freeze_budget(budget, effort)
+    run = store.create_run(rid, 'discovery', budget, None)
+    store.update_run(run['id'], status='running')
+    yield SimpleNamespace(store=store, conn=conn, clock=clock, rid=rid, run=store.run(run['id']))
+    conn.close()
+
+
+class ChainTransport:
+    """Mocked OpenAlex for chain requests, keyed by their `filter` (one key per logical request).
+
+    `worst`: every attempt fails as late as the policy allows — the effort's rate-limit retries answered 429, then a
+    refused connection (sent nothing), which `fetch` retries `MAX_TRANSIENT_NETWORK_RETRIES` times. Otherwise every
+    attempt answers an empty page. A key `hang` returns True for waits until the test cancels it.
+    """
+
+    def __init__(self, wait, worst=True, hang=lambda key, order: False):
+        self.per, self.worst, self.hang = 1 + wait, worst, hang
+        self.attempts, self.order, self.hung = {}, [], set()
+        self.active = self.peak = 0
+
+    async def __call__(self, request):
+        key = request.url.params['filter']
+        if key not in self.attempts:
+            self.order.append(key)
+        n = self.attempts[key] = self.attempts.get(key, 0) + 1
+        self.active += 1
+        self.peak = max(self.peak, self.active)
+        try:
+            await asyncio.sleep(0)
+            if self.hang(key, self.order.index(key)):
+                self.hung.add(key)
+                await asyncio.Event().wait()
+            if not self.worst:
+                return httpx.Response(200, json={'meta': {'count': 0, 'next_cursor': None}, 'results': []})
+            if n % self.per:
+                return httpx.Response(429, headers={'retry-after': '0'})
+            raise httpx.ConnectError('SYNTHETIC refused', request=request)
+        finally:
+            self.active -= 1
+
+
+def no_waiting(monkeypatch):
+    """The retry waits (Retry-After 0, `fetch`'s 1.5 s backoff) yield instead of sleeping."""
+    real = asyncio.sleep
+    async def sleep(delay, result=None):
+        return await real(0, result)
+    monkeypatch.setattr(asyncio, 'sleep', sleep)
+    return real
+
+
+def budget_seeds(flow, lib):
+    """`chain_seeds` semantic seeds, each with 50 unheld references, so the plan fills both direction allowances."""
+    ids = [f'W{i}' for i in range(1, lib.run['budget']['fast_path']['chain_seeds'] + 1)]
+    search(flow, lib, 'search:fast:semantic', ids,
+           refs={oid: [f'https://openalex.org/W{100000 + 100 * i + r}' for r in range(50)] for i, oid in enumerate(ids, 1)})
+
+
+def chain_steps(lib):
+    return [s | {'output': lib.store.step_output(s['id']) or {}} for s in lib.store.run_steps(lib.run['id'])
+            if s['operation_key'].startswith('chain:fast:')]
+
+
+def spent(lib):
+    return lib.store.run(lib.run['id'])['usage'].get('chain_requests', 0)
+
+
+def test_attempt_limit_is_recorded_as_enforced_and_unchanged(effort_library):
+    from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES, PROVIDER_WAIT
+    from deixis.workflow import chaining
+    lib = effort_library
+    effort = lib.store.scope(lib.rid)['effort']
+    fast = lib.run['budget']['fast_path']
+    recorded = chaining.policy(lib.run['budget'], effort)
+    requests = fast['backward_requests'] + fast['forward_requests']
+    assert recorded['request_limit'] == requests
+    assert recorded['attempt_limit'] == chaining.attempt_limit(fast, effort) == (
+        requests * (1 + PROVIDER_WAIT[effort]) * (1 + MAX_TRANSIENT_NETWORK_RETRIES))
+    assert recorded['attempt_limit'] == {'quick': 12, 'standard': 72, 'detailed': 216}[effort]
+
+
+def test_concurrent_retries_never_pass_the_attempt_budget(effort_library, tmp_path, monkeypatch):
+    from deixis.domain.rules import PROVIDER_WAIT
+    from deixis.workflow import chaining
+    lib = effort_library
+    flow, scope, round_ = setup(lib, tmp_path)
+    fast = lib.run['budget']['fast_path']
+    limit = chaining.attempt_limit(fast, scope['effort'])
+    budget_seeds(flow, lib)
+    no_waiting(monkeypatch)
+    transport = ChainTransport(PROVIDER_WAIT[scope['effort']])
+    async def run():
+        flow.deps.http = httpx.AsyncClient(transport=httpx.MockTransport(transport))
+        round_.initial()
+        round_.admit.set()
+        await asyncio.gather(*round_.writers)
+        await round_.stop()
+        await flow.deps.http.aclose()
+    asyncio.run(run())
+    steps = chain_steps(lib)
+    assert len(steps) == len(transport.attempts) == fast['backward_requests'] + fast['forward_requests']
+    assert 1 < transport.peak <= fast['chain_in_flight'] == 5
+    # Every logical request spent its whole share of rate-limit and transient retries, and no more.
+    assert set(transport.attempts.values()) == {transport.per * 3}
+    assert sum(transport.attempts.values()) == spent(lib) == limit
+    assert not [s for s in steps if s['output'].get('unsent')]
+
+
+def test_a_request_past_the_attempt_budget_is_cancelled_unsent(effort_library, tmp_path, monkeypatch):
+    """A fresh plan cannot outrun its budget (the limit is the sum of every request's retries), so the run starts
+    with most of it already spent, as a usage row a previous process left behind would say."""
+    from deixis.domain.rules import PROVIDER_WAIT
+    from deixis.workflow import chaining
+    lib = effort_library
+    flow, scope, round_ = setup(lib, tmp_path)
+    fast = lib.run['budget']['fast_path']
+    limit = chaining.attempt_limit(fast, scope['effort'])
+    requests = fast['backward_requests'] + fast['forward_requests']
+    left = requests // 2
+    lib.store.add_usage(lib.run['id'], 'chain_requests', limit - left)
+    round_.semaphore = asyncio.Semaphore(1)
+    budget_seeds(flow, lib)
+    no_waiting(monkeypatch)
+    transport = ChainTransport(PROVIDER_WAIT[scope['effort']], worst=False)
+    async def run():
+        flow.deps.http = httpx.AsyncClient(transport=httpx.MockTransport(transport))
+        round_.initial()
+        round_.admit.set()
+        await asyncio.gather(*round_.writers)
+        await round_.stop()
+        await flow.deps.http.aclose()
+    asyncio.run(run())
+    steps = chain_steps(lib)
+    assert sum(transport.attempts.values()) == left and spent(lib) == limit
+    assert sum(s['output'].get('unsent') == 'request_budget' for s in steps) == requests - left
+    assert all(s['status'] == 'cancelled' for s in steps if s['output'].get('unsent') == 'request_budget')
+    round_.summary()
+    assert lib.store.existing_step(lib.run['id'], 'fast_chain:summary')['output']['unsent'] == {
+        'request_budget': requests - left}
+
+
+def test_a_restart_counts_spent_attempts_and_sends_nothing_twice(effort_library, tmp_path, monkeypatch):
+    """Crash with two requests done and the next ones in flight; the worker's recovery marks the in-flight ones
+    `outcome_unknown`; a new process resumes the plan. Only never-sent requests go out, and the budget it checks
+    holds every attempt the first process spent or reserved."""
+    from deixis.domain.rules import PROVIDER_WAIT
+    from deixis.workflow import chaining
+    lib = effort_library
+    flow, scope, round_ = setup(lib, tmp_path)
+    wait = PROVIDER_WAIT[scope['effort']]
+    fast = lib.run['budget']['fast_path']
+    limit = chaining.attempt_limit(fast, scope['effort'])
+    requests = fast['backward_requests'] + fast['forward_requests']
+    in_flight = min(fast['chain_in_flight'], requests - 2)
+    budget_seeds(flow, lib)
+    real_sleep = no_waiting(monkeypatch)
+    first = ChainTransport(wait, hang=lambda key, order: order >= 2)
+    async def crash():
+        flow.deps.http = httpx.AsyncClient(transport=httpx.MockTransport(first))
+        round_.initial()
+        round_.admit.set()
+        for _ in range(5000):
+            done = [k for k in first.order[:2] if first.attempts[k] == first.per * 3]
+            if len(first.hung) == in_flight and len(done) == 2:
+                break
+            await real_sleep(0)
+        for task in round_.tasks + round_.writers:
+            task.cancel()
+        await asyncio.gather(*round_.tasks, *round_.writers, return_exceptions=True)
+        await flow.deps.http.aclose()
+    asyncio.run(crash())
+    assert len(first.hung) == in_flight
+    with transaction(lib.conn):
+        lib.conn.execute("UPDATE run_steps SET status = 'outcome_unknown' WHERE status = 'running'")
+    # Two requests spent their whole share; each interrupted one holds its reservation (one attempt plus its retries).
+    before = spent(lib)
+    assert before == 2 * first.per * 3 + in_flight * first.per
+    pending = [s['operation_key'] for s in chain_steps(lib) if s['status'] == 'pending']
+    assert len(pending) == requests - 2 - in_flight
+
+    flow2, _, resumed = setup(lib, tmp_path)
+    second = ChainTransport(wait)
+    async def resume():
+        flow2.deps.http = httpx.AsyncClient(transport=httpx.MockTransport(second))
+        resumed.initial()
+        resumed.admit.set()
+        await asyncio.gather(*resumed.writers)
+        await resumed.stop()
+        await flow2.deps.http.aclose()
+    asyncio.run(resume())
+    assert not set(second.attempts) & set(first.attempts)
+    assert len(second.attempts) == len(pending)
+    assert spent(lib) == before + sum(second.attempts.values()) <= limit
+    steps = {s['operation_key']: s for s in chain_steps(lib)}
+    assert all(steps[key]['status'] != 'pending' and not steps[key]['output'].get('unsent') for key in pending)
+    # What the first process sent stays closed: written as failed, or `outcome_unknown` when the crash came first.
+    sent_first = [s for key, s in steps.items() if key not in pending]
+    assert len(sent_first) == 2 + in_flight and all(s['status'] in ('failed', 'outcome_unknown') for s in sent_first)
+    assert sum(s['status'] == 'outcome_unknown' for s in sent_first) >= in_flight

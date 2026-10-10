@@ -502,18 +502,16 @@ function RoutingSection({ routing }: { routing: SourceRouting }) {
   </div>
 }
 
-// The citation chain this run will follow after its abstract stage (D95). The rule and its limits only: the seeds are
-// the ranking's first works, known after the search, and the run view lists them.
+// The fast chain this run will follow (`fast_chain_v1`), as its budget froze it: OpenAlex only. It starts during the
+// search, from the first works of OpenAlex's semantic search (the ranking fills in when that search gives fewer), and
+// only replies that arrive before the arrival cutoff (the ranking deadline minus `arrival_margin_ms`) add works. The seeds themselves are listed in the run view.
 function ChainingSection({ chaining }: { chaining: CitationChaining }) {
   return <div className="approval-chaining">
     <div className="approval-block-head">
       <strong>{t('Citation chaining')}</strong>
-      <small>{chaining.enabled
-        ? t('After the abstracts are read, OpenAlex is asked for the works that the first {seeds} works of the ranking and every work you verified cite, and for the works that cite them. A new work is kept when a setting or task term stands in its title or abstract; the list of seeds is shown in the run once the search is done.', { seeds: chaining.seeds ?? 0 })
-        : t('Citation chaining is turned off in the settings; this run follows no citation.')}</small>
+      <small>{t('OpenAlex only. While the search runs, OpenAlex is asked for the works that the first {seeds} works of its semantic search cite, and for the works that cite them; when that search gives fewer works, the ranking fills the list. Works you verified are not used as seeds. A new work is kept when a setting or task term stands in its title or abstract and its reply arrives a few seconds before the ranking stage ends; the seeds are listed in the run once the search is done.', { seeds: chaining.seeds })}</small>
     </div>
-    {chaining.enabled && chaining.sources?.includes('semantic_scholar') && <p className="approval-hint">{t('Semantic Scholar is asked too, for the seeds that have a DOI, inside the same request limit.')}</p>}
-    {chaining.enabled && <p className="approval-hint">{t('Up to {cap} citing works per seed · at most {requests} requests · the model reads up to {read} new works · up to {room} of them join the full-text plan, beside its own limit', { cap: chaining.citing_cap ?? 0, requests: chaining.request_limit ?? 0, read: chaining.abstract_read ?? 0, room: chaining.plan_room ?? 0 })}</p>}
+    <p className="approval-hint">{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: chaining.backward_requests, forward: chaining.forward_requests, cap: chaining.citing_cap, attempts: chaining.attempt_limit })}</p>
   </div>
 }
 

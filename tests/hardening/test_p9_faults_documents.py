@@ -30,7 +30,7 @@ from deixis.workflow.store import Store
 from deixis.workflow.worker import Worker
 from fakes import FakeAdapter
 from helpers import make_pdf
-from test_api_flow import app_for, create, include_sources, openalex_client, session, sw_settings, wait_run
+from test_api_flow import app_for, create, openalex_client, session, wait_run
 
 PASSWORD = "password-protected PDF"
 NO_PAGES = "PDF has no pages"
@@ -248,23 +248,25 @@ def test_d7_download_over_the_limit_is_too_large_by_declared_length_and_by_strea
 
 
 def flow_with_fetch_result(tmp_path, result_of):
-    """An answer run over the two OpenAlex works that carry a PDF link, where the fetcher answers `result_of(url)`."""
+    """A discovery run over the two OpenAlex works that carry a PDF link, where the fetcher answers `result_of(url)`.
+
+    The fast path fetches inside discovery (D251), so full-text fetch is on here; the answer run fetches nothing.
+    """
     fetched = []
 
     async def fetcher(url):
         fetched.append(url)
         return result_of(url)
 
-    app = create_app(sw_settings(tmp_path), adapters={"fake": FakeAdapter()}, http_client=openalex_client(), fetcher=fetcher,
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, protocol_approval="as_proposed",
+                        search_query="code", fulltext_fetch="auto")
+    app = create_app(settings, adapters={"fake": FakeAdapter()}, http_client=openalex_client(), fetcher=fetcher,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
         client = session(raw)
         rid = create(client)
         discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
-        discovered, _ = wait_run(client, rid, discovery["id"])
-        include_sources(client, rid, discovered)
-        answer = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
-        view, run = wait_run(client, rid, answer["id"])
+        view, run = wait_run(client, rid, discovery["id"])
         steps = [s for s in run["steps"] if s["kind"] == "fetch_pdf"]
         assets = app.state.store.conn.execute("SELECT COUNT(*) FROM source_assets").fetchone()[0]
     return fetched, steps, assets, (tmp_path / "data" / "papers")

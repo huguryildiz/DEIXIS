@@ -1,9 +1,7 @@
 """Network-free checks for the isolated 500/1000 discovery budget and evidence states."""
 
 import asyncio
-import json
 import sys
-from argparse import Namespace
 from pathlib import Path
 
 import httpx
@@ -30,16 +28,6 @@ def work(number, *, version=None):
             "abstract_inverted_index": {"optimization": [0], "routing": [1]},
             "referenced_works": [], "primary_location": {"version": version},
             "publication_year": 2025}
-
-
-def test_plan_requires_five_distinct_valid_queries():
-    plan = trial.concept_plan(sample_concepts())
-    assert len(plan["queries"]) == 5
-    assert all(not trial.query_rules.query_issues("openalex", q["query_text"]) for q in plan["queries"])
-    bad = sample_concepts()
-    bad["concepts"][-1]["role"] = "method"
-    with pytest.raises(ValueError):
-        trial.concept_plan(bad)
 
 
 def test_depth_gate_requires_complete_pages_and_novel_screenable_tail():
@@ -119,48 +107,3 @@ def test_provider_429_is_failure_not_zero_results(tmp_path):
         assert result["provider_total"] is None
         assert ledger.calls[0]["status"] == "rate_limited"
     asyncio.run(check())
-
-
-def test_1000_slot_run_isolated_and_machine_provisional(monkeypatch, tmp_path):
-    plan = trial.concept_plan(sample_concepts())
-    plan["model_step"] = {"requested_model": "test-gemini", "reasoning_effort": None}
-    plan_path = tmp_path / "plan.json"
-    trial.write_json(plan_path, plan)
-    requested = []
-
-    class Client:
-        def __init__(self, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return None
-
-        async def get(self, url, *, params, headers, timeout):
-            requested.append(dict(params))
-            if "search.title_and_abstract" in params:
-                q = next(i for i, item in enumerate(plan["queries"]) if item["query_text"] == params["search.title_and_abstract"])
-                page = params["page"]
-                rows = [work((page - 1) * 500 + q * 100 + j) for j in range(100)]
-            else:
-                rows = []
-            return httpx.Response(200, json={"meta": {"count": 10000}, "results": rows})
-
-    async def fake_embed(client, key, texts, task_type):
-        return [[1.0, 0.0] for _ in texts]
-
-    monkeypatch.setattr(trial.httpx, "AsyncClient", Client)
-    monkeypatch.setattr(trial.embeddings, "embed", fake_embed)
-    monkeypatch.setenv("GEMINI_API_KEY", "synthetic-never-sent")
-    output = tmp_path / "run"
-    asyncio.run(trial.run(Namespace(plan=plan_path, output_dir=output, marker_tools_root=None)))
-    log = json.loads((output / "run-ledger.json").read_text())
-    assert log["stages"]["initial"]["returned_rows"] == 1000
-    assert log["stages"]["initial_depth_gate"]["open"] is True
-    assert log["stages"]["seeds"]["selected"] == 3
-    assert sum("search.title_and_abstract" in p for p in requested) == 10
-    assert log["stages"]["final"]["included_studies"] is None
-    assert log["real_library_used"] is False
-    assert json.loads((output / "prisma-s-manifest.json").read_text())["prisma_2020_flow_status"] == "incomplete_no_human_screening"

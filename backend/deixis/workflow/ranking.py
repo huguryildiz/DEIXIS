@@ -479,16 +479,14 @@ def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_
             "reasons": reasons, "graph_seeds": graph_seeds}
 
 
-def rank_rows(ranked: dict[str, Any], keep: set[str] | None = None) -> list[dict[str, Any]]:
-    """The rows a ranking step stores: every signal's rank, then the three orders. With `keep`, only those records'
-    rows, their orders renumbered among themselves (the chain's ranking stores its chained works alone, D95)."""
+def rank_rows(ranked: dict[str, Any]) -> list[dict[str, Any]]:
+    """The rows a ranking step stores: every signal's rank, then the three orders."""
     ranks = ranked["ranks"]
     rows = [{"source_version_id": rid, "signal": name, "rank": rank, "available": available}
-            for name in SIGNALS if name in ranks for rid, (rank, available) in sorted(ranks[name].items())
-            if keep is None or rid in keep]
+            for name in SIGNALS if name in ranks for rid, (rank, available) in sorted(ranks[name].items())]
     rows += [{"source_version_id": rid, "signal": name, "rank": position + 1, "available": True}
              for name, listing in zip(ORDERS, (ranked["fused_code"], ranked["fused"], ranked["order"]))
-             for position, rid in enumerate([rid for rid in listing if keep is None or rid in keep])]
+             for position, rid in enumerate(listing)]
     return rows
 
 

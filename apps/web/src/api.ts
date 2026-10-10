@@ -326,14 +326,16 @@ export type RunApproval = {
   suggestions: ApprovalSuggestions
   // Which sources the queries were compiled for and why (D93); null for a card shown before routing existed.
   routing?: SourceRouting | null
-  // How the run chains citations after its abstract stage (D95), frozen when the run was queued; null for a run
-  // queued before D95.
+  // How the run chains citations (the fast chain), frozen in its budget when it was queued; null for a run that
+  // carries no fast-chain policy.
   chaining?: CitationChaining | null
 }
-// The chain rule and its limits as the run froze them (D95). The seeds themselves are known only after the search.
+// The fast chain's rule and limits as the run froze them (`chaining.policy`). The seeds are known only after the search.
+// request_limit counts logical requests (backward + forward); attempt_limit is every HTTP attempt, retries included.
 export type CitationChaining = {
-  enabled: boolean; seeds?: number; citing_cap?: number; request_limit?: number; abstract_read?: number
-  plan_room?: number; directions?: string[]; sources?: string[]
+  enabled: true; rule_version: string; source: string; sources: string[]; directions: string[]; seeds: number
+  backward_requests: number; backward_page_size: number; forward_requests: number; forward_page_size: number
+  citing_cap: number; request_limit: number; attempt_limit: number; in_flight: number
 }
 // The source routing of an sw run (D93): the field distribution of the gate query and the sources it chose.
 // status read: a distribution was read; unavailable: it could not be, so every source in scope is searched;

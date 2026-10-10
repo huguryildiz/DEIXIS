@@ -217,9 +217,7 @@ class Round:
             self.store.start_step(step["id"])
             attempts = 0
             while True:
-                limit = self.run["budget"].get("max_chain_requests",
-                    (self.policy["backward_requests"] + self.policy["forward_requests"])
-                    * (1 + PROVIDER_WAIT[self.scope["effort"]]) * (1 + MAX_TRANSIENT_NETWORK_RETRIES))
+                limit = chaining.attempt_limit(self.policy, self.scope["effort"])
                 left = limit - self.store.run(self.run["id"])["usage"].get("chain_requests", 0)
                 if left <= 0 or self.past_cutoff() or self.flow._openalex_budget_of(self.run["id"]).exhausted:
                     self.store.finish_step(step["id"], "cancelled", output={"unsent": "request_budget" if left <= 0 else "cutoff" if self.past_cutoff() else "openalex_budget", "returned": 0})

@@ -52,12 +52,17 @@ def test_the_connection_view_gives_every_provider_its_role(tmp_path, monkeypatch
 # ---- Task 2: query compiling and discovery ---------------------------------------------------
 
 
+def block_vocabulary(*terms):
+    return {"terms": [
+        {"phrase": phrase, "block": block, "origin": "question", "root": phrase, "in_query": "phrase",
+         "phrase_count": 10, "root_count": None, "and_only": False, "dropped": None}
+        for phrase, block in terms]}
+
+
 def test_the_compiler_sends_no_query_to_a_verification_connector():
-    plan = {"concepts": [{"label": "diffusion channel", "role": "core", "synonyms": ["diffusion channel"]},
-                         {"label": "scheduling", "role": "method", "synonyms": ["scheduling"]}],
-            "providers": ["openalex", "crossref", "semantic_scholar"]}
+    vocabulary = block_vocabulary(("diffusion channel", "setting"), ("scheduling", "task"))
     # The scope may still hold the connector; the compiler is what drops it, so no caller names a provider.
-    queries = query_compiler.compile_queries(plan, ["openalex", "crossref", "semantic_scholar"], 100)
+    queries = query_compiler.compile_block_queries(vocabulary, ["openalex", "crossref", "semantic_scholar"], 100)
     assert {q["provider_id"] for q in queries} == {"openalex", "semantic_scholar"}
 
 
@@ -84,20 +89,11 @@ def test_an_sw_discovery_compiles_a_query_for_every_searchable_provider_and_none
 
 
 
-def test_an_sw_vocabulary_compiles_no_scopus_query_and_a_legacy_plan_still_does():
-    vocabulary = {"terms": [
-        {"phrase": phrase, "block": block, "origin": "question", "root": phrase, "in_query": "phrase",
-         "phrase_count": 10, "root_count": None, "and_only": False, "dropped": None}
-        for phrase, block in (("tidal wetlands", "setting"), ("sediment accretion", "task"))]}
+def test_an_sw_vocabulary_compiles_no_scopus_query():
+    # The legacy SearchPlan compiler that still wrote Scopus queries was removed in the clean start (slice 3a).
+    vocabulary = block_vocabulary(("tidal wetlands", "setting"), ("sediment accretion", "task"))
     sw = query_compiler.compile_block_queries(vocabulary, ["openalex", "scopus", "semantic_scholar"], 100)
     assert [q["provider_id"] for q in sw] == ["openalex", "semantic_scholar"]
-    plan = {"concepts": [{"label": "diffusion channel", "role": "core", "synonyms": ["diffusion channel"]},
-                         {"label": "scheduling", "role": "method", "synonyms": ["scheduling"]}],
-            "providers": ["openalex", "scopus"]}
-    legacy = query_compiler.compile_queries(plan, ["openalex", "scopus"], 100)
-    assert [(q["provider_id"], q["query_text"]) for q in legacy] == [
-        ("openalex", '"diffusion channel" AND scheduling'),
-        ("scopus", 'TITLE-ABS-KEY("diffusion channel" AND scheduling)')]
     assert CONNECTORS["scopus"].searchable and not CONNECTORS["scopus"].sw_searchable
 
 

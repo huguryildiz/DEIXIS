@@ -14,8 +14,10 @@ import httpx
 import pytest
 
 import connector_baseline as baseline
+import fast_search_helpers as fast
 from deixis.providers import common, contract, facade, lookup, openalex, registry
 from deixis.workflow import flow as flow_module, lookups
+from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES
 from deixis.storage.db import dumps
 from test_connector_contract import FIXTURES, dispatch_flow, check_coverage
 from test_connector_dispatch import client, lookup_sources, paper, oa_body, rows
@@ -392,15 +394,16 @@ def lookup_body(pid, doi=DOI, echo=None):
     return {"search-results": {"entry": [{"prism:doi": doi, "dc:description": echo or "SYNTHETIC abstract"}]}}
 
 
-def chain_run(flow, new_run, limit=10):
-    run = new_run(("openalex",))
-    flow.store.update_run(run["id"], budget_json=dumps(run["budget"] | {"max_chain_requests": limit}))
-    return flow.store.run(run["id"])
+CHAIN_KEY = "chain:fast:0"
 
 
-async def chain(flow, run, *, direction="forward", key="chain:forward:W9:1", batch=None, page=1, cites="W9", forms=None):
-    return await flow._chain_request(run, {"effort": "standard"}, key, direction, forms or {"task": ["synthetic"]}, [],
-        batch=batch, page=page if direction == "forward" else None, cites=cites if direction == "forward" else None)
+def chain_run(flow, new_run):
+    return fast.fast_chain_run(flow, new_run(("openalex",)))
+
+
+async def chain(flow, run, *, direction="forward", batch=None):
+    """One fast chain request (forward from W9, or backward over `batch`), sent and written as the round does."""
+    return await fast.chain(flow, run, fast.chain_spec(direction, batch=batch))
 
 
 @pytest.mark.parametrize("pid", ["semantic_scholar", "crossref", "scopus"])
@@ -505,7 +508,7 @@ def test_settlement_and_trace_are_atomic(dispatch_flow, path):
                     lookups._crossref_step(flow.store, flow.deps.http, flow.deps.settings, run, 0, batch))
     prefix = "chain" if path == "chain" else "lookup"
     assert flow.store.run(run["id"])["usage"] == {prefix+"_requests": 2 if path == "chain" else 3}
-    key = "chain:forward:W9:1" if path == "chain" else "record_lookup:crossref:0"
+    key = CHAIN_KEY if path == "chain" else "record_lookup:crossref:0"
     assert flow.store.existing_step(run["id"], key)["output"] is None
     assert rows(flow) == []
 
@@ -709,7 +712,7 @@ def test_accounting_uses_collector_when_outcome_is_rebuilt(dispatch_flow, monkey
                     lookups._crossref_step(flow.store, flow.deps.http, flow.deps.settings, run, 0, batch))
     prefix = "chain" if path == "chain" else "lookup"
     assert flow.store.run(run["id"])["usage"] == {prefix+"_requests": 4, prefix+"_sends": 4}
-    key = "chain:forward:W9:1" if path == "chain" else "record_lookup:crossref:0"
+    key = CHAIN_KEY if path == "chain" else "record_lookup:crossref:0"
     trace = flow.store.existing_step(run["id"], key)["output"]["transport"]
     assert (trace["reserved"], trace["attempts"], trace["sends"], trace["over_reservation"]) == (
         2 if path == "chain" else 3, 4, 4, 2 if path == "chain" else 1)
@@ -718,7 +721,7 @@ def test_accounting_uses_collector_when_outcome_is_rebuilt(dispatch_flow, monkey
 
 def test_chain_reservation_visible_in_flight(dispatch_flow):
     flow, new_run = dispatch_flow
-    run = chain_run(flow, new_run, 2)
+    run = chain_run(flow, new_run)
     async def go():
         entered, release = asyncio.Event(), asyncio.Event()
         async def serve(request):
@@ -749,8 +752,7 @@ def test_chain_admission_raw_redaction_and_provenance(dispatch_flow, direction):
     payload["results"].append(rejected)
     client(flow, lambda r: httpx.Response(200, json=payload))
     with baseline.fake_clock():
-        result = asyncio.run(chain(flow, run, direction=direction, key=f"chain:{direction}:0" if direction == "backward" else "chain:forward:W9:1",
-                                   batch=["W1", "None"]))
+        result = asyncio.run(chain(flow, run, direction=direction, batch=["W1", "None"]))["output"]
     assert (result["returned"], result["dropped_records"], result["passed_filter"]) == (2, 1, 1)
     assert len(flow.store.candidates(run["research_id"])) == 1
     assert flow.store.find_source_by_identifier("doi", "10.9999/rejected") is None
@@ -765,36 +767,10 @@ def test_chain_admission_raw_redaction_and_provenance(dispatch_flow, direction):
     assert flow.store.run(run["id"])["usage"] == {"chain_requests": 1, "chain_sends": 1}
 
 
-def test_chain_drop_does_not_extend_paging(dispatch_flow, monkeypatch):
-    flow, new_run = dispatch_flow
-    monkeypatch.setattr(flow_module, "CHAIN_CITING_PAGE", 2)
-    monkeypatch.setattr(flow_module, "CHAIN_CITING_CAP", 3)
-    sequences = []
-    for drop in (False, True):
-        run = chain_run(flow, new_run)
-        seed = lookup_sources(flow, run, [DOI])[0]["source_version_id"]
-        seen = []
-        def serve(request):
-            cursor, limit = request.url.params["cursor"], int(request.url.params["per_page"])
-            seen.append((cursor, limit))
-            payload = oa_body()
-            payload["results"] *= limit
-            payload["meta"]["next_cursor"] = "SYNTHETIC-next"
-            if drop:
-                for record in payload["results"]:
-                    record["id"] = None
-            return httpx.Response(200, json=payload)
-        client(flow, serve)
-        asyncio.run(flow._chain_requests(run, {"effort": "standard"}, {
-            "seeds": [{"source_version_id": seed, "openalex_ids": ["W9"]}], "backward_batches": []}, {}))
-        sequences.append(seen)
-    assert sequences == [[("*", 2), ("SYNTHETIC-next", 1)]] * 2
-
-
 @pytest.mark.parametrize("ending", [401, 429, "connect"])
 def test_failed_chain_keeps_trace_and_budget(dispatch_flow, ending):
     flow, new_run = dispatch_flow
-    run = chain_run(flow, new_run, 2)
+    run = chain_run(flow, new_run)
     sent = []
     def serve(request):
         sent.append(request)
@@ -803,12 +779,13 @@ def test_failed_chain_keeps_trace_and_budget(dispatch_flow, ending):
         return httpx.Response(ending, text="SYNTHETIC refusal", headers={"retry-after": "0"})
     client(flow, serve)
     with baseline.fake_clock():
-        assert asyncio.run(chain(flow, run)) is None
-    step = flow.store.existing_step(run["id"], "chain:forward:W9:1")
+        step = asyncio.run(chain(flow, run))
     trace = step["output"]["transport"]
-    assert trace["attempts"] == len(sent) <= 2
+    # A refused connection is sent again after a pause, at most MAX_TRANSIENT_NETWORK_RETRIES times; a 429 is
+    # waited out once at standard effort.
+    assert trace["attempts"] == len(sent) == {401: 1, 429: 2, "connect": 1 + MAX_TRANSIENT_NETWORK_RETRIES}[ending]
     assert trace["sends"] == (0 if ending == "connect" else len(sent))
-    assert len(trace["dispatches"]) == (2 if ending == "connect" else 1)
+    assert len(trace["dispatches"]) == (1 + MAX_TRANSIENT_NETWORK_RETRIES if ending == "connect" else 1)
     assert flow.store.run(run["id"])["usage"] == {"chain_requests": len(sent), "chain_sends": trace["sends"]}
     assert step["status"] == "failed"
 
@@ -824,7 +801,7 @@ def test_chain_trace_survives_interrupted_backoff(dispatch_flow, monkeypatch):
     monkeypatch.setattr(flow_module.asyncio, "sleep", interrupted)
     with pytest.raises(asyncio.CancelledError):
         asyncio.run(chain(flow, run))
-    step = flow.store.existing_step(run["id"], "chain:forward:W9:1")
+    step = flow.store.existing_step(run["id"], CHAIN_KEY)
     assert step["output"]["transport"]["attempts"] == 1
     assert flow.store.run(run["id"])["usage"] == {"chain_requests": 1, "chain_sends": 0}
 
@@ -841,53 +818,9 @@ def test_chain_trace_survives_payload_failure(dispatch_flow, monkeypatch):
     monkeypatch.setattr(Path, "write_text", fail)
     with pytest.raises(OSError):
         asyncio.run(chain(flow, run))
-    assert flow.store.existing_step(run["id"], "chain:forward:W9:1")["output"]["transport"]["attempts"] == 1
+    assert flow.store.existing_step(run["id"], CHAIN_KEY)["output"]["transport"]["attempts"] == 1
     assert flow.store.run(run["id"])["usage"] == {"chain_requests": 1, "chain_sends": 1}
     assert rows(flow) == []
-
-
-@pytest.mark.parametrize("recorded,code", [(None, None), ("{", "connector_provenance_invalid"),
-    ("[]", "connector_provenance_invalid"), (dumps({"contract_id": contract.CONTRACT_ID, "adapter_revision": 2}), "adapter_revision_changed"),
-    (dumps({"contract_id": "SYNTHETIC-unsupported", "adapter_revision": 3}), "adapter_revision_changed"),
-    ("missing", "connector_provenance_invalid")])
-def test_chain_continuation_refuses_only_that_seed(dispatch_flow, monkeypatch, recorded, code):
-    flow, new_run = dispatch_flow
-    run = chain_run(flow, new_run)
-    seed = lookup_sources(flow, run, [DOI])[0]["source_version_id"]
-    seen = []
-    def serve(request):
-        seed, cursor = request.url.params["filter"], request.url.params["cursor"]
-        seen.append((seed, cursor))
-        payload = oa_body()
-        payload["meta"]["next_cursor"] = "SYNTHETIC-next" if seed == "cites:W9" and cursor == "*" else None
-        return httpx.Response(200, json=payload)
-    client(flow, serve)
-    original = flow._record_chain
-    def record(*args, **kwargs):
-        original(*args, **kwargs)
-        if args[2] == "chain:forward:W9:1":
-            if recorded == "missing":
-                flow.store.conn.execute("DELETE FROM search_runs WHERE step_id = ?", (args[1]["id"],))
-            else:
-                flow.store.conn.execute("UPDATE search_runs SET connector_json = ? WHERE step_id = ?", (recorded, args[1]["id"]))
-    monkeypatch.setattr(flow, "_record_chain", record)
-    seeds = {"seeds": [{"source_version_id": seed, "kind": "code", "openalex_ids": ["W9", "W10"]}],
-             "backward_batches": [], "forms": {}}
-    flow.store.step(run["id"], "chain_seeds", "code:chain_seeds", output=seeds)
-    asyncio.run(flow._chain_requests(run, {"effort": "standard"}, seeds, {}))
-    flow._chain_summary(run)
-    summary = flow.store.existing_step(run["id"], "chain_summary")["output"]["requests"]
-    step = flow.store.existing_step(run["id"], "chain:forward:W9:2")
-    assert flow.store.run(run["id"])["status"] == "running"
-    if code:
-        assert seen == [("cites:W9", "*"), ("cites:W10", "*")]
-        assert step["error_code"] == code and step["status"] == "failed"
-        assert flow.store.conn.execute("SELECT 1 FROM search_runs WHERE step_id = ?", (step["id"],)).fetchone() is None
-        assert summary["continuation_refused"] == 1 and summary["forward"] == summary["sent"] == 2
-        assert flow.store.run(run["id"])["usage"] == {"chain_requests": 2, "chain_sends": 2}
-    else:
-        assert seen == [("cites:W9", "*"), ("cites:W9", "SYNTHETIC-next"), ("cites:W10", "*")]
-        assert step["status"] == "succeeded" and summary["continuation_refused"] == 0
 
 
 @pytest.mark.parametrize("ending", [200, 401, 429, "malformed"])

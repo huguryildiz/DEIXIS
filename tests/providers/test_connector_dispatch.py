@@ -1,7 +1,7 @@
 """SYNTHETIC B4 dispatch, named changes and stored continuation boundaries.
 
-Old-code behavioral cases use pre-B4 flow/lookup entry points. Direct facade
-equivalence remains separate from admission, secrecy and version refusal.
+Behavioral cases use the flow's send/record seam and the fast path's search slots and
+chain round. Direct facade equivalence remains separate from admission, secrecy and version refusal.
 """
 
 import asyncio
@@ -16,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import connector_baseline as baseline
+import fast_search_helpers as fast
 import test_connector_contract as conformance
 import test_connector_facade as equality
 from test_connector_contract import dispatch_flow, candidate_lib, prepare_kill
@@ -23,7 +24,7 @@ from test_provider_records import record
 from deixis.providers import common, contract, facade, lookup, registry
 from deixis.domain import canonical
 from deixis.workflow import flow as flow_module, lookups
-from deixis.workflow.flow import Page, _QueryRead
+from deixis.workflow.flow import Page
 
 
 @pytest.fixture(autouse=True)
@@ -177,18 +178,7 @@ def test_synthetic_registry_dispatch_and_record(dispatch_flow, monkeypatch):
     assert sent.connector["adapter_revision"] == synthetic.adapter_revision
 
 
-def test_b2_key_removed_after_freeze_never_reaches_facade(tmp_path, monkeypatch):
-    original = facade.CompatibilityConnector.search
-    calls = []
-    async def spy(self, request, context):
-        calls.append(self.descriptor.provider_id)
-        return await original(self, request, context)
-    monkeypatch.setattr(facade.CompatibilityConnector, "search", spy)
-    conformance.test_dispatched_missing_key_after_freeze_sends_nothing_and_records_a_step(tmp_path, monkeypatch, None)
-    assert calls and "serpapi" not in calls
-
-
-# Named change 1: behavior through pre-B4 entry points, so the old harness bites.
+# Named change 1: behavior through the flow's record seam and the fast search slots.
 @pytest.mark.parametrize("kind", ["quota_exhausted", "rate_limited"])
 def test_limit_record_and_pause(dispatch_flow, kind):
     flow, new_run = dispatch_flow
@@ -215,7 +205,7 @@ def test_limit_discovery_and_suppression(dispatch_flow, monkeypatch, kind):
                               else {"error": "SYNTHETIC temporary refusal"})
     client(flow, transport)
     async def discovery(current, scope):
-        failure = await flow._search_round(current, [(0, query()), (1, query())], False, "standard")
+        failure = await fast.search(flow, current, [query(), query()])
         if failure:
             flow._pause(current["id"], *failure)
     monkeypatch.setattr(flow, "_discovery", discovery)
@@ -236,11 +226,12 @@ def test_limit_discovery_and_suppression(dispatch_flow, monkeypatch, kind):
 def test_chain_limit_error(dispatch_flow):
     flow, new_run = dispatch_flow
     run = new_run(("openalex",))
-    step = flow.store.step(run["id"], "chain:backward:0", "provider_chain:openalex")
+    step = flow.store.step(run["id"], "chain:fast:0", "provider_chain:openalex")
     outcome = common.SearchOutcome("rate_limited", "rejected_not_executed", "SYNTHETIC", "keyless",
                                   error_kind="quota_exhausted")
-    flow._record_chain(run, step, "chain:backward:0", "backward", outcome, {}, [], cites=None, page=None)
-    saved = flow.store.existing_step(run["id"], "chain:backward:0")
+    flow._record_chain(run, step, "chain:fast:0", "backward", outcome, {}, [], cites=None, page=None,
+                       batch=["W1"], per_page=1, fast_request=0, fast_arrival={"late": False})
+    saved = flow.store.existing_step(run["id"], "chain:fast:0")
     assert json.loads(rows(flow)[0]["error_json"])["error_kind"] == "quota_exhausted"
     assert json.loads(saved["error_json"])["error_kind"] == "quota_exhausted"
 
@@ -330,7 +321,7 @@ def test_s2_workflow_reordered_abstracts(dispatch_flow):
         assert texts == [f"SYNTHETIC abstract {item['doi']}"]
 
 
-# Named change 3: persisted file and canonical digest, using old flow entry points.
+# Named change 3: persisted file and canonical digest, through the flow's record seam and the fast chain.
 def test_payload_echo_recorded(dispatch_flow):
     flow, new_run = dispatch_flow
     run = new_run(("openalex",))
@@ -404,8 +395,7 @@ def test_keyless_payload_byte_identity(dispatch_flow, monkeypatch):
 
 def test_chain_snapshotted_key_at_write(dispatch_flow, monkeypatch):
     flow, new_run = dispatch_flow
-    run = new_run(("openalex",))
-    run["budget"]["max_chain_requests"] = 10
+    run = fast.fast_chain_run(flow, new_run(("openalex",)))
     old, later = baseline.SYNTHETIC_KEY, "SYNTHETIC-rotated-key"
     seen = []
     def transport(r):
@@ -413,7 +403,7 @@ def test_chain_snapshotted_key_at_write(dispatch_flow, monkeypatch):
         monkeypatch.setenv("OPENALEX_API_KEY", later)
         return httpx.Response(200, json=oa_body(secret=old))
     client(flow, transport)
-    asyncio.run(flow._chain_request(run, {"effort": "standard"}, "chain:backward:0", "backward", {}, [], batch=["W1"]))
+    asyncio.run(fast.chain(flow, run, fast.chain_spec("backward", batch=["W1"])))
     text = (flow.deps.settings.payloads_dir / rows(flow)[0]["raw_payload_path"]).read_text()
     assert seen == [old] and old not in text and later not in text
 
@@ -497,7 +487,7 @@ def test_identity_discovery_rejects_none(dispatch_flow):
     flow, new_run = dispatch_flow
     run = new_run(("openalex",))
     client(flow, lambda r: httpx.Response(200, json=oa_body(ids=(None,))))
-    asyncio.run(flow._search_round(run, [(0, query())], False, "standard"))
+    asyncio.run(fast.search(flow, run, [query()]))
     assert rows(flow)[0]["result_count"] == 0
     assert flow.store.candidates(run["research_id"]) == []
     assert flow.store.existing_step(run["id"], "search:0")["output"]["dropped_records"] == 1
@@ -506,15 +496,14 @@ def test_identity_discovery_rejects_none(dispatch_flow):
 def test_all_dropped_page_continues(dispatch_flow, monkeypatch):
     flow, new_run = dispatch_flow
     run = new_run(("openalex",))
-    monkeypatch.setattr(flow_module, "SW_READ_LIMIT", {"standard": 2})
-    monkeypatch.setitem(registry.CONNECTORS, "openalex", replace(registry.CONNECTORS["openalex"], max_results=1))
     cursors = []
     def transport(r):
         cursors.append(r.url.params["cursor"])
         return httpx.Response(200, json=oa_body(ids=(None,) if len(cursors) == 1 else ("https://openalex.org/W2",),
                                               cursor="next" if len(cursors) == 1 else None))
     client(flow, transport)
-    asyncio.run(flow._search_round(run, [(0, query())], False, "standard"))
+    # Two one-record slots: the dropped record still takes its slot, so the second page ends the read.
+    asyncio.run(fast.search(flow, run, [query()], cap=2, page_size=1))
     assert cursors == ["*", "next"]
     assert [r["result_count"] for r in rows(flow)] == [0, 1]
     assert [r["read_total"] for r in rows(flow)] == [1, 2]
@@ -535,9 +524,8 @@ PROVENANCE = [(None, None), ("current", None), (json.dumps({"contract_id": contr
 def test_resume_provenance(dispatch_flow, monkeypatch, provenance, error):
     flow, new_run = dispatch_flow
     run = new_run(("openalex",))
-    monkeypatch.setattr(flow_module, "SW_READ_LIMIT", {"standard": 2})
-    install(monkeypatch, "openalex", registry.CONNECTORS["openalex"].search, max_results=1)
     client(flow, lambda r: httpx.Response(200, json=oa_body(cursor="next")))
+    # The first page of fast keyword slot 0, as a run that stopped after it left it.
     page = Page(0, "*", 0, None, 2, 0, "search:0", 10)
     _, first, _ = record_sent(flow, run, query(), page=page)
     if provenance == "current":
@@ -554,19 +542,20 @@ def test_resume_provenance(dispatch_flow, monkeypatch, provenance, error):
     client(flow, lambda r: seen.append(r.url.params["cursor"]) or httpx.Response(200, json=oa_body(cursor=None)))
     before = flow.store.run(run["id"])["usage"]
     prior_rows = len(rows(flow))
-    read = _QueryRead(0, query())
-    asyncio.run(flow._read_query(run, read, False, "standard"))
-    failure = flow._write_query(run, read)
+    failure = asyncio.run(fast.search(flow, run, [query()], cap=10, page_size=2))
     saved = flow.store.existing_step(run["id"], "search:0:page:1")
     if error:
         assert seen == [] and flow.store.run(run["id"])["usage"] == before and len(rows(flow)) == prior_rows
         assert saved["status"] == "failed" and saved["error_code"] == error
-        assert saved["output"] == {"status": error, "result_count": 0}
-        assert failure[0] == "provider_adapter_revision_changed" and read.ended
+        assert (saved["output"]["status"], saved["output"]["result_count"]) == (error, 0)
+        assert saved["output"]["stop_reason"] == "page_failed"
+        # The refused continuation ends this query: no later page is asked for.
+        assert failure[0] == "provider_adapter_revision_changed"
+        assert flow.store.existing_step(run["id"], "search:0:page:2") is None
     else:
         assert seen == ["next"] and saved["status"] == "succeeded" and failure is None
         # A second resume asks no page twice.
-        asyncio.run(flow._search_round(run, [(0, query())], False, "standard"))
+        asyncio.run(fast.search(flow, run, [query()], cap=10, page_size=2))
         assert seen == ["next"]
 
 
@@ -577,11 +566,10 @@ def test_resume_changed_descriptor(dispatch_flow, monkeypatch):
     record_sent(flow, run, query(), page=Page(0, "*", 0, None, 20, 0, "search:0", 10))
     source = registry.CONNECTORS["openalex"]
     monkeypatch.setitem(registry.CONNECTORS, "openalex", replace(source, adapter_revision=source.adapter_revision + 1))
-    read = _QueryRead(0, query())
     before = flow.store.run(run["id"])["usage"]
     client(flow, baseline.deny_network)
-    asyncio.run(flow._read_query(run, read, False, "standard"))
-    assert flow._write_query(run, read)[0] == "provider_adapter_revision_changed"
+    failure = asyncio.run(fast.search(flow, run, [query()], cap=40, page_size=20))
+    assert failure[0] == "provider_adapter_revision_changed"
     assert flow.store.run(run["id"])["usage"] == before
 
 
@@ -599,16 +587,14 @@ def test_new_row_current_provenance(dispatch_flow):
 def test_completed_pages_do_not_recheck_revision(dispatch_flow, monkeypatch):
     flow, new_run = dispatch_flow
     run = new_run(("openalex",))
-    monkeypatch.setattr(flow_module, "SW_READ_LIMIT", {"standard": 2})
-    install(monkeypatch, "openalex", registry.CONNECTORS["openalex"].search, max_results=1)
     seen = []
     client(flow, lambda r: seen.append(r.url.params["cursor"]) or httpx.Response(200, json=oa_body(
         cursor="next" if len(seen) == 1 else None)))
-    asyncio.run(flow._search_round(run, [(0, query())], False, "standard"))
+    asyncio.run(fast.search(flow, run, [query()], cap=2, page_size=1))
     assert seen == ["*", "next"]
     flow.store.conn.execute("UPDATE search_runs SET connector_json = '{}' ")
     client(flow, baseline.deny_network)
-    assert asyncio.run(flow._search_round(run, [(0, query())], False, "standard")) is None
+    assert asyncio.run(fast.search(flow, run, [query()], cap=2, page_size=1)) is None
     assert len(rows(flow)) == 2
 
 
@@ -639,17 +625,17 @@ def test_payload_write_failure_publishes_nothing(dispatch_flow, monkeypatch):
         return original(path, *args, **kwargs)
     monkeypatch.setattr(Path, "write_text", fail)
     with pytest.raises(OSError, match="SYNTHETIC"):
-        asyncio.run(flow._search_round(run, [(0, query())], False, "standard"))
+        asyncio.run(fast.search(flow, run, [query()]))
     assert rows(flow) == [] and flow.store.candidates(run["research_id"]) == []
     assert flow.store.conn.execute("SELECT count(*) FROM source_versions").fetchone()[0] == 0
-    assert not any(s["status"] == "succeeded" for s in flow.store.run_steps(run["id"]))
+    assert not any(s["status"] == "succeeded" for s in fast.provider_steps(flow, run))
 
 
 def test_unknown_endpoint_paged_accounting(dispatch_flow):
     flow, new_run = dispatch_flow
     run = new_run(("semantic_scholar",))
     with pytest.raises(KeyError):
-        asyncio.run(flow._search_round(run, [(0, query("semantic_scholar", endpoint="removed"))], False, "standard"))
+        asyncio.run(fast.search(flow, run, [query("semantic_scholar", endpoint="removed")]))
     assert flow.store.run(run["id"])["usage"].get("provider_requests", 0) == 0 and rows(flow) == []
 
 

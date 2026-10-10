@@ -160,14 +160,14 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
         # Which sources the queries were compiled for and why (D93): the approved routing once a correction routed
         # again, else the proposal's. None for a card shown before routing existed.
         "routing": _card_routing(approved or output["proposal"], output["proposal"]),
-        # How this run will chain citations after its abstract stage: the rule and its limits, frozen in the run's
-        # budget when it was queued (D95). The real seeds are only known after the search, in the run view.
-        "chaining": _card_chaining(store, run_id),
+        # How this run will chain citations: the fast chain's rule and limits, frozen in the run's budget when it was
+        # queued. The real seeds are only known after the search, in the run view.
+        "chaining": _card_chaining(store, store.run(run_id)),
     }
 
 
-def _card_chaining(store: Store, run_id: str) -> dict[str, Any] | None:
-    run = store.run(run_id)
+def _card_chaining(store: Store, run: dict[str, Any]) -> dict[str, Any] | None:
+    """The card's chain policy, with the attempt limit for the effort the run's scope revision was queued with."""
     return chain_policy(run["budget"], store.scope(run["research_id"], run["scope_revision"])["effort"])
 
 

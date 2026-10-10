@@ -295,7 +295,8 @@ def test_no_other_run_kind_opens_the_step_and_reading_a_run_leaves_none_pending(
         assert discovery["budget"]["inspection"]["policy"] == "small_batch_fused_v1"
         collection_keys |= {s["operation_key"] for s in store.run_steps(discovery_id)}
         research_view(store, academic_rid)
-        assert phrase_steps(store, academic_rid) == []
+        # The fast-path discovery queues its own answer run (D254), which is the one run that opens the step there.
+        assert {store.run(s["run_id"])["kind"] for s in phrase_steps(store, academic_rid)} <= {"answer"}
         research_view(store, rid)  # the run view a UI reads must open nothing
         before = phrase_steps(store, rid)
         answer(client, rid)

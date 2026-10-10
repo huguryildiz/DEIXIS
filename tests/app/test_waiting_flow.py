@@ -48,6 +48,16 @@ def plan_heads(store, rid):
     return store.existing_step(run_id, small_batch.LIST_KEY)["output"]["order"]
 
 
+def settled_runs(client, rid):
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        runs = client.get(f"/api/researches/{rid}").json()["runs"]
+        if all(r["status"] in ("completed", "failed", "paused", "cancelled") for r in runs):
+            return [r["id"] for r in runs]
+        time.sleep(0.05)
+    raise AssertionError("the queued runs did not settle")
+
+
 def match(client, rid, *files):
     response = client.post(f"/api/researches/{rid}/uploads/match",
                            files=[("files", (name, data, "application/pdf")) for name, data in files])
@@ -69,10 +79,12 @@ def test_the_list_holds_the_works_no_route_found_a_pdf_for_in_the_plan_s_order(t
     try:
         store = app.state.store
         records = records_of(store, rid)
+        # The runs the fast-path discovery queued (its answer, the answer's review, a background read) settle first.
+        runs_before = settled_runs(client, rid)
         view = client.get(f"/api/researches/{rid}/waiting").json()
         counts = client.get(f"/api/researches/{rid}").json()["counts"]
         order = plan_heads(store, rid)
-        runs_before = [r["id"] for r in client.get(f"/api/researches/{rid}").json()["runs"]]
+        runs_after = [r["id"] for r in client.get(f"/api/researches/{rid}").json()["runs"]]
     finally:
         client.__exit__(None, None, None)
     waiting_heads = [row["head"] for row in view["rows"]]
@@ -85,7 +97,7 @@ def test_the_list_holds_the_works_no_route_found_a_pdf_for_in_the_plan_s_order(t
     assert row["doi"] == "10.1/oa.2" and row["links"]["doi"] == "https://doi.org/10.1/oa.2"
     assert row["find_pdf_source_version_id"] == records["W2"]
     assert [v["source_version_id"] for v in row["versions"]] == [records["W2"]] and row["versions_digest"]
-    assert len(runs_before) == 1  # reading the list opened nothing
+    assert runs_after == runs_before  # reading the list opened nothing
 def test_links_open_through_the_proxy_once_one_is_set_and_a_bad_address_is_refused(tmp_path, monkeypatch):
     app, client, rid = sw_research(tmp_path, monkeypatch)
     try:

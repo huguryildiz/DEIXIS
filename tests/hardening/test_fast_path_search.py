@@ -330,7 +330,7 @@ def test_queue_unique_and_stored_scores_not_embedded_twice(library, tmp_path, mo
     assert len(calls) == 1 and rows(lib)[0]['status'] == 'from_store'
 
 
-def test_policy_free_and_pre_slice2_frozen_protocol_are_not_upgraded(library):
+def test_policy_free_and_pre_slice2_frozen_policies_are_not_upgraded(library):
     lib = library
     policy = lib.run['budget']['fast_path']
     policy['enforced_stages'] = policy['enforcement'] = ['search', 'ranking', 'read']
@@ -342,11 +342,9 @@ def test_policy_free_and_pre_slice2_frozen_protocol_are_not_upgraded(library):
     protocol = lib.store.freeze_protocol(lib.rid, 1, {'SYNTHETIC': 'slice1'})
     step = lib.store.step(lib.run['id'], 'protocol', 'protocol:freeze')
     lib.store.finish_step(step['id'], 'succeeded', output={'protocol_revision': protocol['protocol_revision']})
-    assert not fast_search.applicable(lib.store, lib.run)
     assert fast_path.view(lib.store, lib.run)['enforced_stages'] == ['search', 'ranking', 'read']
     assert lib.store.run(lib.run['id'])['budget']['fast_path'] == policy
     policy_free = lib.run | {'budget': {}}
-    assert not fast_search.applicable(lib.store, policy_free)
     assert fast_path.stage_deadline(lib.store, policy_free, 'search') is None
     assert rows(lib) == []
 

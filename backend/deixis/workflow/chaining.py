@@ -1,18 +1,16 @@
-"""Citation chaining of an `sw` discovery run: which works seed it, what one link must show, and the policy (D95).
+"""Citation chaining of an `sw` discovery run: what one link must show, and the frozen policy the run records (D95).
 
-Pure: no database, no clock, no network, no model. The flow reads the store and sends the requests (`flow._chaining`);
-everything here is a function of the rows it is given, so a resumed run re-derives nothing it did not already store.
+Pure: no database, no clock, no network, no model. The fast chain (`fast_chain.Round`) sends the requests and the
+flow writes them (`flow._record_chain`); everything here is a function of the rows it is given, so a resumed run
+re-derives nothing it did not already store.
 
-Three rules hold this module together:
+Two rules hold this module together:
 
-- **The keyword path is not touched.** The seeds are read from the keyword ranking's own stored ranks, and nothing
-  here reorders, adds to or removes from the keyword pool. The chained works get their own abstract read and their
-  own room in the full-text plan, on top of the keyword limits (slice 15, decision 4).
 - **Nothing topical is written here.** A linked work passes when a form of one of the two approved gate blocks stands
   at a word start in its title or abstract (`ranking.blocks_in`), the one matcher the ranking and the abstract stage
   use; which words those are is the research's own vocabulary.
 - **A seed is a work, not a record.** Two heads with the same work or the same normalised title are one seed, so a
-  preprint and its published record the merge left apart do not spend two of the fifteen places.
+  preprint and its published record the merge left apart do not spend two places.
 """
 
 from __future__ import annotations
@@ -20,132 +18,52 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
-from deixis.domain.rules import (CHAIN_ABSTRACT_READ, CHAIN_BACKWARD_BATCH, CHAIN_CITING_CAP, CHAIN_PLAN_ROOM,
-                                 CHAIN_SEEDS)
+from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES, PROVIDER_WAIT
 from deixis.workflow.ranking import blocks_in
 
-# v2 (2026-10-05, D229): Semantic Scholar is a second chain source. A run queued before that froze `v1` in its budget
-# and keeps it: its policy block, requests and counts are what they were.
-RULE_VERSION = "deixis.citation_chaining.v2"
-RULE_VERSION_V1 = "deixis.citation_chaining.v1"
 DIRECTIONS = ("backward", "forward")
 SOURCE = "openalex"
-S2_SOURCE = "semantic_scholar"
-SOURCES = (SOURCE, S2_SOURCE)
-FILTER = "gate_block_form_in_title_or_abstract"
 # The query text a chain request's search run carries: which direction, and which seed or batch (slice 15, Task 3).
 # `search_runs` has no kind column, so this is how a row says it was a chain request and not a keyword query.
 QUERY_PREFIX = "chain:"
 STEP_KIND = "provider_chain:openalex"
-STEP_KIND_S2 = "provider_chain:semantic_scholar"
-STEP_KINDS = (STEP_KIND, STEP_KIND_S2)
-S2_PREFIX = "s2:"  # the front of a Semantic Scholar paper id in `chain_links.linked_openalex_id`
-S2_KEY = "chain:s2:"  # the front of a Semantic Scholar chain request's operation key
+
+
+def attempt_limit(fast: dict[str, Any], effort: str) -> int:
+    """How many HTTP attempts the fast chain may spend in all (usage `chain_requests`), for a frozen fast-path policy.
+
+    Each logical request (`backward_requests + forward_requests`) may wait out the effort's rate-limit retries
+    (`PROVIDER_WAIT`) and be resent after a transient network failure before anything was sent
+    (`MAX_TRANSIENT_NETWORK_RETRIES`). `fast_chain.Round.fetch` enforces this number and `policy` records it.
+    """
+    return ((fast["backward_requests"] + fast["forward_requests"])
+            * (1 + PROVIDER_WAIT[effort]) * (1 + MAX_TRANSIENT_NETWORK_RETRIES))
 
 
 def policy(budget: dict[str, Any], effort: str) -> dict[str, Any] | None:
-    """The chain policy a discovery run's budget froze when it was queued, or None for a run queued before D95.
+    """The chain policy a discovery run's budget froze when it was queued (`fast_path.freeze_budget`), or None for a
+    run that carries no fast-path policy (every run kind but discovery).
 
-    The setting is read from the budget, never from the settings of the moment, so both protocol revisions of a run
-    carry the same block and a changed setting cannot reach a run already queued.
+    The policy is read from the budget, never from the settings of the moment, so both the protocol and the approval
+    card say what the run really does: the fast chain (`fast_chain_v1`), OpenAlex only. `request_limit` counts logical
+    requests; `attempt_limit` is the total HTTP attempts the chain may spend, retries included.
     """
-    setting = budget.get("citation_chaining")
-    if setting is None:
+    fast = budget.get("fast_path") or {}
+    if not fast.get("chain_rule"):
         return None
-    if setting != "auto":
-        return {"enabled": False}
-    block = {"enabled": True, "rule_version": budget.get("chain_rule_version", RULE_VERSION_V1), "seeds": CHAIN_SEEDS,
-             "user_seeds": "every_verified", "seed_order": "bm25_blocks_fused", "directions": list(DIRECTIONS),
-             "source": SOURCE, "citing_cap": CHAIN_CITING_CAP, "backward_batch": CHAIN_BACKWARD_BATCH,
-             "request_limit": budget["max_chain_requests"], "filter": FILTER,
-             "abstract_read": budget.get("chain_abstract_read", CHAIN_ABSTRACT_READ[effort]),
-             "plan_room": budget.get("chain_plan_room", CHAIN_PLAN_ROOM[effort])}
-    if "chain_sources" in budget:
-        block["sources"] = list(budget["chain_sources"])  # absent for a run queued before v2: OpenAlex alone
-    return block
-
-
-def enabled(budget: dict[str, Any]) -> bool:
-    return budget.get("citation_chaining") == "auto"
-
-
-def s2_planned(budget: dict[str, Any]) -> bool:
-    """Whether the budget froze Semantic Scholar as a chain source (v2). A run queued before that never asks it."""
-    return enabled(budget) and S2_SOURCE in (budget.get("chain_sources") or ())
-
-
-def s2_seed_links(seeds: list[dict[str, Any]], dois: dict[str, str | None]) -> tuple[list[dict[str, str]], int]:
-    """The seeds Semantic Scholar can be asked about (those with a DOI, in seed order) and how many it cannot.
-
-    `dois` is the DOI of each seed's work by source version id. A seed without one is skipped for this source and
-    counted, never hidden: the OpenAlex arm still chains it.
-    """
-    asked = [{"source_version_id": seed["source_version_id"], "doi": dois[seed["source_version_id"]]}
-             for seed in seeds if dois.get(seed["source_version_id"])]
-    return asked, len(seeds) - len(asked)
+    return {"enabled": True, "rule_version": fast["chain_rule"], "source": SOURCE, "sources": [SOURCE],
+            "directions": list(DIRECTIONS), "seeds": fast["chain_seeds"],
+            "backward_requests": fast["backward_requests"], "backward_page_size": fast["backward_page_size"],
+            "forward_requests": fast["forward_requests"], "forward_page_size": fast["forward_page_size"],
+            "citing_cap": fast["forward_page_size"],
+            "request_limit": fast["backward_requests"] + fast["forward_requests"],
+            "attempt_limit": attempt_limit(fast, effort),
+            "in_flight": fast["chain_in_flight"]}
 
 
 def norm_title(title: str | None) -> str:
     """A title as the seed rule compares it: case folded, every run of non-word characters one space."""
     return re.sub(r"\W+", " ", (title or "").casefold()).strip()
-
-
-def code_seeds(order: list[str], rows: dict[str, dict[str, Any]], user_works: set[str],
-               limit: int = CHAIN_SEEDS, user_titles: set[str] = frozenset()) -> list[str]:
-    """The first `limit` distinct works of the BM25-and-blocks order that are not the user's own seeds.
-
-    `rows` is the keyword pool by head (`work_id`, `title`). A head whose work or normalised title an earlier head
-    already holds is the same seed and is skipped before it is counted, so the list is `limit` works long whenever
-    the pool holds that many; a user seed is apart and never shortens it (decision 2). The title rule is wider than
-    SW6's merge on purpose (D95): two records of one paper that the record path left apart, a preprint server's copy
-    and the journal's, would otherwise spend two seeds on the same references; a head whose title is a user seed's
-    is that seed.
-    """
-    seen: set[str] = {f"title:{title}" for title in user_titles}
-    chosen: list[str] = []
-    for head in order:
-        row = rows.get(head)
-        if row is None or row["work_id"] in user_works:
-            continue
-        keys = {f"work:{row['work_id']}", f"title:{norm_title(row['title'])}"}
-        if keys & seen:
-            continue
-        seen |= keys
-        chosen.append(head)
-        if len(chosen) == limit:
-            break
-    return chosen
-
-
-def seed_list(order: list[str], rows: dict[str, dict[str, Any]], user: list[dict[str, Any]],
-              limit: int = CHAIN_SEEDS) -> list[dict[str, Any]]:
-    """The chain's seeds: `limit` code seeds from the BM25-and-blocks order, then every seed the user verified.
-
-    `user` is the verified seeds' rows (`id`, `work_id`), in `ranking.verified_seeds` order. The stored graph seeds of
-    the ranking are not read: `rank_records` fills them up to fifteen together with the user's, so they are shorter
-    than fifteen exactly when the user has seeds of their own (decision 2, Sol's finding).
-    """
-    code = code_seeds(order, rows, {row["work_id"] for row in user}, limit,
-                      {norm_title(row.get("title")) for row in user if row.get("title")})
-    return ([{"source_version_id": head, "kind": "code"} for head in code]
-            + [{"source_version_id": row["id"], "kind": "user"} for row in user])
-
-
-def directions(seed: dict[str, Any]) -> list[str]:
-    """Which way a seed is chained: backward when its reference list was read and names a work, forward when it has an
-    OpenAlex identifier to ask `cites:` for. A seed with neither is still a seed and is counted."""
-    return [name for name, ok in (("backward", bool(seed.get("references"))),
-                                  ("forward", bool(seed.get("openalex_ids")))) if ok]
-
-
-def backward_batches(seeds: list[dict[str, Any]], held: set[str], size: int = CHAIN_BACKWARD_BATCH) -> list[list[str]]:
-    """The referenced works the research does not hold yet, sorted, cut into batches of `size`.
-
-    A reference the research already holds sends no request: its record is here, and it is either a keyword work or
-    a work an earlier chain brought. A seed without a reference list adds nothing here.
-    """
-    wanted = sorted({ref for seed in seeds for ref in seed.get("references") or () if ref not in held})
-    return [wanted[start:start + size] for start in range(0, len(wanted), size)]
 
 
 def backward_links(seeds: list[dict[str, Any]], batch: Iterable[str]) -> list[tuple[str, str]]:
@@ -168,8 +86,3 @@ def chained_heads(linked_heads: Iterable[str], keyword_pool: set[str]) -> list[s
     keyword path already has it, and the chain adds nothing but a hit (slice 15, global constraint "one record path").
     """
     return sorted({head for head in linked_heads if head not in keyword_pool})
-
-
-def chain_order(ranked_order: list[str], chained: set[str]) -> list[str]:
-    """The chain's inspection order: the joint ranking's order with every keyword work taken out."""
-    return [head for head in ranked_order if head in chained]

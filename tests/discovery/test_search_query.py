@@ -454,31 +454,6 @@ def test_the_users_own_key_terms_are_searched_and_no_model_writes_a_query(tmp_pa
     assert "search_query" not in protocol_body(client, rid)
 
 
-def test_the_second_round_grows_from_the_model_query_s_own_records(tmp_path, monkeypatch):
-    from deixis.workflow import flow as flow_module
-
-    code_work = WORK | {"id": "https://openalex.org/W8", "doi": "https://doi.org/10.9/b",
-                        "display_name": "SYNTHETIC record only the code query finds"}
-
-    class TwoQueries(OpenAlex):
-        def __call__(self, request):
-            response = super().__call__(request)
-            query = request.url.params.get("search.title_and_abstract")
-            if request.url.params.get("select") != "id" and query != '"synthetic setting" AND "synthetic task"':
-                return httpx.Response(200, json={"meta": {"count": 1}, "results": [code_work]})
-            return response
-
-    read = []
-    candidates = flow_module.phrase_candidates.candidates
-    monkeypatch.setattr(flow_module.phrase_candidates, "candidates",
-                        lambda records, *rest: read.extend(r["title"] for r in records) or candidates(records, *rest))
-    client = client_for(tmp_path, monkeypatch, TwoQueries(), FakeAdapter())
-    rid, run_id = start(client)
-    _, run = wait(client, rid, run_id)
-    assert run["status"] == "completed", run
-    assert read == [WORK["display_name"]]
-
-
 def test_the_code_setting_makes_no_model_query_step(tmp_path, monkeypatch):
     setting = "code"
     for connector in CONNECTORS.values():

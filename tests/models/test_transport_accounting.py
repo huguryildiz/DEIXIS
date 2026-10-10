@@ -11,10 +11,11 @@ import httpx
 import pytest
 
 import connector_baseline as baseline
+import fast_search_helpers as fast
 from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES, PROVIDER_WAIT, SW_READ_LIMIT
 from deixis.providers import common, contract, facade, registry
 from deixis.workflow import flow as module
-from deixis.workflow.flow import Page, _QueryRead, page_allowance
+from deixis.workflow.flow import Page, page_allowance
 from test_connector_contract import dispatch_flow, candidate_lib, FIXTURES, body_of, endpoint_fixture
 from test_candidate_flow import queue_kill
 
@@ -305,24 +306,22 @@ def test_page_allowance_uses_declared_base_cost(pid, effort):
 
 
 def test_pubmed_read_stops_at_corrected_budget_and_carries_trace(dispatch_flow, monkeypatch):
+    # PubMed is not a fast-path discovery source; its two-stage request only stands in for a paged slot whose
+    # pages cost two requests each.
     flow, new_run = dispatch_flow
     run = new_run(("pubmed",))
-    monkeypatch.setitem(registry.CONNECTORS, "pubmed", replace(registry.CONNECTORS["pubmed"], max_results=1))
     monkeypatch.setattr(module, "page_allowance", lambda *args: 3)
     script = Script([("esearch", 200), ("efetch", 200)] * 2, total=100)
     use_client(flow, script)
-    read = _QueryRead(0, {"provider_id": "pubmed", "query_text": baseline.QUERY})
     with baseline.fake_clock():
-        assert asyncio.run(flow._read_query(run, read, False, "standard")) is False
-    # No step writes from the host task.
-    assert not flow.store.run_steps(run["id"])
-    assert len(read.pages) == 2 and read.pages[-1].stop_reason == "budget_exhausted"
-    flow._write_query(run, read)
+        asyncio.run(fast.search(flow, run, [{"provider_id": "pubmed", "query_text": baseline.QUERY}], cap=100, page_size=1))
+    steps = fast.provider_steps(flow, run)
+    assert [s["operation_key"] for s in steps] == ["search:0", "search:0:page:1"]
+    assert steps[-1]["output"]["stop_reason"] == "budget_exhausted"
     usage = flow.store.run(run["id"])["usage"]
     assert usage["query_requests"]["search:0"] == 4 <= 3 - 1 + 4
     assert usage["provider_requests"] == usage["provider_sends"] == 4
-    assert len(flow.store.run_steps(run["id"])) == 2
-    assert all(flow.store.step_output(s["id"])["transport"]["attempts"] == 2 for s in flow.store.run_steps(run["id"]))
+    assert all(s["output"]["transport"]["attempts"] == 2 for s in steps)
     assert not script.remaining
 
 
@@ -337,12 +336,7 @@ def test_missing_key_after_dispatch_keeps_trace_on_failed_page(dispatch_flow, mo
         return outcome
     monkeypatch.setitem(registry.CONNECTORS, "ieee_xplore", replace(registry.CONNECTORS["ieee_xplore"], search=search))
     use_client(flow, script)
-    read = _QueryRead(0, {"provider_id": "ieee_xplore", "query_text": baseline.QUERY})
-    with baseline.fake_clock():
-        asyncio.run(flow._read_query(run, read, False, "standard"))
-    assert not flow.store.run_steps(run["id"])
-    assert flow._write_query(run, read)[0] == "provider_not_configured"
-    step = flow.store.existing_step(run["id"], "search:0")
+    _, step, _ = send_page(flow, run, "ieee_xplore", retries=1)
     assert step["status"] == "failed" and step["output"]["status"] == "not_configured"
     assert step["output"]["transport"] == {"reserved": 2, "attempts": 1, "sends": 0,
         "dispatches": [{"subrequests": [{"url": "https://synthetic.invalid/search", "attempts": 1, "sends": 0,
@@ -516,18 +510,18 @@ def test_discovery_tight_share_minus_one_plus_reservation_bound(dispatch_flow, m
     stages = ["esearch", "efetch"] if pid == "pubmed" else ["search"]
     script = Script([(s, code) for s in stages for code in [429, 200]], total=100)
     use_client(flow, script)
-    read = _QueryRead(0, {"provider_id": pid, "query_text": baseline.QUERY})
+    q = {"provider_id": pid, "query_text": baseline.QUERY}
     with baseline.fake_clock():
-        asyncio.run(flow._read_query(run, read, False, "standard"))
-    flow._write_query(run, read)
+        asyncio.run(fast.search(flow, run, [q], cap=100, page_size=1))
     reserve = registry.CONNECTORS[pid].requests_per_search * 2
     assert flow.store.run(run["id"])["usage"]["query_requests"]["search:0"] == share - 1 + reserve
-    assert len(read.pages) == 1 and not script.remaining
-    assert read.pages[0].transport["attempts"] == reserve
-    # Already-spent share closes the next pending query operation without dispatch.
-    again = _QueryRead(0, read.query)
-    asyncio.run(flow._read_query(run, again, True, "standard"))
-    assert not again.pages
+    steps = fast.provider_steps(flow, run)
+    assert len(steps) == 1 and not script.remaining
+    assert steps[0]["output"]["transport"]["attempts"] == reserve
+    # The read ended on the spent share or the last page: a second pass, retrying failed searches, sends nothing.
+    use_client(flow, baseline.deny_network)
+    asyncio.run(fast.search(flow, run, [q], True, cap=100, page_size=1))
+    assert fast.provider_steps(flow, run) == steps
 
 
 @pytest.mark.parametrize("kind", ["missing_key", "quota"])

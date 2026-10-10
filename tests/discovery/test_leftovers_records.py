@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.domain.canonical import sha256_hex
 from deixis.models.adapter import ModelStepResult
-from deixis.providers import biorxiv
 from deixis.providers import query_compiler
 from deixis.workflow import lookups
 from fakes import FakeAdapter
@@ -73,15 +72,21 @@ def test_sw_records_freeze_stamp_digest_merge_and_open_a_later_revision(tmp_path
         queries = store.step(run_id, "vocabulary", "code:vocabulary")["output"]["queries"]
         assert json.loads(rows[0]["body_json"])["compiled_queries"] == [
             {k: q[k] for k in ("provider_id", "query_text")} for q in queries]
-        assert [(s["provider"], s["result_count"]) for s in view["search_runs"]] == [("openalex", 1), ("biorxiv", 2)]
-        assert run["usage"]["provider_requests"] == 2 and view["counts"]["unique"] == 2
+        # The fast path (D252) asks OpenAlex alone: the question to its semantic search, then the OpenAlex keyword
+        # query, then the chain. The bioRxiv query stays in the protocol and is dropped from the search plan.
+        searched = [s for s in view["search_runs"] if not s["query_text"].startswith("chain:")]
+        keyword = [q for q in queries if q["provider_id"] == "openalex"]
+        assert [(s["provider"], s["result_count"]) for s in searched] == [("openalex", 1), ("openalex", 1)]
+        assert [(s["provider"], s["query_text"]) for s in searched[1:]] == [
+            (q["provider_id"], q["query_text"]) for q in keyword]
+        plan = json.loads(rows[0]["body_json"])["fast_path_search"]
+        assert [(d["query"]["provider_id"], d["reason"]) for d in plan["dropped"]] == [("biorxiv", "openalex_only")]
+        assert run["usage"]["provider_requests"] == 2 and view["counts"]["unique"] == 1
         merged = next(s for s in view["sources"] if s["doi"] == "10.1/a")
-        assert merged["provider_records"] == ["biorxiv", "openalex"]
+        assert merged["provider_records"] == ["openalex"]  # the semantic, keyword and chain rows are one source
         assert "crossref" in view["scope"]["providers"] and "crossref" not in [q["provider_id"] for q in queries]
         assert lookups.in_scope(view["scope"], "crossref") is True
         assert adapter.calls and all("crossref" not in call["enabled_providers"] for call in adapter.calls)
-        assert [(s["provider"], s["query_text"]) for s in view["search_runs"]] == [
-            (q["provider_id"], q["query_text"]) for q in queries]
         second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"})
         assert second.status_code == 202, second.text
         view, later = wait_run(client, rid, second.json()["id"])
@@ -94,14 +99,15 @@ def test_sw_records_freeze_stamp_digest_merge_and_open_a_later_revision(tmp_path
 
 
 def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tmp_path, monkeypatch):
+    # The fast path searches OpenAlex alone (D252), so its keyword page is the one that fails here.
     attempts = []
     limited = True
     def handler(request):
-        if request.url.params.get("per_page") == "1":
-            return routed(request)
-        provider = "biorxiv" if biorxiv.SOURCE_ID in (request.url.params.get("filter") or "") else "openalex"
-        attempts.append((provider, request.url.params.get("search.title_and_abstract")))
-        if provider == "biorxiv" and limited:
+        params = request.url.params
+        if params.get("per_page") == "1" or "search.title_and_abstract" not in params:
+            return routed(request)  # count probes, the semantic search and the chain
+        attempts.append(params["search.title_and_abstract"])
+        if limited:
             return httpx.Response(429, headers={"retry-after": "60"})
         return routed(request)
     adapter = FakeAdapter()
@@ -111,8 +117,10 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
         rid, run_id = start(client)
         view, run = wait_run(client, rid, run_id)
         assert (run["status"], run["pause_reason"]) == ("completed", None)
-        assert [(s["provider"], s["status"]) for s in view["search_runs"]] == [("openalex", "completed"), ("biorxiv", "rate_limited")]
-        assert [s["status"] for s in run["steps"] if s["operation_key"].startswith("search:")] == ["succeeded", "failed"]
+        keyword = lambda view: [(s["provider"], s["status"]) for s in view["search_runs"] if s["query_text"] == attempts[0]]
+        assert keyword(view) == [("openalex", "rate_limited")]
+        assert [(s["operation_key"], s["status"]) for s in run["steps"] if s["operation_key"].startswith("search:")] == [
+            ("search:fast:semantic", "succeeded"), ("search:0", "failed")]
         assert view["counts"]["unique"] == 1
         assert run["budget"]["inspection"]["policy"] == "small_batch_fused_v1"
         assert any(s["operation_key"].startswith("small_batch:v1:")
@@ -128,8 +136,8 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
         assert retry.status_code == 200, retry.text
         view, run = wait_run(client, rid, run_id)
         assert run["status"] == "completed", run
-        assert [(s["provider"], s["status"]) for s in view["search_runs"]] == [("openalex", "completed"), ("biorxiv", "rate_limited"), ("biorxiv", "completed")]
-        assert attempts == [("openalex", attempts[0][1]), ("biorxiv", attempts[1][1]), ("biorxiv", attempts[1][1])]
+        assert keyword(view) == [("openalex", "rate_limited"), ("openalex", "completed")]
+        assert attempts == [attempts[0], attempts[0]]
         assert store.current_protocol(rid, 1) == frozen
         assert store.conn.execute("SELECT COUNT(*) FROM protocol_records WHERE research_id = ?", (rid,)).fetchone()[0] == 1
         assert [call for call in adapter.calls if call["task_type"] in ("vocabulary_labels", "criterion_proposal")] == planning_calls

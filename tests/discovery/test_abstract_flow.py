@@ -246,56 +246,28 @@ def test_a_record_without_an_abstract_is_never_out_of_scope_and_is_not_read(tmp_
     assert not any(title.startswith(OFF_TOPIC) for title in titles)
 
 
-# ---- the read limit leaves the rest unread, and the next run reads on --------------------------
+# ---- the read limit leaves the rest unread ------------------------------------------------------
 
 def test_a_work_outside_the_read_limit_is_unread_and_pending_not_dropped(tmp_path, monkeypatch):
-    size = ABSTRACT_READ_LIMIT["quick"] + 6
+    # The fast path reads the first N works of the frozen list (D251); Quick's N is 25.
+    size = 25 + 6
     app = app_for(tmp_path, monkeypatch, Pool([work(n) for n in range(size)]))
     client = client_of(app)
     try:
         rid, run_id, view, run = discover(client)
         store = app.state.store
+        window = store.run(run_id)["budget"]["fast_path"]["N"]
         plan = step_output(store, run_id, "abstract_stage")
         codes, selections = codes_of(store, rid), selections_of(store, rid)
-        deferred = store.existing_step(run_id, "small_batch:v1:deferred")["output"]
         order = DecisionStore(store).latest_ranking(rid, 1)
         unread = {key for key, code in codes.items() if code in (None, "abstract_not_read")}
         by_svid = {svid: key for key, svid in records_of(store, rid).items()}
     finally:
         client.__exit__(None, None, None)
-    assert plan["limit"] == ABSTRACT_READ_LIMIT["quick"]
-    assert len(deferred["items"]) == 6
+    assert window == 25 and plan["works_needing_model"] == window
     assert len(unread) == 6 and {by_svid[svid] for svid in order[-6:]} == unread
     assert {selections[key] for key in unread} == {("pending", "default")}
     assert len(store_candidates := codes) == size  # nothing was deleted
-
-
-def test_a_second_discovery_run_reads_on_from_where_the_first_stopped(tmp_path, monkeypatch):
-    """K3: the works the first run read are not asked about again; the next ones in the order are."""
-    size = ABSTRACT_READ_LIMIT["quick"] + 6
-    app = app_for(tmp_path, monkeypatch, Pool([work(n) for n in range(size)]))
-    client = client_of(app)
-    try:
-        rid, first_run, view, run = discover(client)
-        store = app.state.store
-        first_titles = shown_titles(store, first_run)
-        first_codes = codes_of(store, rid)
-        second_run, view, run = rerun(client, rid)
-        second_titles = shown_titles(store, second_run)
-        second_plan = step_output(store, second_run, "abstract_stage")
-        second_codes = codes_of(store, rid)
-        rows = store.conn.execute("SELECT COUNT(*) FROM stage_decisions WHERE research_id = ?", (rid,)).fetchone()[0]
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] == "completed"
-    unread = {key for key, code in first_codes.items() if code in (None, "abstract_not_read")}
-    assert len(unread) == 6 and second_plan["works_needing_model"] == 6
-    # Not one record was put to the model twice: the second run read the six the first left, and only those.
-    assert set(second_titles).isdisjoint(set(first_titles))
-    assert len(set(second_titles)) == 6 and len(second_titles) == 12  # six works, each read by two runs
-    assert not [key for key, code in second_codes.items() if code in (None, "abstract_not_read")]
-    # The second run rewrote nothing it had already decided: one row per record, plus the six it re-decided.
-    assert rows == len(first_codes)  # deferred works had no earlier stage decision to supersede
 
 
 def test_a_second_run_of_a_fully_read_research_asks_nothing_and_writes_no_row(tmp_path, monkeypatch):

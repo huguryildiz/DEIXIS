@@ -2,6 +2,9 @@
 
 PYTHONPATH=backend:. .venv/bin/python tests/query_baseline.py --write
 
+The entries of the SearchPlan v2 compiler (`compile_queries`, `_terms`, `_fit`, `_compact_openalex`) were taken out
+of the frozen file when that compiler was removed (clean start, slice 3a); every other entry is the e19a7f7 freeze.
+
 Arguments and results are interned by their order-preserving JSON bytes to keep
 the broad rule cross-product below 4 MB. No canonical/sorted conversion is used.
 """
@@ -76,7 +79,7 @@ def invoke(function, provider, endpoint, arguments):
         else:
             module = rules if function in ("syntax_issues", "boolean_part", "query_issues") else compiler
             method = getattr(module, function)
-            if function == "boolean_part" or function == "_fit":
+            if function == "boolean_part":
                 result = method(provider, *args, **kwargs)
             elif function in ("syntax_issues", "query_issues", "_render", "_rendered", "_fit_blocks"):
                 result = method(provider, *args, endpoint=endpoint, **kwargs)
@@ -180,8 +183,6 @@ def capture():
                 record("_rendered", pid, endpoint, (blocks,))
                 record("_fit_blocks", pid, endpoint, (blocks,))
                 record("render_query", pid, endpoint, (blocks,))
-        for core, family in pairs:
-            record("_fit", pid, None, (core, family))
         for endpoint in dict.fromkeys(("bulk", "nope")):
             if endpoint in connector.endpoints:
                 continue
@@ -194,7 +195,6 @@ def capture():
 
     for function, args in [("_render", (["alpha"], ["beta"])), ("_rendered", ([["alpha"], ["beta"]],))]:
         record(function, "unregistered", None, args, section="undeclared")
-    record("_fit", "unregistered", None, (["alpha"], ["beta"]))
     record("_fit_blocks", "unregistered", None, ([["alpha"], ["beta"]],))
     for pid, connector in registry.CONNECTORS.items():
         for endpoint in dict.fromkeys((None, *connector.endpoints, "bulk", "nope")):
@@ -210,22 +210,6 @@ def capture():
     providers = list(registry.CONNECTORS)
     provider_lists = [providers, providers[::-1], providers + providers[:2], providers[:3],
                       ["crossref", "serpapi"], ["semantic_scholar", "arxiv", "serpapi"]]
-    core = {"role": "core", "label": "Synthetic core", "synonyms": ["body area networks", "wearable sensors"]}
-    families = [{"role": role, "label": role, "synonyms": ["routing", "scheduling"]}
-                for role in ("mechanism", "method", "outcome", "context", "adjacent_field")]
-    plans = [[core], [core, *families], *[[core, family] for family in families],
-             [core, families[-1], families[0]], [dict(core, synonyms=["", "AND", "()"]), families[0]],
-             [core, dict(families[0], synonyms=core["synonyms"])]]
-    for concepts in plans:
-        for selected in provider_lists:
-            for limit in (0, 1, 2, 5, 100):
-                for depth in (0, 50):
-                    for strategy in ("legacy", "compact_openalex_v1"):
-                        record("compile_queries", None, None,
-                               ({"concepts": concepts, "providers": selected}, selected, limit),
-                               {"core_depth": depth, "strategy": strategy})
-    record("compile_queries", None, None, ({"concepts": [core], "providers": providers}, providers, 5),
-           {"strategy": "unknown"})
     vocabs = [vocabulary([["alpha", "beta"], ["gamma", "delta"], ["outcome"]]),
               vocabulary([]), vocabulary([[], ["task"]]), vocabulary([["alpha", "alpha"], ["beta"]]),
               {"terms": [{"block": "setting", "root": "root", "phrase": "root phrase", "in_query": "root", "dropped": None},
@@ -239,12 +223,8 @@ def capture():
         for pid, connector in registry.CONNECTORS.items():
             for endpoint in (None, *connector.endpoints):
                 record("compile_block_queries", pid, endpoint, (vocab, [pid], 100), {"routed": endpoint is not None})
-    for core_terms, family_terms in pairs:
-        record("_compact_openalex", None, None, (core_terms[0], family_terms[0] if family_terms else "of the art"))
     synonyms = [*TERMS.values(), "Alpha", "alpha", "Alpha", '"quoted"', "(parenthesized)", "[bracketed]", "", "   "]
-    record("_terms", None, None, ({"synonyms": synonyms},))
     for synonym in synonyms:
-        record("_terms", None, None, ({"synonyms": [synonym]},))
         record("quoted", None, None, (synonym,))
     record("NAMES", None, None)
     record("PLAIN_PROVIDERS", None, None)

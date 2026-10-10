@@ -31,7 +31,6 @@ def test_a_port_on_the_command_line_keeps_every_other_setting(monkeypatch, tmp_p
     monkeypatch.setenv("DEIXIS_PROTOCOL_APPROVAL", "as_proposed")
     monkeypatch.setenv("DEIXIS_FULLTEXT_FETCH", "off")
     monkeypatch.setenv("DEIXIS_FULLTEXT_ADJUDICATION", "off")
-    monkeypatch.setenv("DEIXIS_QUERY_STRATEGY", "compact_openalex_v1")
     monkeypatch.setenv("DEIXIS_MODEL_CONCURRENCY", "3")
     settings = settings_of(["serve", "--port", "8799", "--no-browser"], monkeypatch, tmp_path)
     assert settings.port == 8799
@@ -39,7 +38,6 @@ def test_a_port_on_the_command_line_keeps_every_other_setting(monkeypatch, tmp_p
     assert settings.protocol_approval == "as_proposed"
     assert settings.fulltext_fetch == "off"
     assert settings.fulltext_adjudication == "off"
-    assert settings.query_strategy == "compact_openalex_v1"
     assert settings.model_concurrency == 3
     assert settings.data_dir == tmp_path
 

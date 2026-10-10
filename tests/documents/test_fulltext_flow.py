@@ -135,6 +135,19 @@ def wait_for_retrieval(client, rid, index=0):
     return wait(client, rid, runs[index]["id"])
 
 
+def wait_for_all(client, rid):
+    """Every run of the research settled, with the fast path's own: the answer its discovery queues (D254) and a
+    late revision that reads the files the answer did not (D255)."""
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        view = client.get(f"/api/researches/{rid}").json()
+        late = {(a.get("late_revision_status") or {}).get("status") for a in view["answers"]}
+        if all(r["status"] in SETTLED for r in view["runs"]) and not late & {"waiting_fetch", "reading", "answering"}:
+            return view
+        time.sleep(0.05)
+    raise AssertionError("the runs did not settle")
+
+
 def step_output(store, run_id, key):
     row = store.conn.execute("SELECT output_json FROM run_steps WHERE run_id = ? AND operation_key = ?",
                              (run_id, key)).fetchone()
@@ -190,6 +203,7 @@ def test_a_closed_published_record_is_read_through_the_open_preprint_of_the_same
     try:
         rid, _, _, _ = discover(client)
         _, run = wait_for_retrieval(client, rid)
+        wait_for_all(client, rid)
         store = app.state.store
         head = records_of(store, rid)["W1"]
         output = json.loads(work_steps(store, run["id"])[head]["output_json"])
@@ -198,8 +212,9 @@ def test_a_closed_published_record_is_read_through_the_open_preprint_of_the_same
         client.__exit__(None, None, None)
     assert output["route"] == "work_version" and output["read_version"] != head
     assert output["version_label"] == "submittedVersion" and output["code"] == "not_read_yet"
-    # The decision is written on the version that was read, not on the published record (D4, D48).
-    assert decision["reason_code"] == "pdf_identity_unconfirmed" and decision["source_version_id"] == output["read_version"]
+    # The decision is written on the version that was read, not on the published record (D4, D48). The file names no
+    # work and nothing read it (no read in this run, and the fast path's late revision did not take it up).
+    assert decision["reason_code"] == "not_read_yet" and decision["source_version_id"] == output["read_version"]
 
 
 def test_a_file_that_names_the_work_is_recorded_as_confirmed_and_one_that_does_not_is_kept_anyway(tmp_path, monkeypatch):
@@ -212,6 +227,7 @@ def test_a_file_that_names_the_work_is_recorded_as_confirmed_and_one_that_does_n
     try:
         rid, _, _, _ = discover(client)
         _, run = wait_for_retrieval(client, rid)
+        wait_for_all(client, rid)
         store = app.state.store
         records, steps = records_of(store, rid), work_steps(store, run["id"])
         checks = {key: json.loads(steps[svid]["output_json"])["identity"] for key, svid in records.items()}
@@ -219,7 +235,9 @@ def test_a_file_that_names_the_work_is_recorded_as_confirmed_and_one_that_does_n
     finally:
         client.__exit__(None, None, None)
     assert checks == {"W1": "doi", "W2": "unconfirmed"}
-    assert codes == {"W1": "not_read_yet", "W2": "pdf_identity_unconfirmed"}
+    # The fast path's late revision (D255) reads both files after the answer: the confirmed one is read by the model,
+    # the unconfirmed one is kept and waits for the person, with no model call.
+    assert codes == {"W1": "all_parts_verified", "W2": "pdf_identity_unconfirmed"}
 
 
 @pytest.mark.parametrize("version,identity_status", [("submittedVersion", "mismatch"), (None, "doi_verified")])

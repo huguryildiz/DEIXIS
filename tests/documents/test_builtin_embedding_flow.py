@@ -36,6 +36,9 @@ from test_semantic_retrieval import two_page_research
 BUILTIN = {"provider": "builtin", "model": local_embedding.MODEL_ID}
 GEMINI = {"provider": "gemini", "model": embeddings.MODEL}
 BUILTIN_STORED = f"builtin:{local_embedding.MODEL_ID}"
+# A discovery run's queue consumer (D252) runs the built-in model with its frozen thread count, which is part of the
+# stored identity: scores of capped and default threads are different cache rows.
+DISCOVERY_STORED = f"{BUILTIN_STORED}:threads=4"
 TURKISH = "Kablosuz algılayıcı ağlarında paket boyutunun enerji tüketimine etkisi nedir?"
 KEY_TERMS = "packet size; energy consumption; wireless sensor networks"
 ENGLISH_SENTENCE = "The effect of packet size on energy consumption in wireless sensor networks."
@@ -116,9 +119,10 @@ class Session:
         return run_id, *wait(self.client, rid, run_id)
 
     def settled(self, rid, run_id):
+        # Read through the API: the worker's runs (the fast path queues more of them) share the store's connection.
         deadline = time.time() + 30
         while time.time() < deadline:
-            run = self.store.run(run_id)
+            run = next(r for r in self.client.get(f"/api/researches/{rid}").json()["runs"] if r["id"] == run_id)
             if run["status"] in ("completed", "failed", "paused", "cancelled"):
                 return run
             time.sleep(0.05)
@@ -242,7 +246,7 @@ def test_a_failed_third_batch_keeps_the_first_two_and_the_code_signals_rank_the_
     assert (step["status"], step["error_code"]) == ("partial", "embedding_failed")
     assert (step["output"]["embedded"], step["output"]["missing"], step["output"]["sources"]) == (20, 4, 24)
     assert output["signals"]["embedding"] == {"ran": True, "available": 20}
-    assert output["embedding_model"] == BUILTIN_STORED and output["embedding_this_run"] == 20
+    assert output["embedding_model"] == DISCOVERY_STORED and output["embedding_this_run"] == 20
 
 
 def test_a_pause_after_a_batch_stops_the_run_and_the_resumed_run_embeds_only_what_is_missing(session, small_batches):
@@ -255,12 +259,13 @@ def test_a_pause_after_a_batch_stops_the_run_and_the_resumed_run_embeds_only_wha
             s.pause()
     s.local.hook = hook
     rid, run_id, view, run = s.discover()
-    stored = len(s.store.source_similarities(rid, 1, BUILTIN_STORED))
+    stored = len(s.store.source_similarities(rid, 1, DISCOVERY_STORED))
     step = s.step(run_id)
     s.local.hook = None
     view, run = s.resume(rid, run_id)
     assert (run["status"], stored, step["status"]) == ("completed", 20, "running")
-    assert (step["output"]["provider"], step["output"]["stored_model"], step["output"]["embedded"]) == ("builtin", BUILTIN_STORED, 20)
+    # The queue consumer writes its counts when it closes (D252); the 20 stored scores are the paused run's progress.
+    assert (step["output"]["provider"], step["output"]["stored_model"]) == ("builtin", DISCOVERY_STORED)
     # Every record was embedded once: the same document calls as the run that was never paused.
     assert s.local.documents() == whole.local.documents() == 24
     assert [c for c in s.local.calls if c[0] == "document"] == [c for c in whole.local.calls if c[0] == "document"]
@@ -396,10 +401,13 @@ def test_stored_similarities_are_read_when_the_model_is_gone_and_nothing_new_is_
     calls = len(s.local.calls)
     run_id, view, run = s.again(rid)
     step, output = s.step(run_id), step_output(s.store, run_id, "ranking")
-    assert len(s.local.calls) == calls  # no call at all, not even the query
-    assert (step["status"], step["output"]["embedded"], step["output"]["from_store"]) == ("succeeded", 0, 24)
+    # The queue consumer embeds the query when the run starts (D252): that call fails, so the step says `failed`, yet
+    # no record is embedded again and the ranking reads the 24 stored scores.
+    assert [call for call in s.local.calls[calls:] if call[0] == "document"] == []
+    assert (step["status"], step["error_code"]) == ("failed", "embedding_failed")
+    assert (step["output"]["embedded"], step["output"]["from_store"]) == (0, 24)
     assert output["signals"]["embedding"] == {"ran": True, "available": 24} and output["embedding_from_store"] == 24
-    assert output["embedding_model"] == BUILTIN_STORED
+    assert output["embedding_model"] == DISCOVERY_STORED
 
 
 def test_with_nothing_missing_the_step_still_opens_and_the_ranking_reads_the_fifth_signal(session):
@@ -408,31 +416,21 @@ def test_with_nothing_missing_the_step_still_opens_and_the_ranking_reads_the_fif
     calls = len(s.local.calls)
     run_id, view, run = s.again(rid)
     step = s.step(run_id)
-    assert len(s.local.calls) == calls and step["status"] == "succeeded"
+    # The queue consumer embeds the query when the run starts (D252); no record is embedded again.
+    assert s.local.calls[calls:] == [("query", 1)] and step["status"] == "succeeded"
     assert (step["output"]["embedded"], step["output"]["from_store"], step["output"]["provider"]) == (0, 24, "builtin")
     assert step_output(s.store, run_id, "ranking")["signals"]["embedding"]["ran"] is True
 
 
-def test_every_finish_keeps_the_identity_and_an_old_step_takes_it_once_on_resume(session, small_batches, tmp_path, monkeypatch):
+def test_every_finish_keeps_the_identity(session, small_batches):
+    # A step opened before slice 21 and resumed is old-data compatibility, gone with the clean start (slice 3a).
     for name, local, status in (("ok", FakeLocal(), "succeeded"), ("partial", FakeLocal(fail_on=3), "partial"),
                                 ("failed", FakeLocal(unavailable=True), "failed")):
         s = session(name, local=local)
         rid, run_id, view, run = s.discover()
         step = s.step(run_id)
         assert step["status"] == status
-        assert (step["output"]["provider"], step["output"]["stored_model"]) == ("builtin", BUILTIN_STORED)
-    # A step opened before this slice (no output) and resumed takes the current setting once, marked.
-    store = Store(db.connect(tmp_path / "old.sqlite"))
-    db.migrate(store.conn)
-    rid = store.create_research("What is SYNTHETIC routing?", "academic", "quick", ["openalex"], "fake", "m", None)
-    run = store.create_run(rid, "discovery", {}, None)
-    store.step(run["id"], "source_similarity", "similarity:gemini-embedding-2")
-    store.set_setting("semantic_search", BUILTIN)
-    flow = object.__new__(ResearchFlow)
-    flow.store, flow.deps = store, SimpleNamespace(http=None, local_embedder=FakeLocal())
-    asyncio.run(flow._source_similarity(run, store.scope(rid), []))
-    output = store.existing_step(run["id"], "source_similarity")["output"]
-    assert (output["identity_from"], output["provider"], output["stored_model"]) == ("resume", "builtin", BUILTIN_STORED)
+        assert (step["output"]["provider"], step["output"]["stored_model"]) == ("builtin", DISCOVERY_STORED)
 
 
 def test_the_wait_budget_is_kept_across_a_pause_and_a_failed_step_keeps_its_waits(session, small_batches, clock):
@@ -557,7 +555,8 @@ def test_a_turkish_question_without_a_sentence_leaves_the_built_in_arm_off_and_s
     s = session()
     rid, run_id, view, run = s.discover(question=TURKISH, key_terms=KEY_TERMS)
     output = step_output(s.store, run_id, "ranking")
-    assert s.step(run_id) is None and s.local.calls == []
+    # The queue consumer opens its step as the run starts (D252) and records why the arm is off; nothing is embedded.
+    assert s.step(run_id)["output"]["embedding_off_reason"] == "english_question_missing" and s.local.calls == []
     assert output["signals"]["embedding"]["reason"] == "english_question_missing"
     assert view["semantic"]["arm"] == "english_question_missing" and view["semantic"]["needs_english_question"] is True
     # With the sentence saved, the next discovery run of the same revision embeds it.
@@ -852,7 +851,7 @@ def test_a_batch_of_another_dimension_than_the_query_is_a_bad_reply(session, sma
     s = session(handler=Gemini([None, None, three]), setting=GEMINI, gemini_key=True)
     rid, run_id, view, run = s.discover()
     step = s.step(run_id)
-    assert (step["status"], step["output"]["embedded"], step["output"]["dimensions"]) == ("partial", 10, 2)
+    assert (step["status"], step["output"]["embedded"]) == ("partial", 10)
     assert "bad_reply: vectors of 3 dimensions where the query had 2" in step["error_json"]
     assert len(s.store.source_similarities(rid, 1, embeddings.MODEL)) == 10 and run["status"] == "completed"
     # The passage path: the query has two dimensions, the passages three.

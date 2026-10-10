@@ -1,6 +1,11 @@
 """Source routing before the approval card: one field distribution request, a table of OpenAlex fields, and the
 queries compiled for the sources it chooses (slice 14, D93).
 
+Since the clean start (slice 3a) the fast path searches OpenAlex only and drops every other routed query
+(`openalex_only`), but routing still runs and is recorded on the card and in the protocol body (`source_routing`,
+`compiled_queries`). The tests of cards shown before routing existed (D93) and of their second round were removed with
+that old-data compatibility.
+
 Distributions, questions and records are SYNTHETIC and from more than one field; every transport is mocked. Passing
 shows which sources the rule chooses for a given distribution and that the run asks for it once — not that the share
 or the table are right for any real question (neither was measured), nor what a real distribution looks like.
@@ -17,7 +22,6 @@ from deixis.domain.rules import ROUTE_SHARE
 from deixis.providers import openalex as openalex_module
 from deixis.workflow import routing
 from deixis.workflow.flow import ResearchFlow
-import test_expansion_flow as expansion_flow
 from test_approval_flow import app_for as approval_app, approve, client_of as approval_client
 from test_search_query import proposal
 from test_vocabulary_flow import QUESTION, WORK, wait
@@ -270,15 +274,13 @@ def test_a_chosen_source_the_query_limit_leaves_without_a_query_is_not_called_se
     """Review of slice 14 (2026-09-23): `quick`'s three queries go to OpenAlex, Semantic Scholar and arXiv, and IEEE,
     chosen by the distribution, was listed as searched on the card and in the body."""
     openalex = Grouping(groups=[("Computer Science", 60), ("Engineering", 40)])
-    app = approval_app(tmp_path, monkeypatch, openalex)
+    app = approval_app(tmp_path, monkeypatch, openalex, approval="as_proposed")
     monkeypatch.setenv("IEEE_API_KEY", "SYNTHETIC-key")
     client = approval_client(app)
     try:
         rid, run_id = start(client, effort="quick")
         view, run = wait(client, rid, run_id)
         card = run["approval"]["routing"]
-        approve(client, run_id)
-        view, run = wait(client, rid, run_id)
         body = client.app.state.store.current_protocol(rid, 1)["body"]
     finally:
         client.__exit__(None, None, None)
@@ -288,61 +290,3 @@ def test_a_chosen_source_the_query_limit_leaves_without_a_query_is_not_called_se
     assert sorted(body["providers"]) == sorted(p for p in card["providers"] if p in queried)
     assert body["source_routing"]["chosen_not_queried"] == [p for p in card["providers"] if p not in queried]
     assert "ieee_xplore" in [row["provider_id"] for row in body["source_routing"]["chosen"]]
-
-
-def pre_routing_card(client, rid, run_id):
-    """Make this run's waiting card one shown before D93: no routing step, no routing in the proposal."""
-    store = client.app.state.store
-    store.conn.execute("DELETE FROM run_steps WHERE run_id = ? AND operation_key = 'source_routing'", (run_id,))
-    step = store.approval_step(run_id)
-    output = step["output"]
-    output["proposal"].pop("routing", None)
-    store.set_step_output(step["id"], output)
-
-
-def pre_routing_run(tmp_path, monkeypatch, terms=()):
-    """A detailed run with CORE in scope whose card is made a pre-D93 one before it is approved. The expansion's
-    SYNTHETIC field gives the run a second round; the distribution is not read (no marker), which changes nothing
-    here, as the routing is removed before the approval."""
-    app = approval_app(tmp_path, monkeypatch, expansion_flow.Field())
-    monkeypatch.setenv("CORE_API_KEY", "SYNTHETIC-key")
-    client = approval_client(app)
-    try:
-        body = {"question": expansion_flow.QUESTION, "model_connection": "fake", "requested_model": "fake-model",
-                "effort": "detailed"}
-        rid = client.post("/api/researches", json=body).json()["research"]["id"]
-        run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
-        wait(client, rid, run_id)
-        pre_routing_card(client, rid, run_id)
-        approve(client, run_id, terms=terms)
-        view, run = wait(client, rid, run_id)
-        store = client.app.state.store
-        card = store.approval_step(run_id)["output"]
-        expansion = store.existing_step(run_id, "vocabulary_expansion")
-        body = store.current_protocol(rid, 1)["body"]
-    finally:
-        client.__exit__(None, None, None)
-    return card, expansion, body
-
-
-def test_a_card_shown_before_routing_and_corrected_keeps_the_query_semantics_it_showed(tmp_path, monkeypatch):
-    """Review of slice 14 (2026-09-23): a correction on a card shown before D93 recompiled the queries with the
-    routing-era compiler, moving Semantic Scholar to the bulk endpoint and dropping CORE in the old scope revision."""
-    card, _, body = pre_routing_run(
-        tmp_path, monkeypatch, terms=[{"op": "add", "phrase": "SYNTHETIC mesh radios", "block": "setting"}])
-    approved = card["approved"]["queries"]
-    s2 = [q for q in approved if q["provider_id"] == "semantic_scholar"]
-    assert s2 and all("endpoint" not in q for q in s2)
-    assert "core" in {q["provider_id"] for q in approved}
-    assert card["approved"].get("routing") is None and "source_routing" not in body
-    assert "core" in body["providers"]
-
-
-def test_a_run_from_before_routing_compiles_its_second_round_as_its_first(tmp_path, monkeypatch):
-    """Review of slice 14 (2026-09-23): an old run's fresh second round took the bulk endpoint and left CORE out."""
-    _, expansion, _ = pre_routing_run(tmp_path, monkeypatch)
-    assert expansion is not None and expansion["status"] == "succeeded"
-    second = expansion["output"]["queries"]
-    assert second, "the SYNTHETIC expansion compiled no second-round query"
-    assert all("endpoint" not in q for q in second)
-    assert "core" in {q["provider_id"] for q in second}

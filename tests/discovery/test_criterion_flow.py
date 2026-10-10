@@ -9,7 +9,6 @@ is not a criterion anyone judged.
 import json
 
 import httpx
-import pytest
 from fastapi.testclient import TestClient
 
 from deixis.domain.canonical import sha256_hex
@@ -180,7 +179,8 @@ def run_with_proposals(tmp_path, monkeypatch, question=EXERCISE, **body):
 
 def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tmp_path, monkeypatch):
     rid, run, openalex, adapter = run_with_proposals(tmp_path, monkeypatch)
-    keys = steps_of(run)
+    # The fast path opens its embedding step (`source_similarity`) as the run starts; it sends nothing to a provider.
+    keys = [key for key in steps_of(run) if key != "source_similarity"]
     # The source routing of slice 14 (D93) follows the vocabulary, before the criterion.
     assert keys[:11] == ["vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
                          "source_routing", "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
@@ -333,22 +333,6 @@ def test_a_run_that_stops_for_key_terms_asks_for_no_criterion(tmp_path, monkeypa
 
 # ---- the second arm and the legacy workflow --------------------------------------------------------------------
 
-def test_the_expansion_revision_carries_the_same_criterion(tmp_path, monkeypatch):
-    """The easiest mistake in this slice: a second revision without the criterion would make every decision stale."""
-    from test_expansion_flow import Field, app_for as expansion_app, client_of, discover, protocols
-
-    app = expansion_app(tmp_path, monkeypatch, Field(), adapter=proposing())
-    client = client_of(app)
-    try:
-        rid, run_id, view, run = discover(client)
-        frozen = protocols(app.state.store, rid)
-    finally:
-        client.__exit__(None, None, None)
-    assert [row["reason"] for row in frozen] == [None, "data_expansion"]
-    first, second = (row["body"] for row in frozen)
-    assert first["inclusion_criterion"] is not None
-    assert sha256_hex(criterion_fields(second)) == sha256_hex(criterion_fields(first))
-    assert second["criterion_origin"] == first["criterion_origin"]
 def test_a_population_two_proposals_name_is_recorded_and_read_back_with_the_frozen_criterion(tmp_path, monkeypatch):
     """SW23 (D106): the role two runs named is required, the base run holds it, and both fields travel with the
     criterion into the protocol and back out of it. The proposals are SYNTHETIC."""

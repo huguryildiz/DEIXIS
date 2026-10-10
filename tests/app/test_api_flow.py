@@ -61,7 +61,7 @@ async def fake_fetch(url):
 def sw_settings(tmp_path):
     return Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1,
                     protocol_approval="as_proposed", search_query="code",
-                    fulltext_fetch="off", citation_chaining="off")
+                    fulltext_fetch="off")
 
 
 def app_for(tmp_path, adapter=None, http_status=200):
@@ -222,7 +222,9 @@ def test_question_to_cited_answer_and_restart(tmp_path):
 
         view, run = wait_run(client, rid, first["id"])
         assert run["status"] == "completed", run
-        assert view["counts"]["found"] == 3 and view["counts"]["unique"] == 3
+        # The fast path (D252) reads the same three works through the semantic search, the keyword query and the chain.
+        assert view["counts"]["unique"] == 3
+        assert view["counts"]["found"] == sum(s["result_count"] for s in view["search_runs"]) > 3
         view = include_sources(client, rid, view)
         assert all(s["selection"]["origin"] == "user" for s in view["sources"] if s["version_role"] == "record")
 

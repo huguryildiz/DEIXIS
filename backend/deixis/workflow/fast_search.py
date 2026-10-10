@@ -42,18 +42,6 @@ def stored_plan(store, run):
     return json.loads(row[0])["fast_path_search"]
 
 
-def applicable(store, run):
-    if not fast_path.enabled(run["budget"]) or run["kind"] != "discovery":
-        return False
-    step = store.existing_step(run["id"], "protocol")
-    if not step or step["status"] != "succeeded":
-        return True
-    row = store.conn.execute(
-        "SELECT body_json FROM protocol_records WHERE research_id = ? AND protocol_revision = ?",
-        (run["research_id"], step["output"]["protocol_revision"])).fetchone()
-    return row is not None and "fast_path_search" in json.loads(row[0])
-
-
 def close_queries(flow, run, specs, reason):
     """Close only unfinished queries; source exhaustion/failure remains its own outcome."""
     with transaction(flow.store.conn):

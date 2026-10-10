@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
+import fast_search_helpers
+
 from deixis.models.errors import limit_kind
 from deixis.providers import common
 from deixis.providers.registry import CONNECTORS
@@ -160,8 +162,7 @@ def test_search_round_records_suppression_and_retry_sends_again(quota_flow, monk
     flow, new_run = quota_flow
     run = new_run()
     calls = []
-    queries = [(index, {"provider_id": "openalex", "query_text": text})
-               for index, text in enumerate(("one", "two"))]
+    queries = [{"provider_id": "openalex", "query_text": text} for text in ("one", "two")]
 
     async def search(http, query, *args, **kwargs):
         calls.append(query)
@@ -175,8 +176,7 @@ def test_search_round_records_suppression_and_retry_sends_again(quota_flow, monk
     monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], search=search, key_env=None))
 
     async def discovery(current, scope):
-        await flow._search_round(current, queries, bool(current["budget"].get("retry_failed_searches_only")),
-                                 "standard")
+        await fast_search_helpers.search(flow, current, queries, bool(current["budget"].get("retry_failed_searches_only")))
         flow.store.update_run(current["id"], event="run_completed", status="completed")
 
     monkeypatch.setattr(flow, "_discovery", discovery)

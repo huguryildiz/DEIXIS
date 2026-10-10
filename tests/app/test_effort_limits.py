@@ -1,13 +1,17 @@
-"""What an effort bounds: how many records one `sw` query reads, and how long a run waits on a rate-limited provider
+"""What an effort bounds: how many records discovery reads, and how long a run waits on a rate-limited provider
 (D88, slice 13c).
+
+Since the clean start (slice 3a) the records read are the fast path's frozen `keyword_cap` (D252), read here through
+`fast_search.execute` (helpers in test_search_paging.py); `SW_READ_LIMIT` is left only in the page allowance and the
+protocol record.
 
 Records and provider answers are SYNTHETIC and from two fields, and every transport is mocked: passing shows workflow
 behavior — which request is sent, what ends a read, what a refused batch leaves on the record — not how long a real
 run takes, not what the limits do to recall, and not how often a real provider answers 429. Nothing here measures a
-duration: no effort stops a run at a time, and the minute targets of D88 are measured after this slice, not enforced
-by it. A `legacy` research is exercised too, because nothing about it may change.
+duration.
 """
 
+import hashlib
 import json
 
 import httpx
@@ -16,11 +20,11 @@ import pytest
 from deixis.config import Settings
 from deixis.domain.rules import PROVIDER_WAIT, SW_READ_LIMIT
 from deixis.providers import common, lookup
-from deixis.workflow import flow, protocol
+from deixis.workflow import fast_path, flow, protocol
 from fakes import FakeAdapter, valid_response
 from test_lookup_flow import Sources, app_for as lookup_app_for, decision_of, records_of, step_output
 from test_lookup_flow import client_of as lookup_client_of, discover as lookup_discover, work as lookup_work
-from test_search_paging import PagedProviders, app_for, client_of, discover, reached_screening, rows_of, wait
+from test_search_paging import ALPHA, BETA, PagedProviders, keyword_plan, keyword_reader, library, read_pages, work  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
@@ -46,45 +50,39 @@ def attempts_at(providers, start):
     return [page for page in providers.openalex if page[0] == start]
 
 
-def error_of(store, rid, page_number):
-    row = store.conn.execute(
-        "SELECT error_json FROM search_runs WHERE research_id = ? AND page_number = ? AND status = 'rate_limited'",
-        (rid, page_number)).fetchone()
-    return json.loads(row[0])
+def error_of(rows, page_number):
+    row = next(r for r in rows if r["page_number"] == page_number and r["status"] == "rate_limited")
+    return json.loads(row["error_json"])
 
 
-# ---- the read limit of an effort ---------------------------------------------------------------
+# ---- the records an effort reads ---------------------------------------------------------------
 
 
-def test_the_read_limit_is_this_research_s_effort(tmp_path, monkeypatch):
-    """`quick` stops at its own limit and counts what it left; a resumed run reads its stored pages and asks again
-    for nothing."""
-    monkeypatch.setattr(flow, "SW_READ_LIMIT", {"quick": 30, "standard": 60, "detailed": 90})
-    providers = PagedProviders(openalex_total=90)
-    client = client_of(app_for(tmp_path, monkeypatch, providers))
-    try:
-        rid, run_id, view, run = discover(client, effort="quick")
-        read = list(providers.openalex)
-        client.post(f"/api/runs/{run_id}/resume")
-        view, run = wait(client, rid, run_id)
-    finally:
-        client.__exit__(None, None, None)
-    assert providers.openalex == read == [(0, 20), (20, 10)]  # the last page asks only for what is left of the limit
-    rows = rows_of(view)
-    assert (rows[-1]["stop_reason"], rows[-1]["read_limit"], rows[-1]["read_total"]) == ("read_limit", 30, 30)
-    assert rows[-1]["unread_count"] == 60  # nothing read is dropped; what was not read is counted
+class DistinctPages(PagedProviders):
+    """OpenAlex pages whose records share no title, so a thousand of them are written without near-duplicate pairs
+    for the record linker to compare; only how many are read matters here."""
+
+    def __call__(self, request):
+        response = super().__call__(request)
+        if request.url.host != "api.openalex.org" or response.status_code != 200:
+            return response
+        payload = json.loads(response.content)
+        for result in payload["results"]:
+            result["display_name"] = "SYNTHETIC " + hashlib.sha256(result["id"].encode()).hexdigest()
+        return httpx.Response(200, json=payload)
 
 
-def test_a_deeper_effort_reads_further_into_the_same_query(tmp_path, monkeypatch):
-    monkeypatch.setattr(flow, "SW_READ_LIMIT", {"quick": 30, "standard": 60, "detailed": 90})
-    providers = PagedProviders(openalex_total=90)
-    client = client_of(app_for(tmp_path, monkeypatch, providers))
-    try:
-        rid, run_id, view, run = discover(client, effort="detailed")
-    finally:
-        client.__exit__(None, None, None)
-    rows = rows_of(view)
-    assert rows[-1]["read_total"] == 90 and rows[-1]["read_limit"] == 90 and rows[-1]["unread_count"] == 0
+@pytest.mark.parametrize("effort, cap", [("quick", 450), ("standard", 1000)])
+def test_the_keyword_cap_is_this_research_s_effort(library, tmp_path, effort, cap):
+    """The cap frozen for the effort stops the read and counts what it left; a deeper effort reads further into the
+    same query. (`detailed` keeps 500 of its 2,000 for the Semantic Scholar bulk slot; test_fast_path_search.py.)"""
+    library.run["budget"]["fast_path"] = fast_path.freeze_budget({}, effort)
+    providers = DistinctPages(openalex_total=1200)
+    research_flow, scope = keyword_reader(library, tmp_path, providers, effort=effort)
+    rows = read_pages(research_flow, library, scope, keyword_plan(library, scope, page_size=200))
+    assert providers.openalex == [(start, min(200, cap - start)) for start in range(0, cap, 200)]
+    assert (rows[-1]["stop_reason"], rows[-1]["read_limit"], rows[-1]["read_total"]) == ("record_cap", cap, cap)
+    assert rows[-1]["unread_count"] == 1200 - cap  # nothing read is dropped; what was not read is counted
 
 
 def test_the_page_request_allowance_shrinks_with_the_effort():
@@ -102,42 +100,32 @@ def test_the_page_request_allowance_shrinks_with_the_effort():
 # ---- waiting on a provider -----------------------------------------------------------------------
 
 
-def test_a_quick_page_that_is_rate_limited_ends_that_read_and_the_run_goes_on(tmp_path, monkeypatch):
-    """`quick` waits for no 429: the page is recorded `page_failed`, the pages before it stand, and the run goes on.
+def test_a_quick_page_that_is_rate_limited_ends_that_read_and_the_run_goes_on(library, tmp_path):
+    """`quick` waits for no 429: the page is recorded `page_failed`, the pages before it stand, and the other query
+    reads on.
 
     The provider states a wait of zero, so nothing but the effort keeps the page from being retried.
     """
-    providers = RefusedWithNoWait(openalex_total=45, crossref_total=12, fail_at=20)
-    app = app_for(tmp_path, monkeypatch, providers)
-    client = client_of(app)
-    try:
-        rid, run_id, view, run = discover(client, effort="quick")
-        error = error_of(app.state.store, rid, 1)
-    finally:
-        client.__exit__(None, None, None)
-    assert attempts_at(providers, 20) == [(20, 20)]  # asked once, not waited out
-    assert [(r["page_number"], r["status"], r["stop_reason"]) for r in rows_of(view)] == [
+    providers = RefusedWithNoWait(openalex_total=45, fail_at=20, fail_query=ALPHA)
+    research_flow, scope = keyword_reader(library, tmp_path, providers, effort="quick")
+    rows = read_pages(research_flow, library, scope, keyword_plan(library, scope, (ALPHA, BETA)))
+    assert [p for p in providers.queries if p == (ALPHA, 20)] == [(ALPHA, 20)]  # asked once, not waited out
+    alpha = [r for r in rows if r["query_text"] == ALPHA]
+    assert [(r["page_number"], r["status"], r["stop_reason"]) for r in alpha] == [
         (0, "completed", None), (1, "rate_limited", "page_failed")]
-    assert error["rate_limit_retries"] == 0  # the skipped wait is on the row, not silent
-    # The read that was refused ends there; the other provider reads all of its own and the run carries on (D18).
-    assert [(r["result_count"], r["stop_reason"]) for r in rows_of(view, "crossref")] == [(10, None), (2, "exhausted")]
-    assert reached_screening(run)
+    assert error_of(alpha, 1)["rate_limit_retries"] == 0  # the skipped wait is on the row, not silent
+    # The read that was refused ends there; the other query reads all of its own (D18).
+    assert [(r["result_count"], r["stop_reason"]) for r in rows if r["query_text"] == BETA] == [
+        (20, None), (20, None), (5, "exhausted")]
 
 
-def test_standard_waits_out_one_rate_limit_and_detailed_as_many_as_it_always_did(tmp_path, monkeypatch):
-    for effort, asked in (("standard", 2), ("detailed", 3)):
-        providers = RefusedWithNoWait(openalex_total=45, fail_at=20)
-        app = app_for(tmp_path, monkeypatch, providers)
-        client = client_of(app)
-        try:
-            rid, run_id, view, run = discover(client, effort=effort)
-            error = error_of(app.state.store, rid, 1)
-        finally:
-            client.__exit__(None, None, None)
-        assert attempts_at(providers, 20) == [(20, 20)] * asked, effort
-        assert error["rate_limit_retries"] == asked - 1, effort
-
-
+@pytest.mark.parametrize("effort, asked", [("standard", 2), ("detailed", 3)])
+def test_standard_waits_out_one_rate_limit_and_detailed_as_many_as_it_always_did(library, tmp_path, effort, asked):
+    providers = RefusedWithNoWait(openalex_total=45, fail_at=20)
+    research_flow, scope = keyword_reader(library, tmp_path, providers, effort=effort)
+    rows = read_pages(research_flow, library, scope, keyword_plan(library, scope))
+    assert attempts_at(providers, 20) == [(20, 20)] * asked
+    assert error_of(rows, 1)["rate_limit_retries"] == asked - 1
 
 
 def two_records_no_abstract():

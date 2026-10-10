@@ -134,35 +134,27 @@ def test_sw_protocol_carries_its_current_thresholds():
     assert [signal["signal"] for signal in body["signals"]] == ["bm25", "blocks", "tfidf", "graph", "joint", "embedding"]
 
 
-def test_an_sw_body_carries_the_chain_policy_its_budget_froze():
-    """D95: the setting is read from the run's budget, so both revisions of one run carry the same block."""
-    from deixis.workflow import protocol
+def test_an_sw_body_carries_the_fast_chain_policy_its_budget_froze():
+    """The chain block is read from the fast-path policy the run's budget froze, never from the settings of the moment."""
+    from deixis.workflow import fast_path, protocol
 
     scope = {"question": "SYNTHETIC question", "steering": None, "language_hint": None, "source_scope": "academic",
              "seed_mode": "question_only", "providers": ["openalex"], "model_connection": "fake",
              "requested_model": "fake-model", "reasoning_effort": None, "literature_model": None,
              "review_mode": "off", "effort": "standard"}
     settings = Settings(data_dir=None)
-    auto = {"citation_chaining": "auto", "max_chain_requests": 40}
-    sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, auto, None, [], "pkg_hash", settings)
+    budget = {"fast_path": fast_path.freeze_budget({}, "standard")}
+    sw = protocol.build_protocol(scope | {"search_workflow": "sw"}, budget, None, [], "pkg_hash", settings)
     assert sw["citation_chaining"] == {
-        "enabled": True, "rule_version": "deixis.citation_chaining.v1", "seeds": 15, "user_seeds": "every_verified",
-        "seed_order": "bm25_blocks_fused", "directions": ["backward", "forward"], "source": "openalex",
-        "citing_cap": 400, "backward_batch": 100, "request_limit": 40,
-        "filter": "gate_block_form_in_title_or_abstract", "abstract_read": 50, "plan_room": 12}
-    assert sw["thresholds"]["chain"] == {"seeds": 15, "citing_cap": 400, "backward_batch": 100, "request_limit": 40,
-                                         "abstract_read": 50, "plan_room": 12}
-    off = protocol.build_protocol(scope | {"search_workflow": "sw"}, {"citation_chaining": "off"}, None, [],
-                                  "pkg_hash", settings)
-    assert off["citation_chaining"] == {"enabled": False} and "chain" not in off["thresholds"]
+        "enabled": True, "rule_version": "fast_chain_v1", "source": "openalex", "sources": ["openalex"],
+        "directions": ["backward", "forward"], "seeds": 20, "backward_requests": 4, "backward_page_size": 50,
+        "forward_requests": 8, "forward_page_size": 25, "citing_cap": 25, "request_limit": 12,
+        "attempt_limit": 72, "in_flight": 5}
+    assert sw["thresholds"]["chain"] == {"seeds": 20, "backward_requests": 4, "backward_page_size": 50,
+                                         "forward_requests": 8, "forward_page_size": 25, "request_limit": 12,
+                                         "attempt_limit": 72}
     before = protocol.build_protocol(scope | {"search_workflow": "sw"}, {}, None, [], "pkg_hash", settings)
     assert "citation_chaining" not in before and "chain" not in before["thresholds"]
-
-
-
-
-
-
 
 
 def test_an_output_that_is_not_json_is_digested_as_text(tmp_path):

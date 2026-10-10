@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 import connector_baseline as baseline
+import fast_search_helpers
 from connector_baseline import SYNTHETIC_KEY, deny_network, response_spec, fake_clock
 from deixis.providers import common, contract, facade, registry
 from deixis.providers.common import SearchOutcome
@@ -154,7 +155,7 @@ COVERED_ELSEWHERE = {
     "module_value_errors": "test_connector_boundary::test_baseline_equivalence",
     "doi_merge_mappings": "test_provider_records::test_same_doi_from_two_providers_is_one_source_with_both_mappings",
     "arxiv_version_boundary": "test_provider_records::test_records_of_one_arxiv_preprint_are_versions_of_one_work_with_one_candidate",
-    "resume_pages_registry": "test_search_paging::test_a_resumed_run_asks_for_no_page_twice",
+    "resume_pages_registry": "test_fast_path_search::test_frozen_plan_cap_rotation_page_admission_and_resume",
     "resume_lookup_helpers": "test_lookup_flow::test_a_resumed_run_asks_no_doi_twice",
 }
 
@@ -505,88 +506,6 @@ def dispatch_flow(tmp_path):
     conn.close()
 
 
-@pytest.mark.parametrize("missing", [None, ""])
-def test_dispatched_missing_key_after_freeze_sends_nothing_and_records_a_step(tmp_path, monkeypatch, missing):
-    import test_search_parallelism as harness
-    from deixis.providers import common
-    monkeypatch.setattr(common.SEMANTIC_SCHOLAR_PACER, "interval_seconds", 0)
-    original = Store.freeze_protocol
-    frozen = []
-    def freeze(store, *args, **kwargs):
-        result = original(store, *args, **kwargs)
-        frozen.append(result)
-        if missing is None:
-            monkeypatch.delenv("SERPAPI_API_KEY", raising=False)
-        else:
-            monkeypatch.setenv("SERPAPI_API_KEY", missing)
-        return result
-    monkeypatch.setattr(Store, "freeze_protocol", freeze)
-    hosts = harness.Hosts(rate_limited=())
-    session = harness.Session(tmp_path / "missing", monkeypatch, hosts)
-    try:
-        session.discover()
-        assert frozen and not hosts.requests("serpapi.com")
-        store, run = session.store, session.run
-        step = store.existing_step(run["id"], "search:4")
-        assert (step["status"], step["error_code"], step["delivery_class"]) == ("failed", "not_configured", "before_send")
-        assert step["output"] == {"status": "not_configured", "result_count": 0}
-        assert run["usage"].get("query_requests", {}).get("search:4", 0) == 0
-        rows = [dict(r) for r in store.conn.execute("SELECT * FROM search_runs WHERE run_id = ?", (run["id"],))]
-        assert rows and all(r["provider"] != "serpapi" for r in rows)
-        assert {r["provider"] for r in rows} == {"openalex", "biorxiv", "semantic_scholar"}
-        assert all(r["status"] in {"completed", "zero_results"} for r in rows)
-        assert store.candidates(session.rid) and run["status"] != "failed"
-        usage = run["usage"]["provider_requests"]
-    finally:
-        session.close()
-    # A control run omits only the refused query; unrelated search accounting remains equal.
-    monkeypatch.setattr(harness, "FIRST_ROUND", harness.FIRST_ROUND[:-1])
-    control = harness.Session(tmp_path / "control", monkeypatch, harness.Hosts(rate_limited=()))
-    try:
-        control.discover()
-        assert control.run["usage"]["provider_requests"] == usage
-    finally:
-        control.close()
-
-
-@pytest.mark.parametrize("missing", [None, ""])
-def test_dispatched_missing_key_alone_pauses_then_retry_sends_once(dispatch_flow, monkeypatch, missing):
-    flow, new_run = dispatch_flow
-    run = new_run()
-    monkeypatch.setenv("IEEE_API_KEY", missing or "")
-    requests = []
-    def transport(request):
-        assert not requests and request.url.host == registry.CONNECTORS["ieee_xplore"].host
-        requests.append(request)
-        assert request.url.params["apikey"] == SYNTHETIC_KEY
-        return httpx.Response(200, text=(baseline.FIXTURES / "responses/ieee_xplore-2.json").read_text())
-    flow.deps.http = httpx.AsyncClient(transport=httpx.MockTransport(transport))
-    query = {"provider_id": "ieee_xplore", "query_text": baseline.QUERY}
-    async def discovery(current, scope):
-        failure = await flow._search_round(current, [(0, query)], bool(current["budget"].get("retry_failed_searches_only")), "standard")
-        searched = any(s["kind"].startswith("provider_search") and s["status"] == "succeeded" for s in flow.store.run_steps(current["id"]))
-        if failure and not searched:
-            flow._pause(current["id"], *failure)
-        flow.store.update_run(current["id"], status="completed")
-    monkeypatch.setattr(flow, "_discovery", discovery)
-    try:
-        asyncio.run(flow.execute(run["id"]))
-        paused = flow.store.run(run["id"])
-        assert paused["status"] == "paused" and paused["pause_reason"] == "provider_not_configured"
-        assert paused["usage"].get("provider_requests", 0) == 0 and not requests
-        step = flow.store.existing_step(run["id"], "search:0")
-        assert flow.store.conn.execute("SELECT count(*) FROM search_runs WHERE run_id = ?", (run["id"],)).fetchone()[0] == 0
-        monkeypatch.setenv("IEEE_API_KEY", SYNTHETIC_KEY)
-        flow.store.queue_failed_search_retry(run["id"])
-        flow.store.update_run(run["id"], status="running")
-        asyncio.run(flow.execute(run["id"]))
-        retried = flow.store.existing_step(run["id"], "search:0")
-        assert retried["id"] == step["id"] and retried["status"] == "succeeded" and len(requests) == 1
-        assert flow.store.run(run["id"])["usage"]["provider_requests"] == 1
-    finally:
-        asyncio.run(flow.deps.http.aclose())
-
-
 @pytest.mark.parametrize("key", [None, SYNTHETIC_KEY])
 def test_dispatch_reads_the_key_once_per_attempt(dispatch_flow, monkeypatch, key):
     flow, new_run = dispatch_flow
@@ -734,7 +653,6 @@ def test_pubmed_efetch_quota_stops_later_searches(dispatch_flow, monkeypatch):
 
 
 def test_repeated_cursor_stops_within_read_limit(dispatch_flow, monkeypatch):
-    from deixis.workflow import flow as module
     from test_provider_records import record
     flow, new_run = dispatch_flow
     run = new_run(("openalex",))
@@ -742,12 +660,12 @@ def test_repeated_cursor_stops_within_read_limit(dispatch_flow, monkeypatch):
     async def search(*args, **kwargs):
         calls.append(kwargs["cursor"])
         return SearchOutcome("completed", None, "SYNTHETIC repeated token", "keyless", records=[record(f"W{len(calls)}", doi=None)], next_cursor="*")
-    monkeypatch.setattr(module, "SW_READ_LIMIT", {"standard":3})
     monkeypatch.setitem(registry.CONNECTORS, "openalex", replace(registry.CONNECTORS["openalex"], search=search, key_env=None, max_results=1))
-    asyncio.run(flow._search_round(run, [(0,{"provider_id":"openalex","query_text":baseline.QUERY})], False, "standard"))
+    # The fast path's record cap bounds a provider that repeats its cursor; 3 slots of 1 record each.
+    asyncio.run(fast_search_helpers.search(flow, run, [{"provider_id":"openalex","query_text":baseline.QUERY}], cap=3, page_size=1))
     assert calls == ["*"] * 3
     rows = [dict(r) for r in flow.store.conn.execute("SELECT * FROM search_runs WHERE run_id = ? ORDER BY page_number", (run["id"],))]
-    assert len(rows) == 3 and rows[-1]["stop_reason"] == "read_limit" and rows[-1]["read_total"] == 3
+    assert len(rows) == 3 and rows[-1]["stop_reason"] == "record_cap" and rows[-1]["read_total"] == 3
 
 
 def test_same_title_different_doi_preserves_distinct_sources(dispatch_flow):

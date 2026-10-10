@@ -40,11 +40,6 @@ SW_READ_LIMIT = {"quick": 400, "standard": 1_000, "detailed": 1_000}
 # read this table.
 PROVIDER_WAIT = {"quick": 0, "standard": 1, "detailed": MAX_RATE_LIMIT_RETRIES}
 
-# How many hosts one round of sw discovery searches reads at once (D89, slice 13f). A host is asked one request at a
-# time whatever this is; the number bounds the hosts, not the requests to one of them, and is the same for every
-# effort. Hand-picked, not measured: whether four providers at once draws more 429s than one at a time is not known.
-SEARCH_PARALLEL_HOSTS = 4
-
 # Which domain source an sw discovery run searches, read from the OpenAlex field distribution of its gate query
 # (D93, slice 14). A source is searched when the fields it covers hold at least ROUTE_SHARE of the records together.
 # The table names OpenAlex fields (`primary_topic.field`), never words of a question. OpenAlex and Semantic Scholar
@@ -102,14 +97,9 @@ FULLTEXT_PASSAGES_PER_CALL = 12
 # `detailed` 1 in one run at 150 / 75. The chain's own abstract read and its own room in the full-text plan sit on top
 # of the keyword limits above, which do not change. 15 seeds cost 17-24 requests in the replay; the request limit
 # leaves room for seeds whose citing works take two pages. Hand-picked from one topic's replay, not optimised.
+# The old chain is gone (clean start, slice 3a): CHAIN_SEEDS and CHAIN_ABSTRACT_READ only feed Home's depth text
+# (`effort_limits`) until that text is rewritten; the fast chain's own numbers are in `fast_path.MODES`.
 CHAIN_SEEDS = 15
-CHAIN_CITING_CAP = 400
-CHAIN_CITING_PAGE = 200
-CHAIN_BACKWARD_BATCH = 100
-# Semantic Scholar's chain arm (D229): one seed is one request per direction. `/references` and `/citations` page by
-# `offset` and `limit` with limit <= 1000 (API description read 2026-10-05); a seed's references are read in one page of
-# that size, its citing works up to CHAIN_CITING_CAP in one page, so the arm spends at most two requests per seed.
-CHAIN_S2_BACKWARD_LIMIT = 1000
 CHAIN_ABSTRACT_READ = {"quick": 20, "standard": 50, "detailed": 50}
 # Plan room 25 -> 12 in standard and detailed on 2026-09-23, after the first acceptance (D95): the chain's own time was
 # 3.50 / 3.81 / 3.30 min against 3.0 with 25; 12 is the smallest room that kept the three chained verified works
@@ -117,7 +107,6 @@ CHAIN_ABSTRACT_READ = {"quick": 20, "standard": 50, "detailed": 50}
 # was 2.04 / 2.19 min against 2.0 with 20. Both changes were made after the results were seen, agreed with gpt-6-sol
 # medium (.local/archive/sw/sw-slice15-acceptance-2026-09-23/sol-decision*.md).
 CHAIN_PLAN_ROOM = {"quick": 12, "standard": 12, "detailed": 12}
-CHAIN_REQUEST_LIMIT = 40
 FULLTEXT_CRITERION_PASSAGES = 8
 FULLTEXT_QUOTE_MIN_CHARS = 12
 

@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import math
 from typing import Any
 
 from deixis.domain import canonical
 from deixis.domain.reason_codes import reason
-from deixis.domain.rules import ABSTRACT_READ_LIMIT, CHAIN_ABSTRACT_READ, FULLTEXT_RUNS
-from deixis.storage.db import now, transaction
-from deixis.workflow import adjudication, chaining, fast_path, fulltext, ranking
+from deixis.domain.rules import ABSTRACT_READ_LIMIT, FULLTEXT_RUNS
+from deixis.storage.db import transaction
+from deixis.workflow import adjudication, fast_path, fulltext, ranking
 from deixis.workflow.decisions import DecisionStore
 
 POLICY = "small_batch_fused_v1"
@@ -102,8 +101,7 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
     body["inspection"] = {
         "policy": POLICY, "runner_version": 4, "batch_size": BATCH_SIZE, "minimum_processed_works": MINIMUM,
         "discovery_model_calls": budget["max_model_calls"],
-        "abstract_limit": ABSTRACT_READ_LIMIT[effort] + (
-            budget.get("chain_abstract_read", CHAIN_ABSTRACT_READ[effort]) if chaining.enabled(budget) else 0),
+        "abstract_limit": ABSTRACT_READ_LIMIT[effort],
         "fetch_limit": fetch.get("max_fulltext_works", 0) + fetch.get("chain_room", 0),
         "read_limit": body["max_fulltext_reads"], "max_model_calls": body["max_model_calls"],
         "fetch_attempts": fulltext.FULLTEXT_WORK_ATTEMPTS,
@@ -297,7 +295,7 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
     def build() -> dict[str, Any]:
         store, rid = flow.store, run["research_id"]
         versions, by_work, keyword = ranking.pool_rows(store, rid, run["scope_revision"])
-        chained = flow._chain_filter(run) if chaining.enabled(run["budget"]) or fast_path.chain_on(run["budget"]) else []
+        chained = flow._chain_filter(run)
         heads = store.work_heads(rid)
         pool = {row["work_id"]: row for row in keyword}
         for head in chained:
@@ -342,9 +340,8 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
                     "keyword_heads": DecisionStore(store).ranking_order(keyword_step["id"]),
                     "chain_heads": chained,
                     "keyword_step": keyword_step["id"]}
-        if fast_path.chain_on(run["budget"]):
-            from deixis.workflow.fast_chain import manifest as chain_manifest
-            manifest["fast_path"] = chain_manifest(store, run)
+        from deixis.workflow.fast_chain import manifest as chain_manifest
+        manifest["fast_path"] = chain_manifest(store, run)
         return build_list(manifest)
     return save_code(flow, run, LIST_KEY, "code:small_batch_list", build)
 
@@ -437,254 +434,22 @@ def stored_progress(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
 
 
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
-    from deixis.workflow import fast_path
-    if (flow.store.existing_step(run["id"], LIST_KEY) is None and chaining.enabled(run["budget"])
-            and not fast_path.chain_on(run["budget"])):
-        forms = flow._chain_forms(run, scope, vocabulary)
-        seeds = flow._chain_seeds(run, scope)
-        flow._enter_clock_stage(run, "chain")
-        await flow._chain_requests(run, scope, seeds, forms)
-        flow._close_clock_stage(run, "chain")
-        flow._checkpoint(run["id"], run["scope_revision"])
-        chained = flow._chain_filter(run)
-        if chained:
-            from deixis.workflow import lookups
-            words, _ = lookups.title_words(vocabulary)
-            lookups.flag_and_decide(flow.store, run, scope, words,
-                                   works=set(flow.store.work_ids(chained).values()), key="chain_record_flags")
-            await flow._source_similarity(run, scope, [{"source_version_id": head} for head in chained],
-                                          key="small_batch:v1:chain_similarity", identity_step="source_similarity")
-        flow._chain_summary(run)
-    if fast_path.chain_on(run["budget"]) and flow.store.existing_step(run["id"], LIST_KEY) is None:
+    if flow.store.existing_step(run["id"], LIST_KEY) is None:
         chained = flow._chain_filter(run)
         from deixis.workflow import lookups
         words, _ = lookups.title_words(vocabulary)
         lookups.flag_and_decide(flow.store, run, scope, words,
                                works=set(flow.store.work_ids(chained).values()), key="chain_record_flags")
     listing = freeze_list(flow, run, scope, vocabulary)
-    from deixis.workflow import fast_path
-    if fast_path.enforces(run["budget"], "read"):
-        from deixis.workflow import fast_read
-        flow._close_clock_stage(run, "ranking")
-        flow._enter_clock_stage(run, "read")
-        if fast_path.chain_on(run["budget"]):
-            only = {svid for item in listing["items"][:run["budget"]["fast_path"]["N"]] for svid in item["versions"]}
-            await flow._second_sources(run, scope, vocabulary, only=only)
-            from deixis.workflow.fast_chain import read_versions
-            snapshot = read_versions(flow, run, listing)
-            await fast_read.execute(flow, run, scope, vocabulary, listing, read_versions=snapshot["versions"])
-        else:
-            await fast_read.execute(flow, run, scope, vocabulary, listing)
-        flow._close_clock_stage(run, "read")
-        return
-    if run["budget"]["inspection"].get("runner_version", 1) >= 4:
-        await execute_pipeline(flow, run, scope, vocabulary, listing)
-        return
-    # Resume must retain the boundaries frozen by the run, including v1's 30-work plans.
-    batch_size = run["budget"]["inspection"].get("batch_size", 30)
-    for number in range((len(listing["items"]) + batch_size - 1) // batch_size):
-        flow._checkpoint(run["id"], run["scope_revision"])
-        key = f"small_batch:v1:{listing['manifest_hash']}:{number}"
-        closed = flow.store.existing_step(run["id"], f"{key}:close")
-        if closed and closed["status"] == "succeeded":
-            continue
-        abstract_used = sum(sum(len(batch) for batch in (s["output"] or {}).get("batches", []))
-                            for s in steps(flow.store, run["id"])
-                            if s["operation_key"].endswith(":abstract_stage") and s["status"] == "succeeded")
-        # An existing plan may still owe fetches/reading after a restart; finish it before deferring new work.
-        if (flow.store.existing_step(run["id"], f"{key}:plan") is None
-                and ((flow.store.existing_step(run["id"], f"{key}:abstract_stage") is None
-                      and abstract_used >= run["budget"]["inspection"]["abstract_limit"])
-                     or flow.store.run(run["id"])["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"])):
-            save_code(flow, run, "small_batch:v1:deferred", "code:small_batch_deferred", lambda: {
-                "reason": "budget_deferred", "items": listing["items"][number * batch_size:]})
-            break
-        plan = save_code(flow, run, f"{key}:plan", "code:small_batch_plan", lambda: next_batch(listing, number, batch_size))
-        flow._small_batch_guard = {"run_id": run["id"], "rid": run["research_id"],
-                                   "user_signature": user_signature(flow.store, run["research_id"])}
-        valid = unchanged_heads(flow.store, run["research_id"], listing, plan["items"])
-        flow._small_batch_guard["versions"] = {svid: listing["manifest"]["versions"][svid]
-                                                for item in plan["items"] if item["head"] in valid
-                                                for svid in item["versions"]}
-        try:
-            await execute_batch(flow, run, scope, vocabulary, listing, plan, key)
-            by_work = {work["work_id"]: work for work in flow._fulltext_works(run["research_id"])}
-            valid = unchanged_heads(flow.store, run["research_id"], listing, plan["items"])
-            states = progress_view(listing, steps(flow.store, run["id"]), list(by_work.values()))["items"]
-            save_code(flow, run, f"{key}:close", "code:small_batch_close", lambda: {
-                "batch_hash": plan["hash"], "items": [item if item["head"] in valid else work_state(item, None)
-                                                      for item in states if item["work_id"] in plan["work_ids"]]})
-        finally:
-            flow._small_batch_guard = None
-    save_code(flow, run, "small_batch:v1:summary", "code:small_batch_summary", lambda:
-              progress_view(listing, steps(flow.store, run["id"]), flow._fulltext_works(run["research_id"])))
-
-
-def consumed(flow: Any, run: dict[str, Any], suffix: str, field: str) -> int:
-    return sum(len((s["output"] or {}).get(field, [])) for s in steps(flow.store, run["id"])
-               if s["operation_key"].startswith("small_batch:v1:") and s["operation_key"].endswith(suffix)
-               and s["status"] == "succeeded")
-
-
-async def execute_batch(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                        listing: dict[str, Any], plan: dict[str, Any], key: str, *, prepare_only: bool = False) -> None:
-    from deixis.workflow.flow import _Held, RunStopped
-    store, rid = flow.store, run["research_id"]
-    flow._checkpoint(run["id"], run["scope_revision"])
-    room = run["budget"]["inspection"]
-    order = unchanged_heads(store, rid, listing, plan["items"])
-    abstract_used = sum(sum(len(batch) for batch in (s["output"] or {}).get("batches", []))
-                        for s in steps(store, run["id"])
-                        if s["operation_key"].endswith(":abstract_stage") and s["status"] == "succeeded"
-                        and s["operation_key"] != f"{key}:abstract_stage")
-    flow._abstract_code_stage(run, scope, vocabulary, order, batch_key=key,
-                              read_limit=max(0, room["abstract_limit"] - abstract_used))
-    groups = None
-    if room.get("runner_version", 1) >= 3:
-        groups = prepare_abstract_groups(flow, run, scope, vocabulary, listing, plan, key)
-    def corpus() -> list[dict[str, Any]]:
-        return [work for work in flow._fulltext_works(rid) if work["head"] in order]
-    baseline = save_code(flow, run, f"{key}:baseline", "code:small_batch_baseline", lambda:
-                         fulltext.baseline_of(corpus(), as_of=now(), scope_revision=run["scope_revision"],
-                                              limit=max(0, room["fetch_limit"] - len(flow._claims(run["id"])))))
-    held = flow._held[run["id"]] = _Held(run["scope_revision"])
-    errors: list[BaseException] = []
-
-    async def fetch_work(wid: str) -> None:
-        try:
-            await flow._overlap_work(run, wid)
-        except BaseException:
-            halt_pipeline(flow, run)
-            held.halted = True
-            held.wake.set()
-            raise
-
-    async def fetch_arm() -> None:
-        in_flight: set[asyncio.Task[Any]] = set()
-        sent: set[str] = set()
-        try:
-            while True:
-                flow._checkpoint(run["id"], run["scope_revision"])
-                works = corpus()
-                stage = store.existing_step(run["id"], f"{key}:abstract_stage")["output"]
-                prefix = f"{key}:abstract_screening"
-                pending = {wid for n, batch in enumerate(stage["batches"])
-                           if n not in held.closed.get(prefix, set()) and not held.model_done
-                           for wid in store.work_ids(batch).values()}
-                if groups is not None:
-                    pending = {wid for group in groups["groups"]
-                               if 0 not in held.closed.get(f"{group['key']}:abstract_screening", set())
-                               and not held.model_done
-                               for wid in store.work_ids(group["sources"]).values()}
-                safe = fulltext.safe_to_fetch(works, order, baseline["limit"], (), 0, pending, baseline,
-                                              preserve_order=True)
-                claims = flow._claims(run["id"])
-                # A claim retains its slot on resume and after a user changes its eligibility.
-                valid_work_ids = {work["work_id"] for work in works}
-                queue = [wid for wid in plan["work_ids"] if wid in claims and wid not in sent
-                         and wid in valid_work_ids
-                         and claims[wid]["status"] not in ("succeeded", "failed")]
-                for wid in safe:
-                    if wid not in claims and len(claims) < room["fetch_limit"]:
-                        flow._claim(run["id"], wid, not held.model_done, "small_batch")
-                        claims = flow._claims(run["id"])
-                        queue.append(wid)
-                while queue and len(in_flight) < fulltext.FULLTEXT_FETCH_PARALLEL:
-                    flow._checkpoint(run["id"], run["scope_revision"])
-                    wid = queue.pop(0)
-                    sent.add(wid)
-                    in_flight.add(asyncio.create_task(fetch_work(wid)))
-                if not in_flight:
-                    if held.model_done:
-                        break
-                    held.wake.clear()
-                    await held.wake.wait()
-                    continue
-                waiter = asyncio.create_task(held.wake.wait())
-                done, _ = await asyncio.wait(in_flight | {waiter}, return_when=asyncio.FIRST_COMPLETED)
-                waiter.cancel()
-                held.wake.clear()
-                for task in done - {waiter}:
-                    in_flight.remove(task)
-                    task.result()
-        except BaseException:
-            halt_pipeline(flow, run)
-            held.halted = True
-            held.wake.set()
-            raise
-        finally:
-            # Pause/error never leaves work running behind a closed batch.
-            results = await asyncio.gather(*in_flight, return_exceptions=True)
-            errors.extend(exc for exc in results if isinstance(exc, BaseException))
-
-    async def model_arm() -> None:
-        try:
-            if groups is None:
-                await flow._abstract_stage(run, scope, vocabulary, order, batch_key=key,
-                                           read_limit=max(0, room["abstract_limit"] - abstract_used))
-            else:
-                # Complete both readings of each ordered group before submitting the next.
-                for index, group in enumerate(groups["groups"]):
-                    await flow._abstract_stage(run, scope, vocabulary, order,
-                        batch_key=group["key"], frozen_plan={"batches": [group["sources"]], "runs": 2})
-                    if set(group["sources"]) <= flow._human_decided_records(rid, group["sources"]):
-                        continue
-                    calls = [store.existing_step(run["id"], f"{group['key']}:abstract_screening:0:{n}")
-                             for n in (1, 2)]
-                    if any(call is None or (call["status"] != "succeeded"
-                           and call.get("error_code") != "invalid_model_output") for call in calls):
-                        unread = [svid for later in groups["groups"][index + 1:] for svid in later["sources"]
-                                  if svid not in flow._human_decided_records(rid, later["sources"])]
-                        if unread:
-                            step = store.existing_step(run["id"], f"{group['key']}:abstract_stage")
-                            flow._write_abstract_codes(run, step["id"],
-                                                      [(svid, "abstract_not_read") for svid in unread])
-                        break
-        except BaseException:
-            # Publish the stop before waking fetch: unscreened work must never become safe on an error.
-            held.halted = True
-            halt_pipeline(flow, run)
-            held.wake.set()
-            raise
-        else:
-            held.model_done = True
-            held.wake.set()
-
-    try:
-        tasks = {asyncio.create_task(model_arm()), asyncio.create_task(fetch_arm())}
-        while tasks:
-            done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
-                if (exc := task.exception()) is not None:
-                    errors.append(exc)
-                    held.halted = True
-                    held.wake.set()
-    finally:
-        del flow._held[run["id"]]
-    if errors:
-        failure = next((exc for exc in errors if not isinstance(exc, RunStopped)), None)
-        if failure:
-            raise failure
-        if held.stop:
-            kind, why, detail = held.stop
-            (flow._fail if kind == "fail" else flow._pause)(run["id"], why, detail)
-        flow._checkpoint(run["id"], run["scope_revision"])
-        raise RunStopped
-    flow._checkpoint(run["id"], run["scope_revision"])
-    if not prepare_only:
-        await read_batch(flow, run, scope, listing, plan, key, order=order)
-
-
-async def read_batch(flow: Any, run: dict[str, Any], scope: dict[str, Any], listing: dict[str, Any],
-                     plan: dict[str, Any], key: str, *, order: list[str] | None = None) -> None:
-    used = consumed(flow, run, ":adjudication_plan", "works")
-    store = flow.store
-    own = store.existing_step(run["id"], f"{key}:adjudication_plan")
-    if own and own["status"] == "succeeded":
-        used -= len(own["output"]["works"])
-    await flow._fulltext_adjudication(run, scope, batch_key=key,
-        order=order if order is not None else unchanged_heads(store, run["research_id"], listing, plan["items"]),
-        read_limit=max(0, run["budget"]["inspection"]["read_limit"] - used))
+    from deixis.workflow import fast_read
+    flow._close_clock_stage(run, "ranking")
+    flow._enter_clock_stage(run, "read")
+    only = {svid for item in listing["items"][:run["budget"]["fast_path"]["N"]] for svid in item["versions"]}
+    await flow._second_sources(run, scope, vocabulary, only=only)
+    from deixis.workflow.fast_chain import read_versions
+    snapshot = read_versions(flow, run, listing)
+    await fast_read.execute(flow, run, scope, vocabulary, listing, read_versions=snapshot["versions"])
+    flow._close_clock_stage(run, "read")
 
 
 def halt_pipeline(flow: Any, run: dict[str, Any]) -> None:
@@ -695,185 +460,3 @@ def halt_pipeline(flow: Any, run: dict[str, Any]) -> None:
         if held:
             held.halted = True
             held.wake.set()
-
-
-async def execute_pipeline(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                           listing: dict[str, Any]) -> None:
-    """Prepare one next batch while reading the previous; reads and closures stay ordered.
-
-    Only one preparation owns `_held` and the four fetch slots. Both model arms
-    use the existing shared limiter; guards cover both batches until they drain.
-    Persisted plans, claims and model operation keys are reused after interruption.
-    """
-    from deixis.workflow.flow import RunStopped
-    store, rid = flow.store, run["research_id"]
-    room = run["budget"]["inspection"]
-    size = room["batch_size"]
-    pending: asyncio.Task[Any] | None = None
-    flow._small_batch_guard = {"run_id": run["id"], "rid": rid,
-                              "user_signature": user_signature(store, rid), "versions": {},
-                              "user_signatures": {}, "reserved_calls": set(), "halted": False}
-
-    async def prepare(plan: dict[str, Any], key: str) -> None:
-        try:
-            await execute_batch(flow, run, scope, vocabulary, listing, plan, key, prepare_only=True)
-        except BaseException:
-            halt_pipeline(flow, run)
-            raise
-
-    async def finish(plan: dict[str, Any], key: str) -> None:
-        try:
-            await read_batch(flow, run, scope, listing, plan, key)
-            flow._checkpoint(run["id"], run["scope_revision"])
-            valid = unchanged_heads(store, rid, listing, plan["items"])
-            states = progress_view(listing, steps(store, run["id"]), flow._fulltext_works(rid))["items"]
-            save_code(flow, run, f"{key}:close", "code:small_batch_close", lambda: {
-                "batch_hash": plan["hash"], "items": [item if item["head"] in valid else work_state(item, None)
-                                                      for item in states if item["work_id"] in plan["work_ids"]]})
-            flow._small_batch_guard["user_signatures"].pop(key, None)
-        except BaseException:
-            halt_pipeline(flow, run)
-            raise
-
-    try:
-        for number in range((len(listing["items"]) + size - 1) // size):
-            if pending and pending.done():
-                await pending
-                pending = None
-            if pending is None:
-                flow._small_batch_guard["versions"] = {}
-            flow._checkpoint(run["id"], run["scope_revision"])
-            key = f"small_batch:v1:{listing['manifest_hash']}:{number}"
-            closed = store.existing_step(run["id"], f"{key}:close")
-            if closed and closed["status"] == "succeeded":
-                continue
-            used = sum(len(batch) for s in steps(store, run["id"])
-                       if s["operation_key"].endswith(":abstract_stage") and s["status"] == "succeeded"
-                       for batch in (s["output"] or {}).get("batches", []))
-            if (store.existing_step(run["id"], f"{key}:plan") is None
-                    and ((store.existing_step(run["id"], f"{key}:abstract_stage") is None
-                          and used >= room["abstract_limit"])
-                         or store.run(run["id"])["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"])):
-                save_code(flow, run, "small_batch:v1:deferred", "code:small_batch_deferred", lambda: {
-                    "reason": "budget_deferred", "items": listing["items"][number * size:]})
-                break
-            flow._small_batch_guard["user_signatures"][key] = user_signature(store, rid)
-            plan = save_code(flow, run, f"{key}:plan", "code:small_batch_plan", lambda: next_batch(listing, number, size))
-            valid = unchanged_heads(store, rid, listing, plan["items"])
-            flow._small_batch_guard["versions"].update({svid: listing["manifest"]["versions"][svid]
-                for item in plan["items"] if item["head"] in valid for svid in item["versions"]})
-            preparation = asyncio.create_task(prepare(plan, key))
-            try:
-                if pending:
-                    done, _ = await asyncio.wait({preparation, pending}, return_when=asyncio.FIRST_COMPLETED)
-                    # Observe an older reading failure before waiting for preparation.
-                    if pending in done:
-                        await pending
-                        pending = None
-                await preparation
-            except BaseException as exc:
-                halt_pipeline(flow, run)
-                results = await asyncio.gather(preparation, return_exceptions=True)
-                if isinstance(exc, RunStopped):
-                    for result in results:
-                        if isinstance(result, BaseException) and not isinstance(result, RunStopped):
-                            raise result
-                raise
-            if pending:
-                await pending
-                pending = None
-            # Freeze the read budget before admitting another preparation. Empty
-            # reading plans close synchronously, including their budget effects.
-            order = unchanged_heads(store, rid, listing, plan["items"])
-            own = store.existing_step(run["id"], f"{key}:adjudication_plan")
-            used = consumed(flow, run, ":adjudication_plan", "works")
-            if own and own["status"] == "succeeded":
-                used -= len(own["output"]["works"])
-            reading = flow._adjudication_plan(run, scope, batch_key=key, order=order,
-                                             read_limit=max(0, room["read_limit"] - used))
-            if reading["works"]:
-                pending = asyncio.create_task(finish(plan, key))
-                await asyncio.sleep(0)
-            else:
-                await finish(plan, key)
-        if pending:
-            await pending
-            pending = None
-        save_code(flow, run, "small_batch:v1:summary", "code:small_batch_summary", lambda:
-                  progress_view(listing, steps(store, run["id"]), flow._fulltext_works(rid)))
-    except BaseException as exc:
-        halt_pipeline(flow, run)
-        if pending:
-            results = await asyncio.gather(pending, return_exceptions=True)
-            pending = None
-            # A sibling's cooperative stop must not hide the failure that caused it.
-            if isinstance(exc, RunStopped):
-                for result in results:
-                    if isinstance(result, BaseException) and not isinstance(result, RunStopped):
-                        raise result
-        raise
-    finally:
-        try:
-            if pending:
-                # Preserve the preparation failure while draining any older read.
-                halt_pipeline(flow, run)
-                await asyncio.gather(pending, return_exceptions=True)
-        finally:
-            flow._small_batch_guard = None
-
-
-def prepare_abstract_groups(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                            listing: dict[str, Any], plan: dict[str, Any], key: str) -> dict[str, Any]:
-    """Freeze ordered groups, looking ahead only far enough to fill the current tail.
-
-    Lookahead performs code screening, never fetch or adjudication. Persisted ownership
-    prevents a resumed/later batch from regrouping sources whose readings already began.
-    """
-    saved = flow.store.existing_step(run["id"], f"{key}:abstract_groups")
-    room = run["budget"]["inspection"]
-    size = room["batch_size"]
-
-    def stage_key(number):
-        return f"small_batch:v1:{listing['manifest_hash']}:{number}"
-
-    def build():
-        records = steps(flow.store, run["id"])
-        assigned = {svid for step in records if step["operation_key"].endswith(":abstract_groups")
-                    and step["status"] == "succeeded"
-                    for group in step["output"]["groups"] for svid in group["sources"]}
-        pending = []
-        number = plan["number"]
-        while True:
-            stage = flow.store.existing_step(run["id"], f"{stage_key(number)}:abstract_stage")
-            if stage is None:
-                used = sum(len(batch) for step in steps(flow.store, run["id"])
-                           if step["operation_key"].endswith(":abstract_stage") and step["status"] == "succeeded"
-                           for batch in step["output"]["batches"])
-                if used >= room["abstract_limit"]:
-                    break
-                items = listing["items"][number * size:(number + 1) * size]
-                heads = unchanged_heads(flow.store, run["research_id"], listing, items)
-                output = flow._abstract_code_stage(run, scope, vocabulary, heads,
-                    batch_key=stage_key(number), read_limit=room["abstract_limit"] - used)
-            else:
-                output = stage["output"]
-            sources = [svid for batch in output["batches"] for svid in batch if svid not in assigned]
-            if number == plan["number"]:
-                pending.extend(sources)
-                target = ((len(pending) + 19) // 20) * 20
-            else:
-                pending.extend(sources[:target - len(pending)])
-            number += 1
-            if len(pending) >= target or number * size >= len(listing["items"]):
-                break
-        return {"groups": [{"sources": pending[i:i + 20],
-                            "key": f"small_batch:v1:abstract_group:{canonical.sha256_hex(pending[i:i + 20])}"}
-                           for i in range(0, len(pending), 20)]}
-
-    result = saved["output"] if saved and saved["status"] == "succeeded" else save_code(
-        flow, run, f"{key}:abstract_groups", "code:small_batch_abstract_groups", build)
-    # Source/selection changes in the carried portion must stop publication too.
-    sources = {svid for group in result["groups"] for svid in group["sources"]}
-    flow._small_batch_guard["versions"].update({svid: listing["manifest"]["versions"][svid]
-                                               for svid in sources})
-    return result

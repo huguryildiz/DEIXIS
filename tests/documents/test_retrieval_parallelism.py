@@ -2,9 +2,10 @@
 
 Three things are checked, all without a network. Equality: the same research fetched one work at a time and several
 at a time leaves the same work steps, the same decisions, the same selections and the same lookup rows. Politeness
-and bound: through the real downloader, no host is asked twice at once and no more than
-`fulltext.FULLTEXT_FETCH_PARALLEL` works are in flight. Stopping: a pause lets the works in flight finish and write
-their steps, opens no new one, and the resumed run ends where an uninterrupted one does.
+and bound: through the real downloader, no host is asked twice at once and no more works are in flight than the
+fast read's fetch slots allow (D251; `fulltext.FULLTEXT_FETCH_PARALLEL` no longer bounds it). Stopping: a pause lets
+the works in flight finish and write their steps, opens no new one, and the resumed run ends where an uninterrupted
+one does.
 
 Records are SYNTHETIC and from two fields (irrigation, and the reading run's second field through
 `test_abstract_flow.QUESTION`); every transport is mocked and the model is scripted. Passing shows the run behaves as
@@ -24,6 +25,7 @@ import httpx
 from deixis.documents import fetch as fetch_module
 from deixis.storage import db
 from deixis.workflow import fulltext
+from deixis.workflow.background_fetch import FetchSlots
 from helpers import make_pdf
 from test_abstract_flow import client_of
 from test_fulltext_flow import (
@@ -188,14 +190,19 @@ def fetch_summary(steps):
             "fetched": sum(bool(o.get("asset_id")) for o in outputs)}
 
 
+def bound(app, parallel):
+    """At most `parallel` works fetched at once: the fast read's process-wide fetch slots (D251)."""
+    app.state.worker.flow.deps.fetch_slots = FetchSlots(parallel)
+
+
 def _retrieve(tmp_path, monkeypatch, parallel):
-    monkeypatch.setattr(fulltext, "FULLTEXT_FETCH_PARALLEL", parallel, raising=False)
     # The same identifiers for the same discovery run, so ties the ranking breaks by identifier fall the same way
     # in both researches and the two retrieval plans are the same list in the same order.
     monkeypatch.setattr(db, "secrets", random.Random(13))
     fetcher = SlowFetcher(ANSWERS)
     app = app_for(tmp_path, monkeypatch, _transport(), fetcher)
     client = client_of(app)
+    bound(app, parallel)
     try:
         rid, _, _, _ = discover(client)
         _, run = wait_for_retrieval(client, rid)
@@ -264,6 +271,8 @@ def test_no_host_is_asked_twice_at_once_and_no_more_than_the_bound_are_in_flight
     monkeypatch.setattr(fulltext, "FULLTEXT_WORK_LIMIT", dict(fulltext.FULLTEXT_WORK_LIMIT, quick=len(urls)))
     app = app_for(tmp_path, monkeypatch, Transport([work(n + 1, pdf_url=url) for n, url in enumerate(urls)]), fetcher)
     client = client_of(app)
+    parallel = 4
+    bound(app, parallel)
     try:
         rid, _, _, _ = discover(client)
         _, run = wait_for_retrieval(client, rid)
@@ -273,9 +282,7 @@ def test_no_host_is_asked_twice_at_once_and_no_more_than_the_bound_are_in_flight
     assert run["status"] == "completed" and summary["fetched"] == len(urls)
     assert sorted(web.requests) == sorted([*(url.split("/")[2] for url in urls), "h3.example.org"])
     assert max(web.most.values()) == 1, web.most
-    parallel = getattr(fulltext, "FULLTEXT_FETCH_PARALLEL", 1)
-    assert web.most_total <= parallel
-    assert parallel == 1 or web.most_total > 1
+    assert 1 < web.most_total <= parallel
 
 
 # ---- a pause lets the works in flight finish and opens no new one -------------------------------
@@ -299,6 +306,7 @@ def test_a_pause_lets_the_works_in_flight_finish_and_the_resumed_run_ends_like_a
 
         fetcher.hook = hook
         client = client_of(app)
+        bound(app, 4)
         try:
             rid, _, _, _ = discover(client)
             _, first = wait_for_retrieval(client, rid)
@@ -326,7 +334,7 @@ def test_a_pause_lets_the_works_in_flight_finish_and_the_resumed_run_ends_like_a
     assert set(at_pause.values()) <= {"succeeded", "cancelled", "pending"}
     assert sum(status != "pending" for status in at_pause.values()) <= asked
     assert len(at_pause) == len(urls)  # the frozen batch preallocates work steps before sending requests
-    assert asked <= max(2, getattr(fulltext, "FULLTEXT_FETCH_PARALLEL", 1))
+    assert asked <= 4  # the fetch slots
     assert resumed["status"] == whole["status"] == "completed"
     # The resumed run asked nothing twice and reports what an uninterrupted run reports.
     assert calls == whole_calls == sorted(urls)

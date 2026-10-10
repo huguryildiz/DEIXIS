@@ -1,26 +1,23 @@
-"""Discovery searches read in parallel across hosts and written in query order, with the request allowance split per
-query (slice 13f, D89).
+"""What is left of the parallel search round of slice 13f (D89) on the fast path, and the request allowance each
+query keeps as its own.
 
-The equality tests were written first, on the sequential code of slice 13e, and the evidence they recorded is the
-fixture every later version has to give back row for row: the same `search_runs` rows, records, versions, candidates
-and work heads, the same search step outputs, the same unread count and the same events, in the same write order.
-Records and provider answers are SYNTHETIC and from two fields, and every transport is mocked: passing shows workflow
-behavior — what is requested, when, and in which order it is written — not live provider timing, not how much wall
-clock the parallel read saves, and not how often a real provider answers 429.
+Since the clean start (slice 3a) discovery reads OpenAlex only (keyword pages, one semantic request, and one Semantic
+Scholar bulk request on Deep), so the tests of hosts read side by side, of the host bound `SEARCH_PARALLEL_HOSTS` and of
+the evidence the sequential five-query round wrote (`tests/fixtures/search_parallelism/`) were removed with that round.
+What the fast path shares with it is tested here: a query's own request share (D89) ends its read, survives a retry,
+and pauses a run whose every share was spent before it asked. `Hosts`, `Session` and `run_discovery` stay for the
+provider-fault tests of tests/hardening/test_p9_faults_providers.py.
+
+Records and provider answers are SYNTHETIC and every transport is mocked: passing shows workflow behavior — what is
+requested and what ends a read — not live provider timing or how often a real provider answers 429.
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
-import json
-import os
-import re
-import threading
 import time
-from collections import Counter
 from dataclasses import replace
-from pathlib import Path
 
 import httpx
 import pytest
@@ -28,12 +25,11 @@ import pytest
 from deixis.providers import biorxiv as biorxiv_module
 from deixis.providers import common
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow import flow, views
-from test_search_paging import app_for, client_of, discover, read_limit, wait
+from deixis.workflow import flow
+from test_search_paging import (ALPHA, BETA, PagedProviders, app_for, client_of, discover, keyword_plan, keyword_reader,
+                                library, reached_screening, read_pages, wait)  # noqa: F401  (library is a fixture)
 
-FIXTURES = Path(__file__).parent.parent / "fixtures" / "search_parallelism"
 QUESTION = "What is the effect of packet size on energy consumption in wireless sensor networks?"
-ID = re.compile(r"\b[a-z]{3}_[0-9A-Za-z]{20}\b")
 
 # Five first-round queries on three hosts: OpenAlex and bioRxiv share api.openalex.org, Semantic Scholar holds two
 # queries, and SerpApi reads one page only. Two DOIs are found by two providers each, so which record heads the work
@@ -134,6 +130,10 @@ class Hosts:
         return params["q"], 0
 
     def answer(self, host, params, entry):
+        if host == "api.openalex.org" and (params.get("search.title_and_abstract") not in TOTALS or "per_page" not in params):
+            # The fast path's semantic request and the routing step's field distribution: not served here.
+            entry |= {"provider": "openalex", "query": params.get("search.title_and_abstract"), "start": 0}
+            return httpx.Response(404)
         if host == "api.openalex.org":
             provider = "biorxiv" if biorxiv_module.SOURCE_ID in (params.get("filter") or "") else "openalex"
             query = params.get("search.title_and_abstract")
@@ -187,16 +187,11 @@ def queries_of(rows):
             for provider, text in rows]
 
 
-def setup(tmp_path, monkeypatch, hosts, second_round=()):
-    """An sw app whose vocabulary compiles FIRST_ROUND and whose expansion adds `second_round`, with small pages."""
-    monkeypatch.setattr(flow, "SW_READ_LIMIT", read_limit(100))
+def setup(tmp_path, monkeypatch, hosts):
+    """An sw app whose vocabulary compiles FIRST_ROUND, with small pages. The fast path searches its OpenAlex query
+    only; the others are dropped from discovery (`openalex_only`)."""
     compiled = queries_of(FIRST_ROUND)
     monkeypatch.setattr(flow.query_compiler, "compile_block_queries", lambda *a, **k: [dict(q) for q in compiled])
-
-    async def expansion(self, run, scope, vocabulary, queries, criterion=None, approval=None):
-        return queries_of(second_round)
-
-    monkeypatch.setattr(flow.ResearchFlow, "_expansion", expansion)
     app = app_for(tmp_path, monkeypatch, hosts)
     for provider, size in (("openalex", 10), ("biorxiv", 10), ("semantic_scholar", 10)):
         monkeypatch.setitem(CONNECTORS, provider, replace(CONNECTORS[provider], max_results=size))
@@ -207,18 +202,11 @@ def setup(tmp_path, monkeypatch, hosts, second_round=()):
 class Session:
     """One app and client for a test: a discovery, then any resume or retry, read before the client closes."""
 
-    def __init__(self, tmp_path, monkeypatch, hosts, second_round=()):
+    def __init__(self, tmp_path, monkeypatch, hosts):
         self.hosts = hosts
-        self.app = setup(tmp_path, monkeypatch, hosts, second_round)
+        self.app = setup(tmp_path, monkeypatch, hosts)
         self.client = client_of(self.app)
         self.store = self.app.state.store
-
-    def start(self, effort="quick"):
-        """Create the research and queue its discovery run without waiting for it."""
-        body = {"question": QUESTION, "model_connection": "fake", "requested_model": "fake-model", "effort": effort}
-        self.rid = self.client.post("/api/researches", json=body).json()["research"]["id"]
-        self.run_id = self.client.post(f"/api/researches/{self.rid}/runs", json={"kind": "discovery"}).json()["id"]
-        return self
 
     def discover(self, effort="quick"):
         self.rid, self.run_id, self.view, self.run = discover(self.client, QUESTION, effort=effort)
@@ -230,265 +218,47 @@ class Session:
         self.view, self.run = wait(self.client, self.rid, self.run_id)
         return self
 
-    def evidence(self):
-        return evidence(self.store, self.rid, self.run_id, self.hosts.transport_log)
-
     def close(self):
         self.client.__exit__(None, None, None)
 
 
-def run_discovery(tmp_path, monkeypatch, hosts, second_round=(), effort="quick"):
-    session = Session(tmp_path, monkeypatch, hosts, second_round)
+def run_discovery(tmp_path, monkeypatch, hosts, effort="quick"):
+    """A whole discovery against `hosts`: the run's search rows in write order, the research view and the run."""
+    session = Session(tmp_path, monkeypatch, hosts)
     try:
         session.discover(effort)
-        return session.evidence(), session.view, session.run
+        rows = [dict(r) for r in session.store.conn.execute(
+            "SELECT * FROM search_runs WHERE research_id = ? ORDER BY rowid", (session.rid,))]
+        return rows, session.view, session.run
     finally:
         session.close()
 
 
-# ---- the evidence a run leaves, with random identifiers and clocks taken out ------------------------------------
+# ---- the request allowance is each query's own (D89) ----------------------------------------------------------
 
 
-class Labels:
-    """Each random identifier becomes its prefix and the order it was first met in, so two runs compare row for row."""
+class RefusedOnce(PagedProviders):
+    """Every page of `query` answers 429 once, with no wait, and then serves: each of its pages costs two requests."""
 
-    def __init__(self):
-        self.seen = {}
-
-    def __call__(self, value):
-        if isinstance(value, str):
-            return ID.sub(lambda m: self.seen.setdefault(m.group(0), f"{m.group(0)[:3]}#{len(self.seen)}"), value)
-        if isinstance(value, dict):
-            return {k: self(v) for k, v in value.items() if not k.endswith("_at")}
-        if isinstance(value, (list, tuple)):
-            return [self(v) for v in value]
-        return value
-
-
-def rows(store, sql, *args):
-    return [dict(r) for r in store.conn.execute(sql, args)]
-
-
-def evidence(store, rid, run_id, request_log=None):
-    """What the search stage wrote, in write order. Only run steps' clocks and creation order are left out."""
-    labels = Labels()
-    steps = {s["id"]: s for s in rows(store, "SELECT * FROM run_steps WHERE run_id = ?", run_id)}
-    for step in steps.values():  # a step is named by its operation key, which does not depend on when it was created
-        labels.seen[step["id"]] = f"step:{step['operation_key']}"
-    events = rows(store, "SELECT type, payload_json FROM events WHERE research_id = ? ORDER BY id", rid)
-    searching = [i for i, e in enumerate(events) if '"provider_search:' in e["payload_json"] or e["type"] == "search_recorded"]
-    events = [(e["type"], json.loads(e["payload_json"])) for e in events[searching[0]:searching[-1] + 1]]
-    search_steps = {s["operation_key"]: {k: s[k] for k in ("kind", "status", "attempt", "error_code", "delivery_class")}
-                    | {"output": json.loads(s["output_json"]) if s["output_json"] else None,
-                       "error": json.loads(s["error_json"]) if s["error_json"] else None}
-                    for s in steps.values() if s["kind"].startswith("provider_search:")}
-    # Compare the original evidence fields to the sequential freeze; verify additive transport facts separately.
-    for row in rows(store, "SELECT * FROM search_runs WHERE run_id = ?", run_id):
-        output = search_steps[steps[row["step_id"]]["operation_key"]]["output"]
-        trace = output.pop("transport")
-        allowance = json.loads(row["error_json"])["rate_limit_retries"]
-        assert trace["reserved"] == 1 + allowance
-        assert len(trace["dispatches"]) == 1
-        subrequests = trace["dispatches"][0]["subrequests"]
-        assert len(subrequests) == 1
-        entry = subrequests[0]
-        assert trace["attempts"] == sum(e["attempts"] for e in subrequests)
-        assert trace["sends"] == sum(e["sends"] for e in subrequests)
-        assert 0 <= trace["sends"] <= trace["attempts"] <= trace["reserved"]
-        assert entry["attempts"] == 1 + entry["retries"]
-        assert entry["sends"] == entry["attempts"] - int(entry["delivery_class"] == "before_send")
-        if request_log is not None:
-            start = row["page_number"] * CONNECTORS[row["provider"]].max_results
-            expected_attempts = sum(e["provider"] == row["provider"] and e["query"] == row["query_text"] and e["start"] == start
-                                    for e in request_log)
-            assert trace["attempts"] == trace["sends"] == entry["attempts"] == entry["sends"] == expected_attempts
-            assert entry["retries"] == expected_attempts - 1
-        assert entry["http_status"] == json.loads(row["error_json"])["http_status"]
-        assert entry["status"] == ("completed" if row["status"] in ("zero_results", "parse_error") else row["status"])
-        assert entry["delivery_class"] == row["delivery_class"]
-        assert entry["url"].startswith("https://") and "?" not in entry["url"]
-        assert "over_reservation" not in trace
-        if row["status"] not in ("completed", "zero_results"):
-            assert output.pop("search_run_id") == row["id"]
-        if not output:
-            search_steps[steps[row["step_id"]]["operation_key"]]["output"] = None
-    found = labels({
-        "events": events,
-        "search_runs": rows(store, "SELECT * FROM search_runs WHERE research_id = ? ORDER BY rowid", rid),
-        "source_versions": rows(store, "SELECT id, work_id, title, doi, version_label FROM source_versions ORDER BY rowid"),
-        "identifiers": rows(store, "SELECT source_version_id, scheme, value, provider FROM identifier_mappings ORDER BY rowid"),
-        "candidates": rows(store, "SELECT id, search_run_id, source_version_id, rank FROM candidates"
-                                  " WHERE research_id = ? ORDER BY rowid", rid),
-        "memberships": rows(store, "SELECT * FROM corpus_memberships"
-                                   " WHERE research_id = ? ORDER BY rowid", rid),
-        "links": rows(store, "SELECT * FROM record_links ORDER BY rowid"),
-        "heads": sorted(store.work_heads(rid).items()),
-        "steps": dict(sorted(search_steps.items())),
-        "unread": views.research_view(store, rid)["counts"]["unread"],
-    })
-    # Two rows that name a pair or a work by their random identifiers are ordered by them; the labels order them instead.
-    for link in found["links"]:
-        link["source_version_id"], link["other_source_version_id"] = sorted(
-            (link["source_version_id"], link["other_source_version_id"]))
-    found["links"] = sorted(found["links"], key=lambda link: json.dumps(link, sort_keys=True))
-    found["heads"] = sorted(found["heads"])
-    return found
-
-
-@pytest.mark.parametrize("fault", ["reserved", "attempts", "sends", "subrequests", "retries"])
-def test_evidence_without_request_log_checks_transport_consistency(tmp_path, monkeypatch, fault):
-    session = Session(tmp_path, monkeypatch, Hosts(rate_limited=())).discover()
-    try:
-        evidence(session.store, session.rid, session.run_id)
-        step = next(s for s in rows(session.store, "SELECT * FROM run_steps WHERE run_id = ?", session.run_id)
-                    if s["kind"].startswith("provider_search:"))
-        output = json.loads(step["output_json"])
-        trace = output["transport"]
-        if fault == "reserved":
-            trace["reserved"] = 0
-        elif fault in ("attempts", "sends"):
-            trace[fault] += 1
-        elif fault == "subrequests":
-            trace["dispatches"][0]["subrequests"] = []
-        else:
-            trace["dispatches"][0]["subrequests"][0]["retries"] += 1
-        session.store.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?", (json.dumps(output), step["id"]))
-        with pytest.raises(AssertionError):
-            evidence(session.store, session.rid, session.run_id)
-    finally:
-        session.close()
-
-
-def test_evidence_with_empty_request_log_does_not_skip_transport_check(tmp_path, monkeypatch):
-    session = Session(tmp_path, monkeypatch, Hosts(rate_limited=())).discover()
-    try:
-        with pytest.raises(AssertionError):
-            evidence(session.store, session.rid, session.run_id, [])
-    finally:
-        session.close()
-
-
-def golden(name, value):
-    """The fixture the sequential code wrote (slice 13f, Task 1); DEIXIS_WRITE_SEARCH_FIXTURES=1 writes it again."""
-    path = FIXTURES / f"{name}.json"
-    if os.environ.get("DEIXIS_WRITE_SEARCH_FIXTURES"):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(value, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
-    expected = json.loads(path.read_text(encoding="utf-8"))
-    # D194 adds provenance and copies the already-recorded limit kind to the
-    # step. Retain the sequential freeze and every other expected field.
-    for row in expected["search_runs"]:
-        row["connector_json"] = json.dumps({
-            "contract_id": "deixis.scholarly_connector.v1", "adapter_revision": CONNECTORS[row["provider"]].adapter_revision,
-            "query_rules_revision": "deixis.query_rules.r1",
-            "payload": "sanitized_json" if row["raw_payload_path"] is not None else None,
-            "dropped_records": 0,
-        }, sort_keys=True)
-        error_kind = json.loads(row["error_json"]).get("error_kind")
-        if error_kind is not None:
-            step = expected["steps"][row["step_id"].removeprefix("step:")]
-            step["error"]["error_kind"] = error_kind
-    return expected
-
-
-def same(value):
-    return json.loads(json.dumps(value, sort_keys=True))
-
-
-def canonical_evidence_ids(value):
-    """Normalize search entities in write order, independently of non-search step count."""
-    def evidence_fields(item):
-        # D256 adds presentation metadata and removes unsafe error prose. This
-        # historical comparator still freezes transport, evidence and states.
-        if isinstance(item, dict):
-            result = {}
-            for key, child in item.items():
-                if key in {"service_kind", "reset_at"} or (key in {"error", "retries"} and "rate_limit" in item):
-                    continue
-                if key == "error" and "http_status" in item:
-                    continue
-                result[key] = json.dumps(evidence_fields(json.loads(child)), sort_keys=True) if key == "error_json" and child else evidence_fields(child)
-            return result
-        if isinstance(item, list):
-            return [evidence_fields(child) for child in item]
-        return item
-    value = evidence_fields(value)
-    seen, counts = {}, {}
-
-    def label(match):
-        old, prefix = match.group(0), match.group(1)
-        if old not in seen:
-            counts[prefix] = counts.get(prefix, 0) + 1
-            seen[old] = f"{prefix}#{counts[prefix]:04d}"
-        return seen[old]
-
-    for key in ("source_versions", "search_runs", "candidates", "memberships", "identifiers"):
-        re.sub(r"\b([a-z]{3})#\d+", label, json.dumps(value[key], sort_keys=True))
-    result = json.loads(re.sub(r"\b([a-z]{3})#\d+", label, json.dumps(value, sort_keys=True)))
-    result["heads"] = sorted(result["heads"])
-    result["links"] = sorted(result["links"], key=lambda link: json.dumps(link, sort_keys=True))
-    return result
-
-
-# ---- Task 1: equality, written on the sequential code ----------------------------------------------------------
-
-
-def test_the_first_round_writes_the_evidence_the_sequential_read_wrote(tmp_path, monkeypatch):
-    """Three hosts, five queries, paged reads, a DOI two providers share, a rate-limited page and a single-page
-    provider: every row, output and event is the one the sequential code wrote, in the same order."""
-    found, view, run = run_discovery(tmp_path, monkeypatch, Hosts())
-    assert any(s["operation_key"].endswith(":abstract_stage") for s in run["steps"]), run
-    assert canonical_evidence_ids(same(found)) == canonical_evidence_ids(golden("first_round", same(found)))
-
-
-def test_the_expansion_round_writes_the_evidence_the_sequential_read_wrote(tmp_path, monkeypatch):
-    found, view, run = run_discovery(tmp_path, monkeypatch, Hosts(), SECOND_ROUND)
-    assert any(s["operation_key"].endswith(":abstract_stage") for s in run["steps"]), run
-    assert [s["query_text"] for s in found["search_runs"]][-4:] == [
-        "SYNTHETIC transmit power control", "SYNTHETIC transmit power control", "SYNTHETIC drift turbulence coding",
-        "SYNTHETIC vascular relay hop"]
-    assert canonical_evidence_ids(same(found)) == canonical_evidence_ids(golden("second_round", same(found)))
-
-
-def test_a_host_that_fails_every_query_does_not_pause_the_run_while_another_succeeds(tmp_path, monkeypatch):
-    """D18: a failed search is recorded and the others go on."""
-    found, view, run = run_discovery(tmp_path, monkeypatch, Hosts(fail={"api.semanticscholar.org"}))
-    assert any(s["operation_key"].endswith(":abstract_stage") for s in run["steps"]), run
-    statuses = {(s["provider"], s["status"]) for s in view["search_runs"]}
-    assert ("semantic_scholar", "failed") in statuses and ("openalex", "completed") in statuses
-
-
-def test_a_run_whose_every_search_fails_pauses(tmp_path, monkeypatch):
-    hosts = Hosts(fail={"api.openalex.org", "api.semanticscholar.org", "serpapi.com"})
-    found, view, run = run_discovery(tmp_path, monkeypatch, hosts)
-    assert (run["status"], run["pause_reason"]) == ("paused", "provider_failed"), run
-    assert {s["status"] for s in view["search_runs"]} == {"failed"}
-    assert "vocabulary_expansion" not in {s["operation_key"] for s in run["steps"]}
-
-
-# ---- Task 2: the request allowance is each query's own (D89) ---------------------------------------------------
-
-
-class RefusedOnce(Hosts):
-    """Every page of the named queries answers 429 once, with no wait, and then serves: each page costs two requests."""
-
-    def __init__(self, queries, **kwargs):
+    def __init__(self, query, **kwargs):
         super().__init__(**kwargs)
-        self.queries, self.refused = set(queries), set()
+        self.query, self.refused = query, []
 
-    @staticmethod
-    def page(host, params):
-        if host == "api.openalex.org":
-            return params.get("search.title_and_abstract"), 0 if params.get("cursor") in (None, "*") else int(params["cursor"])
-        if host == "api.semanticscholar.org":
-            return params["query"], int(params.get("offset") or 0)
-        return params["q"], 0
+    def __call__(self, request):
+        params = request.url.params
+        page = (params.get("search.title_and_abstract"), params.get("cursor"))
+        if page[0] == self.query and page not in self.refused:
+            self.refused.append(page)
+            return httpx.Response(429, text="SYNTHETIC rate limit", headers={"retry-after": "0"})
+        return super().__call__(request)
 
-    def answer(self, host, params, entry):
-        response = super().answer(host, params, entry)
-        page = (entry["query"], entry["start"])
-        if entry["query"] in self.queries and response.status_code == 200 and page not in self.refused:
-            self.refused.add(page)
+
+class AlwaysRefused(PagedProviders):
+    """`fail_at` of `fail_query` answers 429 with a stated wait of zero, every time it is asked."""
+
+    def __call__(self, request):
+        response = super().__call__(request)
+        if response.status_code == 429:
             return httpx.Response(429, text="SYNTHETIC rate limit", headers={"retry-after": "0"})
         return response
 
@@ -506,168 +276,66 @@ def small_allowances(monkeypatch, shares):
     monkeypatch.setattr(flow, "page_allowance", allowance)
 
 
-def test_a_query_that_uses_up_its_share_ends_its_own_read_and_the_run_goes_on(tmp_path, monkeypatch):
+def test_a_query_that_uses_up_its_share_ends_its_own_read_and_the_other_query_goes_on(library, tmp_path, monkeypatch):
     """Each page of the first query needs a retry, so its share of three requests is spent on its second page: that
-    page ends the read with `budget_exhausted` and counts what it left unread, every other query is read whole, and
-    the run is not paused."""
-    small_allowances(monkeypatch, {"SYNTHETIC packet size energy": 3})
-    hosts = RefusedOnce({"SYNTHETIC packet size energy"})
-    found, view, run = run_discovery(tmp_path, monkeypatch, hosts, effort="standard")
-    assert any(s["operation_key"].endswith(":abstract_stage") for s in run["steps"]), run
-    assert run["pause_reason"] != "budget_exhausted"
-    first = [r for r in view["search_runs"] if r["query_text"] == "SYNTHETIC packet size energy"]
+    page ends the read with `budget_exhausted` and counts what it left unread, and the other query is read whole."""
+    small_allowances(monkeypatch, {ALPHA: 3})
+    providers = RefusedOnce(ALPHA, openalex_total=25)
+    research_flow, scope = keyword_reader(library, tmp_path, providers, effort="standard")
+    rows = read_pages(research_flow, library, scope, keyword_plan(library, scope, (ALPHA, BETA), page_size=10))
+    first = [r for r in rows if r["query_text"] == ALPHA]
     assert [(r["page_number"], r["stop_reason"], r["unread_count"]) for r in first] == [
         (0, None, None), (1, "budget_exhausted", 5)]
-    assert [p for p in hosts.requests("api.openalex.org") if p[1] == "SYNTHETIC packet size energy"] == [
-        ("openalex", "SYNTHETIC packet size energy", 0)] * 2 + [("openalex", "SYNTHETIC packet size energy", 10)] * 2
-    assert run["usage"]["query_requests"]["search:0"] == 4
-    # Every other query read as far as it does with no allowance at all.
-    reads = {(r["query_text"], r["stop_reason"]) for r in view["search_runs"] if r["stop_reason"]}
-    assert reads >= {("SYNTHETIC diffusion channel release", "exhausted"), ("SYNTHETIC sensor duty cycle", "exhausted"),
-                     ("SYNTHETIC molecular relay energy", "single_page")}
-    assert found["steps"]["search:0:page:1"]["output"]["stop_reason"] == "budget_exhausted"
+    assert providers.refused == [(ALPHA, "*"), (ALPHA, "10")]
+    assert [p for p in providers.queries if p[0] == ALPHA] == [(ALPHA, 0), (ALPHA, 10)]
+    assert library.store.run(library.run["id"])["usage"]["query_requests"]["search:0"] == 4
+    # The other query reads as far as it does with no allowance at all.
+    assert [(r["page_number"], r["stop_reason"]) for r in rows if r["query_text"] == BETA] == [
+        (0, None), (1, None), (2, "exhausted")]
+    step = library.store.existing_step(library.run["id"], "search:0:page:1")
+    assert step["output"]["stop_reason"] == "budget_exhausted"
 
 
-def test_a_query_s_share_does_not_depend_on_which_host_answered_first(tmp_path, monkeypatch):
-    small_allowances(monkeypatch, {"SYNTHETIC packet size energy": 3})
-    found = []
-    for delay in ({"api.openalex.org": 0.05}, {"api.semanticscholar.org": 0.05, "serpapi.com": 0.05}):
-        path = tmp_path / str(len(found))
-        found.append(same(run_discovery(path, monkeypatch, RefusedOnce({"SYNTHETIC packet size energy"}, delay=delay),
-                                        effort="standard")[0]))
-    assert canonical_evidence_ids(found[0]) == canonical_evidence_ids(found[1])
-
-
-def test_a_resumed_run_keeps_each_query_s_count(tmp_path, monkeypatch):
+def test_a_retried_query_keeps_its_count(library, tmp_path, monkeypatch):
     """The second page of one query fails after its share is spent. Asked to search again, the run finds the count
     it stored for that query, sends nothing, and says on the page's step that the allowance ended the read."""
-    small_allowances(monkeypatch, {"SYNTHETIC receiver sampling budget": 2})
-    hosts = Hosts()
-    session = Session(tmp_path, monkeypatch, hosts)
+    small_allowances(monkeypatch, {ALPHA: 2})
+    providers = AlwaysRefused(openalex_total=25, fail_at=10, fail_query=ALPHA)
+    research_flow, scope = keyword_reader(library, tmp_path, providers, effort="standard")
+    plan = keyword_plan(library, scope, (ALPHA,), page_size=10)
+    read_pages(research_flow, library, scope, plan)
+    # Page 0 is one request, the refused page 1 two (standard waits out one 429): three of a share of two.
+    assert library.store.run(library.run["id"])["usage"]["query_requests"]["search:0"] == 3
+    asked = list(providers.queries)
+    library.run["budget"] |= {"retry_failed_searches_only": True, "retry_provider_requests": 1}  # the retry action
+    read_pages(research_flow, library, scope, plan, retry_failed=True)
+    assert providers.queries == asked  # nothing was sent again: 2 + 1 = 3 requests are spent already
+    assert library.store.run(library.run["id"])["usage"]["query_requests"]["search:0"] == 3
+    step = library.store.existing_step(library.run["id"], "search:0:page:1")
+    assert (step["status"], step["error_code"]) == ("cancelled", "budget_exhausted")
+
+
+def test_a_run_whose_every_share_was_spent_before_it_asked_pauses_instead_of_going_on(tmp_path, monkeypatch):
+    """D18: with no successful search the run pauses, also when no search failed because every query's share was
+    already spent (a run resumed after a crash). Asked to search again, the retry adds to every share and reads."""
+    monkeypatch.setattr(flow, "page_allowance", lambda query, effort, budget: budget.get("retry_provider_requests", 0))
+    providers = PagedProviders(openalex_total=45)
+    client = client_of(app_for(tmp_path, monkeypatch, providers))
     try:
-        session.discover(effort="standard")
-        # Page 0 is one request, the refused page 1 two (standard waits out one 429): three of a share of two.
-        assert session.run["usage"]["query_requests"]["search:3"] == 3
-        asked = list(hosts.log)
-        session.control("retry_failed")  # the retry action adds one request to every query's share: 2 + 1 = 3
-        assert hosts.log == asked  # nothing was sent again
-        assert session.run["usage"]["query_requests"]["search:3"] == 3
-        step = next(s for s in session.run["steps"] if s["operation_key"] == "search:3:page:1")
-        assert (step["status"], step["error_code"]) == ("cancelled", "budget_exhausted")
+        rid, run_id, view, run = discover(client)
+        assert (run["status"], run["pause_reason"]) == ("paused", "budget_exhausted"), run
+        assert providers.openalex == [] and view["search_runs"] == []
+        steps = {s["operation_key"]: (s["status"], s["error_code"]) for s in run["steps"]}
+        assert steps["search:fast:semantic"] == steps["search:0"] == ("cancelled", "budget_exhausted")
+        assert client.post(f"/api/runs/{run_id}/retry_failed").status_code == 200
+        view, run = wait(client, rid, run_id)
     finally:
-        session.close()
+        client.__exit__(None, None, None)
+    assert reached_screening(run)
+    assert providers.openalex and {r["status"] for r in view["search_runs"] if r["provider"] == "openalex"} == {"completed"}
 
 
-# ---- Task 3: hosts side by side, one request per host, written in query order -------------------------------------
-
-
-def overlapping(log, a, b):
-    """Whether a request to host `a` and one to host `b` were in flight at the same time."""
-    return any(x["started"] < y["finished"] and y["started"] < x["finished"]
-               for x in log if x["host"] == a for y in log if y["host"] == b)
-
-
-def test_hosts_are_read_side_by_side_and_each_host_one_request_at_a_time(tmp_path, monkeypatch):
-    hosts = Hosts(delay={"api.openalex.org": 0.05, "api.semanticscholar.org": 0.05, "serpapi.com": 0.05})
-    found, view, run = run_discovery(tmp_path, monkeypatch, hosts)
-    assert overlapping(hosts.log, "api.openalex.org", "api.semanticscholar.org")
-    assert overlapping(hosts.log, "api.openalex.org", "serpapi.com")
-    # OpenAlex and bioRxiv share a host, so their queries are read one after the other, never at once.
-    assert all(hosts.most[host] == 1 for host in ("api.openalex.org", "api.semanticscholar.org", "serpapi.com"))
-    assert hosts.most["hosts"] == 3 <= flow.SEARCH_PARALLEL_HOSTS
-    assert canonical_evidence_ids(same(found)) == canonical_evidence_ids(golden("first_round", same(found)))
-
-
-def test_no_more_hosts_are_read_at_once_than_the_bound(tmp_path, monkeypatch):
-    monkeypatch.setattr(flow, "SEARCH_PARALLEL_HOSTS", 2)
-    hosts = Hosts(delay={"api.openalex.org": 0.05, "api.semanticscholar.org": 0.05, "serpapi.com": 0.05})
-    found, view, run = run_discovery(tmp_path, monkeypatch, hosts)
-    assert hosts.most["hosts"] == 2
-    assert canonical_evidence_ids(same(found)) == canonical_evidence_ids(golden("first_round", same(found)))
-
-
-@pytest.mark.parametrize("second_round", [False, True])
-def test_a_later_query_whose_host_answers_first_is_still_written_in_query_order(tmp_path, monkeypatch, second_round):
-    """OpenAlex holds every answer back, so Semantic Scholar and SerpApi have read their queries before the first
-    query's pages arrive: the evidence is still the sequential read's, row for row."""
-    hosts = Hosts(delay={"api.openalex.org": 0.08})
-    found, view, run = run_discovery(tmp_path, monkeypatch, hosts, SECOND_ROUND if second_round else ())
-    first_semantic = next(i for i, e in enumerate(hosts.log) if e["host"] == "api.semanticscholar.org")
-    assert first_semantic < next(i for i, e in enumerate(hosts.log) if e["host"] == "api.openalex.org")
-    name = "second_round" if second_round else "first_round"
-    assert canonical_evidence_ids(same(found)) == canonical_evidence_ids(golden(name, same(found)))
-
-
-def content(store, rid):
-    """What a run found, named without its write order: each page by its step key, each record by its DOI."""
-    keys = {r["id"]: r["operation_key"] for r in store.conn.execute("SELECT id, operation_key FROM run_steps")}
-    pages = {keys[r["step_id"]]: {k: r[k] for k in ("provider", "query_text", "status", "result_count", "provider_total",
-                                                     "page_limit", "page_number", "read_total", "stop_reason",
-                                                     "unread_count", "payload_sha256")}
-             for r in store.conn.execute("SELECT * FROM search_runs WHERE research_id = ?", (rid,))}
-    dois = sorted(r[0] or "" for r in store.conn.execute(
-        "SELECT v.doi FROM candidates c JOIN source_versions v ON v.id = c.source_version_id WHERE c.research_id = ?",
-        (rid,)))
-    return {"pages": pages, "dois": dois, "versions": store.conn.execute("SELECT COUNT(*) FROM source_versions").fetchone()[0],
-            "unread": views.research_view(store, rid)["counts"]["unread"]}
-
-
-def test_a_pause_lets_the_requests_in_flight_finish_writes_what_was_read_in_order_and_asks_nothing_twice(
-        tmp_path, monkeypatch):
-    """The first query's second page is in flight when the run is paused. It finishes and is written; so are the
-    pages the other hosts had read, in query order; nothing more is asked. Resumed, the run asks for the rest only.
-
-    What the resumed run holds is what an uninterrupted run holds, page for page and record for record. The order
-    is not always the same (D89, Limits): the later queries' pages read before the pause were written before the
-    rest of the first query, so a DOI two providers share can be first written by the other provider. The owner
-    chose that over asking those pages again (2026-09-22).
-    """
-    uninterrupted = Session(tmp_path / "whole", monkeypatch, Hosts())
-    try:
-        whole = content(uninterrupted.discover().store, uninterrupted.rid)
-    finally:
-        uninterrupted.close()
-
-    gate = threading.Event()
-    hosts = Hosts(hold={("SYNTHETIC packet size energy", 10): gate})
-    session = Session(tmp_path / "paused", monkeypatch, hosts).start()
-    try:
-        deadline = time.time() + 10
-        while ("SYNTHETIC packet size energy", 10) not in hosts.waiting:  # the first query's second page is in flight
-            assert time.time() < deadline
-            time.sleep(0.01)
-        assert session.client.post(f"/api/runs/{session.run_id}/pause").status_code == 200
-        gate.set()
-        session.view, session.run = wait(session.client, session.rid, session.run_id)
-        assert (session.run["status"], session.run["pause_reason"]) == ("paused", "user_requested"), session.run
-        # The page in flight finished and was written; the host was asked nothing after it, so bioRxiv's query,
-        # which shares that host, was not started.
-        assert hosts.requests("api.openalex.org") == [("openalex", "SYNTHETIC packet size energy", 0),
-                                                      ("openalex", "SYNTHETIC packet size energy", 10)]
-        order = {text: index for index, (_, text) in enumerate(FIRST_ROUND)}
-        written = [(order[r["query_text"]], r["page_number"]) for r in session.store.conn.execute(
-            "SELECT query_text, page_number FROM search_runs WHERE research_id = ? ORDER BY rowid", (session.rid,))]
-        assert written[:2] == [(0, 0), (0, 1)] and written == sorted(written)
-        # Resumed, the run asks for the pages it had not read and for none it had.
-        session.control("resume")
-        assert any(s["operation_key"].endswith(":abstract_stage") for s in session.run["steps"]), session.run
-        assert set(Counter(hosts.requests()).values()) == {1}
-        assert content(session.store, session.rid) == whole
-    finally:
-        session.close()
-
-
-def test_a_page_step_carries_the_time_of_its_request_not_the_time_it_was_written(tmp_path, monkeypatch):
-    """Semantic Scholar's first query is read while OpenAlex's pages are still arriving, and written after them."""
-    session = Session(tmp_path, monkeypatch, Hosts(delay={"api.openalex.org": 0.08}))
-    try:
-        session.discover()
-        steps = {s["operation_key"]: s for s in session.store.run_steps(session.run_id)}
-    finally:
-        session.close()
-    assert steps["search:1"]["started_at"] < steps["search:0:page:2"]["started_at"]
-    assert steps["search:1"]["finished_at"] < steps["search:0:page:2"]["finished_at"]
-    assert all(s["started_at"] <= s["finished_at"] for key, s in steps.items() if key.startswith("search:"))
+# ---- the connector's host -------------------------------------------------------------------------------------
 
 
 def test_each_connector_names_the_host_its_requests_go_to():
@@ -688,123 +356,3 @@ def test_each_connector_names_the_host_its_requests_go_to():
         assert seen and set(seen) == {connector.host}, connector.provider_id
     assert CONNECTORS["biorxiv"].host == CONNECTORS["openalex"].host
     assert len({c.host for c in CONNECTORS.values()}) == len(CONNECTORS) - 1
-
-
-# ---- review of 2026-09-23 (gpt-6-sol high) -----------------------------------------------------------------------
-
-
-def test_a_first_round_whose_every_share_was_spent_before_it_asked_pauses_instead_of_going_on(tmp_path, monkeypatch):
-    """D18: with no successful search the run pauses, also when no search failed because every query's share was
-    already spent (a run resumed after a crash). Asked to search again, the retry adds to every share and reads."""
-    small_allowances(monkeypatch, {text: 0 for _, text in FIRST_ROUND})
-    hosts = Hosts()
-    session = Session(tmp_path, monkeypatch, hosts)
-    try:
-        session.discover()
-        assert (session.run["status"], session.run["pause_reason"]) == ("paused", "budget_exhausted"), session.run
-        assert hosts.log == [] and "vocabulary_expansion" not in {s["operation_key"] for s in session.run["steps"]}
-        session.control("retry_failed")
-        assert any(s["operation_key"].endswith(":abstract_stage") for s in session.run["steps"]), session.run
-        assert hosts.requests("api.openalex.org")
-    finally:
-        session.close()
-
-
-def test_a_query_resumed_past_a_lowered_read_limit_asks_for_nothing_more(tmp_path, monkeypatch):
-    """A query read 20 records and was paused mid-read; the read limit is then lowered below what it has read (13g
-    halved `detailed`). Resumed, it ends its read where it stands instead of asking for a page of minus records."""
-    gate = threading.Event()
-    hosts = Hosts(hold={("SYNTHETIC packet size energy", 10): gate})
-    session = Session(tmp_path, monkeypatch, hosts).start()
-    try:
-        deadline = time.time() + 10
-        while ("SYNTHETIC packet size energy", 10) not in hosts.waiting:
-            assert time.time() < deadline
-            time.sleep(0.01)
-        assert session.client.post(f"/api/runs/{session.run_id}/pause").status_code == 200
-        gate.set()
-        session.view, session.run = wait(session.client, session.rid, session.run_id)
-        assert session.run["pause_reason"] == "user_requested", session.run
-        monkeypatch.setattr(flow, "SW_READ_LIMIT", read_limit(15))
-        asked = len([p for p in hosts.requests("api.openalex.org") if p[1] == "SYNTHETIC packet size energy"])
-        session.control("resume")
-        assert any(s["operation_key"].endswith(":abstract_stage") for s in session.run["steps"]), session.run
-        assert len([p for p in hosts.requests("api.openalex.org") if p[1] == "SYNTHETIC packet size energy"]) == asked
-    finally:
-        session.close()
-
-
-def test_a_pause_asked_while_a_query_waits_out_its_page_gap_sends_no_further_page(tmp_path, monkeypatch):
-    """The stop is looked at again after the gap between two pages, not only before it (arXiv waits 3 s there)."""
-    hosts = Hosts()
-    session = Session(tmp_path, monkeypatch, hosts)
-    monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], page_gap=0.6))
-    session.start()
-    try:
-        deadline = time.time() + 10
-        while not any(e.get("query") == "SYNTHETIC packet size energy" for e in hosts.log):
-            assert time.time() < deadline
-            time.sleep(0.005)
-        assert session.client.post(f"/api/runs/{session.run_id}/pause").status_code == 200
-        session.view, session.run = wait(session.client, session.rid, session.run_id)
-        assert session.run["pause_reason"] == "user_requested", session.run
-        assert [p for p in hosts.requests("api.openalex.org") if p[1] == "SYNTHETIC packet size energy"] == [
-            ("openalex", "SYNTHETIC packet size energy", 0)]
-    finally:
-        session.close()
-
-
-def test_an_error_on_one_host_still_writes_what_the_other_hosts_had_read(tmp_path, monkeypatch):
-    """Semantic Scholar's connector raises while OpenAlex is still reading: the run fails, but the pages OpenAlex
-    read are written in query order, and OpenAlex is asked for nothing after the error."""
-    session = Session(tmp_path, monkeypatch, Hosts(delay={"api.openalex.org": 0.15}))
-
-    async def broken(*args, **kwargs):
-        raise RuntimeError("SYNTHETIC parser bug")
-
-    monkeypatch.setitem(CONNECTORS, "semantic_scholar", replace(CONNECTORS["semantic_scholar"], search=broken))
-    try:
-        session.discover()
-        assert session.run["status"] == "failed", session.run
-        order = {text: index for index, (_, text) in enumerate(FIRST_ROUND)}
-        written = [(r[0], order[r[1]]) for r in session.store.conn.execute(
-            "SELECT provider, query_text FROM search_runs WHERE research_id = ? ORDER BY rowid", (session.rid,))]
-        assert ("openalex", 0) in written and "semantic_scholar" not in {p for p, _ in written}
-        assert [i for _, i in written] == sorted(i for _, i in written)
-    finally:
-        session.close()
-
-
-def test_a_pause_asked_while_a_failed_request_waits_to_be_sent_again_sends_nothing_more(tmp_path, monkeypatch):
-    """A page whose request failed before it was sent waits before its retry; a pause asked in that wait sends no
-    retry, leaves the page unwritten, and the resumed run asks for that page again (second review of 13f)."""
-    hosts = Hosts()
-    session = Session(tmp_path, monkeypatch, hosts)
-    original, calls, flaky_on = CONNECTORS["openalex"].search, [], [True]
-
-    async def flaky(client, query, limit, *args, cursor=None, **kwargs):
-        outcome = await original(client, query, limit, *args, cursor=cursor, **kwargs)
-        if query == "SYNTHETIC packet size energy" and cursor not in (None, "*"):
-            calls.append(cursor)
-            if flaky_on[0]:
-                return replace(outcome, status="failed", delivery_class="before_send", records=[])
-        return outcome
-
-    monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], search=flaky))
-    session.start()
-    try:
-        deadline = time.time() + 10
-        while not calls:
-            assert time.time() < deadline
-            time.sleep(0.005)
-        assert session.client.post(f"/api/runs/{session.run_id}/pause").status_code == 200
-        session.view, session.run = wait(session.client, session.rid, session.run_id)
-        assert session.run["pause_reason"] == "user_requested", session.run
-        assert len(calls) == 1
-        assert rows(session.store, "SELECT 1 FROM search_runs WHERE research_id = ? AND query_text = ? AND page_number = 1",
-                    session.rid, "SYNTHETIC packet size energy") == []
-        flaky_on[0] = False
-        session.control("resume")
-        assert calls[1] == calls[0] and session.run["status"] == "completed", session.run
-    finally:
-        session.close()

@@ -125,7 +125,6 @@ def test_names_compatibility_and_plain_export():
                 ("arxiv", "arXiv"), ("pubmed", "PubMed"), ("biorxiv", "bioRxiv"), ("ieee_xplore", "IEEE Xplore"),
                 ("scopus", "Scopus"), ("core", "CORE"), ("serpapi", "SerpApi")]
     assert type(rules.NAMES) is dict
-    assert compiler.BOOLEAN_OPERATORS is rules.BOOLEAN_OPERATORS
     assert list(rules.NAMES.items()) == expected
     assert all(registry.CONNECTORS[pid].display_name == name for pid, name in expected)
     assert compiler.PLAIN_PROVIDERS == ("semantic_scholar", "crossref")
@@ -156,9 +155,8 @@ def test_no_provider_branches_in_compiler():
     for line, value in provider_id_literals(source):
         owner = next((f.name for f in functions if f.lineno <= line <= f.end_lineno), None)
         pairs.add((owner, value))
-    # "core" is a concept-role literal, also detected as the registered CORE ID.
-    assert pairs == {("_compact_openalex", "openalex"), ("compile_queries", "openalex"),
-                     ("compile_queries", "serpapi"), ("compile_queries", "core")}
+    # The SearchPlan v2 compiler's own provider branches went with it (clean start, slice 3a).
+    assert pairs == set()
 
 
 def test_no_provider_branches_in_facade():

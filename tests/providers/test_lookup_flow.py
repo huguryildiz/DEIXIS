@@ -643,7 +643,7 @@ def test_without_institutional_access_the_scopus_step_is_skipped_and_asks_about_
         third = abstract_of(store, records_of(store, rid)["W3"])
     finally:
         client.__exit__(None, None, None)
-    assert plan == {"chunks": [], "outside_limit": 0, "skipped": "no_institutional_access"}
+    assert plan == {"chunks": [], "outside_limit": 0, "outside_shortlist": 0, "skipped": "no_institutional_access"}
     assert sources.elsevier == ["TITLE(optimization)"]  # the access check alone; no DOI was sent
     assert third is None
     assert not [s for s in run["steps"] if s["operation_key"].startswith("record_lookup:scopus")]
@@ -734,7 +734,7 @@ def test_an_access_check_a_dead_run_already_sent_is_counted_against_the_lookup_l
 
 def test_thirty_records_with_budget_for_two_scopus_requests_are_asked_in_two_or_queries(tmp_path, monkeypatch):
     """Scopus counts requests, not DOIs: 25 DOIs share one OR query, the other 5 the next, and the budget of two
-    requests covers all 30 records."""
+    requests covers all 30 records. Standard effort, so all 30 stand in the fast path's shortlist of N = 50 (D252)."""
     many = [work(i, doi=f"10.1/r{i:02d}") for i in range(1, 31)]
     held = {f"10.1/r{i:02d}": f"SYNTHETIC scopus abstract {i}" for i in range(1, 31)}
     # one Semantic Scholar batch + 30 Crossref requests + the access check + two Scopus requests
@@ -743,7 +743,7 @@ def test_thirty_records_with_budget_for_two_scopus_requests_are_asked_in_two_or_
     app = scopus_app(tmp_path, monkeypatch, sources)
     client = client_of(app)
     try:
-        rid, run_id, view, run = discover(client)
+        rid, run_id, view, run = discover(client, effort="standard")
         store = app.state.store
         plan = step_output(store, run_id, "lookup_plan:scopus")
         usage = store.run(run_id)["usage"]

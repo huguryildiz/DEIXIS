@@ -1,5 +1,9 @@
 """Semantic Scholar's bulk endpoint for sw searches, and the relevance search a legacy query keeps (slice 14, D93).
 
+Since the clean start (slice 3a) discovery sends Semantic Scholar one bulk request on Deep only (the fast path's
+`s2_bulk` slot); a stored query that names no endpoint is dropped from discovery (`openalex_only`), so the run-level
+test of the relevance search was removed. The connector keeps both endpoints, tested below.
+
 Records, queries and provider answers are SYNTHETIC and from two fields; every transport is mocked. Passing shows what
 is requested, in which syntax, and how a read pages — not what Semantic Scholar really returns, how often it answers
 429, or which records a sort keeps.
@@ -8,16 +12,14 @@ is requested, in which syntax, and how a read pages — not what Semantic Schola
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
-
 import httpx
 import pytest
 
 from deixis.providers import common, query_compiler, query_rules, semantic_scholar
-from deixis.providers.registry import CONNECTORS, endpoint_options, reading
+from deixis.providers.registry import endpoint_options, reading
 from deixis.workflow import flow
 from test_query_compiler import _blocks
-from test_search_paging import app_for, client_of, discover, rows_of
+from test_search_paging import keyword_plan, keyword_reader, library, read_pages  # noqa: F401  (library is a fixture)
 
 
 def paper(i: int) -> dict:
@@ -64,17 +66,6 @@ def test_bulk_rules_accept_the_compiled_shape_and_refuse_what_bulk_would_read_as
     assert query_rules.query_issues("semantic_scholar", '"reef | coral" + x', "bulk")  # operator inside a phrase
     # The relevance search's rule is unchanged for a query that names no endpoint.
     assert query_rules.query_issues("semantic_scholar", '("a b" | c) + d')
-
-
-def test_a_legacy_plan_still_compiles_plain_words_for_semantic_scholar():
-    plan = {"concepts": [{"label": "core", "role": "core", "synonyms": ["entanglement routing"]},
-                         {"label": "method", "role": "method", "synonyms": ["mixed-integer linear programming"]}],
-            "providers": ["openalex", "semantic_scholar"]}
-    queries = query_compiler.compile_queries(plan, ["openalex", "semantic_scholar"], 8)
-    s2 = next(q for q in queries if q["provider_id"] == "semantic_scholar")
-    assert s2 == {"provider_id": "semantic_scholar",
-                  "query_text": "entanglement routing mixed-integer linear programming",
-                  "rationale": 'Core "core" with the method family "method"'}
 
 
 # ---- the connector ----------------------------------------------------------------------------------------------
@@ -180,35 +171,16 @@ class Scholar:
                                          "data": [paper(i) for i in range(offset, end)]})
 
 
-def test_an_sw_run_reads_semantic_scholar_through_bulk_with_the_query_s_sort(tmp_path, monkeypatch):
+def test_a_deep_run_reads_semantic_scholar_through_bulk_with_the_query_s_sort(library, tmp_path, monkeypatch):
+    """The compiled bulk query, in the fast path's Deep `s2_bulk` slot, reaches the bulk endpoint with its sort and
+    no limit, and is read as one page (D93, D252)."""
     monkeypatch.setattr("deixis.providers.common.SEMANTIC_SCHOLAR_PACER.interval_seconds", 0.0)
+    (s2,) = query_compiler.compile_block_queries(_blocks(["arid soils"], ["nitrogen uptake"]), ["semantic_scholar"], 8)
     scholar = Scholar()
-    client = client_of(app_for(tmp_path, monkeypatch, scholar))
-    try:
-        rid, _, view, run = discover(client)
-    finally:
-        client.__exit__(None, None, None)
-    first = [r for r in scholar.requests if r[0].endswith("/paper/search/bulk")]
-    assert first and not [r for r in scholar.requests if r[0].endswith("/paper/search")]
-    assert first[0][1]["sort"] == semantic_scholar.BULK_SORT and "limit" not in first[0][1]
-    rows = rows_of(view, "semantic_scholar")
-    assert (rows[0]["result_count"], rows[0]["stop_reason"]) == (30, "exhausted")
-
-
-def test_a_stored_semantic_scholar_query_that_names_no_endpoint_is_read_by_the_relevance_search(tmp_path, monkeypatch):
-    """A query stored before D93 is searched on the endpoint it was written for (frozen protocol)."""
-    monkeypatch.setattr("deixis.providers.common.SEMANTIC_SCHOLAR_PACER.interval_seconds", 0.0)
-    stored = [{"provider_id": "semantic_scholar", "query_text": "SYNTHETIC packet energy", "rationale": "SYNTHETIC",
-               "dropped_terms": []}]
-    monkeypatch.setattr(flow.query_compiler, "compile_block_queries", lambda *a, **k: [dict(q) for q in stored])
-    scholar = Scholar(total=12)
-    app = app_for(tmp_path, monkeypatch, scholar)
-    monkeypatch.setitem(CONNECTORS, "semantic_scholar", replace(CONNECTORS["semantic_scholar"], max_results=5))
-    client = client_of(app)
-    try:
-        rid, _, view, run = discover(client)
-    finally:
-        client.__exit__(None, None, None)
-    paths = [path for path, _ in scholar.requests]
-    assert paths and all(path.endswith("/paper/search") for path in paths)
-    assert [params.get("offset") for _, params in scholar.requests] == ["0", "5", "10"]
+    research_flow, scope = keyword_reader(library, tmp_path, scholar)
+    plan = keyword_plan(library, scope, ()) | {"s2_bulk": s2, "s2_bulk_index": 0, "s2_reserved": 500}
+    rows = read_pages(research_flow, library, scope, plan)
+    assert [path for path, _ in scholar.requests] == ["/graph/v1/paper/search/bulk"]
+    params = scholar.requests[0][1]
+    assert params["sort"] == semantic_scholar.BULK_SORT and "limit" not in params
+    assert [(r["provider"], r["result_count"], r["stop_reason"]) for r in rows] == [("semantic_scholar", 30, "single_page")]

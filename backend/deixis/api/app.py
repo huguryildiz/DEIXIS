@@ -36,10 +36,9 @@ from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
-from deixis.workflow import chaining, fast_path, small_batch
+from deixis.workflow import fast_path, small_batch
 from deixis.workflow import file_restore, text_retry
-from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CHAIN_ABSTRACT_READ, CHAIN_PLAN_ROOM,
-                                 CHAIN_REQUEST_LIMIT, CRITERION_CALLS, SEARCH_QUERY_CALLS,
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
                                  SUGGESTION_CALLS, ADVICE_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict, effort_limits)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
@@ -1373,18 +1372,8 @@ def create_app(
                 ABSTRACT_READ_LIMIT[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
             # The model-written query and its repair and retry (D92); a run on the code's query alone makes no call.
             extra += SEARCH_QUERY_CALLS if settings.search_query == "model" else 0
-            # Citation chaining (D95): the setting is frozen into the run here, with the chain's own abstract read and
-            # its own request limit, which is not `max_provider_requests`: running out of it ends the chain, never the run.
-            chain: dict[str, Any] = {"citation_chaining": settings.citation_chaining}
-            if settings.citation_chaining == "auto":
-                extra += abstract_stage.model_calls(CHAIN_ABSTRACT_READ[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
-                # The chain's read and plan room are frozen with it, so a run keeps the policy it was queued with.
-                chain |= {"max_chain_requests": CHAIN_REQUEST_LIMIT,
-                          "chain_abstract_read": CHAIN_ABSTRACT_READ[scope["effort"]],
-                          "chain_plan_room": CHAIN_PLAN_ROOM[scope["effort"]],
-                          # D229: the rule version and the sources are frozen too; a run queued without them is v1, OpenAlex alone.
-                          "chain_rule_version": chaining.RULE_VERSION, "chain_sources": list(chaining.SOURCES)}
-            budget = budget | {"max_model_calls": budget["max_model_calls"] + extra} | chain
+            # Citation chaining is the fast chain's, frozen with the rest of its policy below (`fast_path.freeze_budget`).
+            budget = budget | {"max_model_calls": budget["max_model_calls"] + extra}
             if settings.fulltext_fetch == "auto":
                 # The full text is fetched inside this run, beside its screening, with the room a retrieval run
                 # would have had (slice 17a); the mode is frozen here, so a run keeps the path it was queued with.

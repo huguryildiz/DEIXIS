@@ -9,8 +9,10 @@ import pytest
 from deixis.providers import common, registry
 from deixis.storage import db
 from deixis.workflow.watch import check as policy
-from test_connector_contract import dispatch_flow
+import test_fast_path_clock
 from tests.watch.watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, work, page, add_included
+
+library = test_fast_path_clock.library  # the fast-path test library, a fixture
 
 
 def test_baseline_and_second_check_announce_only_new_identities(api):
@@ -267,7 +269,26 @@ def test_page_gap_wait_and_units_and_record_order_persist(tmp_path, monkeypatch)
         assert all([r["provider_record_id"] for r in json.loads(row["records_json"])] == ["B","A"] for row in rows)
 
 
-def test_discovery_revision_two_continuation_refused_after_watch_adapter_bump(dispatch_flow, monkeypatch):
+def test_discovery_revision_two_continuation_refused_after_watch_adapter_bump(library, tmp_path):
+    # A discovery page recorded by OpenAlex adapter revision 2 is not continued by today's adapter: the retried next
+    # page is refused before anything is sent (fast-path search, D252).
+    import asyncio
     from deixis.providers.contract import CONTRACT_ID
-    from tests.providers.test_connector_dispatch import test_resume_provenance as assert_resume
-    assert_resume(dispatch_flow, monkeypatch, json.dumps({"contract_id": CONTRACT_ID, "adapter_revision": 2}), "adapter_revision_changed")
+    from deixis.workflow import fast_search
+    from test_fast_path_search import QUERIES, scripted, setup
+    flow, scope, plan = setup(library, tmp_path)
+    first = QUERIES[0]["query_text"]
+    scripted(flow, [], fail_at=lambda q, p: q["query_text"] == first and p.number == 1)
+    asyncio.run(fast_search.execute(flow, library.run, scope, plan, False))
+    head = library.store.existing_step(library.run["id"], "search:0")
+    assert head["status"] == "succeeded" and head["output"]["next_cursor"]
+    library.conn.execute("UPDATE search_runs SET connector_json = ? WHERE step_id = ?",
+                         (json.dumps({"contract_id": CONTRACT_ID, "adapter_revision": 2}), head["id"]))
+    calls = []
+    scripted(flow, calls)
+    before = library.store.run(library.run["id"])["usage"]
+    asyncio.run(fast_search.execute(flow, library.run, scope, plan, True))
+    assert not [c for c in calls if c[1] == first]
+    assert library.store.run(library.run["id"])["usage"] == before
+    saved = library.store.existing_step(library.run["id"], "search:0:page:1")
+    assert saved["status"] == "failed" and saved["error_code"] == "adapter_revision_changed"

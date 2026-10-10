@@ -74,7 +74,6 @@ def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: li
 def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str, Any] | None,
                    queries: list[dict[str, Any]], skill_package_hash: str, settings: Settings,
                    vocabulary: dict[str, Any] | None = None,
-                   expansion: dict[str, Any] | None = None,
                    criterion: dict[str, Any] | None = None,
                    approval: dict[str, Any] | None = None,
                    embedding_model: str | None = None,
@@ -83,8 +82,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     """The body a research freezes. `vocabulary` is the sw workflow's code vocabulary step output (SW2).
 
     Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
-    the body keeps the numbers that actually decided this research's query. `expansion` is the step output of the
-    second arm (SW2.4) and is given only for the revision that opened it, so a body without one is what it was.
+    the body keeps the numbers that actually decided this research's query.
     `criterion` is what three proposals agreed on (SW15.2); without one the four criterion fields stay null.
     `embedding_model` is the semantic search
     model the research was configured with when it froze this body; the flow reads it, because this function sees no
@@ -102,7 +100,6 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                                       PDF_PAGES_PER_SOURCE, RRF_K)
     from deixis.workflow.criterion import THRESHOLDS as CRITERION_THRESHOLDS
     from deixis.workflow.criterion_passages import THRESHOLDS as CRITERION_PASSAGE_THRESHOLDS
-    from deixis.workflow.expansion import THRESHOLDS as EXPANSION_THRESHOLDS
     from deixis.workflow.lookups import THRESHOLDS as LOOKUP_THRESHOLDS, title_words
     from deixis.workflow.ranking import THRESHOLDS as RANKING_THRESHOLDS
     from deixis.workflow.approval import block_origins
@@ -126,8 +123,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         with_query = {q["provider_id"] for q in queries}
         searched = [p for p in routing["providers"] if p in with_query]
 
-    # How this run chains citations after its abstract stage (D95), read from the budget it was queued with, so the
-    # first body and the expansion revision say the same. A run queued before D95 carries none.
+    # How this run chains citations (the fast chain), read from the policy its budget froze when it was queued.
     chaining = chain_policy(budget, scope["effort"])
 
     # A code vocabulary's queries came from the block compiler, so the body names that compiler, not the plan one.
@@ -170,12 +166,6 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                          "in_query": t["in_query"], "phrase_count": t["phrase_count"], "root_count": t["root_count"],
                          "and_only": t["and_only"], "dropped": t["dropped"]} for t in vocabulary["terms"]]
                        if vocabulary else None),
-        # The second arm's own record: every candidate phrase with its two counts and why it was kept or refused.
-        **({"expansion": {"skipped": expansion["skipped"], "candidates": expansion["candidates"],
-                          "terms": list(expansion["terms"]),
-                          # The accepted phrases a second-round query really kept, by block (review of 13g).
-                          **({"searched": expansion["searched"]} if "searched" in expansion else {})}}
-           if expansion else {}),
         "compiled_queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"],
                               **({"results": q["results"]} if q.get("results") is not None else {}),
                               # Which vocabulary wrote the query: the model's or the code's beside it (D92).
@@ -194,7 +184,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         # to verify a known DOI is named apart so that it is not read as a searched source (D87).
         "providers": sorted(searched),
         "verification_providers": sorted(p for p in scope["providers"] if p not in in_scope),
-        "arms": ["keyword_search", "data_expansion"] if expansion else ["keyword_search"],
+        "arms": ["keyword_search"],
         **({"citation_chaining": chaining} if chaining is not None else {}),
         "survey": {"title_words": list(kept_words), "dropped_title_words": list(dropped_words),
                    "abstract_patterns": list(SURVEY_PATTERNS)},
@@ -235,10 +225,10 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             **({"vocabulary": VOCABULARY_THRESHOLDS} if vocabulary else {}),
             **({"search_query": SEARCH_QUERY_THRESHOLDS}
                if vocabulary and (vocabulary.get("search_query") or {}).get("status") == "ready" else {}),
-            **({"expansion": EXPANSION_THRESHOLDS} if expansion else {}),
-            **({"chain": {key: chaining[key] for key in ("seeds", "citing_cap", "backward_batch", "request_limit",
-                                                         "abstract_read", "plan_room")}}
-               if chaining and chaining["enabled"] else {}),
+            **({"chain": {key: chaining[key] for key in ("seeds", "backward_requests", "backward_page_size",
+                                                         "forward_requests", "forward_page_size", "request_limit",
+                                                         "attempt_limit")}}
+               if chaining else {}),
         },
         "rule_table_version": "sw",
         "budget": budget,
@@ -248,6 +238,5 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                    "review": _model(effective_reviewer(scope, None))},
         "skill_package_hash": skill_package_hash,
         "code_version": f"deixis/{version('deixis')} {compiler_version}",
-        "query_strategy": settings.query_strategy,
         **({"fast_path_search": fast_path_search} if fast_path_search is not None else {}),
     }

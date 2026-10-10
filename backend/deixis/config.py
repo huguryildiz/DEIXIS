@@ -25,7 +25,6 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8765
     model_concurrency: int = 6
-    query_strategy: str = "legacy"
     # Whether an sw discovery run stops for the user before it freezes its protocol (SW2.6, slice 08a). `warn` is the
     # product's behavior: the run goes on and freezes unless the proposal has a warning (`approval.inflating_terms`).
     # `ask` always stops, for a person who wants to review every search; `as_proposed` approves the proposal without
@@ -47,11 +46,6 @@ class Settings:
     # writes it once per scope revision and the code's own query is searched beside it. `code` is the query of
     # slice 13g alone, with no model call, for a measurement or a test that needs the code path only.
     search_query: str = "model"
-    # Whether an `sw` discovery run chains citations after its abstract stage (D95, slice 15). `auto` is the product's
-    # behavior and what `load_settings` reads when the variable is unset; `off` is this dataclass's default so a test
-    # or a script that builds its own settings sends no chain request unless it asks for one. The setting is written
-    # into a discovery run's budget when the run is queued and is frozen there for that run.
-    citation_chaining: str = "off"
     # Whether PDFs that are arXiv versions get the numbered display equations of their authors' LaTeX source while the
     # equation reader (Marker) is not installed (D104, slice 22). `off` in this dataclass and in `load_settings` until
     # slice 24 measures it; `auto` turns the route on (POSIX only). With `off` no source is requested and no PDF
@@ -117,9 +111,6 @@ def load_settings() -> Settings:
 
     credentials.mark_dotenv(load_dotenv(REPO_ROOT / ".env"), REPO_ROOT / ".env")
     credentials.load_into_environment()
-    query_strategy = os.environ.get("DEIXIS_QUERY_STRATEGY", "legacy")
-    if query_strategy not in ("legacy", "compact_openalex_v1"):
-        raise ValueError("DEIXIS_QUERY_STRATEGY must be legacy or compact_openalex_v1")
     if "DEIXIS_SEARCH_WORKFLOW" in os.environ:
         warnings.warn("DEIXIS_SEARCH_WORKFLOW is ignored; new researches use sw", UserWarning, stacklevel=2)
     protocol_approval = os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "warn")
@@ -137,9 +128,6 @@ def load_settings() -> Settings:
     search_query = os.environ.get("DEIXIS_SEARCH_QUERY", "model")
     if search_query not in ("model", "code"):
         raise ValueError("DEIXIS_SEARCH_QUERY must be model or code")
-    citation_chaining = os.environ.get("DEIXIS_CITATION_CHAINING", "auto")
-    if citation_chaining not in ("auto", "off"):
-        raise ValueError("DEIXIS_CITATION_CHAINING must be auto or off")
     arxiv_source = os.environ.get("DEIXIS_ARXIV_SOURCE", "off")
     if arxiv_source not in ("auto", "off"):
         raise ValueError("DEIXIS_ARXIV_SOURCE must be auto or off")
@@ -148,12 +136,10 @@ def load_settings() -> Settings:
         host=os.environ.get("DEIXIS_HOST", "127.0.0.1"),
         port=int(os.environ.get("DEIXIS_PORT", "8765")),
         model_concurrency=max(1, int(os.environ.get("DEIXIS_MODEL_CONCURRENCY", "6") or "6")),
-        query_strategy=query_strategy,
         protocol_approval=protocol_approval,
         fulltext_fetch=fulltext_fetch,
         study_table=study_table,
         fulltext_adjudication=fulltext_adjudication,
         search_query=search_query,
-        citation_chaining=citation_chaining,
         arxiv_source=arxiv_source,
     )

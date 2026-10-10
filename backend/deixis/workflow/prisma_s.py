@@ -83,8 +83,7 @@ CODE_SOURCES = {
 
 
 def code_version() -> str:
-    return (f"deixis/{version('deixis')} {query_compiler.VERSION} {query_compiler.COMPACT_VERSION} "
-            f"{query_compiler.BLOCKS_VERSION}")
+    return f"deixis/{version('deixis')} {query_compiler.BLOCKS_VERSION}"
 
 
 def _code_source(key: str, **extra: Any) -> dict[str, Any]:
@@ -433,8 +432,7 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
                           + "."
                           if approval.get("approved_by") == "model_advice" else "approved vocabulary."),
                        {"query_compiler": body.get("code_version")},
-                       code_source=_code_source("filters", compiler_versions=[
-                           query_compiler.VERSION, query_compiler.COMPACT_VERSION, query_compiler.BLOCKS_VERSION])))
+                       code_source=_code_source("filters", compiler_versions=[query_compiler.BLOCKS_VERSION])))
 
     # 11 — prior work.
     items.append(_item(11, "not_recorded", "Adapting a search from earlier work is not recorded in DEIXIS."))

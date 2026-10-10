@@ -6,7 +6,8 @@ import pytest
 
 from deixis.models.adapter import ModelStepResult
 from deixis.storage.db import dumps
-from deixis.workflow import adjudication, fulltext, small_batch
+from deixis.domain import canonical
+from deixis.workflow import adjudication, fast_path, fulltext, small_batch
 from deixis.workflow.flow import ResearchFlow
 from deixis.workflow.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
@@ -19,6 +20,19 @@ from test_fulltext_flow import (app_for as fetch_app, Fetcher, Transport, work, 
 from deixis.documents.fetch import FetchResult
 
 REFUSED = FetchResult("http_error", final_url=None, http_status=403)
+_FREEZE_POLICY = fast_path.freeze_budget
+
+
+@pytest.fixture
+def no_auto_answer(monkeypatch):
+    """Discovery only: the automatic answer, and the late full-text read it schedules, would change the
+    full-text codes these tests read once discovery has settled."""
+    def policy(*args, **kwargs):
+        frozen = _FREEZE_POLICY(*args, **kwargs)
+        frozen.pop("policy_hash")
+        frozen["auto_answer"] = False
+        return frozen | {"policy_hash": canonical.sha256_hex(frozen)}
+    monkeypatch.setattr(fast_path, "freeze_budget", policy)
 _FREEZE_BUDGET = small_batch.freeze_budget
 _READ_FULLTEXT = ResearchFlow._fulltext_adjudication
 
@@ -38,8 +52,9 @@ def app_for(tmp_path, monkeypatch, transport, fetcher, *, reading="auto", adapte
     read = _READ_FULLTEXT
 
     async def bounded(self, run, scope, **kwargs):
-        # Freeze the scenario's reading room after discovery steps consumed theirs.
-        cap = f"{kwargs.get('batch_key')}:test_read_room"
+        # Freeze the scenario's reading room once, when the run's first work is read: the fast read reads each
+        # work under its own batch key, and every work shares this one room.
+        cap = "small_batch:test_read_room"
         if self.store.existing_step(run["id"], cap) is None and run["budget"]["inspection"]["read_limit"]:
             room = adjudication.read_budget(scope["effort"])
             body = self.store.run(run["id"])["budget"]
@@ -179,6 +194,7 @@ def test_small_batch_invalid_output_is_not_repeated_and_the_next_run_reads_the_w
     assert done["status"] == "completed" and sessions == 2 and code == "not_read_yet"
     assert again["status"] == "completed" and second_calls == 2 and settled == "all_parts_verified"
 
+@pytest.mark.usefixtures("no_auto_answer")
 def test_small_batch_a_repair_leaves_the_last_work_not_reached_and_no_work_is_half_sent(tmp_path, monkeypatch):
     monkeypatch.setattr(adjudication, "read_budget", budget_of(3, 2))
     works, fetcher = papers(2)
@@ -228,6 +244,7 @@ def test_small_batch_a_repair_leaves_the_last_work_not_reached_and_no_work_is_ha
         client.__exit__(None, None, None)
     assert short["status"] == "completed" and opened == 0 and summary["not_reached"] == 1
 
+@pytest.mark.usefixtures("no_auto_answer")
 def test_small_batch_at_most_the_limiter_limit_calls_are_in_flight(tmp_path, monkeypatch):
     works, fetcher = papers(1)
     peaks = []
@@ -249,6 +266,7 @@ def test_small_batch_at_most_the_limiter_limit_calls_are_in_flight(tmp_path, mon
         client.__exit__(None, None, None)
     assert reading["status"] == "completed" and peaks and max(peaks) <= 2 and max(peaks) == 2
 
+@pytest.mark.usefixtures("no_auto_answer")
 def test_small_batch_a_scope_revision_cancels_the_run_and_an_in_flight_response_writes_no_decision(tmp_path, monkeypatch):
     works, fetcher = papers(1)
     holder = {}
@@ -413,6 +431,7 @@ def pause_after_first_fetch(app):
     return pause
 
 
+@pytest.mark.usefixtures("no_auto_answer")
 def test_small_batch_a_link_that_refused_is_not_requested_again_by_a_later_run(tmp_path, monkeypatch):
     """D35, and "the next run continues where the first stopped": a fresh `no_fulltext` is not tried twice."""
     fetcher = Fetcher({"https://example.org/w1.pdf": REFUSED})
@@ -428,7 +447,8 @@ def test_small_batch_a_link_that_refused_is_not_requested_again_by_a_later_run(t
     finally:
         client.__exit__(None, None, None)
     assert asked == ["https://example.org/w1.pdf"] and fetcher.calls == asked
-    assert claimed == {}
+    # The fast read may open a claim for the work, but it settles from the stored refusal without a request.
+    assert all(json.loads(s["output_json"])["code"] == "no_fulltext" for s in claimed.values())
 
 def test_small_batch_a_verified_copy_of_another_version_opens_its_own_row_under_the_work(tmp_path, monkeypatch):
     """SW10.3 and D4: the published record keeps no file it does not have; the submitted copy carries its own label."""
@@ -563,6 +583,7 @@ def test_small_batch_a_work_read_through_its_own_link_leaves_no_lookup_step_that
         client.__exit__(None, None, None)
     assert "pdf_other_copy" not in kinds, kinds
 
+@pytest.mark.usefixtures("no_auto_answer")
 def test_small_batch_a_second_research_with_the_same_record_reads_the_version_row_the_first_one_opened(tmp_path, monkeypatch):
     """Records are shared by every research; a row one research's lookup opened has to join the next research too, or
     that research says `no_fulltext` about a work whose text is in the library."""
@@ -582,12 +603,13 @@ def test_small_batch_a_second_research_with_the_same_record_reads_the_version_ro
         has_text = store.has_pdf_text(store.answer_version(second, records_of(store, second)["W1"]))
     finally:
         client.__exit__(None, None, None)
-    # Either the plan already saw the text or the work step found the row; in neither case is the work without text.
-    assert progress["items"][0]["reason_code"] == "pdf_identity_unconfirmed"
+    # The work step found the row the first research opened: the work has text (not read here), not `no_fulltext`.
+    assert progress["items"][0]["reason_code"] == "not_read_yet"
     assert has_text
     assert fetcher.calls.count(copy) == 1
 
 
+@pytest.mark.usefixtures("no_auto_answer")
 def test_small_batch_a_stale_non_human_fulltext_decision_yields_to_a_newer_abstract_decision(tmp_path, monkeypatch):
     """A stale full-text code no longer speaks for the work (slice 12). The abstract decision under the question
     the research is now asking does. A stale human full-text decision still speaks; that case is in
@@ -673,6 +695,7 @@ def budget_events(store, rid):
         "SELECT payload_json FROM events WHERE research_id = ? AND type = 'openalex_budget_exhausted'", (rid,))]
 
 
+@pytest.mark.usefixtures("no_auto_answer")
 def test_small_batch_openalex_daily_budget_gone_defers_the_work_and_the_next_run_after_the_reset_settles_it(tmp_path, monkeypatch):
     """W2 has a copy at Unpaywall and is read as usual. W1 is a closed record whose OpenAlex lookup the budget refused:
     nothing was tried that could say it has no open copy, so it is not decided (`quota_deferred`, not `no_fulltext`),

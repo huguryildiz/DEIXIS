@@ -67,7 +67,7 @@ class Fixture {
 }
 
 const main = new Fixture(nextPort())  // scan and keyboard walk do not share a server: the scan leaves a Trash item and error toasts behind
-const queue = new Fixture(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
+const queue = new Fixture(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
 const keys = new Fixture(nextPort())
 const motion = new Fixture(nextPort())
 const zoom = new Fixture(nextPort())

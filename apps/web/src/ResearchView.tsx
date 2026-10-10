@@ -256,8 +256,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         else toast('warning', t('The answer failed validation; it is kept as an unverified draft.'))
         break
       }
-      case 'paused': if (current.pause_reason === 'protocol_approval_needed') break  // the approval card says it itself
-        toast(current.pause_reason === 'user_requested' ? 'success' : 'warning', t('{label} paused. {reason}', { label, reason })); break
+      case 'paused': toast(current.pause_reason === 'user_requested' ? 'success' : 'warning', t('{label} paused. {reason}', { label, reason })); break
       case 'failed': toast('error', t('{label} failed. {reason}', { label, reason })); break
       case 'cancelled': toast('success', t('{label} cancelled.', { label })); break
       case 'pause_requested': toast('success', t('Pause requested: the run stops after the current call.')); break
@@ -521,9 +520,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         : run && run.kind !== 'watch_check' && !CANDIDATE_KINDS.has(run.kind) && (active || run.status === 'paused') && <div className="run-strip">
           <span className="run-strip-status" data-run-id={run.id} tabIndex={-1}>{active && <LoaderCircle size={13} className="chat-spin" aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
           {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
-          {/* A run stopped for the approval has no plain Resume: it would freeze a protocol nobody saw, and the
-              backend refuses it. The approval card in the timeline carries the only way on (D80). */}
-          {run.status === 'paused' && run.pause_reason !== 'protocol_approval_needed'
+          {run.status === 'paused'
             && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0) && <Button variant="default" size="sm" disabled={busy} onClick={() => { const origin = document.activeElement; void act(() => api.controlRun(run.id, 'resume')).then(ok => { if (ok) toRunStatus(run.id, origin) }) }}><Play size={14} />{t('Resume')}</Button>}
           <Button variant="destructive" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />{t('Cancel')}</Button>
         </div>}
@@ -533,7 +530,6 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
         <Transcript view={{ ...view, runs: view.runs.filter(r => TRANSCRIPT_KINDS.has(r.kind)) }} modelText={modelText}
           onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
-          onProtocolApproved={async () => { toast('success', t('Correction recorded. The run is queued again.')); await load(); onChanged() }}
           onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
           onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}
           queueCount={queueCount} onOpenQueue={showQueue}

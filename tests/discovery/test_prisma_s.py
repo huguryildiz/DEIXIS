@@ -161,26 +161,19 @@ def test_a_group_that_read_nothing_and_one_that_stopped_after_reading_make_item_
     assert "1 read nothing" in found["text"] and "stopped after reading 2 records" in found["text"]
 
 
-def test_chaining_switched_off_is_not_performed_and_a_bioRxiv_query_is_still_a_separate_search(store):
+def test_item_5_names_the_frozen_chain_policy_and_a_bioRxiv_query_is_still_a_separate_search(store):
+    """Item 5 reads no chain step since the clean start (slice 3b): the fast chain's steps are not reported there yet."""
     lib = Search(store)
-    store.freeze_protocol(lib.rid, 1, body(lib.field) | {"citation_chaining": {"enabled": False}}, reason="SYNTHETIC")
+    policy = {"enabled": True, "rule_version": "fast_chain_v1"}
+    store.freeze_protocol(lib.rid, 1, body(lib.field) | {"citation_chaining": policy}, reason="SYNTHETIC")
     lib.page("search:0", lib.records(1), provider="biorxiv", stop="exhausted")
     data = lib.export()
     five, two = item(data, 5), item(data, 2)
-    assert five["status"] == "not_performed" and five["trace"][-1].startswith("protocol_records:")
+    assert five["status"] == "not_recorded" and five["values"]["policy"] == policy
+    assert five["trace"][-1].startswith("protocol_records:")
     assert two["status"] == "not_performed" and "each database was queried separately" in two["text"].lower()
     assert "OpenAlex" in two["values"]["biorxiv"]
     assert item(data, 1)["values"]["databases"] == [{"provider": "biorxiv", "access": "direct API", "through": "openalex"}]
-
-
-def test_a_chain_that_ran_is_reported_from_its_summary_step(store):
-    lib = Search(store, "irrigation")
-    lib.page("search:0", lib.records(1), stop="exhausted")
-    lib.page("chain:backward:0", lib.records(1), query="chain:backward:W1", stop="exhausted")
-    step = store.step(lib.run, "chain_summary", "code:chain_summary")
-    store.finish_step(step["id"], "succeeded", output={"seeds": {"code": 1}, "requests": {"failed": 0}, "new_works": 1})
-    five = item(lib.export(), 5)
-    assert five["status"] == "reported" and f"run_steps:{step['id']}" in five["trace"]
 
 
 def test_brought_works_are_other_methods_and_the_expansion_round_is_a_search_round(store):
@@ -420,7 +413,7 @@ def test_a_sent_query_without_its_search_record_makes_item_8_incomplete(store):
     assert "1 sent queries have no stored search record" in item(none.export(), 8)["text"]
 
 
-# ---- item 10 and the vocabulary nobody reviewed (D233) ----------------------------------------------------------
+# ---- item 10 and the vocabulary nobody reviewed -----------------------------------------------------------------
 
 def item_ten(store, approval):
     lib = Search(store, "irrigation")
@@ -429,29 +422,6 @@ def item_ten(store, approval):
     return item(lib.export(), 10)["text"]
 
 
-ROW = {"phrase": "broad word", "block": "setting", "matches": 18_369, "matches_without_term": 535}
-
-
-def test_item_10_says_warned_terms_were_kept_and_whether_advice_was_stored(store):
-    text = item_ten(store, {"approved_by": "warn_kept", "advice_given": True,
-                            "advice": [ROW | {"recommendation": "remove", "reason": "SYNTHETIC"}]})
-    assert "no person reviewed" in text and "every warned term was kept" in text and "“broad word”" in text
-    assert "information only" in text and "model removed" not in text
-    assert "no model advice was available" in item_ten(store, {"approved_by": "warn_kept", "advice_given": False,
-                                                              "advice": [ROW | {"recommendation": None, "reason": None}]})
-
-
-def test_item_10_of_a_record_without_the_advice_flag_reads_it_from_the_stored_advice(store):
-    given = item_ten(store, {"approved_by": "warn_kept", "advice": [ROW | {"recommendation": "keep", "reason": "S"}]})
-    assert "stored, as information only" in given
-    none = item_ten(store, {"approved_by": "warn_kept", "advice": [ROW | {"recommendation": None, "reason": None}]})
-    assert "no model advice was available" in none
-
-
-def test_item_10_of_a_run_before_d233_still_says_the_model_removed_the_term(store):
-    text = item_ten(store, {"approved_by": "model_advice",
-                            "advice": [ROW | {"recommendation": "remove", "reason": "S", "applied": True}]})
-    assert "the model removed “broad word”" in text and "kept" not in text
-    text = item_ten(store, {"approved_by": "model_advice",
-                            "advice": [ROW | {"recommendation": "keep", "reason": "S", "applied": False}]})
-    assert "the model removed no term" in text
+def test_item_10_says_whether_a_person_reviewed_the_vocabulary(store):
+    assert "no person reviewed: the search went on without asking" in item_ten(store, {"approved_by": "unattended"})
+    assert item_ten(store, {"approved_by": "user"}).endswith("approved vocabulary.")

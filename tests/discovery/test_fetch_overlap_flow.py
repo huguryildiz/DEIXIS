@@ -47,7 +47,7 @@ class SlowFetcher(Fetcher):
         return answer
 
 
-def app_for(tmp_path, monkeypatch, transport, fetcher, *, adapter=None, reading="off", approval="as_proposed",
+def app_for(tmp_path, monkeypatch, transport, fetcher, *, adapter=None, reading="off",
             start_worker=True):
     for connector in CONNECTORS.values():
         if connector.key_env:
@@ -56,7 +56,7 @@ def app_for(tmp_path, monkeypatch, transport, fetcher, *, adapter=None, reading=
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
     return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
-                               protocol_approval=approval, fulltext_fetch="auto", fulltext_adjudication=reading),
+                               fulltext_fetch="auto", fulltext_adjudication=reading),
                       adapters={"fake": adapter or FakeAdapter(responder(), delay=0.05)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport)), fetcher=fetcher,
                       extra_hosts=("testserver",), trusted_clients=("testclient",), start_worker=start_worker)

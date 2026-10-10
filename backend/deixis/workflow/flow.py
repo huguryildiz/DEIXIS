@@ -65,7 +65,6 @@ from deixis.workflow import ranking as ranking_rules
 from deixis.workflow import report_pipeline
 from deixis.workflow import routing as routing_rules
 from deixis.workflow import search_query as search_query_rules
-from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
 from deixis.workflow.equations import EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, equation_state
@@ -104,13 +103,6 @@ CHAIN_RANK_BASE = 1_000_000_000
 # mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
 HANDLE_TASKS = ("grounded_answer", "answer_review", "cell_extraction", "abstract_screening",
                 "fulltext_adjudication", "lineage_links") + contracts.REPORT_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS
-FORMULATION_SCORE_THRESHOLD = 3
-FORMULATION_TERMS = re.compile(
-    r"\b(?:minimi[sz]e|maximi[sz]e|subject\s+to|s\.\s*t|objective\s+function|constraints?|decision\s+variables?"
-    r"|mixed[-\s]integer|MILP|linear\s+program|integer\s+program|optimization\s+problem|amaç\s+fonksiyonu"
-    r"|kısıt(?:ı|lar(?:ı)?)?|karar\s+değişken(?:i|leri))\b", re.IGNORECASE,
-)
-FORMULATION_SYMBOLS = re.compile(r"(?:<=|>=|[=≤≥∑∈∀∃∫])")
 STOPWORDS = set(
     "the and for with what which how are was were from that this into about does using used use their there have has "
     "not but can our its them they than then also between within over under nasıl nedir neler olan için ile gibi veya "
@@ -123,11 +115,6 @@ TIMEOUT_RETRIED_TASKS = ("abstract_screening", "fulltext_adjudication")
 # A route that did not answer, so the work it was tried for is decided by no code and is tried again (SW10, D35).
 UNANSWERED_FETCH_CODES = ("fetch_timeout", "fetch_failed")
 UNANSWERED_LOOKUP_STATUSES = ("timeout", "rate_limited", "failed")
-
-
-def formulation_score(text: str) -> int:
-    """Favor explicit optimization language and notation over narrative mentions of a model."""
-    return 2 * len(FORMULATION_TERMS.findall(text)) + min(6, len(FORMULATION_SYMBOLS.findall(text)))
 
 
 def fuse_rankings(*rankings: list[dict[str, Any]], k: int = RRF_K) -> list[dict[str, Any]]:
@@ -554,7 +541,7 @@ class ResearchFlow:
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                 scope, run["budget"], None, queries,
                 self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
-                approval=approval, embedding_model=self._embedding_model(), routing=self._routing(run_id),
+                approval=approval, embedding_model=self._embedding_model(), routing=self._routing_step(run_id),
                 fast_path_search=fast_plan,
             ), reason=reason)
             self.store.finish_step(protocol_step["id"], "succeeded",
@@ -794,11 +781,7 @@ class ResearchFlow:
                 "skill_package_hash": sent["skill_package_hash"] if sent else None}
 
     def _proposed(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """A vocabulary that cannot be searched stops an unattended run here. A run that asks for the approval takes
-        it to the user instead: removing or adding a term is how it becomes searchable, and `_approval` checks what
-        the user approved before anything is frozen."""
-        if self.deps.settings.protocol_approval in ("ask", "warn"):
-            return built, queries
+        """A vocabulary that cannot be searched ends the run here, before anything is frozen or sent (`_searchable`)."""
         return self._searchable(run_id, built, queries)
 
     async def _optional_calls(self, run: dict[str, Any], keys: list[str],
@@ -909,308 +892,54 @@ class ResearchFlow:
     async def _approval(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                         queries: list[dict[str, Any]], criterion: dict[str, Any] | None
                         ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any] | None, dict[str, Any]]:
-        """Stop the run until the user has approved or corrected what it would search under (SW2.6, SW15.3).
+        """Record what the run searches under before the protocol is frozen (SW14.1, SW14.2). Nobody is asked.
 
-        Everything before this point is code and count probes; nothing has been searched and no protocol has been
-        frozen, so this is the last place a correction is free. A step that already succeeded returns the approved
-        vocabulary, queries and criterion, so a resumed run asks nothing again and probes nothing again.
-
-        The user is asked once per question, steering and key terms. A second discovery run of the same scope, and a
-        revision that changed only the providers, reapply the corrections the user already made; a revision that
-        changed what was asked about asks again.
+        The fast path goes on with the proposal as it stands, and the record says so (`approved_by: unattended`), so
+        this body is never read as one a person approved. A vocabulary that cannot be searched has already ended the
+        run (`_searchable`); the way to other terms is a new scope revision. A step that already succeeded returns
+        what it recorded, so a resumed run probes nothing again.
         """
-        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        run_id = run["id"]
         step = self.store.step(run_id, "protocol_approval", "code:protocol_approval")
-        unattended = (fast_path.enforces(run["budget"], "answer")
-                      and run["budget"]["fast_path"].get("approval_mode") == "unattended")
         if step["status"] == "succeeded":
             approved = step["output"]["approved"]
             return (search_query_rules.settled(approved["vocabulary"], approved["queries"]), approved["queries"],
                     approved["criterion"], step["output"]["approval"])
-        asked_for = {"question": scope["question"], "steering": scope.get("steering"),
-                     "key_terms": scope.get("key_terms")}
-        # The newest approval this research closed for the same question, steering and key terms. It is both what a
-        # correction is reapplied from and what a re-asked card takes its suggestions back from.
-        # A run that went on because nothing was wrong (`no_warning`), or kept every warned term (`warn_kept`, D233;
-        # `model_advice` is the same run before D233), asked nobody: it is no approval to take back.
-        earlier = next((row for row in self.store.approvals_of(rid)
-                        if row["output"]["asked_for"] == asked_for
-                        and (row["output"].get("approval") or {}).get("approved_by") not in ("no_warning", "warn_kept", "model_advice", "unattended")), None)
-        output = step["output"]
-        if output is None:
-            failures = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("failures", [])
-            output = {"proposal": {"vocabulary": vocabulary, "queries": queries, "criterion": criterion,
-                                   "criterion_failures": failures,
-                                   **({"routing": routing} if (routing := self._routing_step(run_id)) else {})},
-                      "proposal_hash": approval_rules.proposal_hash(vocabulary, criterion),
-                      "asked_for": asked_for, "submitted": None, "suggestion_requests": 0}
-            # The model is not asked twice for the same thing (SW2.6): an earlier approval's suggestions are carried
-            # over, so a card the user is shown again for the same question has them without a new call.
-            # They are judged again against this proposal, whose phrases need not be the earlier one's. An answer
-            # that proposed nothing is carried too: it is an answer, and asking again would be the second call.
-            if (carried := (earlier or {}).get("output", {}).get("suggestions")) is not None:
-                output["carried_suggestions"] = {"terms": suggestion_rules.carry(vocabulary, carried),
-                                                 "from_step_id": earlier["id"]}
-            # Written before the run can stop, and never started: a step that is still `pending` is not half-finished
-            # work the worker's recovery has to guess about.
-            self.store.set_step_output(step["id"], output)
-
-        if "warnings" not in output and self.deps.settings.protocol_approval != "as_proposed" and not unattended:
-            # Read once and stored, with every count it asked (a card stored before the check existed has neither):
-            # a resumed run reads them back and probes nothing again, and each count is written as it arrives.
-            def save(checks: list[dict[str, Any]]) -> None:
-                self.store.set_step_output(step["id"], output | {"warning_checks": checks})
-            found, checks = await approval_rules.inflating_terms(
-                output["proposal"]["vocabulary"], self._count_probe(scope, run_id), output.get("warning_checks"), save)
-            output = output | {"warnings": found, "warning_checks": checks}
-            self.store.set_step_output(step["id"], output)
-
-        if output.get("warnings") and "advice" not in output and output["submitted"] is None and earlier is None and not unattended:
-            connection, requested, _ = step_model(scope, "term_advice")
-            output = output | {"advice": await self._term_advice(run, scope, output),
-                               "advice_model": {"connection": connection, "model": requested}}
-            self.store.set_step_output(step["id"], output)
-
-        requests = output.get("suggestion_requests") or 0
-        if requests and self.store.step(run_id, f"term_suggestions:{requests}",
-                                        "code:term_suggestions")["status"] != "succeeded":
-            # The user pressed the button. The model runs here, in the worker, and the run comes back to the card in
-            # every case: a run that asked for other names never approves on the submission it asked from.
-            await self._term_suggestions(run, scope, vocabulary, requests)
-            self._pause(run_id, "protocol_approval_needed", {"proposal_hash": output["proposal_hash"]})
-        # An earlier approval covers the criterion only when this run took it back from the protocol that approval
-        # froze. One the model proposed for this run — the earlier run's model was down, so the user approved none —
-        # has been seen by nobody, and the user is asked again (SW15.3).
-        proposed_now = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("origin") == "model"
-        if criterion is not None and proposed_now and not unattended:
-            earlier = None
-        if output["submitted"] is not None:
-            edits, source, by = output["submitted"], "submitted", "user"
-        elif earlier is not None:
-            # Only the term operations are reapplied. The criterion this run holds already came back from the
-            # protocol the earlier approval froze, so correcting it a second time would rewrite what was agreed.
-            done = earlier["output"]["edits"]
-            edits, source, by = ({"terms": done["terms"], "criterion": None, "note": done.get("note"),
-                                  "code_query": done.get("code_query")}, "earlier", "earlier_approval")
-        elif unattended:
-            edits, source, by = {"terms": [], "criterion": None, "note": None}, "unattended", "unattended"
-        elif self.deps.settings.protocol_approval == "as_proposed":
-            # A run nobody attends: the proposal is approved as it stands and the protocol says so by name, so a body
-            # approved by a setting is never read as a body a user approved.
-            edits, source, by = {"terms": [], "criterion": None, "note": None}, "setting", "setting"
-        elif self.deps.settings.protocol_approval == "warn" and output.get("warnings"):
-            # The model's advice, when it gave any, is information only (D233): every warned term is kept and the run
-            # goes on, with no card and no pause, also when the advice call failed. Nobody is asked, and the protocol
-            # says so, so this body is never read as one a person approved.
-            advice_rows = approval_rules.advice_rows(output["warnings"], output.get("advice") or {})
-            edits, source, by = {"terms": [], "criterion": None, "note": None}, "warn_kept", "warn_kept"
-        elif self.deps.settings.protocol_approval == "warn" and not output.get("warnings"):
-            # Nothing the application can see is wrong with the proposal, so the run does not stop. The protocol says
-            # that nobody was asked, so this body is never read as one a person approved.
-            edits, source, by = {"terms": [], "criterion": None, "note": None}, "no_warning", "no_warning"
-        else:
-            self._pause(run_id, "protocol_approval_needed", {"proposal_hash": output["proposal_hash"]})
-
-        self._checkpoint(run_id, revision)
-        # What this approval proposed, whether it asked for it or carried it from the approval before. A phrase the
-        # user adds from this list carries the origin `model`, and its count is not read a second time (slice 08c).
-        proposals, from_step = self._suggested(run_id, output)
-        # The network work of an approval happens here, in the worker, and only for the terms the user added.
+        failures = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("failures", [])
         routing = self._routing_step(run_id)
-        built, compiled, kept, skipped = await self._approved_vocabulary(
-            run, scope, vocabulary, queries, edits.get("terms") or [], reapply=source == "earlier",
-            proposals=proposals, code_query=edits.get("code_query"),
-            providers=routing["providers"] if routing else None)
-        if routing is not None and (gate := routing_rules.gate_query(built)) != routing["query"]:
-            # The correction changed the gate query: the distribution is read once more for it, and the queries are
-            # compiled for the sources it routes to. A query already read is not asked again (D93).
-            routing = await self._reroute(run, scope, step, output, gate)
-            built, compiled = self._compiled(built, routing["providers"], run["budget"])
-        agreed = approval_rules.apply_criterion(criterion, edits.get("criterion"))
-        # Switching the code's query off beside a model-written one is a correction too (D92).
-        code_off = (search_query_rules.is_model_written(built) and vocabulary["code_query"]["searched"]
-                    and not built["code_query"]["searched"])
+        digest = approval_rules.proposal_hash(vocabulary, criterion)
         record = {
-            "mode": "unattended" if unattended else self.deps.settings.protocol_approval, "approved_by": by,
-            **({"asked": False} if source == "unattended" else {}),
-            "edited": bool(kept or edits.get("criterion") or code_off),
-            "proposal_hash": output["proposal_hash"], "term_edits": len(kept),
-            "criterion_edited": edits.get("criterion") is not None,
-            "exclusion_word_in_question": approval_rules.exclusion_words_in_question(scope["question"], agreed),
-            **({"asked": False, "reason": "no_warning"} if source == "no_warning" else {}),
-            **({"asked": False, "reason": "warn_kept", "advice": advice_rows,
-                "advice_given": bool(output.get("advice")),
-                "advice_model": output.get("advice_model") if output.get("advice") else None}
-               if source == "warn_kept" else {}),
-            **({"warnings": output["warnings"]} if output.get("warnings") else {}),
-            **({"note": edits["note"]} if edits.get("note") else {}),
-            **({"earlier_approval_step_id": earlier["id"]} if source == "earlier" else {}),
-            # Only a run that asked, or one that carried an earlier answer, says anything about suggestions here:
-            # the body of a run that asked for none is what it was before this slice.
-            **({"suggestions": {
-                "requests": requests, "proposed": len(proposals),
-                "dropped": sum(1 for row in proposals if row["dropped"]),
-                # Terms of the approved vocabulary the model proposed and the user really added.
-                "accepted": sum(1 for term in built["terms"] if term["origin"] == "model"),
-                "step_input_id": from_step,
-                "carried_from_step_id": (output.get("carried_suggestions") or {}).get("from_step_id"),
-            }} if requests or output.get("carried_suggestions") else {}),
+            "mode": "unattended", "approved_by": "unattended", "asked": False, "edited": False,
+            "proposal_hash": digest, "term_edits": 0, "criterion_edited": False,
+            "exclusion_word_in_question": approval_rules.exclusion_words_in_question(scope["question"], criterion),
         }
-        # A correction that empties the vocabulary or makes it too broad stops the run with the step still open, so
-        # the user can send another one; an approval is never closed on a search that cannot run.
-        built, compiled = self._searchable(run_id, built, compiled)
-        self.store.finish_step(step["id"], "succeeded", output=output | {
-            # What the user sent, not what this run could apply: a later run reapplies the whole correction against
-            # its own phrases and decides for itself which operations still have something to act on.
-            "edits": {"terms": approval_rules.canonical_edits(edits.get("terms") or []),
-                      "criterion": edits.get("criterion"), "note": edits.get("note"),
-                      **({"code_query": edits["code_query"]} if edits.get("code_query") is not None else {})},
-            "approved": {"vocabulary": built, "queries": compiled, "criterion": agreed,
-                         **({"routing": routing} if routing else {})},
-            # What was proposed stays with the closed approval, so a later run of this question can carry it and a
-            # reader can still see which proposals were added and which were not (SW14.2).
-            "suggestions": proposals if from_step or output.get("carried_suggestions") else None,
-            "approval": record, "skipped_edits": skipped})
-        return built, compiled, agreed, record
-
-    async def _term_advice(self, run: dict[str, Any], scope: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
-        """Ask a model whether to remove or keep each warned term, once, and never block the run on it (D232, D233).
-
-        Returns `{phrase: {recommendation, reason}}`, empty when the model is down, the call budget is spent or the
-        answer does not name exactly the warned phrases. One call with no repair: a failure is stored as no advice, so
-        a resumed run does not call again. The advice is shown as information; under `warn` every term is kept.
-        """
-        self._checkpoint(run["id"], run["scope_revision"])
-        try:
-            answer = await self._model_step(
-                run, scope, "term_advice:1", "term_advice", optional=True,
-                advice_target=approval_rules.advice_target(scope["question"], output["proposal"]["vocabulary"],
-                                                           output["warnings"]))
-        except OptionalStepFailed:
-            return {}
-        if answer.get("invalid"):
-            return {}
-        return {entry["phrase"]: {"recommendation": entry["recommendation"], "reason": entry["reason"].strip()}
-                for entry in answer["result"]["advice"]}
-
-    def _suggested(self, run_id: str, output: dict[str, Any]) -> tuple[list[dict[str, Any]], str | None]:
-        """This approval's own proposed names, and the StepInput they came from (slice 08c).
-
-        The newest ready request wins; with none, the list an earlier approval of the same question left behind is
-        used, which is also what a reapplied correction's `model` origins must be read against. A failed request
-        contributes nothing and leaves an earlier list in place.
-        """
-        ready = [step for step in self.store.suggestion_steps(run_id)
-                 if (step["output"] or {}).get("status") == "ready"]
-        if ready:
-            return ready[-1]["output"]["terms"], ready[-1]["output"]["step_input_id"]
-        return (output.get("carried_suggestions") or {}).get("terms") or [], None
-
-    async def _term_suggestions(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                                number: int) -> None:
-        """Ask a model for other names of the searched phrases, and count every name it proposed (SW2.5).
-
-        One optional call, no repair: a failed request is recorded as failed and the card offers to try again, so a
-        resumed run never calls the model a second time for the same request. Nothing proposed enters the vocabulary
-        or a query here — the rows are stored, the user decides — and the counts are written with the step, so a run
-        resumed after this point reads them back instead of paying for them again.
-        """
-        run_id, revision = run["id"], run["scope_revision"]
-        step = self.store.step(run_id, f"term_suggestions:{number}", "code:term_suggestions")
-        self.store.start_step(step["id"])
-        self._checkpoint(run_id, revision)
-        try:
-            output = await self._model_step(run, scope, f"term_suggestion:{number}", "term_suggestions",
-                                            optional=True,
-                                            suggestion_target=suggestion_rules.target(scope["question"], vocabulary))
-        except OptionalStepFailed as failure:
-            self.store.finish_step(step["id"], "succeeded",
-                                   output={"status": "failed", "failure": failure.reason, "terms": []})
-            return
-        if output.get("invalid"):
-            # Not repaired and not half-used: a proposal whose anchor is not one of the given phrases has no block.
-            self.store.finish_step(step["id"], "succeeded",
-                                   output={"status": "failed", "failure": "invalid_model_output", "terms": []})
-            return
-        rows = suggestion_rules.screen(vocabulary, output["result"]["terms"])
-        self._checkpoint(run_id, revision)
-        probe = self._count_probe(scope, run_id)
-        for row in rows:
-            if row["dropped"]:
-                continue  # a phrase that cannot enter the query is not worth a request
-            row["phrase_count"] = await probe(query_compiler.quoted(row["phrase"]))
-            if row["phrase_count"] == 0:
-                row["dropped"] = "zero_results"
         self.store.finish_step(step["id"], "succeeded", output={
-            "status": "ready", "terms": rows, "step_input_id": output["step_input_id"]})
-        self._checkpoint(run_id, revision)
-
-    async def _approved_vocabulary(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                                   queries: list[dict[str, Any]], term_edits: list[dict[str, Any]], reapply: bool,
-                                   proposals: list[dict[str, Any]] | None = None, code_query: bool | None = None,
-                                   providers: list[str] | None = None
-                                   ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-        """The vocabulary and queries the run searches with, rebuilt through the one code path that builds them.
-
-        With no term edit the proposal is returned as it is: no probe is sent and the queries are the objects the
-        vocabulary step compiled, byte for byte. With one, the corrected phrases go back through `build_vocabulary`,
-        which decides the root or phrase form, the AND-only mark and the gate narrowing again — a patched term list
-        would carry decisions that were taken for other phrases. The counts the proposal already read are given to
-        it, so only a phrase the user added is really probed. `providers` is the routed list the proposal was compiled
-        for (D93); without one — a run from before D93 — the scope's, compiled as before routing.
-        """
-        routed = providers is not None
-        providers = providers if providers is not None else scope["providers"]
-        kept, skipped = approval_rules.applicable(vocabulary, term_edits) if reapply else (term_edits, [])
-        if search_query_rules.is_model_written(vocabulary):
-            # The model's terms are corrected as whole phrases and the code's query is only switched on or off; the
-            # code vocabulary's forms are not applied to what the model wrote (D92).
-            if not kept and (code_query is None or code_query == vocabulary["code_query"]["searched"]):
-                return vocabulary, queries, [], skipped
-            built = await search_query_rules.rebuild(
-                vocabulary, kept, code_query if vocabulary["code_query"]["searched"] else None,
-                self._count_probe(scope, run["id"]), suggestion_rules.model_phrases(proposals or []))
-            built, compiled = self._compiled(built, providers, run["budget"], routed=routed)
-            return built, compiled, built["user_edits"], skipped
-        if not kept:
-            return vocabulary, queries, [], skipped
-        proposals = proposals or []
-        extraction = approval_rules.edited_extraction(
-            vocabulary, kept, model_phrases=suggestion_rules.model_phrases(proposals))
-        built = await vocabulary_rules.build_vocabulary(
-            extraction, self._count_probe(scope, run["id"]),
-            # The counts of this run's own probes and of the proposals it counted: an added name is not asked again.
-            known={p["query"]: p["count"] for p in vocabulary["probes"]} | suggestion_rules.known_counts(proposals))
-        # What the labelling runs said stays on record; the user's own operations are written beside it, and
-        # `block_origins` reads both, so a phrase the user placed keeps `user` wherever its block is shown.
-        built["labelling"] = vocabulary.get("labelling")
-        built["user_edits"] = approval_rules.canonical_edits(kept)
-        compiled = query_compiler.compile_block_queries(built, providers, run["budget"]["max_provider_requests"],
-                                                        routed=routed)
-        return built, compiled, built["user_edits"], skipped
+            "proposal": {"vocabulary": vocabulary, "queries": queries, "criterion": criterion,
+                         "criterion_failures": failures, **({"routing": routing} if routing else {})},
+            "proposal_hash": digest,
+            "approved": {"vocabulary": vocabulary, "queries": queries, "criterion": criterion,
+                         **({"routing": routing} if routing else {})},
+            "approval": record})
+        return vocabulary, queries, criterion, record
 
     async def _source_routing(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                               queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Read where the proposal's records lie and compile its queries for the sources that routes to (D93).
 
         One OpenAlex request for the gate query (`routing.gate_query`), stored with its answer before the step ends, so
-        a resumed run sends nothing again and searches the queries the step compiled. A run that showed its approval
-        card before this step existed goes on without it, searching the queries the card showed; a new scope revision
-        is routed. No domain source usable in the scope: nothing is asked. A distribution that cannot be read: every
-        usable domain source is searched, and the step says so.
+        a resumed run sends nothing again and searches the queries the step compiled. No domain source usable in the
+        scope: nothing is asked. A distribution that cannot be read: every usable domain source is searched, and the
+        step says so.
         """
         run_id, revision = run["id"], run["scope_revision"]
         step = self.store.existing_step(run_id, "source_routing")
         if step is not None and step["status"] == "succeeded":
             stored = step["output"]
             return search_query_rules.settled(stored["vocabulary"], stored["queries"]), stored["queries"]
-        card = self.store.existing_step(run_id, "protocol_approval")
-        if step is None and card is not None and card["output"] is not None:
-            return vocabulary, queries
         step = step or self.store.step(run_id, "source_routing", "code:source_routing")
         self.store.start_step(step["id"])
         query = routing_rules.gate_query(vocabulary)
-        reads = await self._distribution(scope, query, {})
+        reads = await self._distribution(scope, query)
         routing = routing_rules.route(scope["providers"], query, *reads[query] if query in reads else (None, "unavailable"))
         built, compiled = self._compiled(vocabulary, routing["providers"], run["budget"])
         # Written before the run can stop, so a resumed run reads the answer back instead of asking again.
@@ -1220,16 +949,13 @@ class ResearchFlow:
         self._checkpoint(run_id, revision)
         return self._proposed(run_id, built, compiled)
 
-    async def _distribution(self, scope: dict[str, Any], query: str | None,
-                            known: dict[str, dict[str, Any] | None]) -> dict[str, tuple[dict[str, Any] | None, str]]:
+    async def _distribution(self, scope: dict[str, Any], query: str | None) -> dict[str, tuple[dict[str, Any] | None, str]]:
         """The field distribution of `query` with its routing status, keyed by the query; one request at most, none
-        for a query already in `known`, none when no domain source could be chosen or OpenAlex cannot be asked."""
+        when no domain source could be chosen or OpenAlex cannot be asked."""
         if query is None:
             return {}
         if not routing_rules.needs_distribution(scope["providers"]):
             return {query: (None, "not_needed")}
-        if query in known:
-            return {query: (known[query], "read" if known[query] else "unavailable")}
         connector = CONNECTORS["openalex"]
         if "openalex" not in scope["providers"] or connector.access_mode() == "not_configured":
             return {query: (None, "unavailable")}
@@ -1237,32 +963,13 @@ class ResearchFlow:
                                                          mailto=self.deps.settings.contact_email)
         return {query: (distribution, "read" if distribution else "unavailable")}
 
-    async def _reroute(self, run: dict[str, Any], scope: dict[str, Any], approval_step: dict[str, Any],
-                       output: dict[str, Any], query: str) -> dict[str, Any]:
-        """Route again for a gate query the user's correction changed. The read is written on the approval step
-        before anything else happens, so a worker that dies here reads it back instead of asking again."""
-        known = {**(self._routing_step_output(run["id"]) or {}).get("reads", {}), **output.get("routing_reads", {})}
-        reads = await self._distribution(scope, query, known)
-        if query in reads and query not in known and reads[query][1] in ("read", "unavailable"):
-            output["routing_reads"] = {**output.get("routing_reads", {}), query: reads[query][0]}
-            self.store.set_step_output(approval_step["id"], output)
-        self._checkpoint(run["id"], run["scope_revision"])
-        return routing_rules.route(scope["providers"], query, *reads.get(query, (None, "unavailable")))
-
-    def _compiled(self, vocabulary: dict[str, Any], providers: list[str], budget: dict[str, Any], *,
-                  routed: bool = True) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    def _compiled(self, vocabulary: dict[str, Any], providers: list[str], budget: dict[str, Any]
+                  ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """The first round's queries for these providers, through the compiler that wrote the vocabulary's: a
-        model-written vocabulary's with the code's query beside it (D92), recompiled for the same providers.
-
-        `routed` false is an sw run from before D93 (review of slice 14, 2026-09-23): its queries are compiled as its
-        card showed them, and the code's query keeps the queries stored with it, as before routing.
-        """
+        model-written vocabulary's with the code's query beside it (D92), recompiled for the same providers."""
         limit = budget["max_provider_requests"]
         if not search_query_rules.is_model_written(vocabulary):
-            return vocabulary, query_compiler.compile_block_queries(vocabulary, providers, limit, routed=routed)
-        if not routed:
-            compiled = search_query_rules.compile_queries(vocabulary, providers, limit, routed=False)
-            return search_query_rules.with_compiled(vocabulary, compiled), compiled
+            return vocabulary, query_compiler.compile_block_queries(vocabulary, providers, limit)
         code = vocabulary["code_query"]
         built = vocabulary | {"code_query": code | {
             "queries": query_compiler.compile_block_queries(code["vocabulary"], providers, limit)}}
@@ -1274,23 +981,17 @@ class ResearchFlow:
         return step["output"] if step is not None and step["status"] == "succeeded" else None
 
     def _routing_step(self, run_id: str) -> dict[str, Any] | None:
-        """The routing this run's proposal was compiled for, or None for a run from before D93."""
+        """The routing this run's queries were compiled for (D93), or None before the routing step has run."""
         return (self._routing_step_output(run_id) or {}).get("routing")
 
-    def _routing(self, run_id: str) -> dict[str, Any] | None:
-        """The routing this run searches under: the approved one where a correction routed again, else the step's."""
-        card = self.store.existing_step(run_id, "protocol_approval")
-        approved = ((card or {}).get("output") or {}).get("approved") or {}
-        return approved.get("routing") or self._routing_step(run_id)
-
     def _searchable(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """Stop the run when its vocabulary cannot be searched. A resumed run reads the same stored vocabulary, so it
-        stops for the same reason again instead of going on with no query or with the query that was refused; the way
-        out is a scope revision that names key terms."""
+        """End the run when its vocabulary cannot be searched: no query, or every term too frequent (clean start,
+        decision B). Nothing is searched and nobody is asked to correct the terms; the run fails with the reason, and
+        the way on is a scope revision whose question (or key terms) can be searched."""
         if not queries:
-            self._pause(run_id, "vocabulary_empty")
+            self._fail(run_id, "vocabulary_empty")
         if built["too_broad"]:
-            self._pause(run_id, "vocabulary_too_broad", {"gate_count": built["gate_count"]})
+            self._fail(run_id, "vocabulary_too_broad", {"gate_count": built["gate_count"]})
         return built, queries
 
     async def _research_title(self, run: dict[str, Any], scope: dict[str, Any], optional: bool = False) -> None:
@@ -2198,17 +1899,20 @@ class ResearchFlow:
             await fast_answer.answer(self, run, scope)
             return
         if small_batch.enabled(run["budget"]):
+            # An answer bound to a completed discovery is written on the fast path above. One whose binding does not
+            # resolve to that discovery's fast-path ledger has no other route since the clean start: it stops here.
             inspection = run["budget"]["inspection"]
-            if inspection.get("binding_error"):
-                self._fail(run_id, inspection["binding_error"], {
-                    "list_run_id": inspection["list_run_id"],
-                    "note": "The completed discovery has no successful frozen list; run discovery again."})
+            self._fail(run_id, inspection.get("binding_error") or "answer_binding_unresolved", {
+                "list_run_id": inspection["list_run_id"],
+                "note": "The answer is not bound to a completed fast-path discovery; run discovery again."})
+        # From here on the answer reads only what the user attached (attached scope, or mixed scope with no completed
+        # discovery): the included works' PDF text, ranked by `_retrieve`.
         heads = self.store.included_works(rid)  # one per included work
         selection_revision = self.store.selection_revision(rid)  # read together with the included set it describes
         # No await between the two reads above and this step's write: the snapshot is the state they describe.
         self._answer_start_snapshot(run, heads, selection_revision)
-        if not heads and not self._abstract_sources(run, heads):
-            # Neither evidence route is available (D234). Keep D106's recorded no-evidence result;
+        if not heads:
+            # No evidence route is available (D234). Keep D106's recorded no-evidence result;
             # the snapshot describes inclusion, not a finding about the literature.
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                    {"ok": True, "issues": [], "reason": NO_INCLUDABLE_SOURCE,
@@ -2225,15 +1929,10 @@ class ResearchFlow:
 
         self._checkpoint(run_id)
         self.store.update_run(run_id, stage="answer")
-        # Candidates the full-text stage never reached, or found no open text for, give their abstracts (D225).
-        extra = self._abstract_sources(run, heads)
-        semantic = await self._semantic_ranking(run, scope, included + extra)
+        semantic = await self._semantic_ranking(run, scope, included)
         # Part of the input comes from the cue phrases the criterion was approved with (D84).
         patterns = self._criterion_phrases(run, scope)
-        if small_batch.enabled(run["budget"]):
-            passages = self._small_batch_answer_passages(run, scope, included, extra, semantic, patterns)
-        else:
-            passages = self._retrieve(rid, scope, included, run["budget"]["max_answer_passages"], semantic, patterns)
+        passages = self._retrieve(rid, scope, included, run["budget"]["max_answer_passages"], semantic, patterns)
         if not passages:
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                    {"ok": True, "issues": [], "note": "No accessible passages for the included sources."},
@@ -2335,148 +2034,6 @@ class ResearchFlow:
             "flow": flow, "included": len(heads),
             # Included works whose only text is the person's file not read yet: they give the answer nothing (D100).
             "included_without_answer_text": sum(1 for head in heads if self.store.answer_version(rid, head) is None)})
-
-    def _abstract_sources(self, run: dict[str, Any], heads: list[str]) -> list[str]:
-        """Eligible abstract-only works in the answer's bound frozen list (D225, D238).
-
-        A work counts when the abstract stage kept it as a candidate and the full-text stage either never decided it
-        or found no open text for it (`no_fulltext`), under this question revision; its selection is still pending
-        (nothing excluded it, no person decided it) and it has an abstract and no PDF text. The pool is the run's
-        `max_candidates` eligible works from that list. A resumed run keeps the list its
-        first pass stored, less any work a person has decided since.
-        Passage allocation is handled by `_small_batch_answer_passages`.
-        """
-        # Unbound answers (attached scope, or mixed without a completed small-batch discovery) have no
-        # automatic abstract candidate route. D119 answers do not call this helper; old sw answers cannot execute.
-        if not small_batch.enabled(run["budget"]):
-            return []
-        rid, revision = run["research_id"], run["scope_revision"]
-        pending = {r[0] for r in self.store.conn.execute(
-            "SELECT source_version_id FROM selections WHERE research_id = ? AND state = 'pending' AND origin != 'user'",
-            (rid,))}
-        def without_text(head: str) -> bool:
-            return not any(self.store.has_pdf_text(v) for v in [head, *self.store.work_versions(rid, head)])
-
-        step = self.store.step(run["id"], "answer_abstract_sources", "code:answer_abstract_sources")
-        if step["status"] == "succeeded":
-            # A person who decided one of them since the list was stored has the last word (AGENTS.md, User Authority),
-            # and a work whose PDF text arrived since is no longer abstract-only.
-            return [svid for svid in step["output"]["sources"] if svid in pending and without_text(svid)]
-        self.store.start_step(step["id"])
-        decisions = DecisionStore(self.store)
-        limit = run["budget"]["max_candidates"]
-        facts = decisions.facts(rid)
-        work_heads = facts["heads"]
-        listing = small_batch.answer_listing(self.store, run)
-        order = small_batch.unchanged_heads(self.store, rid, listing, listing["items"])
-        ranking_context = {"ordering_rule": small_batch.POLICY, "manifest_hash": listing["manifest_hash"]}
-        head_of = {svid: work_heads[wid] for svid, wid in
-                   self.store.work_ids(order).items()
-                   if wid in work_heads}
-        taken, sources, reasons = set(heads), [], Counter()
-        for svid in order:
-            head = head_of.get(svid)
-            if head is None or head in taken or len(sources) >= limit:
-                continue
-            taken.add(head)
-            outcome = decisions.work_outcome(rid, self.store.source(head)["work_id"], facts)
-            kept = (outcome.get("stage") == "abstract" and outcome.get("outcome") == "candidate"
-                    or outcome.get("stage") == "fulltext" and outcome.get("outcome") == "unresolved"
-                    and outcome.get("reason_code") == "no_fulltext")
-            # Decided under this question revision: an older revision's candidate was screened against another question.
-            kept = kept and self.store.conn.execute(
-                "SELECT 1 FROM stage_decisions WHERE research_id = ? AND source_version_id = ? AND stage = ?"
-                " AND superseded_at IS NULL AND scope_revision = ?",
-                (rid, outcome["source_version_id"], outcome["stage"], revision)).fetchone() is not None
-            # A work with PDF text in any version is not abstract-only.
-            if (kept and head in pending and without_text(head)
-                    and any(p["kind"] == "abstract" for p in self.store.passages_for(head))):
-                sources.append(head)
-                reasons[f"{outcome['stage']}/{outcome['reason_code']}"] += 1
-        self.store.finish_step(step["id"], "succeeded", output={"sources": sources, "limit": limit,
-                                                                "by_decision": dict(reasons), **ranking_context})
-        return sources
-
-    def _small_batch_answer_passages(self, run: dict[str, Any], scope: dict[str, Any], included: list[str],
-                                     extra: list[str], semantic: list[dict[str, Any]] | None,
-                                     patterns: list[tuple[str, re.Pattern[str]]] | None) -> list[dict[str, Any]]:
-        """D238: retain order within evidence layers; rank passages only within each eligible work."""
-        rid = run["research_id"]
-        listing = small_batch.answer_listing(self.store, run)
-        saved = self.store.existing_step(run["id"], "small_batch:v1:answer_input")
-        if saved is not None and saved["status"] == "succeeded":
-            plan = saved["output"]
-            if plan["selection_revision"] != self.store.selection_revision(rid):
-                self._fail(run["id"], "selection_changed", {"note": "The frozen answer input is stale."})
-            return [self.store.passage(pid) for pid in plan["passage_ids"]]
-        valid = set(small_batch.unchanged_heads(self.store, rid, listing, listing["items"]))
-        eligible = {wid: svid for svid, wid in self.store.work_ids(included + extra).items()}
-        user_works = set(self.store.work_ids([row[0] for row in self.store.conn.execute(
-            "SELECT source_version_id FROM selections WHERE research_id = ? AND state = 'included'"
-            " AND origin = 'user'", (rid,))]).values())
-        ordered = [item | {"ordering_reason": "frozen_list"} for item in listing["items"]
-                   if item["work_id"] in eligible and item["head"] in valid]
-        present = {item["work_id"] for item in ordered}
-        additions = [{"work_id": wid, "head": eligible[wid], "position": None,
-                      "user_priority": wid in user_works,
-                      "ordering_reason": "user_included_outside_frozen_list" if wid in user_works
-                      else "included_outside_frozen_list"}
-                     for wid in sorted(eligible.keys() - present)]
-        ordered = ([item for item in additions if item["user_priority"]]
-                   + [item for item in ordered if item["user_priority"] or item["work_id"] in user_works]
-                   + [item for item in ordered if not item["user_priority"] and item["work_id"] not in user_works]
-                   + [item for item in additions if not item["user_priority"]])
-        fts = " OR ".join(f'"{term}"' for term in self._topic_terms(rid, scope))
-        queues, items = [], []
-        for item in ordered:
-            svid = eligible.get(item["work_id"])
-            passages = self.store.passages_for(svid)
-            if svid in extra:
-                queue = [p for p in passages if p["kind"] == "abstract"][:1]
-            else:
-                # PDF text leads; the abstract may follow, but cannot displace the best question/criterion page.
-                pages = [p for p in passages if p["kind"] == "pdf_page"]
-                ids = {p["id"] for p in pages}
-                topic = [p for p in self.store.search_passages([svid], fts, len(passages)) if p["id"] in ids]
-                if semantic is not None:
-                    topic = fuse_rankings(topic, [p for p in semantic if p["id"] in ids])
-                criterion = criterion_passages.criterion_order(pages, patterns or [])
-                ranked = fuse_rankings(topic, criterion) if criterion else topic
-                queue = list({p["id"]: p for p in [*ranked, *pages, *passages]}.values())[:MAX_PASSAGES_PER_SOURCE]
-            if queue:
-                queues.append(queue)
-                items.append(item | {"source_version_id": svid,
-                                     "evidence_layer": "included_fulltext" if svid in included
-                                     and self.store.has_pdf_text(svid) else "abstract_only"})
-        limit = run["budget"]["max_answer_passages"]
-        # Keep the former breadth prefix when room permits, while giving included PDF evidence
-        # representation before depth. A fixed 24-work cap would lose early D225 sources at DBR.
-        original_prefix = {item["source_version_id"] for item in items[:max(1, limit // 2)]}
-        layered = run["budget"]["inspection"].get("answer_allocation_version", 1) >= 2
-        breadth = max(1, limit // 2)
-        if layered:
-            pairs = sorted(zip(items, queues), key=lambda pair: (
-                not (pair[0]["user_priority"] or pair[0]["work_id"] in user_works),
-                pair[0]["evidence_layer"] != "included_fulltext"))
-            items = [item for item, _ in pairs]
-            queues = [queue for _, queue in pairs]
-            breadth = min(limit, sum(item["evidence_layer"] == "included_fulltext"
-                                     or item["source_version_id"] in original_prefix for item in items))
-        passages = small_batch.allocate(queues, limit, MAX_PASSAGES_PER_SOURCE, breadth=breadth)
-        represented = {p["source_version_id"] for p in passages}
-        selection_revision = self.store.selection_revision(rid)
-        small_batch.save_code(self, run, "small_batch:v1:answer_input", "code:small_batch_answer_input", lambda: {
-            "policy": small_batch.POLICY, "manifest_hash": listing["manifest_hash"],
-            "allocation_rule": "user_priority_then_included_fulltext_v2" if layered else "frozen_work_order_v1",
-            "representation_limit": breadth,
-            "selection_revision": selection_revision, "limit": limit,
-            "items": [{"work_id": item["work_id"], "source_version_id": item["source_version_id"],
-                       "position": item["position"],
-                       "ordering_reason": item["ordering_reason"],
-                       "evidence_layer": item["evidence_layer"],
-                       "reason": None if item["source_version_id"] in represented else "answer_budget_deferred"}
-                      for item in items], "passage_ids": [p["id"] for p in passages]})
-        return passages
 
     def _criterion_phrases(self, run: dict[str, Any], scope: dict[str, Any]) -> list[tuple[str, re.Pattern[str]]]:
         """The approved cue phrases this answer run orders criterion passages with, compiled (D84, SW12.3).
@@ -2838,9 +2395,9 @@ class ResearchFlow:
             raise RunStopped
 
 
-    def _chain_state(self, research_id: str, revision: int) -> tuple[set[str], list[str], list[str]]:
-        """The works citation chaining brought under this question revision, the keyword order and the chain's order
-        (D95): the latest chain filter's list, the latest keyword ranking and the latest chain ranking.
+    def _chain_state(self, research_id: str, revision: int) -> tuple[set[str], list[str]]:
+        """The works citation chaining brought under this question revision and the keyword order (D95): the latest
+        chain filter's list and the latest keyword ranking.
 
         When the chain ran, the keyword order is read by work: a chain record joined to a keyword work can head it
         now, and the work keeps the place its earlier head had. Without a chain the keyword order is read as stored.
@@ -2849,12 +2406,12 @@ class ResearchFlow:
         stored = self.store.latest_step_output(research_id, "chain_filter", revision)
         order = decisions.latest_ranking(research_id, revision) or []
         if stored is None:
-            return set(), order, []
+            return set(), order
         # Every work only a chain found under this revision, an earlier discovery run's too: none is a keyword work.
         # The stored list is not merged in: a work it names that a later keyword search found is a keyword work now.
         heads = self.store.work_heads(research_id)
         chained = {heads[work_id] for work_id in self.store.chain_only_works(research_id, revision) if work_id in heads}
-        return chained, self._current_heads(research_id, order), decisions.latest_chain_ranking(research_id, revision)
+        return chained, self._current_heads(research_id, order)
 
     def _current_heads(self, research_id: str, order: list[str]) -> list[str]:
         """These records as the heads of their works now, in the same order, each work once (D95)."""
@@ -3354,9 +2911,10 @@ class ResearchFlow:
         sent = adjudication.mark_comparator(sent, frozen["question_elements"], frozen["required_roles"])
         criterion = {"criterion": frozen["criterion"], "parts": sent, "cue_phrases": frozen["cue_phrases"],
                      "protocol_revision": frozen["protocol_revision"]}
-        # Chained works are read after the keyword order, in the chain's own order (D95); the limit is the same.
-        chained, legacy_order, chain_order = self._chain_state(rid, run["scope_revision"])
-        order = order if batch_key else legacy_order + chain_order
+        # Chained works have no ranking of their own: one the keyword order did not place is read last (D95,
+        # `adjudication.read_plan`); the limit is the same.
+        chained, legacy_order = self._chain_state(rid, run["scope_revision"])
+        order = order if batch_key else legacy_order
         corpus = self._fulltext_works(rid, chained)
         if batch_key:
             corpus = [work for work in corpus if work["head"] in (order or [])]
@@ -3877,15 +3435,11 @@ class ResearchFlow:
 
     def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int,
                   semantic: list[dict[str, Any]] | None = None,
-                  patterns: list[tuple[str, re.Pattern[str]]] | None = None) -> list[dict[str, Any]]:
-        """Passages for the answer step. `patterns` is given by an sw run alone and may be empty (D84).
+                  patterns: list[tuple[str, re.Pattern[str]]] = ()) -> list[dict[str, Any]]:
+        """Passages for an answer from attached sources (the fast path writes its own input, `fast_answer`).
 
-        Without it the selection is what it was before slice 11: the hand-written formulation quota. With it, part
-        of the room is filled from the criterion order instead, and an empty list means the whole input comes from
-        the topic order — an sw research never falls back to the topic-specific formulation list.
-
-        Attached-source and D119 answers use this shared selector. Academic small-batch answers use
-        `_small_batch_answer_passages` with their stored allocation policy.
+        Part of the room is filled from the criterion order of the approved cue `patterns` (D84); with none, the
+        whole input comes from the topic order.
         """
         # A short attached document can fit in the answer input in its entirety. Do not discard relevant later pages
         # merely because the multi-source six-passage cap was reached; keep that cap for larger or mixed corpora.
@@ -3937,9 +3491,8 @@ class ResearchFlow:
                 if pages:
                     matched = {q["id"]: i for i, q in enumerate(self.store.search_passages([svid], fts, MAX_PASSAGES_PER_SOURCE * 2))}
                     pages.sort(key=lambda q: (0, position[q["id"]]) if q["id"] in position else (1, matched[q["id"]]) if q["id"] in matched
-                               else (2, q["physical_page"] if q["physical_page"] is not None else math.inf) if patterns is not None
-                               else (2, -formulation_score(q["text"]), q["physical_page"] if q["physical_page"] is not None else math.inf))
-                if patterns is not None and pages:
+                               else (2, q["physical_page"] if q["physical_page"] is not None else math.inf))
+                if pages:
                     # The source still gives the same number of pages; one of them comes from the criterion order,
                     # and a source with no criterion page gives its second page from the topic order. The page
                     # already given as `first` is not offered again, or it would spend one of the two places.
@@ -3957,45 +3510,27 @@ class ResearchFlow:
             p = next((q for q in passages if q["kind"] == "abstract"), None) or best.get(svid) or next(iter(passages), None)
             if p:
                 selected[p["id"]] = p
-        taken = {svid: 1 for svid in {p["source_version_id"] for p in selected.values()}}
-        if patterns is None:
-            order_position = {svid: i for i, svid in enumerate(order)}
-            formulation_pages = [p for svid in order for p in passages_of[svid]
-                                 if p["kind"] == "pdf_page" and formulation_score(p["text"]) >= FORMULATION_SCORE_THRESHOLD]
-            formulation_pages.sort(key=lambda p: (-formulation_score(p["text"]), order_position[p["source_version_id"]],
-                                                   p["physical_page"] if p["physical_page"] is not None else math.inf))
-            formulation_room = limit // 4
-            formulations_added = 0
-            for p in formulation_pages:
-                if len(selected) >= limit or formulations_added >= formulation_room:
+        # The criterion quota fills in rounds down the source order, so it is not spent on one source's pages
+        # and every source holding a criterion page is represented before any source gives a second one.
+        # A crowded pass that short sources left unfilled has already given a source up to three passages; the
+        # cap counts them (D84, limits).
+        taken = dict(Counter(p["source_version_id"] for p in selected.values()))
+        room = limit // criterion_passages.CRITERION_ROOM_DIVISOR
+        added = 0
+        for depth in range(max((len(ordered) for ordered in criterion_of.values()), default=0)):
+            if len(selected) >= limit or added >= room:
+                break
+            for svid in order:
+                if len(selected) >= limit or added >= room:
                     break
-                svid = p["source_version_id"]
+                ordered = criterion_of.get(svid, [])
+                if depth >= len(ordered):
+                    continue
+                p = ordered[depth]
                 if p["id"] not in selected and taken.get(svid, 0) < MAX_PASSAGES_PER_SOURCE:
                     selected[p["id"]] = p
                     taken[svid] = taken.get(svid, 0) + 1
-                    formulations_added += 1
-        else:
-            # The criterion quota fills in rounds down the source order, so it is not spent on one source's pages
-            # and every source holding a criterion page is represented before any source gives a second one.
-            # A crowded pass that short sources left unfilled has already given a source up to three passages; the
-            # cap counts them. The legacy branch keeps its count from one, as it always did (D84, limits).
-            taken = dict(Counter(p["source_version_id"] for p in selected.values()))
-            room = limit // criterion_passages.CRITERION_ROOM_DIVISOR
-            added = 0
-            for depth in range(max((len(ordered) for ordered in criterion_of.values()), default=0)):
-                if len(selected) >= limit or added >= room:
-                    break
-                for svid in order:
-                    if len(selected) >= limit or added >= room:
-                        break
-                    ordered = criterion_of.get(svid, [])
-                    if depth >= len(ordered):
-                        continue
-                    p = ordered[depth]
-                    if p["id"] not in selected and taken.get(svid, 0) < MAX_PASSAGES_PER_SOURCE:
-                        selected[p["id"]] = p
-                        taken[svid] = taken.get(svid, 0) + 1
-                        added += 1
+                    added += 1
         for p in ranked:
             if len(selected) >= limit:
                 break
@@ -4832,11 +4367,9 @@ class ResearchFlow:
                     report_target: dict[str, Any] | None = None,
                     vocabulary_target: dict[str, Any] | None = None,
                     screening_target: dict[str, Any] | None = None,
-                    suggestion_target: dict[str, Any] | None = None,
                     adjudication_target: dict[str, Any] | None = None,
                     lineage_target: dict[str, Any] | None = None,
-                    candidate_target: dict[str, Any] | None = None,
-                    advice_target: dict[str, Any] | None = None) -> dict[str, Any]:
+                    candidate_target: dict[str, Any] | None = None) -> dict[str, Any]:
         candidates = []
         for c in candidate_rows:
             source = self.store.source(c["source_version_id"])
@@ -4874,16 +4407,12 @@ class ResearchFlow:
             target["vocabulary_target"] = vocabulary_target
         if screening_target is not None:
             target["screening_target"] = screening_target
-        if suggestion_target is not None:
-            target["suggestion_target"] = suggestion_target
         if adjudication_target is not None:
             target["adjudication_target"] = adjudication_target
         if lineage_target is not None:
             target["lineage_target"] = lineage_target
         if candidate_target is not None:
             target["candidate_target"] = candidate_target
-        if advice_target is not None:
-            target["advice_target"] = advice_target
         allowlist = {"candidate_ids": [c["candidate_id"] for c in candidates], "source_ids": [s["source_id"] for s in sources],
                      "passage_ids": [p["passage_id"] for p in passages]}
         if task_type == "claim_assessment" and candidate_target is not None and candidate_target["version"] is not None:
@@ -4891,13 +4420,6 @@ class ResearchFlow:
         if vocabulary_target is not None:
             # The allowlist for this step is the phrase list itself: it may label those phrases and name no other.
             allowlist["phrases"] = [entry["phrase"] for entry in vocabulary_target["phrases"]]
-        if suggestion_target is not None:
-            # The same rule for the suggestion step: a proposed name may be another name for one of these phrases
-            # and for no other phrase (slice 08c).
-            allowlist["phrases"] = [entry["phrase"] for entry in suggestion_target["phrases"]]
-        if advice_target is not None:
-            # Advice may name a warned phrase and no other (D232).
-            allowlist["phrases"] = [entry["phrase"] for entry in advice_target["warnings"]]
         if task_type in contracts.REPORT_TASKS:
             report = report_target or {}
             cells, gaps = report.get("cells", []), report.get("gap_candidates", [])
@@ -5082,7 +4604,6 @@ class ResearchFlow:
                           optional: bool = False, extraction_target: dict[str, Any] | None = None,
                           report_target: dict[str, Any] | None = None, vocabulary_target: dict[str, Any] | None = None,
                           screening_target: dict[str, Any] | None = None,
-                          suggestion_target: dict[str, Any] | None = None,
                           adjudication_target: dict[str, Any] | None = None,
                           limiter: ModelCallLimiter | None = None, budget_short: str = "pause",
                           recheck: Callable[[list[dict[str, Any]]], list[dict[str, Any]] | None] | None = None,
@@ -5095,7 +4616,6 @@ class ResearchFlow:
                           candidate_target: dict[str, Any] | None = None,
                           step_input_builder: Callable[[str], dict] | None = None,
                           max_request_chars: int | None = None,
-                          advice_target: dict[str, Any] | None = None,
                           resplit: dict[str, Any] | None = None,
                           ) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
@@ -5271,8 +4791,7 @@ class ResearchFlow:
                 halt("budget_exhausted", {"limit": "model_calls"})
             payload = step_input_builder(step["id"]) if step_input_builder is not None else self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
                                        claims or [], model, extraction_target, report_target, vocabulary_target,
-                                       screening_target, suggestion_target, adjudication_target, lineage_target, candidate_target,
-                                       advice_target)
+                                       screening_target, adjudication_target, lineage_target, candidate_target)
             if attempt_record is not None:
                 extra = (step_output_extra or {}) | attempt_record(payload)
             if issues := contracts.check_step_input(payload):

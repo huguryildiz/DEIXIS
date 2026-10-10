@@ -9,7 +9,7 @@ from typing import Any
 from deixis.documents import embeddings, local_embedding, pdf
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.contracts import locate_anchor
-from deixis.domain.rules import SUGGESTION_CALLS, effective_reviewer, result_applicability
+from deixis.domain.rules import effective_reviewer, result_applicability
 from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import expansion as expansion_rules
@@ -17,7 +17,6 @@ from deixis.workflow import flow_counts as flow_rules
 from deixis.workflow import overrides as override_rules
 from deixis.workflow import probes as probe_rules
 from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy
-from deixis.workflow import suggestions as suggestions_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import chunk_numbers, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts, inspection_progress
@@ -34,133 +33,40 @@ from deixis.workflow import fast_path
 # What the approval card shows of a vocabulary. The probes stay out: they are large, and the screen shows a term's
 # own counts, which are already in the term row.
 APPROVAL_VOCABULARY_FIELDS = ("claim_words", "exclusion_words", "outcome_terms", "gate_count", "too_broad")
-# What the card reads of one proposed name (slice 08c). `phrase_count` null was not counted, which is not zero.
-SUGGESTION_FIELDS = ("phrase", "synonym_of", "block", "phrase_count", "dropped")
 
 
-def _approval_side(vocabulary: dict[str, Any] | None, criterion: dict[str, Any] | None,
-                   queries: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
-    """One side of the approval — what was proposed, or what was approved — as the screen reads it (slice 08a)."""
-    if vocabulary is None:
-        return None
+def _approval_side(vocabulary: dict[str, Any], criterion: dict[str, Any] | None,
+                   queries: list[dict[str, Any]]) -> dict[str, Any]:
+    """What the run searched under, as the approval card reads it (slice 08a)."""
     origins = approval_rules.block_origins(vocabulary)
     side = {
         "terms": [{field: term[field] for field in vocabulary_rules.TERM_FIELDS}
                   | {"block_origin": origins.get(term["phrase"], "rule")} for term in vocabulary["terms"]],
         **{field: vocabulary[field] for field in APPROVAL_VOCABULARY_FIELDS},
         "criterion": criterion,
-        # Whether a criterion was built at all: without one the screen offers to write it or to go on without it.
-        "criterion_available": criterion is not None,
-        "sought_term_in_criterion": (criterion or {}).get("sought_term_in_criterion"),
     }
-    if queries is not None:
-        # The compiled text of every query this run will send, by provider and, beside a model-written query, by
-        # which vocabulary wrote it (D92).
-        side["queries"] = [{"provider_id": q["provider_id"], "query_text": q["query_text"],
-                            **({"origin": q["origin"]} if q.get("origin") else {})} for q in queries]
-    if (record := vocabulary.get("search_query")) is not None:
-        side["search_query"] = _search_query_side(vocabulary, record)
+    # The compiled text of every query this run sends, by provider and, beside a model-written query, by which
+    # vocabulary wrote it (D92).
+    side["queries"] = [{"provider_id": q["provider_id"], "query_text": q["query_text"],
+                        **({"origin": q["origin"]} if q.get("origin") else {})} for q in queries]
     return side
 
 
-def _search_query_side(vocabulary: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
-    """What the card shows of a model-written query (D92): each term's kind, reason and two counts, the backups that
-    replaced a term, the warnings, and the code's query offered beside it. A failed model whose user chose the code's
-    query alone says only that."""
-    if record["status"] != "ready":
-        return {"status": record["status"], "choice": record.get("choice"),
-                "attempts": [{"attempt": a["attempt"], "reason": a["reason"]} for a in record.get("attempts") or []]}
-    counts = {c["phrase"]: c for c in record["checks"]}  # a phrase counted again after a correction: the last count
-    code = vocabulary["code_query"]
-    return {
-        "status": "ready",
-        "terms": [{"phrase": phrase, **meta, "with_other_block": (counts.get(phrase) or {}).get("with_other_block")}
-                  for phrase, meta in record["meta"].items()],
-        "warnings": record["warnings"],
-        "backups_left": record["backups_left"],
-        "code_query": {
-            "searched": code["searched"],
-            # A code query that could not be searched on its own is shown, but the switch cannot turn it on.
-            "available": bool(code["queries"]) and not code["vocabulary"]["too_broad"],
-            "terms": [{"phrase": t["phrase"], "block": t["block"],
-                       "form": t["root"] if t["in_query"] == "root" else t["phrase"]}
-                      for t in code["vocabulary"]["terms"] if not t["dropped"]],
-            "queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"]} for q in code["queries"]],
-        },
-    }
-
-
-def _suggestions_side(store: Store, run_id: str, step: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
-    """What the model was asked for on this card, and what came of it (slice 08c, SW2.5).
-
-    The list stays on the card after the approval, so which proposals were added and which were not can still be
-    read. `available` says whether the route would take a request, and `unavailable_reason` why not; a card that is
-    waiting for the worker is `requested` and offers no button.
-    """
-    steps = store.suggestion_steps(run_id)
-    requests = output.get("suggestion_requests") or 0
-    carried = output.get("carried_suggestions") or {}
-    ready = [row for row in steps if (row["output"] or {}).get("status") == "ready"]
-    terms = ready[-1]["output"]["terms"] if ready else carried.get("terms") or []
-    # A list with no row in it is an answer too: the model proposed nothing, and it is not asked again.
-    answered = bool(ready) or bool(carried)
-    closed = {row["operation_key"] for row in steps if row["status"] == "succeeded"}
-    working = bool(requests) and f"term_suggestions:{requests}" not in closed
-    failure = next((row["output"]["failure"] for row in reversed(steps)
-                    if (row["output"] or {}).get("status") == "failed"), None)
-    status = ("requested" if working else "ready" if answered else "failed" if failure else "none")
-    reason = ("no_anchor_phrases" if not suggestions_rules.anchors(output["proposal"]["vocabulary"])
-              else "already_suggested" if answered
-              # A started call is charged to the run even when it fails; the run was given SUGGESTION_CALLS for this.
-              else "suggestion_call_spent" if store.suggestion_calls(run_id) >= SUGGESTION_CALLS else None)
-    return {
-        "status": status,
-        # The card shows the button only while it is editable, so the run's own status is not read here.
-        "available": step["status"] != "succeeded" and reason is None and not working,
-        "unavailable_reason": reason,
-        "failure": failure if status == "failed" else None,
-        "carried": not ready and bool(carried),
-        "terms": [{field: row[field] for field in SUGGESTION_FIELDS} for row in terms],
-    }
-
-
 def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
-    """What this run asked the user to approve and what came of it, or None when it asked nothing (SW2.6)."""
+    """What this run recorded it searched under, or None before it recorded anything (SW2.6, SW14.2).
+
+    Nobody is asked since the clean start (decision B): the record says so (`approved_by: unattended`).
+    """
     step = store.approval_step(run_id)
-    if step is None or not step["output"]:
+    if step is None or step["status"] != "succeeded":
         return None
     output = step["output"]
-    approved = output.get("approved")
-    record = output.get("approval") or {}
+    approved = output["approved"]
     return {
-        "status": "approved" if step["status"] == "succeeded" else
-                  "submitted" if output.get("submitted") is not None else "waiting",
-        "approved_by": record.get("approved_by"),
-        "edited": record.get("edited"),
+        "approved_by": output["approval"].get("approved_by"),
         "proposal_hash": output["proposal_hash"],
-        # Both sides stay on the screen after the approval: the user can see what was proposed and what changed.
-        "proposal": _approval_side(output["proposal"]["vocabulary"], output["proposal"]["criterion"],
-                                   # A model-written proposal shows its compiled queries before the approval (D92).
-                                   output["proposal"]["queries"]
-                                   if output["proposal"]["vocabulary"]["block_assignment"] == "search_query" else None),
-        "approved": _approval_side(approved["vocabulary"], approved["criterion"], approved["queries"]) if approved else None,
-        "skipped_edits": output.get("skipped_edits") or [],
-        # What made the run stop for the person, or an empty list (`approval.inflating_terms`).
-        "warnings": [w | {"advice": (output.get("advice") or {}).get(w["phrase"])}
-                     for w in output.get("warnings") or []],
-        # The model that advised on the warnings, or None when it was not asked or gave nothing (D232).
-        "advice_model": output.get("advice_model") if output.get("advice") else None,
-        # The model's advice per warned term when the run went on without asking anyone (D233): information only, every
-        # term was kept. `advice_given` is False when the call failed or its output was not used.
-        "advice_applied": record.get("advice") if record.get("approved_by") in ("warn_kept", "model_advice") else None,
-        "advice_given": (record["advice_given"] if "advice_given" in record else
-                         any(row.get("recommendation") for row in record.get("advice") or []))
-        if record.get("approved_by") in ("warn_kept", "model_advice") else None,
-        "suggestions": _suggestions_side(store, run_id, step, output),
-        # Which sources the queries were compiled for and why (D93): the approved routing once a correction routed
-        # again, else the proposal's. None for a card shown before routing existed.
-        "routing": _card_routing(approved or output["proposal"], output["proposal"]),
-        # How this run will chain citations: the fast chain's rule and limits, frozen in the run's budget when it was
+        "approved": _approval_side(approved["vocabulary"], approved["criterion"], approved["queries"]),
+        # How this run chains citations: the fast chain's rule and limits, frozen in the run's budget when it was
         # queued. The real seeds are only known after the search, in the run view.
         "chaining": _card_chaining(store, store.run(run_id)),
     }
@@ -169,16 +75,6 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
 def _card_chaining(store: Store, run: dict[str, Any]) -> dict[str, Any] | None:
     """The card's chain policy, with the attempt limit for the effort the run's scope revision was queued with."""
     return chain_policy(run["budget"], store.scope(run["research_id"], run["scope_revision"])["effort"])
-
-
-def _card_routing(side: dict[str, Any], proposal: dict[str, Any]) -> dict[str, Any] | None:
-    """The card's routing with `queried`: the chosen sources the first round's queries really go to. The effort's
-    query limit can leave a chosen source no query, and the card must not call it searched (review of slice 14)."""
-    routing = side.get("routing") or proposal.get("routing")
-    if routing is None:
-        return None
-    queried = {q["provider_id"] for q in side.get("queries") or []}
-    return routing | {"queried": [p for p in routing["providers"] if p in queried]}
 
 
 def _first_round_size(store: Store, run_id: str) -> int | None:

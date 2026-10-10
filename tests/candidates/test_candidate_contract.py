@@ -133,7 +133,7 @@ def test_fixture_step_inputs_are_clean(key):
 
 
 @pytest.mark.parametrize("mutation", ["absent", "wrong_task", "candidates", "candidate_ids", "extraction_target",
-                                     "report_target", "vocabulary_target", "screening_target", "suggestion_target",
+                                     "report_target", "vocabulary_target", "screening_target",
                                      "adjudication_target", "lineage_target"])
 def test_check_step_input_rejects_candidate_target_mismatch(mutation):
     si = fixture()

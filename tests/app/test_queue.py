@@ -144,10 +144,9 @@ class Lib:
                 self.store._insert_passage(svid, asset, "pdf_page", page, None, None, None, version, text)
         return asset
 
-    def rank(self, svids, chain=False):
+    def rank(self, svids):
         run = self.new_run("discovery")
-        key = "chain_ranking" if chain else "ranking"
-        step = self.store.step(run, key, f"code:{key}")
+        step = self.store.step(run, "ranking", "code:ranking")
         self.store.finish_step(step["id"], "succeeded", output={})
         self.ds.save_ranks(step["id"], self.rid, [{"source_version_id": svid, "signal": "inspection", "rank": i + 1,
                                                    "available": 1} for i, svid in enumerate(svids)])
@@ -291,18 +290,19 @@ def test_a_work_whose_selection_the_user_set_is_not_in_the_queue(store):
     assert found["counts"]["user_selected"] == 1 and found["counts"]["open"] == 1
 
 
-def test_rows_are_ordered_by_fused_rank_with_chained_works_after_keyword_works(store):
+def test_rows_are_ordered_by_rank_and_a_chained_work_has_no_place(store):
+    """The fast path ranks keyword works only; a chained work, like a work the ranking did not place, goes last."""
     lib = Lib(store, "irrigation")
     first, second, unranked = queued(lib), queued(lib), queued(lib)
     chained = lib.work(query="chain:backward:W1")
     lib.text(chained, [lib.field["page"]])
     lib.read(chained, "fulltext_runs_disagree", labels={name: ("present", "absent") for name in lib.parts})
-    lib.rank([second, first])
-    lib.rank([chained], chain=True)
+    lib.rank([second, first, chained])
     rows = lib.rows()["rows"]
-    assert [row["source_version_id"] for row in rows] == [second, first, chained, unranked]
-    assert [row["place"] for row in rows] == [1, 2, 3, None]
-    assert [row["arm"] for row in rows] == ["keyword", "keyword", "chain", "keyword"]
+    assert [row["source_version_id"] for row in rows[:2]] == [second, first]
+    assert {row["source_version_id"] for row in rows[2:]} == {chained, unranked}
+    assert [row["place"] for row in rows] == [1, 2, None, None]
+    assert {row["source_version_id"]: row["arm"] for row in rows}[chained] == "chain"
 
 
 # ---- what each row asks -------------------------------------------------------------------------------------------

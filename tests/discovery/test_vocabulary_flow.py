@@ -9,6 +9,7 @@ import json
 import time
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
@@ -17,6 +18,7 @@ from deixis.documents.fetch import FetchResult
 from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
+from deixis.workflow.vocabulary import VERY_LARGE_COUNT
 from deixis.workflow.store import Store
 from fakes import FakeAdapter
 
@@ -61,7 +63,7 @@ def app_for(tmp_path, monkeypatch, handler, adapter, workflow="sw"):
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
-                               protocol_approval="as_proposed", fulltext_fetch="off"),
+                               fulltext_fetch="off"),
                       adapters={"fake": adapter},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -120,8 +122,9 @@ def test_an_sw_discovery_searches_while_every_model_call_fails(tmp_path, monkeyp
     # The vocabulary step opens first and the optional block labelling of slice 04d runs inside it; the criterion
     # proposal of slice 06 follows, the approval step of slice 08a closes without stopping in this setup, and the
     # protocol is frozen next, still before any search. The source routing of slice 14 (D93) sits between the
-    # vocabulary and the criterion.
-    assert [s["operation_key"] for s in run["steps"]][:11] == [
+    # vocabulary and the criterion. The fast path's embedding step (`source_similarity`) opens when the run starts and
+    # is left out of this order.
+    assert [s["operation_key"] for s in run["steps"] if s["operation_key"] != "source_similarity"][:11] == [
         "vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3", "source_routing",
         "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
         "protocol_approval", "protocol"]
@@ -144,10 +147,12 @@ def test_no_recorded_query_holds_a_claim_word_or_an_exclusion_word(tmp_path, mon
         rid, run_id = start(client, "Which packet size in wireless sensor networks, using integer programming, "
                                     "not surveys?")
         view, run = wait(client, rid, run_id)
-    assert view["search_runs"]
-    for search in view["search_runs"]:
-        assert "integer programming" not in search["query_text"].lower()
-        assert "survey" not in search["query_text"].lower()
+    # The keyword queries: the fast path's semantic search sends the question's own sentence and is not one of them.
+    keyword = [q for q in openalex.searches if q is not None]
+    assert view["search_runs"] and keyword
+    for query in keyword:
+        assert "integer programming" not in query.lower()
+        assert "survey" not in query.lower()
     for probe in openalex.counts:
         assert "integer programming" not in probe.lower() and "survey" not in probe.lower()
 
@@ -192,10 +197,12 @@ def test_a_question_code_cannot_read_stops_for_key_terms_and_the_next_revision_s
         assert revised.status_code == 200, revised.text
         second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
         view, run = wait(client, rid, second)
-    assert openalex.searches, run
+    # The keyword queries (the semantic search and the chain carry no keyword query).
+    keyword = [q for q in openalex.searches if q is not None]
+    assert keyword, run
     # The user's setting block gated the search; the claim group they wrote is in no query.
-    assert all("wireless" in q for q in openalex.searches)
-    assert all("integer programming" not in q and "survey" not in q for q in openalex.searches)
+    assert all("wireless" in q for q in keyword)
+    assert all("integer programming" not in q and "survey" not in q for q in keyword)
 
 
 def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_second_build(tmp_path, monkeypatch):
@@ -225,51 +232,68 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
     run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ?", (rid,)).fetchone()[0]
     again = protocol.build_protocol(store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"],
         body["skill_package_hash"], Settings(data_dir=None, search_query="code"), vocabulary=stored["vocabulary"],
-        approval=store.approval_step(run_id)["output"]["approval"], routing=stored["routing"])
+        approval=store.approval_step(run_id)["output"]["approval"], routing=stored["routing"],
+        # The fast path's own inputs, frozen beside the others: the semantic search model and the search plan.
+        embedding_model=next(s["model"] for s in body["signals"] if s["signal"] == "embedding"),
+        fast_path_search=body["fast_path_search"])
     assert sha256_hex(again) == rows[0]["body_sha256"]
 
 
 
 
-def test_a_vocabulary_that_matches_nothing_stops_the_run_before_any_search(tmp_path, monkeypatch):
-    openalex = CountingOpenAlex(count=0)
+# A vocabulary that cannot be searched ends the run (clean start, decision B): no approval card is opened, nothing is
+# searched, resuming is refused, and the way on is a new scope revision whose question can be searched.
+UNSEARCHABLE = {"vocabulary_empty": (0, QUESTION, "How does packet size change energy use in wireless sensor networks?"),
+                "vocabulary_too_broad": (VERY_LARGE_COUNT + 1, "Which networks are reported?", QUESTION)}
+
+
+@pytest.mark.parametrize("reason", sorted(UNSEARCHABLE))
+def test_a_vocabulary_that_cannot_be_searched_ends_the_run_before_any_search(tmp_path, monkeypatch, reason):
+    count, question, _ = UNSEARCHABLE[reason]
+    openalex = CountingOpenAlex(count=count)
     with TestClient(app_for(tmp_path, monkeypatch, openalex, DeadAdapter())) as client:
         client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-        rid, run_id = start(client, QUESTION)
+        rid, run_id = start(client, question)
         view, run = wait(client, rid, run_id)
-    assert (run["status"], run["pause_reason"]) == ("paused", "vocabulary_empty"), run
-    assert not openalex.searches
+    assert (run["status"], run["pause_reason"]) == ("failed", reason), run
+    assert openalex.counts and not openalex.searches and not view["search_runs"]
+    if reason == "vocabulary_too_broad":
+        assert run["error"]["gate_count"] > VERY_LARGE_COUNT
+    # No approval card waits for the user, and no protocol was frozen.
+    assert run["approval"] is None
+    keys = [s["operation_key"] for s in run["steps"]]
+    assert "protocol_approval" not in keys and "protocol" not in keys
     step = next(s for s in run["steps"] if s["operation_key"] == "vocabulary")
-    assert step["status"] == "succeeded"  # the counts are kept, so resuming pays for none of them again
+    assert step["status"] == "succeeded"  # the counts it read are kept with the step
+    # A failed discovery queues no answer.
+    assert [r["kind"] for r in view["runs"]] == ["discovery"]
 
 
-def test_one_block_of_terms_too_frequent_to_search_stops_the_run(tmp_path, monkeypatch):
-    from deixis.workflow.vocabulary import VERY_LARGE_COUNT
-
-    openalex = CountingOpenAlex(count=VERY_LARGE_COUNT + 1)
+@pytest.mark.parametrize("reason", sorted(UNSEARCHABLE))
+def test_a_run_ended_for_its_vocabulary_cannot_be_resumed_and_a_revised_question_searches(tmp_path, monkeypatch, reason):
+    count, question, revised = UNSEARCHABLE[reason]
+    openalex = CountingOpenAlex(count=count)
     with TestClient(app_for(tmp_path, monkeypatch, openalex, DeadAdapter())) as client:
         client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-        rid, run_id = start(client, "Which networks are reported?")
-        view, run = wait(client, rid, run_id)
-    assert (run["status"], run["pause_reason"]) == ("paused", "vocabulary_too_broad"), run
-    assert not openalex.searches
-
-
-def test_resuming_a_run_stopped_for_its_vocabulary_stops_it_again_and_searches_nothing(tmp_path, monkeypatch):
-    from deixis.workflow.vocabulary import VERY_LARGE_COUNT
-
-    for count, question, reason in ((0, QUESTION, "vocabulary_empty"),
-                                    (VERY_LARGE_COUNT + 1, "Which networks are reported?", "vocabulary_too_broad")):
-        openalex = CountingOpenAlex(count=count)
-        with TestClient(app_for(tmp_path / reason, monkeypatch, openalex, DeadAdapter())) as client:
-            client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-            rid, run_id = start(client, question)
-            wait(client, rid, run_id)
-            assert client.post(f"/api/runs/{run_id}/resume").status_code < 300
-            time.sleep(0.2)
-            view, run = wait(client, rid, run_id)
-        assert (run["status"], run["pause_reason"]) == ("paused", reason), run
+        rid, run_id = start(client, question)
+        wait(client, rid, run_id)
+        assert client.post(f"/api/runs/{run_id}/resume").status_code == 409
+        time.sleep(0.2)
+        _, run = wait(client, rid, run_id)
+        assert (run["status"], run["pause_reason"]) == ("failed", reason), run
         assert not openalex.searches
+        # The user edits the question: a new scope revision, whose discovery run searches as any other does.
+        openalex.count_value = 40
+        version = client.get(f"/api/researches/{rid}").json()["research"]["version"]
+        response = client.post(f"/api/researches/{rid}/scope", json={"question": revised, "expected_version": version})
+        assert response.status_code == 200, response.text
+        second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        view, run = wait(client, rid, second)
+    assert (run["status"], run["pause_reason"]) == ("completed", None), run
+    assert run["scope_revision"] == 2 and openalex.searches and view["search_runs"]
+    assert run["approval"]["approved_by"] == "unattended"
+    first = next(r for r in view["runs"] if r["id"] == run_id)
+    assert (first["status"], first["pause_reason"]) == ("failed", reason)
 
 
 def test_key_terms_survive_a_revision_that_does_not_name_them(tmp_path, monkeypatch):

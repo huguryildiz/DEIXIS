@@ -26,6 +26,8 @@ RUNTIME_FILES = {
     "research_title": ("SKILL.md", "references/research-title.md"),
     "vocabulary_labels": ("SKILL.md", "references/vocabulary-labels.md"),
     "criterion_proposal": ("SKILL.md", "references/criterion-proposal.md"),
+    # No step runs these two since the clean start (slice 3b). The method files, their entries here and the package
+    # hash they feed change together in slice 6.
     "term_suggestions": ("SKILL.md", "references/term-suggestions.md"),
     "term_advice": ("SKILL.md", "references/term-advice.md"),
     "search_query": ("SKILL.md", "references/search-query.md"),

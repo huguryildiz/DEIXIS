@@ -174,7 +174,7 @@ def test_bare_store_defers_running_reservation_and_paused_resume_stays_queued(tm
         assert lib.store.next_queued_run()["id"] == run["id"]
 
 
-@pytest.mark.parametrize("path", ["create", "resume", "search_retry", "suggestions", "approval", "code_query", "follow_on"])
+@pytest.mark.parametrize("path", ["create", "resume", "search_retry", "code_query", "follow_on"])
 def test_all_run_creators_and_requeues_succeed_but_wait(path, tmp_path):
     with store_library(tmp_path) as lib:
         store = lib.store
@@ -183,9 +183,7 @@ def test_all_run_creators_and_requeues_succeed_but_wait(path, tmp_path):
             run = store.create_run(lib.rid, "discovery" if path == "search_retry" else "answer",
                                    {"inspection": {"policy": "small_batch_fused_v1"}}, None)
             store.update_run(run["id"], status="paused")
-            if path in ("suggestions", "approval"):
-                store.step(run["id"], "protocol_approval", "protocol_approval", {"suggestion_requests": 0})
-            elif path == "code_query": store.step(run["id"], "search_query", "search_query", {"synthetic": True})
+            if path == "code_query": store.step(run["id"], "search_query", "search_query", {"synthetic": True})
             elif path == "search_retry":
                 step = store.step(run["id"], "search", "provider_search:openalex")
                 store.finish_step(step["id"], "failed")
@@ -194,8 +192,6 @@ def test_all_run_creators_and_requeues_succeed_but_wait(path, tmp_path):
             if path in ("create", "follow_on"): result = store.create_run(lib.rid, "answer", {}, None)
             elif path == "resume": result = store.resume_run(run["id"])
             elif path == "search_retry": result = store.queue_failed_search_retry(run["id"])
-            elif path == "suggestions": result = store.request_term_suggestions(run["id"])
-            elif path == "approval": result = store.submit_approval(run["id"], {})
             else: result = store.choose_code_query(run["id"])
             assert result["status"] == "queued" and store.next_queued_run() is None
         assert store.next_queued_run()["id"] == result["id"]

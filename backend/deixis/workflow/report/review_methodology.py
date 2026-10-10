@@ -221,18 +221,8 @@ def _search_provenance(store: Store, research_id: str, scope_revision: int) -> t
     query_text = "; ".join(
         f"{row['provider']} — {row['query_text']} ({row['retrieved_at'][:10]})" for row in searches
     ) or "none recorded"
-
-    versions = []
-    if discovery_runs:
-        marks = ",".join("?" for _ in discovery_runs)
-        for row in store.conn.execute(
-            f"SELECT output_json FROM run_steps WHERE run_id IN ({marks}) AND operation_key = 'search_plan'"
-            " AND output_json IS NOT NULL ORDER BY rowid", discovery_runs,
-        ):
-            version = json.loads(row["output_json"]).get("query_compiler")
-            if version and version not in versions:
-                versions.append(version)
-    return ", ".join(providers) or "none recorded", query_text, ", ".join(versions) or "not recorded"
+    # No discovery step records a compiled query version for this sentence; the old `search_plan` step that did is gone.
+    return ", ".join(providers) or "none recorded", query_text, "not recorded"
 
 
 def _screening_provenance(store: Store, research_id: str, scope_revision: int) -> tuple[str, str]:

@@ -186,34 +186,6 @@ def test_a_code_query_identical_to_the_model_query_is_not_sent_twice_and_one_swi
         "model", "model"]
 
 
-def test_a_correction_acts_on_the_model_terms_counts_what_it_adds_and_can_switch_the_code_query_off():
-    built = proposal()
-    count, asked = counter({'"freight corridor"': 0})
-    rebuilt = asyncio.run(search_query.rebuild(built, [
-        {"op": "remove", "phrase": "integer programming"},
-        {"op": "add", "phrase": "crew scheduling", "block": "task"},
-        {"op": "add", "phrase": "freight corridor", "block": "setting"},
-        {"op": "move", "phrase": "delay", "block": "task"},
-    ], False, count))
-    rows = {t["phrase"]: (t["block"], t["origin"], t["dropped"]) for t in rebuilt["terms"]}
-    assert rows == {"rail freight": ("setting", "search_query", None), "timetable": ("task", "search_query", None),
-                    "crew scheduling": ("task", "user", None), "freight corridor": ("setting", "user", "zero_results"),
-                    "delay": ("task", "question", None)}
-    assert rebuilt["outcome_terms"] == [] and not rebuilt["code_query"]["searched"]
-    # A count the proposal already read is not asked again; the new terms are.
-    assert '"rail freight"' not in asked and '"crew scheduling"' in asked
-    assert {e["phrase"] for e in rebuilt["user_edits"]} == {"integer programming", "crew scheduling",
-                                                            "freight corridor", "delay"}
-
-
-def test_the_code_query_cannot_be_switched_on_where_it_could_not_be_searched():
-    from deixis.workflow import approval
-
-    errors = approval.check_edits({"vocabulary": proposal(too_broad=True)}, {"code_query": True})
-    assert errors == ["The code's query cannot be searched on its own, so it cannot be switched on"]
-    assert approval.check_edits({"vocabulary": proposal(too_broad=True)}, {"code_query": False}) == []
-
-
 def test_the_protocol_says_the_code_query_was_searched_only_when_one_of_its_queries_was_compiled():
     from deixis.workflow.protocol import _search_query as protocol_block
 
@@ -260,12 +232,12 @@ async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
-def client_for(tmp_path, monkeypatch, handler, adapter, approval="as_proposed", setting="model"):
+def client_for(tmp_path, monkeypatch, handler, adapter, setting="model"):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query=setting,
-                              protocol_approval=approval, fulltext_fetch="off"),
+                              fulltext_fetch="off"),
                      adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
                      fetcher=no_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
     client = TestClient(app)
@@ -403,46 +375,6 @@ def test_the_code_query_choice_is_refused_on_a_run_that_did_not_stop_for_the_mod
     assert client.post(f"/api/runs/{run_id}/search-query-choice").status_code == 409
 
 
-def test_the_card_shows_the_model_query_and_the_code_query_can_be_switched_off(tmp_path, monkeypatch):
-    openalex, adapter = OpenAlex(), FakeAdapter()
-    client = client_for(tmp_path, monkeypatch, openalex, adapter, approval="ask")
-    rid, run_id = start(client)
-    view, run = wait(client, rid, run_id)
-    assert run["pause_reason"] == "protocol_approval_needed"
-    card = client.get(f"/api/researches/{rid}").json()
-    approval = next(r for r in card["runs"] if r["id"] == run_id)["approval"]
-    side = approval["proposal"]["search_query"]
-    assert side["status"] == "ready" and side["code_query"]["searched"] and side["code_query"]["available"]
-    assert {t["phrase"]: t["kind"] for t in side["terms"]} == {"synthetic setting": "topic", "synthetic task": "topic"}
-    assert {q["origin"] for q in approval["proposal"]["queries"]} == {"model", "code"}
-    response = client.post(f"/api/runs/{run_id}/protocol-approval", json={"code_query": False})
-    assert response.status_code == 200, response.text
-    _, run = wait(client, rid, run_id, ("completed", "failed"))
-    assert run["status"] == "completed", run
-    body = protocol_body(client, rid)
-    assert body["search_query"]["code_query_searched"] is False
-    assert {q["origin"] for q in body["compiled_queries"]} == {"model"}
-    assert body["approval"]["edited"] is True
-    # The model was asked once, before the card; the approval and the resumed run asked nothing again.
-    assert len(calls(adapter)) == 1
-
-
-def test_the_code_query_switch_is_refused_where_no_model_wrote_the_query(tmp_path, monkeypatch):
-    adapter = FakeAdapter(fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
-                          if si["task_type"] == "search_query" else None)
-    client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter, approval="ask")
-    rid, run_id = start(client)
-    wait(client, rid, run_id)
-    client.post(f"/api/runs/{run_id}/resume")
-    time.sleep(0.2)
-    wait(client, rid, run_id)
-    client.post(f"/api/runs/{run_id}/search-query-choice")
-    _, run = wait(client, rid, run_id, ("paused",))
-    assert run["pause_reason"] == "protocol_approval_needed"
-    response = client.post(f"/api/runs/{run_id}/protocol-approval", json={"code_query": False})
-    assert response.status_code == 422
-
-
 def test_the_users_own_key_terms_are_searched_and_no_model_writes_a_query(tmp_path, monkeypatch):
     adapter = FakeAdapter()
     client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter)
@@ -461,7 +393,7 @@ def test_the_code_setting_makes_no_model_query_step(tmp_path, monkeypatch):
             monkeypatch.delenv(connector.key_env, raising=False)
     adapter = FakeAdapter()
     app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query=setting,
-                              protocol_approval="as_proposed", fulltext_fetch="off"),
+                              fulltext_fetch="off"),
                      adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(OpenAlex())),
                      fetcher=no_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
     client = TestClient(app)
@@ -582,17 +514,6 @@ def test_a_count_with_the_other_block_is_read_with_the_terms_that_block_is_searc
     assert setting["with_other_block"] == 50
 
 
-def test_a_correction_recounts_a_kept_term_whose_other_block_changed():
-    built = proposal(answer(["rail freight"], ["timetable"]), counts={'"rail freight" AND (timetable)': 0})
-    assert [w["phrase"] for w in built["search_query"]["warnings"]] == ["rail freight"]
-    count, asked = counter({})
-    rebuilt = asyncio.run(search_query.rebuild(built, [
-        {"op": "remove", "phrase": "timetable"}, {"op": "add", "phrase": "crew scheduling", "block": "task"}],
-        None, count))
-    assert rebuilt["search_query"]["warnings"] == []
-    assert '"rail freight" AND ("crew scheduling")' in asked
-
-
 def test_code_terms_order_and_close_records_only_when_a_code_query_was_really_compiled():
     """The switch on, but the request limit left only the model's queries: the code's terms were not searched and
     do not enter ranking, the abstract rules or the second round's blocks."""
@@ -630,127 +551,3 @@ def test_a_vocabulary_stored_before_compiled_was_written_reads_it_from_its_store
     assert search_query.code_terms(search_query.settled(old, model_only)) == []
     both = search_query.compile_queries(built, ["openalex"], 4)
     assert search_query.code_terms(search_query.settled(old, both))
-
-
-# ---- the approval stops only for a warning (default `warn` mode) -------------------------------------------------
-
-GATE = '("narrow setting" OR "broad setting") AND ("synthetic task")'
-WITHOUT_BROAD = '("narrow setting") AND ("synthetic task")'
-WITHOUT_NARROW = '("broad setting") AND ("synthetic task")'
-
-
-def two_setting_terms(si):
-    if si["task_type"] != "search_query":
-        return valid_response(si)
-    return json.dumps(envelope(si, "deixis.search_query.v1") | answer(["narrow setting", "broad setting"], ["synthetic task"]))
-
-
-def test_a_term_that_multiplies_the_matches_is_found_with_the_count_without_it():
-    from deixis.workflow import approval
-
-    async def run(table):
-        count, asked = counter(table)
-        vocabulary = {"gate_count": table.get(GATE), "terms": [
-            {"phrase": p, "block": b, "dropped": None, "root": p, "in_query": "phrase"}
-            for p, b in (("narrow setting", "setting"), ("broad setting", "setting"), ("synthetic task", "task"))]}
-        return (await approval.inflating_terms(vocabulary, count))[0], asked
-
-    found, asked = asyncio.run(run({GATE: 18_369, WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_000}))
-    assert [(w["phrase"], w["matches"], w["matches_without_term"]) for w in found] == [("broad setting", 18_369, 535)]
-    assert len(asked) == 2  # one request per term that shares its block; the task term stands alone and is not asked
-    # Below the factor, below the floor, and a block's only term: no warning.
-    assert asyncio.run(run({GATE: 5_000, WITHOUT_BROAD: 535, WITHOUT_NARROW: 4_900}))[0] == []
-    assert asyncio.run(run({GATE: 900, WITHOUT_BROAD: 5, WITHOUT_NARROW: 5}))[0] == []
-
-
-def advice_down():
-    """The model answers everything but the term advice, so a warning still opens the card (D232)."""
-    return FakeAdapter(two_setting_terms, fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
-                       if si["task_type"] == "term_advice" else None)
-
-
-def test_without_a_warning_the_run_freezes_its_protocol_and_says_nobody_was_asked(tmp_path, monkeypatch):
-    client = client_for(tmp_path, monkeypatch, OpenAlex({GATE: 600}), advice_down(), approval="warn")
-    rid, run_id = start(client)
-    _, run = wait(client, rid, run_id)
-    assert run["status"] == "completed", run
-    stored = step_output(client, run_id, "protocol_approval")
-    assert stored["warnings"] == [] and stored["approval"]["asked"] is False
-    assert stored["approval"]["reason"] == "no_warning" and stored["approval"]["approved_by"] == "no_warning"
-    approval = protocol_body(client, rid)["approval"]
-    assert (approval["mode"], approval["approved_by"], approval["edited"]) == ("warn", "no_warning", False)
-    assert approval["asked"] is False and approval["reason"] == "no_warning"
-
-
-def test_a_term_that_inflates_the_matches_under_ask_stops_the_run_with_the_warning_and_the_count_without_it(tmp_path, monkeypatch):
-    openalex = OpenAlex({GATE: 18_369, WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_500})
-    client = client_for(tmp_path, monkeypatch, openalex, advice_down(), approval="ask")
-    rid, run_id = start(client)
-    _, run = wait(client, rid, run_id)
-    assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed")
-    card = next(r for r in client.get(f"/api/researches/{rid}").json()["runs"] if r["id"] == run_id)["approval"]
-    assert card["status"] == "waiting"
-    assert [(w["warning"], w["phrase"], w["matches"], w["matches_without_term"]) for w in card["warnings"]] == [
-        ("term_inflates_matches", "broad setting", 18_369, 535)]
-    # The person can still edit on the card: removing the term closes the approval, which then says it was asked.
-    response = client.post(f"/api/runs/{run_id}/protocol-approval",
-                           json={"terms": [{"op": "remove", "phrase": "broad setting"}]})
-    assert response.status_code == 200, response.text
-    _, run = wait(client, rid, run_id, ("completed", "failed"))
-    approval = protocol_body(client, rid)["approval"]
-    assert run["status"] == "completed" and approval["approved_by"] == "user" and "asked" not in approval
-    assert approval["warnings"][0]["phrase"] == "broad setting"
-
-
-def set_stored(client, run_id, key, change):
-    store = client.app.state.store
-    row = store.conn.execute("SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = ?",
-                             (run_id, key)).fetchone()
-    store.set_step_output(row["id"], change(json.loads(row["output_json"])))
-
-
-def test_a_run_that_went_on_without_a_warning_is_not_an_earlier_approval_for_a_later_run(tmp_path, monkeypatch):
-    openalex = OpenAlex({GATE: 600})
-    client = client_for(tmp_path, monkeypatch, openalex, advice_down(), approval="warn")
-    rid, first = start(client)
-    wait(client, rid, first)
-    assert step_output(client, first, "protocol_approval")["approval"]["approved_by"] == "no_warning"
-    # The second run of the question reads the query the first run stored; it now holds a term that inflates.
-    openalex.table |= {WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_500}
-
-    def inflate(output):
-        output["vocabulary"]["gate_count"] = 18_369
-        return output
-    set_stored(client, first, "search_query", inflate)
-    second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
-    _, run = wait(client, rid, second, ("completed", "failed"))
-    # Under warn the second run asks nobody either (D233): every warned term is kept, and the record is its own.
-    assert run["status"] == "completed", run
-    approval = step_output(client, second, "protocol_approval")
-    assert approval["warnings"][0]["phrase"] == "broad setting"
-    assert approval["approval"]["approved_by"] == "warn_kept"
-
-
-def test_a_card_stored_before_the_check_existed_is_checked_once_and_not_closed_as_no_warning(tmp_path, monkeypatch):
-    openalex = OpenAlex({GATE: 18_369, WITHOUT_BROAD: 535, WITHOUT_NARROW: 17_500})
-    client = client_for(tmp_path, monkeypatch, openalex, advice_down(), approval="ask")
-    rid, run_id = start(client)
-    wait(client, rid, run_id)
-    stored = step_output(client, run_id, "protocol_approval")
-    # Every count the check asked is kept, the ones that produced no warning too.
-    assert {c["phrase"]: c["matches_without_term"] for c in stored["warning_checks"]} == {
-        "narrow setting": 17_500, "broad setting": 535}
-
-    def old_card(output):
-        output.pop("warnings"), output.pop("warning_checks")
-        return output
-    set_stored(client, run_id, "protocol_approval", old_card)
-    # The route refuses to resume past an approval; a restarted worker queues the run the way the store does.
-    client.app.state.store.resume_run(run_id)
-    client.app.state.worker.wake()
-    deadline = time.time() + 15
-    while "warnings" not in (step_output(client, run_id, "protocol_approval") or {}) and time.time() < deadline:
-        time.sleep(0.05)
-    _, run = wait(client, rid, run_id)
-    assert (run["status"], run["pause_reason"]) == ("paused", "protocol_approval_needed")
-    assert step_output(client, run_id, "protocol_approval")["warnings"][0]["phrase"] == "broad setting"

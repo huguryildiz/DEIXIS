@@ -167,38 +167,6 @@ def test_answer_order_puts_user_choices_then_more_providers_then_text_match_firs
     assert answer_source_order(included, facts, texts, ["scheduling", "optimization"]) == ["d", "b", "c", "e", "a"]
 
 
-def test_formulation_score_ranks_explicit_model_text_above_narrative_text():
-    from deixis.workflow.flow import formulation_score
-
-    formulation = "SYNTHETIC. We minimize total delay subject to x ∈ {0,1} and the constraint x ≤ 1."
-    narrative = "SYNTHETIC. The study discusses scheduling results and reports a simulation."
-    assert formulation_score(formulation) > formulation_score(narrative)
-    assert formulation_score("SYNTHETIC. The word st alone is not an optimization abbreviation.") == 0
-
-
-def test_answer_retrieval_places_a_formulation_page_before_a_better_fts_match():
-    from deixis.workflow.flow import ResearchFlow
-
-    abstract = {"id": "abstract", "source_version_id": "source", "kind": "abstract", "physical_page": None,
-                "text": "SYNTHETIC. An abstract about scheduling."}
-    formulation = {"id": "formulation", "source_version_id": "source", "kind": "pdf_page", "physical_page": 4,
-                   "text": "SYNTHETIC. Minimize delay subject to x ∈ {0,1} and x ≤ 1."}
-    fts_match = {"id": "fts", "source_version_id": "source", "kind": "pdf_page", "physical_page": 2,
-                 "text": "SYNTHETIC. Scheduling scheduling scheduling results."}
-
-    class RetrievalStore:
-        def latest_step_output(self, *_): return None
-        def search_passages(self, *_): return [fts_match]
-        def passages_for(self, *_): return [abstract, fts_match, formulation]
-        def source(self, *_): return {"title": "SYNTHETIC scheduling source"}
-        def answer_order_facts(self, *_): return {"source": (True, 1)}
-
-    flow = object.__new__(ResearchFlow)
-    flow.store = RetrievalStore()
-    passages = flow._retrieve("research", {"question": "How is scheduling optimized?", "revision": 1}, ["source"], 4)
-    assert [p["id"] for p in passages] == ["abstract", "formulation", "fts"]
-
-
 def _many_sources_store(pages_of_s2):
     abstracts = {f"s{n}": {"id": f"abstract-{n}", "source_version_id": f"s{n}", "kind": "abstract", "physical_page": None,
                            "text": f"SYNTHETIC abstract {n} about scheduling."} for n in range(1, 6)}
@@ -224,7 +192,8 @@ def test_answer_retrieval_gives_a_pdf_source_its_best_pages_when_sources_outnumb
     flow.store = _many_sources_store(pages)
     scope = {"question": "How is scheduling optimized?", "revision": 1}
     sources = [f"s{n}" for n in range(1, 6)]
-    assert [p["id"] for p in flow._retrieve("research", scope, sources, 4)] == ["abstract-1", "abstract-2", "fts", "formulation"]
+    # The best text match first, then the other pages by page number (no formulation quota since slice 3b).
+    assert [p["id"] for p in flow._retrieve("research", scope, sources, 4)] == ["abstract-1", "abstract-2", "fts", "plain"]
     # With room for every source, the selection is unchanged: every abstract first, then pages.
     assert [p["id"] for p in flow._retrieve("research", scope, sources, 8)][:5] == [f"abstract-{n}" for n in range(1, 6)]
 

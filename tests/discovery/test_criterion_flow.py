@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from deixis.domain.canonical import sha256_hex
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS,
-                                 SUGGESTION_CALLS, ADVICE_CALLS, TEST_EFFORT_BUDGETS)
+                                 TEST_EFFORT_BUDGETS)
 from deixis.workflow.abstract_stage import model_calls
 from deixis.models.adapter import ModelStepResult
 from deixis.workflow.criterion import PROPOSAL_RUNS
@@ -202,12 +202,11 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     assert body["thresholds"]["criterion"] == {
         "proposal_runs": 3, "proposal_majority": 2, "role_consensus_version": 2,
         "match_min_shared_cues": 2, "match_overlap_divisor": 2}
-    # An sw discovery run is given the criterion's three calls, the abstract stage's own (slice 09) and the one
-    # term suggestion the user may ask for (slice 08c), on top of its preset; the preset a legacy run and an answer
-    # run read is untouched.
+    # An sw discovery run is given the criterion's three calls and the abstract stage's own (slice 09) on top of its
+    # preset; the preset an answer run reads is untouched.
     presets = {preset.max_model_calls for preset in TEST_EFFORT_BUDGETS.values()}
     abstract_calls = model_calls(ABSTRACT_READ_LIMIT["quick"], ABSTRACT_BATCH, ABSTRACT_RUNS)
-    assert body["budget"]["max_model_calls"] - CRITERION_CALLS - SUGGESTION_CALLS - ADVICE_CALLS - abstract_calls in presets
+    assert body["budget"]["max_model_calls"] - CRITERION_CALLS - abstract_calls in presets
 
 
 def test_the_repeated_labelling_and_proposal_calls_go_out_together(tmp_path, monkeypatch):

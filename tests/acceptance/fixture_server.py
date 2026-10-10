@@ -5,8 +5,7 @@ application behavior in a browser; it does not measure model quality or live pro
 
 Question markers select failure scripts: "[rate-limit]" (OpenAlex 429), "[model-down]" (the first abstract-screening call
 fails before sending), "[invent-locator]" (every answer draft asserts a page and an equation), "[slow-cells]" (each cell
-extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs), "[suggest-down]" (every
-term-suggestion call fails, so the approval card shows the failure and its retry), "[query-down]" (every call that
+extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs), "[query-down]" (every call that
 writes the search query fails, so the run stops for the model query, D92), "[queue]" (the reading model answers each
 queue work by a script, so case J finds one row of each kind it needs), "[protocol-title]" (with
 `DEIXIS_FIXTURE_PROTOCOL=on`, case R, slice 26: both reading runs find every part of the work whose title names a study
@@ -387,17 +386,7 @@ def queue_reading(si: dict[str, Any], output: dict[str, Any], question: str = ""
 # What a count probe of the sw workflow is told every phrase is worth: enough for no term to drop and few enough
 # for the gate never to be narrowed. SYNTHETIC, like everything else here.
 PROBE_COUNT = 800
-# The two other names the scripted model proposes on the approval card (slice 08c). The second one is held by no
-# record here, so its count drops it and the card cannot add it. Both are SYNTHETIC.
-SUGGESTED = "synthetic release timing"
-UNHELD_SUGGESTION = "synthetic unheld name"
 RATE_LIMIT_MODE = False
-# "[wide]" in the question makes the code query's gate, `(relay) and (... wide ...)`, match 20,000 records and the same
-# gate without the term "wide" (the marker is itself a word of the question) only 535, the live DBR/VBF shape. The
-# approval card then warns about "wide" and, in the same run, the scripted model advises on it (D232). Without the
-# marker every count stays PROBE_COUNT.
-WIDE_MODE = False
-WIDE_GATE, WIDE_WITHOUT = 20_000, 535
 
 
 def openalex(request: httpx.Request) -> httpx.Response:
@@ -410,8 +399,6 @@ def openalex(request: httpx.Request) -> httpx.Response:
         return europepmc_search(request)
     if QUEUE_MODE and request.url.host != "api.openalex.org":
         return httpx.Response(404)  # a DOI lookup answers "no result"; the queue works' PDFs come from OpenAlex
-    if params.get("search.title_and_abstract") == f'"{UNHELD_SUGGESTION}"':
-        return httpx.Response(200, json={"meta": {"count": 0}, "results": []})
     if params.get("group_by") == "primary_topic.field.id":
         # The source routing request (D93): a SYNTHETIC distribution in which one domain source's fields hold most
         # of the records and another's none.
@@ -419,10 +406,6 @@ def openalex(request: httpx.Request) -> httpx.Response:
             {"key": "https://openalex.org/fields/17", "key_display_name": "Computer Science", "count": 80},
             {"key": "https://openalex.org/fields/22", "key_display_name": "Engineering", "count": 15},
             {"key": "https://openalex.org/fields/27", "key_display_name": "Medicine", "count": 5}]})
-    if (WIDE_MODE and params.get("per_page") == "1" and params.get("select") == "id"
-            and candidate_query.startswith(('(relay) and (', '("relay networks") and ('))):
-        count = WIDE_GATE if "wide" in candidate_query else WIDE_WITHOUT
-        return httpx.Response(200, json={"meta": {"count": count}, "results": []})
     if params.get("per_page") == "1" and params.get("select") == "id":
         # A count-only request reads `meta.count` and no record; answering it with the whole fixture list would
         # make every phrase worth the same handful of works (slice 04a).
@@ -489,8 +472,6 @@ class ScriptedCodex:
             else:
                 return ModelStepResult("failed", error="SYNTHETIC hold timed out")
         RATE_LIMIT_MODE = "[rate-limit]" in question
-        global WIDE_MODE
-        WIDE_MODE = "[wide]" in question
         global LINEAGE_MODE, LINEAGE_REJECT_MODE
         LINEAGE_REJECT_MODE = '[lineage-reject]' in question
         LINEAGE_MODE = '[lineage]' in question or LINEAGE_REJECT_MODE
@@ -499,10 +480,6 @@ class ScriptedCodex:
                                    http_status=429, retry_after="3600")
         if "[model-down]" in question and task == "abstract_screening" and si["research_id"] not in self.failed_once:
             self.failed_once.add(si["research_id"])
-            return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
-        if "[suggest-down]" in question and task == "term_suggestions":
-            return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
-        if "[advice-down]" in question and task == "term_advice":
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[query-down]" in question and task == "search_query":
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
@@ -650,20 +627,7 @@ class ScriptedCodex:
                     output["claims"][-1]["passage_ids"] = [passage["passage_id"]]
                     output["citation_anchors"].append({"claim_key": claim_key, "passage_id": passage["passage_id"],
                                                         "cell_id": None, "quote": " ".join(passage["text"].split())[:600]})
-        if si["task_type"] == "term_suggestions":
-            # One name a record holds, one no record holds, and a repeat of the phrase it was asked about: the last
-            # two are what code drops, so the card can be seen refusing them.
-            anchor = si["suggestion_target"]["phrases"][0]["phrase"]
-            output["terms"] = [{"phrase": phrase, "synonym_of": anchor}
-                               for phrase in (SUGGESTED, UNHELD_SUGGESTION, anchor)]
-        elif si["task_type"] == "term_advice":
-            # Remove the warned term, or under "[advice-keep]" keep it as the question's own subject (D232).
-            keep = "[advice-keep]" in question
-            output["advice"] = [{"phrase": w["phrase"], "recommendation": "keep" if keep else "remove",
-                                 "reason": "SYNTHETIC: the question uses this word itself, so relevant papers say it."
-                                 if keep else "SYNTHETIC: a general word that pulls in papers from other fields."}
-                                for w in si["advice_target"]["warnings"]]
-        elif si["task_type"] == "search_query":
+        if si["task_type"] == "search_query":
             # A query in the fixture's own words (D92): two topic terms and a method term, one backup per block.
             output |= {"setting": [{"term": "relay networks", "kind": "topic", "why": "SYNTHETIC: where the work happens"}],
                        "task": [{"term": "molecule release", "kind": "topic", "why": "SYNTHETIC: the process studied"},
@@ -862,14 +826,11 @@ def main() -> None:
     if args.write_replacement_pdf:
         args.write_replacement_pdf.write_bytes(make_pdf(["SYNTHETIC replacement scan: release scheduling by bisection, full page."]))
         return
-    # Cases A–G approve the code-built proposal automatically; case H explicitly asks for approval.
     settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1,
-                        protocol_approval=os.environ.get("DEIXIS_PROTOCOL_APPROVAL", "as_proposed"),
-                        # Cases A–H keep the code's query alone, as they always had it; case I asks for the
+                        # Cases A–G keep the code's query alone, as they always had it; case I asks for the
                         # model-written query of D92.
                         search_query=os.environ.get("DEIXIS_SEARCH_QUERY", "code"),
-                        # Case H reads the approval card of one discovery run; the retrieval run that would follow
-                        # it (D83) is not part of the case and would open a second run under it. Case J reads.
+                        # A retrieval run after discovery (D83) would open a second run under it; case J reads.
                         fulltext_fetch="auto" if QUEUE_MODE else "off",
                         fulltext_adjudication="auto" if QUEUE_MODE else "off",
                         arxiv_source="auto" if ARXIV_SOURCE_MODE else "off")

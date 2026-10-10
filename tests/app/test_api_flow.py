@@ -60,7 +60,7 @@ async def fake_fetch(url):
 
 def sw_settings(tmp_path):
     return Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1,
-                    protocol_approval="as_proposed", search_query="code",
+                    search_query="code",
                     fulltext_fetch="off")
 
 
@@ -254,10 +254,8 @@ def test_question_to_cited_answer_and_restart(tmp_path):
         assert passage["source"]["id"] == evidence["source_version_id"]
         assert evidence["text_source"] == passage["text_source"]  # a quote says whether its text was read with OCR (D51)
         pdf_sources = [s for s in view["sources"] if s["access"]["assets"]]
-        assert len(pdf_sources) == 3  # downloaded OA PDF + the letter's open manuscript (D48) + uploaded file
-        letter, manuscript = [s for s in view["sources"] if "letter" in s["title"]]
-        assert letter["access"]["oa_pdf_version"] == "submittedVersion" and not letter["access"]["assets"]  # other version not attached
-        assert manuscript["access"]["assets"] and letter["answer_reads_version_id"] == manuscript["source_version_id"]
+        # The fast-path answer fetches nothing (slice 3b) and full-text fetching is off here: the upload is the only PDF.
+        assert [s["title"] for s in pdf_sources] == ["my notes"]
         asset_id = pdf_sources[0]["access"]["assets"][0]["id"]
         assert client.get(f"/api/researches/{rid}/assets/{asset_id}").headers["content-type"] == "application/pdf"
         before = view
@@ -464,8 +462,9 @@ def test_refused_link_leads_to_one_lookup_for_another_copy_and_is_not_requested_
         discovery = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
         discovered, _ = wait_run(client, rid, discovery["id"])
         include_sources(client, rid, discovered)
-        answer = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
-        view, run = wait_run(client, rid, answer["id"])
+        # The fast-path answer fetches nothing (slice 3b); the PDF collection run still acquires included works' PDFs.
+        collection = client.post(f"/api/researches/{rid}/runs", json={"kind": "pdf_collection"}).json()
+        view, run = wait_run(client, rid, collection["id"])
         assert run["status"] == "completed", run
 
         refused = next(s for s in run["steps"] if s["kind"] == "fetch_pdf")
@@ -482,11 +481,11 @@ def test_refused_link_leads_to_one_lookup_for_another_copy_and_is_not_requested_
         else:
             assert (other["status"], other["error_code"]) == ("failed", "no_other_copy")
             assert not source["access"]["assets"] and source["access"]["other_copy"]["status"] == "failed"
-        # The letter's published record has no open PDF, so its open manuscript is retrieved for the answer (D48).
+        # The letter's published record has no open PDF, so its open manuscript is retrieved too (D48).
         assert sorted(fetched) == ["https://example.org/w1.pdf", "https://example.org/w3-manuscript.pdf", "https://repository.example/w1.pdf"]
         assert lookups == ["api.openalex.org", "api.crossref.org"]
 
-        again = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        again = client.post(f"/api/researches/{rid}/runs", json={"kind": "pdf_collection"}).json()
         _, rerun = wait_run(client, rid, again["id"])
         assert rerun["status"] == "completed", rerun
         assert not [s for s in rerun["steps"] if s["kind"] in ("fetch_pdf", "pdf_other_copy")]
@@ -827,16 +826,8 @@ def test_resume_after_crash_following_saved_answer_does_not_duplicate_it(tmp_pat
 
 
 def test_submitted_and_published_versions_stay_separate_versions_of_one_work(tmp_path):
-    # C: one work family, separate versions; evidence stays with the inspected version; versions are not counted twice.
-    def cite_manuscript(si):
-        if si["task_type"] != "grounded_answer":
-            return valid_response(si)
-        manuscript = next(s["source_id"] for s in si["sources"] if s["version_label"] == "submittedVersion")
-        passage = next(p for p in si["passages"] if p["source_id"] == manuscript)
-        return valid_response(si | {"passages": [passage]})
-
-    adapter = FakeAdapter(cite_manuscript)
-    with TestClient(app_for(tmp_path, adapter)) as client:
+    # C: one work family, separate versions; a PDF stays with the version it came from; versions are not counted twice.
+    with TestClient(app_for(tmp_path)) as client:
         session(client)
         rid = create(client)
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
@@ -852,28 +843,22 @@ def test_submitted_and_published_versions_stay_separate_versions_of_one_work(tmp
         manuscript = next(s for s in view["sources"] if s["source_version_id"] == manuscript["source_version_id"])
         client.patch(f"/api/researches/{rid}/selections/{manuscript['source_version_id']}",
                      json={"state": "included", "expected_version": manuscript["selection"]["version"]})
-        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+        # The fast-path answer fetches nothing (slice 3b); the PDF collection run acquires the included works' PDFs.
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "pdf_collection"}).json()
         view, run = wait_run(client, rid, run["id"])
         assert run["status"] == "completed", run
-        # One version per work: the published record has no PDF text, so the answer reads the manuscript's (D48).
-        letters = [s for s in adapter.calls[-1]["sources"] if "letter" in s["title"]]
-        assert [s["version_label"] for s in letters] == ["submittedVersion"]
-
-        evidence = view["answers"][0]["claims"][0]["evidence"][0]
-        assert evidence["source_version_id"] == manuscript["source_version_id"] and evidence["kind"] == "pdf_page"
-        assert evidence["anchor_text"]
-        passage = client.get(f"/api/researches/{rid}/passages/{evidence['passage_id']}").json()
-        assert passage["source"]["version_label"] == "submittedVersion"
         by_id = {s["source_version_id"]: s for s in view["sources"]}
+        # One version per work: the published record has no open PDF, so the manuscript's is read for it (D48).
+        assert by_id[manuscript["source_version_id"]]["access"]["assets"]
         assert not by_id[record["source_version_id"]]["access"]["assets"]  # the manuscript PDF is not attached to the published record
-        assert view["counts"]["included"] == 3 and view["counts"]["cited"] == 1
+        assert by_id[record["source_version_id"]]["answer_reads_version_id"] == manuscript["source_version_id"]
+        assert view["counts"]["included"] == 3
 
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()  # found again
         view, _ = wait_run(client, rid, run["id"])
         assert len(view["sources"]) == 4
         again = next(s for s in view["sources"] if s["source_version_id"] == manuscript["source_version_id"])
         assert (again["selection"]["state"], again["selection"]["origin"]) == ("included", "user")
-        assert view["answers"][0]["claims"][0]["evidence"][0]["source_version_id"] == manuscript["source_version_id"]
 
 
 def test_sources_found_for_an_earlier_question_revision_are_labelled(tmp_path):

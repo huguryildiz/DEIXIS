@@ -89,8 +89,7 @@ REFUSED = FetchResult("http_error", final_url=None, http_status=403)
 TIMED_OUT = FetchResult("timeout", final_url=None, error="ReadTimeout")
 
 
-def app_for(tmp_path, monkeypatch, transport, fetcher, workflow="sw", setting="auto", adapter=None,
-            approval="as_proposed"):
+def app_for(tmp_path, monkeypatch, transport, fetcher, workflow="sw", setting="auto", adapter=None):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
@@ -98,7 +97,7 @@ def app_for(tmp_path, monkeypatch, transport, fetcher, workflow="sw", setting="a
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
     return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
-                               protocol_approval=approval, fulltext_fetch=setting, fulltext_adjudication="off"),
+                               fulltext_fetch=setting, fulltext_adjudication="off"),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport)), fetcher=fetcher,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))

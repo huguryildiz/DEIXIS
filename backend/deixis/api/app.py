@@ -39,7 +39,7 @@ from deixis.workflow import abstract_stage
 from deixis.workflow import fast_path, small_batch
 from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
-                                 SUGGESTION_CALLS, ADVICE_CALLS, TEST_EFFORT_BUDGETS, RevisionConflict, effort_limits)
+                                 TEST_EFFORT_BUDGETS, RevisionConflict, effort_limits)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
 from deixis.models.deepseek import DeepSeekAdapter
@@ -49,9 +49,7 @@ from deixis.providers import scopus
 from deixis.providers import zotero
 from deixis.providers.registry import CONNECTORS, configured_providers, provider_role
 from deixis.storage import db
-from deixis.workflow import approval as approval_rules
 from deixis.workflow import adjudication, fulltext
-from deixis.workflow import suggestions as suggestion_rules
 from deixis.workflow import bibliography
 from deixis.workflow import audit as audit_rules
 from deixis.workflow import prisma_s
@@ -94,7 +92,6 @@ UPLOAD_CHUNK_BYTES = 1024 * 1024
 CSRF_COOKIE = "deixis_csrf"
 CSRF_HEADER = "x-deixis-csrf"
 # The pauses an approval answers: the proposal itself, and a correction that left nothing searchable (slice 08a).
-APPROVABLE_PAUSES = ("protocol_approval_needed", "vocabulary_empty", "vocabulary_too_broad")
 INSTITUTIONAL_ACCESS_TTL_SECONDS = 600
 INSTITUTIONAL_ACCESS_RETRY_SECONDS = 30
 
@@ -257,20 +254,6 @@ class ScopeRevision(BaseModel):
     steering: str | None = Field(default=None, max_length=2000)
     expected_version: int
     key_terms: str | None = Field(default=None, max_length=500)  # left out, the revision keeps the previous terms
-
-
-class ProtocolApprovalSubmission(BaseModel):
-    """The user's answer to the approval step; an empty body approves the proposal as it stands (slice 08a).
-
-    The fields are loose on purpose: `approval.check_edits` reads them and names every fault at once, so the user
-    is told what is wrong with the whole correction instead of the first line of it.
-    """
-
-    terms: list[dict[str, Any]] = Field(default_factory=list)
-    criterion: dict[str, Any] | None = None
-    note: str | None = None
-    # Whether the code's own query is searched beside a model-written one (D92); null leaves the proposal's choice.
-    code_query: Any = None
 
 
 class ResearchTitleChange(BaseModel):
@@ -1366,9 +1349,7 @@ def create_app(
             # The criterion proposal before the first search (D78) and the abstract stage's two runs over the
             # works the read limit reaches (D81) are given on top of the preset, so the preset itself — which an
             # answer run reads — is what it always was (slice 06 review).
-            # SUGGESTION_CALLS is the one term-suggestion call the user may ask for on the approval card (D82); a
-            # run that never asks spends none of it.
-            extra = CRITERION_CALLS + SUGGESTION_CALLS + ADVICE_CALLS + abstract_stage.model_calls(
+            extra = CRITERION_CALLS + abstract_stage.model_calls(
                 ABSTRACT_READ_LIMIT[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
             # The model-written query and its repair and retry (D92); a run on the code's query alone makes no call.
             extra += SEARCH_QUERY_CALLS if settings.search_query == "model" else 0
@@ -1401,70 +1382,11 @@ def create_app(
         request.app.state.worker.wake()
         return run
 
-    @app.post("/api/runs/{run_id}/protocol-approval")
-    async def approve_protocol(run_id: str, body: ProtocolApprovalSubmission, request: Request) -> dict[str, Any]:
-        """Approve or correct the vocabulary and criterion an sw discovery run stopped for (SW2.6, SW15.3).
-
-        Declared before the generic run action so `protocol-approval` reaches it. The route validates, stores and
-        queues; every count request the correction needs is sent by the worker.
-        """
-        store = store_of(request)
-        run = store.run(run_id)
-        store.research(run["research_id"])
-        step = store.approval_step(run_id)
-        if step is None or not step["output"]:
-            raise HTTPException(409, "This run has not proposed a protocol to approve")
-        if step["status"] == "succeeded":
-            # The protocol of this run is frozen and its searches ran under it; a change is a new scope revision.
-            raise HTTPException(409, "This run's protocol is already approved; revise the scope to change it")
-        if run["status"] != "paused" or run["pause_reason"] not in APPROVABLE_PAUSES:
-            raise HTTPException(409, f"Cannot approve a protocol on a run in status {run['status']}")
-        edits = body.model_dump()
-        if errors := approval_rules.check_edits(step["output"]["proposal"], edits):
-            raise HTTPException(422, {"errors": errors})
-        run = store.submit_approval(run_id, edits)
-        request.app.state.worker.wake()
-        return run
-
-    @app.post("/api/runs/{run_id}/term-suggestions")
-    async def suggest_terms(run_id: str, request: Request) -> dict[str, Any]:
-        """Ask a model for other names of the terms on the approval card (SW2.5, slice 08c).
-
-        Declared before the generic run action, like `protocol-approval`. The route validates, counts the request
-        and queues the run; the model call and every count request are sent by the worker. Nothing the model
-        proposes enters a query here or later unless the user adds it in their correction.
-        """
-        store = store_of(request)
-        run = store.run(run_id)
-        store.research(run["research_id"])
-        step = store.approval_step(run_id)
-        if step is None or not step["output"]:
-            raise HTTPException(409, "This run has not proposed a protocol to suggest terms for")
-        if step["status"] == "succeeded":
-            # The protocol is frozen and its searches ran under it; a change is a new scope revision.
-            raise HTTPException(409, "This run's protocol is already approved; revise the scope to change it")
-        if run["status"] != "paused" or run["pause_reason"] not in APPROVABLE_PAUSES:
-            raise HTTPException(409, f"Cannot ask for terms on a run in status {run['status']}")
-        if not suggestion_rules.anchors(step["output"]["proposal"]["vocabulary"]):
-            # With no searched term there is nothing to be another name for; the way out is a term or key terms.
-            raise HTTPException(409, "This proposal has no searched term to suggest other names for")
-        answered = any((row["output"] or {}).get("status") == "ready" for row in store.suggestion_steps(run_id))
-        if answered or step["output"].get("carried_suggestions"):
-            # SW2.6: the model is not asked twice for the same thing. Only a failed request may be repeated.
-            raise HTTPException(409, "This card already has the model's suggestions")
-        if store.suggestion_calls(run_id) >= SUGGESTION_CALLS:
-            # The run was given SUGGESTION_CALLS on top of its preset for this. A started call is charged even when
-            # it fails, so another one would be paid for out of the abstract screening's share.
-            raise HTTPException(409, "This run has spent the model call it had for other names")
-        run = store.request_term_suggestions(run_id)
-        request.app.state.worker.wake()
-        return run
-
     @app.post("/api/runs/{run_id}/search-query-choice")
     async def choose_code_query(run_id: str, request: Request) -> dict[str, Any]:
         """Search with the code's query alone after the model could not write one (D92).
 
-        Declared before the generic run action, like `protocol-approval`. The other way out of the same pause is
+        Declared before the generic run action so `search-query-choice` reaches it. The other way out of the same pause is
         `resume`, which asks the model once more while an attempt is left.
         """
         store = store_of(request)
@@ -1502,9 +1424,6 @@ def create_app(
             # A queued run paused here never passes the worker; a person's waiting files are looked at from here
             # (slice 18b, decision 5). With a paused run in the research the helper opens nothing.
             worker.flow.queue_person_reading(run["research_id"])
-        elif action == "resume" and status == "paused" and run["pause_reason"] == "protocol_approval_needed":
-            # There is no resuming past the approval: the run would freeze a protocol the user never saw (SW2.6).
-            raise HTTPException(409, "Approve or correct the proposed protocol before resuming this run")
         elif (action == "resume" and status == "paused" and run["pause_reason"] == "search_query_failed"
               and not (run.get("error") or {}).get("retries_left", 1)):
             # The model was asked as many times as a run allows; the way on is the code's query or a new revision.

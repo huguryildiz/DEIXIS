@@ -150,19 +150,17 @@ class _Context:
             self._outcomes[work_id] = self.decisions.work_outcome(self.rid, work_id, self.facts)
         return self._outcomes[work_id]
 
-    # The fused order (SW11.7, D95): keyword works by the latest keyword ranking, chained works after them by the
-    # latest chain ranking. A work neither ranking placed has no place and goes last, by its head.
+    # The order (SW11.7): keyword works by the latest keyword ranking. A chained work has no ranking of its own on the
+    # fast path, so it has no place and goes last, by its head, like any work the ranking did not place.
     def place(self) -> dict[str, int]:
         if self._place is None:
             keyword = self.decisions.latest_ranking(self.rid, self.revision) or []
-            chain = self.decisions.latest_chain_ranking(self.rid, self.revision)
-            work_of = self.store.work_ids(list(dict.fromkeys(keyword + chain)))
+            work_of = self.store.work_ids(list(dict.fromkeys(keyword)))
             fused: dict[str, int] = {}
-            for arm, order in ((False, keyword), (True, chain)):
-                for svid in order:
-                    work_id = work_of.get(svid)
-                    if work_id is not None and (work_id in self.chained) == arm:
-                        fused.setdefault(work_id, len(fused) + 1)
+            for svid in keyword:
+                work_id = work_of.get(svid)
+                if work_id is not None and work_id not in self.chained:
+                    fused.setdefault(work_id, len(fused) + 1)
             self._place = fused
         return self._place
 

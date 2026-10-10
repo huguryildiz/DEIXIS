@@ -17,7 +17,7 @@ from deixis.domain import contracts
 TASKS = (
     "owner_review", "grounded_answer", "answer_review", "cell_extraction",
     "table_columns", "research_title", "vocabulary_labels", "criterion_proposal",
-    "term_suggestions", "term_advice", "search_query", "abstract_screening", "fulltext_adjudication",
+    "search_query", "abstract_screening", "fulltext_adjudication",
     "report_plan", "report_section", "report_phrase_repair", "report_review",
     "lineage_links", "claim_decomposition", "kill_search_query", "claim_assessment",
 )
@@ -51,7 +51,7 @@ def nested(depth, leaf=None):
 def test_t0_registry_keys_are_independently_frozen():
     expected = {f"{builder}:{task}" for builder in ("model_output_schema", "step_output_schema") for task in TASKS}
     expected.add("report_section_anchor_patch_schema")
-    assert len(expected) == 43
+    assert len(expected) == 39
     assert contracts.model_transport_schemas().keys() == expected
 
 

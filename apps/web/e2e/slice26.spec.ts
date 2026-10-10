@@ -71,7 +71,7 @@ async function openQueue(page: Page, server: Slice26Server, rid: string) {
 }
 
 test.describe.serial('R: a work whose title names a study protocol is a queue row, not an include', () => {
-  const server = new Slice26Server(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_PROTOCOL: 'on' })
+  const server = new Slice26Server(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_PROTOCOL: 'on' })
   let api: Api
   let rid = ''
 

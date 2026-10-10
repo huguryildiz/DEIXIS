@@ -83,7 +83,7 @@ const noSideScroll = (page: Page) => page.evaluate(() => document.documentElemen
 
 test.describe.serial('P: pages of Europe PMC’s drawn text say "rendered" on every surface', () => {
   const server = new Slice25Server(nextPort(), {
-    DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on',
+    DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on',
     DEIXIS_FIXTURE_EUROPEPMC: 'on',
   })
   let api: Api
@@ -163,7 +163,7 @@ test.describe.serial('P: pages of Europe PMC’s drawn text say "rendered" on ev
 
 test.describe.serial('Q: an sw research with nothing included answers from its abstracts and says so', () => {
   // Retrieval and reading are off here, so the search finishes with no work included (the fixture's smallest case).
-  const server = new Slice25Server(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed' })
+  const server = new Slice25Server(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw' })
   let api: Api
   let rid = ''
 

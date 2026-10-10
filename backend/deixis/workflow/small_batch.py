@@ -58,17 +58,6 @@ def answer_budget(store: Any, rid: str, revision: int, budget: dict[str, Any]) -
                                     "manifest_hash": step["output"]["manifest_hash"]}}
 
 
-def answer_listing(store: Any, run: dict[str, Any]) -> dict[str, Any]:
-    binding = run["budget"]["inspection"]
-    step = store.existing_step(binding.get("list_run_id", run["id"]), LIST_KEY)
-    if (step is None or step["status"] != "succeeded"
-            or binding.get("manifest_hash", step["output"]["manifest_hash"]) != step["output"]["manifest_hash"]):
-        raise ValueError("Answer frozen-list binding does not resolve")
-    if step["output"]["manifest"].get("scope_revision") != run["scope_revision"]:
-        raise ValueError("Answer frozen-list scope_revision differs from the answer run")
-    return step["output"]
-
-
 def allocate(queues: list[list[dict[str, Any]]], limit: int, per_source: int,
              breadth: int | None = None) -> list[dict[str, Any]]:
     """Represent the bounded breadth prefix, fill its depth, then widen with unused room."""

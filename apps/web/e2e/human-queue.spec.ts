@@ -93,7 +93,7 @@ async function openQueue(page: Page, server: QueueServer, rid: string) {
 test.describe.serial('J: the human queue of an sw research', () => {
   // DEIXIS_FIXTURE_AUDIT adds one work both reading runs include (slice 20): it is no queue row, and the audit sample's
   // group of agreeing includes shows it.
-  const server = new QueueServer(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
+  const server = new QueueServer(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
   let api: Api
   let rid = ''
   let page: Page

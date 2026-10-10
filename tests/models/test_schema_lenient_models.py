@@ -135,7 +135,7 @@ def _app_with_adapter(tmp_path, monkeypatch, adapter, handler):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     return create_app(
         Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
-                 protocol_approval="as_proposed", fulltext_fetch="off", fulltext_adjudication="off"),
+                 fulltext_fetch="off", fulltext_adjudication="off"),
         adapters={"fake": adapter},
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         fetcher=lambda url: FetchResult("http_error", final_url=url, http_status=404),
@@ -191,7 +191,7 @@ def _adjudication_app(tmp_path, monkeypatch, *, adapter, budget, concurrency=1, 
 
     return create_app(
         Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
-                 protocol_approval="as_proposed", fulltext_fetch="off",
+                 fulltext_fetch="off",
                  fulltext_adjudication="auto", model_concurrency=concurrency),
         adapters={"fake": adapter},
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(pool)),

@@ -258,7 +258,7 @@ def flow_with_fetch_result(tmp_path, result_of):
         fetched.append(url)
         return result_of(url)
 
-    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, protocol_approval="as_proposed",
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1,
                         search_query="code", fulltext_fetch="auto")
     app = create_app(settings, adapters={"fake": FakeAdapter()}, http_client=openalex_client(), fetcher=fetcher,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))

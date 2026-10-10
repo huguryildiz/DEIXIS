@@ -180,7 +180,7 @@ export type Run = {
   created_at: string; updated_at: string; version: number; steps?: Step[]; target: RunTarget | null
   // screening_notes: the note of each screening batch, in order, with its step.
   screening_notes: { step_id: string; text: string }[]
-  // What this run asked the user to approve before freezing its protocol; null when it asked nothing (D80).
+  // The protocol this run froze before it searched; null when it froze none (D80).
   approval: RunApproval | null
   // Per round, what each source brought in this discovery run and how much of it no other source did (D93).
   // counted false: the run was searched before these were kept, which is not the same as zero.
@@ -240,7 +240,7 @@ export type Probes = {
       reasons: ('verified' | 'brought')[]; found: 'no' | 'unknown' }[] }
 }
 
-// ---- the protocol approval of an sw discovery run (D80) --------------------------------------------
+// ---- the frozen protocol of a discovery run (D80) -------------------------------------------------
 // The blocks a term can sit in. setting and task are the two blocks that make the provider query; outcome orders
 // the records; claim is the assertion under test and exclusion the words that keep a record out — neither is searched.
 export type ApprovalBlock = 'setting' | 'task' | 'outcome' | 'claim' | 'exclusion'
@@ -248,8 +248,6 @@ export type ApprovalTerm = {
   phrase: string; block: ApprovalBlock
   // Who supplied the phrase (the question, the user's key terms, the user's own correction) and who put it in its
   // block (the code rule, the model's labelling step, the user).
-  // 'model': the user added a name the model proposed for another term on this card (D82). The origin is derived
-  // on the server from the stored proposals; the correction the browser sends never names it.
   // 'search_query': the model that wrote this run's query chose it (D92); its block origin is the same.
   origin: 'question' | 'key_terms' | 'user' | 'model' | 'search_query'; block_origin: 'rule' | 'model' | 'user' | 'search_query'
   // The form the phrase enters the query in, and what each form was counted at. A null count was not read.
@@ -265,70 +263,23 @@ export type ApprovalCriterion = {
   // Whether what the question looks for is named in the criterion; null when it was not checked.
   sought_term_in_criterion?: boolean | null; origin?: string
 }
-// One side of the approval: what the run proposed, or what it was approved with.
+// What the run was approved with: the vocabulary it searched and the queries it sent.
 export type ApprovalSide = {
   terms: ApprovalTerm[]
   // Phrases that never enter a provider query; they carry no count of their own.
   claim_words: string[]; exclusion_words: string[]; outcome_terms: string[]
   gate_count: number | null; too_broad: boolean
-  criterion: ApprovalCriterion | null; criterion_available: boolean; sought_term_in_criterion: boolean | null
-  // The approved side carries them, and a proposal whose query a model wrote (D92): the compiled text of every query
-  // the run will send, and which vocabulary wrote each one.
-  queries?: { provider_id: string; query_text: string; origin?: 'model' | 'code' }[]
-  // Present when a model wrote the query, or was asked to and failed (D92).
-  search_query?: SearchQuerySide
-}
-// What the card shows of a model-written query (D92). The counts and warnings are code's checks; `kind` and `why`
-// are the model's own words about a term and decide nothing.
-export type SearchQueryTerm = {
-  phrase: string; kind: 'topic' | 'method' | 'population' | 'other' | null; why: string | null
-  // The term this backup took the place of, when a chosen term held no record.
-  backup_for: string | null
-  // Records holding the term together with the other block's chosen terms; null was not counted.
-  with_other_block: number | null
-}
-export type SearchQuerySide =
-  | { status: 'ready'; terms: SearchQueryTerm[]
-      warnings: { phrase: string; block: string; warning: 'no_records_with_other_block' | 'count_unknown' }[]
-      backups_left: Record<'setting' | 'task', string[]>
-      // The query code built from the question's words (slice 13g), offered beside the model's.
-      code_query: { searched: boolean; available: boolean
-                    terms: { phrase: string; block: 'setting' | 'task'; form: string }[]
-                    queries: { provider_id: string; query_text: string }[] } }
-  | { status: 'failed'; choice: 'code_only' | null; attempts: { attempt: number; reason: string | null }[] }
-export type TermEdit = { op: 'remove' | 'move' | 'add'; phrase: string; block?: ApprovalBlock }
-// What the user sends back. An empty package approves the proposal as it stands; a criterion given replaces the
-// proposed one whole (slice 08a).
-export type ProtocolEdits = {
-  terms: TermEdit[]
-  criterion: { criterion: string; parts: CriterionPart[]; cue_phrases: { phrase: string; part: string | null }[]; exclusion_title_words: string[] } | null
-  note: string | null
-  // Whether the code's query is searched beside a model-written one; null leaves the proposal's choice (D92).
-  code_query?: boolean | null
+  criterion: ApprovalCriterion | null
+  // The compiled text of every query the run sends, and which vocabulary wrote each one (D92).
+  queries: { provider_id: string; query_text: string; origin?: 'model' | 'code' }[]
 }
 export type RunApproval = {
-  // waiting: the card is editable. submitted: the correction was sent and is being applied. approved: it is frozen.
-  status: 'waiting' | 'submitted' | 'approved'
-  approved_by: 'user' | 'setting' | 'earlier_approval' | 'no_warning' | 'model_advice' | 'warn_kept' | 'unattended' | null; edited: boolean | null; proposal_hash: string
-  proposal: ApprovalSide; approved: ApprovalSide | null
-  // Operations of an earlier approval this run could not apply, because the phrase is no longer in the proposal.
-  skipped_edits: { op: string; phrase: string; block?: string; reason?: string }[]
-  // Why the run stopped for the person: a term that alone inflates the matches, with the count without it.
-  // `advice` is the model's remove-or-keep suggestion for the term and one plain sentence why (D232); null when none was asked or given.
-  warnings?: { warning: string; phrase: string; block: string; matches: number; matches_without_term: number; advice?: { recommendation: 'remove' | 'keep'; reason: string } | null }[]
-  // The model that gave that advice; null when it gave none.
-  advice_model?: { connection: string; model: string | null } | null
-  // When the run went on without asking (`approved_by` warn_kept; model_advice on a run before D233): the advice per warned term.
-  // Information only: every warned term was kept (D233). `advice_given` is false when the call failed or its output was not used.
-  advice_applied?: { phrase: string; recommendation: 'remove' | 'keep' | null; reason: string | null; matches: number; matches_without_term: number; applied?: boolean; not_applied?: string }[] | null
-  advice_given?: boolean | null
-  // Other names the user asked a model for, and what came of it (D82).
-  suggestions: ApprovalSuggestions
-  // Which sources the queries were compiled for and why (D93); null for a card shown before routing existed.
-  routing?: SourceRouting | null
+  // Who let the run search with this protocol; in practice always 'unattended' (nobody is asked any more).
+  approved_by: string | null; proposal_hash: string
+  approved: ApprovalSide
   // How the run chains citations (the fast chain), frozen in its budget when it was queued; null for a run that
   // carries no fast-chain policy.
-  chaining?: CitationChaining | null
+  chaining: CitationChaining | null
 }
 // The fast chain's rule and limits as the run froze them (`chaining.policy`). The seeds are known only after the search.
 // request_limit counts logical requests (backward + forward); attempt_limit is every HTTP attempt, retries included.
@@ -336,39 +287,6 @@ export type CitationChaining = {
   enabled: true; rule_version: string; source: string; sources: string[]; directions: string[]; seeds: number
   backward_requests: number; backward_page_size: number; forward_requests: number; forward_page_size: number
   citing_cap: number; request_limit: number; attempt_limit: number; in_flight: number
-}
-// The source routing of an sw run (D93): the field distribution of the gate query and the sources it chose.
-// status read: a distribution was read; unavailable: it could not be, so every source in scope is searched;
-// not_needed: no field-specific source was in scope, so nothing was asked.
-export type SourceRouting = {
-  status: 'read' | 'unavailable' | 'not_needed'; query: string | null; total: number | null
-  fields: { field: string; count: number; share: number }[]; route_share: number; table_version: string
-  chosen: RoutedSource[]; left_out: RoutedSource[]; providers: string[]
-  // The chosen sources the first round's queries go to; the effort's query limit can leave a chosen one none.
-  queried?: string[]
-}
-export type RoutedSource = {
-  provider_id: string
-  reason: 'always' | 'share' | 'distribution_unavailable' | 'no_route' | 'share_below' | 'not_in_scope'
-    | 'not_configured' | 'not_in_sw_search'
-  fields?: string[]; share?: number
-}
-// One name the model proposed for a term of the card. `phrase_count` is how many records hold it; null was not
-// counted, which is not zero. `dropped` says why it cannot enter the query, and a dropped row cannot be added.
-export type SuggestedTerm = {
-  phrase: string; synonym_of: string; block: ApprovalBlock
-  phrase_count: number | null; dropped: string | null
-}
-export type ApprovalSuggestions = {
-  // none: nothing was asked. requested: the run is asking a model. ready: the list is on record. failed: the
-  // request did not complete and may be repeated.
-  status: 'none' | 'requested' | 'ready' | 'failed'
-  // Whether the run would take a request now, and why it would not.
-  available: boolean; unavailable_reason: null | 'no_anchor_phrases' | 'already_suggested' | 'suggestion_call_spent'
-  failure: string | null
-  // Whether this list came from an earlier approval of the same question rather than from a request of this run.
-  carried: boolean
-  terms: SuggestedTerm[]
 }
 export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string
@@ -1013,7 +931,7 @@ export type ReviewApplyResult = { decision: ReviewDecision; revision: { id: stri
 
 export class ApiError extends Error {
   status: number
-  // A 422 from the approval route names every fault of the correction at once; the card shows them by their row.
+  // A 422 can name every fault of a request at once.
   errors: string[]
   // A 409 of the human queue says why: `row_changed` or `reading_started` (slice 17).
   reason: string | null
@@ -1284,13 +1202,7 @@ export const api = {
   effortLimits: () => request<EffortLimits>('/api/effort-limits'),
   reviseScope: (id: string, question: string, expectedVersion: number, keyTerms?: string | null) =>
     request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion, key_terms: keyTerms ?? null })),
-  // Approve or correct the protocol an sw discovery run stopped for; the run is queued again (D80).
-  approveProtocol: (runId: string, edits: ProtocolEdits) =>
-    request<Run>(`/api/runs/${runId}/protocol-approval`, json('POST', edits)),
-  // Ask the model for other names of the terms on the card. Nothing it proposes is searched until the user adds
-  // it in their correction (D82).
   skipEquations: (runId: string) => request<Run>(`/api/runs/${runId}/skip-equations`, { method: 'POST' }),
-  suggestTerms: (runId: string) => request<Run>(`/api/runs/${runId}/term-suggestions`, { method: 'POST' }),
   // After the model could not write the query: search with the code's query alone (D92).
   chooseCodeQuery: (runId: string) => request<Run>(`/api/runs/${runId}/search-query-choice`, { method: 'POST' }),
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),

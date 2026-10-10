@@ -1,4 +1,4 @@
-import type { ApprovalBlock, Evidence, FileRestoreReceipt, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
+import type { Evidence, FileRestoreReceipt, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
@@ -254,11 +254,10 @@ const pauseReasons: Record<string, string> = {
   ocr_pages_changed: 'The PDF’s pages without text changed while OCR was running. Nothing was stored; start OCR again.',
   asset_removed: 'The PDF was removed from the source before OCR finished. Nothing was stored.',
   extraction_failed: 'The PDF could not be opened to find its pages without text.',
-  // The sw workflow's own stops: the run has searched nothing yet and waits for the user (D80).
-  protocol_approval_needed: 'This run has not searched yet. Check the search terms and the inclusion criterion below, correct them if needed, and approve them.',
+  // The sw workflow's own stops: the run has searched nothing yet (D80).
   key_terms_needed: 'DEIXIS reads search terms from an English question and does not translate. Revise the question in English, or give the English key terms below.',
-  vocabulary_empty: 'No term is left that a provider query could be built from. Add a term below, or move one back into the setting or task block.',
-  vocabulary_too_broad: 'Every remaining term is too frequent to search on its own, and they are all in one block. Add a term to the other block, or replace one with a narrower phrase.',
+  vocabulary_empty: 'No search term could be built from the question, so nothing was searched. Revise the question below, for example with other words for the topic or with key terms, and search again.',
+  vocabulary_too_broad: 'Every search term in the question is too common to search on its own, so nothing was searched. Revise the question below with a narrower topic or with key terms, and search again.',
   search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
 }
 export { reviewFindingLabels, reviewFocusLabels, reviewDecisionLabels, reviewStaleLabels, reviewNotReviewedLabels, reviewContextLabels, notReviewedText } from './review/labels'
@@ -328,76 +327,9 @@ export const reportAssemblyDraftText = (error: unknown) => {
 // How many more times resuming may ask the model to write the query; the pause carries it (D92).
 export const searchQueryTriesLeft = (run: { error: unknown }) => (run.error as { retries_left?: number } | null)?.retries_left ?? 1
 
-// ---- the protocol approval card (D80) ----
-// The five blocks a term can sit in, and what each one does with it.
-export const blockLabels: Record<ApprovalBlock, string> = {
-  setting: 'Setting', task: 'Task', outcome: 'Outcome', claim: 'Claim under test', exclusion: 'Excluded words',
-}
-export const blockNotes: Record<ApprovalBlock, string> = {
-  setting: 'Searched: one part of the provider query.',
-  task: 'Searched: the other part of the provider query.',
-  outcome: 'Not searched; used to order the records that were found.',
-  claim: 'Not searched: a record that states the claim is what the search is looking for.',
-  exclusion: 'Not searched. Kept with the protocol; in this version no record is kept out by them yet.',
-}
-// Who supplied a phrase, and who put it in its block. Both are shown, because they answer different questions.
-const termOrigins: Record<string, string> = {
-  question: 'from the question', key_terms: 'from your key terms', user: 'added by you',
-  // The model proposed the name; it is in the search because the user added it (D82).
-  model: 'suggested by the model',
-  // The model that wrote this run's query chose it (D92).
-  search_query: 'written by the model',
-}
-const blockOrigins: Record<string, string> = { rule: 'block by rule', model: 'block by the model', user: 'block by you', search_query: 'block by the model' }
-// What the model said a term of its query names (D92). Shown, never used by a rule.
-const termKinds: Record<string, string> = { topic: 'topic', method: 'method', population: 'population', other: 'other' }
-export const termKindText = (kind: string) => t(termKinds[kind] ?? kind)
-const queryWarnings: Record<string, string> = {
-  no_records_with_other_block: 'no record holds it together with the other block',
-  count_unknown: 'its count could not be read',
-}
-export const queryWarningText = (warning: string) => t(queryWarnings[warning] ?? warning)
-// Why a source is or is not searched by an sw run (D93).
-const routeReasons: Record<string, string> = {
-  always: 'always searched',
-  share: 'its fields hold enough of the records',
-  distribution_unavailable: 'searched because the field distribution could not be read',
-  no_route: 'searched; no field rule names it',
-  share_below: 'its fields hold too few of the records',
-  not_in_scope: 'not among this research’s sources',
-  not_configured: 'no key configured',
-  not_in_sw_search: 'not searched by this workflow',
-}
-export const routeReasonText = (reason: string) => t(routeReasons[reason] ?? reason)
-export const termOriginText = (origin: string) => t(termOrigins[origin] ?? origin)
-export const blockOriginText = (origin: string) => t(blockOrigins[origin] ?? origin)
-// Why a phrase left the query. It stays on record with its reason rather than disappearing.
-const dropReasons: Record<string, string> = {
-  zero_results: 'no record holds it',
-  // Why a proposed name cannot enter the search (D82).
-  already_present: 'already one of the terms above',
-  contains_claim_word: 'contains a word of the claim under test',
-  contains_exclusion_word: 'contains an excluded word',
-  too_long: 'longer than six words',
-  duplicate: 'proposed twice',
-  anchor_not_searched: 'the term it was another name for is no longer searched',
-}
-export const dropReasonText = (reason: string) => t(dropReasons[reason] ?? reason)
-// Why the model cannot be asked for other names right now.
-const suggestionBlockers: Record<string, string> = {
-  no_anchor_phrases: 'There is no searched term to ask about. Add a term to the setting or task block first.',
-  already_suggested: 'The model has already been asked for this question; its proposals are below.',
-  suggestion_call_spent: 'This run has used the one model call it had for other names. You can still add terms yourself.',
-}
-export const suggestionBlockerText = (reason: string | null) => (reason ? t(suggestionBlockers[reason] ?? reason) : '')
+// ---- the frozen protocol of a discovery run (D80) ----
 const approvedByNames: Record<string, string> = {
   unattended: 'Nobody reviewed the search vocabulary; the fast path went on without asking.',
-  user: 'You approved these search terms and this criterion.',
-  setting: 'Approved as proposed by the unattended setting, not by a person.',
-  earlier_approval: 'Approved with the correction you made earlier for this question.',
-  no_warning: 'No warning, so the search went ahead without asking you.',
-  model_advice: 'A model advised on the warnings and the search went ahead without asking you.',
-  warn_kept: 'The application warned about some terms, kept every one of them and went ahead without asking you.',
 }
 export const approvedByText = (by: string | null) => (by ? t(approvedByNames[by] ?? by) : '')
 
@@ -441,8 +373,6 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'lineage_publication') return t('Recording development decisions (code)')
   if (kind === 'model:search_plan') return t('Search plan (model)')
   if (kind === 'model:screening') return t('Screening proposal (model)')
-  if (kind === 'code:term_suggestions') return t('Other names for the search terms (code)')
-  if (kind === 'model:term_suggestions') return t('Other names for the search terms (model)')
   if (kind === 'code:abstract_stage') return t('Abstract screening (code)')
   if (kind === 'model:abstract_screening') return t('Abstract screening proposal (model)')
   if (kind === 'code:chain_abstract_stage') return t('Abstract screening of chained works (code)')

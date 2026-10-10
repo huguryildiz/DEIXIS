@@ -14,7 +14,7 @@ from test_fetch_overlap_flow import wait
 def test_scripted_fixture_small_batch_discovery(tmp_path, monkeypatch, reading):
     app = create_app(
         Settings(data_dir=tmp_path, port=8877, model_concurrency=1,
-                 protocol_approval="as_proposed", search_query="code",
+                 search_query="code",
                  fulltext_fetch="auto" if reading == "auto" else "off",
                  fulltext_adjudication=reading),
         adapters={"codex": ScriptedCodex(tmp_path)},

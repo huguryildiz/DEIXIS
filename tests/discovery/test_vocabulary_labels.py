@@ -197,7 +197,8 @@ def test_an_sw_discovery_searches_with_the_rules_blocks_while_every_labelling_ca
     assert vocabulary["labelling"]["runs_ok"] == 0 and len(vocabulary["labelling"]["failures"]) == LABEL_RUNS
     # The rule's own blocks were searched, and its claim word stayed out of every query.
     assert {t["phrase"] for t in vocabulary["terms"]} == {"delivery delay", "supply chains", "shipment batching"}
-    assert all("ledger" not in query for query in openalex.searches + openalex.counts)
+    # Keyword queries only: the fast path's semantic search and chain requests carry none.
+    assert all("ledger" not in query for query in openalex.searches + openalex.counts if query is not None)
 
 
 def test_two_runs_of_three_agreeing_put_the_models_block_in_the_query(tmp_path, monkeypatch):
@@ -213,7 +214,7 @@ def test_two_runs_of_three_agreeing_put_the_models_block_in_the_query(tmp_path, 
     setting = [t["phrase"] for t in vocabulary["terms"] if t["block"] == "setting"]
     assert "distributed ledgers" in setting
     # The query enters by the term's root word, so the phrase shows up there as "distributed" (SW3.5).
-    assert any("distributed" in query for query in openalex.searches), openalex.searches
+    assert any("distributed" in query for query in openalex.searches if query is not None), openalex.searches
     record = next(p for p in vocabulary["labelling"]["phrases"] if p["phrase"] == "distributed ledgers")
     assert record == {"phrase": "distributed ledgers", "rule_block": "claim", "block": "setting", "origin": "model",
                       "runs": ["claim", "setting", "setting"]}
@@ -316,5 +317,8 @@ def test_the_frozen_protocol_names_the_origin_of_every_block_and_is_the_same_on_
     again = protocol.build_protocol(
         store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"], body["skill_package_hash"],
         Settings(data_dir=None, search_query="code"), vocabulary=stored["vocabulary"], criterion=criterion,
-        approval=store.approval_step(run_id)["output"]["approval"], routing=stored["routing"])
+        approval=store.approval_step(run_id)["output"]["approval"], routing=stored["routing"],
+        # The fast path's own inputs, frozen beside the others: the semantic search model and the search plan.
+        embedding_model=next(s["model"] for s in body["signals"] if s["signal"] == "embedding"),
+        fast_path_search=body["fast_path_search"])
     assert sha256_hex(again) == row["body_sha256"]

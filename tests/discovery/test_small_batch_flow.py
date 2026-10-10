@@ -38,7 +38,7 @@ def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, adapter=None, model_works
     fetcher = SlowFetcher({f"https://example.org/w{i}.pdf": ok(named_pdf(f"10.1/oa.{i}"))
                            for i in range(n)} if pdf else {}, delay=0.002)
     app = create_app(Settings(data_dir=tmp_path / "data", port=8877, search_query=search_query,
-                              protocol_approval="as_proposed", fulltext_fetch=fetch,
+                              fulltext_fetch=fetch,
                               fulltext_adjudication=reading, **settings),
                      adapters={"fake": adapter or FakeAdapter(valid_response)},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport or Transport(records))),
@@ -164,29 +164,6 @@ def test_unexpected_model_error_does_not_fetch_unscreened_work(tmp_path, monkeyp
         assert run["status"] == "failed", run
         assert not fetcher.calls
         assert not work_steps(app.state.store, run_id)
-
-
-def test_answer_api_freezes_discovery_policy_and_uses_that_input(tmp_path, monkeypatch):
-    from test_fetch_overlap_flow import wait
-
-    adapter = FakeAdapter(valid_response)
-    app, _ = app_for(tmp_path, monkeypatch, 4, adapter=adapter)
-    with client_of(app) as client:
-        rid, discovery_id, _, discovery = discover(client, effort="standard")
-        assert discovery["status"] == "completed", discovery
-        answer = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
-        _, settled = wait(client, rid, answer["id"])
-        assert settled["status"] == "completed", settled
-        stored = app.state.store.run(answer["id"])
-        assert small_batch.enabled(stored["budget"])
-        allocation = output(app.state.store, answer["id"], "small_batch:v1:answer_input")
-        assert stored["budget"]["inspection"]["list_run_id"] == discovery_id
-        listing = output(app.state.store, discovery_id, small_batch.LIST_KEY)
-        sent = next(c for c in adapter.calls if c["task_type"] == "grounded_answer")
-        assert len(allocation["passage_ids"]) == 4
-        assert [i["work_id"] for i in allocation["items"]] == [i["work_id"] for i in listing["items"]]
-        assert len(sent["passages"]) == 4
-
 
 
 def test_flagged_answer_without_eligible_work_records_no_evidence(tmp_path, monkeypatch):

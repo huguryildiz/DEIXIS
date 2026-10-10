@@ -11,12 +11,12 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.domain import canonical, skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
+from deixis.providers.common import ProviderRecord
 from deixis.storage.db import transaction
 from deixis.workflow import fast_answer, fast_path, small_batch, views, report_pipeline
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
 from fakes import FakeAdapter, valid_response
-from test_abstract_answer_sources import candidate
 from test_criterion_passage_flow import library, page_source, TOPIC_PAGE
 from test_fast_path_clock import FakeClock
 from test_small_batch_flow import client_of
@@ -25,6 +25,20 @@ from test_fulltext_flow import Transport, work
 from test_abstract_flow import ON_TOPIC
 from test_answer_resplit import draft_for
 
+
+
+def candidate(store, rid, name, abstract, *codes):
+    """One SYNTHETIC search record with an abstract and these decisions, its selection derived from them."""
+    record = ProviderRecord(provider_record_id=name, title=f"SYNTHETIC {name}", authors=[], year=None, venue=None,
+                            publication_type=None, doi=None, landing_url=None, oa_pdf_url=None, oa_pdf_version=None,
+                            version_label=None, abstract=abstract, abstract_origin="provider", identifiers={}, raw={})
+    svid, _ = store.upsert_provider_source("known_list", record, None)
+    store.add_to_corpus(rid, svid, "search")
+    decisions = DecisionStore(store)
+    for code in codes:
+        decisions.record(rid, svid, code)
+    decisions.derive_selection(rid, store.source(svid)["work_id"])
+    return svid
 
 def setup(tmp_path, n=1, codes=("runs_agree_candidate",), pdf=False):
     store, rid = library(tmp_path)
@@ -193,7 +207,7 @@ def test_auto_answer_creation_is_atomic_idempotent_and_skips_old_scope(tmp_path)
 def test_end_to_end_unattended_auto_answer_and_backend_abstract_label(tmp_path):
     adapter = FakeAdapter(valid_response)
     app = create_app(Settings(data_dir=tmp_path, port=8879, fulltext_fetch="off",
-        fulltext_adjudication="off", search_query="code", protocol_approval="ask"),
+        fulltext_adjudication="off", search_query="code"),
         adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(
             Transport([work(1, title=ON_TOPIC)]))), extra_hosts=("testserver",), trusted_clients=("testclient",))
     with client_of(app) as client:
@@ -209,7 +223,6 @@ def test_end_to_end_unattended_auto_answer_and_backend_abstract_label(tmp_path):
         view = client.get(f"/api/researches/{rid}").json()
         assert view["answers"][0]["status"] == "structurally_valid"
         assert view["answers"][0]["claims"][0]["evidence_basis"] == "abstract"
-        assert not any(call["task_type"] == "term_advice" for call in adapter.calls)
 
 
 def inspected_pdf(lib):

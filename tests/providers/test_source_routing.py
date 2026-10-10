@@ -1,10 +1,10 @@
-"""Source routing before the approval card: one field distribution request, a table of OpenAlex fields, and the
+"""Source routing before the first search: one field distribution request, a table of OpenAlex fields, and the
 queries compiled for the sources it chooses (slice 14, D93).
 
 Since the clean start (slice 3a) the fast path searches OpenAlex only and drops every other routed query
-(`openalex_only`), but routing still runs and is recorded on the card and in the protocol body (`source_routing`,
+(`openalex_only`), but routing still runs and is recorded in its step and in the protocol body (`source_routing`,
 `compiled_queries`). The tests of cards shown before routing existed (D93) and of their second round were removed with
-that old-data compatibility.
+that old-data compatibility, and the tests of a correction on the approval card with the card itself (slice 3b).
 
 Distributions, questions and records are SYNTHETIC and from more than one field; every transport is mocked. Passing
 shows which sources the rule chooses for a given distribution and that the run asks for it once — not that the share
@@ -17,14 +17,17 @@ import asyncio
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 
+from deixis.api.app import create_app
+from deixis.config import Settings
 from deixis.domain.rules import ROUTE_SHARE
 from deixis.providers import openalex as openalex_module
+from deixis.providers.registry import CONNECTORS
 from deixis.workflow import routing
 from deixis.workflow.flow import ResearchFlow
-from test_approval_flow import app_for as approval_app, approve, client_of as approval_client
 from test_search_query import proposal
-from test_vocabulary_flow import QUESTION, WORK, wait
+from test_vocabulary_flow import DeadAdapter, QUESTION, WORK, no_fetch, wait
 
 SCOPE = ["openalex", "semantic_scholar", "arxiv", "biorxiv", "pubmed", "ieee_xplore"]
 
@@ -186,6 +189,26 @@ class Grouping:
         return httpx.Response(200, json={"meta": {"count": 1}, "results": [WORK]})
 
 
+def client_for(tmp_path, monkeypatch, handler):
+    """A test client on a fresh app with no source keys set, searching through `handler`."""
+    for connector in CONNECTORS.values():
+        if connector.key_env:
+            monkeypatch.delenv(connector.key_env, raising=False)
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code", fulltext_fetch="off"),
+                     adapters={"fake": DeadAdapter()},
+                     http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
+                     extra_hosts=("testserver",), trusted_clients=("testclient",))
+    client = TestClient(app)
+    client.__enter__()
+    client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+    return client
+
+
+def routing_of(client, run_id):
+    """The routing the run's queries were compiled for, as its `source_routing` step recorded it."""
+    return client.app.state.store.existing_step(run_id, "source_routing")["output"]["routing"]
+
+
 def start(client, effort="standard"):
     body = {"question": QUESTION, "model_connection": "fake", "requested_model": "fake-model", "effort": effort}
     rid = client.post("/api/researches", json=body).json()["research"]["id"]
@@ -198,19 +221,19 @@ def searched(run):
 
 
 @pytest.mark.field_distribution
-def test_a_clinical_distribution_searches_pubmed_and_biorxiv_and_the_card_and_body_say_why(tmp_path, monkeypatch):
+def test_a_clinical_distribution_searches_openalex_and_the_body_says_why(tmp_path, monkeypatch):
     openalex = Grouping()
-    client = approval_client(approval_app(tmp_path, monkeypatch, openalex, approval="as_proposed"))
+    client = client_for(tmp_path, monkeypatch, openalex)
     try:
         rid, run_id = start(client)
         view, run = wait(client, rid, run_id)
-        store = client.app.state.store
-        body = store.current_protocol(rid, 1)["body"]
+        record = routing_of(client, run_id)
+        body = client.app.state.store.current_protocol(rid, 1)["body"]
     finally:
         client.__exit__(None, None, None)
     assert len(openalex.grouped) == 1
     assert "arxiv" not in searched(run) and "openalex" in searched(run)
-    assert run["approval"]["routing"]["providers"] == ["openalex", "semantic_scholar", "biorxiv", "pubmed"]
+    assert record["providers"] == ["openalex", "semantic_scholar", "biorxiv", "pubmed"]
     routed = body["source_routing"]
     assert routed["status"] == "read" and routed["total"] == 100 and routed["query"] == openalex.grouped[0]
     assert {row["provider_id"]: row["reason"] for row in routed["left_out"]}["arxiv"] == "share_below"
@@ -220,73 +243,36 @@ def test_a_clinical_distribution_searches_pubmed_and_biorxiv_and_the_card_and_bo
 
 
 @pytest.mark.field_distribution
-def test_an_unreadable_distribution_searches_every_domain_source_in_scope(tmp_path, monkeypatch):
+def test_an_unreadable_distribution_routes_to_every_domain_source_in_scope(tmp_path, monkeypatch):
     openalex = Grouping(fail=True)
-    client = approval_client(approval_app(tmp_path, monkeypatch, openalex, approval="as_proposed"))
+    client = client_for(tmp_path, monkeypatch, openalex)
     try:
         rid, run_id = start(client)
-        view, run = wait(client, rid, run_id)
+        wait(client, rid, run_id)
+        record = routing_of(client, run_id)
     finally:
         client.__exit__(None, None, None)
-    record = run["approval"]["routing"]
     assert record["status"] == "unavailable"
     assert record["providers"] == ["openalex", "semantic_scholar", "arxiv", "biorxiv", "pubmed"]
 
 
 @pytest.mark.field_distribution
-def test_a_resumed_run_does_not_ask_again_and_a_correction_asks_once_for_its_new_gate_query(tmp_path, monkeypatch):
-    openalex = Grouping(groups=[("Computer Science", 60), ("Engineering", 40)])
-    client = approval_client(approval_app(tmp_path, monkeypatch, openalex))
-    try:
-        rid, run_id = start(client)
-        view, run = wait(client, rid, run_id)
-        assert run["pause_reason"] == "protocol_approval_needed" and len(openalex.grouped) == 1
-        before = run["approval"]["routing"]
-        assert before["providers"] == ["openalex", "semantic_scholar", "arxiv"]
-        # An added setting term changes the gate query: the distribution is read once more, for the new query.
-        approve(client, run_id, terms=[{"op": "add", "phrase": "SYNTHETIC mesh radios", "block": "setting"}])
-        view, run = wait(client, rid, run_id)
-    finally:
-        client.__exit__(None, None, None)
-    assert len(openalex.grouped) == 2 and openalex.grouped[1] != openalex.grouped[0]
-    assert "synthetic" in openalex.grouped[1].casefold()  # the code vocabulary enters the phrase by its rarest word
-    assert run["approval"]["routing"]["query"] == openalex.grouped[1]
-    assert searched(run) == ["arxiv", "openalex", "semantic_scholar"]
-
-
-@pytest.mark.field_distribution
-def test_an_approval_without_a_correction_reads_the_distribution_once(tmp_path, monkeypatch):
-    openalex = Grouping(groups=[("Computer Science", 60), ("Engineering", 40)])
-    client = approval_client(approval_app(tmp_path, monkeypatch, openalex))
-    try:
-        rid, run_id = start(client)
-        wait(client, rid, run_id)
-        approve(client, run_id)
-        view, run = wait(client, rid, run_id)
-    finally:
-        client.__exit__(None, None, None)
-    assert run["status"] in ("completed", "paused") and run["pause_reason"] != "protocol_approval_needed"
-    assert len(openalex.grouped) == 1
-
-
-@pytest.mark.field_distribution
 def test_a_chosen_source_the_query_limit_leaves_without_a_query_is_not_called_searched(tmp_path, monkeypatch):
     """Review of slice 14 (2026-09-23): `quick`'s three queries go to OpenAlex, Semantic Scholar and arXiv, and IEEE,
-    chosen by the distribution, was listed as searched on the card and in the body."""
+    chosen by the distribution, was listed as searched in the body."""
     openalex = Grouping(groups=[("Computer Science", 60), ("Engineering", 40)])
-    app = approval_app(tmp_path, monkeypatch, openalex, approval="as_proposed")
+    client = client_for(tmp_path, monkeypatch, openalex)
     monkeypatch.setenv("IEEE_API_KEY", "SYNTHETIC-key")
-    client = approval_client(app)
     try:
         rid, run_id = start(client, effort="quick")
-        view, run = wait(client, rid, run_id)
-        card = run["approval"]["routing"]
+        wait(client, rid, run_id)
+        record = routing_of(client, run_id)
         body = client.app.state.store.current_protocol(rid, 1)["body"]
     finally:
         client.__exit__(None, None, None)
-    assert card["providers"] == ["openalex", "semantic_scholar", "arxiv", "ieee_xplore"]
-    assert card["queried"] == ["openalex", "semantic_scholar", "arxiv"]
+    assert len(openalex.grouped) == 1
+    assert record["providers"] == ["openalex", "semantic_scholar", "arxiv", "ieee_xplore"]
     queried = {q["provider_id"] for q in body["compiled_queries"]}
-    assert sorted(body["providers"]) == sorted(p for p in card["providers"] if p in queried)
-    assert body["source_routing"]["chosen_not_queried"] == [p for p in card["providers"] if p not in queried]
+    assert sorted(body["providers"]) == sorted(p for p in record["providers"] if p in queried)
+    assert body["source_routing"]["chosen_not_queried"] == [p for p in record["providers"] if p not in queried]
     assert "ieee_xplore" in [row["provider_id"] for row in body["source_routing"]["chosen"]]

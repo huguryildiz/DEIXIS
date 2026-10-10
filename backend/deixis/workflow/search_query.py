@@ -10,7 +10,7 @@ apply to what the model wrote.
 The model's terms become the proposal's vocabulary and the code's own query (slice 13g) is searched beside it, as
 the second measurement's "model + code" arm did (`.local/archive/sw/sw-model-query-experiment-2026-09-24/`). The code vocabulary
 is kept whole under `code_query`, so the ranking, the abstract stage's code rules and the protocol can read the terms
-of both queries, while the second round and the approval card's corrections read the model's alone.
+of both queries.
 """
 
 from __future__ import annotations
@@ -19,9 +19,9 @@ from typing import Any, Awaitable, Callable
 
 from deixis.providers import query_compiler
 from deixis.providers.query_compiler import quoted
-from deixis.workflow.approval import SIDE_LISTS, canonical_edits
+from deixis.workflow.approval import SIDE_LISTS
 from deixis.workflow.criterion import norm
-from deixis.workflow.vocabulary import GATE_BLOCKS, TERM_FIELDS
+from deixis.workflow.vocabulary import GATE_BLOCKS
 
 ASSIGNMENT = "search_query"  # the vocabulary's `block_assignment`, and the origin of the model's own terms
 ATTEMPTS = 2  # the first call, and one more when the user asks for it after a failure
@@ -65,8 +65,8 @@ def answer_terms(answer: dict[str, Any]) -> tuple[dict[str, list[dict[str, str]]
 class _Counter:
     """Count requests with a ceiling, each query asked once. A count past the ceiling is unknown, never invented."""
 
-    def __init__(self, count: Callable[[str], Awaitable[int | None]], known: dict[str, int | None] | None = None):
-        self.count, self.known, self.asked, self.skipped = count, dict(known or {}), 0, 0
+    def __init__(self, count: Callable[[str], Awaitable[int | None]]):
+        self.count, self.known, self.asked, self.skipped = count, {}, 0, 0
         self.probes: list[dict[str, Any]] = []
 
     async def __call__(self, query: str) -> int | None:
@@ -235,86 +235,3 @@ def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int
 def model_queries(queries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The first round's queries the model's terms wrote; all of them for a vocabulary with no origin marks."""
     return [query for query in queries if query.get("origin", "model") == "model"]
-
-
-async def rebuild(vocabulary: dict[str, Any], term_edits: list[dict[str, Any]], code_query: bool | None,
-                  count: Callable[[str], Awaitable[int | None]], model_phrases: frozenset[str] | set[str] = frozenset()
-                  ) -> dict[str, Any]:
-    """The model-written vocabulary after the user's correction on the approval card.
-
-    The operations act on the model's terms and the side lists, never on the code's query, which the user can only
-    switch off (`code_query=False`). A phrase the user adds or moves into a block is counted like the model's own:
-    no record alone and it enters as dropped; nothing with the other block and it carries the warning. A count this
-    vocabulary already read is not asked again. The code vocabulary's forms (roots, gate narrowing) are not applied:
-    the model's terms enter the query as whole phrases, as they were measured.
-    """
-    operations = {edit["phrase"]: edit for edit in canonical_edits(term_edits)}
-    counter = _Counter(count, {probe["query"]: probe["count"] for probe in vocabulary["probes"]})
-    meta = dict(vocabulary["search_query"]["meta"])
-    rows: list[tuple[str, str, str]] = []  # (phrase, block, origin) in the vocabulary's order
-    for term in vocabulary["terms"]:
-        edit = operations.get(norm(term["phrase"]))
-        if edit is None:
-            rows.append((term["phrase"], term["block"], term["origin"]))
-        elif edit["op"] == "move":
-            rows.append((term["phrase"], edit["block"], term["origin"]))
-    for block, field in SIDE_LISTS.items():
-        for phrase in vocabulary.get(field) or []:
-            edit = operations.get(norm(phrase))
-            if edit is None:
-                rows.append((phrase, block, "question"))
-            elif edit["op"] == "move":
-                rows.append((phrase, edit["block"], "question"))
-    rows +=[(edit["phrase"], edit["block"], "model" if edit["phrase"] in model_phrases else "user")
-             for edit in operations.values() if edit["op"] == "add"]
-    before = {term["phrase"]: term for term in vocabulary["terms"]}
-    terms: list[dict[str, Any]] = []
-    checks = list(vocabulary["search_query"]["checks"])
-    counted_here: list[dict[str, Any]] = []
-    for phrase, block, origin in rows:
-        if block not in GATE_BLOCKS:
-            continue
-        kept = before.get(phrase)
-        if kept is not None and kept["block"] == block:
-            terms.append(kept)
-            continue
-        alone = await counter(quoted(phrase))
-        counted_here.append({"phrase": phrase, "block": block, "alone": alone, "with_other_block": None,
-                             "backup_for": None})
-        terms.append(_term(phrase, block, origin, alone, "zero_results" if alone == 0 else None))
-        meta.setdefault(phrase, {"kind": None, "why": None, "backup_for": None})
-    # Every searched term is counted again with the other block as corrected, the kept ones too: a warning read
-    # against a block the user changed would describe a query that is no longer sent. A count already read is not
-    # asked again, and a kept term's count is written again only where it changed.
-    queried = _queried(terms)
-    last = {c["phrase"]: c for c in checks}
-    warnings: list[dict[str, Any]] = []
-    for term in terms:
-        if term["dropped"]:
-            continue
-        phrase, block = term["phrase"], term["block"]
-        row = next((c for c in counted_here if c["phrase"] == phrase), None)
-        fresh = row is not None
-        row = row or {"phrase": phrase, "block": block, "alone": term["phrase_count"], "with_other_block": None,
-                      "backup_for": None}
-        row["with_other_block"] = await _with_other(phrase, row["alone"], queried[_other(block)], counter)
-        if not fresh and (phrase not in last or last[phrase]["with_other_block"] != row["with_other_block"]):
-            counted_here.append(row)
-        warnings += [{"phrase": phrase, "block": block, "warning": w} for w in _warnings(row)]
-    checks += counted_here
-    gate_query = f"{_group(queried['setting'])} AND {_group(queried['task'])}" if all(queried.values()) else None
-    code = dict(vocabulary["code_query"])
-    if code_query is not None:
-        code["searched"] = bool(code_query)
-    return vocabulary | {
-        "terms": [{field: term[field] for field in TERM_FIELDS} for term in terms],
-        **{field: [phrase for phrase, b, _ in rows if b == block] for block, field in SIDE_LISTS.items()},
-        "gate_count": await counter(gate_query) if gate_query else None,
-        "probes": vocabulary["probes"] + [p for p in counter.probes if p["query"] not in
-                                          {q["query"] for q in vocabulary["probes"]}],
-        "search_query": vocabulary["search_query"] | {
-            "meta": {phrase: row for phrase, row in meta.items() if any(t["phrase"] == phrase for t in terms)},
-            "warnings": warnings, "checks": checks},
-        "code_query": code,
-        "user_edits": canonical_edits(term_edits),
-    }

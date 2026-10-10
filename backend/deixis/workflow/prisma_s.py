@@ -54,13 +54,6 @@ THROUGH = {"biorxiv": "openalex"}
 REGISTRY_WORDS = ("clinicaltrials", "ictrp", "registry", "trials")
 
 
-def _advice_given(approval: dict[str, Any]) -> bool:
-    """Whether a model's advice was stored: the record's own flag, else read from the stored advice rows."""
-    if "advice_given" in approval:
-        return bool(approval["advice_given"])
-    return any(row.get("recommendation") for row in approval.get("advice") or [])
-
-
 def _root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -171,8 +164,7 @@ def _planned_queries(store: Store, research_id: str, revision: int, latest: dict
     """The queries the latest frozen protocol planned, each marked by what the stored rows say happened to it.
 
     The protocol is frozen before the first provider request and never edited, so it lists a query a stopped run never
-    sent. A step belongs to the protocol only through its run: the run whose `protocol` or `protocol_expansion` step
-    names the record's hash. A step is matched to a planned query by its index in that run and, when it wrote a
+    sent. A step belongs to the protocol only through its run: the run whose `protocol` step names the record's hash. A step is matched to a planned query by its index in that run and, when it wrote a
     `search_runs` row, by that row's provider and query text too. With no such run nothing is known: every query is
     `delivery_unknown`.
     - `sent`: a matching step succeeded, or failed with a recorded transport send count above zero.
@@ -189,7 +181,7 @@ def _planned_queries(store: Store, research_id: str, revision: int, latest: dict
         return []
     linked = {row["run_id"]: dict(row) for row in store.conn.execute(
         "SELECT DISTINCT s.run_id FROM run_steps s JOIN runs r ON r.id = s.run_id"
-        " WHERE r.research_id = ? AND r.scope_revision = ? AND s.operation_key IN ('protocol', 'protocol_expansion')"
+        " WHERE r.research_id = ? AND r.scope_revision = ? AND s.operation_key = 'protocol'"
         " AND s.status = 'succeeded' AND json_extract(s.output_json, '$.protocol_hash') = ?",
         (research_id, revision, latest["body_sha256"]))}
     rows = [dict(row) for row in store.conn.execute(
@@ -324,34 +316,10 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
     items.append(_item(4, "not_recorded", "DEIXIS does not browse websites; browsing done outside DEIXIS is not "
                                           "recorded here."))
 
-    # 5 — citation searching.
-    summaries = [dict(row) for row in conn.execute(
-        "SELECT s.id, s.run_id, s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
-        " AND r.scope_revision = ? AND s.operation_key = 'chain_summary' AND s.status = 'succeeded'"
-        " ORDER BY s.finished_at, s.id", (research_id, revision))]
-    chaining = body.get("citation_chaining")
-    if summaries:
-        outputs = [json.loads(s["output_json"] or "{}") for s in summaries]
-        failed = sum((o.get("requests") or {}).get("failed") or 0 for o in outputs)
-        chain_open = [g for g in chain if not g["ended_complete"]]
-        status = "incomplete" if failed or chain_open else "reported"
-        text = ("Backward and forward citation searching from seed works through OpenAlex "
-                f"({len(chain)} request groups).")
-        if status == "incomplete":
-            text += f" {len(chain_open)} request groups did not end complete and {failed} requests failed."
-        items.append(_item(5, status, text, {
-            "policy": chaining,
-            "runs": [{"run_id": s["run_id"], "seeds": o.get("seeds"), "requests": o.get("requests"),
-                      "new_works": o.get("new_works"), "read_by_model": o.get("read_by_model"),
-                      "not_read": o.get("not_read")} for s, o in zip(summaries, outputs)],
-            "chain_groups": _ended_counts(chain)},
-            [f"run_steps:{s['id']}" for s in summaries] + protocol_trace))
-    elif isinstance(chaining, dict) and chaining.get("enabled") is False:
-        items.append(_item(5, "not_performed", "The protocol switched citation chaining off.",
-                           {"policy": chaining}, protocol_trace))
-    else:
-        items.append(_item(5, "not_recorded", "No citation search was recorded in DEIXIS for this question revision.",
-                           {"policy": chaining}, protocol_trace))
+    # 5 — citation searching. The fast chain's own steps (`code:fast_chain`) are not read here: the item lists the
+    # frozen chain policy only.
+    items.append(_item(5, "not_recorded", "No citation search was recorded in DEIXIS for this question revision.",
+                       {"policy": body.get("citation_chaining")}, protocol_trace))
 
     # 6 — contacts.
     items.append(_item(6, "not_recorded", "Contacting authors or experts is not recorded in DEIXIS."))
@@ -393,8 +361,6 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
                             "origins": dict(sorted(Counter(str(g["origin"]) for g in keyword).items())),
                             "approval": {key: approval.get(key) for key in (
                                 "mode", "approved_by", "edited", "term_edits", "criterion_edited")},
-                            "model_term_suggestions": approval.get("suggestions"),
-                            "model_advice": approval.get("advice"),
                             "concept_blocks": body.get("concept_blocks")}, protocol_trace))
     else:
         items.append(_item(8, "incomplete" if unsent else "not_recorded",
@@ -418,19 +384,8 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
     # 10 — search filters.
     items.append(_item(10, "not_performed",
                        "DEIXIS has no published search filter; the queries are compiled from the "
-                       + ("vocabulary, which no person reviewed because the application raised no warning."
-                          if approval.get("approved_by") == "no_warning" else
-                          "vocabulary, which no person reviewed: the application warned that "
-                          + ", ".join(f"“{r['phrase']}”" for r in approval.get("advice") or [])
-                          + " made the matches far more numerous, and every warned term was kept"
-                          + (" (a model's advice on them is stored, as information only)."
-                             if _advice_given(approval) else " (no model advice was available).")
-                          if approval.get("approved_by") == "warn_kept" else
-                          "vocabulary, which no person reviewed: the model advised on the application's warnings and "
-                          + (("the model removed " + ", ".join(f"“{r['phrase']}”" for r in approval["advice"] if r.get("applied")))
-                             if any(r.get("applied") for r in approval.get("advice") or []) else "the model removed no term")
-                          + "."
-                          if approval.get("approved_by") == "model_advice" else "approved vocabulary."),
+                       + ("vocabulary, which no person reviewed: the search went on without asking."
+                          if approval.get("approved_by") == "unattended" else "approved vocabulary."),
                        {"query_compiler": body.get("code_version")},
                        code_source=_code_source("filters", compiler_versions=[query_compiler.BLOCKS_VERSION])))
 

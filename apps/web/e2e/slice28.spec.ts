@@ -72,7 +72,7 @@ async function openQueue(page: Page, server: Slice28Server, rid: string) {
 }
 
 test.describe.serial('S: a work both runs find no part of, on a comparator criterion, is a queue row, not an exclusion', () => {
-  const server = new Slice28Server(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_COMPARATOR: 'on' })
+  const server = new Slice28Server(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_COMPARATOR: 'on' })
   let api: Api
   let rid = ''
 

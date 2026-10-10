@@ -55,10 +55,8 @@ function phaseOf(kind: string): PhaseKey | null {
   if (kind === 'model:report_section' || kind === 'model:report_phrase_repair') return 'sections'
   if (kind === 'model:report_review') return 'assembly'
   if (kind === 'model:search_plan') return 'plan'
-  // An sw run plans its search in code and asks the user before it searches; those steps are its plan phase, so the
-  // phase does not read "waiting" while the run has counted its terms and is waiting for the user.
-  if (['code:vocabulary', 'model:vocabulary_labels', 'model:criterion_proposal', 'code:criterion', 'code:protocol_approval',
-       'code:term_suggestions', 'model:term_suggestions'].includes(kind)) return 'plan'
+  // An sw run plans its search in code before it searches; those steps are its plan phase.
+  if (['code:vocabulary', 'model:vocabulary_labels', 'model:criterion_proposal', 'code:criterion', 'code:protocol_approval'].includes(kind)) return 'plan'
   if (kind.startsWith('provider_search')) return 'search'
   if (kind === 'model:screening') return 'screen'
   // An sw run screens abstracts in two steps: code classifies every record, then the model proposes.
@@ -104,11 +102,9 @@ const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unk
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
-  // The approval card sends its own correction; this only refreshes the view once the backend has taken it.
-  onProtocolApproved?: () => void | Promise<void>
   // The way out of a `key_terms_needed` stop: the revision form below, on its key-terms field.
   onGiveKeyTerms?: () => void
   // The way on after the model could not write the query: search with the code's query alone (D92).
@@ -141,7 +137,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   return <>
   <div className="chat-question"><p dir="auto">{view.scope.question}</p></div>
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
-    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onProtocolApproved={onProtocolApproved} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
+    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
       queueLine={run.id === lastReading && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
@@ -152,10 +148,10 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onProtocolApproved, onGiveKeyTerms, onChooseCodeQuery, queueLine = null, children }: {
+function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueLine = null, children }: {
   run: Run; view: ResearchView; now: number; latest: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
-  onProtocolApproved?: () => void | Promise<void>; onGiveKeyTerms?: () => void
+  onGiveKeyTerms?: () => void
   onChooseCodeQuery?: (run: Run) => Promise<void>; queueLine?: { count: number; open: () => void } | null; children: ReactNode
 }) {
   const active = ACTIVE.has(run.status)
@@ -230,25 +226,6 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
   const overlap = run.kind === 'discovery' && (run.budget.fulltext_fetch as unknown as { mode?: string } | undefined)?.mode === 'overlap'
   const order: PhaseKey[] = run.kind === 'review' ? ['review'] : run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? ['plan', 'search', 'screen', ...(overlap ? ['pdf' as const] : [])] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
-  // When the run went on without asking about the warned terms, one plain line per term says what the model advised. Since
-  // D233 advice is information and every term is kept; a run from before it (`model_advice`) really removed the terms the
-  // model advised removing, and says so. A term with no advice says so.
-  const legacyAdvice = run.approval?.approved_by === 'model_advice'
-  const advised = (run.approval?.advice_applied ?? []).filter(row => !legacyAdvice || row.recommendation !== null)
-  const adviceModel = run.approval?.advice_model
-  const adviceLines = advised.length > 0 && <ul className="chat-advice-lines">{advised.map(row => {
-    const counts = { phrase: row.phrase, from: row.matches.toLocaleString(uiLocale()), to: row.matches_without_term.toLocaleString(uiLocale()) }
-    return <li key={row.phrase}>
-      {adviceModel && row.recommendation !== null && <><ModelName connection={adviceModel.connection} text={modelText(adviceModel.model)} />{' '}</>}
-      <span dir="auto">{legacyAdvice
-        ? (row.applied ? t('removed “{phrase}” from the search ({from} → {to} papers):', counts)
-          : row.not_applied ? t('advised removing “{phrase}”, but it is the last word of its group, so it stayed:', counts)
-          : t('kept “{phrase}”:', counts))
-        : row.recommendation === 'remove' ? t('advised removing “{phrase}” ({from} with it, {to} without); kept:', counts)
-        : row.recommendation === 'keep' ? t('advised keeping “{phrase}” ({from} with it, {to} without); kept:', counts)
-        : t('no advice on “{phrase}” ({from} with it, {to} without); kept', counts)}{row.reason ? ` ${row.reason}` : ''}</span>
-    </li>
-  })}</ul>
   const reached = run.kind === 'report' && !active ? 2 : Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
   // A citation chain's requests are not searches of the question; the screening phase reports them (D95).
   // The funnel counts belong to the current question revision; only its latest discovery run may show them (D233).
@@ -678,7 +655,6 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
             </span>
             <time>{seconds === null ? '' : durationText(seconds)}</time>
           </div>
-          {key === 'plan' && adviceLines}
           {collapsed && state === 'running' && <div className="chat-step-progress">
             <span className="chat-step-progress-bar"><span style={{ width: `${Math.round(((i + 0.5) / order.length) * 100)}%` }} /></span>
             <small>{t('stage {n} of {total}', { n: i + 1, total: order.length })}</small>
@@ -743,7 +719,7 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
       </>}
     </div>
 
-    {run.status === 'paused' && run.pause_reason !== 'protocol_approval_needed' && <div className="chat-note is-warning">
+    {run.status === 'paused' && <div className="chat-note is-warning">
       <p>{pauseReasonText(run.pause_reason, run.error)}</p>
       {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
       {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
@@ -756,8 +732,8 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onP
         {onChooseCodeQuery && <Button variant="outline" size="sm" onClick={() => void onChooseCodeQuery(run)}>{t('Search with the query built from the question’s words')}</Button>}
       </>}
     </div>}
-    {/* What this run would search with, before it searches: the user corrects it here and approves it (D80). */}
-    {run.approval && <ProtocolApproval run={run} approval={run.approval} onApproved={() => onProtocolApproved?.()} />}
+    {/* What this run froze before it searched (D80). */}
+    {run.approval && <ProtocolApproval approval={run.approval} />}
     {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note ${run.status === 'failed' ? 'is-error' : 'is-neutral'}`}><p>{pauseReasonText(run.pause_reason, run.error)}</p>{pauseDetailText(run).map(line => <p key={line}>{line}</p>)}</div>}
     {queueLine && <p className="chat-queue-line"><Hand size={14} aria-hidden /><span>{t(queueLine.count === 1 ? '{n} work awaits your decision' : '{n} works await your decision', { n: queueLine.count })}</span>
       <span aria-hidden>·</span><button type="button" onClick={queueLine.open}>{t('Open')}</button></p>}

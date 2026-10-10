@@ -13,7 +13,7 @@ from deixis.config import Settings
 from deixis.domain import canonical
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.storage import db
-from deixis.workflow import fast_path, small_batch
+from deixis.workflow import fast_answer, fast_path, small_batch
 from deixis.workflow.flow import ResearchFlow, RunStopped
 from deixis.workflow.store import Store
 from deixis.workflow.worker import Worker
@@ -50,8 +50,11 @@ class FakeClock:
 
 @pytest.fixture(autouse=True)
 def historical_read_policy(monkeypatch, request):
-    """Keep slice 1/4 regressions on their already-frozen policy, without answer enforcement."""
-    if request.node.originalname == "test_02_policy_freezes_with_run_and_canonical_hash":
+    """Keep slice 1/4 regressions on their already-frozen policy, without answer enforcement. The tests that run an
+    answer use the current policy: since the clean start (slice 3b) an answer is written on the fast path only."""
+    if request.node.originalname in ("test_02_policy_freezes_with_run_and_canonical_hash",
+                                     "test_end_to_end_sw_discovery_answer_with_fake_clock",
+                                     "test_rerun_answer_flow_save_paths"):
         return
     freeze = fast_path.freeze_budget
     def historical(*args, **kwargs):
@@ -112,7 +115,7 @@ def save(lib, run, outcome):
 def app_for(tmp_path, clock=None, adapter=None):
     return create_app(
         Settings(data_dir=tmp_path, port=8877, fulltext_fetch="off", fulltext_adjudication="off",
-                 search_query="code", protocol_approval="as_proposed"),
+                 search_query="code"),
         adapters={"fake": adapter or FakeAdapter(valid_response)},
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(Transport([work(1, title=ON_TOPIC)]))),
         extra_hosts=("testserver",), trusted_clients=("testclient",), clock=clock)
@@ -221,7 +224,7 @@ def test_08_resume_after_overrun_keeps_allocation_and_attempt(library, tmp_path)
     assert stage(lib, "search")["balance_before_ms"] == -72000
 
 
-@pytest.mark.parametrize("reason", ["user_requested", "protocol_approval_needed", "model_connection_not_ready"])
+@pytest.mark.parametrize("reason", ["user_requested", "search_query_failed", "model_connection_not_ready"])
 def test_09_graceful_pause_excluded_from_budget_included_in_latency(library, reason):
     lib = library
     fast_path.enter_stage(lib.store, lib.run, "plan")
@@ -509,7 +512,7 @@ def test_deadlines_use_only_frozen_enforced_stages(library, enforced, name):
 def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
     from deixis.workflow import fast_read, fast_search
     clock = FakeClock()
-    for method in ("_vocabulary", "_ranking", "_semantic_ranking", "_review"):
+    for method in ("_vocabulary", "_ranking", "_generate_answer", "_review"):
         original = getattr(ResearchFlow, method)
         async def timed(self, *args, _original=original, **kwargs):
             clock.advance(2)
@@ -529,9 +532,10 @@ def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
     with client_of(app) as client:
         rid, discovery_id, _, discovery = discover(client)
         assert discovery["status"] == "completed", discovery
-        clock.advance(100)
-        answer = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
-        _, run = wait(client, rid, answer["id"])
+        # The unattended policy starts the answer itself when the discovery completes.
+        answer = app.state.store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = 'answer'",
+                                              (rid,)).fetchone()["id"]
+        _, run = wait(client, rid, answer)
         assert run["status"] == "completed", run
         assert app.state.worker.flow.store.clock is clock
         assert app.state.worker.flow.deps.clock is clock
@@ -542,7 +546,7 @@ def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
         assert [tuple(row) for row in rows] == [(s, "stage_done") for s in ("plan", "search", "ranking", "read", "answer")]
         assert run["budget"]["inspection"]["list_run_id"] == discovery_id
         assert run["fast_path"]["used_ms"] == 11000
-        assert run["fast_path"]["latency_ms"] == 111000
+        assert run["fast_path"]["latency_ms"] == 11000  # no idle time: the answer starts as the discovery ends
         assert not app.state.worker.flow._clock_tasks
 
 
@@ -551,9 +555,9 @@ def test_existing_partial_flow_dependencies_keep_store_clock(library):
     assert flow.store.clock is library.clock
 
 
-@pytest.mark.parametrize("case,expected", [("empty_evidence", "no_evidence"), ("empty_passages", "no_evidence"),
-                                          ("invalid", "unverified_draft"), ("valid", "structurally_valid")])
-def test_rerun_all_four_answer_flow_save_paths(tmp_path, monkeypatch, case, expected):
+@pytest.mark.parametrize("case,expected", [("empty_input", "no_evidence"), ("invalid", "unverified_draft"),
+                                          ("valid", "structurally_valid")])
+def test_rerun_answer_flow_save_paths(tmp_path, monkeypatch, case, expected):
     clock, adapter = FakeClock(), FakeAdapter(valid_response)
     app = app_for(tmp_path, clock, adapter=adapter)
     with client_of(app) as client:
@@ -563,10 +567,9 @@ def test_rerun_all_four_answer_flow_save_paths(tmp_path, monkeypatch, case, expe
         _, first = wait(client, rid, first["id"])
         assert first["fast_path"]["answer_outcome"] == "structurally_valid"
         ledger = dict(app.state.store.conn.execute("SELECT * FROM fast_path_ledgers").fetchone())
-        if case == "empty_evidence":
-            monkeypatch.setattr(ResearchFlow, "_abstract_sources", lambda *args: [])
-        elif case == "empty_passages":
-            monkeypatch.setattr(ResearchFlow, "_small_batch_answer_passages", lambda *args: [])
+        if case == "empty_input":
+            plan = fast_answer.input_plan
+            monkeypatch.setattr(fast_answer, "input_plan", lambda *args: plan(*args) | {"passage_ids": []})
         elif case == "invalid":
             adapter.responder = lambda si: "{}" if si["task_type"] == "grounded_answer" else valid_response(si)
         original_save = Store.save_answer

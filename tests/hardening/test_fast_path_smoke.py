@@ -29,7 +29,7 @@ def test_quick_question_runs_every_fast_path_stage_and_answers_unattended(tmp_pa
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
     works = [work(n, pdf_url=url(n), title=ON_TOPIC) for n in range(1, 31)]
     fetcher = Fetcher({url(n): ok(named_pdf(f"10.1/oa.{n}")) for n in range(1, 31)})
-    app = create_app(Settings(data_dir=tmp_path, port=8765, search_query="code", protocol_approval="ask",
+    app = create_app(Settings(data_dir=tmp_path, port=8765, search_query="code",
                               fulltext_fetch="auto", fulltext_adjudication="auto"),
                      adapters={"fake": FakeAdapter(responder())},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(Transport(works))), fetcher=fetcher,
@@ -58,7 +58,6 @@ def test_quick_question_runs_every_fast_path_stage_and_answers_unattended(tmp_pa
     assert len(fetcher.calls) == kinds["fetch_pdf"] == 10  # Quick reads the first K = 10 eligible works
     assert kinds["model:fulltext_adjudication"] == 20  # two reads per work
     assert kinds["code:fast_path_cutoff"] == 1 and kinds["model:grounded_answer"] == 1
-    assert "model:term_advice" not in kinds  # approval is unattended
     claims = view["answers"][0]["claims"]
     assert claims and {claim["evidence_basis"] for claim in claims} == {"full_text"}
 
@@ -95,7 +94,7 @@ def test_hung_read_call_is_cut_and_the_answer_still_publishes(tmp_path, monkeypa
     works = [work(n, pdf_url=url(n), title=ON_TOPIC) for n in range(1, 31)]
     fetcher = Fetcher({url(n): ok(named_pdf(f"10.1/oa.{n}")) for n in range(1, 31)})
     adapter = Hanging(responder())
-    app = create_app(Settings(data_dir=tmp_path, port=8765, search_query="code", protocol_approval="ask",
+    app = create_app(Settings(data_dir=tmp_path, port=8765, search_query="code",
                               fulltext_fetch="auto", fulltext_adjudication="auto"),
                      adapters={"fake": adapter},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(Transport(works))), fetcher=fetcher,

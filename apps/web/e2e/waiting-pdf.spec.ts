@@ -28,7 +28,7 @@ const PORT = nextPort()
 const URL = `http://127.0.0.1:${PORT}`
 const QUESTION = 'How do SYNTHETIC molecular relays and greenhouse irrigation schedule their releases?'
 const WAITING_TITLE = 'SYNTHETIC release timing of molecular relays in closed channels'
-const ENV = { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_WAITING: 'on' }
+const ENV = { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_WAITING: 'on' }
 
 // Starts a fixture server on `port` over a fresh data directory and waits until it answers.
 async function startServer(dataDir: string, port: number, publisherPdf: string) {

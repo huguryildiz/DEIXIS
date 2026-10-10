@@ -27,10 +27,9 @@ from deixis.storage import db
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow import links
 from deixis.workflow.flow import answer_source_order, fuse_rankings
-from deixis.workflow import abstract_stage, adjudication, fulltext, ranking, suggestions
+from deixis.workflow import abstract_stage, adjudication, fulltext, ranking
 from deixis.workflow.protocol import build_protocol
 from deixis.workflow.store import Store
-from deixis.workflow.approval import apply_criterion, canonical_edits, edited_extraction
 from deixis.workflow.criterion import consensus
 from deixis.workflow import criterion_passages
 from deixis.workflow.vocabulary import apply_labels, build_vocabulary
@@ -386,56 +385,6 @@ def stage_record_ranking(rows: list[dict[str, Any]]) -> Any:
             "fused": fused, "order": order, "rescued": rescued}
 
 
-# The correction a user makes at the approval step, and the counts the proposal it corrects already read (SW2.6).
-# The operations carry no order of their own: the user typed them in some order and nothing may follow from it.
-APPROVAL_EDITS = [
-    {"op": "remove", "phrase": "energy consumption"},
-    {"op": "move", "phrase": "packet size", "block": "outcome"},
-    {"op": "add", "phrase": "duty cycle", "block": "task"},
-    {"op": "add", "phrase": "medium access", "block": "task"},
-]
-APPROVAL_COUNTS = {'"duty cycle"': 30_000, "duty": 400_000, "cycle": 2_000_000,
-                   '"medium access"': 20_000, "medium": 6_000_000, "access": 8_000_000}
-APPROVAL_CRITERION = {
-    "criterion": "SYNTHETIC: the paper measures the energy a named packet size costs.",
-    "parts": [{"name": "packet size", "definition": "SYNTHETIC: a size in bytes is named."},
-              {"name": "energy", "definition": "SYNTHETIC: a joule figure is reported."}],
-    "cue_phrases": [{"phrase": "energy per bit", "part": "energy"},
-                    {"phrase": "payload length", "part": "packet size"}],
-    "exclusion_title_words": ["editorial", "review"],
-}
-
-
-def stage_protocol_approval(rows: list[dict[str, Any]]) -> Any:
-    """The vocabulary, the queries and the criterion a correction leaves behind (slice 08a, SW14.6).
-
-    The rows are the providers and the correction's operations, neither of which carries an order of its own, so
-    the order they arrive in must not reach the rebuilt vocabulary, its probe list or the compiled queries. The
-    counts the proposal already read are given as known, so the stage sends no request for them either.
-    """
-    async def count(query: str) -> int | None:
-        return APPROVAL_COUNTS.get(query, VOCABULARY_COUNTS.get(query, 6_000))
-
-    providers = [row["id"] for row in rows if row.get("id")]
-    edits = [APPROVAL_EDITS[row["edit"]] for row in rows if "edit" in row]
-    labelled, records = apply_labels(extract(VOCABULARY_QUESTION), VOCABULARY_LABEL_RUNS)
-    proposal = asyncio.run(build_vocabulary(labelled, count))
-    proposal["labelling"] = {"runs_ok": len(VOCABULARY_LABEL_RUNS), "skipped": None, "failures": [],
-                             "phrases": records}
-    approved = asyncio.run(build_vocabulary(edited_extraction(proposal, edits), count,
-                                            known={p["query"]: p["count"] for p in proposal["probes"]}))
-    approved["labelling"] = proposal["labelling"]
-    approved["user_edits"] = canonical_edits(edits)
-    return {"vocabulary": approved, "user_edits": approved["user_edits"],
-            "queries": canonical_rows(compile_block_queries(approved, providers, len(providers)), "provider_id"),
-            # The criterion the user replaced is the one the three fixed proposals agreed on, so the phrases that
-            # survive the replacement must keep the runs that wrote them.
-            "criterion": apply_criterion(
-                consensus(CRITERION_QUESTION, {number: CRITERION_RUNS[number - 1] for number in (1, 2, 3)},
-                          CRITERION_SOUGHT),
-                APPROVAL_CRITERION)}
-
-
 # The blocks, the read plan and the two model runs of the abstract stage (slice 09, SW9, SW14.6). One SYNTHETIC
 # question and six SYNTHETIC records from a field no other stage here uses: a title holding both gate blocks, a
 # notice, an artifact with a stored link, two records the model reads, and one whose two versions share a work and
@@ -471,30 +420,6 @@ def stage_abstract_stage(rows: list[dict[str, Any]]) -> Any:
     combined = {rid: abstract_stage.combine(*runs) for rid, runs in sorted(ABSTRACT_PROPOSALS.items())}
     return {"codes": codes, "reading": {work["work_id"]: abstract_stage.reading_version(work) for work in works},
             "plan": plan, "combined": combined}
-
-
-def stage_term_suggestions(rows: list[dict[str, Any]]) -> Any:
-    """The card rows the model's proposed names become, and the counts they carry over (slice 08c, SW14.6).
-
-    The rows are one model's `terms` list, which carries no order of its own: the order it happened to write them
-    in must reach neither the screened list nor the known counts the approval reuses. The vocabulary they are
-    screened against is the corrected one of `stage_protocol_approval`, so the two stages agree on what "already
-    present" means.
-    """
-    async def count(query: str) -> int | None:
-        return APPROVAL_COUNTS.get(query, VOCABULARY_COUNTS.get(query, 6_000))
-
-    labelled, _ = apply_labels(extract(VOCABULARY_QUESTION), VOCABULARY_LABEL_RUNS)
-    proposal = asyncio.run(build_vocabulary(labelled, count))
-    screened = suggestions.screen(proposal, [{"phrase": row["phrase"], "synonym_of": row["synonym_of"]}
-                                             for row in rows])
-    read = {row["phrase"]: row["count"] for row in rows}
-    for row in screened:
-        # The flow counts exactly the rows code did not drop; each proposal's count travels with it, not with its
-        # place in the list.
-        row["phrase_count"] = None if row["dropped"] else read[row["phrase"]]
-    return {"target": suggestions.target(VOCABULARY_QUESTION, proposal), "rows": screened,
-            "known": suggestions.known_counts(screened), "model": sorted(suggestions.model_phrases(screened))}
 
 
 # The retrieval plan of the full-text stage (slice 10, SW10, SW14.6). One SYNTHETIC field, eight works: one the
@@ -622,8 +547,6 @@ STAGES: dict[str, Callable[[list], Any]] = {
     "code_vocabulary": stage_code_vocabulary,
     "survey_flags": stage_survey_flags,
     "criterion": stage_criterion,
-    "protocol_approval": stage_protocol_approval,
-    "term_suggestions": stage_term_suggestions,
     "record_ranking": stage_record_ranking,
     "abstract_stage": stage_abstract_stage,
     "fulltext_plan": stage_fulltext_plan,
@@ -638,23 +561,6 @@ ROWS: dict[str, list[dict[str, Any]]] = {
     "build_protocol": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed")],
     "code_vocabulary": [{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed", "scopus")],
     "criterion": [{"run": number} for number in (1, 2, 3)],
-    # Five providers and the four operations of one correction, shuffled together: neither the provider order nor
-    # the order the operations arrive in may reach the approved vocabulary or its queries.
-    "protocol_approval": ([{"id": p} for p in ("openalex", "crossref", "arxiv", "pubmed", "scopus")]
-                          + [{"edit": index} for index in range(4)]),
-    # The names one model proposed on the approval card. The list carries no order of its own, and it holds every
-    # row code drops: a repeat, a phrase the proposal already has, one carrying a claim phrase, one carrying an
-    # exclusion phrase, and one over the word bound. `count` is what the flow would have read for the row.
-    "term_suggestions": [
-        {"phrase": "wsn", "synonym_of": "wireless sensor networks", "count": 60_000},
-        {"phrase": "payload length", "synonym_of": "packet size", "count": 8_000},
-        {"phrase": "frame size", "synonym_of": "packet size", "count": 5_000},
-        {"phrase": "payload length", "synonym_of": "packet size", "count": 8_000},
-        {"phrase": "integer programming of payload length", "synonym_of": "packet size", "count": 40},
-        {"phrase": "energy consumption", "synonym_of": "packet size", "count": 40_000},
-        {"phrase": "one two three four five six seven", "synonym_of": "wireless sensor networks", "count": 5},
-        {"phrase": "surveys of payload length", "synonym_of": "packet size", "count": 60},
-    ],
     # Four works: one still a candidate on the abstract stage, one whose two versions disagree on the full text, one
     # the user decided, and one whose two versions reached the same outcome, so the version named for the work must
     # not be the one decided first. SYNTHETIC decisions; they show merge behavior, not screening quality.

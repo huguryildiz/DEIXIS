@@ -28,14 +28,12 @@ def settings_of(argv, monkeypatch, tmp_path):
 def test_a_port_on_the_command_line_keeps_every_other_setting(monkeypatch, tmp_path):
     """`--port` moves the server; it is not a reason to run a different workflow (slice 13 smoke run)."""
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
-    monkeypatch.setenv("DEIXIS_PROTOCOL_APPROVAL", "as_proposed")
     monkeypatch.setenv("DEIXIS_FULLTEXT_FETCH", "off")
     monkeypatch.setenv("DEIXIS_FULLTEXT_ADJUDICATION", "off")
     monkeypatch.setenv("DEIXIS_MODEL_CONCURRENCY", "3")
     settings = settings_of(["serve", "--port", "8799", "--no-browser"], monkeypatch, tmp_path)
     assert settings.port == 8799
     assert not hasattr(settings, "search_workflow")
-    assert settings.protocol_approval == "as_proposed"
     assert settings.fulltext_fetch == "off"
     assert settings.fulltext_adjudication == "off"
     assert settings.model_concurrency == 3

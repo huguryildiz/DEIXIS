@@ -21,11 +21,6 @@ def lib(tmp_path):
         "Which methods were studied?", "academic", "quick", ["openalex"], "fake", "fake-screening", "en"
     )
     discovery = store.create_run(research_id, "discovery", {"max_model_calls": 4}, None)
-    plan = store.step(discovery["id"], "search_plan", "model:search_plan")
-    store.finish_step(plan["id"], "succeeded", output={
-        "query_compiler": "deixis.query_compiler.v2",
-        "queries": [{"provider_id": "openalex", "query_text": "synthetic methods"}],
-    })
     search = store.step(discovery["id"], "search:0", "provider_search:openalex")
     store.finish_step(search["id"], "succeeded", output={"status": "completed", "result_count": 7})
     store.add_search_run(
@@ -67,7 +62,8 @@ def test_review_methodology_reports_corpus_counts_and_provider_dates_without_a_m
     assert section["status"] == "valid" and section["step_id"] is None
     assert str(snapshot["corpus"]["found"]) in section["draft"]["text"]
     assert "synthetic methods" in section["draft"]["text"]
-    assert "deixis.query_compiler.v2" in section["draft"]["text"]
+    # No fast-path step records the compiled query version this sentence names (slice 3b).
+    assert "the compiled query version was not recorded" in section["draft"]["text"]
     numbers = section["validation"]["numbers"]
     assert numbers["corpus"] == snapshot["corpus"]
     assert (numbers["fetch_pdf"], numbers["pdf_other_copy"], numbers["full_text_ratio"]) == (1, 1, 0.5)

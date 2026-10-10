@@ -60,7 +60,7 @@ const viewOf = async (api: Api, rid: string) => (await (await api.context.get(`/
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled', fullPage: true })
 
 test.describe.serial('M: the flow of an sw research and its search report', () => {
-  const server = new FlowServer(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'as_proposed', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
+  const server = new FlowServer(nextPort(), { DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_FIXTURE_QUEUE: 'on', DEIXIS_FIXTURE_AUDIT: 'on' })
   let api: Api
   let rid = ''
   let page: Page

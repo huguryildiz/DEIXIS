@@ -863,7 +863,7 @@ def test_b01_backup_while_the_app_runs_restores_every_table_and_file_and_every_v
         conn.close()
     assert sorted(p.name for p in data.iterdir()) == ["library.sqlite", "papers", "provider-payloads"]
 
-    with TestClient(restored_app(Settings(data_dir=data, port=8765, model_concurrency=1, protocol_approval="as_proposed",
+    with TestClient(restored_app(Settings(data_dir=data, port=8765, model_concurrency=1,
                                           search_query="code", fulltext_fetch="off"))) as raw:
         views_after = collect_views(raw, ids)
         assert set(views_after) == set(views_before)

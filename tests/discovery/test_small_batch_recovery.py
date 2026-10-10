@@ -465,14 +465,3 @@ def test_answer_blocks_active_discovery_and_requires_its_completed_revision(tmp_
         binding = store.run(answer.json()["id"])["budget"]["inspection"]
         assert binding["list_run_id"] == run_id
         assert binding["manifest_hash"] == store.existing_step(run_id, small_batch.LIST_KEY)["output"]["manifest_hash"]
-
-
-def test_protocol_pause_opens_no_inspection_or_followup_runs(tmp_path, monkeypatch):
-    app, fetcher = seeded_app(tmp_path, monkeypatch, approval="ask")
-    with session(app) as client:
-        rid, run_id = queue(client)
-        paused = wait(client, rid, run_id)[1]
-        assert (paused["status"], paused["pause_reason"]) == ("paused", "protocol_approval_needed")
-        assert not fetcher.calls
-        assert not [s for s in app.state.store.run_steps(run_id) if s["kind"].startswith("code:small_batch")]
-        assert [row[0] for row in app.state.store.conn.execute("SELECT id FROM runs WHERE research_id = ?", (rid,))] == [run_id]

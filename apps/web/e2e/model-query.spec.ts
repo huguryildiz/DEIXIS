@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
 
-// Case I: a model writes the sw discovery run's search query, the approval card shows it with the query built from
-// the question's words beside it, and a failed model stops the run until the user says what to search with (D92).
+// Case I: a model writes the sw discovery run's search query, the run searches with it without asking and the folded
+// protocol lists the queries it sent, and a failed model stops the run until the user says what to search with (D92).
 //
-// Its own fixture server: the application of case H started with the model-written query. The model is scripted and
+// Its own fixture server: the application of cases A–G started with the model-written query. The model is scripted and
 // every record SYNTHETIC, so a passing case shows application behavior, not whether a model writes a good query.
 
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -27,7 +27,7 @@ class ModelQueryServer {
   async start() {
     const env = {  // no provider keys or user data directory reach the fixture
       PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'),
-      DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_PROTOCOL_APPROVAL: 'ask', DEIXIS_SEARCH_QUERY: 'model',
+      DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_SEARCH_QUERY: 'model',
     }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {
@@ -50,8 +50,7 @@ class ModelQueryServer {
 
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled', fullPage: true })
 const card = (page: Page) => page.locator('.approval-card')
-// A searched term's facts (who wrote it, what the model said of it) sit under Advanced.
-const termRow = (page: Page, phrase: string) => page.locator('.approval-term.is-detail', { has: page.locator('.approval-phrase', { hasText: phrase }) })
+const MODEL_QUERY = '"relay networks" AND ("molecule release" OR "bisection search")'
 
 async function startResearch(page: Page, server: ModelQueryServer, question: string) {
   await page.goto(server.url())
@@ -71,31 +70,13 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
   })
   test.afterAll(async () => { await page?.close(); await server.stop() })
 
-  test('the card shows the model query, what the model said of each term, and the code query beside it', async () => {
+  test('the run searches without asking, and the folded protocol lists the model query it sent', async () => {
     await startResearch(page, server, QUESTION)
-    await expect(card(page)).toBeVisible({ timeout: 60_000 })
-    await card(page).getByRole('button', { name: 'Advanced' }).click()
-    await expect(card(page)).toContainText('A model wrote these search terms from the question.')
-    await expect(termRow(page, 'molecule release')).toContainText('written by the model')
-    await expect(termRow(page, 'molecule release')).toContainText('topic')
-    await expect(termRow(page, 'bisection search')).toContainText('method')
-    await expect(termRow(page, 'molecule release')).toContainText('with the other block')
-    const queries = card(page).locator('.approval-queries')
-    await expect(queries).toContainText('"relay networks" AND ("molecule release" OR "bisection search")')
-    await expect(queries.getByRole('checkbox')).toBeChecked()
-    await shot(page, 'I-model-query-desktop')
-  })
-
-  test('switching the code query off is a correction, and only the model query is searched', async () => {
-    await card(page).locator('.approval-queries').getByRole('checkbox').uncheck()
-    await expect(page.locator('.approval-summary')).toContainText('the code’s query switched off')
-    await card(page).getByRole('button', { name: 'Start searching' }).click()
-    await expect(page.locator('.approval-card.is-approved')).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('.approval-card.is-approved')).toContainText('corrected before searching')
-    await page.locator('.approval-toggle').click()
-    const sent = page.locator('.approval-diff-group', { hasText: 'Queries sent' }).locator('li')
-    await expect(sent.first()).toContainText('"relay networks" AND ("molecule release" OR "bisection search")')
-    await expect(page.locator('.approval-diff-group', { hasText: 'Queries sent' })).not.toContainText('from the question’s words')
+    const approved = page.locator('.approval-card.is-approved')
+    await expect(approved).toBeVisible({ timeout: 60_000 })
+    await expect(approved).toContainText('not reviewed, fast path')
+    await approved.locator('.approval-toggle').click()
+    await expect(approved.locator('.approval-diff-group', { hasText: 'Queries sent' })).toContainText(MODEL_QUERY)
     await shot(page, 'I-model-query-approved-desktop')
   })
 
@@ -142,16 +123,16 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
     await startResearch(page, server, `${QUESTION} [query-down]`)
     const note = page.locator('.chat-note.is-warning')
     await expect(note).toContainText('The model could not write the search query', { timeout: 60_000 })
-    // Nothing was searched, and no approval card was opened for a query nobody wrote.
+    // Nothing was searched, and no protocol was frozen for a query nobody wrote.
     await expect(card(page)).toHaveCount(0)
     await expect(page.locator('.run-strip').getByRole('button', { name: 'Resume' })).toBeVisible()
     await shot(page, 'I-model-query-failed-desktop')
     await note.getByRole('button', { name: 'Search with the query built from the question’s words' }).click()
-    await expect(card(page)).toBeVisible({ timeout: 60_000 })
-    await expect(card(page)).toContainText('You chose the query DEIXIS built from the question’s words.')
-    await card(page).getByRole('button', { name: 'Advanced' }).click()
-    await expect(termRow(page, 'relay networks')).toContainText('from the question')
-    await expect(card(page).locator('.approval-queries')).toHaveCount(0)
+    // The run goes on without asking; the queries it sent are the code's, not the model's.
+    const approved = page.locator('.approval-card.is-approved')
+    await expect(approved).toBeVisible({ timeout: 60_000 })
+    await approved.locator('.approval-toggle').click()
+    await expect(approved.locator('.approval-diff-group', { hasText: 'Queries sent' })).not.toContainText(MODEL_QUERY)
     await shot(page, 'I-model-query-code-only-desktop')
   })
 })

@@ -67,7 +67,7 @@ Bütün eksikler burada; ayrı TODO dosyası yok. Parantezdeki D numaraları [ka
 ### Temiz başlangıçtan kalan (10 Eki)
 
 - `_source_routing` / `compiled_queries` / PRISMA-S madde 5 / yöntem metnindeki derleyici sürümü / watch hızlı aramaya uyarlanacak.
-- Cevaptan önceki PDF hazırlık paneli ve cevap çipindeki arXiv kaynağı rozeti hızlı yolda neredeyse hiç görünmüyor; Playwright bunları sahte API verisiyle sınıyor. Kalsın mı, silinsin mi ayrı karar.
+- Cevaptan önceki PDF hazırlık paneli ve cevap çipindeki arXiv kaynağı rozeti hızlı yolda neredeyse hiç görünmüyor. Karar (sahip, 11 Eki): ikisi de kalır; panel otomatik cevap başarısız olunca tek çıkış yolu. Chat 4'te Playwright test adlarına "sahte API verisi" ibaresi eklenecek. Hızlı cevabın denklemleri arXiv kaynağından okuyup okumaması ayrı ürün sorusu (P10 sonrası).
 - Playwright hız sınırı vakaları her başarısız OpenAlex isteğini kendi satırıyla eşlemiyor (en az bir satıra bakıyor); hızlı cevap akış özetinin duraklat/yeniden başlat testi yok (Sol, küçük).
 - Zincir istekleri tarama aşamasında sayıldığı için, arama sürerken arama aşaması bitmiş gibi görünebilir (5a'da fark edildi, eskiden de vardı).
 

@@ -65,9 +65,26 @@ Bütün eksikler burada; ayrı TODO dosyası yok. Parantezdeki D numaraları [ka
 
 ### Arama (P10'dan sonra; sahip, 10 Eki)
 
-- Geniş sorularda alanın bilinen önemli makaleleri listenin üstüne az giriyor: son ölçümde battery_soh ilk 50'de 15 hedeften 3'ü, materials_ml 13'ten 5–6'sı. Cevap puanı bunu ölçmüyor (ilk 20'nin çoğu yine ilgili). Ölçüt: hedef makalelerin ilk 50'ye girme oranı, 10 soruda. (RESULT_final.md)
-- dbr_vbf (Elicit kıyası) her ayarda 8 Ekim'in altında (69–79): cevap insan değerlendirmesi gibi boyutları kapsamıyor; Hızlı ayarda bir kilit makale (maulana2019) hiç bulunmuyor.
-- Survey makaleleri: ayrı survey araması yok; başlığında güçlü derleme kelimesi geçen makale listeden çıkıyor (4 Ekim'de dbr_vbf'te 90 eleme, 60'ı yönlendirme derlemesi). 6 Ekim'de survey kaynakçasından makale çekme kolu eşiği geçmedi (4 soruda 1 yeni hedef, eşik 2). Açık soru: karşılaştırma sorularında survey'in kendisi cevaba kaynak olarak yardım ediyor mu? Ölçüt: survey'li ve survey'siz cevap puanı ve kapsanan boyutlar, aynı sorularda. (`.local/benchmark/2026-10-06/SUMMARY.md`)
+Durum: arama işi kapandı (son ölçüm 10 soru × 2 tekrar, cevap puanı 90,7, katı atıf 0,92, Standart ortanca 4,7 dk). Aşağıdakiler P10'dan sonra ayrı bir iş olarak açılacak. Kanıt `.local/benchmark/2026-10-09-fastpath-live/RESULT_final.md`.
+
+Eksikler, önem sırasıyla:
+
+1. Geniş sorularda bilinen önemli makaleler üstte değil: battery_soh'ta ilk 50'de 15 hedeften yalnız 3'ü, materials_ml'de 13'ten 5–6'sı var. Cevap yine iyi çıkıyor, çünkü listede başka ilgili makaleler var; ama alanın "klasik" makaleleri kaçabiliyor. Cevap puanı bunu ölçmüyor. Ölçüt: hedef makalelerin ilk 50'ye girme oranı, 10 soruda.
+2. dbr_vbf (Elicit kıyası) hâlâ en zayıf soru (69–79 puan, 8 Ekim'in altında). Cevap insan değerlendirmesi gibi bazı boyutları kapsamıyor. Hızlı ayarda kilit makale Maulana 2019 hiç bulunmuyor.
+3. Ücretli makalelerin tam metni okunamıyor (erişim sınırı). Açık PDF'lerin yaklaşık %90'ı süresinde okunuyor, ama mühendislik makalelerinin çoğunun açık PDF'i yok; o makaleler özetten giriyor.
+4. Survey'ler: ayrı survey araması yok; başlığında güçlü derleme kelimesi geçen makale listeden çıkıyor (4 Ekim'de dbr_vbf'te 90 eleme, 60'ı yönlendirme derlemesi). 6 Ekim'de survey kaynakçasından makale çekme kolu eşiği geçmedi (4 soruda 1 yeni hedef, eşik 2; `.local/benchmark/2026-10-06/SUMMARY.md`). Açık soru: karşılaştırma sorularında survey'in kendisi cevaba kaynak olarak yardım ediyor mu? Ölçüt: survey'li ve survey'siz cevap puanı ve kapsanan boyutlar, aynı sorularda.
+5. Süre sınırda: Standart'ta 20 koşudan 8'i 5 dakikayı geçti (en uzun 5,8 dk). Bir önceki gün ortanca 3,5 dk idi; yavaşlamanın nedenine bakılmadı.
+
+Ölçülmeyenler:
+
+- Derin ayarda atıf doğruluğu: 0,68 çıkmıştı; düşüren iki sebep düzeltildi (D259, D260), ama yeniden ölçülmedi.
+- İnsan kontrolü: bütün puanlar iki modelin (Claude ve Sol) kör etiketlerinden geliyor; hiçbir sonuca insan bakmadı.
+- Örneklem: 10 soru, her biri 2 tekrar. Koşudan koşuya 8–30 puan oynama görülmüştü.
+
+Ortam riskleri:
+
+- OpenAlex kotası: günlük ücretsiz kota (1 dolar) yaklaşık 20 araştırmada bitiyor. Yoğun kullanımda ön ödemeli kredi gerekiyor.
+- Cevapsız kalma: 21 denemenin 1'inde cevap adımındaki model çağrısı yanıt vermedi ve araştırma cevapsız durakladı; tekrarlayınca cevap geldi.
 
 ### Ölçülmedi (gerçek model veya gerçek kullanım gerekiyor)
 

@@ -30,7 +30,7 @@ def test_quick_question_runs_every_fast_path_stage_and_answers_unattended(tmp_pa
     works = [work(n, pdf_url=url(n), title=ON_TOPIC) for n in range(1, 31)]
     fetcher = Fetcher({url(n): ok(named_pdf(f"10.1/oa.{n}")) for n in range(1, 31)})
     app = create_app(Settings(data_dir=tmp_path, port=8765, search_query="code", protocol_approval="ask",
-                              fulltext_fetch="auto", fulltext_adjudication="auto", fast_path="on"),
+                              fulltext_fetch="auto", fulltext_adjudication="auto"),
                      adapters={"fake": FakeAdapter(responder())},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(Transport(works))), fetcher=fetcher,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -96,7 +96,7 @@ def test_hung_read_call_is_cut_and_the_answer_still_publishes(tmp_path, monkeypa
     fetcher = Fetcher({url(n): ok(named_pdf(f"10.1/oa.{n}")) for n in range(1, 31)})
     adapter = Hanging(responder())
     app = create_app(Settings(data_dir=tmp_path, port=8765, search_query="code", protocol_approval="ask",
-                              fulltext_fetch="auto", fulltext_adjudication="auto", fast_path="on"),
+                              fulltext_fetch="auto", fulltext_adjudication="auto"),
                      adapters={"fake": adapter},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(Transport(works))), fetcher=fetcher,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))

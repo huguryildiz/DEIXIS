@@ -1420,8 +1420,7 @@ def create_app(
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
             if scope.get("search_workflow") == "sw":
                 budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
-                if settings.fast_path == "on":
-                    budget["fast_path"] = fast_path.freeze_budget(budget, scope["effort"])
+                budget["fast_path"] = fast_path.freeze_budget(budget, scope["effort"])
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}

@@ -450,7 +450,7 @@ def test_integrated_new_and_slice2_frozen_paths(tmp_path, monkeypatch, marker):
                 policy.pop(key)
             return policy | {'policy_hash': canonical.sha256_hex(policy)}
         monkeypatch.setattr(fast_path, 'freeze_budget', old)
-    app = app_for(tmp_path, FakeClock(), 'on')
+    app = app_for(tmp_path, FakeClock())
     if marker:
         fallback = fast_chain.Round.fallback
         def charged(self):

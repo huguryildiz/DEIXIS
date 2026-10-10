@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from deixis.api.app import CSRF_COOKIE, CSRF_HEADER, create_app
-from deixis.config import Settings, load_settings
+from deixis.config import Settings
 from deixis.domain import canonical
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.storage import db
@@ -110,35 +110,13 @@ def save(lib, run, outcome):
     return lib.store.save_answer(lib.rid, run["id"], None, None, 1, outcome, draft, {"ok": outcome != "unverified_draft"})
 
 
-def app_for(tmp_path, clock=None, flag="off", adapter=None):
+def app_for(tmp_path, clock=None, adapter=None):
     return create_app(
-        Settings(data_dir=tmp_path, port=8877, fast_path=flag, fulltext_fetch="off", fulltext_adjudication="off",
+        Settings(data_dir=tmp_path, port=8877, fulltext_fetch="off", fulltext_adjudication="off",
                  search_query="code", protocol_approval="as_proposed"),
         adapters={"fake": adapter or FakeAdapter(valid_response)},
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(Transport([work(1, title=ON_TOPIC)]))),
         extra_hosts=("testserver",), trusted_clients=("testclient",), clock=clock)
-
-
-def test_01_flag_off_budgets_are_byte_identical_and_no_clock_rows(tmp_path, monkeypatch):
-    from deixis.domain.rules import ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, ADVICE_CALLS, CRITERION_CALLS, SUGGESTION_CALLS
-    from deixis.workflow import abstract_stage
-
-    app = app_for(tmp_path)
-    with client_of(app) as client:
-        rid, discovery_id, _, run = discover(client)
-        base = TEST_EFFORT_BUDGETS["quick"].__dict__
-        extra = CRITERION_CALLS + SUGGESTION_CALLS + ADVICE_CALLS + abstract_stage.model_calls(
-            ABSTRACT_READ_LIMIT["quick"], ABSTRACT_BATCH, ABSTRACT_RUNS)
-        expected = small_batch.freeze_budget(base | {"max_model_calls": base["max_model_calls"] + extra,
-                                                      "citation_chaining": "off"}, "quick", "off")
-        assert app.state.store.conn.execute("SELECT budget_json FROM runs WHERE id = ?", (discovery_id,)).fetchone()[0] == db.dumps(expected)
-        answer = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
-        _, settled = wait(client, rid, answer["id"])
-        expected_answer = small_batch.answer_budget(app.state.store, rid, 1, base)
-        assert db.dumps(settled["budget"]) == db.dumps(expected_answer)
-        assert "fast_path" not in run and "fast_path" not in settled
-        for table in ("ledgers", "stages", "intervals"):
-            assert app.state.store.conn.execute(f"SELECT COUNT(*) FROM fast_path_{table}").fetchone()[0] == 0
 
 
 @pytest.mark.parametrize("effort,bases,n,k,cap,seeds,back,forward", [
@@ -148,7 +126,7 @@ def test_01_flag_off_budgets_are_byte_identical_and_no_clock_rows(tmp_path, monk
 ])
 def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, n, k, cap, seeds, back, forward):
     clock = FakeClock()
-    app = app_for(tmp_path, clock, "on")
+    app = app_for(tmp_path, clock)
     with client_of(app) as client:
         rid, run_id, _, run = discover(client, effort)
         assert run["status"] == "completed", run
@@ -582,7 +560,7 @@ def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
         clock.advance(2)
         return await search(*args, **kwargs)
     monkeypatch.setattr(fast_search, "execute", bounded_search)
-    app = app_for(tmp_path, clock, "on")
+    app = app_for(tmp_path, clock)
     with client_of(app) as client:
         rid, discovery_id, _, discovery = discover(client)
         assert discovery["status"] == "completed", discovery
@@ -603,16 +581,6 @@ def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
         assert not app.state.worker.flow._clock_tasks
 
 
-def test_setting_default_off_and_invalid_value(monkeypatch):
-    monkeypatch.delenv("DEIXIS_FAST_PATH", raising=False)
-    assert load_settings().fast_path == "off"
-    monkeypatch.setenv("DEIXIS_FAST_PATH", "on")
-    assert load_settings().fast_path == "on"
-    monkeypatch.setenv("DEIXIS_FAST_PATH", "auto")
-    with pytest.raises(ValueError, match="DEIXIS_FAST_PATH"):
-        load_settings()
-
-
 def test_existing_partial_flow_dependencies_keep_store_clock(library):
     flow = ResearchFlow(SimpleNamespace(store=library.store))
     assert flow.store.clock is library.clock
@@ -622,7 +590,7 @@ def test_existing_partial_flow_dependencies_keep_store_clock(library):
                                           ("invalid", "unverified_draft"), ("valid", "structurally_valid")])
 def test_rerun_all_four_answer_flow_save_paths(tmp_path, monkeypatch, case, expected):
     clock, adapter = FakeClock(), FakeAdapter(valid_response)
-    app = app_for(tmp_path, clock, "on", adapter)
+    app = app_for(tmp_path, clock, adapter=adapter)
     with client_of(app) as client:
         rid, discovery_id, _, discovery = discover(client)
         assert discovery["status"] == "completed", discovery
@@ -701,7 +669,7 @@ def test_open_rework_is_live_and_checkpoint_delay_is_visible(library):
 def test_stop_between_stages_does_not_open_next_interval(library, tmp_path, monkeypatch, status, next_stage):
     lib = library
     flow = ResearchFlow(SimpleNamespace(store=lib.store))
-    app = app_for(tmp_path / "api", lib.clock, "on")
+    app = app_for(tmp_path / "api", lib.clock)
     app.state.store = lib.store
     app.state.worker = SimpleNamespace(flow=SimpleNamespace(queue_person_reading=lambda rid: None),
                                        wake=lambda: None, current_run_id=None)

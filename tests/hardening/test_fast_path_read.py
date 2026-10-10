@@ -202,8 +202,7 @@ def test_abstract_deadline_after_limiter_leaves_unsent_records_unread(tmp_path, 
         return valid_response(si)
     from test_fast_path_clock import FakeClock
     adapter = FakeAdapter(respond, delay=0.03)
-    app, _ = app_for(tmp_path, monkeypatch, 30, model_works=True, fetch="off", reading="off",
-                     fast_path="on", model_concurrency=concurrency, adapter=adapter)
+    app, _ = app_for(tmp_path, monkeypatch, 30, model_works=True, fetch="off", reading="off", model_concurrency=concurrency, adapter=adapter)
     holder["app"] = app
     with client_of(app) as client:
         app.state.store.clock = FakeClock()
@@ -461,7 +460,7 @@ def test_hung_model_call_is_cut_at_the_read_deadline_without_pausing(tmp_path, m
         return policy | {"policy_hash": canonical.sha256_hex(policy)}
     monkeypatch.setattr(fast_path, "freeze_budget", short_drain)
     adapter = Hanging(respond)
-    app, fetcher = app_for(tmp_path, monkeypatch, 30, pdf=True, fast_path="on", adapter=adapter,
+    app, fetcher = app_for(tmp_path, monkeypatch, 30, pdf=True, adapter=adapter,
                            model_works=task == "abstract_screening")
     started = time.monotonic()
     with client_of(app) as client:
@@ -541,7 +540,7 @@ def test_new_read_keeps_chain_and_list_freeze_in_ranking(tmp_path, monkeypatch):
         return freeze(flow, run, *args)
     monkeypatch.setattr(small_batch, "freeze_list", timed)
     from test_fast_path_clock import FakeClock
-    app, _ = app_for(tmp_path, monkeypatch, 3, fetch="off", reading="off", fast_path="on")
+    app, _ = app_for(tmp_path, monkeypatch, 3, fetch="off", reading="off")
     with client_of(app) as client:
         app.state.store.clock = FakeClock()
         _, _, _, run = discover(client)
@@ -564,7 +563,7 @@ def test_slice1_policy_keeps_legacy_batches_and_clock_boundaries(tmp_path, monke
         policy["policy_hash"] = canonical.sha256_hex(policy)
         return policy
     monkeypatch.setattr(fast_path, "freeze_budget", old)
-    app, _ = app_for(tmp_path, monkeypatch, 60, fetch="off", reading="off", fast_path="on")
+    app, _ = app_for(tmp_path, monkeypatch, 60, fetch="off", reading="off")
     with client_of(app) as client:
         _, run_id, _, run = discover(client, "standard")
         assert run["status"] == "completed", run
@@ -576,7 +575,7 @@ def test_slice1_policy_keeps_legacy_batches_and_clock_boundaries(tmp_path, monke
 
 def test_real_fetch_and_adjudication_are_bounded_by_top_k(tmp_path, monkeypatch):
     adapter = FakeAdapter(valid_response, delay=0.005)
-    app, fetcher = app_for(tmp_path, monkeypatch, 30, pdf=True, fast_path="on", adapter=adapter)
+    app, fetcher = app_for(tmp_path, monkeypatch, 30, pdf=True, adapter=adapter)
     with client_of(app) as client:
         _, run_id, _, run = discover(client)
         assert run["status"] == "completed", run
@@ -600,7 +599,7 @@ def test_work_without_text_gives_its_slot_to_the_next_work(tmp_path, monkeypatch
             policy.pop("policy_hash")
             return policy | {"policy_hash": canonical.sha256_hex(policy)}
         monkeypatch.setattr(fast_path, "freeze_budget", frozen_before)
-    app, fetcher = app_for(tmp_path, monkeypatch, 40, pdf=True, fast_path="on")
+    app, fetcher = app_for(tmp_path, monkeypatch, 40, pdf=True)
     for n in range(0, 40, 2):  # every other work has no file
         del fetcher.answers[f"https://example.org/w{n}.pdf"]
     with client_of(app) as client:
@@ -618,7 +617,7 @@ def test_work_without_text_gives_its_slot_to_the_next_work(tmp_path, monkeypatch
 
 
 def test_refill_is_bounded_by_the_screened_window(tmp_path, monkeypatch):
-    app, fetcher = app_for(tmp_path, monkeypatch, 40, pdf=True, fast_path="on")
+    app, fetcher = app_for(tmp_path, monkeypatch, 40, pdf=True)
     fetcher.answers.clear()  # no work has a file
     with client_of(app) as client:
         _, run_id, _, run = discover(client)
@@ -637,7 +636,7 @@ def test_fulltext_deadline_after_limiter_cannot_decide_from_one_read(tmp_path, m
             holder["expired"] = True
             holder["app"].state.store.clock.advance(1000)
     adapter = FakeAdapter(valid_response, before=before, delay=0.01)
-    app, _ = app_for(tmp_path, monkeypatch, 25, pdf=True, fast_path="on", adapter=adapter)
+    app, _ = app_for(tmp_path, monkeypatch, 25, pdf=True, adapter=adapter)
     holder["app"] = app
     with client_of(app) as client:
         app.state.store.clock = FakeClock()
@@ -652,7 +651,7 @@ def test_real_pdf_after_cutoff_settles_in_background_without_reading(tmp_path, m
     from test_fast_path_clock import FakeClock
     import time
 
-    app, fetcher = app_for(tmp_path, monkeypatch, 25, pdf=True, fast_path="on")
+    app, fetcher = app_for(tmp_path, monkeypatch, 25, pdf=True)
     fetcher.delay = 0.3
     with client_of(app) as client:
         app.state.store.clock = FakeClock()
@@ -778,7 +777,7 @@ def test_abstract_resume_reuses_sent_step_and_excludes_downtime(tmp_path, monkey
                 fast_path.checkpoint(store, iid)
                 holder["app"].state.worker.recover()
     adapter = FakeAdapter(valid_response, delay=0.01, before=before)
-    app, _ = app_for(tmp_path, monkeypatch, 25, model_works=True, fetch="off", reading="off", fast_path="on",
+    app, _ = app_for(tmp_path, monkeypatch, 25, model_works=True, fetch="off", reading="off",
                      model_concurrency=1, adapter=adapter)
     holder["app"] = app
     with client_of(app) as client:

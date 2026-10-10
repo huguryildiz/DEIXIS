@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import timedelta
 from typing import Any
 
 from deixis.domain.reason_codes import reason
 from deixis.storage.db import transaction
 from deixis.workflow import background_fetch, fast_path, fulltext, small_batch
+
+log = logging.getLogger("deixis.fast_read")
 
 
 def selected(works: list[dict[str, Any]], order: list[str], k: int,
@@ -37,6 +40,13 @@ def without_text(policy: dict[str, Any], claims: dict[str, Any]) -> set[str]:
         return set()
     return {wid for wid, claim in claims.items() if claim["status"] in ("succeeded", "failed")
             and (claim.get("output") or {}).get("code") != fulltext.settled_code({"has_text": True})}
+
+
+def _stop_asked(store: Any, run: dict[str, Any]) -> bool:
+    """Whether a stop was asked of the run itself (a pause, a cancel, a newer question revision), not just the halt
+    one arm's error puts on the others."""
+    return (store.run(run["id"])["status"] in ("pause_requested", "cancelled", "paused", "failed")
+            or store.research(run["research_id"])["current_scope_revision"] != run["scope_revision"])
 
 
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
@@ -253,9 +263,16 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             (flow._fail if kind == "fail" else flow._pause)(run_id, why, detail)
         # An unexpected error in one arm halts the others, whose checkpoint then reads as a stop: the error, not
         # that stop, ends the run, so the worker records it as a failure instead of leaving the run `running`.
+        # A pause, cancel or new question revision the person asked for still wins: the run stops as asked, and the
+        # error is logged rather than turning that stop into a failure.
         failure = next((r for r in [error, *results] if isinstance(r, Exception) and not isinstance(r, RunStopped)), None)
         if failure is not None:
-            raise failure
+            if not _stop_asked(store, run):
+                raise failure
+            log.error("run %s: error in the read window while a stop was asked; the stop stands", run_id,
+                      exc_info=(type(failure), failure, failure.__traceback__))
+            flow._held.pop(run_id, None)
+            flow._checkpoint(run_id, run["scope_revision"])  # writes the asked-for stop and raises RunStopped
         if isinstance(error, RunStopped) or any(isinstance(result, RunStopped) for result in results):
             flow._held.pop(run_id, None)
             flow._checkpoint(run_id, run["scope_revision"])

@@ -4,6 +4,7 @@ import asyncio
 from datetime import timedelta
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from deixis.domain import canonical
@@ -773,3 +774,95 @@ def test_abstract_resume_reuses_sent_step_and_excludes_downtime(tmp_path, monkey
         read = next(s for s in run["fast_path"]["stages"] if s["stage"] == "read")
         assert read["used_ms"] == 12000 and read["status"] == "done"
         assert not run["fast_path"]["read"]["cutoff"]["not_screened_at_cutoff"]
+
+
+# ---- Sol review of 2348f17: a stop after a download ---------------------------------------------------------
+
+def _pdf_source(lib, doi="10.1/kept", oa_pdf_url="https://example.org/kept.pdf"):
+    from deixis.providers.common import ProviderRecord
+    record = ProviderRecord("WKEPT", "SYNTHETIC kept download", [], 2020, "J", "article", doi, None,
+                            oa_pdf_url, "publishedVersion" if oa_pdf_url else None, "publishedVersion", None, None, {}, {})
+    svid, _ = lib.store.upsert_provider_source("openalex", record, None)
+    lib.store.add_to_corpus(lib.rid, svid, "search")
+    return lib.store.source(svid)
+
+
+def _fetch_flow(lib, tmp_path, fetch_pdf, http=None):
+    from deixis.documents import fetch as fetch_module
+    async def no_xml(url):
+        return fetch_module.FetchResult("failed")
+    settings = SimpleNamespace(papers_dir=tmp_path / "papers", recovery_dir=tmp_path / "recovery",
+                               contact_email="synthetic@example.org")
+    return ResearchFlow(SimpleNamespace(store=lib.store, settings=settings, fetch_pdf=fetch_pdf, fetch_xml=no_xml,
+                                        http=http))
+
+
+def test_a_kept_download_that_changed_on_disk_is_downloaded_again_not_published(library, tmp_path, monkeypatch):
+    """The kept file is read once and its own bytes are checked: bytes that changed after a separate check are
+    never published under the old link (Sol, P1)."""
+    import hashlib
+    from deixis.documents import fetch as fetch_module, pdf_files
+    from helpers import make_pdf
+    lib = library
+    assert fast_path.enforces(lib.run["budget"], "read")
+    source = _pdf_source(lib)
+    kept, changed = make_pdf(["SYNTHETIC kept bytes"]), make_pdf(["SYNTHETIC other bytes"])
+    calls = []
+    async def fetch_pdf(url):
+        calls.append(url)
+        return fetch_module.FetchResult("ok", kept, final_url="https://example.org/kept-final.pdf")
+    flow = _fetch_flow(lib, tmp_path, fetch_pdf)
+    step = lib.store.step(lib.run["id"], f"fetch:{source['id']}", "fetch_pdf")
+    lib.store.finish_step(step["id"], "cancelled", error_code="run_stopped", output={"kept_download": {
+        "sha256": hashlib.sha256(kept).hexdigest(), "byte_size": len(kept), "final_url": "https://example.org/old.pdf"}})
+    papers = tmp_path / "papers"
+    papers.mkdir()
+    (papers / f"{hashlib.sha256(kept).hexdigest()}.pdf").write_bytes(changed)
+    # The window between a separate identity check and the read: the check sees the old file.
+    monkeypatch.setattr(pdf_files, "file_is_whole", lambda *args: True)
+    asyncio.run(flow._fetch_pdf(lib.run, source))
+    asset = lib.store.asset(lib.store.existing_step(lib.run["id"], f"fetch:{source['id']}")["output"]["asset_id"])
+    assert calls == ["https://example.org/kept.pdf"]
+    assert asset["sha256"] == hashlib.sha256(kept).hexdigest()
+
+
+def test_a_lookup_copy_stopped_before_publication_is_tried_again_on_resume(library, tmp_path):
+    """A stop after the looked-up copy was downloaded closes `other_copy` cancelled; the resumed attempt asks that
+    route again instead of settling the work without text because every lookup answered (Sol, P1)."""
+    from deixis.documents import fetch as fetch_module
+    from helpers import make_pdf
+    lib = library
+    source = _pdf_source(lib, oa_pdf_url=None)
+    copy = "https://repo.example/kept-copy.pdf"
+
+    def handler(request):
+        if "api.unpaywall.org" in request.url.host:
+            location = {"url_for_pdf": copy, "url": "https://repo.example/item", "version": "publishedVersion"}
+            return httpx.Response(200, json={"doi": "10.1/kept", "best_oa_location": location, "oa_locations": [location]})
+        if "api.openalex.org" in request.url.host:
+            return httpx.Response(200, json={"doi": "https://doi.org/10.1/kept", "display_name": "x", "locations": []})
+        if "api.crossref.org" in request.url.host:
+            return httpx.Response(200, json={"message": {"DOI": "10.1/kept", "link": []}})
+        return httpx.Response(200, json={"results": [], "resultList": {"result": []}})
+
+    calls = []
+    async def fetch_pdf(url):
+        calls.append(url)
+        if len(calls) == 1:  # the stop arrives while the copy is on its way
+            lib.store.update_run(lib.run["id"], status="pause_requested", pause_reason="user_requested")
+        return fetch_module.FetchResult("ok", make_pdf(["SYNTHETIC kept copy"]), final_url=url)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            flow = _fetch_flow(lib, tmp_path, fetch_pdf, client)
+            with pytest.raises(RunStopped):
+                await flow._fetch_work_text(lib.run, source["id"])
+            assert flow._other_copy_step(lib.run["id"], source["id"])["status"] == "cancelled"
+            assert not lib.store.has_asset(source["id"])
+            lib.store.update_run(lib.run["id"], status="running", pause_reason=None)
+            return await flow._fetch_work_text(lib.run, source["id"])
+
+    output = asyncio.run(check())
+    assert lib.store.has_pdf_text(source["id"])
+    assert output["code"] == fulltext.settled_code({"has_text": True})
+    assert calls == [copy, copy]

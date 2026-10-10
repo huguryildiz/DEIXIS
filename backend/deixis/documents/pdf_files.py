@@ -56,6 +56,24 @@ def file_is_whole(path: Path, sha256: str, size: int) -> bool:
         return False
 
 
+def read_whole(path: Path, sha256: str, size: int) -> bytes | None:
+    """The file's bytes, read once through one no-follow regular descriptor, when exactly those bytes have this
+    identity; None when the file is missing, not regular or different."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+    except OSError as exc:
+        if exc.errno in (errno.ENOENT, errno.ELOOP):
+            return None
+        raise
+    with os.fdopen(descriptor, "rb") as source:
+        if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
+            return None
+        data = source.read(size + 1)
+    if len(data) != size or hashlib.sha256(data).hexdigest() != sha256:
+        return None
+    return data
+
+
 def stage_bytes(path: Path, data: bytes) -> tuple[str, int]:
     """Write and fsync into a caller-owned path; return the identity of the bytes written."""
     with path.open("wb") as target:

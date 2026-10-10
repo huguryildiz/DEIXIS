@@ -2241,12 +2241,14 @@ class ResearchFlow:
             return 0
         # A link that refused in an earlier run is not requested again; a timeout or lost connection is.
         refusal = self.store.pdf_link_refusal(svid, source["oa_pdf_url"])
-        if (refusal is not None and not self._needs_other_copy(run["research_id"], source, refusal)) or (limit is not None and downloads >= limit):
+        # A lookup a stop cut before its copy was published is asked again (its download was not kept).
+        cut = self._other_copy_step(run["id"], svid)["status"] == "cancelled"
+        if (refusal is not None and not cut and not self._needs_other_copy(run["research_id"], source, refusal)) or (limit is not None and downloads >= limit):
             return 0
         if refusal is None:
             await self._fetch_pdf(run, source)
             refusal = self.store.pdf_link_refusal(svid, source["oa_pdf_url"])
-        if refusal is not None and self._needs_other_copy(run["research_id"], source, refusal):
+        if refusal is not None and (cut or self._needs_other_copy(run["research_id"], source, refusal)):
             await self._find_other_copy(run, source, other_versions=other_versions)
         return 1
 
@@ -2287,14 +2289,14 @@ class ResearchFlow:
             return
         papers = self.deps.settings.papers_dir
         # A stop before publication kept the downloaded file (below): a resumed run reads it rather than asking the
-        # link again, while the stored file is still whole.
+        # link again, while the stored file still holds exactly those bytes (read once, then checked).
         kept = (step["output"] or {}).get("kept_download") if step["status"] == "cancelled" else None
         data = None
         if kept:
             from deixis.documents import pdf_files
-            kept_path = papers / f"{kept['sha256']}.pdf"
-            if await text_retry.drained_thread(pdf_files.file_is_whole, kept_path, kept["sha256"], kept["byte_size"]):
-                data, final_url = await text_retry.drained_thread(kept_path.read_bytes), kept["final_url"]
+            data = await text_retry.drained_thread(pdf_files.read_whole, papers / f"{kept['sha256']}.pdf",
+                                                   kept["sha256"], kept["byte_size"])
+            final_url = kept["final_url"]
         self.store.start_step(step["id"])
         if data is None:
             self.store.add_usage(run["id"], "downloads")
@@ -2521,8 +2523,11 @@ class ResearchFlow:
         # collection run keep the narrow trigger.
         # The lookup rows are the research's history, not this run's: a lookup or a copy that did not answer an
         # earlier run is asked again here, or the work would be planned by every later run and settled by none.
+        # A lookup a stop cut before its copy was published (`cancelled`) is asked again too: every provider may have
+        # answered, but the work has no file yet.
         if route is None and normalize_doi(source["doi"]) and (
-                not self.store.pdf_discoveries(rid, head) or self._unanswered_lookups(rid, head)):
+                not self.store.pdf_discoveries(rid, head) or self._unanswered_lookups(rid, head)
+                or self._other_copy_step(run_id, head)["status"] == "cancelled"):
             self._stop_work_if_requested(run)
             found = await self._find_other_copy(run, source, other_versions=True)
             opened = found.get("lookup_version_id")

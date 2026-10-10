@@ -51,6 +51,23 @@ def test_read_failure_fails_the_run_before_the_read_closes(tmp_path, monkeypatch
                     if s["kind"] == "code:small_batch_close"]
 
 
+def test_read_failure_during_a_pause_request_pauses_the_run(tmp_path, monkeypatch):
+    """A person's pause asked while an arm fails unexpectedly wins: the run pauses, it is not marked failed
+    (Sol review of 2348f17, P2)."""
+    async def fail_read(flow, run, *args, **kwargs):
+        flow.store.update_run(run["id"], event="run_pause_requested", status="pause_requested",
+                              pause_reason="user_requested")
+        raise RuntimeError("SYNTHETIC reading failed")
+
+    monkeypatch.setattr(ResearchFlow, "_adjudication_call", fail_read)
+    app, _ = app_for(tmp_path, monkeypatch, 6, pdf=True)
+    with client_of(app) as client:
+        _, run_id, _, run = discover(client, effort="standard")
+        assert (run["status"], run["pause_reason"]) == ("paused", "user_requested"), run
+        assert not [s for s in small_batch.steps(app.state.store, run_id)
+                    if s["kind"] == "code:small_batch_close"]
+
+
 def test_shared_pair_reservation_survives_first_send_and_blocks_competing_pair():
     from types import SimpleNamespace
     used = 0

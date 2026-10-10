@@ -79,8 +79,10 @@ Write notes in the question's language unless the StepInput says otherwise.
 
 Goal: up to eight columns the user could add to compare the table's sources on
 the question. You receive the question, the table's current columns and the
-titles and abstracts of its rows. A suggestion is shown to the user and added
-only if the user chooses it.
+titles and abstracts of its rows. When the user asks for suggestions, a
+suggested column is added only if the user chooses it. In the study table the
+application builds after an answer, the suggested columns are added without a
+person reviewing them.
 
 - Suggest fields the question needs compared across sources, such as the
   method, the setting, a key parameter or the main result. Do not repeat a

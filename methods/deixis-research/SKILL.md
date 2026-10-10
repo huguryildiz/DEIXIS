@@ -69,16 +69,6 @@ For `criterion_proposal`, read
 question alone, what a paper must contain to be included, and name the words an
 author of such a paper would write.
 
-For `term_suggestions`, read
-[term suggestions](references/term-suggestions.md): the user asked for other
-names of the search phrases the application already holds; you propose a term
-list, never a query, and you choose no block.
-
-For `term_advice`, read
-[term advice](references/term-advice.md): the approval card warns about search
-terms that multiply the matches; you say for each whether to remove or keep it,
-in one plain sentence, as information only (no term is removed because of it), and you propose no term and write no query.
-
 For `search_query`, read
 [search query](references/search-query.md): you choose the terms of the two
 blocks the keyword search is built from, with backups; the application counts

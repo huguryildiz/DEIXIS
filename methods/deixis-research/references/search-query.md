@@ -2,8 +2,8 @@
 
 Goal: write the keyword query of a scholarly literature search for
 `question.text`. You do not search and you do not answer the question. The
-application counts every term you give and shows your query to the user before
-anything is searched.
+application counts every term you give, writes the query and freezes it in the
+search protocol before anything is searched. Nobody edits it before the search.
 
 A paper is found when its title or abstract holds at least one term of EACH
 block:

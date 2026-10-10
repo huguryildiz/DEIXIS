@@ -87,16 +87,6 @@
    "change": "Written for DEIXIS on 2026-09-21 (SW15, D78), not adapted from upstream text. One job: from the question and the user's steering alone, state the inclusion criterion in one sentence, 2 to 5 parts with 6 to 15 short phrases each, and the title words of papers that are about the topic without being primary studies of this kind. Says that the setting belongs to the search blocks and is no part, and that the thing sought is not the setting: it is named in the criterion sentence and has a part and phrases of its own. No rationale and no strength mark are asked for (SW15.7). Loaded into criterion_proposal steps only. The wording carries the rules measured in .local/sw-criterion-prompt-fix-2026-09-21 (deepseek-flash, effort high, five questions, 15 runs); none of that measurement's five questions, and no question of .local/sw-block-labelling-2026-09-21, appears in this file, so those sets stay out of sample and the file carries no worked example at all."
   },
   {
-   "deixis_file": "references/term-suggestions.md",
-   "derived_from": [],
-   "change": "Written for DEIXIS on 2026-09-21 (SW2.5, D82), not adapted from upstream text. One job: for the searched phrases the approval card already holds, propose other names the literature uses for the same thing — a term list, never a query — each one naming with `synonym_of` the given phrase it is another name for, so the block is derived by code and never chosen by the step. Says that a broader term, a narrower term and a neighbouring topic are not other names, that the phrases the search keeps out deliberately (claim, exclusion, outcome) must not be proposed or contained, and that an empty list is a good answer. No rationale field and no block field are asked for. Loaded into term_suggestions steps only. **Not measured:** this wording was written in the planning chat and has been tried against no model, and the slice that added it called none, so how many proposals survive the count probe and how many are really other names is unknown."
-  },
-  {
-   "deixis_file": "references/term-advice.md",
-   "derived_from": [],
-   "change": "Written for DEIXIS on 2026-10-05 (D232), not adapted from upstream text. One job: for each search term the approval card warns about because it multiplies the matches, say remove or keep and give one plain sentence for a non-expert; keep when the term is the question's own subject, remove when it is a general word the other terms already narrow. No term is proposed and no query is written. Loaded into term_advice steps only. No real-model measurement. Revised 2026-10-06 (D233): the advice is information only and nothing is removed because of it; exactly one entry per warned term is required."
-  },
-  {
    "deixis_file": "references/report.md",
    "derived_from": [],
    "change": "Written for DEIXIS on 2026-09-17 (P6 slice 1), not adapted from upstream text. Applies SKILL.md's evidence rules to the fixed report skeleton: report_plan, per-section instructions for III-IX/abstract/index_terms, VI/VII's narrowed gap/future-direction exception to the candidate-development ban, phrase repair, and report review. Loaded into report_plan, report_section, report_phrase_repair and report_review steps only. 2026-09-18: made the supplied per-section frames mandatory for every claims[].text and insufficient_evidence[].reason sentence because the first real-model report run produced sentences that followed no frame; evidence support explicitly outranks frame fit. 30 September 2026 (P18): require exact copying of per-step passage, cell, source and column handles, restrict use to the allowlist, and forbid citations to glossary passages outside it. 30 September 2026 (P19): distinguish anchor location from claim support and require rewriting or dropping an unsupported cell citation without substituting another cell quote or passage."
@@ -160,13 +150,6 @@
    "change": "Echo the two short binding fields and refer to SKILL.md for conditional package-hash copying. No real-model measurement."
   },
   {
-   "deixis_file": "references/term-suggestions.md",
-   "derived_from": [],
-   "date": "2026-10-03",
-   "decision": "D198",
-   "change": "Echo the two short binding fields and refer to SKILL.md for conditional package-hash copying. No real-model measurement."
-  },
-  {
    "deixis_file": "references/vocabulary-labels.md",
    "derived_from": [],
    "date": "2026-10-03",
@@ -186,6 +169,13 @@
    "date": "2026-10-03",
    "decision": "D198",
    "change": "Echo the two short binding fields and refer to SKILL.md for conditional package-hash copying. No real-model measurement; review remains a separate recorded assessment."
+  },
+  {
+   "deixis_file": "SKILL.md",
+   "derived_from": [],
+   "date": "2026-10-10",
+   "decision": "D1",
+   "change": "Clean start (slice 6): removed references/term-suggestions.md and references/term-advice.md and their SKILL.md sections, because no step runs term_suggestions or term_advice since the interactive term approval was deleted; their earlier provenance entries are in Git history. references/search-query.md now says the query is frozen in the search protocol without a person editing it, and references/evidence-table.md says the automatic study table adds suggested columns without review. No real-model measurement."
   }
  ],
  "phrasebank": {

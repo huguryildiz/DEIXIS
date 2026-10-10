@@ -290,5 +290,6 @@ def test_api_add_development_columns(tmp_path):
 
 def test_skill_package_hash_unchanged_by_l1():
     # D198 changes the envelope instructions while preserving the L1 column contract; D225 adds the abstract-number rule, D228 the comparison criterion rule, D232 the term-advice file, D233 its information-only wording.
-    # L1 leaves runtime instructions alone; D243 changes the shared answer and review rules.
-    assert load_skill_package().package_hash == "sha256:89f8ecd284f5e0f5064854dbb7ac1bafef3a8ca7fc3ad82ed80d779afb315000"
+    # L1 leaves runtime instructions alone; D243 changes the shared answer and review rules. The clean start (slice 6,
+    # new D1) removes the term-advice and term-suggestion files and rewords search-query.md and evidence-table.md.
+    assert load_skill_package().package_hash == "sha256:06b463687e76afea3861f9138a8a2ba7a29bd5d40ef87e49a8aa57b6112488be"

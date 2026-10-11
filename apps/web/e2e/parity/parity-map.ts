@@ -9,7 +9,7 @@ import type { FixtureContext } from './gates'
 
 export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
-export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog'
+export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog' | 'research-panel'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -109,6 +109,8 @@ export const SURFACES: Surface[] = [
     app: '#/', ready: '.composer .guide label',
     open: page => page.locator('input[type=file]').first().setInputFiles(GUIDE_PDFS.map(name => ({ name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') }))) },
   { id: 'research', mock: "setScenario('ok')", app: '#/research/{research}', ready: '.research-topbar' },
+  // The research page with one side panel open (S7a, R10/P1): the Sources panel, opened fresh.
+  { id: 'research-panel', mock: "setScenario('ok'); openPanel('sources', 'cited', false)", app: '#/research/{research}/sources', ready: '[data-split-panel] #split-panel-title' },
   { id: 'zotero', mock: "setScenario('ok'); go('home'); zoteroDlg('home')", app: '#/', ready: '.zotero-dialog .zotero-cols label',
     prepare: page => page.route('**/api/zotero/collections**', route => route.fulfill({ json: { source: 'local', collections: ZOTERO_COLLECTIONS } })),
     open: async page => {
@@ -290,7 +292,7 @@ export const PAIRS: Pair[] = [
   { id: 'research.more', surface: 'research', mock: '.topbar [data-menu="research"]', app: '.research-topbar .research-more', checks: ['chrome', 'icon'], widths: DESK,
     icon: { mock: 'more', app: 'ellipsis' }, status: 'pending:S8', why: 'S8: ⋯ research menu' },
   { id: 'research.thread', surface: 'research', mock: '.thread-inner', app: '.thread-inner', checks: ['content'], breakpoint: true,
-    status: 'pending:S7a', why: 'S7a: the tabs become thread + rail + panel' },
+    status: 'active' },
   { id: 'research.question', surface: 'research', mock: '.thread .q', app: '.chat-question', checks: ['content', 'type', 'colour'],
     status: 'pending:S8', why: 'S8: question bubble with scope label and date · revision' },
   { id: 'research.steps', surface: 'research', mock: '.steps .step', app: '.chat-steps .chat-step', checks: ['content', 'type'], list: 'fixed',
@@ -335,6 +337,23 @@ export const PAIRS: Pair[] = [
   { id: 'zotero.foot', surface: 'zotero', mock: '.dlg-f', app: '.zotero-dialog-foot', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
   // Chrome geometry minus y (GEOMETRY_EXCEPTIONS zotero-foot-buttons-y): the footer's place follows the notes above it.
   { id: 'zotero.foot-buttons', surface: 'zotero', mock: '.dlg-f button', app: '.zotero-dialog-foot button', checks: ['chrome', 'content', 'type', 'colour'], list: 'fixed', status: 'active' },
+  // The panel frame (S7a, R10/P1). Its body is each panel's own slice (S12-S15b); here the frame, its 46px head, the
+  // heading and the head buttons. At 390 the panel covers the screen.
+  { id: 'panel.frame', surface: 'research-panel', mock: '.panel', app: '[data-split-panel]', checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },
+  // At 1024 the panel and the thread are 56% / 44% of the space beside the sidebar on both sides, but the app's sidebar
+  // is 224px there (App.css, under 1050px) and the mockup's 256px.
+  { id: 'panel.frame@1024', surface: 'research-panel', mock: '.panel', app: '[data-split-panel]', checks: [], widths: [], breakpoint: true,
+    status: 'pending:S1', why: 'S1: sidebar 256px at 1024 (app 224px), then the panel is 430px as in the mockup' },
+  { id: 'panel.head', surface: 'research-panel', mock: '.panel .p-head', app: '.split-panel-head', checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'panel.title', surface: 'research-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'book', app: 'book-open' }, text: true, status: 'active' },
+  { id: 'panel.wide', surface: 'research-panel', mock: '.panel .p-head [data-act="wide"]', app: '.split-panel-head .split-panel-wide', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'max', app: 'maximize-2' }, states: ['hover'], unordered: true, status: 'active' },
+  { id: 'panel.close', surface: 'research-panel', mock: '.panel .p-head [data-act="close"]', app: '.split-panel-head [aria-label="Close"]', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'x', app: 'x' }, states: ['hover'], unordered: true, status: 'active' },
+  { id: 'panel.thread', surface: 'research-panel', mock: '.thread-inner', app: '.thread-inner', checks: ['content'], widths: DESK, status: 'active' },
+  { id: 'panel.thread@1024', surface: 'research-panel', mock: '.thread-inner', app: '.thread-inner', checks: [], widths: [], breakpoint: true,
+    status: 'pending:S1', why: 'S1: sidebar 256px at 1024 (app 224px), then the thread beside the panel is 338px as in the mockup' },
 ]
 
 /** Pending pairs per slice, for the summary line. */

@@ -549,7 +549,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {/* The thread scrolls on its own; the artifacts rail (S11 fills it) sits beside it while no panel is open. */}
     <div className="research-thread-col" inert={Boolean(phone && panel)}>
     <div className="research-thread-grid">
-    <div className="research-body">
+    <div className="research-body thread-inner">
     {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the panel that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
       <span className="research-revision">{t('Research')} · {t('revision {n}', { n: view.research.current_scope_revision })}</span>

@@ -105,6 +105,11 @@ export const PLACEMENTS: Placement[] = [
   { id: 'jobs-sheet-controls', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Jobs sheet job line: Pause / Resume of an OCR run or a PDF collection, and the research title as a link', app: '.job-action, .job-research' },
   { id: 'jobs-sheet-unconfirmed', rule: '§2.3 / AGENTS.md (no success beyond stored state)', slice: 'S1', container: 'Jobs sheet, under Finished: jobs whose own run failed, was cancelled, or could not be read ("Status unknown")', app: null },
   { id: 'toast-dismiss', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Toast, after the text and the Undo link: the dismiss button (errors stay until dismissed)', app: '.toast-close' },
+  // S7a: the tabs are gone before the rail (S11), the steps (S9) and the ⋯ menu (S8) open the panels.
+  { id: 'panel-menu-rows', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S8',
+    container: 'Topbar ⋯ "Research actions" lists every panel with its count (Sources, Awaiting your decision, Get more full text, Evidence table, Follow-up, Candidates, Activity) until S8 trims it to R9 and S11/S9 open the rest', app: '.research-topbar-more' },
+  { id: 'rail-under-thread', rule: '§0 rule 5 (the Artifacts list, the only way to older report versions, stays reachable)', slice: 'S11',
+    container: 'Below 1100px the rail slot follows the thread in the same scroll instead of hiding; S11/S12 (report version select) restore the mockup rule', app: '.research-rail' },
 ]
 
 /** Mockup copy replaced because it would be false (§2.3, Q2). The parity check compares structure, not text; behaviour
@@ -130,6 +135,8 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'zotero-account', rule: '§2.3 (Q2, S6: the local app has no key; the zotero.org key is set in .env and its rights are not checked)', mock: 'Connected as the Zotero account in Settings · read-only key.', app: 'Reads Zotero on this computer through its local API · read-only. / Reads the zotero.org library set in .env · read-only.' },
   { id: 'zotero-count', rule: '§2.3 (Q2, S6: the count is Zotero’s numItems; the import skips standalone notes and non-PDF attachments)', mock: 'Import N items (no note on what N counts)', app: 'Import N items, with "Counts are Zotero’s own; standalone notes and non-PDF attachments are skipped, so fewer items may be added." in the foot note' },
   { id: 'zotero-home-join', rule: '§2.3 (Q2, S6: Home imports when the research starts, as included sources)', mock: 'Items join this research as attached sources.', app: 'Items are imported when the research starts and join it as included sources.' },
+  // Live copy, not mockup copy: the run chips named the tabs, which no longer exist (S7a). S8 replaces the chips (R3-R6).
+  { id: 'run-chip-panel', rule: '§2.3 (a sentence names only what exists)', mock: 'Open the Candidates / Follow-up / Evidence tab to control this run (live app, no mockup element)', app: 'Open the Candidates / Follow-up / Evidence table panel to control this run' },
 ]
 
 /** Geometry axes a pair may not compare because the position follows content the slice must change: a §2.3 copy

@@ -185,8 +185,8 @@ test.describe.serial('S7a: thread and side panel', () => {
       const box = (await dialog.boundingBox())!
       expect(box.x).toBe(0)
       expect(box.width).toBe(390)
-      // Full width has nothing to widen on a phone.
-      await expect(dialog.getByRole('button', { name: 'Full width' })).toBeHidden()
+      // Full width stays in the head as the mockup draws it.
+      await expect(dialog.getByRole('button', { name: 'Full width' })).toBeVisible()
       await shot(phone, 's7a-phone-dialog')
       for (let i = 0; i < 40; i++) {
         await phone.keyboard.press(i % 7 === 6 ? 'Shift+Tab' : 'Tab')

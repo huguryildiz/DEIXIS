@@ -1062,7 +1062,7 @@ class ResearchFlow:
         for i in open_seeds:
             head, title_region, _ = texts[i]
             found = await self._seed_lookup(run, f"seed_match:v2:semantic:{i}", lambda head=head: openalex.search_semantic(
-                self.deps.http, head[:openalex.SEMANTIC_MAX_CHARS], seed_match_rules.SEMANTIC_PER_PAGE,
+                self.deps.http, openalex.semantic_text(head), seed_match_rules.SEMANTIC_PER_PAGE,
                 api_key, mailto, references=True))
             contexts[i]["lookups"].append(found["summary"])
             if found["failed"]:
@@ -1121,7 +1121,7 @@ class ResearchFlow:
             if hits > 1:
                 return {"status": "no_match", "ambiguous": True, "lookups": lookups}
         found = await self._seed_lookup(run, "seed_match:semantic", lambda: openalex.search_semantic(
-            self.deps.http, head[:openalex.SEMANTIC_MAX_CHARS], seed_match_rules.SEMANTIC_PER_PAGE,
+            self.deps.http, openalex.semantic_text(head), seed_match_rules.SEMANTIC_PER_PAGE,
             api_key, mailto, references=True))
         lookups.append(found["summary"])
         if found["failed"]:

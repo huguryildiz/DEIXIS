@@ -45,7 +45,7 @@ def seed_requests(envelope, limit):
         if text.strip():
             specs.append({"index": i, "source_version_id": context["source_version_id"], "origin": origin,
                           "provider_id": "openalex", "endpoint": "semantic",
-                          "query_text": text[:openalex.SEMANTIC_MAX_CHARS], "limit": limit})
+                          "query_text": openalex.semantic_text(text), "limit": limit})
     return specs
 
 
@@ -88,7 +88,7 @@ def build_plan(store, run, scope, queries, seed_context=None):
                      if deep and q["provider_id"] == "semantic_scholar" and q.get("endpoint") == "bulk"), None)
     s2 = queries[s2_index] if s2_index is not None else None
     return {"version": 1, "semantic": {"provider_id": "openalex", "endpoint": "semantic",
-            "query_text": sentence[0][:openalex.SEMANTIC_MAX_CHARS] if sentence else None, "limit": policy["semantic_top"],
+            "query_text": openalex.semantic_text(sentence[0]) if sentence else None, "limit": policy["semantic_top"],
             "query_origin": sentence[1] if sentence else english_question.MISSING,
             **({"seed_text": seed} if seed else {}), **({"seed_parts": parts} if seed_context else {})},
             "keywords": keyword, "keyword_cap": policy["keyword_record_cap"] - (500 if deep else 0),

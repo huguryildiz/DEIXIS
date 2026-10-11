@@ -837,6 +837,33 @@ def test_the_semantic_request_never_sends_more_than_openalex_accepts():
     assert "x" * 1501 not in outcome.request_description
 
 
+def test_openalex_counts_a_letter_outside_the_basic_plane_twice():
+    """OpenAlex counts UTF-16 code units: 1,500 characters with three math italic letters were refused as 1,503
+    (measured live, 11 Oct 2026, a battery seed PDF's first page)."""
+    from deixis.providers import openalex
+    def units(text):
+        return len(text.encode("utf-16-le")) // 2
+    text = "𝑆𝑜𝐻 " + "x" * 1600
+    cut = openalex.semantic_text(text)
+    assert units(cut) == 1500 and cut == text[:1497]
+    assert openalex.semantic_text("𝑆" * 800) == "𝑆" * 750
+    assert openalex.semantic_text("x" * 1499 + "𝑆") == "x" * 1499
+    assert openalex.semantic_text("© ∗ plain") == "© ∗ plain"
+    plain = "y" * 3000
+    assert openalex.semantic_text(plain) == plain[:1500]
+    sent = []
+    def handler(request):
+        sent.append(request.url.params["search.semantic"])
+        return httpx.Response(200, json={"meta": {"count": 0}, "results": []})
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            await openalex.search_semantic(client, text, 10)
+    asyncio.run(go())
+    assert [units(q) for q in sent] == [1500]
+    envelope = {"rule": seed_match.RULE, "seeds": [{"source_version_id": "a", "status": "no_match", "first_page_text": text}]}
+    assert units(fast_search.seed_requests(envelope, 25)[0]["query_text"]) == 1500
+
+
 def test_a_failed_lookup_is_asked_again_by_the_next_run(tmp_path, monkeypatch):
     """A run whose seed lookup failed (an OpenAlex 400 before the 1,500-character limit, an incomplete DOI reply) does
     not hand that failure to the next run of the revision; the next run asks again (D3)."""

@@ -32,8 +32,21 @@ PROVIDER_ID = "openalex"
 WORKS_URL = "https://api.openalex.org/works"
 SEMANTIC_PACER = SerialRequestPacer(1.0)
 # The longest `search.semantic` value OpenAlex accepts; a longer one is refused with HTTP 400 "Search query too long"
-# (measured 11 Oct 2026: 1,500 characters pass, 2,000 do not).
+# (measured 11 Oct 2026: 1,500 characters pass, 2,000 do not). OpenAlex counts UTF-16 code units: a letter outside the
+# Basic Multilingual Plane (a PDF's math italic 𝑆, say) counts twice (measured 11 Oct 2026: 1,500 characters holding three
+# such letters were refused as 1,503), so `semantic_text` cuts by that count.
 SEMANTIC_MAX_CHARS = 1500
+
+
+def semantic_text(text: str, limit: int = SEMANTIC_MAX_CHARS) -> str:
+    """The longest head of `text` OpenAlex counts as at most `limit` characters (UTF-16 code units); a text without
+    letters outside the Basic Multilingual Plane is cut exactly as `text[:limit]`."""
+    units = 0
+    for i, char in enumerate(text):
+        units += 2 if ord(char) > 0xFFFF else 1
+        if units > limit:
+            return text[:i]
+    return text
 SEARCH_PARAM = "search.title_and_abstract"
 SELECT = ",".join(
     [
@@ -167,16 +180,16 @@ async def search_semantic(client, query, per_page, api_key=None, contact_email=N
 
     OpenAlex Help, semantic-search/authentication/example-costs, read 2026-10-09:
     50 results, select supported, Bearer accepted. The help page said 2,000 characters; the live API refuses more than
-    1,500 (HTTP 400, measured 11 Oct 2026), so the query is cut at SEMANTIC_MAX_CHARS.
+    1,500 (HTTP 400, measured 11 Oct 2026), so the query is cut to that (`semantic_text`).
     """
     select = SELECT + "".join(f",{field}" for field, asked in
                              ((REFERENCE_COUNT_FIELD, reference_count), (REFERENCES_FIELD, references)) if asked)
-    params = {"search.semantic": query[:SEMANTIC_MAX_CHARS], "per_page": min(per_page, 50), "select": select}
+    params = {"search.semantic": semantic_text(query), "per_page": min(per_page, 50), "select": select}
     if contact_email:
         params["mailto"] = contact_email
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     access = "api_key" if api_key else "keyless"
-    description = f"GET {WORKS_URL} search.semantic={query[:SEMANTIC_MAX_CHARS]!r} per_page={params['per_page']} access={access}"
+    description = f"GET {WORKS_URL} search.semantic={semantic_text(query)!r} per_page={params['per_page']} access={access}"
     response, outcome = await SEMANTIC_PACER.run(lambda: send(client, WORKS_URL, params, headers, description, access,
                                    RATE_LIMIT_HEADERS + ("x-ratelimit-credits-used",), (api_key,),
                                    max_rate_limit_retries=max_rate_limit_retries))

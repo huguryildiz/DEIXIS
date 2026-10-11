@@ -17,6 +17,16 @@ Limits:
 - If an earlier seed task raises (a code or database fault, not a provider error), or the process dies while a later reply waits for its turn, that reply is lost and the request is sent again on resume (one paid request). Writing it out of order was rejected because it changes first admission.
 - The time saved per seeded run is not measured live.
 
+## D10 — Follow-up questions are answered only from passages the research already holds
+Status: accepted (decided with Sol over S22a's review rounds, 12 Oct 2026) · Date: 2026-10-12 · Writer: Claude
+Context: The mockup's follow-up box (R30, R31; F17, slice S22a) asks a further question inside a research. It must not start a search or cite anything the research has not read.
+Decision:
+- Each question is one `followup_answer` run. Its passages come from the latest answer's frozen evidence for the current question revision, or from the included works when there is no answer yet. Sources the person excluded or set to pending, read on the work's current head, are left out. Passages are ranked by word match and meaning, fused by RRF, and only the passages sent in that call can be cited.
+- Every quote must be found in its passage. After one repair, an invalid answer is stored as an unverified draft with no citations; the same happens when the two-call budget runs out on invalid output. The outcome is "not answered" when the passages do not say.
+- Pause, cancel, a newer question revision, the person's source choices and the stored files are checked before each call, on resume and inside the publish transaction. A turn and its citation links are published together and never edited. A published turn shows `stale_scope` or `stale_selection` when the question or the selection changed later.
+- "Search for new works on this" saves a new question revision, which the person starts.
+Limits: Whether a question counts as answered is the model's call, and a quote found in its passage does not prove the passage supports the claim. Without semantic ranking (no embedding model, or a question not in English) only word-match ranking runs. Tested with SYNTHETIC records and the fake model only; one live gpt-5.6-luna run in its own data directory is still owed, and whether these answers help a researcher is not measured.
+
 ## D9 — An answer the person starts may read works screened after the cutoff
 Status: accepted (decided with Sol over S20's review rounds, 12 Oct 2026) · Date: 2026-10-12 · Writer: Claude
 Context: A discovery-bound answer reads only the evidence the read stage held at its cutoff (old D253). "Screen more" (F13, slice S20, run kind `screen_more`) screens works below the read window later, so without a change its candidates would never reach an answer, and regenerating the answer would give the same text.

@@ -1,0 +1,86 @@
+/* Settings and Connections (UI port S7). The base rules live in workspace.css, App.css and LegacyWorkspace.css; this
+   file only restyles them inside the Settings page (.settings-page) and the connection sheet, so it is safe to load in
+   any order. The page is a 760px centred column: a 20px heading, 14px section headings, bordered row groups, a
+   three-column tile grid with a status pill, and radio cards whose chosen card takes the accent tint. */
+
+/* ── Page column and headings ─────────────────────────────────────────────────────────────────────────── */
+.app .main-shell .settings-page{max-width:calc(760px + 2 * clamp(32px,4vw,80px));margin:0 auto 48px}
+.app .settings-page>.section-label{display:none}
+.app .settings-page>h1{margin:0;font-size:20px;font-weight:600;letter-spacing:0;line-height:1.3}
+.app .settings-page>h1{width:fit-content;max-width:100%}
+.app .settings-page>p{max-width:72ch;margin:6px 0 0;color:var(--muted);font-size:13px;line-height:1.55}
+.app .settings-page .settings-tabs{margin:18px 0 22px}
+.app .settings-page h2,.app .settings-page .connections-group h2{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:14px;font-weight:600;letter-spacing:0;line-height:1.4}
+.app .settings-page h2.with-icon>svg{width:16px;height:16px}
+.app .settings-page .connections-tab{gap:28px}
+.app .settings-page .connections-subhead{margin:14px 0 8px;color:var(--ink-2);font-size:12.5px;font-weight:600}
+.app .settings-page .connections-subhead.with-icon>svg{width:14px;height:14px}
+.app .settings-page .legacy-mini-note{margin:0 0 10px;max-width:76ch;font-size:12.5px!important;line-height:1.55}
+.app .settings-page .connection-grid+.legacy-mini-note{margin-top:8px}
+.app .settings-page .local-tool-machine{margin:0 0 10px;font-size:12.5px}
+
+/* ── Bordered row groups: default models and the proxy form ───────────────────────────────────────────── */
+.app .settings-page .settings-roles{border:1px solid var(--line);border-radius:10px}
+.app .settings-page .settings-role{padding:12px 14px;border-bottom:0;border-top:1px solid var(--line)}
+.app .settings-page .settings-role:first-child{border-top:0}
+.app .settings-page .settings-role-text strong{font-size:13.5px;font-weight:500}
+.app .settings-page .settings-role-text strong.with-icon>svg{width:15px;height:15px}
+.app .settings-page .settings-role-text small{margin-top:2px;font-size:12.5px}
+
+.app .settings-page .proxy-setting{margin-bottom:28px}
+.app .settings-page .proxy-form{grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 8px;max-width:none;margin-top:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px}
+.app .settings-page .proxy-form label{grid-column:1/-1;font-size:13px;font-weight:500}
+.app .settings-page .proxy-form input{height:32px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.app .settings-page .proxy-form small{grid-column:1/-1;grid-row:3;font-size:12px}
+.app .settings-page .proxy-actions{grid-column:2;grid-row:2;gap:8px;margin-top:0}
+.app .settings-page .proxy-actions [data-slot=button]{height:32px}
+@media(max-width:600px){
+  .app .settings-page .proxy-form{grid-template-columns:minmax(0,1fr)}
+  .app .settings-page .proxy-form small{grid-row:auto}
+  .app .settings-page .proxy-actions{grid-column:1;grid-row:auto}
+}
+
+/* ── Connection tiles: three columns, name then a status pill ──────────────────────────────────────────── */
+.app .settings-page .connection-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.app .settings-page .connection-card{gap:10px;min-height:0;padding:12px;border-color:var(--line);border-radius:10px;background:var(--paper);transition:box-shadow .15s ease,border-color .15s ease,background-color .15s ease}
+.app .settings-page .connection-card:hover{background:var(--paper);box-shadow:var(--shadow-float)}
+.app .settings-page .connection-card.active{border-color:var(--accent-line);background:var(--accent-tint)}
+.app .settings-page .connection-card-icon{width:32px;height:32px;border-color:var(--line);border-radius:8px}
+.app .settings-page .connection-card-text{gap:4px}
+.app .settings-page .connection-card-text strong{font-size:13.5px;font-weight:500}
+.app .settings-page .connection-card-status{padding:1px 7px;font-size:11px;font-weight:500;line-height:1.5}
+.app .settings-page .connection-card-status::before{display:none}
+.app .settings-page .planned-connections summary{font-size:12.5px;font-weight:500}
+@media(max-width:760px){.app .settings-page .connection-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+@media(max-width:600px){.app .settings-page .connection-card{gap:9px;padding:10px}}
+
+/* Status pills share the tile pill's shape (no dot, 11px). */
+.app .settings-page .status-chip,.connection-sheet .status-chip{gap:0;padding:1px 7px;border-color:transparent;font-size:11px;font-weight:500;line-height:1.5}
+.app .settings-page .status-chip::before,.connection-sheet .status-chip::before{display:none}
+.app .settings-page .status-chip.is-configured,.connection-sheet .status-chip.is-configured{border-color:transparent;background:var(--hover-surface)}
+
+/* ── Semantic search: radio cards; the chosen card takes the accent tint ───────────────────────────────── */
+.app .settings-page .semantic-choices{border-color:var(--line);border-radius:10px}
+.app .settings-page .semantic-option{transition:background-color .12s ease}
+.app .settings-page .semantic-option:has(.semantic-choice input:checked){background:var(--accent-tint)}
+.app .settings-page .semantic-choice{gap:6px 10px;padding:10px 14px;font-size:13.5px}
+.app .settings-page .semantic-choice strong{font-size:13.5px;font-weight:500}
+.app .settings-page .semantic-choice .status-chip{margin:0 0 0 auto}
+.app .settings-page .semantic-reason,.app .settings-page .semantic-model-name{font-size:12px}
+.app .settings-page .semantic-option-body{padding:0 14px 12px 50px;font-size:12.5px}
+@media(max-width:600px){.app .settings-page .semantic-option-body{padding-left:14px}}
+.app .settings-page .local-tool-note,.app .settings-page .local-tool-error{font-size:12.5px}
+
+/* ── Connection sheet body: facts as a bordered row group, quieter head ────────────────────────────────── */
+.connection-sheet .connection-sheet-head{gap:9px}
+.connection-sheet .connection-sheet-head .connection-icon{width:20px;height:20px}
+.connection-sheet .connection-sheet-head .source-title{font-size:16px;font-weight:600;letter-spacing:0;line-height:1.35}
+.connection-sheet .status-chip{margin-top:10px}
+.connection-sheet .source-byline{font-size:13px;line-height:1.55}
+.connection-sheet .connection-checks{margin-top:14px;border:1px solid var(--line);border-radius:10px}
+.connection-sheet .connection-checks .legacy-check{padding:9px 14px;border-bottom:0;border-top:1px solid var(--line);font-size:13px}
+.connection-sheet .connection-checks .legacy-check:first-child{border-top:0}
+.connection-sheet .connection-checks .legacy-check strong{color:var(--ink-2)}
+.connection-sheet .connection-checks+*{margin-top:14px}
+.connection-sheet .connection-recheck{margin-top:18px}
+.connection-sheet .key-form label{font-size:13px;font-weight:500}

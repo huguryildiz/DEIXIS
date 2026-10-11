@@ -8,6 +8,7 @@ import { ConnectionsTab } from './Connections'
 import { useToast } from './Toast'
 import { t, uiLocale } from './i18n'
 import { Notice } from './Notice'
+import './Settings.css'
 
 const NO_DEFAULT = '__none'
 
@@ -32,7 +33,7 @@ export function SettingsPage({ dark, tab, onTab }: { dark: boolean; tab: 'defaul
     }).catch((e: Error) => toast('error', t('Could not save the default: {message}', { message: e.message })))
   }
 
-  return <section className="collection legacy-connections">
+  return <section className="collection legacy-connections settings-page">
     <div className="section-label">{t('Settings')}</div>
     <h1 tabIndex={-1}>{t('Settings')}</h1>
     <p>{t('Defaults apply to new researches. Each research keeps the models it was created with, and you can change them for one research from the composer.')}</p>

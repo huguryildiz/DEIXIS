@@ -583,7 +583,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
         </span>
         <div className="library-row-facts">
           <span className={`ref-pill library-depth ${ACCESS_PILLS[entry.access_level]}`}>
-            <Check size={12} aria-hidden />{t(ACCESS_LABELS[entry.access_level])}
+            <i className="library-depth-dot" aria-hidden />{t(ACCESS_LABELS[entry.access_level])}
           </span>
           {entry.versions.map(version => <span key={version.source_version_id}
             className={`ref-pill ${version.version_label ? versionTones[version.version_label] ?? 'is-unstated' : 'is-unstated'}`}>

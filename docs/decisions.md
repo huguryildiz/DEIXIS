@@ -4,6 +4,21 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D9 — An answer the person starts may read works screened after the cutoff
+Status: accepted (decided with Sol over S20's review rounds, 12 Oct 2026) · Date: 2026-10-12 · Writer: Claude
+Context: A discovery-bound answer reads only the evidence the read stage held at its cutoff (old D253). "Screen more" (F13, slice S20, run kind `screen_more`) screens works below the read window later, so without a change its candidates would never reach an answer, and regenerating the answer would give the same text.
+Decision:
+- A new answer the person starts may read works that a Screen more run of the same question revision made candidates through two agreeing abstract reads. Only the version both runs read is taken, with its stored abstract, while it still has exactly the title, abstract, DOI, year and venue they were shown.
+- Each such row carries `screened_after_cutoff` (the Screen more run) and `evidence_basis: abstract_screening` in the answer input and the answer view, so the interface can label it "screened after the cutoff (abstract screening)".
+- Every batch's candidates raise `selection_revision` in the same transaction as the decisions, so an earlier answer reads `stale_selection` and stays as it was.
+Limits:
+- Abstract-based evidence only; nothing is included automatically, and only works the cutoff left out as `outside_read_window` or `not_screened_at_cutoff` qualify.
+- A work counts as screened, and is never planned again, when a person decided it at any stage or set the selection of any of its versions (included, excluded or pending); when it has a current full-text stage decision of any code; or when it has a current abstract decision other than `abstract_not_read`, `abstract_not_proposed`, `no_abstract` or `abstract_not_found`.
+- Screen more plans only works the abstract stage can send: the current head is a search candidate of the revision and some search-candidate version has its own abstract and no lookup code. A (work, head) pair a completed run planned without a decision is not planned again. No abstract is fetched.
+- A work stays out of the answer when it left the research; when its outcome is `criterion_not_met`, `out_of_scope` or `versions_disagree`; when the person's selection of its current head is not included or, with none on the head, any person selection on another version is not included; or when the version read changed.
+- One version per work (the admitted head, else the smallest record id) replaces the cutoff's record and is marked `cutoff_source_version_id`. Automatic answers and late revisions do not add these works; a late revision of a person-started answer keeps the rows it had.
+- Measured on SYNTHETIC fixtures with a fake model only. Whether these answers help a researcher is not measured; D8's live-run limit covers it.
+
 ## D8 — The interface matches the mockup; mockup-only elements become real features
 Status: accepted (owner 11 Oct 2026, evening: "it should have been exactly the same as the mockup", option "make everything real") · Date: 2026-10-11 · Writer: Claude
 Context: D5 took the mockup's colours and fonts but kept the old structure (research tabs, modal sheets) and left out every mockup element without a backend. After the port the owner compared the app with the mockup (v24, `.local/design/elicit-style-mockup/index.html`) and asked for the same screens. The work is planned in `.local/design/parity-plan.md` as slices S0 to S28. D6 and D7 were taken by other sessions the same day, so this entry is D8.

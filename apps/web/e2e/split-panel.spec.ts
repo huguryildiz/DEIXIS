@@ -175,6 +175,62 @@ test.describe.serial('S7a: thread and side panel', () => {
     await expect(thread).toBeVisible()
   })
 
+  test('a kept panel keeps its draft and its selection while another panel is stacked on it', async () => {
+    await page.goto(`${server.url()}/#/research/${rid}/candidates`)
+    const cands = panel(page, 'Candidates')
+    await expect(cands).toBeVisible()
+    await cands.getByRole('button', { name: 'Add candidate' }).click()
+    const draft = 'SYNTHETIC relays release on a bisection schedule.'
+    await cands.getByLabel('Your sentence').fill(draft)
+    await openPanel(page, 'activity')
+    await panel(page, 'Activity').getByRole('button', { name: 'Back' }).click()
+    await expect(panel(page, 'Candidates').getByLabel('Your sentence')).toHaveValue(draft)
+    // The form's own Escape closes the form; it is not the panel's.
+    await panel(page, 'Candidates').getByLabel('Your sentence').press('Escape')
+    await expect(panel(page, 'Candidates').getByLabel('Your sentence')).toHaveCount(0)
+    await expect(panel(page, 'Candidates')).toBeVisible()
+    await panel(page, 'Candidates').getByRole('button', { name: 'Add candidate' }).click()
+    await panel(page, 'Candidates').getByLabel('Your sentence').fill(draft)
+    await panel(page, 'Candidates').getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(panel(page, 'Candidates').getByRole('heading', { name: 'Candidate card' })).toBeVisible()
+    await openPanel(page, 'activity')
+    await panel(page, 'Activity').getByRole('button', { name: 'Back' }).click()
+    await expect(panel(page, 'Candidates').getByRole('heading', { name: 'Candidate card' })).toBeVisible()
+  })
+
+  test('Escape in a field that does not use it closes the panel', async () => {
+    await page.goto(`${server.url()}/#/research/${rid}/sources`)
+    const filter = panel(page, 'Sources').getByRole('searchbox', { name: 'Filter sources' })
+    await filter.fill('relay')
+    await filter.press('Escape')
+    await expect(page.locator('[data-split-panel]')).toHaveCount(0)
+  })
+
+  test('a table card opens its table in the open table panel; closing returns to the rail button', async () => {
+    for (const title of ['SYNTHETIC table A', 'SYNTHETIC table B']) {
+      expect((await post(api, `/api/researches/${rid}/tables`, { title })).ok()).toBe(true)
+    }
+    await page.goto(`${server.url()}/#/research/${rid}`)
+    await page.locator('.research-thread').getByRole('button', { name: 'Open table: SYNTHETIC table A' }).click()
+    const table = panel(page, 'Evidence table')
+    await expect(table.locator('#evidence-heading')).toHaveText('SYNTHETIC table A')
+    // With the panel open, the other card switches the table shown.
+    await page.locator('.research-thread').getByRole('button', { name: 'Open table: SYNTHETIC table B' }).click()
+    await expect(table.locator('#evidence-heading')).toHaveText('SYNTHETIC table B')
+    await page.locator('.research-thread').getByRole('button', { name: 'Open table: SYNTHETIC table A' }).click()
+    await expect(table.locator('#evidence-heading')).toHaveText('SYNTHETIC table A')
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-split-panel]')).toHaveCount(0)
+
+    // The rail stays mounted while a panel is open, so its button takes focus back.
+    const railButton = page.getByRole('complementary', { name: /^Artifacts/ }).getByRole('button', { name: /SYNTHETIC table B/ })
+    await railButton.click()
+    await expect(table.locator('#evidence-heading')).toHaveText('SYNTHETIC table B')
+    await expect(page.getByRole('complementary', { name: /^Artifacts/ })).toBeHidden()
+    await table.getByRole('button', { name: 'Close', exact: true }).click()
+    await expect(railButton).toBeFocused()
+  })
+
   test('at 390px the panel is a full-screen modal dialog that keeps focus inside', async ({ browser }) => {
     const phone = await browser.newPage({ viewport: { width: 390, height: 844 } })
     try {

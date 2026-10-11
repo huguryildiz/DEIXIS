@@ -129,7 +129,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [seedPick, setSeedPick] = useState<string[] | null>(null)
   const [removal, setRemoval] = useState<{ ids: string[]; versions: number; elsewhere: number | null } | null>(null)
   const [tableStart, setTableStart] = useState<{ ids: string[]; notIncluded: number } | null>(null)
-  const [focusTable, setFocusTable] = useState<string | null>(null)
+  // The table to show, with a count of requests: asking for the same table again (a card clicked twice) still shows it.
+  const [focusTable, setFocusTable] = useState<{ id: string; request: number } | null>(null)
+  const showTableFirst = (tableId: string) => setFocusTable(previous => ({ id: tableId, request: (previous?.request ?? 0) + 1 }))
   const fileInput = useRef<HTMLInputElement>(null)
   const sourceFileInput = useRef<HTMLInputElement>(null)
   const replaceFileInput = useRef<HTMLInputElement>(null)
@@ -423,7 +425,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const startTable = (ids: string[]) => act(async () => {
     const created = await api.createTable(id, { title: t('Evidence table'), rows: inSourceOrder(ids).map(s => s.source_version_id) }, crypto.randomUUID())
     setPicked([])
-    setFocusTable(created.table.id)
+    showTableFirst(created.table.id)
     openPanel('table')
   }, t(ids.length === 1 ? 'Table started with {n} row.' : 'Table started with {n} rows.', { n: ids.length }))
   const askTableStart = (ids: string[]) => {
@@ -435,7 +437,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const current = await api.table(id, table.id)
     await api.addTableRows(id, table.id, inSourceOrder(ids).map(s => s.source_version_id), current.table.version)
     setPicked([])
-    setFocusTable(table.id)
+    showTableFirst(table.id)
     openPanel('table')
   }, t('Rows added to {title}.', { title: table.title }))
 
@@ -464,7 +466,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const latestEvidenceReportRun = view.runs.find(r => r.kind === 'report' && r.target?.report_id === view.reportRuns[0]?.id)
   // The latest report's panel belongs to its card in the thread; an older version's panel opens from here.
   const olderReport = reports.find(r => r.answer.id === openReportId && r.answer.id !== answer?.id)
-  const openTable = (tableId: string) => { setFocusTable(tableId); openPanel('table') }
+  const openTable = (tableId: string) => { showTableFirst(tableId); openPanel('table') }
   // Table cards sit under the report card, or at the end of the conversation before the first answer.
   const tableCards = tables && tables.length > 0 && <div className="table-artifacts">{tables.map(table => <TableCard key={table.id} table={table} onOpen={() => openTable(table.id)} />)}</div>
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
@@ -634,10 +636,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       keyTerms={view.scope.key_terms ?? ''} keyTermsRef={keyTerms}
       onSubmit={(text, terms) => act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
     </div>
-    {!panel && <aside className="research-rail" aria-labelledby="research-rail-title">
+    {/* Hidden, not removed, while a panel is open: a panel opened from the rail hands focus back to its button. */}
+    <aside className="research-rail" aria-labelledby="research-rail-title" hidden={Boolean(panel)}>
       <h2 id="research-rail-title" className="research-rail-title">{t('Artifacts')} <span className="research-tab-count">{reports.length + view.reportRuns.length + (tables?.length ?? 0)}</span></h2>
       <ArtifactsTab reports={reports} tables={tables} reportRuns={view.reportRuns} heading={heading} onOpenReport={setOpenReportId} onOpenEvidenceReport={setOpenEvidenceReportId} onOpenTable={openTable} />
-    </aside>}
+    </aside>
     </div>
     </div>
     {panel && <SplitPanel stack={panels} phone={phone} />}
@@ -681,7 +684,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <WaitingForPdf researchId={id} view={view} busy={busy} incoming={waitingFiles} onIncomingTaken={takeWaitingFiles} onChanged={async (announced?: string) => { if (announced) announcedRuns.current.add(announced); await load(); onChanged() }} />
     </StackPanel>
     <StackPanel name="table" title={t('Evidence table')} icon={Table2}>
-      <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
+      <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable?.id ?? null} tableRequest={focusTable?.request ?? 0} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
     </StackPanel>
     <StackPanel name="watch" title={t('Follow-up')} icon={Clock}>
       <FollowUpView researchId={id} view={view} dark={dark} onReload={followupCount.reload} onChanged={followupChanged} />

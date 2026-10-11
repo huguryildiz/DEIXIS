@@ -149,10 +149,17 @@ export function Elapsed({ since }: { since: string }) {
 }
 
 // initialTableId: the table to show first, e.g. one just started from chosen sources.
-export function EvidenceTab({ researchId, view, dark, initialTableId = null, modelText, onRunStarted }: { researchId: string; view: ResearchView; dark: boolean; initialTableId?: string | null; modelText: ModelText; onRunStarted: () => void }) {
+// tableRequest: counts the owner's requests to show initialTableId, so a table card clicked while the panel is open
+// switches the table shown (the panel is not mounted anew).
+export function EvidenceTab({ researchId, view, dark, initialTableId = null, tableRequest = 0, modelText, onRunStarted }: { researchId: string; view: ResearchView; dark: boolean; initialTableId?: string | null; tableRequest?: number; modelText: ModelText; onRunStarted: () => void }) {
   const toast = useToast()
   const [tables, setTables] = useState<TableSummary[] | null>(null)
   const [chosen, setChosen] = useState<string | null>(initialTableId)
+  const [shownRequest, setShownRequest] = useState(tableRequest)
+  if (shownRequest !== tableRequest) {
+    setShownRequest(tableRequest)
+    if (initialTableId) setChosen(initialTableId)
+  }
   const [trashedTables, setTrashedTables] = useState(0)
   const [table, setTable] = useState<TableView | null>(null)
   const [error, setError] = useState('')

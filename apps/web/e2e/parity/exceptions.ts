@@ -96,6 +96,7 @@ export const PLACEMENTS: Placement[] = [
   { id: 'seed-choice-stale', rule: '§2.2 (Q1)', slice: 'S23b', container: 'Search plan panel, "PDFs guiding the search"; stale-seed warn notice in the plan step', app: null },
   { id: 'search-again-new-answer', rule: '§2.2 (Q1)', slice: 'S8', container: 'Topbar ⋯ menu rows "Search again" and "Generate a new answer"', app: null },
   { id: 'counts-places', rule: '§2.2 (Q1)', slice: 'S11', container: 'unique and included in the Funnel panel; given and cited in the Answering step detail', app: null },
+  { id: 'zotero-library-source', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S6', container: 'Zotero dialog body, between the lead note and the collections: "Zotero on this computer" / "zotero.org"', app: '.zotero-source' },
 ]
 
 /** Mockup copy replaced because it would be false (§2.3, Q2). The parity check compares structure, not text; behaviour
@@ -113,6 +114,15 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'quota-continue', rule: '§2.3 (Q2, R19)', mock: 'Continue with the N finished searches', app: 'The run went on with the M that finished.' },
   { id: 'find-pdf-proxy-pill', rule: '§2.3 (Q2)', mock: 'TOBB ETÜ proxy', app: 'only the providers actually asked' },
   { id: 'sign-in-terminal', rule: '§2.3 (Q2)', mock: 'Opens sign-in in a terminal', app: 'the CLI login command with Copy' },
+  { id: 'zotero-lead', rule: '§2.3 (Q2, S6: one collection per import, D16; its own items only)', mock: 'Choose collections. DEIXIS reads their items and attached PDFs; it never changes your Zotero library.', app: 'Choose a collection. DEIXIS reads its own items (not its sub-collections) and each item’s first PDF; it never changes your Zotero library.' },
+  { id: 'zotero-account', rule: '§2.3 (Q2, S6: the local app has no key; the zotero.org key is set in .env and its rights are not checked)', mock: 'Connected as the Zotero account in Settings · read-only key.', app: 'Reads Zotero on this computer through its local API · read-only. / Reads the zotero.org library set in .env · read-only.' },
+  { id: 'zotero-home-join', rule: '§2.3 (Q2, S6: Home imports when the research starts, as included sources)', mock: 'Items join this research as attached sources.', app: 'Items are imported when the research starts and join it as included sources.' },
+]
+
+/** S6: the mockup's collection checkboxes become radio rows. An import takes one collection (D16, `collection_key`), and
+ *  Home holds one chosen collection until the research starts. Same row layout; only the input's type differs. */
+export const SINGLE_CHOICE: Array<{ id: string; rule: string; mock: string; app: string; slice: string }> = [
+  { id: 'zotero-one-collection', rule: '§0 rule 3 and 5 (one collection per import, D16)', mock: '.zcols input[type="checkbox"]', app: '.zotero-cols input[type="radio"]', slice: 'S6' },
 ]
 
 /** Q3: the composer's single-guide radio becomes check rows, one per eligible PDF (at most five), all checked (D3). */

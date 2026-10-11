@@ -3639,4 +3639,16 @@ const tr: Record<string, string> = {
   "The file's @string definitions expand to far more text than the file holds": "Dosyadaki @string tanımları dosyanın içerdiğinden çok daha fazla metne açılıyor",
   // UI parity S20: the screen_more run kind.
   'Abstract screening of more works': 'Daha fazla çalışmanın özet taraması',
+  // UI parity S6: Zotero dialog.
+  'Import from Zotero': 'Zotero’dan içe aktar',
+  'Choose a collection. DEIXIS reads its own items (not its sub-collections) and each item’s first PDF; it never changes your Zotero library.': 'Bir koleksiyon seçin. DEIXIS koleksiyonun kendi öğelerini (alt koleksiyonlarınkini değil) ve her öğenin ilk PDF’ini okur; Zotero kitaplığınızı hiç değiştirmez.',
+  'Reads Zotero on this computer through its local API · read-only.': 'Bu bilgisayardaki Zotero’yu yerel API’si üzerinden okur · salt okunur.',
+  'Reads the zotero.org library set in .env · read-only.': '.env’de ayarlı zotero.org kitaplığını okur · salt okunur.',
+  'Items are imported when the research starts and join it as included sources.': 'Öğeler araştırma başlayınca içe aktarılır ve dahil edilen kaynaklar olarak araştırmaya katılır.',
+  'Items are added to All works in the Library.': 'Öğeler Kütüphane’de Tüm çalışmalar’a eklenir.',
+  '{n} item': '{n} öğe',
+  '{n} items': '{n} öğe',
+  'Import {n} item': '{n} öğeyi içe aktar',
+  'Import {n} items': '{n} öğeyi içe aktar',
+  'Import items': 'Öğeleri içe aktar',
 }

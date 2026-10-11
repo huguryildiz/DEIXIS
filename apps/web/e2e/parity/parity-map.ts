@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test'
 import type { Use } from './exceptions'
 import type { FixtureContext } from './gates'
 
@@ -8,7 +9,7 @@ import type { FixtureContext } from './gates'
 
 export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
-export type SurfaceId = 'home' | 'research'
+export type SurfaceId = 'home' | 'research' | 'zotero'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -43,11 +44,33 @@ export type Surface = {
   app: string
   /** An app element that shows the state is ready. */
   ready: string
+  /** Before the app page loads: answers that the fixture server has no source for (e.g. a Zotero library). */
+  prepare?: (page: Page) => Promise<unknown>
+  /** After the page loads: the clicks that open this state (a dialog), before `ready` is awaited. */
+  open?: (page: Page) => Promise<unknown>
 }
+
+/** The Zotero library the dialog surface shows: SYNTHETIC collections shaped like the mockup's six (two of them
+ *  sub-collections of the first), one with a count Zotero did not send. The fixture server has no Zotero. */
+export const ZOTERO_COLLECTIONS = [
+  { key: 'SYNA', name: 'SYNTHETIC UWSN reliability', items: 24, parent: null },
+  { key: 'SYNB', name: 'SYNTHETIC UWSN reliability / k-connectivity', items: 11, parent: 'SYNA' },
+  { key: 'SYNC', name: 'SYNTHETIC UWSN reliability / Lifetime models', items: 9, parent: 'SYNA' },
+  { key: 'SYND', name: 'SYNTHETIC IRS and RIS', items: 31, parent: null },
+  { key: 'SYNE', name: 'SYNTHETIC Quantum networks', items: null, parent: null },
+  { key: 'SYNF', name: 'SYNTHETIC Thesis reading list', items: 46, parent: null },
+]
 
 export const SURFACES: Surface[] = [
   { id: 'home', mock: "setScenario('ok'); go('home')", app: '#/', ready: '#research-question' },
   { id: 'research', mock: "setScenario('ok')", app: '#/research/{research}', ready: '.research-topbar' },
+  { id: 'zotero', mock: "setScenario('ok'); go('home'); zoteroDlg('home')", app: '#/', ready: '.zotero-dialog .zotero-cols label',
+    prepare: page => page.route('**/api/zotero/collections**', route => route.fulfill({ json: { source: 'local', collections: ZOTERO_COLLECTIONS } })),
+    open: async page => {
+      await page.locator('.composer-add').click()
+      await page.getByRole('menuitem', { name: /Zotero collection/ }).click()
+      await page.mouse.move(0, 0)
+    } },
 ]
 
 export const WIDTHS = [1280, 390]
@@ -154,6 +177,26 @@ export const PAIRS: Pair[] = [
   { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box', app: '.rail .box', checks: ['content', 'type'], list: 'fixed', widths: DESK,
     dataText: { mock: ['.tnum', 'button.li span', 'button.li em'], app: ['.tnum', '.rail-data'] },
     status: 'pending:S11', why: 'S11: artifacts, waiting, funnel, depth, run and usage boxes' },
+
+  // S6: the Zotero dialog of Home (H17). The dialog's and the footer's height and y depend on the rows and on how the
+  // §2.3 notes wrap, so those two are compared as content (x, width, padding, line height); the head row is chrome.
+  { id: 'zotero.dialog', surface: 'zotero', mock: '.pal.dlg', app: '.zotero-dialog', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'zotero.head', surface: 'zotero', mock: '.dlg .pal-in', app: '.zotero-dialog-head', checks: ['chrome', 'type', 'colour', 'icon'], text: true,
+    icon: { mock: 'lib', app: 'library' }, status: 'active' },
+  { id: 'zotero.title', surface: 'zotero', mock: '.dlg .pal-in b', app: '.zotero-dialog-title', checks: ['chrome', 'type'], status: 'active' },
+  { id: 'zotero.close', surface: 'zotero', mock: '.dlg .pal-in .ib', app: '.zotero-dialog-close', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'x', app: 'x' }, states: [], status: 'active' },
+  { id: 'zotero.lead', surface: 'zotero', mock: '.dlg-b > p.foot-note:first-child', app: '.zotero-dialog-lead', checks: ['content', 'type', 'colour'], status: 'active' },
+  { id: 'zotero.cols', surface: 'zotero', mock: '.zcols', app: '.zotero-cols', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'zotero.col-row', surface: 'zotero', mock: '.zcols label:not(.sub)', app: '.zotero-cols label:not(.sub)', checks: ['chrome', 'content', 'type', 'icon'],
+    list: 'data', expected: () => ZOTERO_COLLECTIONS.filter(c => !c.parent).length, icon: { mock: 'folder', app: 'folder' }, status: 'active' },
+  { id: 'zotero.col-count', surface: 'zotero', mock: '.zcols em', app: '.zotero-cols em', checks: ['type', 'colour'], states: [],
+    list: 'data', expected: () => ZOTERO_COLLECTIONS.filter(c => c.items !== null).length, status: 'active' },
+  { id: 'zotero.col-sub', surface: 'zotero', mock: '.zcols label.sub', app: '.zotero-cols label.sub', checks: ['chrome', 'content', 'type', 'icon'],
+    list: 'data', expected: () => ZOTERO_COLLECTIONS.filter(c => c.parent).length, icon: { mock: 'folder', app: 'folder' }, status: 'active' },
+  { id: 'zotero.note', surface: 'zotero', mock: '.dlg-b > p.foot-note:last-child', app: '.zotero-dialog-note', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'zotero.foot', surface: 'zotero', mock: '.dlg-f', app: '.zotero-dialog-foot', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'zotero.foot-buttons', surface: 'zotero', mock: '.dlg-f button', app: '.zotero-dialog-foot button', checks: ['content', 'type', 'colour'], list: 'fixed', status: 'active' },
 ]
 
 /** Pending pairs per slice, for the summary line. */

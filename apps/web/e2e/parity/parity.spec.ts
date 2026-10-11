@@ -107,7 +107,9 @@ async function pagesFor(browser: Browser, width: number, theme: Theme) {
 }
 
 async function showApp(page: Page, base: string, surface: Surface, research: string) {
+  await surface.prepare?.(page)
   await page.goto(`${base}/${surface.app.replace('{research}', research)}`)
+  await surface.open?.(page)
   await page.locator(surface.ready).first().waitFor()
   await page.evaluate(() => document.fonts.ready)
   await page.waitForTimeout(300)  // let entrance transitions settle before measuring

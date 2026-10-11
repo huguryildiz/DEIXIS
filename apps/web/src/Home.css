@@ -15,7 +15,6 @@
 .app .composer textarea{display:block;width:100%;min-height:112px;padding:14px 16px;border:0;border-radius:0;background:transparent;box-shadow:none;color:var(--ink);font-size:15px;line-height:1.55;resize:none;outline:none}
 .app .composer textarea:focus-visible{border:0;box-shadow:none}
 .app .composer textarea::placeholder{color:var(--muted)}
-.app .composer .zotero-panel{margin:0 12px 12px}
 .composer-hint{margin:0;padding:6px 16px 8px;color:var(--muted);font-size:12px}
 .composer-controls{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:var(--sidebar-surface)}
 .app .composer-models{position:relative;padding:10px 40px 10px 10px;border-top:1px solid var(--line);background:var(--sidebar-surface)}

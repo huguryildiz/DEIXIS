@@ -9,10 +9,9 @@ import { Notice } from './Notice'
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-// Chooses one collection of the user's Zotero library (D16). Used on a research page and in the home composer,
-// which sits inside a form: every button is type="button" so none submits it.
-export function ZoteroPanel({ busy, action, onImport, onClose }: {
-  busy: boolean; action?: string; onImport: (source: ZoteroSource, key: string, name: string) => void; onClose: () => void
+// Chooses one collection of the user's Zotero library (D16) on a research page. Every button is type="button".
+export function ZoteroPanel({ busy, onImport, onClose }: {
+  busy: boolean; onImport: (source: ZoteroSource, key: string, name: string) => void; onClose: () => void
 }) {
   const [source, setSource] = useState<ZoteroSource>('local')
   const [collections, setCollections] = useState<ZoteroCollection[] | null>(null)
@@ -55,7 +54,7 @@ export function ZoteroPanel({ busy, action, onImport, onClose }: {
         </SelectContent>
       </Select>
       <Button type="button" disabled={busy || !key} onClick={() => onImport(source, key, collections.find(c => c.key === key)?.name ?? key)}>
-        <Library size={14} />{action ?? t(busy ? 'Importing…' : 'Import collection')}
+        <Library size={14} />{t(busy ? 'Importing…' : 'Import collection')}
       </Button>
     </div>}
   </div>

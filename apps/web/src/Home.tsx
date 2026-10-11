@@ -6,10 +6,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
-import { api, ApiError, type Connections, type Effort, type EffortLimits, type ModelOption, type ModelRole, type RoleModelSetting, type SourceScope, type ZoteroSource } from './api'
+import { api, ApiError, type Connections, type Effort, type EffortLimits, type ModelOption, type ModelRole, type RoleModelSetting, type SourceScope } from './api'
 import { connectionName, fileRestoreNote, fileRestoreTone, isPlannedModel, reasoningLabel, scopeLabels } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
-import { ZoteroPanel } from './ZoteroPanel'
+import { ZoteroDialog, type ZoteroChoice } from './ZoteroDialog'
 import { ConnectionIcon } from './connectionIcons'
 import { Notice } from './Notice'
 import { SemanticSetupNote } from './SemanticNotes'
@@ -202,11 +202,12 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const [pickerNonce, setPickerNonce] = useState(0)
   const [files, setFiles] = useState<File[]>([])
   // A Zotero collection chosen before the research exists; it is imported right after the research is created.
-  const [zotero, setZotero] = useState<{ source: ZoteroSource; key: string; name: string } | null>(null)
+  const [zotero, setZotero] = useState<ZoteroChoice | null>(null)
   const [zoteroOpen, setZoteroOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
+  const addButton = useRef<HTMLButtonElement>(null)
   const toast = useToast()
 
   useEffect(() => {
@@ -372,13 +373,11 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
       <label className="composer-label sr-only" htmlFor="research-question">{t('What would you like to investigate?')}</label>
       <Textarea id="research-question" aria-label={t('Research question')} placeholder={t('Ask a research question. DEIXIS searches, screens, reads and links every claim to a passage.')} value={question}
         onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit() } }} />
-      {zoteroOpen && <ZoteroPanel busy={busy} action={t('Use this collection')} onClose={() => setZoteroOpen(false)}
-        onImport={(source, key, name) => { setZotero({ source, key, name }); setZoteroOpen(false); if (scope === 'academic') setScope('attached_and_academic') }} />}
       {scope === 'attached_and_academic' && files.length === 0 && zotero &&
         <p className="composer-hint">{t('The imported PDFs guide the search.')}</p>}
       <div className="composer-controls">
         <DropdownMenu>
-          <DropdownMenuTrigger type="button" className="composer-add" aria-label={t('Add sources')} title={t('Add sources (optional)')}><Plus size={16} /></DropdownMenuTrigger>
+          <DropdownMenuTrigger ref={addButton} type="button" className="composer-add" aria-label={t('Add sources')} title={t('Add sources (optional)')}><Plus size={16} /></DropdownMenuTrigger>
           <DropdownMenuContent className="home-menu" align="start" sideOffset={6}>
             <DropdownMenuItem className="home-menu-item" onClick={() => fileInput.current?.click()}><MenuRow icon={FileUp} title={t('Upload PDF')} detail={t('From this computer, up to 50 MB each. You can also drop files here.')} /></DropdownMenuItem>
             <DropdownMenuItem className="home-menu-item" onClick={() => setZoteroOpen(true)}><span className="home-menu-row"><ConnectionIcon id="zotero" /><span className="home-menu-text">{t('Zotero collection')}<small>{t('Read-only, from Zotero on this computer or zotero.org. Imported when the research starts.')}</small></span></span></DropdownMenuItem>
@@ -422,6 +421,8 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
         <button type="button" className="models-picker-close" aria-label={t('Close')} onClick={() => setPickerRole(null)}><X size={14} /></button>
       </div>}
     </form>
+    <ZoteroDialog open={zoteroOpen} onOpenChange={setZoteroOpen} destination="home" busy={busy} initial={zotero} returnFocus={addButton}
+      onImport={choice => { setZotero(choice); setZoteroOpen(false); if (scope === 'academic') setScope('attached_and_academic') }} />
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void addFiles(e.target.files); e.target.value = '' }} />
     {noModel && <p className="hint">{t('Connect a model to start')}</p>}
     {connections && !models.length && <Notice tone="attention">{t('No model connection is ready: {reason}. A research needs a model that a connection lists; model steps pause until the chosen connection is ready, and no other model is used instead.', { reason: notReadyReasons(connections) })}</Notice>}

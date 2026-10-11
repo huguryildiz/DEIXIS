@@ -61,6 +61,18 @@ def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
     return policy | {"policy_hash": canonical.sha256_hex(policy)}
 
 
+def with_intent(policy: dict[str, Any], intent: str) -> dict[str, Any]:
+    """The frozen policy routed by the research's intent (UI parity S5a): `report` leaves it as it is; `papers` queues
+    no answer after discovery; `table` and `compare` queue no answer and open the study table instead
+    (`intent.after_discovery`). The hash covers the routing, so a run keeps the route it was queued with."""
+    if intent == "report":
+        return policy
+    routed = {k: v for k, v in policy.items() if k != "policy_hash"} | {"auto_answer": False}
+    if intent in ("table", "compare"):
+        routed["after_discovery"] = "study_table"
+    return routed | {"policy_hash": canonical.sha256_hex(routed)}
+
+
 def effort_limits() -> dict[str, Any]:
     """What each research depth gives a run, read from MODES at the moment of asking: Home's depth text says these
     numbers, so a changed mode cannot leave the text behind. `minutes` is the stage bases summed and rounded, the

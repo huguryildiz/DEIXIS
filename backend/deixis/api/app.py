@@ -36,7 +36,7 @@ from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
-from deixis.workflow import fast_path, small_batch
+from deixis.workflow import fast_path, intent, small_batch
 from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
                                  TEST_EFFORT_BUDGETS, RevisionConflict)
@@ -117,6 +117,8 @@ class CreateResearch(BaseModel):
     language_hint: str | None = Field(default=None, pattern=r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$")
     # The user's own English search terms, used by the sw workflow when code cannot read the question (SW2.1).
     key_terms: str | None = Field(default=None, max_length=500)
+    # What the research produces (UI parity S5a, F4): a drafted report, the papers only, or a study table.
+    intent: Literal["report", "papers", "table", "compare"] = "report"
 
 
 MODEL_ROLES = ("answer", "literature", "reviewer")
@@ -874,6 +876,7 @@ def create_app(
     async def review_refusal(_: Request, exc: ReviewRefusal):
         return JSONResponse(exc.extra_fields | {"detail": exc.detail, "code": exc.code}, status_code=exc.status_code)
 
+    from deixis.api.home_routes import register_home_routes
     from deixis.api.shell_routes import register_shell_routes
     from deixis.api.usage_routes import register_usage_routes
     from deixis.api.watch_routes import register_watch_routes
@@ -881,6 +884,7 @@ def create_app(
     register_watch_routes(app)
     register_shell_routes(app)
     register_usage_routes(app)
+    register_home_routes(app)
 
     @app.exception_handler(WatchRefusal)
     async def watch_refusal(_: Request, exc: WatchRefusal):
@@ -1062,6 +1066,8 @@ def create_app(
     async def create_research(body: CreateResearch, request: Request) -> dict[str, Any]:
         if body.seed_mode == "uploaded_seed" and body.source_scope != "attached_and_academic":
             raise HTTPException(422, "A PDF seed requires Files + academic search")
+        if body.intent == "papers" and body.source_scope == "attached":
+            raise HTTPException(422, "Finding papers needs academic search")
         listed: dict[str, list[dict[str, Any]] | None] = {}
 
         async def check_role(connection: str, model: str, effort: str | None) -> None:
@@ -1097,7 +1103,8 @@ def create_app(
                                     body.review_mode, body.review_model, body.review_reasoning_effort,
                                     literature_connection=literature_connection, review_connection=review_connection,
                                     seed_mode=body.seed_mode,
-                                    key_terms=body.key_terms)
+                                    key_terms=body.key_terms, intent=body.intent,
+                                    comparison_frame=intent.comparison_frame(body.question) if body.intent == "compare" else None)
         return research_view(store, rid)
 
     @app.get("/api/settings")
@@ -1383,7 +1390,8 @@ def create_app(
                 # would have had (slice 17a); the mode is frozen here, so a run keeps the path it was queued with.
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
             budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
-            budget["fast_path"] = fast_path.freeze_budget(budget, scope["effort"])
+            budget["fast_path"] = fast_path.with_intent(fast_path.freeze_budget(budget, scope["effort"]),
+                                                        store.research(research_id)["intent"])
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}
@@ -1612,6 +1620,7 @@ def create_app(
                                        extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
                                        input_observation=read.observation)
         store.add_to_corpus(research_id, svid, "user_upload", selection_state="included", selection_origin="user")
+        intent.attached_ingested(store, research_id)
         return research_view(store, research_id) | {"uploaded_source_version_id": svid,
             "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
 
@@ -1857,6 +1866,7 @@ def create_app(
             if read.observation is not None and read.observation["integrity"] != "verified":
                 notes.append({"title": item.record.title, "note": "PDF input not verified: " + text_retry.INPUT_CHANGED})
             pdfs_added += 1
+        intent.attached_ingested(store, research_id)
         return {**research_view(store, research_id), "zotero_import": {"items": len(items), "pdfs_added": pdfs_added, "notes": notes}}
 
     @app.post("/api/researches/{research_id}/zotero-pdfs")

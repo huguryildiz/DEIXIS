@@ -450,8 +450,9 @@ class ResearchFlow:
         if self.store.run(run_id)["status"] in ("running", "pause_requested") and run["kind"] == "discovery":
             with transaction(self.store.conn):
                 self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
-                from deixis.workflow import fast_answer
+                from deixis.workflow import fast_answer, intent
                 fast_answer.auto_answer(self.store, run)
+                intent.after_discovery(self.store, run)  # `table`/`compare`: the study table instead of the answer
         elif self.store.run(run_id)["status"] in ("running", "pause_requested"):
             if ((run["kind"] == "answer" and fast_path.enforces(run["budget"], "answer"))
                     or run["kind"] == "answer_review"):

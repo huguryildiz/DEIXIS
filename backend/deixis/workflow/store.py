@@ -247,12 +247,15 @@ class Store:
         seed_mode: str = "question_only",
         search_workflow: str = "sw",
         key_terms: str | None = None,
+        intent: str = "report",
+        comparison_frame: str | None = None,
     ) -> str:
         rid, ts = new_id("res"), now()
         title = provisional_title(question)
         with transaction(self.conn):
             self.conn.execute(
-                "INSERT INTO researches (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)", (rid, title, ts, ts)
+                "INSERT INTO researches (id, title, created_at, updated_at, intent, comparison_frame) VALUES (?, ?, ?, ?, ?, ?)",
+                (rid, title, ts, ts, intent, comparison_frame),
             )
             columns = {
                 "research_id": rid, "revision": 1, "question": question.strip(), "language_hint": language_hint,

@@ -604,7 +604,8 @@ export type QueueAnswerResult = {
   selection: { source_version_id: string; state: Source['selection']['state']; origin: Source['selection']['origin']; version: number } | null
 }
 export type ResearchView = {
-  research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string }
+  research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string
+    intent: ResearchIntent; comparison_frame: string | null }
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
   reportRuns: ReportSummary[]
   // The probe set's columns and the probes no arm found (slice 19).
@@ -623,6 +624,7 @@ export type ResearchSummary = {
   last_run_kind: RunKind | null
   answer_count: number; followup_new: number; created_at: string; updated_at: string
   awaiting: AwaitingCounts  // open queue rows and works waiting for the person's PDF, kept apart (S2)
+  intent: ResearchIntent
 }
 export type TrashedResearch = { id: string; title: string; trashed_at: string }
 // The Trash page's groups (D50); a trashed research's tables and removed sources go and come back with it and are not listed.
@@ -1121,6 +1123,7 @@ export const api = {
     question: string; source_scope: SourceScope; seed_mode?: 'question_only' | 'uploaded_seed'; effort: Effort; model_connection: string; requested_model: string; reasoning_effort: string | null
     literature_connection: string; literature_model: string; literature_reasoning_effort: string | null
     review_mode: ReviewMode; review_connection: string | null; review_model: string | null; review_reasoning_effort: string | null
+    intent?: ResearchIntent  // default 'report'; 'papers' with source_scope 'attached' is refused (422)
   }) => request<ResearchView>('/api/researches', json('POST', body)),
   settings: () => request<Record<ModelRole, RoleModelSetting>>('/api/settings'),
   saveModelDefault: (role: ModelRole, setting: RoleModelSetting) =>
@@ -1427,4 +1430,14 @@ export const usageApi = {
   usageThisMonth: () => request<Usage>('/api/usage?period=month'),
   usageOfRun: (runId: string) => request<Usage>(`/api/usage?period=run&run_id=${encodeURIComponent(runId)}`),
   openAlexBudgetToday: () => request<OpenAlexBudgetToday>('/api/openalex/budget-today'),
+}
+
+// Home endpoints (api/home_routes.py, S5a). A research's intent is what it produces: a drafted report, the papers only,
+// or a study table (`compare` also stores a comparison question frame). Suggestions are the stored unanswered aspects of
+// the latest current, valid answers: the answer model's notes, labelled only as suggestions, never as proven gaps.
+export type ResearchIntent = 'report' | 'papers' | 'table' | 'compare'
+export type Suggestion = { text: string; research_id: string; research_title: string; answer_id: string; created_at: string }
+
+export const homeApi = {
+  suggestions: () => request<{ suggestions: Suggestion[] }>('/api/suggestions'),
 }

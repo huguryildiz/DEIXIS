@@ -206,6 +206,7 @@ def test_the_run_kind_migration_keeps_every_run_and_the_run_guards(tmp_path, mon
     conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, usage_json, target_json,"
                  " version, created_at, updated_at) VALUES ('run_old', 'res_old', 1, 'cell_recheck', 'completed', 'extraction',"
                  " '{}', '{\"model_calls\": 1}', '{\"table_id\": \"t\"}', 3, 'then', 'later')")
+    conn.execute("INSERT INTO run_steps (id, run_id, operation_key, kind, status) VALUES ('stp_old', 'run_old', 'k', 'model:x', 'succeeded')")
     before = tuple(conn.execute("SELECT * FROM runs").fetchone())
     with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
         conn.execute("UPDATE runs SET kind = 'table_column_recheck'")
@@ -218,4 +219,52 @@ def test_the_run_kind_migration_keeps_every_run_and_the_run_guards(tmp_path, mon
     assert {"kill_searches_run_guard", "owner_reviews_run_guard", "watch_checks_run_guard"} <= triggers
     assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'runs_status'").fetchone() is not None
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == [] and conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+    assert conn.execute("SELECT run_id FROM run_steps WHERE id = 'stp_old'").fetchone()[0] == "run_old"  # dependents kept
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+        conn.execute("INSERT INTO run_steps (id, run_id, operation_key, kind, status) VALUES ('stp_x', 'run_missing', 'k', 'x', 'pending')")
+    with pytest.raises(sqlite3.IntegrityError, match="owner review requires a review run"):
+        conn.execute("INSERT INTO owner_reviews (id, research_id, snapshot_id, run_id, focus, requested_connection, created_at)"
+                     " VALUES ('rev_x', 'res_old', 'snap_x', 'run_old', 'source_support', 'fake', 'now')")
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+        conn.execute("UPDATE runs SET kind = 'invented'")
     conn.close()
+
+
+def many_rows(lib, count):
+    """`count` more SYNTHETIC rows, each with an abstract to read."""
+    for n in range(count):
+        svid = lib.store.create_upload_source(f"SYNTHETIC extra study {n:02d}")
+        lib.store._insert_passage(svid, None, "abstract", None, None, "provider", None, None, f"SYNTHETIC: packets of {n + 10} bytes.")
+        lib.store.add_to_corpus(lib.rid, svid, "user_upload", selection_state="included", selection_origin="user")
+    table = lib.tables.table_view(lib.rid, lib.tid)["table"]
+    known = set(lib.tables.active_rows(lib.tid))
+    extra = [s["source_version_id"] for s in lib.store.conn.execute(
+        "SELECT source_version_id FROM corpus_memberships WHERE research_id = ?", (lib.rid,)) if s[0] not in known]
+    if extra:
+        lib.tables.add_rows(lib.rid, lib.tid, extra, table["version"])
+
+
+def test_a_column_recheck_reads_every_row_past_the_fill_limit(tmp_path):
+    lib = library(tmp_path)
+    many_rows(lib, 26)
+    rows = lib.tables.active_rows(lib.tid)
+    assert len(rows) == 29  # more than the 25 sources one fill reads
+    run = recheck_column(lib)
+    assert len(run["target"]["cells"]) == 28 and run["budget"]["max_model_calls"] == 56
+    assert execute(lib, run)["status"] == "completed"
+    assert sent_sources(lib, run["id"]) == [r for r in rows if r != lib.no_text]
+    assert all(cell(lib, svid)["pending_proposal"] for svid in rows if svid != lib.no_text)
+
+
+def test_a_column_removed_during_its_recheck_fails_the_run_before_the_next_cell(tmp_path):
+    lib = library(tmp_path)
+    run = recheck_column(lib)
+
+    def remove_during_first(si):
+        if len(lib.adapter.calls) == 1:
+            lib.tables.remove_column(lib.rid, lib.tid, lib.cid, column_version(lib))
+
+    lib.adapter.before = remove_during_first
+    stopped = execute(lib, run)
+    assert (stopped["status"], stopped["pause_reason"]) == ("failed", "column_unavailable")
+    assert len(lib.adapter.calls) == 1 and lib.store.existing_step(run["id"], "column_recheck:summary") is None

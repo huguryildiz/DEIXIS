@@ -528,7 +528,10 @@ def send_record(store: Store, payload: dict[str, Any], reasoning_effort: str | N
                  "current": p["passage_id"] in current,
                  "extraction_version": current[p["passage_id"]]["extraction_version"]
                  if p["passage_id"] in current else None} for p in payload["passages"]]
-    return {"send_record": {"selection_revision": selection, "pairs": pairs, "passages": passages}}
+    # The effort the call was sent with: its StepInput's model record has none, and a model change (S17) may have made
+    # it other than the plan's.
+    return {"send_record": {"selection_revision": selection, "pairs": pairs, "passages": passages,
+                            "reasoning_effort": reasoning_effort}}
 
 
 def publication_proposals(store: Store, run: dict, outputs: list[tuple[dict, LineageJob]],
@@ -559,8 +562,11 @@ def publication_proposals(store: Store, run: dict, outputs: list[tuple[dict, Lin
                      **{k: inputs[k] for k in ("mention_passage_ids", "edge_state", "year_order_warning")}}]}
                 live = build_input(run["research_id"], run["scope_revision"], live_target,
                                    [current[pid] for pid in mention_ids], run["budget"]["max_model_calls"])
+                # Staleness is about the inputs: the live input is compared under the model the call was sent to, which
+                # a model change (S17) may have made other than the plan's.
+                live["model"] = payload["model"]
                 stale = pair_fp(live, store.research(run["research_id"])["selection_revision"], frm,
-                                run["target"]["model"][2]) != record["pair_fp"]
+                                sent.get("reasoning_effort", run["target"]["model"][2])) != record["pair_fp"]
             proposals.append({"research_id": run["research_id"], "table_id": table_id,
                               "from_svid": frm, "to_svid": to, "decision": decision,
                               "edge_state": inputs["edge_state"], "run_id": run["id"], "step_id": payload["step_id"],

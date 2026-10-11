@@ -2216,7 +2216,8 @@ class ResearchFlow:
                 frozen = self.store.step_input_payload(output["step_input_id"])
                 connection, requested, effort = step_model(scope, "grounded_answer")
                 if frozen["model"]["requested_model"] is not None:
-                    connection, requested = frozen["model"]["connection"], frozen["model"]["requested_model"]
+                    connection, requested, effort = self._run_model(
+                        run, scope, "grounded_answer", (frozen["model"]["connection"], frozen["model"]["requested_model"], effort))
 
                 def same_input(step_id: str, frozen=frozen) -> dict[str, Any]:
                     return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now()}
@@ -4130,9 +4131,25 @@ class ResearchFlow:
         if candidate["trashed_at"] is not None:
             self._fail(run["id"], "candidate_unavailable")
 
+    def _run_model(self, run: dict[str, Any], scope: dict[str, Any], task: str,
+                   frozen: tuple[str, str | None, str | None]) -> tuple[str, str | None, str | None]:
+        """The model a run's next call of `task` goes to when the run froze one at its request (a prior-art search's
+        target, a lineage plan, the draft an extra answer repair rewrites).
+
+        The frozen model, unless a person changed a model of this research since the run was created (UI parity S17,
+        F10): then the role's model in effect now, as every other step takes it. The frozen record itself is never
+        edited, and each call's StepInput and session say what it asked for, so `model_mismatch` still compares the
+        answer's model with the model that call asked for.
+        """
+        changed = self.store.conn.execute(
+            "SELECT 1 FROM research_model_changes WHERE research_id = ? AND changed_at >= ? LIMIT 1",
+            (run["research_id"], run["created_at"])).fetchone()
+        return step_model(scope, task) if changed else tuple(frozen)
+
     def _candidate_measure(self, run: dict, scope: dict, task: str, target: dict, rows: list[dict]) -> int:
         source_ids = list(dict.fromkeys(p["source_version_id"] for p in rows))
-        model = tuple(run["target"]["model"][task]) if run["kind"] == "kill_search" else step_model(scope, task)
+        model = (self._run_model(run, scope, task, run["target"]["model"][task]) if run["kind"] == "kill_search"
+                 else step_model(scope, task))
         payload = self._step_input(run, scope, new_id("stp"), task, [], source_ids, rows, [], model,
                                    candidate_target=target)
         return len(prompt.step_message(contracts.with_citation_handles(payload)))
@@ -4162,7 +4179,8 @@ class ResearchFlow:
             gate()
             return self.store.run(run["id"])["usage"].get("model_calls", 0) < run["budget"]["max_model_calls"]
 
-        model = tuple(run["target"]["model"][task]) if run["kind"] == "kill_search" else step_model(scope, task)
+        model = (self._run_model(run, scope, task, run["target"]["model"][task]) if run["kind"] == "kill_search"
+                 else step_model(scope, task))
         return await self.deps.limiter.run(f"{run['id']}:{key}", lambda: self._model_step(
             run, scope, key, task, source_ids=list(dict.fromkeys(p["source_version_id"] for p in rows)),
             passage_rows=rows, candidate_target=target, model=model, limiter=self.deps.limiter,
@@ -4602,6 +4620,7 @@ class ResearchFlow:
         if publication and publication["status"] == "succeeded":
             return
         outputs: list[tuple[dict, lineage.LineageJob]] = []
+        model = self._run_model(run, scope, "lineage_links", plan["model"])  # the plan's, unless changed since (S17)
 
         async def call(job: lineage.LineageJob) -> dict:
             # Stored successes are judged at publication even after exclusion or a human edit.
@@ -4631,9 +4650,9 @@ class ResearchFlow:
                     output = await self._model_step(
                         run, scope, job.key, "lineage_links", source_ids=[job.chunk["to"], *job.chunk["from"]],
                         passage_rows=passages, lineage_target=target, limiter=self.deps.limiter,
-                        model=tuple(plan["model"]), step_output_extra={"chunk_key": job.key},
+                        model=model, step_output_extra={"chunk_key": job.key},
                         max_message_chars=48_000, send_gate=gate, resend_guard=resend,
-                        attempt_record=lambda payload: lineage.send_record(self.store, payload, plan["model"][2]),
+                        attempt_record=lambda payload: lineage.send_record(self.store, payload, model[2]),
                     )
                 except lineage.ChunkSkipped as exc:
                     step = self.store.step(run["id"], job.key, "model:lineage_links")
@@ -4879,7 +4898,8 @@ class ResearchFlow:
                             "message": f"{len(labels)} of {len(output['result']['claims'])} claims are analyst_inference"}]}
         connection, requested, effort = step_model(scope, "grounded_answer")
         if frozen["model"]["requested_model"] is not None:
-            connection, requested = frozen["model"]["connection"], frozen["model"]["requested_model"]
+            connection, requested, effort = self._run_model(
+                run, scope, "grounded_answer", (frozen["model"]["connection"], frozen["model"]["requested_model"], effort))
 
         def same_input(step_id: str, frozen=frozen) -> dict[str, Any]:
             return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now()}

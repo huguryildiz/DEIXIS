@@ -3,7 +3,7 @@
 The answer report's Markdown and the evidence table's CSV are built in the browser (AnswerBlock.tsx `markdown`,
 EvidenceTable.tsx `tableCsv`). Their DOCX and XLSX twins are written here from the same view models, with the same
 labels in the same language and citation style. The Turkish strings are copies of the `tr` map in apps/web/src/i18n.ts;
-tests/report/test_ooxml_exports.py fails when one of them drifts. `{name} — source` exists only in these files.
+tests/report/test_ooxml_exports.py fails when one of them drifts. The SERVER_ONLY labels exist only in these files.
 """
 
 from __future__ import annotations
@@ -77,9 +77,25 @@ TR: dict[str, str] = {
     "Abstract": "Özet",
     "Selected pages": "Seçili sayfalar",
     "Full text": "Tam metin",
+    "no linked evidence": "bağlı kanıt yok",
+    "Made under an earlier definition of this column (revision {old}). It stays until you edit it or use a newer proposal.":
+        "Bu sütunun önceki bir tanımıyla üretildi (revizyon {old}). Siz düzenleyene ya da daha yeni bir öneriyi kullanana kadar kalır.",
+    "A PDF this value cites was removed from the source. The cited passages still open as text; the PDF view is off.":
+        "Bu değerin dayandığı bir PDF kaynaktan kaldırıldı. Pasajlar metin olarak açılmaya devam eder; PDF görünümü kapalıdır.",
+    "This value cites a PDF that was later replaced. Its evidence still opens the previous file; a recheck reads the current file.":
+        "Bu değer sonradan değiştirilen bir PDF’ye dayanıyor. Kanıtı önceki dosyayı açmaya devam eder; yeniden inceleme güncel dosyayı okur.",
+    "This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.":
+        "Bu değer, yalnız taranmış bir sayfanın OCR metninden okunan bir sayı ya da denklem içeriyor. Sayfayla karşılaştırılmadı; kanıtı açıp PDF ile karşılaştırın.",
+    "This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction.":
+        "Bu değer PDF’nin önceki bir metin çıkarımına dayanıyor. Kanıtı o metni açmaya devam eder; yeniden inceleme güncel çıkarımı okur.",
 }
 # Written only into the DOCX and XLSX table exports; not a UI string.
-SERVER_ONLY = {"{name} — source": "{name} — kaynak"}
+SERVER_ONLY = {
+    "{name} — source": "{name} — kaynak",
+    "{name} — state": "{name} — durum",
+    "{name} — warnings": "{name} — uyarılar",
+    "State: {state}": "Durum: {state}",
+}
 
 Translate = Callable[..., str]
 

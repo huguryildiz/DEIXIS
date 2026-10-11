@@ -1,9 +1,11 @@
 """The answer report as DOCX blocks: the browser's Markdown download (AnswerBlock.tsx `markdown`) block for block.
 
 Same title line, notices, sections, citation labels, limits, cited passages and closing sentence, in the same order and
-language. One addition: under each cited passage its stored anchor quote, verbatim, because a Word file cannot open
-the passage the way the app does. Nothing is recomputed: claims, citations, locators and anchors come from the stored
-answer as the research view returns it.
+language. Two additions: under each cited passage the stored anchor quote of every claim that cites it, verbatim
+(different quotes of one passage are never merged), because a Word file cannot open the passage the way the app does;
+and every limitation under Limits, including the access ones the screen shows with the PDF upload suggestions.
+Nothing is recomputed: claims, citations, locators and anchors come from the stored answer as the research view
+returns it.
 """
 
 from __future__ import annotations
@@ -19,35 +21,19 @@ def filename(title: str, version: int) -> str:
     return f"{file_base(title, 'deixis-report')}-v{version}.docx"
 
 
-def _pdf_suggestion_notes(answer: dict[str, Any], sources: list[dict[str, Any]]) -> list[int]:
-    """Indexes of the access limitations shown with the PDF suggestions (AnswerBlock.tsx `pdfSuggestion`)."""
-    if answer["status"] != "structurally_valid" or answer.get("applicability") == "stale_scope":
-        return []
-
-    def lacking(ids: list[str]) -> list[dict[str, Any]]:
-        found = []
-        for source_id in dict.fromkeys(ids):
-            match = next((s for s in sources if s["source_version_id"] == source_id and s.get("origin") == "provider"
-                          and not (s.get("access") or {}).get("assets")), None)
-            if match:
-                found.append(match)
-        return found
-
-    limitations = answer.get("limitations") or []
-    notes = [i for i, item in enumerate(limitations) if item.get("kind") == "access" and lacking(item.get("source_ids") or [])]
-    ids = ([sid for i in notes for sid in limitations[i].get("source_ids") or []] if notes
-           else [e["source_version_id"] for claim in answer.get("claims") or [] for e in claim.get("evidence") or []])
-    return notes if lacking(ids) else []
-
-
 def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str, version: int,
            language: Language, style: CitationStyle) -> list[ooxml.Block]:
     t = translator(language)
     claims = answer.get("claims") or []
     refs: dict[str, tuple[int, dict[str, Any]]] = {}
+    anchors: dict[str, list[str]] = {}
     for claim in claims:
         for evidence in claim.get("evidence") or []:
             refs.setdefault(evidence["passage_id"], (len(refs) + 1, evidence))
+            # Each claim's link keeps its own quote; quotes of one passage are never merged, only exact repeats.
+            quotes = anchors.setdefault(evidence["passage_id"], [])
+            if evidence.get("anchor_text") and evidence["anchor_text"] not in quotes:
+                quotes.append(evidence["anchor_text"])
 
     def cite_label(claim: dict[str, Any], evidence: dict[str, Any]) -> str:
         if not evidence.get("source_key"):
@@ -66,8 +52,9 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
             sections[-1][1].append(claim)
         else:
             sections.append((claim.get("section"), [claim]))
-    shown = set(_pdf_suggestion_notes(answer, sources))
-    limits = [item for i, item in enumerate(answer.get("limitations") or []) if i not in shown]
+    # The screen shows access limitations inside the PDF upload suggestions and the Markdown leaves them out of Limits;
+    # this file has no suggestions block, so every limitation is listed.
+    limits = answer.get("limitations") or []
 
     out: list[ooxml.Block] = [ooxml.heading(0, title), ooxml.paragraph(f"{t('Report')} · V{version}")]
     if answer.get("applicability") == "stale_scope":
@@ -113,7 +100,6 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
                 line += f" ({t(OCR_LABEL)})"
             if evidence.get("text_source") == "latex_source":
                 line += f" ({t('arXiv source')})"
-            anchor = evidence.get("anchor_text")
-            out.append(ooxml.paragraph(line, *([ooxml.Run(f"\n“{anchor}”")] if anchor else [])))
+            out.append(ooxml.paragraph(line, *(ooxml.Run(f"\n“{quote}”") for quote in anchors[passage_id])))
     out += [ooxml.Rule(), ooxml.paragraph(t("Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked."))]
     return out

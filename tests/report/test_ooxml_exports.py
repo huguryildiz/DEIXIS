@@ -1,13 +1,17 @@
 """DOCX and XLSX exports (S18): SYNTHETIC records only; no provider or real model is called.
 
 The files are checked by reading them back with zipfile and ElementTree: the parts a reader needs, well-formed XML,
-the same text as the Markdown or CSV export, anchors and locators as stored, and no secrets or local paths.
+the same text as the Markdown or CSV export (the browser's own generators run in node for the answer and the table),
+anchors and locators as stored, and no secrets or local paths.
 """
 
 from __future__ import annotations
 
+import csv
 import io
+import json
 import re
+import subprocess
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -21,6 +25,7 @@ from deixis.exports import report as report_export
 from deixis.exports import table as table_export
 from deixis.exports.text import SERVER_ONLY, TR, number_text, reference_text
 from deixis.workflow.report.export import export_markdown
+from deixis.workflow.views import report_view
 from test_api_flow import app_for, attached_research, create, session, wait_run
 from test_report_api import create_table, fill_table, upload_and_include
 from test_report_export import complete
@@ -176,6 +181,58 @@ def test_number_and_reference_formats_follow_the_browser():
     assert reference_text("apa", {"title": "a", "authors": [], "year": None}) == "a. (n.d.)."
 
 
+# ---- the browser's own exports, run in node ---------------------------------------------------------------------
+
+BROWSER = r"""
+const fs = require('fs'), path = require('path'), Module = require('module'), ts = require('typescript');
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const stored = { 'deixis-citation-style': input.style, 'deixis-ui-language': input.lang };
+globalThis.localStorage = { getItem: k => stored[k] ?? null, setItem: (k, v) => { stored[k] = String(v) } };
+const options = { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React, esModuleInterop: true };
+const compile = (source, file) => ts.transpileModule(source, { fileName: file, compilerOptions: options }).outputText;
+require.extensions['.ts'] = require.extensions['.tsx'] = (m, file) => m._compile(compile(fs.readFileSync(file, 'utf8'), file), file);
+const src = path.resolve('src');
+const slice = (file, from, to) => {
+  const text = fs.readFileSync(path.join(src, file), 'utf8'), a = text.indexOf(from), b = text.indexOf(to, a);
+  if (a < 0 || b < 0) throw new Error(`${file}: ${from} … ${to} not found`);
+  return text.slice(a, b);
+};
+// The real generators, cut from their components: AnswerBlock's markdown() and EvidenceTable's tableCsv().
+const probe = `
+import { t, uiLocale, setUiLanguage } from './i18n'
+import { locatorText, pageLocator, verdictLabels, versionText } from './labels'
+import { citationStyles, formatReferenceText } from './citations'
+import { OCR_LABEL } from './ocr'
+const React = null, ModelName = null
+export { setUiLanguage }
+export function answerMarkdown(answer: any, sources: any[], title: string, version: number, style: any) {
+${slice('research/AnswerBlock.tsx', 'const refs = new Map', 'const copyReport')}
+  return markdown()
+}
+${slice('research/AnswerBlock.tsx', 'function pdfSuggestion(', 'function PdfSuggestions(')}
+${slice('EvidenceTable.tsx', 'const formatLabels', 'function downloadTableCsv(')}
+export { tableCsv }
+`;
+const file = path.join(src, '__s18_export_probe__.tsx');
+const m = new Module(file, module); m.filename = file; m.paths = Module._nodeModulePaths(src);
+m._compile(compile(probe, file), file);
+m.exports.setUiLanguage(input.lang);
+process.stdout.write(JSON.stringify({
+  markdown: input.answer ? m.exports.answerMarkdown(input.answer, input.sources, input.title, input.version, input.style) : null,
+  csv: input.table ? m.exports.tableCsv(input.table, input.sources) : null,
+}));
+"""
+
+
+def browser_exports(*, lang, style, sources, answer=None, title="", version=0, table=None) -> dict:
+    root = Path(__file__).resolve().parents[2]
+    payload = json.dumps({"lang": lang, "style": style, "sources": sources, "answer": answer, "title": title,
+                          "version": version, "table": table})
+    done = subprocess.run(["node", "-e", BROWSER], input=payload, cwd=root / "apps/web", capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
 # ---- answer report ---------------------------------------------------------------------------------------------
 
 def _evidence(passage, source, key, **extra):
@@ -195,6 +252,8 @@ SYNTHETIC_ANSWER = {
          "evidence": [_evidence("p3", "s2", None, physical_page=7, printed_label="iv", text_source="ocr", anchor_text="ocr quote")]},
         {"section": "Results", "text": "Claim three.", "support_type": "source_stated", "review": None,
          "evidence": [_evidence("p1", "s1", "Lov21", anchor_text="quote “one” & <two>")]},
+        {"section": "Results", "text": "Claim four.", "support_type": "source_stated", "review": None,
+         "evidence": [_evidence("p1", "s1", "Lov21", anchor_text="a different quote of p1")]},
     ],
     "limitations": [{"kind": "access", "text": "SYNTHETIC access limit.", "source_ids": ["s2"]},
                     {"kind": "conflicting_evidence", "text": "SYNTHETIC conflict.", "source_ids": []}],
@@ -206,26 +265,7 @@ SYNTHETIC_SOURCES = [
     {"source_version_id": "s2", "title": "SYNTHETIC scan", "authors": [], "year": None, "venue": None, "doi": None,
      "landing_url": None, "publication_type": None, "origin": "provider", "access": {"assets": []}},
 ]
-# What AnswerBlock.tsx `markdown()` returns for SYNTHETIC_ANSWER (APA, English), written out by hand.
-SYNTHETIC_MARKDOWN = f"""# SYNTHETIC title
-Report · V3
-> Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.
-> SYNTHETIC notice & <tag>
-## Methods
-Claim one {SPECIAL}. [Lov21, PDF p. 3][Lov21, abstract]
-Claim two. [3] _(interpretation)_ _Reviewer: partly supported — SYNTHETIC reason_
-## Results
-Claim three. [Lov21]
-## Not answered by the inspected passages
-- SYNTHETIC gap ğ
-## Limits
-- **conflicting evidence:** SYNTHETIC conflict.
-## Cited passages
-[Lov21] Lovelace, A. (2021). SYNTHETIC routing. — PDF p. 3
-[Lov21] Lovelace, A. (2021). SYNTHETIC routing. — abstract
-[3] SYNTHETIC scan. (n.d.). — PDF p. 7 (printed iv) (OCR text · check against the page)
----
-Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked."""
+ACCESS_LIMIT = {"en": "access: SYNTHETIC access limit.", "tr": "erişim: SYNTHETIC access limit."}
 
 
 def _plain_markdown(markdown: str) -> list[str]:
@@ -238,22 +278,20 @@ def _plain_markdown(markdown: str) -> list[str]:
     return lines
 
 
-def test_answer_docx_has_the_markdown_text_plus_anchors_in_order():
+@pytest.mark.parametrize("lang,style", [("en", "apa"), ("tr", "ieee"), ("en", "mla"), ("tr", "chicago")])
+def test_answer_docx_is_the_browser_markdown_plus_quotes_and_access_limits(lang, style):
+    markdown = browser_exports(lang=lang, style=style, sources=SYNTHETIC_SOURCES, answer=SYNTHETIC_ANSWER,
+                               title="SYNTHETIC title", version=3)["markdown"]
     data = ooxml.docx(answer_export.blocks(SYNTHETIC_ANSWER, SYNTHETIC_SOURCES, title="SYNTHETIC title", version=3,
-                                           language="en", style="apa"))
+                                           language=lang, style=style))
     items = docx_items(data)
     first_lines = [item.split("\n")[0] for item in items]
-    assert first_lines == _plain_markdown(SYNTHETIC_MARKDOWN)
-    anchors = [item.split("\n")[1] for item in items if "\n" in item]
-    assert anchors == ["“quote “one” & <two>”", "“abstract quote”", "“ocr quote”"]
-    # The access limitation is shown with the PDF suggestions on screen, so neither file repeats it under Limits.
-    assert "SYNTHETIC access limit." not in raw_text(data)
-    turkish = docx_items(ooxml.docx(answer_export.blocks(SYNTHETIC_ANSWER, SYNTHETIC_SOURCES, title="T", version=3,
-                                                         language="tr", style="ieee")))
-    assert "Rapor · V3" in turkish and "Atıf yapılan pasajlar" in turkish and "Sınırlılıklar" in turkish
-    assert "Claim one " + SPECIAL + ". [Lov21, PDF s. 3][Lov21, özet]" in turkish
-    assert any(item.startswith("[3] “SYNTHETIC scan.” — PDF s. 7 (basılı iv) (OCR metni · sayfayla karşılaştırın)") for item in turkish)
-    assert "Claim two. [3] (yorum) İnceleyici: kısmen destekleniyor — SYNTHETIC reason" in turkish
+    # The browser leaves the access limitation to its PDF suggestions block; the file lists it under Limits.
+    assert ACCESS_LIMIT[lang] not in _plain_markdown(markdown) and ACCESS_LIMIT[lang] in first_lines
+    assert [line for line in first_lines if line != ACCESS_LIMIT[lang]] == _plain_markdown(markdown)
+    # Every claim's own quote of a passage, verbatim and unmerged, under the passage's one numbered line.
+    quotes = [item.split("\n")[1:] for item in items if "\n" in item]
+    assert quotes == [["“quote “one” & <two>”", "“a different quote of p1”"], ["“abstract quote”"], ["“ocr quote”"]]
 
 
 def test_answer_docx_route_names_refusals_and_content(tmp_path):
@@ -279,6 +317,11 @@ def test_answer_docx_route_names_refusals_and_content(tmp_path):
             assert claim["text"] in text
         for e in evidence:
             assert f"“{e['anchor_text']}”" in text and f"PDF p. {e['physical_page']}" in text
+        for limitation in answer["limitations"]:
+            assert limitation["text"] in text
+        markdown = browser_exports(lang="en", style="apa", sources=view["sources"], answer=answer,
+                                   title=answer["report_title"], version=answer["report_version"])["markdown"]
+        assert [i.split("\n")[0] for i in items] == _plain_markdown(markdown)
         assert_clean(response.content, tmp_path)
         assert client.get(path).content == response.content  # en/apa are the defaults
         assert "Rapor · V1" in docx_items(client.get(path + "?lang=tr").content)
@@ -298,6 +341,11 @@ def test_answer_docx_route_names_refusals_and_content(tmp_path):
 
 # ---- evidence table --------------------------------------------------------------------------------------------
 
+def _current(state, author, depth, value, evidence=(), revision=1):
+    return {"state": state, "author": author, "reading_depth": depth, "value": value, "column_revision": revision,
+            "evidence": [{"anchor_text": a, "kind": k, "physical_page": p, "printed_label": l} for a, k, p, l in evidence]}
+
+
 SYNTHETIC_TABLE = {
     "table": {"title": "SYNTHETIC tablo ğ & <x>", "version": 4},
     "columns": [
@@ -312,68 +360,82 @@ SYNTHETIC_TABLE = {
          "version_label": None, "access_level": "abstract"},
     ],
     "cells": [
-        {"column_id": "c1", "source_version_id": "s1", "current": {
-            "state": "value", "author": "model", "reading_depth": "full_text", "value": {"number": 1234.5, "unit": "kB"},
-            "evidence": [{"anchor_text": "size is 1,234.5 kB", "kind": "pdf_page", "physical_page": 4, "printed_label": "12"},
-                         {"anchor_text": None, "kind": "abstract", "physical_page": None, "printed_label": None}]}},
-        {"column_id": "c2", "source_version_id": "s1", "current": {
-            "state": "not_verified", "author": "human", "reading_depth": None, "value": {"option_ids": ["o2", "zz"]}, "evidence": []}},
-        {"column_id": "c3", "source_version_id": "s1", "current": {
-            "state": "value", "author": "model", "reading_depth": "abstract", "value": {"text": SPECIAL},
-            "evidence": [{"anchor_text": SPECIAL, "kind": "abstract", "physical_page": None, "printed_label": None}]}},
-        {"column_id": "c1", "source_version_id": "s2", "current": {
-            "state": "value", "author": "model", "reading_depth": "abstract", "value": {"number": 7, "unit": None}, "evidence": []}},
-        {"column_id": "c2", "source_version_id": "s2", "current": {
-            "state": "not_reported", "author": "system", "reading_depth": "metadata", "value": None, "evidence": []},
+        {"column_id": "c1", "source_version_id": "s1", "flags": ["stale_column", "ocr_numbers_unchecked"],
+         "current": _current("value", "model", "full_text", {"number": 1234.5, "unit": "kB"},
+                             [("size is 1,234.5 kB", "pdf_page", 4, "12"), (None, "abstract", None, None)])},
+        {"column_id": "c2", "source_version_id": "s1", "flags": [],
+         "current": _current("not_verified", "human", None, {"option_ids": ["o2", "zz"]})},
+        {"column_id": "c3", "source_version_id": "s1", "flags": ["pdf_replaced", "text_superseded"],
+         "current": _current("value", "model", "abstract", {"text": SPECIAL}, [(SPECIAL, "abstract", None, None)])},
+        {"column_id": "c1", "source_version_id": "s2", "flags": ["pdf_removed"],
+         "current": _current("value", "model", "abstract", {"number": 7, "unit": None})},
+        {"column_id": "c2", "source_version_id": "s2", "flags": ["proposal_before_edit"],
+         "current": _current("not_reported", "system", "metadata", None),
          "pending_proposal": {"state": "value", "value": {"option_ids": ["o1"]}}},
-        {"column_id": "c3", "source_version_id": "s2", "current": None},
+        {"column_id": "c3", "source_version_id": "s2", "flags": [], "current": None},
     ],
 }
-# The rows EvidenceTable.tsx `tableCsv` writes for SYNTHETIC_TABLE (APA, English), written out by hand.
-SYNTHETIC_CSV = [
-    ["Key", "Reference", "Title", "Authors", "Year", "Version", "Access", "Size", "Size — evidence", "Kind", "Kind — evidence",
-     "Note", "Note — evidence"],
-    ["Lov21", "Lovelace, A. (2021). SYNTHETIC routing.", "SYNTHETIC routing", "Ada Lovelace; B C", "2021", "accepted manuscript",
-     "PDF text", "1,234.5 kB", "“size is 1,234.5 kB” — PDF p. 4 (printed 12) | abstract", "Slow, zz", "", SPECIAL,
-     f"“{SPECIAL}” — abstract"],
-    ["", "SYNTHETIC scan. (n.d.).", "SYNTHETIC scan", "", "", "version not stated", "Abstract only", "7", "", "Not reported", "", "", ""],
+STALE = "Made under an earlier definition of this column (revision 1). It stays until you edit it or use a newer proposal."
+OCR = "This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF."
+REPLACED = "This value cites a PDF that was later replaced. Its evidence still opens the previous file; a recheck reads the current file."
+SUPERSEDED = "This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction."
+REMOVED = "A PDF this value cites was removed from the source. The cited passages still open as text; the PDF view is off."
+# Per row and column: (source line, state, warnings) — what the grid and the cell panel show beside the CSV value.
+SYNTHETIC_EXTRAS = [
+    [("Model · Full text", "Value", f"{STALE} | {OCR}"), ("You · no linked evidence", "Value without linked evidence", ""),
+     ("Model · Abstract", "Value", f"{REPLACED} | {SUPERSEDED}")],
+    [("Model · Abstract", "Value", REMOVED), ("System · Metadata", "Not reported", ""), ("", "", "")],
 ]
-SYNTHETIC_SOURCE_LINES = [["Model · Full text", "You", "Model · Abstract"], ["Model · Abstract", "System · Metadata", ""]]
 
 
-def test_table_xlsx_is_the_csv_plus_source_columns():
-    data = table_export.xlsx(SYNTHETIC_TABLE, SYNTHETIC_SOURCES, language="en", style="apa")
+def _csv(text: str) -> list[list[str]]:
+    assert text.startswith("﻿")
+    return list(csv.reader(io.StringIO(text[1:], newline="")))
+
+
+@pytest.mark.parametrize("lang,style", [("en", "apa"), ("tr", "chicago")])
+def test_table_xlsx_is_the_browser_csv_plus_source_state_and_warnings(lang, style):
+    expected = _csv(browser_exports(lang=lang, style=style, sources=SYNTHETIC_SOURCES, table=SYNTHETIC_TABLE)["csv"])
+    data = table_export.xlsx(SYNTHETIC_TABLE, SYNTHETIC_SOURCES, language=lang, style=style)
     rows = xlsx_rows(data)
-    width = 7 + 3 * 3
-    assert rows[0] == SYNTHETIC_CSV[0][:7] + [x for name in ("Size", "Kind", "Note")
-                                              for x in (name, f"{name} — evidence", f"{name} — source")]
-    for row, csv, lines in zip(rows[1:], SYNTHETIC_CSV[1:], SYNTHETIC_SOURCE_LINES):
+    names = ("Size", "Kind", "Note")
+    width = 7 + 5 * len(names)
+    head = expected[0]
+    suffix = ("source", "state", "warnings") if lang == "en" else ("kaynak", "durum", "uyarılar")
+    assert rows[0] == head[:7] + [x for k, name in enumerate(names) for x in (head[7 + 2 * k], head[8 + 2 * k],
+                                                                             *(f"{name} — {s}" for s in suffix))]
+
+    def text(value):
+        return number_text(value, lang) if isinstance(value, (int, float)) else value
+
+    for row, line in zip(rows[1:], expected[1:]):
         row = row + [""] * (width - len(row))
-        # Numbers stay numbers in the workbook; the CSV writes their text.
-        as_csv = [str(v) for v in row[:7]] + [str(row[7 + 3 * k + j]) for k in range(3) for j in (0, 1)]
-        assert as_csv == csv
-        assert [row[9 + 3 * k] for k in range(3)] == lines
-    assert rows[1][4] == 2021 and rows[2][7] == 7
+        assert [str(v) for v in row[:7]] + [text(row[7 + 5 * k + j]) for k in range(len(names)) for j in (0, 1)] == line
+    assert rows[1][4] == 2021 and rows[2][7] == 7  # numbers stay numbers in the workbook
+    if lang == "en":
+        for row, extras in zip(rows[1:], SYNTHETIC_EXTRAS):
+            row = row + [""] * (width - len(row))
+            assert [tuple(row[9 + 5 * k: 12 + 5 * k]) for k in range(len(names))] == extras
+    else:
+        assert rows[1][9] == "Model · Tam metin" and rows[1][14] == "Siz · bağlı kanıt yok"
+        assert rows[1][15] == "Bağlı kanıtı olmayan değer" and rows[1][11].startswith("Bu sütunun önceki bir tanımıyla üretildi (revizyon 1).")
     workbook = parts(data, XLSX_PARTS)["xl/workbook.xml"]
     assert [s.get("name") for s in workbook.iter(S + "sheet")] == ["SYNTHETIC tablo ğ & <x>"]
     assert "Fast" not in raw_text(data)  # the proposal waiting for a decision is left out, as in the CSV
-    turkish = xlsx_rows(table_export.xlsx(SYNTHETIC_TABLE, SYNTHETIC_SOURCES, language="tr", style="apa"))
-    assert turkish[0][:7] == ["Anahtar", "Künye", "Başlık", "Yazarlar", "Yıl", "Sürüm", "Erişim"]
-    assert turkish[0][9] == "Size — kaynak" and turkish[1][7] == "1.234,5 kB" and turkish[1][9] == "Model · Tam metin"
-    assert turkish[1][8] == "“size is 1,234.5 kB” — PDF s. 4 (basılı 12) | özet" and turkish[2][10] == "Bildirilmemiş"
 
 
-def test_table_docx_has_the_same_values_sources_and_quotes():
+def test_table_docx_has_the_values_sources_states_warnings_and_quotes():
     data = table_export.docx(SYNTHETIC_TABLE, SYNTHETIC_SOURCES, language="en", style="apa")
     items = docx_items(data)
     assert items[0] == "SYNTHETIC tablo ğ & <x>"
     grid = items[1]
-    assert grid[0] == SYNTHETIC_CSV[0][:7] + ["Size", "Kind", "Note"]
+    assert grid[0] == ["Key", "Reference", "Title", "Authors", "Year", "Version", "Access", "Size", "Kind", "Note"]
     assert grid[1][:7] == ["Lov21", "Lovelace, A. (2021). SYNTHETIC routing.", "SYNTHETIC routing", "Ada Lovelace; B C", "2021",
                            "accepted manuscript", "PDF text"]
-    assert grid[1][7:] == ["1,234.5 kB\nModel · Full text\n“size is 1,234.5 kB” — PDF p. 4 (printed 12)\nabstract",
-                           "Slow, zz\nYou", f"{SPECIAL}\nModel · Abstract\n“{SPECIAL}” — abstract"]
-    assert grid[2][7:] == ["7\nModel · Abstract", "Not reported\nSystem · Metadata", ""]
+    assert grid[1][7:] == [f"1,234.5 kB\nModel · Full text\n{STALE}\n{OCR}\n“size is 1,234.5 kB” — PDF p. 4 (printed 12)\nabstract",
+                           "Slow, zz\nYou · no linked evidence\nState: Value without linked evidence",
+                           f"{SPECIAL}\nModel · Abstract\n{REPLACED}\n{SUPERSEDED}\n“{SPECIAL}” — abstract"]
+    assert grid[2][7:] == [f"7\nModel · Abstract\n{REMOVED}", "Not reported\nSystem · Metadata", ""]
     size = parts(data, DOCX_PARTS)["word/document.xml"].find(f"{W}body/{W}sectPr/{W}pgSz")
     assert size.get(W + "orient") == "landscape"
 
@@ -388,21 +450,24 @@ def test_table_routes_on_a_filled_synthetic_table(tmp_path):
         table = create_table(client, rid, with_columns=True)
         fill_table(client, rid, table)
         view = client.get(f"/api/researches/{rid}/tables/{table['table']['id']}").json()
+        sources = client.get(f"/api/researches/{rid}").json()["sources"]
         base = f"/api/researches/{rid}/tables/{table['table']['id']}/export"
         xlsx = client.get(base + "/xlsx")
         assert xlsx.status_code == 200, xlsx.text
         assert xlsx.headers["content-type"] == ooxml.XLSX_MEDIA_TYPE
         assert xlsx.headers["content-disposition"] == f'attachment; filename="synthetic-evidence-v{view["table"]["version"]}.xlsx"'
         rows = xlsx_rows(xlsx.content)
-        assert len(rows) == 1 + len(view["rows"]) and len(rows[0]) == 7 + 3 * len(view["columns"])
+        expected = _csv(browser_exports(lang="en", style="apa", sources=sources, table=view)["csv"])
+        assert len(rows) == len(expected) and len(rows[0]) == 7 + 5 * len(view["columns"])
         cells = {(c["column_id"], c["source_version_id"]): c["current"] for c in view["cells"]}
-        for row, source in zip(rows[1:], view["rows"]):
+        for row, line, source in zip(rows[1:], expected[1:], view["rows"]):
+            row = row + [""] * (len(rows[0]) - len(row))
+            assert [str(v) for v in row[:7]] + [row[7 + 5 * k + j] for k in range(len(view["columns"])) for j in (0, 1)] == line
             for index, column in enumerate(view["columns"]):
                 current = cells[(column["id"], source["source_version_id"])]
-                assert row[7 + 3 * index] == current["value"]["text"]
                 for e in current["evidence"]:
-                    assert f"“{e['anchor_text']}” — PDF p. {e['physical_page']}" in row[8 + 3 * index]
-                assert row[9 + 3 * index] == "Model · Selected pages"
+                    assert f"“{e['anchor_text']}” — PDF p. {e['physical_page']}" in row[8 + 5 * index]
+                assert row[9 + 5 * index: 11 + 5 * index] == ["Model · Selected pages", "Value"]
         docx = client.get(base + "/docx?lang=tr&style=chicago")
         assert docx.status_code == 200 and docx.headers["content-type"] == ooxml.DOCX_MEDIA_TYPE
         assert docx.headers["content-disposition"].endswith(f'-v{view["table"]["version"]}.docx"')
@@ -436,17 +501,45 @@ def _markdown_items(markdown: str) -> list:
     return items
 
 
+def _appendix(store, view, items, language):
+    """The DOCX after the Markdown's last item is the evidence appendix: every current link with its quote and place."""
+    heading = "Evidence appendix" if language == "en" else "Kanıt eki"
+    assert items[0] == heading
+    text = "\n".join(items[1:])
+    links = [link for section in view["sections"] for claim in section["claims"] for link in claim["evidence"]]
+    assert links
+    lines = [line for line in items if isinstance(line, str)]
+    for link in links:
+        target = link["passage_id"] or link["open_passage_id"]
+        expected = f'[{link["ref_number"]}] “{link["anchor_text"]}”'
+        if link["cell_id"]:
+            expected += " — " + ("Table I, " if language == "en" else "Tablo I, ")
+        else:
+            expected += " — "
+        if target:
+            row = store.conn.execute("SELECT kind, physical_page FROM passages WHERE id = ?", (target,)).fetchone()
+            place = {"en": "abstract", "tr": "özet"}[language] if row["kind"] == "abstract" else \
+                ("PDF p. " if language == "en" else "PDF s. ") + str(row["physical_page"])
+        else:
+            place = "quote not located" if language == "en" else "alıntı hücrenin kanıt pasajlarında bulunamadı"
+        assert any(line.startswith(expected) and place in line for line in lines), (expected, place, lines)
+    assert sum(line.startswith("[") for line in lines) == len(links)
+    return text
+
+
 @pytest.mark.parametrize("language", ["en", "tr"])
-def test_evidence_report_docx_matches_the_markdown_export(tmp_path, language):
+def test_evidence_report_docx_is_the_markdown_export_plus_an_evidence_appendix(tmp_path, language):
     store, reports, rid, report_id = complete(tmp_path)
     try:
         store.conn.execute("UPDATE reports SET language = ? WHERE id = ?", (language, report_id))
         markdown, md_name = export_markdown(store, rid, report_id)
         data, name = report_export.export_docx(store, rid, report_id)
         assert name == md_name.removesuffix(".md") + ".docx"
-        items = docx_items(data)
-        assert items == _markdown_items(markdown)
+        items, expected = docx_items(data), _markdown_items(markdown)
+        assert items[:len(expected)] == expected
         assert any(isinstance(item, list) for item in items)  # Table I is a real table
+        view = report_view(store, rid, report_id) | {"language": language}
+        _appendix(store, view, items[len(expected):], language)
         assert_clean(data, tmp_path)
     finally:
         store.conn.close()
@@ -469,12 +562,15 @@ def test_evidence_report_route_and_refusals(tmp_path):
         assert response.headers["content-type"] == ooxml.DOCX_MEDIA_TYPE
         assert re.fullmatch(r'attachment; filename="report-[a-z0-9-]+-v1\.docx"', response.headers["content-disposition"])
         markdown = client.get(f"/api/researches/{rid}/reports/{report_id}/export?format=markdown").text
-        assert docx_items(response.content) == _markdown_items(markdown)
+        items, expected = docx_items(response.content), _markdown_items(markdown)
+        assert items[:len(expected)] == expected
+        store = raw.app.state.store
+        view = client.get(f"/api/researches/{rid}/reports/{report_id}").json()
+        _appendix(store, view, items[len(expected):], "en")
         assert_clean(response.content, tmp_path)
         for research, report, status in ((other, report_id, 404), (rid, "rpt_unknown000", 404), ("res_unknown000", report_id, 404)):
             refused = client.get(f"/api/researches/{research}/reports/{report}/export/docx")
             assert refused.status_code == status and "content-disposition" not in refused.headers
-        store = raw.app.state.store
         pending = store.create_run(rid, "report", {"max_model_calls": 1, "max_provider_requests": 0}, None,
                                    {"table_id": table["table"]["id"]})
         from deixis.workflow.report.store import ReportStore

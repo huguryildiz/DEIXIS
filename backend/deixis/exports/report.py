@@ -3,13 +3,20 @@
 It reads the same report view and corpus and takes every sentence from the shared `export_text` helpers, so the
 headings, claims, reference numbers, Table I, references and closing notes match the Markdown and LaTeX files. Stored
 text goes in as plain text (whitespace collapsed, as the Markdown writer does); `$...$` math stays as written.
+
+After them comes an evidence appendix the Markdown does not have: every current citation of every claim, with its
+stored anchor quote verbatim and its locator read from the cited passage's stored record (kind, physical page, printed
+label). A Table I cell citation names the column and the frozen evidence passage its quote was located in; a quote
+that was not located is said to be so, never given a page.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from deixis.documents.jats import RENDITION_SQL
 from deixis.exports import ooxml
+from deixis.exports.text import OCR_LABEL, locator_text, translator
 from deixis.workflow.report import export_text
 from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
 from deixis.workflow.store import NotFound, Store
@@ -30,7 +37,70 @@ def _table(table: dict[str, Any], tr: bool) -> list[ooxml.Block]:
             ooxml.Table(header, body, (1.4,) + (2.0,) * len(columns))]
 
 
-def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None) -> list[ooxml.Block]:
+def _appendix(view: dict[str, Any], sections: list[dict[str, Any]], locators: dict[str, dict[str, Any]], tr: bool) -> list[ooxml.Block]:
+    pick = export_text.pick
+    t = translator("tr" if tr else "en")
+    table = view.get("table_i") or {}
+    columns = {column["column_id"]: column["name"] for column in table.get("columns") or []}
+    cell_columns = {cell["cell_id"]: columns.get(cell["column_id"], "") for cell in table.get("cells") or []}
+
+    def place(passage_id: str | None) -> str:
+        record = locators.get(passage_id or "")
+        if record is None:
+            return ""
+        text = locator_text(t, record)
+        if record.get("text_source") == "ocr":
+            text += f" ({t(OCR_LABEL)})"
+        if record.get("text_source") == "latex_source":
+            text += f" ({t('arXiv source')})"
+        return text
+
+    out: list[ooxml.Block] = []
+    for section in sections:
+        cited = [claim for claim in section["claims"] if claim["evidence"]]
+        if not cited:
+            continue
+        out.append(ooxml.heading(3, plain(export_text.heading(section["section_id"], tr))))
+        for claim in cited:
+            out.append(ooxml.paragraph(plain(claim["text"]), style="Small"))
+            items = []
+            for link in claim["evidence"]:
+                quote = f'“{link["anchor_text"]}”' if link.get("anchor_text") else pick("no quote stored", tr, "kayıtlı alıntı yok")
+                parts = [f'[{link["ref_number"]}] {quote}']
+                if link.get("cell_id"):
+                    parts.append(f'{pick("Table I", tr, "Tablo I")}, {plain(cell_columns.get(link["cell_id"], ""))}'.rstrip(", "))
+                    parts.append(place(link.get("open_passage_id")) or pick(
+                        "quote not located in the cell's evidence passages", tr, "alıntı hücrenin kanıt pasajlarında bulunamadı"))
+                else:
+                    parts.append(place(link.get("passage_id")))
+                    if link.get("anchor_match") is None and link.get("anchor_text"):
+                        parts.append(pick("quote not located in the passage", tr, "alıntı pasajda bulunamadı"))
+                items.append([" — ".join(part for part in parts if part)])
+            out.append(ooxml.bullets(items))
+    if not out:
+        return []
+    return [ooxml.heading(1, pick("Evidence appendix", tr, "Kanıt eki")),
+            ooxml.paragraph(pick("Each current citation with its stored anchor quote, verbatim, and where the quote sits: the page "
+                                 "of the cited passage, or the Table I cell and the evidence passage the quote was located in.", tr,
+                                 "Her güncel atıf, kayıtlı çapa alıntısıyla (olduğu gibi) ve alıntının yeriyle: atıf yapılan "
+                                 "pasajın sayfası ya da Tablo I hücresi ve alıntının bulunduğu kanıt pasajı."), style="Small"),
+            *out]
+
+
+def passage_locators(store: Store, view: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Kind, page, printed label, text source and rendition of every passage the report's citations point at."""
+    ids = sorted({pid for section in view["sections"] for claim in section["claims"] for link in claim["evidence"]
+                  for pid in (link.get("passage_id"), link.get("open_passage_id")) if pid})
+    if not ids:
+        return {}
+    rows = store.conn.execute(
+        f"SELECT p.id, p.kind, p.physical_page, p.printed_label, p.text_source, {RENDITION_SQL} AS rendition"
+        f" FROM passages p LEFT JOIN source_assets a ON a.id = p.asset_id WHERE p.id IN ({', '.join('?' * len(ids))})", ids)
+    return {row["id"]: dict(row) | {"rendition": bool(row["rendition"])} for row in rows}
+
+
+def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None,
+           locators: dict[str, dict[str, Any]] | None = None) -> list[ooxml.Block]:
     tr = export_text.is_turkish(view)
     out: list[ooxml.Block] = []
     draft = export_text.draft_line(view, tr)
@@ -116,7 +186,7 @@ def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None) -
     if review and review["status"] == "reviewed" and review["findings"]:
         out += [ooxml.paragraph(export_text.findings_heading(tr)),
                 ooxml.bullets([" · ".join(export_text.finding_fields(finding, tr, plain))] for finding in review["findings"])]
-    return out
+    return out + _appendix(view, sections, locators or {}, tr)
 
 
 def export_docx(store: Store, research_id: str, report_id: str) -> tuple[bytes, str]:
@@ -130,4 +200,5 @@ def export_docx(store: Store, research_id: str, report_id: str) -> tuple[bytes, 
         corpus = ReportStore(store).snapshot(report_id)["corpus"]
     except NotFound:
         corpus = None
-    return ooxml.docx(blocks(view, title=title, corpus=corpus), title=title), export_text.report_stem(view, title) + ".docx"
+    data = ooxml.docx(blocks(view, title=title, corpus=corpus, locators=passage_locators(store, view)), title=title)
+    return data, export_text.report_stem(view, title) + ".docx"

@@ -55,9 +55,9 @@
 @media(max-width:600px){.app .settings-page .connection-card{gap:9px;padding:10px}}
 
 /* Status pills share the tile pill's shape (no dot, 11px). */
-.app .settings-page .status-chip,.connection-sheet .status-chip{gap:0;padding:1px 7px;border-color:transparent;font-size:11px;font-weight:500;line-height:1.5}
-.app .settings-page .status-chip::before,.connection-sheet .status-chip::before{display:none}
-.app .settings-page .status-chip.is-configured,.connection-sheet .status-chip.is-configured{border-color:transparent;background:var(--hover-surface)}
+.app .settings-page .status-chip,.detail-sheet.connection-sheet .status-chip{gap:0;padding:1px 7px;border-color:transparent;font-size:11px;font-weight:500;line-height:1.5}
+.app .settings-page .status-chip::before,.detail-sheet.connection-sheet .status-chip::before{display:none}
+.app .settings-page .status-chip.is-configured,.detail-sheet.connection-sheet .status-chip.is-configured{border-color:transparent;background:var(--hover-surface)}
 
 /* ── Semantic search: radio cards; the chosen card takes the accent tint ───────────────────────────────── */
 .app .settings-page .semantic-choices{border-color:var(--line);border-radius:10px}
@@ -72,15 +72,15 @@
 .app .settings-page .local-tool-note,.app .settings-page .local-tool-error{font-size:12.5px}
 
 /* ── Connection sheet body: facts as a bordered row group, quieter head ────────────────────────────────── */
-.connection-sheet .connection-sheet-head{gap:9px}
-.connection-sheet .connection-sheet-head .connection-icon{width:20px;height:20px}
-.connection-sheet .connection-sheet-head .source-title{font-size:16px;font-weight:600;letter-spacing:0;line-height:1.35}
-.connection-sheet .status-chip{margin-top:10px}
-.connection-sheet .source-byline{font-size:13px;line-height:1.55}
-.connection-sheet .connection-checks{margin-top:14px;border:1px solid var(--line);border-radius:10px}
-.connection-sheet .connection-checks .legacy-check{padding:9px 14px;border-bottom:0;border-top:1px solid var(--line);font-size:13px}
-.connection-sheet .connection-checks .legacy-check:first-child{border-top:0}
-.connection-sheet .connection-checks .legacy-check strong{color:var(--ink-2)}
-.connection-sheet .connection-checks+*{margin-top:14px}
-.connection-sheet .connection-recheck{margin-top:18px}
-.connection-sheet .key-form label{font-size:13px;font-weight:500}
+.detail-sheet.connection-sheet .connection-sheet-head{gap:9px}
+.detail-sheet.connection-sheet .connection-sheet-head .connection-icon{width:20px;height:20px}
+.detail-sheet.connection-sheet .connection-sheet-head .source-title{font-size:16px;font-weight:600;letter-spacing:0;line-height:1.35}
+.detail-sheet.connection-sheet .status-chip{margin-top:10px}
+.detail-sheet.connection-sheet .source-byline{font-size:13px;line-height:1.55}
+.detail-sheet.connection-sheet .connection-checks{margin-top:14px;border:1px solid var(--line);border-radius:10px}
+.detail-sheet.connection-sheet .connection-checks .legacy-check{padding:9px 14px;border-bottom:0;border-top:1px solid var(--line);font-size:13px}
+.detail-sheet.connection-sheet .connection-checks .legacy-check:first-child{border-top:0}
+.detail-sheet.connection-sheet .connection-checks .legacy-check strong{color:var(--ink-2)}
+.detail-sheet.connection-sheet .connection-checks+*{margin-top:14px}
+.detail-sheet.connection-sheet .connection-recheck{margin-top:18px}
+.detail-sheet.connection-sheet .key-form label{font-size:13px;font-weight:500}

@@ -146,7 +146,7 @@
 .evidence-cell{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;min-width:190px;max-width:270px;min-height:68px;padding:9px 12px;color:var(--ink);text-align:left}
 .evidence-cell-value{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:4;font-size:12.5px;line-height:1.45;overflow-wrap:anywhere}
 .evidence-cell.is-state .evidence-cell-value{color:var(--muted);font-style:italic}
-.evidence-cell.is-empty .evidence-cell-value{color:color-mix(in srgb,var(--muted),transparent 20%)}
+.evidence-cell.is-empty .evidence-cell-value{color:var(--muted)}
 .evidence-cell-marks{color:var(--muted);font-size:10.5px;line-height:1.4}
 .evidence-cell-live{font-size:11.5px;line-height:1.4}
 .evidence-cell-flags{display:flex;flex-wrap:wrap;gap:4px}

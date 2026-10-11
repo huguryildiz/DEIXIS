@@ -889,8 +889,19 @@ def _library_representative_score(row: dict[str, Any]) -> tuple[int, ...]:
     )
 
 
+_LIBRARY_ITEM_COLUMNS = "origin, metadata_origin, metadata_confirmed_by, metadata_confirmed_at, added_at"
+
+
+def _library_items(conn: Any, svids: list[str] | None = None) -> dict[str, dict[str, Any]]:
+    """Saved Library items by source version (S19a); every one when `svids` is None."""
+    where = f" WHERE source_version_id IN ({', '.join('?' * len(svids))})" if svids is not None else ""
+    rows = conn.execute(f"SELECT source_version_id, {_LIBRARY_ITEM_COLUMNS} FROM library_items{where}", svids or ()).fetchall()
+    return {row["source_version_id"]: {k: row[k] for k in row.keys() if k != "source_version_id"} for row in rows}
+
+
 def library_view(store: Store) -> dict[str, Any]:
-    """Every work (publication) in any non-trashed research, with its versions and the researches it belongs to."""
+    """Every work (publication) in any non-trashed research or saved in the Library, with its versions and the
+    researches it belongs to. Each version stays its own record; a saved one carries its `library_item`."""
     conn = store.conn
     rows = conn.execute(
         "SELECT v.id AS source_version_id, v.work_id, v.title, v.authors_json, v.year, v.venue, v.volume, v.issue,"
@@ -902,9 +913,19 @@ def library_view(store: Store) -> dict[str, Any]:
         " JOIN researches r ON r.id = m.research_id WHERE r.trashed_at IS NULL"
         " ORDER BY v.created_at DESC, r.updated_at DESC"
     ).fetchall()
+    # Saved items join with no research: one held only by the Library, or by a trashed research, still lists.
+    saved_rows = conn.execute(
+        "SELECT v.id AS source_version_id, v.work_id, v.title, v.authors_json, v.year, v.venue, v.volume, v.issue,"
+        " v.pages, v.publication_type, v.doi, v.landing_url, v.version_label, v.cited_by_count, v.cited_by_count_at,"
+        " v.created_at AS source_created_at, NULL AS research_id, NULL AS research_title, NULL AS research_updated_at,"
+        " NULL AS removed_at,"
+        f" {_HAS_PDF_TEXT} AS has_pdf_text, {_HAS_ABSTRACT} AS has_abstract"
+        " FROM library_items i JOIN source_versions v ON v.id = i.source_version_id ORDER BY v.created_at DESC"
+    ).fetchall()
+    saved = _library_items(conn)
 
     works: dict[str, dict[str, Any]] = {}
-    for row in rows:
+    for row in [*rows, *saved_rows]:
         work = works.setdefault(row["work_id"], {"versions": {}, "researches": {}})
         svid = row["source_version_id"]
         if svid not in work["versions"]:
@@ -915,10 +936,11 @@ def library_view(store: Store) -> dict[str, Any]:
                 "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
                 "source_created_at": row["source_created_at"],
                 "access_level": _access_level(row["has_pdf_text"], row["has_abstract"]),
+                "library_item": saved.get(svid),
             }
         rid = row["research_id"]
         # A source removed from a research stays in the library but not in that research's project group (D50).
-        if row["removed_at"] is None and rid not in work["researches"]:
+        if rid is not None and row["removed_at"] is None and rid not in work["researches"]:
             work["researches"][rid] = {"id": rid, "title": row["research_title"], "updated_at": row["research_updated_at"]}
 
     entries = []
@@ -937,12 +959,17 @@ def library_view(store: Store) -> dict[str, Any]:
             "cited_by_count": max((v["cited_by_count"] for v in versions if v["cited_by_count"] is not None), default=None),
             "cited_by_count_at": representative["cited_by_count_at"],
             "versions": [{"source_version_id": v["source_version_id"], "version_label": v["version_label"],
-                          "year": v["year"], "venue": v["venue"], "access_level": v["access_level"]} for v in versions],
+                          "year": v["year"], "venue": v["venue"], "access_level": v["access_level"],
+                          "library_item": v["library_item"]} for v in versions],
+            # The version whose bibliographic fields the row shows; a bibliography of the row exports this record.
+            "representative_source_version_id": representative["source_version_id"],
+            "saved": any(v["library_item"] for v in versions),
             # The best reading depth any stored version of this work reaches; the panel lists each version separately.
             "access_level": max((v["access_level"] for v in versions), key=_ACCESS_ORDER.index),
             "researches": researches,
             "first_research_id": researches[0]["id"] if researches else None,
-            "newest_source_at": max(v["source_created_at"] or "" for v in versions),
+            "newest_source_at": max(max(v["source_created_at"] or "", (v["library_item"] or {}).get("added_at") or "")
+                                    for v in versions),
         })
 
     # Most recently added works first; within a tie, newest active research first.
@@ -981,12 +1008,14 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
         " v.landing_url, v.version_label, v.publication_type, v.cited_by_count, v.cited_by_count_at,"
         f" v.created_at AS source_created_at, {_HAS_PDF_TEXT} AS has_pdf_text, {_HAS_ABSTRACT} AS has_abstract"
         " FROM source_versions v WHERE v.work_id = ?"
-        " AND EXISTS (SELECT 1 FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
+        " AND (EXISTS (SELECT 1 FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
         "  WHERE m.source_version_id = v.id AND r.trashed_at IS NULL)"
+        "  OR EXISTS (SELECT 1 FROM library_items i WHERE i.source_version_id = v.id))"
         " ORDER BY v.created_at DESC", (work_id,)
     ).fetchall()
     if not rows:
         return None
+    saved = _library_items(conn, [row["source_version_id"] for row in rows])
 
     versions, researches = [], {}
     for row in rows:
@@ -1019,6 +1048,7 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
                       "original_filename": asset["original_filename"],
                       "extraction_status": asset["extraction_status"]} if asset else None,
             "abstract_passage_id": abstract["id"] if abstract else None,
+            "library_item": saved.get(svid),
             "research_id": members[0]["id"] if members else None,
             # No research holds this version now, but the one it was removed from still opens its stored text (D50).
             "removed_research_id": None if members else (removed["id"] if (removed := conn.execute(

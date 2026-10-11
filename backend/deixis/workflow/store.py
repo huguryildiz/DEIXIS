@@ -443,12 +443,14 @@ class Store:
             from deixis.workflow.recovery_history import frozen_source_versions
             frozen = frozen_source_versions(self.conn, source_ids)
             for source_id in source_ids:
-                # A provider source may be shared by another research. Keep its evidence and files in that case.
+                # A provider source may be shared by another research or saved in the Library (S19a). Keep its
+                # evidence and files in that case.
                 shared = self.conn.execute(
                     "SELECT 1 FROM corpus_memberships WHERE source_version_id = ? UNION SELECT 1 FROM candidates WHERE source_version_id = ?"
                     " UNION SELECT 1 FROM kill_search_query_records WHERE source_version_id = ?"
-                    " UNION SELECT 1 FROM kill_search_hits WHERE source_version_id = ? LIMIT 1",
-                    (source_id, source_id, source_id, source_id),
+                    " UNION SELECT 1 FROM kill_search_hits WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM library_items WHERE source_version_id = ? LIMIT 1",
+                    (source_id, source_id, source_id, source_id, source_id),
                 ).fetchone()
                 if shared or source_id in cited or source_id in frozen:
                     continue
@@ -2999,12 +3001,14 @@ class Store:
             self.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (research_id,))
             orphan_files: list[str] = []
             for svid in chosen:
-                # The source may still belong to another research; its record, passages and file stay in that case.
+                # The source may still belong to another research or be saved in the Library (S19a); its record,
+                # passages and file stay in that case.
                 if self.conn.execute(
                     "SELECT 1 FROM corpus_memberships WHERE source_version_id = ?"
                     " UNION SELECT 1 FROM candidates WHERE source_version_id = ?"
                     " UNION SELECT 1 FROM kill_search_query_records WHERE source_version_id = ?"
-                    " UNION SELECT 1 FROM kill_search_hits WHERE source_version_id = ? LIMIT 1", (svid, svid, svid, svid),
+                    " UNION SELECT 1 FROM kill_search_hits WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM library_items WHERE source_version_id = ? LIMIT 1", (svid, svid, svid, svid, svid),
                 ).fetchone():
                     continue
                 source = self.conn.execute("SELECT work_id, provider_payload_path FROM source_versions WHERE id = ?", (svid,)).fetchone()

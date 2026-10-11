@@ -891,6 +891,8 @@ def create_app(
     register_export_routes(app)
     register_research_model_routes(app)
     register_table_routes(app)
+    from deixis.api.library_routes import register_library_routes
+    register_library_routes(app, settings)
 
     @app.exception_handler(WatchRefusal)
     async def watch_refusal(_: Request, exc: WatchRefusal):

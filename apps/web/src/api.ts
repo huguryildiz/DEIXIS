@@ -1476,4 +1476,52 @@ export const researchModelApi = {
     request<ResearchView & { model_changes: ResearchModelChange[] }>(`/api/researches/${id}/models`, json('PUT', body)),
   recheckColumn: (id: string, tableId: string, columnId: string, expectedVersion: number, idempotencyKey: string) =>
     request<Run>(`/api/researches/${id}/tables/${tableId}/columns/${columnId}/recheck`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+// Library-owned items (api/library_routes.py, S19a). A saved item is one source version: two versions of a work saved
+// together stay two items. `metadata_origin` is 'user_supplied' for an uploaded file's or imported entry's fields until
+// a provider confirms them (`metadata_confirmed_by`).
+export type LibraryItemOrigin = 'saved' | 'upload' | 'zotero_import' | 'bibtex_import' | 'ris_import'
+export type LibraryItem = {
+  origin: LibraryItemOrigin; metadata_origin: 'provider' | 'user_supplied'
+  metadata_confirmed_by: string | null; metadata_confirmed_at: string | null; added_at: string
+}
+export type LibraryItemVersion = LibraryVersion & { library_item: LibraryItem | null }
+// The entry of /api/library: `representative_source_version_id` is the record whose fields the row shows.
+export type LibraryItemEntry = Omit<LibraryEntry, 'versions'> & {
+  versions: LibraryItemVersion[]; representative_source_version_id: string; saved: boolean
+}
+export type LibraryItemsView = Omit<LibraryView, 'entries'> & { entries: LibraryItemEntry[] }
+export type LibraryItemWork = Omit<LibraryWork, 'versions'> & { versions: (LibraryWorkVersion & { library_item: LibraryItem | null })[] }
+export type LibraryBibliographyRequest = { format: 'bibtex' | 'ris'; work_ids?: string[]; source_version_ids?: string[] }
+export type NewResearchFromSetBody = Omit<Parameters<typeof api.create>[0], 'source_scope' | 'seed_mode'> & { work_ids: string[] }
+
+// POST, so the set can be large; answers with the file, not JSON.
+async function libraryBibliography(body: LibraryBibliographyRequest, retried = false): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch('/api/library/bibliography', {
+    method: 'POST', credentials: 'same-origin', body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json', 'x-deixis-csrf': await csrf() },
+  })
+  if (response.status === 403 && !retried) {
+    csrfToken = null
+    return libraryBibliography(body, true)
+  }
+  if (!response.ok) throw await responseError(response)
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const fallback = body.format === 'ris' ? 'deixis-library.ris' : 'deixis-library.bib'
+  return { blob: await response.blob(), filename: /^attachment;\s*filename="([a-zA-Z0-9._-]+)"$/.exec(disposition)?.[1] ?? fallback }
+}
+
+export const libraryApi = {
+  saveItems: (sourceVersionIds: string[]) =>
+    request<{ saved: string[]; already_saved: string[]; library: LibraryItemsView }>('/api/library/items',
+      json('POST', { source_version_ids: sourceVersionIds })),
+  upload: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<{ source_version_id: string; work_id: string; library: LibraryItemsView; file_restore: FileRestoreReceipt | null }>(
+      '/api/library/uploads', { method: 'POST', body: form })
+  },
+  bibliography: libraryBibliography,
+  // A new research (scope 'attached') holding one version per work: the one adding a Library work to a research picks.
+  newResearchFromSet: (body: NewResearchFromSetBody) =>
+    request<ResearchView & { added_source_version_ids: string[] }>('/api/library/researches', json('POST', body)),
 }

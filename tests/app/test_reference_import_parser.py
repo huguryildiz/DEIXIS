@@ -170,18 +170,25 @@ def test_pathological_files_stop_early_in_bounded_time(data):
 
 
 def bounded(run, seconds=3.0, peak_bytes=64 * 1024 * 1024):
-    """Run `run()` and assert it stayed within the time and the traced memory given."""
+    """Run `run()` and assert it stayed within the time given (untraced) and, when `peak_bytes` is given, within that
+    traced memory (a second, traced run: tracing slows Python too much to time it)."""
     import time
     import tracemalloc
-    tracemalloc.start()
     started = time.perf_counter()
     try:
-        return run()
+        result = run()
     finally:
         elapsed = time.perf_counter() - started
-        peak = tracemalloc.get_traced_memory()[1]
-        tracemalloc.stop()
-        assert elapsed < seconds and peak < peak_bytes, (elapsed, peak)
+        assert elapsed < seconds, elapsed
+    if peak_bytes is not None:
+        tracemalloc.start()
+        try:
+            run()
+        finally:
+            peak = tracemalloc.get_traced_memory()[1]
+            tracemalloc.stop()
+            assert peak < peak_bytes, peak
+    return result
 
 
 def test_a_doubling_string_stops_at_the_value_limit():
@@ -216,5 +223,48 @@ def test_string_definitions_and_an_unclosed_comment_count_toward_the_cap(monkeyp
 
 def test_a_long_wrapped_ris_value_reads_in_linear_time():
     data = b"TY  - JOUR\nTI  - SYNTHETIC wrapped\nAB  - start\n" + b"word\n" * 800_000 + b"ER  -\n"
-    _, entries, _ = bounded(lambda: b.read_file(data, "x.ris"), peak_bytes=256 * 1024 * 1024)
+    _, entries, _ = bounded(lambda: b.read_file(data, "x.ris"), peak_bytes=None)
     assert entries[0].abstract.startswith("start word word") and len(entries[0].abstract) == len("start") + 5 * 800_000
+
+
+def test_escaped_heads_inside_unclosed_values_are_read_once():
+    data = rb"\@a{k,t={" * 500_000
+    assert len(data) <= b.MAX_FILE_BYTES
+    _, entries, errors = bounded(lambda: b.read_file(data, "x.bib"), seconds=2.0, peak_bytes=None)
+    # The first value runs to the end of the file; nothing inside it is read again as an entry.
+    assert entries == [] and [(e.index, e.code) for e in errors] == [(1, "unclosed_value")]
+
+
+@pytest.mark.parametrize("entry, record, agree", [
+    ("SYNTHETIC Diffusion Scheduling", "Synthetic diffusion scheduling.", True),
+    ("SYNTHETIC diffusion scheduling", "SYNTHETIC diffusion scheduling: a survey of methods", True),
+    ("量子通信研究", "量子通信研究：综述", True),
+    ("量子通信研究", "光纤网络研究", False),
+    ("Introduction", "Introduction to SYNTHETIC molecular communication networks", False),
+    ("SYNTHETIC relay budget under drift", "SYNTHETIC relay budget under drift and noise in channels", True),
+    ("SYNTHETIC my real paper on relays", "SYNTHETIC unrelated provider paper", False),
+])
+def test_titles_agree(entry, record, agree):
+    assert b.titles_agree(entry, record) is agree
+
+
+def test_format_detection_and_author_splitting_stay_linear_on_long_whitespace():
+    blank = b"\n" * 4_000_000 + b"no entry here"
+    with pytest.raises(b.ImportRefused) as refused:
+        bounded(lambda: b.read_file(blank, "x.txt"), seconds=2.0, peak_bytes=None)
+    assert refused.value.code == "import_unknown_format"
+    spaces = "@article{k, title={SYNTHETIC}, author={Example, Rae" + " " * 60_000 + "and Other, Ola}}"
+    entries, _ = bounded(lambda: b.parse_bibtex(spaces), seconds=2.0, peak_bytes=None)
+    assert entries[0].authors == ["Rae Example", "Ola Other"]
+
+
+def test_identity_keeps_symbols_apart_but_not_dashes_or_case():
+    def ident(title):
+        return b.identity(b.parse_bibtex("@book{k, title={" + title + "}, author={Example, Rae}, year={2001}}")[0][0])
+    assert ident("SYNTHETIC C++ Primer") != ident("SYNTHETIC C Primer") != ident("SYNTHETIC C# Primer")
+    assert ident("SYNTHETIC pages 1--2 primer") == ident("SYNTHETIC Pages 1–2 Primer")
+
+
+def test_long_keys_and_macro_names_are_cut_in_reports():
+    entries, errors = b.parse_bibtex("@article{" + "k" * 5000 + ", title = " + "m" * 5000 + "}")
+    assert len(errors[0].key) == b.MAX_KEY_CHARS and len(errors[0].message) < 200

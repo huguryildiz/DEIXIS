@@ -1531,12 +1531,21 @@ export const libraryApi = {
 // Library imports (api/library_routes.py, S19b). A Zotero collection or a BibTeX / RIS file goes into the Library, not
 // into a research. A .bib / .ris entry whose DOI a provider confirms is stored as that provider's record
 // (`record: 'provider'`, `confirmed_by`); one with a stored record under its DOI reuses it (`'existing'`); any other
-// entry is the person's own record (`'user_supplied'`). Entries that could not be read are listed in `errors` and left
+// entry, or one whose DOI names a record with another title (`title_mismatch`), is the person's own record
+// (`'user_supplied'`). Entries that could not be read are listed in `errors` and left
 // out; `code` names the fault for translation, `message` is the English sentence.
 export type ReferenceImportFormat = 'bibtex' | 'ris'
+// What one provider did with an entry's DOI. `reason` for an error is e.g. 'HTTP 500', 'incomplete_answer',
+// 'several_works' or 'unreadable_record'; for not_asked it is 'doi_not_filterable' or 'crossref_limit' (20 a file).
+export type ReferenceImportLookup = {
+  provider: 'openalex' | 'crossref'; outcome: 'found' | 'not_found' | 'error' | 'not_asked'; reason: string | null
+}
 export type ReferenceImportEntry = {
   index: number; key: string | null; title: string; doi: string | null
-  lookup: 'confirmed' | 'not_found' | 'failed' | 'no_doi'; record: 'provider' | 'existing' | 'user_supplied'
+  lookup: 'confirmed' | 'not_found' | 'failed' | 'no_doi'; lookups: ReferenceImportLookup[]
+  record: 'provider' | 'existing' | 'user_supplied'
+  // The title of the record the DOI named when it is another work's: the entry is then kept as the person's own.
+  title_mismatch: string | null
   source_version_id: string; work_id: string; confirmed_by: string | null
   duplicate_of: number | null  // the index of the earlier entry in this file that names the same record
 }

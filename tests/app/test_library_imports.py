@@ -110,10 +110,10 @@ def test_bibtex_import_resolves_dois_and_marks_whose_metadata_each_item_carries(
     crossref_item = {"DOI": "10.5555/SYN.Crossref", "title": ["SYNTHETIC Crossref record"], "type": "journal-article",
                      "author": [{"given": "Cy", "family": "Ross"}], "issued": {"date-parts": [[2018]]},
                      "container-title": ["Crossref Journal"], "URL": "https://doi.org/10.5555/syn.crossref"}
-    providers = Providers(works=[work("10.5555/syn.hit", "SYNTHETIC provider title", "W100")],
+    providers = Providers(works=[work("10.5555/syn.hit", "SYNTHETIC diffusion scheduling with alpha-stable noise and Müller's étude", "W100")],
                           crossref={"10.5555/syn.crossref": crossref_item})
     app = app_for(tmp_path, providers)
-    extra = b"\n@article{cr2018, title = {SYNTHETIC my own title}, doi = {10.5555/syn.crossref}}\n"
+    extra = b"\n@article{cr2018, title = {SYNTHETIC {C}rossref Record}, doi = {10.5555/syn.crossref}}\n"
     with TestClient(app) as raw:
         client = session(raw)
         store = app.state.store
@@ -128,7 +128,7 @@ def test_bibtex_import_resolves_dois_and_marks_whose_metadata_each_item_carries(
         assert (hit["lookup"], hit["record"], hit["confirmed_by"]) == ("confirmed", "provider", "openalex")
         source = store.source(hit["source_version_id"])
         # The provider's record is stored, not the entry's own fields.
-        assert (source["title"], source["authors"]) == ("SYNTHETIC provider title", ["Ada Provider"])
+        assert (source["title"], source["authors"]) == ("SYNTHETIC diffusion scheduling with alpha-stable noise and Müller's étude", ["Ada Provider"])
         origin, metadata, by, at = item(store, hit["source_version_id"])
         assert (origin, metadata, by) == ("bibtex_import", "user_supplied", "openalex") and at is not None
 
@@ -170,7 +170,7 @@ def test_a_provider_error_leaves_the_entry_user_supplied_and_a_stored_doi_record
         with transaction(store.conn):
             stored_svid, _ = store.upsert_provider_source("openalex", _record(stored.works[0]), None)
         text = (b"@article{down, title = {SYNTHETIC lookup down}, doi = {10.5555/syn.down}}\n"
-                b"@article{known, title = {SYNTHETIC my title for a stored work}, doi = {10.5555/syn.stored}}\n")
+                b"@article{known, title = {SYNTHETIC Stored Provider Record}, doi = {10.5555/syn.stored}}\n")
         body = upload(client, "down.bib", text).json()["reference_import"]
         down, known = body["entries"]
         assert (down["lookup"], down["record"], down["confirmed_by"]) == ("failed", "user_supplied", None)
@@ -182,7 +182,7 @@ def test_a_provider_error_leaves_the_entry_user_supplied_and_a_stored_doi_record
 
 
 def test_duplicates_in_a_file_and_a_second_import_add_nothing(tmp_path):
-    providers = Providers(works=[work("10.5555/syn.hit", "SYNTHETIC provider title", "W100")])
+    providers = Providers(works=[work("10.5555/syn.hit", "SYNTHETIC RIS diffusion record", "W100")])
     app = app_for(tmp_path, providers)
     with TestClient(app) as raw:
         client = session(raw)
@@ -196,7 +196,7 @@ def test_duplicates_in_a_file_and_a_second_import_add_nothing(tmp_path):
         # The same book from a .bib file finds the record the .ris entry made; it is already saved.
         twice = (b"@book{a, title={SYNTHETIC RIS book without DOI}, author={Example, Rae}, year={2001}}\n"
                  b"@book{b, title={SYNTHETIC RIS Book Without DOI}, author={Example, Rae}, year={2001}}\n"
-                 b"@article{c, title={SYNTHETIC again}, doi={10.5555/SYN.HIT}}\n")
+                 b"@article{c, title={SYNTHETIC RIS diffusion record}, doi={10.5555/SYN.HIT}}\n")
         again = upload(client, "again.bib", twice).json()["reference_import"]
         a, b_, c = again["entries"]
         book = first["entries"][1]["source_version_id"]
@@ -287,3 +287,67 @@ def test_an_unconfirmed_arxiv_doi_never_joins_or_takes_in_another_work(tmp_path)
         with transaction(store.conn):
             v3, _ = store.upsert_provider_source("arxiv", arxiv_record("2101.00001v3", "SYNTHETIC arXiv preprint"), None)
         assert store.source(v3)["work_id"] == store.source(v1)["work_id"] != row["work_id"]
+
+
+def abstract_of(store, svid):
+    row = store.conn.execute("SELECT text FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)).fetchone()
+    return row["text"] if row else None
+
+
+def test_one_unconfirmed_doi_never_joins_two_different_entries(tmp_path):
+    providers = Providers()  # OpenAlex holds nothing, Crossref answers 404: the DOI stays unconfirmed
+    app = app_for(tmp_path, providers)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        text = (b"@article{a, title = {SYNTHETIC first paper}, author = {Example, Rae}, year = 2020, doi = {10.5555/syn.same}}\n"
+                b"@article{b, title = {SYNTHETIC other paper}, author = {Other, Ola}, year = 2021, doi = {10.5555/syn.same},"
+                b" abstract = {SYNTHETIC text of the other paper.}}\n"
+                b"@article{a2, title = {SYNTHETIC First Paper}, author = {Example, Rae}, year = 2020, doi = {10.5555/syn.same},"
+                b" abstract = {SYNTHETIC late abstract for the first paper.}}\n")
+        a, b_, a2 = upload(client, "same.bib", text).json()["reference_import"]["entries"]
+        assert a["source_version_id"] != b_["source_version_id"]
+        # The same entry again names the record it made, which keeps its own fields: no abstract is added to it.
+        assert a2["source_version_id"] == a["source_version_id"] and a2["duplicate_of"] == 1
+        assert abstract_of(store, a["source_version_id"]) is None
+        assert abstract_of(store, b_["source_version_id"]) == "SYNTHETIC text of the other paper."
+        # A later import of another entry with that DOI is a third record; the first two are unchanged.
+        later = b"@article{c, title = {SYNTHETIC third paper}, year = 2022, doi = {10.5555/syn.same}, abstract = {SYNTHETIC c.}}"
+        c = upload(client, "later.bib", later).json()["reference_import"]["entries"][0]
+        assert c["source_version_id"] not in (a["source_version_id"], b_["source_version_id"])
+        assert abstract_of(store, a["source_version_id"]) is None
+        assert store.source(a["source_version_id"])["title"] == "SYNTHETIC first paper"
+
+
+def test_a_doi_whose_record_is_another_work_keeps_the_entry_as_its_own(tmp_path):
+    providers = Providers(works=[work("10.5555/syn.typo", "SYNTHETIC unrelated provider paper", "W9")])
+    app = app_for(tmp_path, providers)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        text = b"@article{t, title = {SYNTHETIC my real paper on relays}, doi = {10.5555/syn.typo}}"
+        row = upload(client, "typo.bib", text).json()["reference_import"]["entries"][0]
+        assert (row["lookup"], row["record"], row["confirmed_by"]) == ("confirmed", "user_supplied", None)
+        assert row["title_mismatch"] == "SYNTHETIC unrelated provider paper"
+        assert store.source(row["source_version_id"])["title"] == "SYNTHETIC my real paper on relays"
+        assert store.find_source_by_identifier("openalex", "W9") is None  # the other paper's record is not stored
+        assert item(store, row["source_version_id"])[1:] == ("user_supplied", None, None)
+
+
+def test_each_provider_says_what_it_did(tmp_path, monkeypatch):
+    monkeypatch.setattr(bibtex_ris, "CROSSREF_FALLBACK_MAX", 1)
+    providers = Providers(openalex_status=500)
+    app = app_for(tmp_path, providers)
+    with TestClient(app) as raw:
+        client = session(raw)
+        text = (b"@article{a, title = {SYNTHETIC a}, doi = {10.5555/syn.a}}\n"
+                b"@article{b, title = {SYNTHETIC b}, doi = {10.5555/syn.b}}\n"
+                b"@article{c, title = {SYNTHETIC c}, doi = {10.5555/syn,c}}\n")
+        a, b_, c = upload(client, "x.bib", text).json()["reference_import"]["entries"]
+        assert a["lookups"] == [{"provider": "openalex", "outcome": "error", "reason": "HTTP 500"},
+                                {"provider": "crossref", "outcome": "not_found", "reason": None}]
+        assert b_["lookups"] == [{"provider": "openalex", "outcome": "error", "reason": "HTTP 500"},
+                                 {"provider": "crossref", "outcome": "not_asked", "reason": "crossref_limit"}]
+        assert c["lookups"] == [{"provider": "openalex", "outcome": "not_asked", "reason": "doi_not_filterable"},
+                                {"provider": "crossref", "outcome": "not_asked", "reason": "crossref_limit"}]
+        assert [r["lookup"] for r in (a, b_, c)] == ["failed", "failed", "failed"]

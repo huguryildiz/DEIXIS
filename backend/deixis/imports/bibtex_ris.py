@@ -16,9 +16,13 @@ its length is refused whole (`import_expansion_too_large`). The route runs it of
 An entry's DOI is resolved through the existing lookups: OpenAlex `works_by_dois` for up to 100 DOIs a request, then
 Crossref `crossref_work` one DOI at a time for the DOIs OpenAlex did not confirm (at most `CROSSREF_FALLBACK_MAX`). A
 confirmed DOI stores the provider's record, merged by DOI with a stored record under the existing rules
-(`Store.upsert_provider_source`), and the entry's own fields are not written. An entry whose DOI no provider confirmed
-reuses a stored record with that DOI, else becomes a record of its own under the `reference_file` mapping that never
-merges by DOI (as a Zotero item does not), so a mistyped DOI cannot take over another work's record, nor join one as its version through an arXiv DOI
+(`Store.upsert_provider_source`), and the entry's own fields are not written. A record a DOI names is used only when
+its title agrees with the entry's (`titles_agree`); otherwise a mistyped DOI would put another paper, and its abstract,
+under the entry. An entry whose DOI no provider confirmed reuses a stored record with that DOI and an agreeing title,
+else becomes a record of its own under the `reference_file` mapping that never merges by DOI (as a Zotero item does
+not); its identity is DOI, title, year and first author together (`identity`), never the DOI alone, and a record made
+before for the same entry is reused as it stands, never filled from a later entry. So a mistyped DOI cannot take over
+another work's record, nor join one as its version through an arXiv DOI
 (`store.UNVERIFIED_DOI_PROVIDERS`). Its metadata
 stays `user_supplied` until a provider confirms it. Versions are never merged: one entry is one source version.
 """
@@ -51,6 +55,7 @@ MAX_ENTRIES = 500
 # MAX_VALUE_CHARS characters, else that entry (or @string) is an error; all values of the file together hold at most
 # EXPANSION_FACTOR times the file's length (at least MIN_EXPANSION_BUDGET), else the whole file is refused.
 MAX_VALUE_CHARS = 64 * 1024
+MAX_KEY_CHARS = 200  # a citation key or RIS ID as reported back
 EXPANSION_FACTOR = 4
 MIN_EXPANSION_BUDGET = 1024 * 1024
 CROSSREF_FALLBACK_MAX = 20
@@ -131,7 +136,9 @@ def detect_format(filename: str | None, text: str) -> Format:
     head = text.lstrip()
     if re.match(r"TY  -", head):
         return "ris"
-    if re.match(r"@\s*[A-Za-z]+\s*[{(]", head) or re.search(r"(?m)^\s*@\s*[A-Za-z]+\s*[{(]", text):
+    # An entry head anywhere, as the parser reads one; a search that starts only at '@' signs stays linear (a
+    # line-anchored `^\s*@` would rescan every run of blank lines once per line).
+    if _HEAD.search(text):
         return "bibtex"
     raise ImportRefused(422, "import_unknown_format", "The file is neither BibTeX (.bib) nor RIS (.ris)")
 
@@ -216,7 +223,8 @@ def _split_top(value: str, separator: re.Pattern[str]) -> list[str]:
 
 def _bibtex_authors(value: str) -> list[str]:
     names = []
-    for raw in _split_top(value, re.compile(r"\s+and\s+", re.IGNORECASE)):
+    # Whitespace collapsed first: the separator is tried at every position, and `\s+` over a long run would rescan it.
+    for raw in _split_top(re.sub(r"\s+", " ", value), re.compile(r" and ", re.IGNORECASE)):
         raw = raw.strip()
         if not raw or raw.lower() == "others":
             continue
@@ -294,6 +302,10 @@ class _Budget:
 class _BibReader:
     def __init__(self, text: str, start: int, macros: dict[str, str], budget: _Budget):
         self.text, self.pos, self.macros, self.budget = text, start, macros, budget
+        self.reach = start  # the furthest position read; a failed entry is never read again up to it
+
+    def resume(self) -> int:
+        return max(self.pos, self.reach)
 
     def ws(self) -> None:
         self.pos = _WS.match(self.text, self.pos).end()
@@ -310,6 +322,7 @@ class _BibReader:
                 continue
             if char == "@":
                 if _HEAD.match(text, i):
+                    self.reach = i
                     raise _Malformed("unclosed_value", "a field value is not closed before the next entry")
             elif char == "{":
                 depth += 1
@@ -324,6 +337,8 @@ class _BibReader:
                 self.pos = i + 1
                 return text[start:i]
             i += 1
+        # Read to the end (an escaped `\@type{` is not an entry head inside a value): nothing after it is read again.
+        self.reach = len(text)
         raise _Malformed("unclosed_value", "a field value is not closed before the end of the file")
 
     def value(self) -> str:
@@ -342,7 +357,7 @@ class _BibReader:
             elif (match := _IDENT.match(self.text, self.pos)):
                 name = match.group(0).lower()
                 if name not in self.macros:
-                    raise _Malformed("undefined_string", f"@string {match.group(0)} is not defined")
+                    raise _Malformed("undefined_string", f"@string {match.group(0)[:80]} is not defined")
                 part = self.macros[name]
                 self.pos = match.end()
             else:
@@ -424,7 +439,7 @@ def parse_bibtex(text: str) -> tuple[list[Entry], list[EntryError]]:
     while (head := _HEAD.search(text, pos)) is not None:
         start, kind, closing = head.start(), head.group(1).lower(), "}" if head.group(2) == "{" else ")"
         line = lines.at(start)
-        pos = start + 1  # where the next entry is looked for when this one cannot be read
+        pos = start + 1  # where the next entry is looked for when this one reads nothing further
         if kind in ("comment", "preamble"):
             if head.group(2) == "(":
                 continue
@@ -440,10 +455,10 @@ def parse_bibtex(text: str) -> tuple[list[Entry], list[EntryError]]:
             reader = _BibReader(text, head.end(), macros, budget)
             try:
                 macros.update(reader.fields(closing))
-                pos = reader.pos
                 strings += 1
             except _Malformed as exc:
                 errors.append(EntryError(None, line, None, exc.code, f"@string: {exc}"))
+            pos = max(pos, reader.resume())
             _over_cap(entries, errors, strings)
             continue
         index += 1
@@ -451,14 +466,16 @@ def parse_bibtex(text: str) -> tuple[list[Entry], list[EntryError]]:
         if key_match is None:
             errors.append(EntryError(index, line, None, "missing_key", "the entry has no citation key"))
         else:
-            key = key_match.group(1)
+            key = key_match.group(1)[:MAX_KEY_CHARS]
             reader = _BibReader(text, key_match.end(), macros, budget)
             try:
                 raw = reader.fields(closing)
-                pos = reader.pos  # read to its end: an entry without a title is still not searched for heads
                 entries.append(_bibtex_entry(index, key, kind, raw))
             except _Malformed as exc:
                 errors.append(EntryError(index, line, key, exc.code, str(exc)))
+            # Recovery never reads a region twice: the next head is looked for after everything this entry read (a
+            # value stops at the next head, so a well-formed entry after a broken one is still found).
+            pos = max(pos, reader.resume())
         _over_cap(entries, errors, strings)
     return entries, errors
 
@@ -506,7 +523,7 @@ def parse_ris(text: str) -> tuple[list[Entry], list[EntryError]]:
         tags: dict[str, list[str]] = {}
         for tag, parts in record or []:
             tags.setdefault(tag, []).append(" ".join(parts).strip())
-        key = (tags.get("ID") or [None])[0] or None
+        key = ((tags.get("ID") or [None])[0] or None) and tags["ID"][0][:MAX_KEY_CHARS]
         if problem:
             errors.append(EntryError(index, record_line, key, *problem))
         else:
@@ -597,24 +614,39 @@ class Resolution:
     provider: str | None = None
     record: ProviderRecord | None = None
     payload_path: str | None = None
+    # What each provider answered: {"provider", "outcome": "found" | "not_found" | "error" | "not_asked", "reason"}.
+    attempts: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _attempt(provider: str, outcome: str, reason: str | None = None) -> dict[str, Any]:
+    return {"provider": provider, "outcome": outcome, "reason": reason}
+
+
+def _failure(outcome) -> str:
+    return f"HTTP {outcome.http_status}" if outcome.http_status else (outcome.error or outcome.status)[:200]
 
 
 async def resolve_dois(http: httpx.AsyncClient, dois: list[str], contact_email: str | None,
                        write_payload) -> dict[str, Resolution]:
     """Each DOI confirmed by exactly one OpenAlex work with that DOI, else by Crossref's record of it.
 
-    `failed` means a provider could not be asked or answered unreadably and none confirmed the DOI; `not_found` means
-    every provider asked answered without it. `write_payload(provider, payload)` stores an answer and returns its path.
+    `failed` means no provider confirmed the DOI and at least one could not be asked or did not answer readably;
+    `not_found` means every provider asked answered without it. `attempts` says what each provider did, with the
+    reason. `write_payload(provider, payload)` stores an answer and returns its path.
     """
-    results: dict[str, Resolution] = {}
+    results = {doi: Resolution("failed") for doi in dois}
     asked = [d for d in dois if "|" not in d and "," not in d]  # the OpenAlex filter cannot hold these two
+    for doi in dois:
+        if doi not in asked:
+            results[doi].attempts.append(_attempt("openalex", "not_asked", "doi_not_filterable"))
     connector = CONNECTORS["openalex"]
     for i in range(0, len(asked), openalex.MAX_IDS_PER_REQUEST):
         batch = asked[i:i + openalex.MAX_IDS_PER_REQUEST]
         outcome = await openalex.works_by_dois(http, batch, api_key=connector.api_key(), contact_email=contact_email,
                                                per_page=openalex.MAX_IDS_PER_REQUEST)
         if outcome.status not in ("completed", "zero_results"):
-            results.update({d: Resolution("failed") for d in batch})
+            for doi in batch:
+                results[doi].attempts.append(_attempt("openalex", "error", _failure(outcome)))
             continue
         # A page that may have left works out cannot say a DOI has none, or that its one work is the only one.
         complete = isinstance(outcome.provider_total, int) and outcome.provider_total <= len(outcome.records)
@@ -624,30 +656,40 @@ async def resolve_dois(http: httpx.AsyncClient, dois: list[str], contact_email: 
                 by_doi.setdefault(record.doi, []).append(record)
         path = write_payload("openalex", outcome.raw_payload) if outcome.records else None
         for doi in batch:
-            found = by_doi.get(doi, [])
+            found, result = by_doi.get(doi, []), results[doi]
             if len(found) == 1 and complete:
-                results[doi] = Resolution("confirmed", "openalex", found[0], path)
+                result.status, result.provider, result.record, result.payload_path = "confirmed", "openalex", found[0], path
+                result.attempts.append(_attempt("openalex", "found"))
+            elif not complete:
+                result.attempts.append(_attempt("openalex", "error", "incomplete_answer"))
+            elif found:
+                result.attempts.append(_attempt("openalex", "error", "several_works"))
             else:
-                results[doi] = Resolution("not_found" if complete and not found else "failed")
-    open_dois = [d for d in dois if results.get(d) is None or results[d].status != "confirmed"]
+                result.attempts.append(_attempt("openalex", "not_found"))
+    open_dois = [d for d in dois if results[d].status != "confirmed"]
+    for doi in open_dois[CROSSREF_FALLBACK_MAX:]:
+        results[doi].attempts.append(_attempt("crossref", "not_asked", "crossref_limit"))
     for doi in open_dois[:CROSSREF_FALLBACK_MAX]:
+        result = results[doi]
         answer, outcome = await lookup.crossref_work(http, doi, contact_email)
-        earlier = results.get(doi)
         if answer.status == "found":
             try:
                 record = crossref.record_from_item(outcome.raw_payload)
             except (AttributeError, KeyError, TypeError, IndexError):
                 record = None
             if record is not None and record.doi == doi:
-                results[doi] = Resolution("confirmed", "crossref", record, write_payload("crossref", outcome.raw_payload))
-                continue
-            results[doi] = Resolution("failed")
+                result.status, result.provider, result.record = "confirmed", "crossref", record
+                result.payload_path = write_payload("crossref", outcome.raw_payload)
+                result.attempts.append(_attempt("crossref", "found"))
+            else:
+                result.attempts.append(_attempt("crossref", "error", "unreadable_record"))
         elif answer.status == "not_found":
-            results[doi] = earlier if earlier is not None and earlier.status == "failed" else Resolution("not_found")
+            result.attempts.append(_attempt("crossref", "not_found"))
         else:
-            results[doi] = Resolution("failed")
-    for doi in dois:
-        results.setdefault(doi, Resolution("failed"))  # left unasked past the Crossref cap
+            result.attempts.append(_attempt("crossref", "error", _failure(outcome)))
+    for result in results.values():
+        if result.status != "confirmed" and all(a["outcome"] == "not_found" for a in result.attempts):
+            result.status = "not_found"
     return results
 
 
@@ -660,12 +702,39 @@ def _fold(value: str | None) -> str:
     return "".join(ch for ch in text if unicodedata.category(ch)[0] in "LN" or unicodedata.category(ch) in ("Mn", "Mc"))
 
 
+def _identity_fold(value: str | None) -> str:
+    """Stricter than `_fold` for record identity: NFKC and casefold with whitespace, dashes and quotation marks
+    dropped, every other character kept, so `C++` and `C#` stay apart from `C` while `--` against `–` or a capital
+    letter does not split one entry in two."""
+    text = unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", value or "").casefold())
+    return "".join(ch for ch in text if not (ch.isspace() or ch in "\"'`" or unicodedata.category(ch) in ("Pd", "Pi", "Pf")))
+
+
 def identity(entry: Entry) -> str:
-    """The same entry imported again, from either format, finds the record it made the first time."""
-    if entry.doi:
-        return f"doi:{entry.doi}"
-    basis = "|".join((_fold(entry.title), str(entry.year or ""), _fold(entry.authors[0] if entry.authors else "")))
-    return "entry:" + hashlib.sha256(basis.encode()).hexdigest()[:24]
+    """The same entry imported again, from either format, finds the record it made the first time. An unconfirmed DOI
+    is never an identity on its own: two entries naming one DOI with a different title, year or first author are two
+    records."""
+    basis = "\x1f".join((entry.doi or "", _identity_fold(entry.title), str(entry.year or ""),
+                          _identity_fold(entry.authors[0] if entry.authors else "")))
+    return "entry:" + hashlib.sha256(basis.encode()).hexdigest()[:32]
+
+
+def titles_agree(entry_title: str, record_title: str) -> bool:
+    """Whether a record a DOI names is the work the entry names, by title. Deliberately strict: a disagreement keeps
+    the entry as the person's own record, which loses nothing, while a false agreement would put another paper's
+    record (and its abstract) under the entry. Agreement is the same folded title, one folded title containing the
+    other when the shorter is at least half the longer (a subtitle), or, for titles of three words or more, 80% of
+    the shorter title's words in the other."""
+    a, b = _fold(entry_title), _fold(record_title)
+    if not a or not b:
+        return False
+    short, long_ = sorted((a, b), key=len)
+    if a == b or (short in long_ and 2 * len(short) >= len(long_)):
+        return True
+    words = [set(_fold(w) for w in re.findall(r"\w+", unicodedata.normalize("NFKC", t).casefold())) - {""}
+             for t in (entry_title, record_title)]
+    fewer = min(words, key=len)
+    return len(fewer) >= 3 and len(words[0] & words[1]) >= 0.8 * len(fewer)
 
 
 def user_record(entry: Entry, fmt: Format) -> ProviderRecord:
@@ -697,23 +766,36 @@ async def import_entries(store: Store, http: httpx.AsyncClient, payloads_dir: Pa
     with transaction(store.conn):
         for entry in entries:
             found = resolved.get(entry.doi) if entry.doi else None
-            confirmed_by = None
+            confirmed_by, svid, mismatch = None, None, None
+            existing = store.find_source_by_identifier("doi", entry.doi) if entry.doi else None
             if found is not None and found.status == "confirmed":
-                svid, _ = store.upsert_provider_source(found.provider, found.record, found.payload_path)
-                confirmed_by = found.provider
-                record = "provider"
-            elif entry.doi and (existing := store.find_source_by_identifier("doi", entry.doi)):
-                svid, record = existing, "existing"
-                mapping = store.conn.execute(
-                    "SELECT provider FROM identifier_mappings WHERE source_version_id = ? AND scheme = 'doi'"
-                    " ORDER BY id LIMIT 1", (svid,)).fetchone()
-                # The stored record is that provider's own, from an earlier lookup or search.
-                confirmed_by = mapping["provider"] if mapping else None
-            else:
-                svid, _ = store.upsert_provider_source(PROVIDER, user_record(entry, fmt), file_payload)
+                if titles_agree(entry.title, found.record.title):
+                    svid, _ = store.upsert_provider_source(found.provider, found.record, found.payload_path)
+                    confirmed_by, record = found.provider, "provider"
+                else:
+                    mismatch = found.record.title
+            elif existing is not None:
+                stored = store.source(existing)["title"]
+                if titles_agree(entry.title, stored):
+                    mapping = store.conn.execute(
+                        "SELECT provider FROM identifier_mappings WHERE source_version_id = ? AND scheme = 'doi'"
+                        " ORDER BY id LIMIT 1", (existing,)).fetchone()
+                    # The stored record is that provider's own, from an earlier lookup or search.
+                    svid, record, confirmed_by = existing, "existing", mapping["provider"] if mapping else None
+                else:
+                    mismatch = stored
+            if svid is None:
+                # The person's own record. One made before for the same entry is reused as it stands: a second entry
+                # never fills its fields or adds its abstract.
+                own = user_record(entry, fmt)
+                svid = (store.find_source_by_identifier(PROVIDER, own.provider_record_id)
+                        or store.upsert_provider_source(PROVIDER, own, file_payload)[0])
                 record = "user_supplied"
             rows.append({"index": entry.index, "key": entry.key, "title": entry.title, "doi": entry.doi,
-                         "lookup": found.status if found is not None else "no_doi", "record": record,
+                         "lookup": found.status if found is not None else "no_doi",
+                         "lookups": found.attempts if found is not None else [], "record": record,
+                         # The title of the record the DOI named when it is not the entry's work.
+                         "title_mismatch": mismatch,
                          "source_version_id": svid, "work_id": store.source(svid)["work_id"],
                          "confirmed_by": confirmed_by})
         svids = [row["source_version_id"] for row in rows]

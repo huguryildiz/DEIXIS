@@ -486,11 +486,17 @@ def answer_is_current(store: Store, research: dict[str, Any], answer: dict[str, 
 
 def intent_outcome(store: Store, research: dict[str, Any]) -> dict[str, Any] | None:
     """What a `table`/`compare` discovery of the current question did instead of the answer, when it wrote no table:
-    the latest `study_table_skipped` of a run of this revision (UI parity S5a). None otherwise."""
-    row = store.conn.execute(
-        "SELECT e.payload_json, e.run_id FROM events e JOIN runs r ON r.id = e.run_id WHERE e.research_id = ?"
-        " AND e.type = 'study_table_skipped' AND r.scope_revision = ? ORDER BY e.id DESC LIMIT 1",
+    the `study_table_skipped` of the latest discovery run of this revision (UI parity S5a). None otherwise, so a skip
+    of an earlier discovery no longer shows once a later one of the same question ran (S5b)."""
+    latest = store.conn.execute(
+        "SELECT id FROM runs WHERE research_id = ? AND kind = 'discovery' AND scope_revision = ?"
+        " ORDER BY created_at DESC, rowid DESC LIMIT 1",
         (research["id"], research["current_scope_revision"])).fetchone()
+    if latest is None:
+        return None
+    row = store.conn.execute(
+        "SELECT payload_json, run_id FROM events WHERE research_id = ? AND type = 'study_table_skipped' AND run_id = ?"
+        " ORDER BY id DESC LIMIT 1", (research["id"], latest["id"])).fetchone()
     if row is None:
         return None
     return {"kind": "table_skipped", "reason": json.loads(row["payload_json"])["reason"], "run_id": row["run_id"]}

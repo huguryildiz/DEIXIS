@@ -352,6 +352,9 @@ WITHHELD_PDFS = {work["best_oa_location"]["pdf_url"] for _, work in EUROPEPMC_WO
 # semantic page holds the first PARITY_SEMANTIC, the keyword query's cursor pages the rest, and citation chaining finds
 # nothing, so found and unique are both PARITY_TOTAL. Each work has an open PDF naming its DOI on page one.
 PARITY_TOTAL, PARITY_SEMANTIC, PARITY_PASS, PARITY_CITED = 412, 50, 34, 12
+# The answer's unanswered aspects (SYNTHETIC), which Home offers as its "Suggested" cards (UI parity S5b).
+PARITY_UNANSWERED = ("How do SYNTHETIC duty-cycled schedules compare on lifetime under node mobility?",
+                     "Which SYNTHETIC energy models report k-connectivity repair costs?")
 # The titles name none of the query's second block (the question's own words), so code leaves every record to the two
 # abstract-screening runs instead of passing it on its title alone (`abstract_stage.code_outcome`, rule 4).
 PARITY_TOPICS = ("degree-constrained topology control", "coverage and node lifetime", "duty-cycled sleep scheduling",
@@ -860,6 +863,9 @@ class ScriptedCodex:
                                 "quote": " ".join(chosen["text"].split())[:600]})
             output["claims"] = claims
             output["citation_anchors"] = anchors
+            if "[parity]" in question:
+                # Two notes of what the passages did not cover, as the mockup's two "Suggested" cards on Home (S5b).
+                output["unanswered_aspects"] = list(PARITY_UNANSWERED)
         return output
 
     async def replace_seed(self, research_id: str) -> None:

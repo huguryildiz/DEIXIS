@@ -101,6 +101,7 @@ def test_parity_counts(tmp_path):
         assert sorted(r["kind"] for r in rows) == ["choose_run", "confirm_quote", "find_part"]
         first = [a for a in v["answers"] if a["status"] == "structurally_valid"]
         assert len(first) == 1
+        assert first[0]["unanswered_aspects"] == list(fx.PARITY_UNANSWERED)  # Home's "Suggested" cards (S5b)
 
         # V2: a second answer run, as "Generate a new answer" asks; the first answer stays as it was.
         assert client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).status_code == 202

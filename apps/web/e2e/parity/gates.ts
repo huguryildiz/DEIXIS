@@ -408,15 +408,15 @@ export function checkIcon(pair: Pair, m: Side, index = 0): string[] {
 }
 
 /** Icon box ±1 px, measured on the svg of the item at `index`. */
-export async function checkIconBox(pair: Pair, mock: Page, app: Page, index = 0, id = pair.id): Promise<string[]> {
+export async function checkIconBox(pair: Pair, mock: Page, app: Page, index = 0, id = pair.id, mockIndex = index): Promise<string[]> {
   if (!iconOf(pair, index)) return []
-  const box = (page: Page, sel: string, exclude: string[]) => page.evaluate(({ sel, exclude, index }) => {
+  const box = (page: Page, sel: string, exclude: string[], index: number) => page.evaluate(({ sel, exclude, index }) => {
     const el = [...document.querySelectorAll(sel)].filter(e => !exclude.some(x => e.closest(x)))[index]
     const svg = el?.matches('svg') ? el : el?.querySelector('svg')
     const r = svg?.getBoundingClientRect()
     return r ? { width: r.width, height: r.height } : null
   }, { sel, exclude, index })
-  const [a, b] = [await box(mock, pair.mock, MOCK_EXCLUDE), await box(app, pair.app, APP_EXCLUDE)]
+  const [a, b] = [await box(mock, pair.mock, MOCK_EXCLUDE, mockIndex), await box(app, pair.app, APP_EXCLUDE, index)]
   if (!a || !b) return [`${id}: icon svg missing`]
   return (['width', 'height'] as const).filter(k => !near(a[k], b[k], 1)).map(k => `${id}: icon ${k} mockup ${a[k]} app ${b[k]} (±1)`)
 }
@@ -439,7 +439,7 @@ export const PROBE = [...new Set(COLOUR_EXCEPTIONS.flatMap(e => e.selectors))]
 export type FixtureContext = { researches: number; suggestions: number }
 
 /** One item's checks: the pair's geometry, type, colour, fixed text and icon checks, on the item at `index`. */
-async function checkItem(pair: Pair, item: Pair, m: Side, v: Variant, mock: Page, app: Page, index: number, data: boolean): Promise<string[]> {
+async function checkItem(pair: Pair, item: Pair, m: Side, v: Variant, mock: Page, app: Page, index: number, data: boolean, mockIndex = index): Promise<string[]> {
   const out = checkPresence(item, m)
   if (out.length) return out
   if (pair.checks.includes('chrome')) {
@@ -451,14 +451,15 @@ async function checkItem(pair: Pair, item: Pair, m: Side, v: Variant, mock: Page
   if (pair.checks.includes('content')) out.push(...checkContent(item, m))
   if (pair.checks.includes('type')) out.push(...checkType(item, m))
   if (pair.checks.includes('colour')) out.push(...checkColour(item, m, v))
-  if (pair.checks.includes('icon')) out.push(...checkIcon(pair, m, index).map(l => l.replace(pair.id, item.id)), ...await checkIconBox(pair, mock, app, index, item.id))
+  if (pair.checks.includes('icon')) out.push(...checkIcon(pair, m, index).map(l => l.replace(pair.id, item.id)), ...await checkIconBox(pair, mock, app, index, item.id, mockIndex))
   if ((pair.text ?? pair.list === 'fixed') && !data) out.push(...checkText(item, m))
   return out
 }
 
 /** Lists. A fixed list (nav items, menu rows, tabs, head buttons, toolbars) has the same items as the mockup: count,
  *  order, visibility, geometry, type, colour, icon and fixed text item by item. A data list's count comes from the
- *  fixture records (`expected`), and each row is compared with the mockup's first row for layout and style only. */
+ *  fixture records (`expected`), and each row is compared for layout and style only with the mockup row at the same
+ *  place, or the mockup's last row when the data has more rows (a grid of cards keeps its columns). */
 export async function checkList(pair: Pair, v: Variant, mock: Page, app: Page, ctx: FixtureContext): Promise<{ failures: string[]; first: Side }> {
   const mockItems = await measureAll(mock, pair.mock, MOCK_EXCLUDE, PROBE, pair.dataText?.mock)
   const appItems = await measureAll(app, pair.app, APP_EXCLUDE, [], pair.dataText?.app)
@@ -471,8 +472,9 @@ export async function checkList(pair: Pair, v: Variant, mock: Page, app: Page, c
   const count = data ? appItems.length : Math.min(mockItems.length, appItems.length)
   for (let i = 0; i < count && mockItems.length; i++) {
     const item = { ...pair, id: `${pair.id}[${i}]` }
-    failures.push(...await checkItem(pair, item, { mock: mockItems[data ? 0 : i], app: appItems[i] }, v, mock, app, i, data))
-    if (pair.checks.includes('colour')) failures.push(...await checkColourStates(item, v, mock, app, i, data ? 0 : i))
+    const m = Math.min(i, mockItems.length - 1)
+    failures.push(...await checkItem(pair, item, { mock: mockItems[m], app: appItems[i] }, v, mock, app, i, data, m))
+    if (pair.checks.includes('colour')) failures.push(...await checkColourStates(item, v, mock, app, i, m))
   }
   return { failures, first: { mock: mockItems[0] ?? null, app: appItems[0] ?? null } }
 }

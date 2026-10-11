@@ -1,12 +1,12 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Popover } from '@base-ui/react/popover'
-import { ArrowUp, BookMarked, Brain, Check, ChevronDown, Cpu, FileText, FileUp, Gauge, Link2, Paperclip, PenLine, Plus, ScanSearch, Search, ShieldCheck, SlidersHorizontal, Table2, Telescope, X, Zap, type LucideIcon } from 'lucide-react'
+import { ArrowUp, BookMarked, Brain, Check, ChevronDown, Cpu, FileText, FileUp, Gauge, Lightbulb, Link2, Network, Paperclip, PenLine, Plus, RotateCw, ScanSearch, Search, ShieldCheck, SlidersHorizontal, Table2, Telescope, X, Zap, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
-import { api, ApiError, type Connections, type Effort, type EffortLimits, type ModelOption, type ModelRole, type RoleModelSetting, type SourceScope } from './api'
+import { api, ApiError, homeApi, type Connections, type Effort, type EffortLimits, type IntentOutcome, type ModelOption, type ModelRole, type ResearchIntent, type ResearchSummary, type RoleModelSetting, type SourceScope, type Suggestion } from './api'
 import { connectionName, fileRestoreNote, fileRestoreTone, isPlannedModel, reasoningLabel, scopeLabels } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroDialog, type ZoteroChoice } from './ZoteroDialog'
@@ -182,9 +182,79 @@ export function ModelPicker({ role, icon: Icon, hint, models, value, onChange, e
   </div>
 }
 
+// The mode chips under the composer (H13). Each sets what the research produces (its intent); "Ask my PDFs" is the
+// attached-only scope with a drafted report. The chosen chip is the person's explicit choice, stored with the research.
+type ModeChip = 'report' | 'papers' | 'table' | 'compare' | 'ask'
+const modeChips: { id: ModeChip; label: string; icon: LucideIcon }[] = [
+  { id: 'report', label: 'Draft report', icon: FileText },
+  { id: 'papers', label: 'Find papers', icon: Search },
+  { id: 'table', label: 'Evidence table', icon: Table2 },
+  { id: 'compare', label: 'Compare methods', icon: Network },
+  { id: 'ask', label: 'Ask my PDFs', icon: Paperclip },
+]
+
+// Why a table/compare discovery of the current question wrote no table (the view's current outcome only).
+const outcomeText: Record<IntentOutcome['reason'], string> = {
+  no_included_source: 'No study table: no source was included',
+  scope_revised: 'No study table: the question was revised',
+  run_active: 'No study table: another run was active',
+}
+
+// The Resume card (H14): the most recently updated research, its latest report version and what waits for the person.
+function ResumeCard({ research }: { research: ResearchSummary }) {
+  const [facts, setFacts] = useState<{ version: number | null; outcome: IntentOutcome | null } | null>(null)
+  useEffect(() => {
+    api.research(research.id).then(view => {
+      const latest = view.answers.filter(a => a.status === 'structurally_valid').sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+      setFacts({ version: latest?.report_version ?? null, outcome: view.intent_outcome })
+    }, () => setFacts(null))
+  }, [research.id])
+  const waiting = research.awaiting.queue + research.awaiting.pdf
+  const parts = [
+    facts?.version ? t('Report V{n}', { n: facts.version }) : null,
+    facts?.outcome ? t(outcomeText[facts.outcome.reason]) : null,
+    waiting ? t('{n} waiting for you', { n: waiting }) : null,
+  ].filter(Boolean)
+  // Queue rows and works waiting for the person's PDF are different things; the sum is shown, the split is told.
+  const split = t('{queue} in the queue · {pdf} waiting for your PDF', { queue: research.awaiting.queue, pdf: research.awaiting.pdf })
+  return <button type="button" className="card" onClick={() => { window.location.hash = `/research/${research.id}` }}>
+    <span className="home-card-tag"><RotateCw aria-hidden />{t('Resume')}</span>
+    <p>{research.title}</p>
+    {parts.length > 0 && <small title={waiting ? split : undefined}><i className="home-card-dot" aria-hidden />{parts.join(' · ')}{waiting > 0 && <span className="sr-only"> ({split})</span>}</small>}
+  </button>
+}
+
+// The first-run setup card (H2): shown while no model connection is ready, so nothing can start yet. Each row states
+// what the connections list and the proxy setting hold now; none of it is a live test.
+function SetupCard({ connections, reasons, proxy }: { connections: Connections; reasons: string; proxy: string | null | undefined }) {
+  const keyless = connections.providers.filter(p => p.id === 'openalex' || p.id === 'crossref')
+  const sourcesReady = keyless.length === 2 && keyless.every(p => p.implemented && p.access_mode !== null && p.access_mode !== 'not_configured')
+  const settings = () => { window.location.hash = '/settings/connections' }
+  const num = (n: number, ok: boolean) => <span className={`num ${ok ? 'ok' : ''}`} aria-hidden>{ok ? <Check /> : n}</span>
+  return <section className="home-setup" aria-labelledby="home-setup-title">
+    <h2 id="home-setup-title"><span>{t('Set up DEIXIS')}</span><small>{t('Three things before the first question. Nothing leaves this computer except the searches and the model calls you set up.')}</small></h2>
+    <div className="home-setup-row">{num(1, false)}<p>{t('Answer and literature models')}<small>{t('Not connected. Use Codex CLI, Claude Code, or an API key.')}</small>{reasons && <small className="home-setup-reason">{reasons}</small>}</p>
+      <button type="button" className="setup-connect" onClick={settings}>{t('Connect')}</button></div>
+    <div className="home-setup-row">{num(2, sourcesReady)}<p>{t('Scholarly sources')}<small>{t('OpenAlex and Crossref work without a key.')}</small></p>
+      {sourcesReady ? <span className="st ok">{t('Ready')}</span> : <button type="button" className="setup-add" onClick={settings}>{t('Connect')}</button>}</div>
+    <div className="home-setup-row">{num(3, Boolean(proxy))}<p>{t('Institution proxy (optional)')}<small>{t('Lets you open PDFs your library pays for, through its sign-in.')}</small></p>
+      {proxy ? <span className="st no">{t('Address saved')}</span> : <button type="button" className="setup-add" onClick={settings}>{t('Add')}</button>}</div>
+  </section>
+}
+
 export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const [question, setQuestion] = useState('')
   const [scope, setScope] = useState<SourceScope>('academic')
+  const [intent, setIntent] = useState<ResearchIntent>('report')
+  // Home's real data: the latest research (Resume), stored unanswered aspects (Suggested) and the proxy setting.
+  const [latest, setLatest] = useState<ResearchSummary | null>(null)
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
+  const [proxy, setProxy] = useState<string | null | undefined>(undefined)
+  useEffect(() => {
+    api.researches().then(list => setLatest(list[0] ?? null), () => setLatest(null))
+    homeApi.suggestions().then(result => setSuggestions(result.suggestions.slice(0, 2)), () => setSuggestions([]))
+    api.institutionProxy().then(result => setProxy(result.address), () => setProxy(null))
+  }, [])
   const [effort, setEffort] = useState<Effort>('standard')
   const [limits, setLimits] = useState<EffortLimits | null>(null)
   useEffect(() => { api.effortLimits().then(setLimits, () => setLimits(null)) }, [])
@@ -201,12 +271,15 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   // Each choice in the menu remounts the picker, so choosing the same role again opens its list again.
   const [pickerNonce, setPickerNonce] = useState(0)
   const [files, setFiles] = useState<File[]>([])
+  // Attached PDFs the person unchecked in the guide rows: they are still read as sources but do not guide the search.
+  const [unguided, setUnguided] = useState<Set<string>>(new Set())
   // A Zotero collection chosen before the research exists; it is imported right after the research is created.
   const [zotero, setZotero] = useState<ZoteroChoice | null>(null)
   const [zoteroOpen, setZoteroOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
+  const questionInput = useRef<HTMLTextAreaElement>(null)
   const addButton = useRef<HTMLButtonElement>(null)
   const toast = useToast()
 
@@ -235,6 +308,38 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const efforts = chosen?.reasoning_efforts ?? []
   const needsFiles = scope === 'attached'
   const needsSource = scope !== 'academic'
+  // A mixed search with several PDFs shows one check row per PDF (Q3, D3): every checked one guides the search.
+  const guideRows = scope === 'attached_and_academic' && files.length > 1
+  const guidedFiles = files.filter(f => !unguided.has(f.name))
+  const activeChip: ModeChip = scope === 'attached' && intent === 'report' ? 'ask' : intent
+
+  // What guides the search: every eligible PDF while all rows are checked (the backend keeps five), otherwise the
+  // checked uploads plus the Zotero items, in that order, among the PDFs the backend can use.
+  function seedSelection(candidates: { source_version_id: string; origin: string }[], uploaded: Map<string, string>) {
+    if (!guideRows || guidedFiles.length === files.length) return { all_eligible: true as const }
+    const usable = new Set(candidates.map(c => c.source_version_id))
+    const chosen = guidedFiles.map(f => uploaded.get(f.name)).filter((v): v is string => Boolean(v && usable.has(v)))
+    const fromZotero = candidates.filter(c => c.origin === 'zotero_import').map(c => c.source_version_id)
+    const ids = [...chosen, ...fromZotero].slice(0, MAX_SEED_PDFS)
+    if (!ids.length) throw new Error(t('none of the checked PDFs has text that can guide a search'))
+    return { source_version_ids: ids }
+  }
+
+  function chooseChip(chip: ModeChip) {
+    if (chip === 'ask') { setScope('attached'); setIntent('report') }
+    else {
+      setIntent(chip)
+      // Draft report searches again: leaving "Ask my PDFs" goes back to a scope with a search.
+      if (chip === 'report' && scope === 'attached') setScope(files.length || zotero ? 'attached_and_academic' : 'academic')
+    }
+    questionInput.current?.focus()
+  }
+  function chooseScope(next: SourceScope) {
+    setScope(next)
+    if (next === 'attached' && intent === 'papers') setIntent('report')  // finding papers needs a search
+  }
+  const chipDisabled = (chip: ModeChip) => chip === 'papers' && scope === 'attached' ? t('Needs academic search')
+    : chip === 'ask' && !files.length && !zotero ? t('Add a PDF first') : null
 
   function chooseModel(id: string, list = models) {
     const next = list.find(m => m.id === id)
@@ -251,7 +356,13 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
       const header = await file.slice(0, 5).text()
       if (header === '%PDF-') accepted.push(file); else rejected.push(file.name)
     }
-    setFiles(old => [...new Map([...old, ...accepted].map(f => [f.name, f])).values()])
+    const next = [...new Map([...files, ...accepted].map(f => [f.name, f])).values()]
+    // At most five PDFs guide one search (D3): a file added past five starts unchecked.
+    const out = new Set([...unguided].filter(name => next.some(f => f.name === name)))
+    let guided = 0
+    for (const f of next) { if (out.has(f.name)) continue; if (guided < MAX_SEED_PDFS) guided++; else out.add(f.name) }
+    setFiles(next)
+    setUnguided(out)
     if (accepted.length && scope === 'academic') setScope('attached_and_academic')  // attachments must be part of the scope
     setError(rejected.length ? t('{files}: only PDF files can be attached.', { files: rejected.join(', ') }) : '')
   }
@@ -260,6 +371,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
     if (!question.trim() || busy) return
     if (needsFiles && !files.length && !zotero) { setError(t('Attach at least one PDF to use “Attached files”.')); return }
     if (scope === 'attached_and_academic' && !files.length && !zotero) { setError(t('Add a PDF or Zotero collection to guide the search.')); return }
+    if (guideRows && !guidedFiles.length && !zotero) { setError(t('Choose at least one PDF to guide the search.')); return }
     const literatureChoice = models.find(m => m.id === literature)
     if (!chosen || !literatureChoice) { setError(t('Choose the answer and literature models first. DEIXIS does not pick them for you.')); return }
     setBusy(true)
@@ -269,7 +381,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
     const customReviewer = reviewer !== DEFAULT_REVIEWER && reviewer !== NO_REVIEW
     const reviewerChoice = customReviewer ? models.find(m => m.id === reviewer) : undefined
     try {
-      const view = await api.create({ question: question.trim(), source_scope: scope,
+      const view = await api.create({ question: question.trim(), source_scope: scope, intent,
         seed_mode: scope === 'attached_and_academic' ? 'uploaded_seed' : 'question_only', effort, model_connection: chosen.connection, requested_model: chosen.model,
         reasoning_effort: efforts.some(e => e.id === reasoning) ? reasoning : null,
         literature_connection: literatureChoice.connection, literature_model: literatureChoice.model,
@@ -279,9 +391,11 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
         review_reasoning_effort: customReviewer ? listedEffort(models, reviewer, reviewerReasoning) : null })
       id = view.research.id
       let latestView = view
+      const uploaded = new Map<string, string>()
       step = 'Research saved, but DEIXIS could not attach the PDFs: {message}. You can retry from the research page.'
       for (const file of files) {
         const added = await api.upload(id, file)
+        uploaded.set(file.name, added.uploaded_source_version_id)
         if (added.file_restore) toast(fileRestoreTone(added.file_restore), [t('PDF added and included. Its text was extracted page by page (no OCR).'), fileRestoreNote(added.file_restore)].filter(Boolean).join(' '))
         latestView = added
       }
@@ -295,7 +409,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
       if (scope === 'attached_and_academic') {
         step = 'Research saved, but the PDFs could not guide the search: {message}. Choose a readable PDF on the research page.'
         try {
-          latestView = await api.setSeeds(id, { all_eligible: true }, latestView.research.version)
+          latestView = await api.setSeeds(id, seedSelection(latestView.scope.seed_candidates, uploaded), latestView.research.version)
         } catch (e) {
           // 409 is a real conflict: another choice was stored meanwhile. Do not search on a guess; let the person check it.
           if (e instanceof ApiError && e.status === 409) { toast('warning', t('The PDF choice changed elsewhere; check it on the research page.')); onCreated(id); return }
@@ -328,21 +442,20 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const reviewerSummary = reviewer === NO_REVIEW ? t('Off') : reviewer === DEFAULT_REVIEWER ? defaultName ?? t('no reviewer') : modelName(reviewer)
   // Bytes as the file manager shows them, so a large attachment is recognisable before it is uploaded.
   const fileSize = (bytes: number) => bytes >= 1_000_000 ? t('{n} MB', { n: (bytes / 1_000_000).toFixed(1) }) : t('{n} KB', { n: Math.max(1, Math.round(bytes / 1000)) })
-  // A mixed search is guided by up to five of the attached PDFs (D3); with several files the chips say so.
-  const guiding = scope === 'attached_and_academic' && files.length > 1
+  // A mixed search is guided by up to five of the attached PDFs (D3); with several files the checked ones' chips say so.
   const hasChips = files.length > 0 || Boolean(zotero)
   const chips = <div className="attachments" aria-label={hasChips ? t('PDFs to attach') : undefined}>
     {zotero && <div className="attachment-chip">
       <span className="attachment-chip-main"><span className="attachment-icon" aria-hidden><ConnectionIcon id="zotero" /></span><span className="attachment-name" title={zotero.name}>{zotero.name}</span><small>Zotero</small></span>
       <button type="button" className="attachment-remove" aria-label={t('Remove {name}', { name: zotero.name })} onClick={() => setZotero(null)}><X size={13} /></button>
     </div>}
-    {files.map((file, index) =>
+    {files.map(file =>
       <div key={file.name} className="attachment-chip">
         <span className="attachment-chip-main">
           <span className="attachment-icon" aria-hidden><FileText size={13} /></span>
-          <span className="attachment-name" title={file.name}>{file.name}</span><small>{guiding && index < MAX_SEED_PDFS ? t('guides the search') : fileSize(file.size)}</small>
+          <span className="attachment-name" title={file.name}>{file.name}</span><small>{guideRows && !unguided.has(file.name) ? t('guides the search') : fileSize(file.size)}</small>
         </span>
-        <button type="button" className="attachment-remove" aria-label={t('Remove {name}', { name: file.name })} onClick={() => setFiles(old => old.filter(f => f.name !== file.name))}><X size={13} /></button>
+        <button type="button" className="attachment-remove" aria-label={t('Remove {name}', { name: file.name })} onClick={() => { setFiles(old => old.filter(f => f.name !== file.name)); setUnguided(old => { const next = new Set(old); next.delete(file.name); return next }) }}><X size={13} /></button>
       </div>)}
   </div>
 
@@ -359,9 +472,10 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   return <section className="welcome home">
     <h1 className="sr-only" tabIndex={-1}>{uiLanguage() === 'tr' ? <><em>Sorunuz</em> sizi nereye götürüyor?</> : <>Where does your <em>question</em>{' '}lead?</>}</h1>
     <p className="intro sr-only">{t('Ask a question. DEIXIS finds publications, lets you choose the sources, and links each claim to a passage you can open.')}</p>
+    {noModel && connections && <SetupCard connections={connections} reasons={notReadyReasons(connections)} proxy={proxy} />}
     <form className="composer" onSubmit={e => { e.preventDefault(); void submit() }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); void addFiles(e.dataTransfer.files) }}>
       <div className="composer-band">
-        <Select value={scope} onValueChange={value => { if (value) setScope(value as SourceScope) }}>
+        <Select value={scope} onValueChange={value => { if (value) chooseScope(value as SourceScope) }}>
           <SelectTrigger className="composer-scope" aria-label={t('Source scope')} title={t('Where DEIXIS looks for sources')}><SelectValue>{(value: string) => { const Icon = scopeOptions[value as SourceScope].icon; return <><Icon size={15} aria-hidden />{t(scopeLabels[value as SourceScope])}</> }}</SelectValue></SelectTrigger>
           <SelectContent className="home-menu" align="start" alignItemWithTrigger={false}>
             <div className="home-menu-heading" aria-hidden="true">{t('Workflows')}</div>
@@ -371,7 +485,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
         </Select>
       </div>
       <label className="composer-label sr-only" htmlFor="research-question">{t('What would you like to investigate?')}</label>
-      <Textarea id="research-question" aria-label={t('Research question')} placeholder={t('Ask a research question. DEIXIS searches, screens, reads and links every claim to a passage.')} value={question}
+      <Textarea ref={questionInput} id="research-question" aria-label={t('Research question')} placeholder={t('Ask a research question. DEIXIS searches, screens, reads and links every claim to a passage.')} value={question}
         onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit() } }} />
       {scope === 'attached_and_academic' && files.length === 0 && zotero &&
         <p className="composer-hint">{t('The imported PDFs guide the search.')}</p>}
@@ -408,8 +522,21 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
             {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d} className="home-menu-item"><MenuRow icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={effortDetail(d, limits)} /></SelectItem>)}
           </SelectContent>
         </Select>
-        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero)} aria-label={t('Start research')} title={noModel ? t('Connect a model to start') : undefined}><ArrowUp size={17} /></Button>
+        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero) || (guideRows && !guidedFiles.length && !zotero)} aria-label={t('Start research')} title={noModel ? t('Connect a model to start') : undefined}><ArrowUp size={17} /></Button>
       </div>
+      {guideRows && <div className="guide" role="group" aria-labelledby="guide-lead">
+        <span id="guide-lead">{t('PDFs guiding the search · their titles, abstracts and references shape the query.')}</span>
+        {files.map(file => {
+          const checked = !unguided.has(file.name)
+          const full = !checked && guidedFiles.length >= MAX_SEED_PDFS
+          return <label key={file.name} title={full ? t('At most five PDFs guide one search.') : file.name}>
+            <input type="checkbox" checked={checked} disabled={full} aria-describedby={full ? 'guide-limit' : undefined}
+              onChange={() => setUnguided(old => { const next = new Set(old); if (checked) next.add(file.name); else next.delete(file.name); return next })} />
+            <span>{file.name}</span>
+          </label>
+        })}
+        {guidedFiles.length >= MAX_SEED_PDFS && files.length > MAX_SEED_PDFS && <span id="guide-limit" className="sr-only">{t('At most five PDFs guide one search.')}</span>}
+      </div>}
       {pickerRole && models.length > 0 && <div className="composer-options composer-models">
         {pickerRole === 'answer' && <ModelPicker key={pickerNonce} defaultOpen role={t(modelRoles.answer.label)} icon={modelRoles.answer.icon} hint={t(modelRoles.answer.hint)} models={models} value={model}
           onChange={id => chooseModel(id)} effort={reasoning} onEffort={setReasoning} />}
@@ -424,10 +551,28 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
     <ZoteroDialog open={zoteroOpen} onOpenChange={setZoteroOpen} destination="home" busy={busy} initial={zotero} returnFocus={addButton}
       onImport={choice => { setZotero(choice); setZoteroOpen(false); if (scope === 'academic') setScope('attached_and_academic') }} />
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void addFiles(e.target.files); e.target.value = '' }} />
-    {noModel && <p className="hint">{t('Connect a model to start')}</p>}
-    {connections && !models.length && <Notice tone="attention">{t('No model connection is ready: {reason}. A research needs a model that a connection lists; model steps pause until the chosen connection is ready, and no other model is used instead.', { reason: notReadyReasons(connections) })}</Notice>}
-    <SemanticSetupNote />
+    {noModel && <p className="hint home-connect-hint">{t('Connect a model to start')}</p>}
     {error && <Notice tone="error">{error}</Notice>}
+    <div className="mode-chips" role="group" aria-label={t('What the research produces')}>
+      {modeChips.map(({ id, label, icon: Icon }) => {
+        const reason = chipDisabled(id)
+        return <button key={id} type="button" className={`chip ${activeChip === id ? 'on' : ''}`} aria-pressed={activeChip === id}
+          aria-disabled={reason ? true : undefined} aria-describedby={reason ? `chip-reason-${id}` : undefined} title={reason ?? undefined}
+          onClick={() => { if (!reason) chooseChip(id) }}>
+          <Icon aria-hidden />{t(label)}
+        </button>
+      })}
+      {modeChips.map(({ id }) => { const reason = chipDisabled(id); return reason && <span key={id} id={`chip-reason-${id}`} className="sr-only">{reason}</span> })}
+    </div>
+    {(latest || suggestions.length > 0) && <div className="home-cards">
+      {latest && <ResumeCard research={latest} />}
+      {suggestions.map(s => <button key={`${s.answer_id}:${s.text}`} type="button" className="card" onClick={() => { setQuestion(s.text); questionInput.current?.focus() }}>
+        <span className="home-card-tag"><Lightbulb aria-hidden />{t('Suggested')}</span>
+        <p>{s.text}</p>
+        <small className="home-card-source">{s.research_title}</small>
+      </button>)}
+    </div>}
+    <SemanticSetupNote />
     <p className="hint home-hint">{busy ? t('Saving research…') : t('⌘ / Ctrl + Enter starts the research · ? shows shortcuts · Nothing is downloaded from paywalled sites')}</p>
   </section>
 }

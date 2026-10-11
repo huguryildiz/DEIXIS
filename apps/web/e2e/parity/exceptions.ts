@@ -56,9 +56,12 @@ export const COLOUR_EXCEPTIONS: ColourException[] = [
     property: 'color', use: 'icon', selectors: WARN_TONE, mock: { light: '#a2650c', dark: '#e2a54c' }, approved: { light: '#985f0b', dark: '#e2a54c' },
     states: ['default', 'hover', 'selected'], note: 'Icons and short tone labels on the page surfaces.' },
   { id: 'ok-tone', rule: '§0 rule 4 (D5: the include tone is darker than the mockup)', token: '--tone-include',
-    property: 'color', use: 'icon', selectors: ['.recents svg.i.ok', '.methods .ok', '.pill.ok', '.inc', '.ok-t'],
+    property: 'color', use: 'icon', selectors: ['.recents svg.i.ok', '.methods .ok', '.pill.ok', '.inc', '.ok-t', '.setup .num.ok'],
     mock: { light: '#2e7d4f', dark: '#6cc48f' }, approved: { light: '#2d7a4d', dark: '#6cc48f' },
     states: ['default', 'hover', 'selected'], note: 'Completed, included.' },
+  { id: 'ok-text-on-tint', rule: '§0 rule 4 (mockup --ok on --ok-bg is 4.41:1, below 4.5:1)', token: '--ok-ink',
+    property: 'color', use: 'text', selectors: ['.st.ok'], mock: { light: '#2e7d4f', dark: '#6cc48f' }, approved: { light: '#2f6b45', dark: '#8fd0a4' },
+    states: ['default'], note: 'Text on the green tint uses the matching -ink token (.impeccable.md §2.1): the setup card\'s "Ready".' },
   { id: 'abstract-dot', rule: 'D5 abstract colour (index.css --attr-abstract): approved for dots and icons only', token: '--attr-abstract',
     property: 'color', use: 'dot', selectors: ['.pill.abs', '.v-abs'], mock: { light: '#8b95a5', dark: '#8a94a3' }, approved: { light: '#6e7a8e', dark: '#8a94a3' },
     states: ['default', 'hover', 'selected'], note: 'A source-attribute dot or icon. Reference pills may keep the D5 color-mix foreground.' },
@@ -96,6 +99,7 @@ export const PLACEMENTS: Placement[] = [
   { id: 'seed-choice-stale', rule: '§2.2 (Q1)', slice: 'S23b', container: 'Search plan panel, "PDFs guiding the search"; stale-seed warn notice in the plan step', app: null },
   { id: 'search-again-new-answer', rule: '§2.2 (Q1)', slice: 'S8', container: 'Topbar ⋯ menu rows "Search again" and "Generate a new answer"', app: null },
   { id: 'counts-places', rule: '§2.2 (Q1)', slice: 'S11', container: 'unique and included in the Funnel panel; given and cited in the Answering step detail', app: null },
+  { id: 'suggestion-research', rule: 'plan H15 / Q4 (a suggestion names the research whose answer it came from)', slice: 'S5b', container: 'Suggested card, under the suggestion, in the Resume card\'s meta-line style', app: '.home-card-source' },
   { id: 'zotero-library-source', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S6', container: 'Zotero dialog body, between the lead note and the collections: "Zotero on this computer" / "zotero.org"', app: '.zotero-source' },
   { id: 'language-command', rule: '§2.4 (TR/EN placement)', slice: 'S1', container: 'Search palette: Türkçe / English rows when the query asks for "language" or "dil" (the Settings row is S24)', app: null },
   { id: 'jobs-sheet-controls', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Jobs sheet job line: Pause / Resume of an OCR run or a PDF collection, and the research title as a link', app: '.job-action, .job-research' },
@@ -118,6 +122,7 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'quota-continue', rule: '§2.3 (Q2, R19)', mock: 'Continue with the N finished searches', app: 'The run went on with the M that finished.' },
   { id: 'find-pdf-proxy-pill', rule: '§2.3 (Q2)', mock: 'TOBB ETÜ proxy', app: 'only the providers actually asked' },
   { id: 'jobs-note', rule: '§2.3 (Q2; late_revision.py skips text that is not eligible)', mock: 'Text read in the background joins the next answer.', app: 'Text read in the background can be used in the next answer if it qualifies.' },
+  { id: 'setup-proxy', rule: '§2.3 (Q2, S5b: DEIXIS never fetches through the proxy; links of works waiting for a PDF open through it in the browser)', mock: 'Lets DEIXIS open PDFs your library pays for.', app: 'Lets you open PDFs your library pays for, through its sign-in.' },
   { id: 'sign-in-terminal', rule: '§2.3 (Q2)', mock: 'Opens sign-in in a terminal', app: 'the CLI login command with Copy' },
   { id: 'zotero-lead', rule: '§2.3 (Q2, S6: one collection per import, D16; its own items only)', mock: 'Choose collections. DEIXIS reads their items and attached PDFs; it never changes your Zotero library.', app: 'Choose a collection. DEIXIS reads its own items (not its sub-collections) and each item’s first readable PDF; it never changes your Zotero library.' },
   { id: 'zotero-account', rule: '§2.3 (Q2, S6: the local app has no key; the zotero.org key is set in .env and its rights are not checked)', mock: 'Connected as the Zotero account in Settings · read-only key.', app: 'Reads Zotero on this computer through its local API · read-only. / Reads the zotero.org library set in .env · read-only.' },
@@ -129,6 +134,9 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
  *  change that wraps differently, or a §2.2 placement above the element. The other axes are still checked (±2 px). */
 export type GeometryException = { id: string; rule: string; pairs: string[]; axes: Array<'x' | 'y' | 'width' | 'height'>; note: string }
 export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
+  { id: 'setup-rows-y', rule: '§2.3 (copy changes setup-leaves and setup-proxy) and §0 rule 2 (example-setup row)',
+    pairs: ['home-first.setup-num', 'home-first.setup-num-ok', 'home-first.connect', 'home-first.ready', 'home-first.add'], axes: ['y'],
+    note: 'The setup rows sit under the replaced head sentence, and the proxy row holds the replaced proxy sentence; both wrap differently from the mockup at 390 px. x, width and height are compared.' },
   { id: 'zotero-foot-buttons-y', rule: '§2.2 (placement zotero-library-source) and §2.3 (copy changes zotero-lead, zotero-account, zotero-count)',
     pairs: ['zotero.foot-buttons'], axes: ['y'],
     note: 'The footer sits below the library switch row and the replaced notes, whose wrapped height differs from the mockup; x, width and height are compared.' },
@@ -142,7 +150,7 @@ export const SINGLE_CHOICE: Array<{ id: string; rule: string; mock: string; app:
 
 /** Q3: the composer's single-guide radio becomes check rows, one per eligible PDF (at most five), all checked (D3). */
 export const CHECK_ROWS: Array<{ id: string; rule: string; mock: string; app: string | null; slice: string }> = [
-  { id: 'guide-check-rows', rule: 'Q3 (D3 kept)', mock: '.guide[role="radiogroup"] input[type="radio"]', app: null, slice: 'S5b' },
+  { id: 'guide-check-rows', rule: 'Q3 (D3 kept)', mock: '.guide[role="radiogroup"] input[type="radio"]', app: '.composer .guide[role="group"] input[type="checkbox"]', slice: 'S5b' },
 ]
 
 /** Marks the app draws that the mockup does not, kept for accessibility (WCAG 1.4.1: a selected state is not carried by

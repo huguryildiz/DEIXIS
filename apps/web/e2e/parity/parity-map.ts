@@ -9,7 +9,7 @@ import type { FixtureContext } from './gates'
 
 export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
-export type SurfaceId = 'home' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog'
+export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -84,8 +84,29 @@ async function drawerIfPhone(page: Page) {
   await page.locator('.mobile-menu').click()
   await page.locator('aside.sidebar.is-open').waitFor()
 }
+
+/** S5b: the first-run Home. No model connection is ready, no research exists and nothing is suggested; the scholarly
+ *  sources and the proxy setting are the fixture server's own. */
+async function firstRun(page: Page) {
+  await page.route('**/api/connections**', async route => {
+    const response = await route.fetch()
+    const body = await response.json() as { models: Record<string, unknown> }
+    await route.fulfill({ response, json: { ...body, models: {} } })
+  })
+  await page.route('**/api/researches', route => route.request().method() === 'GET' ? route.fulfill({ json: [] }) : route.fallback())
+  await page.route('**/api/suggestions', route => route.fulfill({ json: { suggestions: [] } }))
+}
+
+/** S5b: two SYNTHETIC PDFs attached in a mixed search, so the composer shows its guide rows (Q3). */
+export const GUIDE_PDFS = ['SYNTHETIC-guide-first.pdf', 'SYNTHETIC-guide-second.pdf']
+
 export const SURFACES: Surface[] = [
-  { id: 'home', mock: HOME, app: '#/', ready: '#research-question' },
+  // S5b: ready once the Resume card is there (the card pairs measure it); the composer comes first.
+  { id: 'home', mock: HOME, app: '#/', ready: '.home-cards .card' },
+  { id: 'home-first', mock: "setScenario('first'); go('home')", app: '#/', ready: '.home-setup', prepare: firstRun },
+  { id: 'home-guide', mock: `setScenario('ok'); go('home'); st.scope = 'PDFs + academic search'; st.files = ${JSON.stringify(GUIDE_PDFS)}; render()`,
+    app: '#/', ready: '.composer .guide label',
+    open: page => page.locator('input[type=file]').first().setInputFiles(GUIDE_PDFS.map(name => ({ name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') }))) },
   { id: 'research', mock: "setScenario('ok')", app: '#/research/{research}', ready: '.research-topbar' },
   { id: 'zotero', mock: "setScenario('ok'); go('home'); zoteroDlg('home')", app: '#/', ready: '.zotero-dialog .zotero-cols label',
     prepare: page => page.route('**/api/zotero/collections**', route => route.fulfill({ json: { source: 'local', collections: ZOTERO_COLLECTIONS } })),
@@ -219,15 +240,41 @@ export const PAIRS: Pair[] = [
   { id: 'home.send', surface: 'home', mock: '.comp-row .send', app: '.send-button', checks: ['chrome', 'icon'], icon: { mock: 'up', app: 'arrow-up' }, status: 'active' },
   { id: 'home.send-style', surface: 'home', mock: '.comp-row .send', app: '.send-button', checks: ['colour'],
     status: 'active' },
-  { id: 'home.mode-chips', surface: 'home', mock: '.chips .chip', app: '.mode-chips .chip', checks: ['chrome', 'type', 'colour'], list: 'fixed',
-    states: ['hover', 'selected'], selected: { mock: '.chips .chip.on', app: '.mode-chips .chip.on' },
-    status: 'pending:S5b', why: 'S5b: intent chips (needs S5a intent backend)' },
+  { id: 'home.mode-chips', surface: 'home', mock: '.chips .chip', app: '.mode-chips .chip', checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed',
+    icon: [['file', 'file-text'], ['search', 'search'], ['table', 'table-2'], ['graph', 'network'], ['clip', 'paperclip']].map(([mock, app]) => ({ mock, app })),
+    states: ['hover', 'selected'], selected: { mock: '.chips .chip.on', app: '.mode-chips .chip.on' }, status: 'active' },
   // Resume (one research exists) plus up to two Suggested cards from stored unanswered aspects (Q4).
   { id: 'home.cards', surface: 'home', mock: '.cards .card', app: '.home-cards .card', checks: ['content', 'type'], list: 'data',
-    expected: ctx => (ctx.researches ? 1 : 0) + Math.min(2, ctx.suggestions),
-    status: 'pending:S5b', why: 'S5b: Resume and Suggested cards' },
+    expected: ctx => (ctx.researches ? 1 : 0) + Math.min(2, ctx.suggestions), status: 'active' },
+  { id: 'home.card-tag', surface: 'home', mock: '.cards .card .tag', app: '.home-cards .card .home-card-tag', checks: ['chrome', 'type', 'colour', 'icon'], list: 'data',
+    expected: ctx => (ctx.researches ? 1 : 0) + Math.min(2, ctx.suggestions), states: [],
+    icon: [{ mock: 'redo', app: 'rotate-cw' }, { mock: 'bulb', app: 'lightbulb' }, { mock: 'bulb', app: 'lightbulb' }], status: 'active' },
+  { id: 'home.card-text', surface: 'home', mock: '.cards .card p', app: '.home-cards .card p', checks: ['content', 'type', 'colour'], list: 'data',
+    expected: ctx => (ctx.researches ? 1 : 0) + Math.min(2, ctx.suggestions), states: [], status: 'active' },
+  // The Resume card's line; a Suggested card's research title is a declared placement (exceptions.ts) and not counted.
+  { id: 'home.card-meta', surface: 'home', mock: '.cards .card small', app: '.home-cards .card small', checks: ['content', 'type', 'colour'], list: 'data',
+    expected: ctx => (ctx.researches ? 1 : 0), states: [], status: 'active' },
   { id: 'home.hint', surface: 'home', mock: '.home .hint', app: '.home-hint', checks: ['content', 'type', 'colour'], states: [],
     status: 'active' },
+
+  // S5b: the first-run setup card (H2). The rows follow the head sentence and the proxy sentence, both replaced under
+  // §2.3, so their y is a declared geometry exception; the mockup's "Use the example setup" row is a mockup control.
+  { id: 'home-first.setup', surface: 'home-first', mock: '.setup', app: '.home-setup', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'home-first.setup-head', surface: 'home-first', mock: '.setup h3', app: '.home-setup h2', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'home-first.setup-rows', surface: 'home-first', mock: '.setup > div:has(> .num)', app: '.home-setup-row', checks: ['content', 'type'], list: 'fixed', text: false, status: 'active' },
+  { id: 'home-first.setup-num', surface: 'home-first', mock: '.setup .num:not(.ok)', app: '.home-setup .num:not(.ok)', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  { id: 'home-first.setup-num-ok', surface: 'home-first', mock: '.setup .num.ok', app: '.home-setup .num.ok', checks: ['chrome', 'colour', 'icon'], use: 'icon', states: [],
+    icon: { mock: 'check', app: 'check' }, status: 'active' },
+  { id: 'home-first.connect', surface: 'home-first', mock: '.setup .btn-teal', app: '.home-setup .setup-connect', checks: ['chrome', 'type', 'colour'], text: true, status: 'active' },
+  { id: 'home-first.ready', surface: 'home-first', mock: '.setup .st.ok', app: '.home-setup .st.ok', checks: ['chrome', 'type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'home-first.add', surface: 'home-first', mock: '.setup > div > .ghost[data-go="settings"]', app: '.home-setup .setup-add', checks: ['chrome', 'type', 'colour'], text: true, status: 'active' },
+  { id: 'home-first.connect-hint', surface: 'home-first', mock: '.home-inner > p.hint', app: '.home-connect-hint', checks: ['content', 'type', 'colour'], text: true, states: [], status: 'active' },
+
+  // S5b: the PDF guide rows (H11, Q3): check rows instead of the mockup's radio (CHECK_ROWS in exceptions.ts).
+  { id: 'home-guide.guide', surface: 'home-guide', mock: '.composer .guide', app: '.composer .guide', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'home-guide.lead', surface: 'home-guide', mock: '.guide > span', app: '.guide > span:first-child', checks: ['content', 'type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'home-guide.row', surface: 'home-guide', mock: '.guide label', app: '.guide label', checks: ['content', 'type', 'colour'], list: 'data', expected: () => GUIDE_PDFS.length, states: [], status: 'active' },
+  { id: 'home-guide.check', surface: 'home-guide', mock: '.guide input', app: '.guide input', checks: ['chrome'], list: 'data', expected: () => GUIDE_PDFS.length, status: 'active' },
 
   ...shell('research'),
   { id: 'research.topbar', surface: 'research', mock: '.topbar', app: '.research-topbar', checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },

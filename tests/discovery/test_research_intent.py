@@ -185,3 +185,27 @@ def test_table_and_compare_with_nothing_included_write_no_table_and_no_answer(tm
         assert included == [] and tables == [] and answers == [] and columns == []
         assert len(skipped) == 1 and '"no_included_source"' in skipped[0]
         assert view["intent_outcome"] == {"kind": "table_skipped", "reason": "no_included_source", "run_id": discovery["id"]}
+
+
+def test_intent_outcome_shows_only_the_latest_discovery_of_the_question(tmp_path, monkeypatch):
+    """S5b: Home and the research page render the current outcome. A skip written by an earlier discovery of the same
+    question stops showing once a later discovery opened the table."""
+    app, client, rid, first, view = run(tmp_path, monkeypatch, "table")
+    try:
+        assert view["intent_outcome"] == {"kind": "table_skipped", "reason": "no_included_source", "run_id": first["id"]}
+        # The person includes one found work by hand; the next discovery of the same question then has an included
+        # source and opens the table.
+        source = next(s for s in view["sources"] if s["version_role"] == "record")
+        changed = client.patch(f"/api/researches/{rid}/selections/{source['source_version_id']}", json={
+            "state": "included", "expected_version": source["selection"]["version"], "reason": "SYNTHETIC: the user's call"})
+        assert changed.status_code == 200
+        second_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        view, second = wait(client, rid, second_id)
+        store = app.state.store
+        tables = tables_of(store, rid)
+        skipped = events_of(store, rid, "study_table_skipped")
+    finally:
+        client.__exit__(None, None, None)
+    assert second["status"] == "completed" and second["scope_revision"] == first["scope_revision"]
+    assert len(tables) == 1 and len(skipped) == 1  # the earlier skip is still stored, as history
+    assert view["intent_outcome"] is None

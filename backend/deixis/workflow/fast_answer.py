@@ -322,8 +322,14 @@ def check_input(flow: Any, run_id: str, plan: dict[str, Any]) -> None:
     heads = store.work_heads(rid) if late else {}
     for row in plan["items"]:
         svid = row["source_version_id"]
-        if late and (heads.get(row["work_id"]) != row["head"] or versions.get(row["head"], row["head"]) != svid
-                     or row["route"] == "fulltext" and flow._current_asset(svid) != row["asset_id"]):
+        if late and row.get("screened_after_cutoff"):
+            # UI parity S20: a row admitted after the cutoff reads the version Screen more read, which need not be the
+            # work's answer version; it is held to the head it was admitted under. Membership, metadata and passage
+            # checks below still apply to the version it reads.
+            if heads.get(row["work_id"]) != row.get("head_after_cutoff", row["head"]) or row["route"] != "abstract":
+                flow._pause(run_id, "source_changed")
+        elif late and (heads.get(row["work_id"]) != row["head"] or versions.get(row["head"], row["head"]) != svid
+                       or row["route"] == "fulltext" and flow._current_asset(svid) != row["asset_id"]):
             flow._pause(run_id, "source_changed")
         if svid not in members or any(members[svid].get(k) != v for k, v in row["version"].items()):
             flow._pause(run_id, "source_changed")

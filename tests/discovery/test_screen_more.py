@@ -283,6 +283,11 @@ def test_a_work_the_person_already_decided_is_neither_listed_nor_planned(tmp_pat
     assert page["total"] == 34 and head not in {i["source_version_id"] for i in page["items"]}
     run = screen_more.request(h.store, rid, None)
     assert head not in run["target"]["heads"] and len(run["target"]["heads"]) == 34
+    pending = run["target"]["heads"][0]  # a selection the person set back to pending is the person's too
+    version = h.store.conn.execute("SELECT version FROM selections WHERE research_id = ? AND source_version_id = ?",
+                                   (rid, pending)).fetchone()[0]
+    h.store.set_user_selection(rid, pending, "pending", version, "SYNTHETIC not sure")
+    assert pending not in {i["source_version_id"] for i in screen_more.unscreened(h.store, rid, 0, 100)["items"]}
 
 
 def new_answer(h, rid, **extra):
@@ -509,3 +514,71 @@ def test_unscreened_and_screen_more_routes(tmp_path, monkeypatch):
         assert client.get(f"/api/researches/{other}/unscreened").status_code == 422
         refused = client.post(f"/api/researches/{other}/screen-more")
         assert refused.status_code == 422 and refused.json()["code"] == "no_completed_discovery"
+
+
+# ---- a late full-text revision of an answer that read a Screen more row on another version --------------------------
+
+
+def admitted_row_on_another_version(lib):
+    """Put into the base answer's stored input the row Screen more admission writes when the runs read version B of a
+    work whose head is A (SYNTHETIC; the same fields `fast_answer.input_plan` sets)."""
+    from test_fast_path_late_revision import row as late_row
+
+    head = lib.store.create_upload_source("SYNTHETIC admitted work, record A")
+    lib.store.add_to_corpus(lib.rid, head, "user_upload")
+    other = new_id("srv")
+    lib.store.conn.execute("INSERT INTO source_versions (id, work_id, title, origin, version_label, created_at)"
+                           " VALUES (?, ?, 'SYNTHETIC admitted work, version B', 'provider', 'acceptedVersion', ?)",
+                           (other, lib.store.source(head)["work_id"], now()))
+    lib.store.add_to_corpus(lib.rid, other, "search", candidate=False)
+    passage = lib.store._insert_passage(other, None, "abstract", None, None, "provider", None, None,
+                                        "SYNTHETIC exercise improves fatigue in the admitted version B.")
+    assert lib.store.answer_versions(lib.rid)[head] == head  # the work's answer version is A, the row reads B
+    step_id = late_row(lib)["base_input_step_id"]
+    base = json.loads(lib.store.conn.execute("SELECT output_json FROM run_steps WHERE id = ?", (step_id,)).fetchone()[0])
+    source = lib.store.source(other)
+    base["items"].append({
+        "work_id": source["work_id"], "head": head, "position": None, "source_version_id": other, "route": "abstract",
+        "decision_id": None, "abstract_decision_id": None, "fulltext_decision_id": None, "asset_id": None,
+        "abstract_ids": [passage], "fulltext_ids": [], "reason": None, "base_reason": "outside_read_window",
+        "base_route": "abstract", "file_unverified": False, "user_priority": False, "override_reason": None,
+        "version": {k: source.get(k) for k in fast_answer.VERSION_FIELDS}, "screened_after_cutoff": "run_SYNTHETIC",
+        "evidence_basis": "abstract_screening", "cutoff_source_version_id": head})
+    base["passage_ids"].append(passage)
+    lib.store.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?", (json.dumps(base), step_id))
+    return other
+
+
+def late_revision_of(lib):
+    from deixis.workflow import late_revision
+    from test_fast_path_late_revision import read_late, row as late_row
+
+    read_late(lib)
+    late_revision.advance(lib.flow, lib.rid)
+    revision = lib.store.run(late_row(lib)["answer_run_id"])
+    lib.store.update_run(revision["id"], status="running")
+    asyncio.run(lib.flow.execute(revision["id"]))
+    return lib.store.run(revision["id"]), late_row(lib)
+
+
+def test_a_late_revision_keeps_a_screen_more_row_on_another_version(tmp_path):
+    from deixis.workflow import late_revision
+    from test_fast_path_late_revision import prepared
+
+    lib = prepared(tmp_path)
+    other = admitted_row_on_another_version(lib)
+    revision, late = late_revision_of(lib)
+    assert (revision["status"], late["status"]) == ("completed", "published"), revision
+    plan = lib.store.existing_step(revision["id"], late_revision.REVISION_INPUT)["output"]
+    kept = [i for i in plan["items"] if i["source_version_id"] == other]
+    assert len(kept) == 1 and kept[0]["screened_after_cutoff"] == "run_SYNTHETIC" and kept[0]["route"] == "abstract"
+
+
+def test_a_real_change_to_the_screen_more_version_still_pauses_the_late_revision(tmp_path):
+    from test_fast_path_late_revision import prepared
+
+    lib = prepared(tmp_path)
+    other = admitted_row_on_another_version(lib)
+    lib.store.conn.execute("UPDATE source_versions SET title = 'SYNTHETIC retitled version B' WHERE id = ?", (other,))
+    revision, _ = late_revision_of(lib)
+    assert (revision["status"], revision["pause_reason"]) == ("paused", "source_changed")

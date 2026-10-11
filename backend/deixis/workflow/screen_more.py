@@ -8,10 +8,11 @@ works: code first, then two model runs per batch of `ABSTRACT_BATCH`, each batch
 Nothing is included here (SW1.2): a work the two runs agree on becomes an abstract-stage candidate, and only a person
 or a full-text reading includes it.
 
-A work counts as screened once a person decided it, or it holds a current (not stale) decision at the full-text stage
-or an abstract-stage decision other than "not read" (`NOT_READ_CODES`: the stage's own unread codes, and the lookup's
-"no abstract" codes, which say no abstract was there to read, so a version that has one can still be read). The list's position and the
-embedding similarity it was frozen with are prioritization signals (AGENTS.md), never relevance or quality.
+A work counts as screened once a person decided it or set the selection of any of its versions, or it holds a
+current (not stale) decision at the full-text stage or an abstract-stage decision other than "not read"
+(`NOT_READ_CODES`: the stage's own unread codes, and the lookup's "no abstract" codes, which say no abstract was there
+to read, so a version that has one can still be read). The list's position and the embedding similarity it was frozen
+with are prioritization signals (AGENTS.md), never relevance or quality.
 """
 
 from __future__ import annotations
@@ -71,9 +72,11 @@ def _screened_works(store: Any, rid: str) -> tuple[set[str], dict[str, str]]:
             if decision["stage"] == "fulltext" or decision["reason_code"] not in NOT_READ_CODES:
                 screened.add(work_id)
                 break
+    # A selection the person set, in any state (included, excluded or set back to pending), is the person's: the
+    # abstract stage never reads a work whose head carries one, so it is not offered for screening.
     screened |= {row[0] for row in store.conn.execute(
         "SELECT v.work_id FROM selections s JOIN source_versions v ON v.id = s.source_version_id"
-        " WHERE s.research_id = ? AND s.origin = 'user' AND s.state IN ('included', 'excluded')", (rid,))}
+        " WHERE s.research_id = ? AND s.origin = 'user'", (rid,))}
     return screened, facts["heads"]
 
 

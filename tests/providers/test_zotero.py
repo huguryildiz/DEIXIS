@@ -80,7 +80,8 @@ def test_local_import_includes_items_with_pdf_text_and_repeats_without_duplicate
     with TestClient(app_for(tmp_path, zotero_client(files, seen))) as client:
         rid = start(client)
         collections = client.get("/api/zotero/collections", params={"source": "local"}).json()["collections"]
-        assert collections == [{"key": "THES2345", "name": "Thesis"}, {"key": COLLECTION, "name": "Thesis / Known set"}]
+        assert collections == [{"key": "THES2345", "name": "Thesis", "items": None, "parent": None},
+                               {"key": COLLECTION, "name": "Thesis / Known set", "items": None, "parent": "THES2345"}]
 
         response = client.post(f"/api/researches/{rid}/zotero-imports", json={"source": "local", "collection_key": COLLECTION})
         assert response.status_code == 201, response.text
@@ -136,6 +137,55 @@ def test_web_import_reads_pages_and_sends_the_key_only_to_zotero_org(tmp_path, m
         assert [r.url.params["start"] for r in seen if r.url.path.endswith("/items")] == ["0", "2", "4", "6"]
         stored = "".join(p.read_text() for p in (tmp_path / "data" / "provider-payloads").iterdir())
         assert "LNKD1234" in stored and "zkey-secret-value" not in stored
+
+
+def _collection_row(key, name, parent=False, num_items=None, meta=True):
+    row = {"key": key, "data": {"key": key, "name": name, "parentCollection": parent}}
+    if meta:
+        row["meta"] = {"numCollections": 0} if num_items is None else {"numCollections": 0, "numItems": num_items}
+    return row
+
+
+def test_collections_carry_item_counts_and_parents_across_pages(tmp_path, monkeypatch):
+    monkeypatch.setenv("ZOTERO_API_KEY", "zkey-secret-value")
+    monkeypatch.setenv("ZOTERO_LIBRARY_ID", "42")
+    monkeypatch.delenv("ZOTERO_LIBRARY_TYPE", raising=False)
+    rows = [_collection_row("THES2345", "Thesis", False, 12),
+            _collection_row("CHAP2345", "Chapter 2", "THES2345", 5),
+            _collection_row("DEEP2345", "Methods", "CHAP2345", 0),
+            _collection_row("NOMETA23", "Loose", False, meta=False),
+            _collection_row("NOCNT234", "No count", False, None)]
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        start = int(request.url.params["start"])
+        return httpx.Response(200, json=rows[start:start + 2], headers={"total-results": str(len(rows))})
+
+    with TestClient(app_for(tmp_path, httpx.AsyncClient(transport=httpx.MockTransport(handler)))) as client:
+        body = client.get("/api/zotero/collections", params={"source": "web"}).json()
+    assert [r.url.params["start"] for r in seen] == ["0", "2", "4"]
+    assert body["source"] == "web"
+    assert body["collections"] == [
+        {"key": "NOMETA23", "name": "Loose", "items": None, "parent": None},
+        {"key": "NOCNT234", "name": "No count", "items": None, "parent": None},
+        {"key": "THES2345", "name": "Thesis", "items": 12, "parent": None},
+        {"key": "CHAP2345", "name": "Thesis / Chapter 2", "items": 5, "parent": "THES2345"},
+        {"key": "DEEP2345", "name": "Thesis / Chapter 2 / Methods", "items": 0, "parent": "CHAP2345"},
+    ]
+
+
+def test_collection_counts_ignore_malformed_meta(tmp_path):
+    rows = [{"key": "AAAA1111", "data": {"key": "AAAA1111", "name": "A"}, "meta": {"numItems": "7"}},
+            {"key": "BBBB1111", "data": {"key": "BBBB1111", "name": "B", "parentCollection": None}, "meta": "bad"},
+            {"key": "CCCC1111", "data": {"key": "CCCC1111", "name": "C"}, "meta": {"numItems": True}}]
+
+    def handler(request):
+        return httpx.Response(200, json=rows)
+
+    with TestClient(app_for(tmp_path, httpx.AsyncClient(transport=httpx.MockTransport(handler)))) as client:
+        body = client.get("/api/zotero/collections", params={"source": "local"}).json()
+    assert [(c["name"], c["items"], c["parent"]) for c in body["collections"]] == [("A", None, None), ("B", None, None), ("C", None, None)]
 
 
 def test_unavailable_zotero_and_academic_scope_explain_what_to_do(tmp_path, monkeypatch):

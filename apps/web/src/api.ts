@@ -735,7 +735,7 @@ export type QuickFindResult = {
 }
 export type ActivityEvent ={ id: number; type: string; run_id: string | null; payload: Record<string, unknown>; created_at: string }
 export type ZoteroSource = 'local' | 'web'
-export type ZoteroCollection = { key: string; name: string }
+export type ZoteroCollection = { key: string; name: string; items: number | null; parent: string | null }
 // note is an English template keyed in i18n; vars fill its {placeholders}.
 export type ZoteroNote = { title: string; note: string; vars?: Record<string, string> }
 export type ZoteroImport = { items: number; pdfs_added: number; notes: ZoteroNote[] }

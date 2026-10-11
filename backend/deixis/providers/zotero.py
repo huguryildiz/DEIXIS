@@ -84,16 +84,31 @@ def library(source: str) -> Library:
                    "api_key", key, ("imported_file", "imported_url"))
 
 
-async def collections(client: httpx.AsyncClient, lib: Library) -> list[dict[str, str]]:
-    """The library's collections, each named by its path ("Thesis / Chapter 2") and sorted by that name."""
-    rows = {r["data"]["key"]: r["data"] for r in await _get_all(client, lib, "/collections")}
+async def collections(client: httpx.AsyncClient, lib: Library) -> list[dict[str, Any]]:
+    """The library's collections, each named by its path ("Thesis / Chapter 2") and sorted by that name.
+
+    `items` is Zotero's own `meta.numItems` (the collection's own items, not its subcollections'), or None when Zotero did not
+    send it; `parent` is the parent collection's key, or None for a top-level collection.
+    """
+    api_rows = await _get_all(client, lib, "/collections")
+    rows = {r["data"]["key"]: r["data"] for r in api_rows}
+    counts = {r["data"]["key"]: (r.get("meta") or {}).get("numItems") if isinstance(r.get("meta"), dict) else None for r in api_rows}
 
     def path(key: str) -> str:
         data = rows[key]
         name = str(data.get("name") or "(unnamed)")
         return f"{path(data['parentCollection'])} / {name}" if data.get("parentCollection") in rows else name
 
-    return sorted(({"key": key, "name": path(key)} for key in rows), key=lambda c: c["name"].casefold())
+    def parent(key: str) -> str | None:
+        value = rows[key].get("parentCollection")
+        return value if isinstance(value, str) and value else None
+
+    def count(key: str) -> int | None:
+        value = counts[key]
+        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+    return sorted(({"key": key, "name": path(key), "items": count(key), "parent": parent(key)} for key in rows),
+                  key=lambda c: c["name"].casefold())
 
 
 async def collection_items(client: httpx.AsyncClient, lib: Library, collection_key: str) -> tuple[list[ZoteroItem], list[dict[str, Any]]]:

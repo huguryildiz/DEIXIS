@@ -193,6 +193,7 @@ export const runKindLabels: Record<RunKind, string> = {
   watch_check: 'Follow-up check',
   review: 'Review by another model',
   answer_review: 'Answer review',
+  followup_answer: 'Follow-up answer',
   discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title', lineage_links: 'Development links', claim_decomposition: 'Claim breakdown', kill_search: 'Prior-art search for a claim',
   screen_more: 'Abstract screening of more works',
 }

@@ -423,6 +423,9 @@ class Store:
             self.conn.execute("DELETE FROM reports WHERE research_id = ?", (research_id,))
             from deixis.workflow.tables import purge_tables  # tables builds on this module
             purge_tables(self.conn, research_id)  # cell revisions reference runs, step inputs and passages deleted below
+            # Follow-up turns and their links (S22a) point at runs, step inputs and passages deleted below.
+            self.conn.execute("DELETE FROM followup_turn_links WHERE turn_id IN (SELECT id FROM followup_turns WHERE research_id = ?)", (research_id,))
+            self.conn.execute("DELETE FROM followup_turns WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM evidence_links WHERE claim_id IN (SELECT id FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?))", (research_id,))
             self.conn.execute("DELETE FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs WHERE research_id = ?)", (research_id,))
@@ -939,7 +942,7 @@ class Store:
 
             run_id = new_id("run")
             ts = fast_path.timestamp(self.clock) if fast_path.enabled(budget) else now()
-            stage = {"discovery": "discovery", "answer": "inspection", "pdf_collection": "inspection",
+            stage = {"discovery": "discovery", "answer": "inspection", "followup_answer": "answer", "pdf_collection": "inspection",
                      "fulltext_fetch": "inspection", "fulltext_adjudication": "inspection",
                      "research_title": "intake", "lineage_links": "synthesis",
                      "claim_decomposition": "candidate", "kill_search": "candidate", "review": "claim_check",
@@ -2941,7 +2944,8 @@ class Store:
         return chosen
 
     def cited_source_versions(self, svids: list[str]) -> set[str]:
-        """Of these source versions, the ones an answer quote, an evidence table or a report still cites (D65).
+        """Of these source versions, the ones an answer quote, a follow-up answer, an evidence table or a report still
+        cites (D65).
 
         The scope is the whole workspace, not one research: evidence stays openable wherever it was written, so a
         cited source is never deleted on its own. Deleting its research is still the way out (D50).
@@ -2958,8 +2962,9 @@ class Store:
             f" UNION SELECT to_source_version_id FROM lineage_links WHERE to_source_version_id IN ({marks})"
             f" UNION SELECT source_version_id FROM lineage_link_evidence WHERE source_version_id IN ({marks})"
             f" UNION SELECT source_version_id FROM claim_matrix_cells WHERE source_version_id IN ({marks})"
-            f" UNION SELECT source_version_id FROM claim_matrix_evidence WHERE source_version_id IN ({marks})",
-            (*svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids),
+            f" UNION SELECT source_version_id FROM claim_matrix_evidence WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM followup_turn_links WHERE source_version_id IN ({marks})",
+            (*svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids),
         ).fetchall()
         from deixis.workflow.review.store import snapshot_referenced_source_versions
         return {row[0] for row in rows} | snapshot_referenced_source_versions(self.conn, svids)

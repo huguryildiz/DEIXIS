@@ -20,6 +20,7 @@ from deixis.paths import SKILL_DIR
 RUNTIME_FILES = {
     "owner_review": ("SKILL.md", "references/review.md"),
     "grounded_answer": ("SKILL.md", "references/source-grounded-answer.md", PHRASEBANK),
+    "followup_answer": ("SKILL.md", "followup.md"),
     "answer_review": ("SKILL.md", "references/answer-review.md"),
     "cell_extraction": ("SKILL.md", "references/evidence-table.md"),
     "table_columns": ("SKILL.md", "references/evidence-table.md"),

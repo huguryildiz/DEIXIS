@@ -176,6 +176,13 @@
    "date": "2026-10-10",
    "decision": "D1",
    "change": "Clean start (slice 6): removed references/term-suggestions.md and references/term-advice.md and their SKILL.md sections, because no step runs term_suggestions or term_advice since the interactive term approval was deleted; their earlier provenance entries are in Git history. references/search-query.md now says the query is frozen in the search protocol without a person editing it, and references/evidence-table.md says the automatic study table adds suggested columns without review. The SKILL.md availability paragraph is now scoped to grounded_answer, answer_review and the report tasks, and says claim-specific kill-search runs only through the three candidate tasks. No real-model measurement."
+  },
+  {
+   "deixis_file": "followup.md",
+   "derived_from": [],
+   "date": "2026-10-12",
+   "decision": "D8",
+   "change": "UI parity S22a (F17): new method file for the followup_answer task, not upstream text. Loaded only into followup_answer steps with SKILL.md, which gained one routing paragraph. It restates the grounded answer's one-source and exact-anchor rules for a short answer to a follow-up question from passages the application selected from this research, adds the answered / partly_answered / not_answered outcome, and says no search is run. Not measured; tried against no model."
   }
  ],
  "phrasebank": {

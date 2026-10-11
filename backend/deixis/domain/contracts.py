@@ -29,6 +29,7 @@ from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, chec
 SCHEMA_FILES = {
     "OwnerReview": "owner-review.schema.json",
     "GroundedAnswerDraft": "grounded-answer-draft.schema.json",
+    "FollowupAnswer": "followup-answer.schema.json",
     "AnswerReview": "answer-review.schema.json",
     "EvidenceCellDraft": "evidence-cell-draft.schema.json",
     "TableColumnProposal": "table-column-proposal.schema.json",
@@ -52,6 +53,7 @@ SCHEMA_FILES = {
 SCHEMA_VERSIONS = {
     "OwnerReview": "deixis.owner_review.v1",
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
+    "FollowupAnswer": "deixis.followup_answer.v1",
     "AnswerReview": "deixis.answer_review.v1",
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",
@@ -76,6 +78,7 @@ SCHEMA_VERSIONS = {
 TASK_OUTPUTS = {
     "owner_review": ("OwnerReview",),
     "grounded_answer": ("GroundedAnswerDraft",),
+    "followup_answer": ("FollowupAnswer",),
     "answer_review": ("AnswerReview",),
     "cell_extraction": ("EvidenceCellDraft",),
     "table_columns": ("TableColumnProposal",),
@@ -126,6 +129,10 @@ OUTPUT_ALIASES: dict[str, dict[str, dict[str, str]]] = {
         "records": {"verdict": "label"},
     },
     "grounded_answer": {
+        "claims": {"claim_label": "lower"},
+        "citation_anchors": {"claim_label": "lower"},
+    },
+    "followup_answer": {
         "claims": {"claim_label": "lower"},
         "citation_anchors": {"claim_label": "lower"},
     },
@@ -1027,6 +1034,8 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_answer(step_input, allow, result, report)
         _check_phrasing(step_input, result, report)
         _check_math(step_input, result, report)
+    elif output_type == "FollowupAnswer":
+        _check_followup(allow, step_input, result, report)
     elif output_type == "AnswerReview":
         _check_review(step_input, result, report)
     elif output_type == "OwnerReview":
@@ -2246,6 +2255,35 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
     if title_words > 15:
         report.issues.append(Issue("answer_title_too_long", "/title",
                                    f"expected at most 15 words, got {title_words}"))
+    _check_cited_claims(step_input, allow, draft, report)
+    for i, limitation in enumerate(draft["limitations"]):
+        for j, sid in enumerate(limitation["source_ids"]):
+            if sid not in allow["source_ids"]:
+                report.issues.append(Issue("unknown_source_id", f"/limitations/{i}/source_ids/{j}", sid))
+
+
+def _check_followup(allow: dict[str, set[str]], step_input: dict[str, Any], draft: dict[str, Any],
+                    report: ValidationReport) -> None:
+    """A follow-up answer: the grounded answer's claim, passage and anchor rules, and an outcome that says what it is.
+
+    An answer (whole or in part) carries at least one claim; anything short of a whole answer names what the given
+    passages leave open. A `not_answered` outcome may still report, with anchors, what the closest passages state.
+    """
+    _check_cited_claims(step_input, allow, draft, report)
+    if draft["outcome"] != "not_answered" and not draft["claims"]:
+        report.issues.append(Issue("followup_answer_without_claims", "/claims",
+                                   f"outcome {draft['outcome']!r} needs at least one cited claim"))
+    if draft["outcome"] != "answered" and not draft["unanswered_aspects"]:
+        report.issues.append(Issue("followup_unanswered_without_aspect", "/unanswered_aspects",
+                                   f"outcome {draft['outcome']!r} needs what the given passages do not say"))
+    fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
+    fields += [(f"/unanswered_aspects/{i}", text) for i, text in enumerate(draft["unanswered_aspects"])]
+    _check_math(step_input, draft, report, fields=fields)
+
+
+def _check_cited_claims(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any],
+                        report: ValidationReport) -> None:
+    """Claim labels, allowlisted passages, D247's one-source rule and one located anchor per claim-passage pair."""
     labels: set[str] = set()
     cited_by_claim: dict[str, set[str]] = {}
     source_of = {p["passage_id"]: p["source_id"] for p in step_input["passages"]}
@@ -2300,10 +2338,6 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
     for claim_label, passage_id in sorted(required_anchors - seen_anchors):
         report.issues.append(Issue("missing_citation_anchor", "/citation_anchors",
                                    f"{claim_label}:{passage_id}: this citation requires an exact contiguous quote"))
-    for i, limitation in enumerate(draft["limitations"]):
-        for j, sid in enumerate(limitation["source_ids"]):
-            if sid not in allow["source_ids"]:
-                report.issues.append(Issue("unknown_source_id", f"/limitations/{i}/source_ids/{j}", sid))
 
 
 # Explicit paths keep record conversion out of prose, quotes, revision IDs and envelope metadata.

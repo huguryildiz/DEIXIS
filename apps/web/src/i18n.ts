@@ -3652,4 +3652,6 @@ const tr: Record<string, string> = {
   'Import {n} items': '{n} öğeyi içe aktar',
   'Import items': 'Öğeleri içe aktar',
   'Counts are Zotero’s own; standalone notes and non-PDF attachments are skipped, so fewer items may be added.': 'Sayılar Zotero’nun kendi sayılarıdır; tek başına notlar ve PDF olmayan ekler atlanır, bu yüzden daha az öğe eklenebilir.',
+  // UI parity S22a: the follow-up answer run.
+  'Follow-up answer': 'Takip sorusu yanıtı',
 }

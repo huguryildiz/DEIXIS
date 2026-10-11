@@ -254,6 +254,145 @@
   },
   "created_at": "2026-09-14T12:06:00Z"
  },
+ "K_followup_answer": {
+  "step_input_id": "sti_SYNTHK0003",
+  "research_id": "res_SYNTHA0001",
+  "run_id": "run_SYNTHK0002",
+  "step_id": "stp_SYNTHK0003",
+  "task_type": "followup_answer",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "skill_files": [
+   "SKILL.md",
+   "followup.md"
+  ],
+  "output_schema_versions": [
+   "deixis.followup_answer.v1"
+  ],
+  "question": {
+   "text": "SYNTHETIC follow-up: which binary variables do the release scheduling models use?",
+   "language_hint": null
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "grounded_answer"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [],
+  "candidates": [],
+  "sources": [
+   {
+    "source_id": "srv_SYNA1pub01",
+    "work_id": "wrk_SYNA1work",
+    "title": "SYNTHETIC A1: Mixed-integer scheduling of transmitter release times in a diffusion channel",
+    "year": 2021,
+    "version_label": "published",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_SYNA2pub01",
+    "work_id": "wrk_SYNA2work",
+    "title": "SYNTHETIC A2: Resource allocation for bacterial relay networks",
+    "year": 2019,
+    "version_label": "published",
+    "access_level": "abstract"
+   },
+   {
+    "source_id": "srv_SYNA3pre01",
+    "work_id": "wrk_SYNA3work",
+    "title": "SYNTHETIC A3: Relay placement under diffusion delay",
+    "year": 2020,
+    "version_label": "arXiv v1",
+    "access_level": "pdf_available"
+   }
+  ],
+  "passages": [
+   {
+    "passage_id": "psg_SYNA1abs01",
+    "source_id": "srv_SYNA1pub01",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "synthetic_fixture",
+    "text_source": null,
+    "text": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+   },
+   {
+    "passage_id": "psg_SYNA1pg003",
+    "source_id": "srv_SYNA1pub01",
+    "reading_depth": "selected_sections",
+    "locator": {
+     "kind": "pdf_page",
+     "physical_page": 3,
+     "printed_label": "129"
+    },
+    "abstract_origin": null,
+    "text_source": "text_layer",
+    "text": "SYNTHETIC. The objective minimizes expected bit error probability subject to a total molecule budget per frame."
+   },
+   {
+    "passage_id": "psg_SYNA2abs01",
+    "source_id": "srv_SYNA2pub01",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "synthetic_fixture",
+    "text_source": null,
+    "text": "SYNTHETIC. We study how relay bacteria share a limited nutrient supply among forwarding tasks."
+   },
+   {
+    "passage_id": "psg_SYNA3pg002",
+    "source_id": "srv_SYNA3pre01",
+    "reading_depth": "selected_sections",
+    "locator": {
+     "kind": "pdf_page",
+     "physical_page": 2,
+     "printed_label": null
+    },
+    "abstract_origin": null,
+    "text_source": "text_layer",
+    "text": "SYNTHETIC. Relay positions are chosen by a heuristic; no optimality guarantee is claimed in this version."
+   }
+  ],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [
+    "srv_SYNA1pub01",
+    "srv_SYNA2pub01",
+    "srv_SYNA3pre01"
+   ],
+   "passage_ids": [
+    "psg_SYNA1abs01",
+    "psg_SYNA1pg003",
+    "psg_SYNA2abs01",
+    "psg_SYNA3pg002"
+   ]
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 2,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 0
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": null
+  },
+  "created_at": "2026-09-14T12:05:00Z"
+ },
  "C_report_plan": {
   "step_input_id": "sti_SYNTHR0001",
   "research_id": "res_SYNTHA0001",

@@ -180,6 +180,7 @@ export type Step = {
     works?: unknown[] } | null
 }
 export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more'
+export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
@@ -1609,4 +1610,42 @@ export type ScreenedAfterCutoff = {
   work_id: string; source_version_id: string; screen_more_run_id: string; evidence_basis: 'abstract_screening'; route: 'abstract'
   // The record the read cutoff held for the work when the runs read another version of it; null when the same.
   cutoff_source_version_id: string | null
+}
+
+// Follow-up questions (S22a; api/followup_turns_routes.py). One `followup_answer` run answers a question from passages
+// this research already holds; no search is started. `status` stays 'pending' until the answer is published with its
+// links; the run's own status says whether it is still working, paused or stopped. Claims and citations come only with
+// a valid answer: an 'unverified_draft' carries its `issues` and no claim. `no_passages` means the research held no
+// passage to give and no model was asked. "Search for new works on this" is a new scope revision with `question`.
+export type FollowupTurnStatus = 'pending' | 'answered' | 'partly_answered' | 'not_answered' | 'no_passages' | 'unverified_draft'
+export type FollowupCitation = {
+  passage_id: string; source_version_id: string; work_id: string; title: string; year: number | null
+  version_label: string | null; reading_depth: 'abstract' | 'selected_sections'
+  locator: { kind: string; physical_page: number | null; printed_label: string | null }
+  anchor_text: string; anchor_match: 'exact' | 'normalized' | 'fuzzy'
+}
+export type FollowupClaim = { label: string; text: string; support_type: 'source_stated' | 'analyst_inference'; citations: FollowupCitation[] }
+export type FollowupTurn = {
+  id: string; research_id: string; scope_revision: number; question: string; status: FollowupTurnStatus
+  created_at: string; published_at: string | null
+  stale_scope: boolean  // asked under an earlier revision of the research question
+  passages_considered: number | null  // stored passages of this research the selection ranked
+  passages_given: number | null  // passages sent to the model (its allowlist)
+  run: { id: string; status: RunStatus; stage: string; pause_reason: string | null; error: unknown }
+  answer: {
+    answer_language: string; outcome: 'answered' | 'partly_answered' | 'not_answered'
+    claims: FollowupClaim[]; unanswered_aspects: string[]
+  } | null
+  issues: { code: string; path: string; message: string }[]
+}
+
+export const followupApi = {
+  list: (researchId: string) =>
+    request<FollowupTurn[]>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns`),
+  get: (researchId: string, turnId: string) =>
+    request<FollowupTurn>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns/${encodeURIComponent(turnId)}`),
+  // `expectedScopeRevision` is the question revision on screen; a newer one answers 409, as an active run does.
+  ask: (researchId: string, question: string, expectedScopeRevision: number, idempotencyKey: string) =>
+    request<FollowupTurn>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns`,
+      json('POST', { question, expected_scope_revision: expectedScopeRevision }, { 'Idempotency-Key': idempotencyKey })),
 }

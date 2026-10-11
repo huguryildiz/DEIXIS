@@ -109,7 +109,7 @@ RRF_K = 60  # reciprocal rank fusion constant (D27)
 CHAIN_RANK_BASE = 1_000_000_000
 # Steps whose records are shown as short handles instead of stored identifiers, because long random IDs were
 # mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
-HANDLE_TASKS = ("grounded_answer", "answer_review", "cell_extraction", "abstract_screening",
+HANDLE_TASKS = ("grounded_answer", "followup_answer", "answer_review", "cell_extraction", "abstract_screening",
                 "fulltext_adjudication", "lineage_links") + contracts.REPORT_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS
 STOPWORDS = set(
     "the and for with what which how are was were from that this into about does using used use their there have has "
@@ -449,6 +449,9 @@ class ResearchFlow:
                 await self._watch_check(run)
             elif run["kind"] == "table_columns":
                 await self._table_columns(run, scope)
+            elif run["kind"] == "followup_answer":
+                from deixis.workflow import followup
+                await followup.answer(self, run, scope)
             else:
                 self._fail(run_id, "unknown_run_kind", {"kind": run["kind"]})
         except RunStopped:
@@ -1957,14 +1960,14 @@ class ResearchFlow:
                 | ({"identity_from": identity_from} if identity_from else {}))
 
     def _embedding_query(self, scope: dict[str, Any], embedder: embeddings.Embedder,
-                         query_text: str | None = None) -> tuple[str, str] | None:
+                         query_text: str | None = None, query_origin: str = "column") -> tuple[str, str] | None:
         """(text, origin) of the query. The built-in model reads English only (D103): the question when it is English,
         else the revision's English sentence; a table column's text only when it is English. Other providers take
         the text as written."""
         if query_text is not None:
             if embedder.provider == "builtin" and not english_question.is_english(query_text):
                 return None
-            return query_text, "column"
+            return query_text, query_origin
         if embedder.provider == "builtin":
             return english_question.embedding_query(self.store, scope)
         return scope["question"], "question"
@@ -3592,7 +3595,8 @@ class ResearchFlow:
 
 
     async def _semantic_ranking(self, run: dict[str, Any], scope: dict[str, Any], included: list[str], query_text: str | None = None,
-                                key: str = "semantic_retrieval") -> list[dict[str, Any]] | None:
+                                key: str = "semantic_retrieval", query_origin: str = "column",
+                                only: set[str] | None = None) -> list[dict[str, Any]] | None:
         """Rank the included sources' passages by embedding similarity to the question, or to query_text (D27, D29).
 
         Uses the provider chosen in Settings; without a choice, Gemini when GEMINI_API_KEY is set. The query is always
@@ -3607,10 +3611,10 @@ class ResearchFlow:
         if embedder is None:
             return None
         identity = self._identity(embedder, identity_from)
-        query = self._embedding_query(scope, embedder, query_text)
+        query = self._embedding_query(scope, embedder, query_text, query_origin)
         if query is None:
             # Recorded so the transcript can say why the built-in model did not rank these passages (D103).
-            reason = "column_not_english" if query_text is not None else english_question.MISSING
+            reason = f"{query_origin}_not_english" if query_text is not None else english_question.MISSING
             step = self.store.step(run_id, key, f"embedding:{embedder.stored_model}", output=identity)
             self.store.finish_step(step["id"], "succeeded", output=identity | {"skipped": True, "reason": reason})
             return None
@@ -3618,7 +3622,8 @@ class ResearchFlow:
         if identity_from:
             self._merge_step_output(step["id"], {}, identity)
         self.store.start_step(step["id"])
-        passages = [p for svid in included for p in self.store.passages_for(svid)]
+        # `only` keeps the ranking to these passages (a follow-up's pool, S22a): no other text is embedded or sent.
+        passages = [p for svid in included for p in self.store.passages_for(svid) if only is None or p["id"] in only]
         stored = self.store.passage_embeddings([p["id"] for p in passages], embedder.stored_model)
         missing = [p for p in passages if p["id"] not in stored]
         uploads = self.store.user_upload_assets({p["asset_id"] for p in missing if p.get("asset_id")})
@@ -4761,7 +4766,7 @@ class ResearchFlow:
         for svid in source_ids:
             source = self.store.source(svid)
             kinds = {p["kind"] for p in self.store.passages_for(svid)}
-            if task_type == "grounded_answer" and fast_path.enforces(run["budget"], "answer"):
+            if task_type == "followup_answer" or task_type == "grounded_answer" and fast_path.enforces(run["budget"], "answer"):
                 kinds = {p["kind"] for p in passage_rows if p["source_version_id"] == svid}
             access = "pdf_available" if "pdf_page" in kinds else "abstract" if "abstract" in kinds else "metadata"
             sources.append({"source_id": svid, "work_id": source["work_id"], "title": source["title"], "year": source["year"],
@@ -4774,6 +4779,11 @@ class ResearchFlow:
             "text_source": None if p["kind"] == "abstract" else p.get("text_source", "text_layer"), "text": p["text"],
         } for p in passage_rows]
         language = scope["language_hint"] if scope["language_hint"] and re.fullmatch(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})*", scope["language_hint"]) else None
+        question = scope["question"]
+        if task_type == "followup_answer":
+            # The turn's question replaces the research question for this task only (S22a); the research's language
+            # hint belongs to its own question, so the follow-up's language is read from its own text.
+            question, language = run["target"]["question"], None
         review = {"claims_under_review": claims} if task_type == "answer_review" else {}
         target = {}
         if extraction_target is not None:
@@ -4813,7 +4823,7 @@ class ResearchFlow:
             "task_type": task_type, "scope_revision": run["scope_revision"],
             "skill_package_hash": self.deps.package.package_hash, "skill_files": list(RUNTIME_FILES[task_type]),
             "output_schema_versions": [contracts.SCHEMA_VERSIONS[o] for o in contracts.TASK_OUTPUTS[task_type]],
-            "question": {"text": scope["question"], "language_hint": language},
+            "question": {"text": question, "language_hint": language},
             "user_steering": [scope["steering"]] if scope.get("steering") else [],
             # The providers a query may go to. A verification connector stays in the research's scope for the records
             # whose DOI is already known, and is never offered to the model as a place to search (D87).
@@ -5325,7 +5335,7 @@ class ResearchFlow:
                     report = contracts.validate_model_output(failed_input, original_output)
                     if report.ok:
                         report.result = output_text
-            elif task_type in ("grounded_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS:
+            elif task_type in ("grounded_answer", "followup_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS:
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             # Field names from the alias table are put right before validation and the renames recorded (D86).
             if not anchor_patch:
@@ -5361,7 +5371,7 @@ class ResearchFlow:
             if split_relabel:
                 recorded["validation_json"]["relabelled"] = dict(split_relabel)
             if report.ok:
-                if task_type == "grounded_answer":
+                if task_type in ("grounded_answer", "followup_answer"):
                     report.result = contracts.name_sources_in_prose(payload, report.result)
                 output = {"output_type": report.output_type, "result": report.result,
                           "step_input_id": payload["step_input_id"], "resolved_model": result.resolved_model, "warnings": warnings}

@@ -42,6 +42,10 @@ that matches `task_type`:
 | `report_review` | [Report](references/report.md) — Report review |
 | `owner_review` | [Owner review](references/review.md) |
 
+For `followup_answer`, read [follow-up answer](followup.md) instead: you answer
+a follow-up question from the passages of this research the application chose
+for it, and you start no search.
+
 For `answer_review`, read [answer review](references/answer-review.md) instead:
 you review claims another step wrote and do not answer the question yourself.
 

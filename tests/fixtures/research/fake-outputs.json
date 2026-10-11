@@ -3463,6 +3463,342 @@
     "context_limits": [],
     "notes": "SYNTHETIC empty findings."
    }
+  },
+  {
+   "name": "followup_valid",
+   "step_input": "K_followup_answer",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "answered",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "text": "It has been reported that release-time scheduling is formulated as a mixed-integer linear program with binary release variables.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ]
+     }
+    ],
+    "citation_anchors": [
+     {
+      "claim_label": "c1",
+      "passage_id": "psg_SYNA1abs01",
+      "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+     }
+    ],
+    "unanswered_aspects": []
+   }
+  },
+  {
+   "name": "followup_not_answered_with_closest_evidence",
+   "step_input": "K_followup_answer",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "not_answered",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "text": "It has been reported that release-time scheduling is formulated as a mixed-integer linear program with binary release variables.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ]
+     }
+    ],
+    "citation_anchors": [
+     {
+      "claim_label": "c1",
+      "passage_id": "psg_SYNA1abs01",
+      "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+     }
+    ],
+    "unanswered_aspects": [
+     "None of the given passages reports how the binary variables are indexed over time."
+    ]
+   }
+  },
+  {
+   "name": "followup_not_answered_without_claims",
+   "step_input": "K_followup_answer",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "not_answered",
+    "claims": [],
+    "citation_anchors": [],
+    "unanswered_aspects": [
+     "None of the given passages answers this follow-up question."
+    ]
+   }
+  },
+  {
+   "name": "followup_answered_without_claims",
+   "step_input": "K_followup_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "followup_answer_without_claims"
+   ],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "answered",
+    "claims": [],
+    "citation_anchors": [],
+    "unanswered_aspects": []
+   }
+  },
+  {
+   "name": "followup_partly_answered_without_aspect",
+   "step_input": "K_followup_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "followup_unanswered_without_aspect"
+   ],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "partly_answered",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "text": "It has been reported that release-time scheduling is formulated as a mixed-integer linear program with binary release variables.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ]
+     }
+    ],
+    "citation_anchors": [
+     {
+      "claim_label": "c1",
+      "passage_id": "psg_SYNA1abs01",
+      "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+     }
+    ],
+    "unanswered_aspects": []
+   }
+  },
+  {
+   "name": "followup_passage_not_sent",
+   "step_input": "K_followup_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "unknown_passage_id"
+   ],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "answered",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "text": "It has been reported that release-time scheduling is formulated as a mixed-integer linear program with binary release variables.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA5abs01"
+      ]
+     }
+    ],
+    "citation_anchors": [],
+    "unanswered_aspects": []
+   }
+  },
+  {
+   "name": "followup_invented_locator",
+   "step_input": "K_followup_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "locator_in_claim_text"
+   ],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "answered",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "text": "Equation 4 on page 12 shows that the release variables are binary.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ]
+     }
+    ],
+    "citation_anchors": [
+     {
+      "claim_label": "c1",
+      "passage_id": "psg_SYNA1abs01",
+      "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+     }
+    ],
+    "unanswered_aspects": []
+   }
+  },
+  {
+   "name": "followup_anchor_not_in_passage",
+   "step_input": "K_followup_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "anchor_not_in_passage"
+   ],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "answered",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "text": "It has been reported that release-time scheduling is formulated as a mixed-integer linear program with binary release variables.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ]
+     }
+    ],
+    "citation_anchors": [
+     {
+      "claim_label": "c1",
+      "passage_id": "psg_SYNA1abs01",
+      "quote": "The release variables are continuous and unbounded in this model."
+     }
+    ],
+    "unanswered_aspects": []
+   }
+  },
+  {
+   "name": "followup_missing_anchor",
+   "step_input": "K_followup_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "missing_citation_anchor"
+   ],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "answered",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "text": "It has been reported that release-time scheduling is formulated as a mixed-integer linear program with binary release variables.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ]
+     }
+    ],
+    "citation_anchors": [],
+    "unanswered_aspects": []
+   }
+  },
+  {
+   "name": "followup_several_sources",
+   "step_input": "K_followup_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "source_stated_several_sources"
+   ],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "answered",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "text": "It has been reported that release-time scheduling is formulated as a mixed-integer linear program with binary release variables.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01",
+       "psg_SYNA2abs01"
+      ]
+     }
+    ],
+    "citation_anchors": [
+     {
+      "claim_label": "c1",
+      "passage_id": "psg_SYNA1abs01",
+      "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+     },
+     {
+      "claim_label": "c1",
+      "passage_id": "psg_SYNA2abs01",
+      "quote": "SYNTHETIC. We study how relay bacteria share a limited nutrient supply among forwarding tasks."
+     }
+    ],
+    "unanswered_aspects": []
+   }
+  },
+  {
+   "name": "followup_envelope_mismatch",
+   "step_input": "K_followup_answer",
+   "expect_ok": false,
+   "expect_codes": [
+    "envelope_mismatch"
+   ],
+   "output": {
+    "schema_version": "deixis.followup_answer.v1",
+    "step_input_id": "sti_SYNTHK0003",
+    "scope_revision": 2,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "answer_language": "en",
+    "outcome": "answered",
+    "claims": [
+     {
+      "claim_label": "c1",
+      "text": "It has been reported that release-time scheduling is formulated as a mixed-integer linear program with binary release variables.",
+      "support_type": "source_stated",
+      "passage_ids": [
+       "psg_SYNA1abs01"
+      ]
+     }
+    ],
+    "citation_anchors": [
+     {
+      "claim_label": "c1",
+      "passage_id": "psg_SYNA1abs01",
+      "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
+     }
+    ],
+    "unanswered_aspects": []
+   }
   }
  ]
 }

@@ -1,0 +1,325 @@
+"""UI parity S20, F12 and F13: the not-read list and the "Screen more" run. SYNTHETIC OpenAlex records and the fake
+model, so these tests show the workflow (which works, in which order, two reads per batch, nothing included, budget,
+resume, cancel, the refusals), not model quality or live provider access.
+"""
+
+import asyncio
+import json
+import time
+from types import SimpleNamespace
+
+import pytest
+
+from deixis.config import Settings
+from deixis.domain import skill
+from deixis.domain.rules import RevisionConflict
+from deixis.storage import db
+from deixis.workflow import screen_more, small_batch
+from deixis.workflow.flow import FlowDeps, ResearchFlow
+from deixis.workflow.store import Store
+from deixis.workflow.worker import Worker
+from fakes import FakeAdapter, valid_response
+from test_fetch_overlap_flow import discover, output
+from test_small_batch_flow import app_for, client_of
+
+ACTIVE = ("queued", "running", "pause_requested")
+
+
+class Crash(BaseException):
+    """The process stopping in the middle of a call."""
+
+
+def settle(client, rid, timeout=60):
+    """Wait until no run of the research is active (the discovery queues an answer and its review)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        view = client.get(f"/api/researches/{rid}").json()
+        if all(run["status"] not in ACTIVE for run in view["runs"]):
+            return view
+        time.sleep(0.05)
+    raise AssertionError("the research's runs did not settle")
+
+
+def discovered(tmp_path, monkeypatch, n):
+    """A quick discovery (read window N = 25) over `n` SYNTHETIC works the model reads, every run settled."""
+    app, _ = app_for(tmp_path, monkeypatch, n, model_works=True)
+    with client_of(app) as client:
+        rid, run_id, _, run = discover(client, effort="quick")
+        assert run["status"] == "completed", run
+        settle(client, rid)
+    return rid, run_id
+
+
+def harness(tmp_path, responder=valid_response):
+    """The library the app wrote, driven by a flow of its own, so a test controls each run's execution."""
+    store = Store(db.connect(tmp_path / "data" / "library.sqlite"))
+    adapter = FakeAdapter(responder)
+    flow = ResearchFlow(FlowDeps(Settings(data_dir=tmp_path / "data", port=8877), store, {"fake": adapter},
+                                 skill.load_skill_package(), None))
+    return SimpleNamespace(store=store, flow=flow, adapter=adapter)
+
+
+def execute(h, run):
+    h.store.update_run(run["id"], status="running")
+    asyncio.run(h.flow.execute(run["id"]))
+    return h.store.run(run["id"])
+
+
+def listing(store, discovery_id):
+    return output(store, discovery_id, small_batch.LIST_KEY)
+
+
+def screening_steps(store, run_id):
+    return {r["operation_key"]: r["status"] for r in store.conn.execute(
+        "SELECT operation_key, status FROM run_steps WHERE run_id = ? AND kind = 'model:abstract_screening'", (run_id,))}
+
+
+def sent_batches(h, run_id=None):
+    """The records of every abstract-screening call the harness adapter answered, read from the stored StepInputs
+    (the model sees short handles), oldest first; one run's calls when `run_id` is given."""
+    ids = {c["candidate_id"]: c["source_version_id"] for c in h.store.candidates(rid_of(h))}
+    rows = h.store.conn.execute(
+        "SELECT i.payload_json FROM step_inputs i JOIN run_steps s ON s.id = i.step_id JOIN runs r ON r.id = s.run_id"
+        " WHERE r.kind = 'screen_more' AND s.kind = 'model:abstract_screening'"
+        f"{' AND r.id = ?' if run_id else ''} ORDER BY i.rowid", (run_id,) if run_id else ())
+    return [[ids[c["candidate_id"]] for c in json.loads(row[0])["candidates"]] for row in rows]
+
+
+def rid_of(h):
+    return h.store.conn.execute("SELECT id FROM researches ORDER BY created_at LIMIT 1").fetchone()[0]
+
+
+def included(store, rid):
+    return store.conn.execute("SELECT COUNT(*) FROM selections WHERE research_id = ? AND state = 'included'",
+                              (rid,)).fetchone()[0]
+
+
+# ---- F13: the run ------------------------------------------------------------------------------------------------
+
+
+def test_screen_more_reads_the_next_forty_twice_per_batch_and_includes_nothing(tmp_path, monkeypatch):
+    rid, discovery_id = discovered(tmp_path, monkeypatch, 90)
+    h = harness(tmp_path)
+    frozen = listing(h.store, discovery_id)
+    before = screen_more.unscreened(h.store, rid, 0, 100)
+    assert before["total"] == 65 and before["list_size"] == 90  # the read window took the first 25
+    assert [i["signals"]["rank"] for i in before["items"]] == list(range(26, 91))
+    revision = h.store.selection_revision(rid)
+
+    run = screen_more.request(h.store, rid, None)
+    assert run["kind"] == "screen_more" and run["stage"] == "screening"
+    assert run["target"]["heads"] == [item["head"] for item in frozen["items"][25:65]]  # skips the screened 25
+    assert run["budget"]["screen_more"]["reads"] == 4 and run["budget"]["max_model_calls"] == 8
+    assert run["budget"]["max_provider_requests"] == 0
+    assert execute(h, run)["status"] == "completed"
+
+    batches = sent_batches(h)
+    assert len(batches) == 4 and batches[0] == batches[1] and batches[2] == batches[3]  # each batch read twice
+    assert [len(b) for b in batches] == [20, 20, 20, 20] and not set(batches[0]) & set(batches[2])
+    assert batches[0] + batches[2] == run["target"]["heads"]  # in list order
+    assert h.store.run(run["id"])["usage"]["model_calls"] == 4
+    assert included(h.store, rid) == 0  # two agreeing runs make candidates; nothing is included
+    assert not h.store.conn.execute("SELECT 1 FROM stage_decisions WHERE research_id = ? AND outcome = 'include'",
+                                    (rid,)).fetchone()
+    summary = h.store.existing_step(run["id"], screen_more.SUMMARY_KEY)["output"]
+    assert summary["planned"] == 40 and len(summary["candidates"]) == 40 and summary["not_screened"] == []
+    assert summary["reason_codes"] == {"runs_agree_candidate": 40}
+
+    after = screen_more.unscreened(h.store, rid, 0, 100)
+    assert after["total"] == 25 and [i["signals"]["rank"] for i in after["items"]] == list(range(66, 91))
+    assert h.store.selection_revision(rid) == revision + 1  # the answer made before is for an earlier selection
+    assert execute(h, run)["status"] == "completed"  # run again: nothing sent twice, no second move
+    assert len(sent_batches(h)) == 4 and h.store.selection_revision(rid) == revision + 1
+
+    second = screen_more.request(h.store, rid, None)
+    assert second["target"]["heads"] == [item["head"] for item in frozen["items"][65:90]]
+    assert second["budget"]["screen_more"]["reads"] == 4  # 25 works: a batch of 20 and one of 5, each read twice
+    assert execute(h, second)["status"] == "completed"
+    with pytest.raises(screen_more.NothingToScreen) as refused:
+        screen_more.request(h.store, rid, None)
+    assert refused.value.code == "nothing_left"
+
+
+def test_screen_more_honours_its_budget(tmp_path, monkeypatch):
+    rid, _ = discovered(tmp_path, monkeypatch, 90)
+    h = harness(tmp_path)
+    run = screen_more.request(h.store, rid, None)
+    h.store.conn.execute("UPDATE runs SET budget_json = json_set(budget_json, '$.max_model_calls', 2) WHERE id = ?",
+                         (run["id"],))
+    assert execute(h, run)["status"] == "completed"
+    assert len(sent_batches(h)) == 2 and h.store.run(run["id"])["usage"]["model_calls"] == 2
+    summary = h.store.existing_step(run["id"], screen_more.SUMMARY_KEY)["output"]
+    # The second batch is not half-sent: its 20 works are "not read" and stay on the not-read list.
+    assert len(summary["candidates"]) == 20 and len(summary["not_screened"]) == 20
+    assert summary["reason_codes"] == {"abstract_not_read": 20, "runs_agree_candidate": 20}
+    assert screen_more.unscreened(h.store, rid)["total"] == 45
+
+
+def test_screen_more_resumes_after_a_crash_without_resending_a_finished_call(tmp_path, monkeypatch):
+    rid, _ = discovered(tmp_path, monkeypatch, 90)
+    h = harness(tmp_path)
+    run = screen_more.request(h.store, rid, None)
+
+    def crash_on_third(si):
+        if len(h.adapter.calls) == 3:
+            h.adapter.before = None
+            raise Crash
+
+    h.adapter.before = crash_on_third
+    with pytest.raises(Crash):
+        execute(h, run)
+    assert Worker.recover(SimpleNamespace(store=h.store))["runs"] == 1
+    assert h.store.run(run["id"])["pause_reason"] == "backend_restarted"
+    steps = screening_steps(h.store, run["id"])
+    assert sorted(steps.values()) == ["outcome_unknown", "succeeded", "succeeded"]
+
+    h.store.resume_run(run["id"])
+    assert execute(h, run)["status"] == "completed"
+    batches = sent_batches(h)
+    assert len(batches) == 5 and batches[2] == batches[3] == batches[4]  # only the unfinished calls went again
+    assert len(h.store.existing_step(run["id"], screen_more.SUMMARY_KEY)["output"]["candidates"]) == 40
+    assert included(h.store, rid) == 0
+
+
+def test_a_paused_screen_more_resumes_without_repeating_and_a_cancel_stops_it(tmp_path, monkeypatch):
+    rid, _ = discovered(tmp_path, monkeypatch, 90)
+    h = harness(tmp_path)
+    run = screen_more.request(h.store, rid, None)
+    revision = h.store.selection_revision(rid)
+
+    def pause_after_first_batch(si):
+        if len(h.adapter.calls) == 2:
+            h.store.update_run(run["id"], status="pause_requested", pause_reason="user_requested")
+
+    h.adapter.before = pause_after_first_batch
+    stopped = execute(h, run)
+    assert (stopped["status"], stopped["pause_reason"]) == ("paused", "user_requested")
+    assert len(sent_batches(h)) == 2 and h.store.existing_step(run["id"], screen_more.SUMMARY_KEY) is None
+    h.adapter.before = None
+    h.store.resume_run(run["id"])
+    assert execute(h, run)["status"] == "completed"
+    assert len(sent_batches(h)) == 4  # the first batch was not read again
+    assert h.store.selection_revision(rid) > revision
+
+    second = screen_more.request(h.store, rid, None)
+
+    def cancel_during_first(si):
+        if len(h.adapter.calls) == 5:
+            h.store.update_run(second["id"], event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
+
+    h.adapter.before = cancel_during_first
+    assert execute(h, second)["status"] == "cancelled"
+    assert len(sent_batches(h)) == 5  # no call after the cancel
+    assert h.store.existing_step(second["id"], screen_more.SUMMARY_KEY) is None
+    assert screen_more.unscreened(h.store, rid)["total"] == 25  # the cancelled run closed no batch
+
+
+def test_a_newer_question_revision_cancels_screen_more(tmp_path, monkeypatch):
+    rid, _ = discovered(tmp_path, monkeypatch, 60)
+    h = harness(tmp_path)
+    run = screen_more.request(h.store, rid, None)
+
+    def revise(si):
+        if len(h.adapter.calls) == 1:
+            h.store.revise_scope(rid, h.store.research(rid)["version"], "SYNTHETIC another question", None)
+
+    h.adapter.before = revise
+    stopped = execute(h, run)
+    assert (stopped["status"], stopped["pause_reason"]) == ("cancelled", "scope_revised")
+
+
+def test_screen_more_refusals(tmp_path, monkeypatch):
+    rid, _ = discovered(tmp_path, monkeypatch, 30)
+    h = harness(tmp_path)
+    h.store.conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at,"
+                         " updated_at) VALUES ('run_ACTIVE00000001', ?, 1, 'answer', 'running', 'answer', '{}', 'now', 'now')",
+                         (rid,))
+    with pytest.raises(RevisionConflict):
+        screen_more.request(h.store, rid, None)  # one active run per research
+    h.store.conn.execute("UPDATE runs SET status = 'cancelled' WHERE id = 'run_ACTIVE00000001'")
+    first = screen_more.request(h.store, rid, "same")
+    assert screen_more.request(h.store, rid, "same")["id"] == first["id"]  # a replayed key returns the same run
+    assert len(first["target"]["heads"]) == 5 and first["budget"]["screen_more"]["reads"] == 2
+    execute(h, first)
+    with pytest.raises(screen_more.NothingToScreen) as refused:
+        screen_more.request(h.store, rid, None)
+    assert refused.value.code == "nothing_left"
+
+    other = h.store.create_research("SYNTHETIC unsearched question", "academic", "quick", [], "fake", "fake-model", None)
+    with pytest.raises(screen_more.NothingToScreen) as refused:
+        screen_more.request(h.store, other, None)
+    assert refused.value.code == "no_completed_discovery"
+
+
+def test_a_work_the_person_already_decided_is_neither_listed_nor_planned(tmp_path, monkeypatch):
+    rid, discovery_id = discovered(tmp_path, monkeypatch, 60)
+    h = harness(tmp_path)
+    head = listing(h.store, discovery_id)["items"][25]["head"]  # the first work below the read window
+    version = h.store.conn.execute("SELECT version FROM selections WHERE research_id = ? AND source_version_id = ?",
+                                   (rid, head)).fetchone()[0]
+    h.store.set_user_selection(rid, head, "excluded", version, "SYNTHETIC not this one")
+    page = screen_more.unscreened(h.store, rid, 0, 100)
+    assert page["total"] == 34 and head not in {i["source_version_id"] for i in page["items"]}
+    run = screen_more.request(h.store, rid, None)
+    assert head not in run["target"]["heads"] and len(run["target"]["heads"]) == 34
+
+
+# ---- F12 and the routes ------------------------------------------------------------------------------------------
+
+
+def test_unscreened_and_screen_more_routes(tmp_path, monkeypatch):
+    app, _ = app_for(tmp_path, monkeypatch, 60, model_works=True)
+    with client_of(app) as client:
+        assert client.get("/api/researches/res_missing/unscreened").status_code == 404
+        rid, discovery_id, _, run = discover(client, effort="quick")
+        view = settle(client, rid)
+        store = app.state.store
+        frozen = listing(store, discovery_id)
+        answer = next(a for a in view["answers"] if a["run_id"])
+        assert answer["applicability"] == "current"
+
+        page = client.get(f"/api/researches/{rid}/unscreened", params={"offset": 10, "limit": 5}).json()
+        assert page["total"] == 35 and page["screenable"] == 35 and page["list_size"] == 60
+        assert [i["source_version_id"] for i in page["items"]] == [i["head"] for i in frozen["items"][35:40]]
+        assert [i["signals"]["rank"] for i in page["items"]] == [36, 37, 38, 39, 40]
+        assert "prioritization signals" in page["signals_note"] and page["items"][0]["title"].startswith("SYNTHETIC")
+        assert set(page["items"][0]["signals"]) == {"rank", "similarity"}
+        everything = client.get(f"/api/researches/{rid}/unscreened", params={"limit": 100}).json()["items"]
+        assert [i["signals"]["rank"] for i in everything] == list(range(26, 61))
+        assert client.get(f"/api/researches/{rid}/unscreened", params={"limit": 101}).status_code == 422
+        assert client.get(f"/api/researches/{rid}/unscreened", params={"offset": -1}).status_code == 422
+
+        url = f"/api/researches/{rid}/screen-more"
+        assert client.post(url, headers={"x-deixis-csrf": "wrong"}).status_code == 403
+        store.conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at,"
+                           " updated_at) VALUES ('run_ACTIVE00000001', ?, 1, 'answer', 'running', 'answer', '{}', 'now', 'now')",
+                           (rid,))
+        assert client.post(url).status_code == 409
+        store.conn.execute("UPDATE runs SET status = 'cancelled' WHERE id = 'run_ACTIVE00000001'")
+        first = client.post(url, headers={"Idempotency-Key": "s1"})
+        assert first.status_code == 202, first.text
+        assert first.json()["kind"] == "screen_more" and len(first.json()["target"]["heads"]) == 35
+        assert client.post(url, headers={"Idempotency-Key": "s1"}).json()["id"] == first.json()["id"]
+        view = settle(client, rid)
+        assert next(r for r in view["runs"] if r["id"] == first.json()["id"])["status"] == "completed"
+        assert client.get(f"/api/researches/{rid}/unscreened").json()["total"] == 0
+        refused = client.post(url)
+        assert refused.status_code == 422 and refused.json()["code"] == "nothing_left"
+        assert next(a for a in view["answers"] if a["id"] == answer["id"])["applicability"] == "stale_selection"
+
+        # The next answer reads the works Screen more made candidates, from their abstracts; nothing is included.
+        again = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"})
+        assert again.status_code == 202, again.text
+        settle(client, rid)
+        plan = output(store, again.json()["id"], "fast_path:v1:answer_input")
+        later = [row for row in plan["items"] if row.get("screened_after_cutoff") == first.json()["id"]]
+        assert len(later) == 35 and all(row["route"] == "abstract" for row in later)
+        assert plan["excluded_reasons"].get("outside_read_window", 0) == 0
+        assert included(store, rid) == 0
+
+        other = client.post("/api/researches", json={"question": "SYNTHETIC attached question", "model_connection": "fake",
+                                                      "requested_model": "fake-model", "effort": "quick",
+                                                      "source_scope": "attached"}).json()["research"]["id"]
+        assert client.get(f"/api/researches/{other}/unscreened").status_code == 422
+        refused = client.post(f"/api/researches/{other}/screen-more")
+        assert refused.status_code == 422 and refused.json()["code"] == "no_completed_discovery"

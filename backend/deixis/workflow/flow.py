@@ -429,6 +429,9 @@ class ResearchFlow:
                 await self._cell_recheck(run, scope)
             elif run["kind"] == "table_column_recheck":
                 await self._table_column_recheck(run, scope)
+            elif run["kind"] == "screen_more":
+                from deixis.workflow import screen_more  # UI parity S20, F13
+                await screen_more.execute(self, run, scope)
             elif run["kind"] == "research_title":
                 await self._research_title(run, scope)
             elif run["kind"] == "report":

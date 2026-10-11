@@ -1574,4 +1574,26 @@ export const libraryImportsApi = {
     return request<{ library: LibraryItemsView; reference_import: ReferenceImport }>(
       '/api/library/reference-imports', { method: 'POST', body: form })
   },
+// The not-read list and the "Screen more" run (S20; api/screen_more_routes.py). `unscreened` pages through the works of
+// the latest completed discovery's frozen list that were never screened, in list order; `signals.rank` (place in that
+// list) and `signals.similarity` (the embedding score it was ranked with, null when none) are prioritization signals,
+// not relevance or quality. `screenable` is false for a work with no abstract to read. `screenMore` queues one run
+// (kind `screen_more`) over the next 40 screenable works, read twice per batch of 20; it never includes a source, its
+// candidates move the selection revision (an earlier answer reads `stale_selection`) and the next answer reads them.
+// 409 while another run of the research is active; 422 with `code` `no_completed_discovery` or `nothing_left`.
+export type UnscreenedWork = {
+  work_id: string; source_version_id: string; title: string | null; year: number | null; venue: string | null
+  doi: string | null; authors: unknown[]; has_abstract: boolean; screenable: boolean
+  signals: { rank: number; similarity: number | null }
+}
+export type UnscreenedPage = {
+  research_id: string; discovery_run_id: string; scope_revision: number; manifest_hash: string; list_size: number
+  total: number; screenable: number; offset: number; limit: number; items: UnscreenedWork[]; signals_note: string
+}
+
+export const screenMoreApi = {
+  unscreened: (id: string, offset = 0, limit = 50) =>
+    request<UnscreenedPage>(`/api/researches/${encodeURIComponent(id)}/unscreened?offset=${offset}&limit=${limit}`),
+  screenMore: (id: string, idempotencyKey: string) =>
+    request<Run>(`/api/researches/${encodeURIComponent(id)}/screen-more`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }),
 }

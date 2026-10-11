@@ -664,3 +664,53 @@ def test_follow_up_citations_carry_the_answer_views_evidence_marks_and_warnings(
         (citation,) = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()["answer"]["claims"][0]["citations"]
         assert citation["removed_from_research"] is True and citation["source_version_id"] == svid
         assert app.state.store.asset_impact(aid)["followup_quotes"] == 1
+
+
+def published_version_of(lib, svid):
+    """A SYNTHETIC published version (its own DOI) of `svid`'s work, added to the research: it now heads the work."""
+    from deixis.providers.common import ProviderRecord
+    record = ProviderRecord(provider_record_id="published", title="SYNTHETIC published", authors=[], year=None,
+                            venue=None, publication_type=None, doi="10.5555/synthetic.published", landing_url=None,
+                            oa_pdf_url=None, oa_pdf_version=None, version_label=None, abstract="SYNTHETIC published.",
+                            abstract_origin="provider", identifiers={}, raw={})
+    new, _ = lib.store.upsert_provider_source("known_list", record, None)
+    work = lib.store.source(svid)["work_id"]
+    lib.store.conn.execute("UPDATE source_versions SET work_id = ? WHERE id = ?", (work, new))
+    lib.store.add_to_corpus(lib.rid, new, "search")
+    assert lib.store.work_heads(lib.rid)[work] == new
+    return new
+
+
+def test_a_choice_on_the_works_new_head_takes_its_frozen_passages_out_of_the_pool(tmp_path):
+    from test_fast_path_answer import answer_run, cutoff, setup, user
+    for state in ("excluded", "pending"):
+        lib = setup(tmp_path / state, n=2)
+        cutoff(lib)
+        run = answer_run(lib)
+        asyncio.run(fast_answer.answer(lib.flow, run, lib.store.scope(lib.rid)))
+        old = lib.sources[0]
+        assert old in followup.pool(lib.store, lib.rid, 1)["sources"]
+        new = published_version_of(lib, old)
+        user(lib, new, state)
+        # The frozen answer named the old head; the person's choice on the work's head now still takes it out.
+        frozen = followup.pool(lib.store, lib.rid, 1)
+        assert old not in frozen["sources"] and new not in frozen["sources"]
+        assert lib.sources[1] in frozen["sources"]
+
+
+def test_an_invalid_answer_language_is_not_written_to_the_typed_column(tmp_path):
+    for value in ({"tag": "en"}, ["en", "tr"]):
+        def bad_language(si, value=value):
+            return json.dumps(json.loads(valid_response(si)) | {"claims": [], "citation_anchors": [],
+                                                                 "answer_language": value})
+
+        app = app_for(tmp_path / type(value).__name__, FakeAdapter(bad_language))
+        with TestClient(app) as client:
+            session(client)
+            rid, _ = research(client)
+            turn = answered(client, rid)
+            assert turn["status"] == "unverified_draft" and turn["run"]["status"] == "completed"
+            row = app.state.store.conn.execute("SELECT answer_language, draft_json FROM followup_turns WHERE id = ?",
+                                               (turn["id"],)).fetchone()
+            # The column holds a language tag or nothing; the raw value stays in the stored draft.
+            assert row["answer_language"] is None and json.loads(row["draft_json"])["answer_language"] == value

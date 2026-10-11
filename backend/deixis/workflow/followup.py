@@ -42,6 +42,7 @@ MAX_TERMS = 40
 # Why a follow-up stops unpublished when what its pool was frozen from changed (the run fails; the person asks again).
 SELECTION_CHANGED = "followup_selection_changed"
 SOURCES_CHANGED = "followup_sources_changed"
+LANGUAGE_TAG = re.compile(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})*")  # common.schema.json#/$defs/language_tag
 
 
 class FollowupRefused(Exception):
@@ -131,9 +132,13 @@ def pool(store: Any, research_id: str, scope_revision: int) -> dict[str, Any]:
     frozen = _answer_input(store, research_id, scope_revision)
     if frozen is not None:
         selections, humans = _person_states(store, research_id)
+        # The person's choice is read on the work's head now, not the head the answer froze: a version published
+        # since heads the work, and excluding or setting it pending takes the work's frozen passages out too.
+        heads = store.work_heads(research_id)
         for item in frozen["plan"]["items"]:
             svid = item["source_version_id"]
-            state = selections.get(item.get("head")) or humans.get(item["work_id"])
+            head = heads.get(item["work_id"], item.get("head"))
+            state = selections.get(head) or humans.get(item["work_id"])
             if state in ("excluded", "pending"):
                 continue
             ids = list(item["abstract_ids"])
@@ -288,6 +293,12 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
             validation={"ok": True, "issues": [], "warnings": output.get("warnings", [])}, links=links)
 
 
+def _language_tag(value: Any) -> str | None:
+    """A language tag for the typed column, or None: an invalid draft's raw value (an object, a list, a malformed
+    string) stays only in its stored JSON."""
+    return value if isinstance(value, str) and LANGUAGE_TAG.fullmatch(value) else None
+
+
 def publish(flow: Any, run: dict[str, Any], turn: dict[str, Any], frozen_pool: dict[str, Any], status: str, *,
             considered: int, given: int, validation: dict[str, Any], step_id: str | None = None,
             step_input_id: str | None = None, draft: dict[str, Any] | None = None,
@@ -303,7 +314,7 @@ def publish(flow: Any, run: dict[str, Any], turn: dict[str, Any], frozen_pool: d
             "UPDATE followup_turns SET status = ?, step_id = ?, step_input_id = ?, answer_language = ?, draft_json = ?,"
             " validation_json = ?, passages_considered = ?, passages_given = ?, selection_revision = ?,"
             " user_signature = ?, published_at = ? WHERE id = ? AND status = 'pending'",
-            (status, step_id, step_input_id, (draft or {}).get("answer_language"),
+            (status, step_id, step_input_id, _language_tag((draft or {}).get("answer_language")),
              dumps(draft) if draft is not None else None, dumps(validation), considered, given,
              frozen_pool["selection_revision"], frozen_pool["user_signature"], now(), turn["id"]),
         ).rowcount

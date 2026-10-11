@@ -93,6 +93,8 @@ function ZoteroDialogContent({ destination, busy, initial, onImport }: {
     : t('Import items')
   const note = [
     t(source === 'local' ? 'Reads Zotero on this computer through its local API · read-only.' : 'Reads the zotero.org library set in .env · read-only.'),
+    // The count is Zotero's `numItems`; the import skips standalone notes and attachments that are not PDFs (zotero.collection_items).
+    t('Counts are Zotero’s own; standalone notes and non-PDF attachments are skipped, so fewer items may be added.'),
     t(destination === 'home' ? 'Items are imported when the research starts and join it as included sources.' : 'Items are added to All works in the Library.'),
   ].join(' ')
 
@@ -103,7 +105,7 @@ function ZoteroDialogContent({ destination, busy, initial, onImport }: {
       <Dialog.Close type="button" className="zotero-dialog-close" aria-label={t('Close')}><X size={16} aria-hidden /></Dialog.Close>
     </div>
     <div className="zotero-dialog-body">
-      <Dialog.Description className="zotero-dialog-lead">{t('Choose a collection. DEIXIS reads its own items (not its sub-collections) and each item’s first PDF; it never changes your Zotero library.')}</Dialog.Description>
+      <Dialog.Description className="zotero-dialog-lead">{t('Choose a collection. DEIXIS reads its own items (not its sub-collections) and each item’s first readable PDF; it never changes your Zotero library.')}</Dialog.Description>
       <div className="zotero-source" role="group" aria-label={t('Zotero library')}>
         {(['local', 'web'] as const).map(s => <button type="button" key={s} aria-pressed={source === s} onClick={() => choose(s)}>{s === 'local' ? t('Zotero on this computer') : 'zotero.org'}</button>)}
       </div>

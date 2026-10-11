@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 import { execSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { COLOUR_EXCEPTIONS, COPY_CHANGES, EXCLUDED_MOCK_CONTROLS, PLACEMENTS, type ColourException, type Use } from './exceptions'
+import { COLOUR_EXCEPTIONS, COPY_CHANGES, EXCLUDED_MOCK_CONTROLS, GEOMETRY_EXCEPTIONS, PLACEMENTS, type ColourException, type Use } from './exceptions'
 import type { Pair, Theme } from './parity-map'
 
 // The parity gate of plan §4.1 as reusable helpers. A slice runs them for its screens through parity.spec.ts; each
@@ -442,7 +442,12 @@ export type FixtureContext = { researches: number; suggestions: number }
 async function checkItem(pair: Pair, item: Pair, m: Side, v: Variant, mock: Page, app: Page, index: number, data: boolean): Promise<string[]> {
   const out = checkPresence(item, m)
   if (out.length) return out
-  if (pair.checks.includes('chrome')) out.push(...checkChrome(item, m, data ? ['x', 'width', 'height'] : undefined))
+  if (pair.checks.includes('chrome')) {
+    // A declared geometry exception (exceptions.ts) leaves out only its axes.
+    const free = new Set(GEOMETRY_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id))).flatMap(e => e.axes))
+    const axes = (data ? ['x', 'width', 'height'] as Axis[] : ['x', 'y', 'width', 'height'] as Axis[]).filter(a => !free.has(a))
+    out.push(...checkChrome(item, m, axes))
+  }
   if (pair.checks.includes('content')) out.push(...checkContent(item, m))
   if (pair.checks.includes('type')) out.push(...checkType(item, m))
   if (pair.checks.includes('colour')) out.push(...checkColour(item, m, v))

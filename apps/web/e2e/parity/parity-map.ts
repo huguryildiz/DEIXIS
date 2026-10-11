@@ -179,7 +179,8 @@ export const PAIRS: Pair[] = [
     status: 'pending:S11', why: 'S11: artifacts, waiting, funnel, depth, run and usage boxes' },
 
   // S6: the Zotero dialog of Home (H17). The dialog's and the footer's height and y depend on the rows and on how the
-  // §2.3 notes wrap, so those two are compared as content (x, width, padding, line height); the head row is chrome.
+  // §2.3 notes wrap, so those two frames are compared as content (x, width, padding, line height); the head row is
+  // chrome, and the footer buttons are chrome without y (a declared geometry exception).
   { id: 'zotero.dialog', surface: 'zotero', mock: '.pal.dlg', app: '.zotero-dialog', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
   { id: 'zotero.head', surface: 'zotero', mock: '.dlg .pal-in', app: '.zotero-dialog-head', checks: ['chrome', 'type', 'colour', 'icon'], text: true,
     icon: { mock: 'lib', app: 'library' }, status: 'active' },
@@ -196,7 +197,8 @@ export const PAIRS: Pair[] = [
     list: 'data', expected: () => ZOTERO_COLLECTIONS.filter(c => c.parent).length, icon: { mock: 'folder', app: 'folder' }, status: 'active' },
   { id: 'zotero.note', surface: 'zotero', mock: '.dlg-b > p.foot-note:last-child', app: '.zotero-dialog-note', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
   { id: 'zotero.foot', surface: 'zotero', mock: '.dlg-f', app: '.zotero-dialog-foot', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
-  { id: 'zotero.foot-buttons', surface: 'zotero', mock: '.dlg-f button', app: '.zotero-dialog-foot button', checks: ['content', 'type', 'colour'], list: 'fixed', status: 'active' },
+  // Chrome geometry minus y (GEOMETRY_EXCEPTIONS zotero-foot-buttons-y): the footer's place follows the notes above it.
+  { id: 'zotero.foot-buttons', surface: 'zotero', mock: '.dlg-f button', app: '.zotero-dialog-foot button', checks: ['chrome', 'content', 'type', 'colour'], list: 'fixed', status: 'active' },
 ]
 
 /** Pending pairs per slice, for the summary line. */

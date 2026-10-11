@@ -3641,7 +3641,7 @@ const tr: Record<string, string> = {
   'Abstract screening of more works': 'Daha fazla çalışmanın özet taraması',
   // UI parity S6: Zotero dialog.
   'Import from Zotero': 'Zotero’dan içe aktar',
-  'Choose a collection. DEIXIS reads its own items (not its sub-collections) and each item’s first PDF; it never changes your Zotero library.': 'Bir koleksiyon seçin. DEIXIS koleksiyonun kendi öğelerini (alt koleksiyonlarınkini değil) ve her öğenin ilk PDF’ini okur; Zotero kitaplığınızı hiç değiştirmez.',
+  'Choose a collection. DEIXIS reads its own items (not its sub-collections) and each item’s first readable PDF; it never changes your Zotero library.': 'Bir koleksiyon seçin. DEIXIS koleksiyonun kendi öğelerini (alt koleksiyonlarınkini değil) ve her öğenin okunabilen ilk PDF’ini okur; Zotero kitaplığınızı hiç değiştirmez.',
   'Reads Zotero on this computer through its local API · read-only.': 'Bu bilgisayardaki Zotero’yu yerel API’si üzerinden okur · salt okunur.',
   'Reads the zotero.org library set in .env · read-only.': '.env’de ayarlı zotero.org kitaplığını okur · salt okunur.',
   'Items are imported when the research starts and join it as included sources.': 'Öğeler araştırma başlayınca içe aktarılır ve dahil edilen kaynaklar olarak araştırmaya katılır.',
@@ -3651,4 +3651,5 @@ const tr: Record<string, string> = {
   'Import {n} item': '{n} öğeyi içe aktar',
   'Import {n} items': '{n} öğeyi içe aktar',
   'Import items': 'Öğeleri içe aktar',
+  'Counts are Zotero’s own; standalone notes and non-PDF attachments are skipped, so fewer items may be added.': 'Sayılar Zotero’nun kendi sayılarıdır; tek başına notlar ve PDF olmayan ekler atlanır, bu yüzden daha az öğe eklenebilir.',
 }

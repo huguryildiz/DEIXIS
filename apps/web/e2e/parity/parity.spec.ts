@@ -4,12 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createServer } from 'node:net'
-import { COLOUR_EXCEPTIONS } from './exceptions'
-import {
-  APP_EXCLUDE, MOCK_EXCLUDE, MOCKUP, PARITY_OUT, checkBreakpoint, checkChrome, checkColour, checkContent, checkContrast,
-  checkIcon, checkIconBox, checkOrder, checkPresence, checkType, driveMockup, exceptionFor, hovered, measure, openMockup,
-  writePixelDiff, type Side,
-} from './gates'
+import { APP_EXCLUDE, MOCK_EXCLUDE, MOCKUP, PARITY_OUT, checkBreakpoint, driveMockup, gateSurface, measure, openMockup, writePixelDiff, type FixtureContext } from './gates'
 import { BREAKPOINT, PAIRS, SURFACES, THEMES, WIDTHS, pairsFor, pendingBySlice, type Surface, type Theme } from './parity-map'
 
 // Parity check (D8, plan §4.1): the app on the fixture server against the mockup v24, per surface, at 1280 and 390,
@@ -118,35 +113,21 @@ async function showApp(page: Page, base: string, surface: Surface, research: str
   await page.waitForTimeout(300)  // let entrance transitions settle before measuring
 }
 
-const PROBE = [...new Set(COLOUR_EXCEPTIONS.flatMap(e => e.selectors))]
-
-/** Every gate of §4.1 for one surface and variant. Returns failure lines. */
-async function gate(surface: Surface, width: number, theme: Theme, mock: Page, app: Page): Promise<{ failures: string[]; checked: number }> {
-  const pairs = pairsFor(surface.id, width)
-  const failures: string[] = []
-  const measured = new Map<string, Side>()
-  for (const pair of pairs) {
-    const side: Side = { mock: await measure(mock, pair.mock, MOCK_EXCLUDE, PROBE), app: await measure(app, pair.app, APP_EXCLUDE, []) }
-    measured.set(pair.id, side)
-    const presence = checkPresence(pair, side)
-    failures.push(...presence)
-    if (presence.length) continue
-    if (pair.checks.includes('chrome')) failures.push(...checkChrome(pair, side))
-    if (pair.checks.includes('content')) failures.push(...checkContent(pair, side))
-    if (pair.checks.includes('type')) failures.push(...checkType(pair, side))
-    if (pair.checks.includes('colour')) {
-      failures.push(...checkColour(pair, side, { width, theme }))
-      // A declared exception's contrast is also checked in the hover state (§4.1).
-      const exception = side.mock && exceptionFor(pair, 'color', theme, side.mock)
-      if (exception?.states.includes('hover')) {
-        const hover = await hovered(app, pair.app, APP_EXCLUDE, [])
-        if (hover) failures.push(...checkContrast(pair.id, exception.use, hover, `${theme} ${width} hover`))
-      }
+/** The fixture facts data lists count from: researches on the server, suggestions from current valid answers (Q4). */
+async function fixtureContext(base: string): Promise<FixtureContext> {
+  const api = await apiRequest.newContext({ baseURL: base, extraHTTPHeaders: { origin: base } })
+  try {
+    const list = (await (await api.get('/api/researches')).json()) as Array<{ id: string }> | { researches: Array<{ id: string }> }
+    const researches = Array.isArray(list) ? list : list.researches
+    const aspects = new Set<string>()
+    for (const r of researches) {
+      const view = (await (await api.get(`/api/researches/${r.id}`)).json()) as { answers: Array<{ status: string; unanswered_aspects?: string[] }> }
+      for (const a of view.answers) if (a.status === 'structurally_valid') for (const x of a.unanswered_aspects ?? []) aspects.add(x)
     }
-    if (pair.checks.includes('icon')) failures.push(...checkIcon(pair, side), ...await checkIconBox(pair, mock, app))
+    return { researches: researches.length, suggestions: aspects.size }
+  } finally {
+    await api.dispose()
   }
-  failures.push(...checkOrder(pairs, measured))
-  return { failures, checked: pairs.length }
 }
 
 test.describe('parity: app against the mockup v24', () => {
@@ -154,11 +135,13 @@ test.describe('parity: app against the mockup v24', () => {
   // server and research again.
   const server = new FixtureServer()
   let research = ''
+  let ctx: FixtureContext = { researches: 0, suggestions: 0 }
 
   test.beforeAll(async () => {
     test.setTimeout(180_000)
     await server.start()
     research = await parityResearch(server.url())
+    ctx = await fixtureContext(server.url())
     const pending = pendingBySlice()
     const total = Object.values(pending).reduce((a, b) => a + b, 0)
     const active = PAIRS.filter(p => p.status === 'active').length
@@ -175,8 +158,9 @@ test.describe('parity: app against the mockup v24', () => {
           try {
             await driveMockup(pages.mock, surface.mock)
             await showApp(pages.app, server.url(), surface, research)
-            const { failures, checked } = await gate(surface, width, theme, pages.mock, pages.app)
-            info.annotations.push({ type: 'parity', description: `${checked} active pairs checked` })
+            const pairs = pairsFor(surface.id, width)
+            const failures = await gateSurface(pairs, { width, theme }, pages.mock, pages.app, ctx)
+            info.annotations.push({ type: 'parity', description: `${pairs.length} active pairs checked` })
             const diff = await writePixelDiff(pages.mock, pages.app, pages.scratch, `${surface.id}-${width}-${theme}`)
             info.annotations.push({ type: 'pixel-diff', description: diff })
             expect(failures, `${surface.id} ${width} ${theme}:\n${failures.join('\n')}`).toEqual([])

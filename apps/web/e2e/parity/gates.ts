@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 import { execSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { COLOUR_EXCEPTIONS, EXCLUDED_MOCK_CONTROLS, PLACEMENTS, type ColourException, type Use } from './exceptions'
+import { COLOUR_EXCEPTIONS, COPY_CHANGES, EXCLUDED_MOCK_CONTROLS, PLACEMENTS, type ColourException, type Use } from './exceptions'
 import type { Pair, Theme } from './parity-map'
 
 // The parity gate of plan §4.1 as reusable helpers. A slice runs them for its screens through parity.spec.ts; each
@@ -82,6 +82,7 @@ export type Measured = {
   colours: Record<string, Rgba>
   background: Rgba       // what the element actually sits on, alpha composited
   icon: string | null
+  text: string           // visible fixed text: no data text, no hidden text, text-transform applied
   matches: string[]      // exception selectors (mockup side) the element matches
   hasBorder: boolean
 }
@@ -91,12 +92,13 @@ const STYLE_KEYS = ['font-family', 'font-size', 'font-weight', 'line-height', 'l
   'border-bottom-right-radius', 'border-bottom-left-radius', 'box-shadow', 'border-top-width'] as const
 const COLOUR_KEYS = ['color', 'background-color', 'border-top-color'] as const
 
-/** Measures the first element `selector` matches. `exclude` removes matches inside excluded mockup controls (rule 2) or
- *  declared app placements (§2.2); `probe` lists exception selectors to test with `Element.matches`. */
-export async function measure(page: Page, selector: string, exclude: string[], probe: string[]): Promise<Measured | null> {
+/** Measures every element `selector` matches, in document order. `exclude` removes matches inside excluded mockup
+ *  controls (rule 2) or declared app placements (§2.2); `probe` lists exception selectors to test with `Element.matches`;
+ *  `dataText` lists selectors inside an element whose text is data (counts, titles), left out of its fixed text. */
+export async function measureAll(page: Page, selector: string, exclude: string[], probe: string[], dataText: string[] = []): Promise<Measured[]> {
   // The mockup's icon table (its global `P`); the app has none and names its icons by lucide class.
   const icons = await page.evaluate('typeof P === "undefined" ? null : P') as Record<string, string> | null
-  return page.evaluate(({ selector, exclude, probe, styleKeys, colourKeys, icons }) => {
+  return page.evaluate(({ selector, exclude, probe, styleKeys, colourKeys, icons, dataText }) => {
     const canvas = document.createElement('canvas')
     canvas.width = canvas.height = 1
     const ctx = canvas.getContext('2d', { willReadFrequently: true })!
@@ -115,44 +117,74 @@ export async function measure(page: Page, selector: string, exclude: string[], p
       const c = (i: number) => (top[i] * top[3] + under[i] * under[3] * (1 - top[3])) / a
       return [c(0), c(1), c(2), a]
     }
-    const all = [...document.querySelectorAll(selector)].filter(el => !exclude.some(x => el.closest(x)))
-    if (!all.length) return null
-    const el = all[0] as HTMLElement
-    const r = el.getBoundingClientRect()
-    const cs = getComputedStyle(el)
-    const style: Record<string, string> = {}
-    for (const key of styleKeys) style[key] = cs.getPropertyValue(key)
-    const colours: Record<string, [number, number, number, number]> = {}
-    for (const key of colourKeys) colours[key] = rgba(cs.getPropertyValue(key))
-    // The background the element sits on: its own and its ancestors' backgrounds, composited until opaque.
-    let background: [number, number, number, number] = [0, 0, 0, 0]
-    for (let node: Element | null = el; node && background[3] < 1; node = node.parentElement) {
-      background = over(background, rgba(getComputedStyle(node).backgroundColor))
+    const order = [...document.querySelectorAll('*')]
+    // The text a reader sees: no hidden or visually hidden (sr-only) text, no data text, CSS text-transform applied.
+    const shown = (node: Element): boolean => {
+      const st = getComputedStyle(node)
+      if (st.display === 'none' || st.visibility === 'hidden') return false
+      const box = node.getBoundingClientRect()
+      return !(box.width <= 1 && box.height <= 1 && st.overflow === 'hidden')
     }
-    background = over(background, [255, 255, 255, 1])
-    // Icon identity: a lucide class in the app, the path set of the mockup's own `P` table in the mockup.
-    const svg = el.matches('svg') ? el : el.querySelector('svg')
-    let icon: string | null = null
-    if (svg) {
-      const lucide = [...svg.classList].find(c => c.startsWith('lucide-'))
-      if (lucide) icon = lucide.slice('lucide-'.length)
-      else {
-        // Compare as parsed markup: `<path …/>` in the table reads back as `<path …></path>`.
-        const parsed = (body: string) => { const t = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); t.innerHTML = body; return t.innerHTML }
-        icon = icons ? Object.entries(icons).find(([, body]) => parsed(body) === svg.innerHTML)?.[0] ?? null : null
+    const textOf = (el: Element): string => {
+      const parts: string[] = []
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        let ok = true
+        for (let up = node.parentElement; up && ok; up = up === el ? null : up.parentElement) {
+          if (dataText.some(sel => up!.matches(sel)) || !shown(up)) ok = false
+        }
+        if (!ok) continue
+        const transform = getComputedStyle(node.parentElement!).textTransform
+        const text = node.textContent ?? ''
+        parts.push(transform === 'uppercase' ? text.toUpperCase() : transform === 'lowercase' ? text.toLowerCase() : text)
       }
+      return parts.join(' ').replace(/\s+/g, ' ').trim()
     }
-    return {
-      found: all.length,
-      visible: r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none',
-      order: [...document.querySelectorAll('*')].indexOf(el),
-      box: { x: r.x, y: r.y, width: r.width, height: r.height },
-      style, colours, background,
-      icon,
-      matches: probe.filter(sel => { try { return el.matches(sel) } catch { return false } }),
-      hasBorder: parseFloat(cs.borderTopWidth) > 0,
-    }
-  }, { selector, exclude, probe, styleKeys: [...STYLE_KEYS], colourKeys: [...COLOUR_KEYS], icons })
+    const all = [...document.querySelectorAll(selector)].filter(el => !exclude.some(x => el.closest(x)))
+    return all.map(node => {
+      const el = node as HTMLElement
+      const r = el.getBoundingClientRect()
+      const cs = getComputedStyle(el)
+      const style: Record<string, string> = {}
+      for (const key of styleKeys) style[key] = cs.getPropertyValue(key)
+      const colours: Record<string, [number, number, number, number]> = {}
+      for (const key of colourKeys) colours[key] = rgba(cs.getPropertyValue(key))
+      // The background the element sits on: its own and its ancestors' backgrounds, composited until opaque.
+      let background: [number, number, number, number] = [0, 0, 0, 0]
+      for (let up: Element | null = el; up && background[3] < 1; up = up.parentElement) {
+        background = over(background, rgba(getComputedStyle(up).backgroundColor))
+      }
+      background = over(background, [255, 255, 255, 1])
+      // Icon identity: a lucide class in the app, the path set of the mockup's own `P` table in the mockup.
+      const svg = el.matches('svg') ? el : el.querySelector('svg')
+      let icon: string | null = null
+      if (svg) {
+        const lucide = [...svg.classList].find(c => c.startsWith('lucide-'))
+        if (lucide) icon = lucide.slice('lucide-'.length)
+        else {
+          // Compare as parsed markup: `<path …/>` in the table reads back as `<path …></path>`.
+          const parsed = (body: string) => { const t = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); t.innerHTML = body; return t.innerHTML }
+          icon = icons ? Object.entries(icons).find(([, body]) => parsed(body) === svg.innerHTML)?.[0] ?? null : null
+        }
+      }
+      return {
+        found: all.length,
+        visible: r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none',
+        order: order.indexOf(el),
+        box: { x: r.x, y: r.y, width: r.width, height: r.height },
+        style, colours, background,
+        icon,
+        text: textOf(el),
+        matches: probe.filter(sel => { try { return el.matches(sel) } catch { return false } }),
+        hasBorder: parseFloat(cs.borderTopWidth) > 0,
+      }
+    })
+  }, { selector, exclude, probe, styleKeys: [...STYLE_KEYS], colourKeys: [...COLOUR_KEYS], icons, dataText })
+}
+
+/** The first element `selector` matches (its `found` is the count of all matches). */
+export async function measure(page: Page, selector: string, exclude: string[], probe: string[], dataText: string[] = []): Promise<Measured | null> {
+  return (await measureAll(page, selector, exclude, probe, dataText))[0] ?? null
 }
 
 // ---- colour science -----------------------------------------------------------------------------------------------
@@ -225,14 +257,15 @@ export type Variant = { width: number; theme: Theme }
 export type Side = { mock: Measured | null; app: Measured | null }
 const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol
 
-/** Presence: an active pair is found and visible on both sides; a fixed list has the same count on both sides. */
+const baseId = (id: string) => id.replace(/\[\d+\]$/, '')
+
+/** Presence: an active pair is found and visible on both sides. Lists are counted item by item in `checkList`. */
 export function checkPresence(pair: Pair, m: Side): string[] {
   const out: string[] = []
   if (!m.mock) out.push(`${pair.id}: not in the mockup (${pair.mock})`)
   if (!m.app) out.push(`${pair.id}: not in the app (${pair.app})`)
   if (!m.mock || !m.app) return out
   if (m.mock.visible !== m.app.visible) out.push(`${pair.id}: visible in mockup ${m.mock.visible}, app ${m.app.visible}`)
-  if (pair.list && m.mock.found !== m.app.found) out.push(`${pair.id}: list has ${m.mock.found} items in the mockup, ${m.app.found} in the app`)
   return out
 }
 
@@ -244,18 +277,18 @@ export function checkOrder(pairs: Pair[], measured: Map<string, Side>): string[]
   return mock.join(' ') === app.join(' ') ? [] : [`order differs:\n  mockup ${mock.join(' → ')}\n  app    ${app.join(' → ')}`]
 }
 
-/** Chrome geometry: x, y, width and height within ±2 px. */
-export function checkChrome(pair: Pair, m: Side): string[] {
+type Axis = 'x' | 'y' | 'width' | 'height'
+/** Chrome geometry: x, y, width and height within ±2 px (a data list's rows: no y, their place depends on the data). */
+export function checkChrome(pair: Pair, m: Side, axes: Axis[] = ['x', 'y', 'width', 'height']): string[] {
   if (!m.mock || !m.app) return []
-  return (['x', 'y', 'width', 'height'] as const).filter(k => !near(m.mock!.box[k], m.app!.box[k], 2))
+  return axes.filter(k => !near(m.mock!.box[k], m.app!.box[k], 2))
     .map(k => `${pair.id}: ${k} mockup ${m.mock!.box[k].toFixed(1)} app ${m.app!.box[k].toFixed(1)} (±2)`)
 }
 
 /** Content blocks: x and width within ±2 px, no y; padding and line height equal. */
 export function checkContent(pair: Pair, m: Side): string[] {
   if (!m.mock || !m.app) return []
-  const out = (['x', 'width'] as const).filter(k => !near(m.mock!.box[k], m.app!.box[k], 2))
-    .map(k => `${pair.id}: ${k} mockup ${m.mock!.box[k].toFixed(1)} app ${m.app!.box[k].toFixed(1)} (±2)`)
+  const out = checkChrome(pair, m, ['x', 'width'])
   for (const k of ['padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'line-height']) {
     if (m.mock.style[k] !== m.app.style[k]) out.push(`${pair.id}: ${k} mockup ${m.mock.style[k]} app ${m.app.style[k]}`)
   }
@@ -285,10 +318,21 @@ export function checkType(pair: Pair, m: Side): string[] {
   return out
 }
 
+const norm = (t: string) => t.replace(/\s+/g, ' ').trim()
+/** Fixed text: the visible text with data text left out (the pair's `dataText`), as rendered (text-transform applied).
+ *  Mockup copy replaced under §2.3 (`COPY_CHANGES`) is expected in its replacement wording. */
+export function checkText(pair: Pair, m: Side): string[] {
+  if (!m.mock || !m.app) return []
+  const change = COPY_CHANGES.find(c => norm(c.mock) === norm(m.mock!.text))
+  const expected = change ? change.app : m.mock.text
+  if (norm(expected) === norm(m.app.text)) return []
+  return [`${pair.id}: text mockup "${norm(m.mock.text)}"${change ? ` (copy change ${change.id} → "${change.app}")` : ''}, app "${norm(m.app.text)}"`]
+}
+
 /** The colour exceptions that cover this mockup element, property and theme. */
 export function exceptionFor(pair: Pair, property: string, theme: Theme, mock: Measured): ColourException | undefined {
   return COLOUR_EXCEPTIONS.find(e => e.property === property
-    && (e.pairs?.includes(pair.id) || e.selectors.some(sel => mock.matches.includes(sel)))
+    && (e.pairs?.includes(baseId(pair.id)) || e.selectors.some(sel => mock.matches.includes(sel)))
     && e.use === (pair.use ?? 'text')
     && deltaE2000(flatten(mock.colours[property], mock.background), hexToRgba(e.mock[theme])) <= 1)
 }
@@ -302,21 +346,37 @@ export function checkContrast(id: string, use: Use, el: Measured, where: string)
   return ratio + 1e-9 < min ? [`${id}: ${use} contrast ${ratio.toFixed(2)}:1 < ${min}:1 (${hex(fg)} on ${hex(el.background)}, ${where})`] : []
 }
 
-/** Colour, radius, border and shadow: equal or ΔE2000 ≤ 1. A declared exception is compared to its approved D5 value
- *  (exact) instead, and its contrast is checked by use. */
+/** The `color` of one state: a declared exception's approved value (exact) and its contrast by use; otherwise the
+ *  mockup's colour within ΔE2000 1, and, when the default state is an exception, still its contrast. */
+function checkStateColour(pair: Pair, m: Side, v: Variant, state: string, fallback?: ColourException): string[] {
+  if (!m.mock || !m.app) return []
+  const where = `${v.theme} ${v.width} ${state}`
+  const exception = exceptionFor(pair, 'color', v.theme, m.mock)
+  const got = flatten(m.app.colours.color, m.app.background)
+  if (exception) {
+    const out = deltaE2000(got, hexToRgba(exception.approved[v.theme])) > 0.1
+      ? [`${pair.id}: color app ${hex(got)} is not the approved ${exception.approved[v.theme]} of exception ${exception.id} (${where})`] : []
+    return [...out, ...checkContrast(pair.id, exception.use, m.app, where)]
+  }
+  const want = flatten(m.mock.colours.color, m.mock.background)
+  const d = deltaE2000(want, got)
+  const out = d > 1 ? [`${pair.id}: color mockup ${hex(want)} app ${hex(got)} (ΔE2000 ${d.toFixed(2)} > 1, ${where})`] : []
+  return fallback ? [...out, ...checkContrast(pair.id, fallback.use, m.app, where)] : out
+}
+
+/** Colour, radius, border and shadow in the default state: equal or ΔE2000 ≤ 1. A declared exception is compared to its
+ *  approved D5 value (exact) instead, and its contrast is checked by use. */
 export function checkColour(pair: Pair, m: Side, v: Variant): string[] {
   if (!m.mock || !m.app) return []
   const out: string[] = []
   for (const key of COLOUR_KEYS) {
+    if (key === 'color') { out.push(...checkStateColour(pair, m, v, 'default')); continue }
     if (key === 'border-top-color' && !(m.mock.hasBorder && m.app.hasBorder)) continue
     const mc = m.mock.colours[key], ac = m.app.colours[key]
     if (mc[3] === 0 && ac[3] === 0) continue
     const exception = exceptionFor(pair, key, v.theme, m.mock)
     if (exception) {
-      const approved = hexToRgba(exception.approved[v.theme])
-      const got = key === 'color' ? flatten(ac, m.app.background) : ac
-      if (deltaE2000(got, approved) > 0.1) out.push(`${pair.id}: ${key} app ${hex(got)} is not the approved ${exception.approved[v.theme]} of exception ${exception.id}`)
-      if (key === 'color') out.push(...checkContrast(pair.id, exception.use, m.app, `${v.theme} ${v.width}`))
+      if (deltaE2000(ac, hexToRgba(exception.approved[v.theme])) > 0.1) out.push(`${pair.id}: ${key} app ${hex(ac)} is not the approved ${exception.approved[v.theme]} of exception ${exception.id}`)
       continue
     }
     const white: Rgba = [255, 255, 255, 1]
@@ -333,27 +393,30 @@ export function checkColour(pair: Pair, m: Side, v: Variant): string[] {
   return out
 }
 
-/** Icons: the same mapped icon (mockup `P` name ↔ lucide name) and the box within ±1 px. */
-export function checkIcon(pair: Pair, m: Side): string[] {
-  if (!m.mock || !m.app || !pair.icon) return []
+const iconOf = (pair: Pair, index: number) => (Array.isArray(pair.icon) ? pair.icon[index] : pair.icon)
+
+/** Icons: the same mapped icon (mockup `P` name ↔ lucide name) for this item. */
+export function checkIcon(pair: Pair, m: Side, index = 0): string[] {
+  const icon = iconOf(pair, index)
+  if (!m.mock || !m.app || !icon) return []
   const out: string[] = []
-  if (m.mock.icon !== pair.icon.mock) out.push(`${pair.id}: mockup icon ${m.mock.icon} is not the mapped ${pair.icon.mock}`)
-  if (m.app.icon !== pair.icon.app) out.push(`${pair.id}: app icon ${m.app.icon} is not the mapped ${pair.icon.app}`)
+  if (m.mock.icon !== icon.mock) out.push(`${pair.id}: mockup icon ${m.mock.icon} is not the mapped ${icon.mock}`)
+  if (m.app.icon !== icon.app) out.push(`${pair.id}: app icon ${m.app.icon} is not the mapped ${icon.app}`)
   return out
 }
 
-/** Icon box ±1 px, measured on the svg itself. */
-export async function checkIconBox(pair: Pair, mock: Page, app: Page): Promise<string[]> {
-  if (!pair.icon) return []
-  const box = (page: Page, sel: string) => page.evaluate(sel => {
-    const el = document.querySelector(sel)
+/** Icon box ±1 px, measured on the svg of the item at `index`. */
+export async function checkIconBox(pair: Pair, mock: Page, app: Page, index = 0, id = pair.id): Promise<string[]> {
+  if (!iconOf(pair, index)) return []
+  const box = (page: Page, sel: string, exclude: string[]) => page.evaluate(({ sel, exclude, index }) => {
+    const el = [...document.querySelectorAll(sel)].filter(e => !exclude.some(x => e.closest(x)))[index]
     const svg = el?.matches('svg') ? el : el?.querySelector('svg')
     const r = svg?.getBoundingClientRect()
     return r ? { width: r.width, height: r.height } : null
-  }, sel)
-  const [a, b] = [await box(mock, pair.mock), await box(app, pair.app)]
-  if (!a || !b) return [`${pair.id}: icon svg missing`]
-  return (['width', 'height'] as const).filter(k => !near(a[k], b[k], 1)).map(k => `${pair.id}: icon ${k} mockup ${a[k]} app ${b[k]} (±1)`)
+  }, { sel, exclude, index })
+  const [a, b] = [await box(mock, pair.mock, MOCK_EXCLUDE), await box(app, pair.app, APP_EXCLUDE)]
+  if (!a || !b) return [`${id}: icon svg missing`]
+  return (['width', 'height'] as const).filter(k => !near(a[k], b[k], 1)).map(k => `${id}: icon ${k} mockup ${a[k]} app ${b[k]} (±1)`)
 }
 
 /** Breakpoint 1024: only the rail and the Library's third pane hide, and panel and thread widths match. A pair flagged
@@ -368,15 +431,92 @@ export function checkBreakpoint(pair: Pair, m: Side): string[] {
 
 export const MOCK_EXCLUDE = EXCLUDED_MOCK_CONTROLS.map(c => c.selector)
 export const APP_EXCLUDE = PLACEMENTS.flatMap(p => (p.app ? [p.app] : []))
+export const PROBE = [...new Set(COLOUR_EXCEPTIONS.flatMap(e => e.selectors))]
 
-/** Contrast of a declared exception element in the hover state too (plan §4.1: hover and selected states). */
-export async function hovered(page: Page, selector: string, exclude: string[], probe: string[]): Promise<Measured | null> {
-  const el = page.locator(selector).first()
-  if (!(await el.isVisible())) return null
-  await el.hover()
-  const m = await measure(page, selector, exclude, probe)
-  await page.mouse.move(0, 0)
-  return m
+/** Fixture facts a data list's expected count comes from (never the mockup's example count). */
+export type FixtureContext = { researches: number; suggestions: number }
+
+/** One item's checks: the pair's geometry, type, colour, fixed text and icon checks, on the item at `index`. */
+async function checkItem(pair: Pair, item: Pair, m: Side, v: Variant, mock: Page, app: Page, index: number, data: boolean): Promise<string[]> {
+  const out = checkPresence(item, m)
+  if (out.length) return out
+  if (pair.checks.includes('chrome')) out.push(...checkChrome(item, m, data ? ['x', 'width', 'height'] : undefined))
+  if (pair.checks.includes('content')) out.push(...checkContent(item, m))
+  if (pair.checks.includes('type')) out.push(...checkType(item, m))
+  if (pair.checks.includes('colour')) out.push(...checkColour(item, m, v))
+  if (pair.checks.includes('icon')) out.push(...checkIcon(pair, m, index).map(l => l.replace(pair.id, item.id)), ...await checkIconBox(pair, mock, app, index, item.id))
+  if ((pair.text ?? pair.list === 'fixed') && !data) out.push(...checkText(item, m))
+  return out
+}
+
+/** Lists. A fixed list (nav items, menu rows, tabs, head buttons, toolbars) has the same items as the mockup: count,
+ *  order, visibility, geometry, type, colour, icon and fixed text item by item. A data list's count comes from the
+ *  fixture records (`expected`), and each row is compared with the mockup's first row for layout and style only. */
+export async function checkList(pair: Pair, v: Variant, mock: Page, app: Page, ctx: FixtureContext): Promise<{ failures: string[]; first: Side }> {
+  const mockItems = await measureAll(mock, pair.mock, MOCK_EXCLUDE, PROBE, pair.dataText?.mock)
+  const appItems = await measureAll(app, pair.app, APP_EXCLUDE, [], pair.dataText?.app)
+  const failures: string[] = []
+  const data = pair.list === 'data'
+  const want = data ? pair.expected?.(ctx) : mockItems.length
+  if (want === undefined) failures.push(`${pair.id}: a data list needs \`expected\` from the fixture records`)
+  else if (appItems.length !== want) failures.push(`${pair.id}: ${appItems.length} items in the app, expected ${want} (${data ? 'fixture records' : 'mockup'})`)
+  if (!mockItems.length) failures.push(`${pair.id}: not in the mockup (${pair.mock})`)
+  const count = data ? appItems.length : Math.min(mockItems.length, appItems.length)
+  for (let i = 0; i < count && mockItems.length; i++) {
+    const item = { ...pair, id: `${pair.id}[${i}]` }
+    failures.push(...await checkItem(pair, item, { mock: mockItems[data ? 0 : i], app: appItems[i] }, v, mock, app, i, data))
+  }
+  return { failures, first: { mock: mockItems[0] ?? null, app: appItems[0] ?? null } }
+}
+
+/** Hover and selected states of a pair's `color` (plan §4.1): each state is produced on both pages (pointer over the
+ *  element; the pair's `selected` selectors for the selected item) and checked like the default one. An exception
+ *  element must declare which of these states it has (`states`). */
+export async function checkColourStates(pair: Pair, v: Variant, mock: Page, app: Page): Promise<string[]> {
+  const first = await measure(mock, pair.mock, MOCK_EXCLUDE, PROBE)
+  if (!first) return []
+  const fallback = exceptionFor(pair, 'color', v.theme, first)
+  if (fallback && !pair.states) return [`${pair.id}: exception ${fallback.id} applies; declare the element's states (hover, selected) in the map`]
+  const out: string[] = []
+  for (const state of pair.states ?? []) {
+    if (fallback && !fallback.states.includes(state)) continue  // the exception does not cover this state
+    if (state === 'hover') {
+      const [ml, al] = [mock.locator(pair.mock).first(), app.locator(pair.app).first()]
+      await ml.hover()
+      const mm = await measure(mock, pair.mock, MOCK_EXCLUDE, PROBE)
+      await mock.mouse.move(0, 0)
+      await al.hover()
+      const am = await measure(app, pair.app, APP_EXCLUDE, [])
+      await app.mouse.move(0, 0)
+      out.push(...checkStateColour(pair, { mock: mm, app: am }, v, 'hover', fallback))
+    } else {
+      if (!pair.selected) { out.push(`${pair.id}: declares a selected state but no \`selected\` selectors`); continue }
+      const m = { mock: await measure(mock, pair.selected.mock, MOCK_EXCLUDE, PROBE), app: await measure(app, pair.selected.app, APP_EXCLUDE, []) }
+      if (!m.mock || !m.app) { out.push(`${pair.id}: selected item missing (mockup ${!!m.mock}, app ${!!m.app})`); continue }
+      out.push(...checkStateColour(pair, m, v, 'selected', fallback))
+    }
+  }
+  return out
+}
+
+/** Every gate of §4.1 for the active pairs of one surface and variant. Returns failure lines. */
+export async function gateSurface(pairs: Pair[], v: Variant, mock: Page, app: Page, ctx: FixtureContext): Promise<string[]> {
+  const failures: string[] = []
+  const measured = new Map<string, Side>()
+  for (const pair of pairs) {
+    if (pair.list) {
+      const { failures: f, first } = await checkList(pair, v, mock, app, ctx)
+      failures.push(...f)
+      measured.set(pair.id, first)
+    } else {
+      const side: Side = { mock: await measure(mock, pair.mock, MOCK_EXCLUDE, PROBE, pair.dataText?.mock), app: await measure(app, pair.app, APP_EXCLUDE, [], pair.dataText?.app) }
+      measured.set(pair.id, side)
+      failures.push(...await checkItem(pair, pair, side, v, mock, app, 0, false))
+    }
+    if (pair.checks.includes('colour')) failures.push(...await checkColourStates(pair, v, mock, app))
+  }
+  failures.push(...checkOrder(pairs, measured))
+  return failures
 }
 
 // ---- pixel diffs (review aid, never a gate) -----------------------------------------------------------------------

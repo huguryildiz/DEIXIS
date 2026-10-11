@@ -659,7 +659,8 @@ class ScriptedCodex:
             self.app.state.store.update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
                                             pause_reason="user_requested")
         if "[stale-seed]" in question and task == "grounded_answer" and self.app is not None:
-            self.seed_tasks.setdefault(si["research_id"], asyncio.create_task(self.replace_seed(si["research_id"])))
+            if si["research_id"] not in self.seed_tasks:  # one replacement task per research, created only once
+                self.seed_tasks[si["research_id"]] = asyncio.create_task(self.replace_seed(si["research_id"]))
         if "[model-quota]" in question and task == "abstract_screening":
             return ModelStepResult("failed", error="SYNTHETIC quota", error_kind="quota_exhausted",
                                    http_status=429, retry_after="3600")

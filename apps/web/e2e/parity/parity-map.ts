@@ -1,4 +1,5 @@
 import type { Use } from './exceptions'
+import type { FixtureContext } from './gates'
 
 // Which mockup element corresponds to which app element, per surface (plan §4.1). A pair is `active` when the current
 // app already matches it within tolerance, or `pending:<slice>` when a later slice of the parity plan changes that part
@@ -17,11 +18,19 @@ export type Pair = {
   app: string               // selector in the app
   checks: Check[]           // presence is always checked for an active pair
   status: Status
-  list?: boolean            // a fixed list: equal counts on both sides
+  /** `fixed`: the mockup's items are the spec (nav, menu rows, tabs, head buttons, toolbars), compared item by item
+   *  including fixed text. `data`: rows that come from records; the count is `expected` from the fixture, never the
+   *  mockup's example count, and each row is compared with the mockup's first row for layout and style. */
+  list?: 'fixed' | 'data'
+  expected?: (ctx: FixtureContext) => number
+  text?: boolean            // compare fixed text (default: on for fixed lists, off otherwise)
+  dataText?: { mock?: string[]; app?: string[] }  // selectors inside the element whose text is data, left out of the comparison
+  states?: Array<'hover' | 'selected'>             // interaction states the element has; colour is checked in each
+  selected?: { mock: string; app: string }         // the selected item, when `states` has 'selected'
   widths?: number[]         // only at these viewport widths (default: every width)
   unordered?: boolean       // not part of the surface's order check (floating or positioned chrome)
   use?: Use                 // what the `color` property carries, for colour exceptions and contrast (default text)
-  icon?: { mock: string; app: string }  // mockup `P` icon name ↔ lucide icon name
+  icon?: { mock: string; app: string } | Array<{ mock: string; app: string }>  // mockup `P` name ↔ lucide name; per item for a list
   breakpoint?: boolean      // compared at 1024 for visibility and width only (rail, Library third pane, panel, thread)
   why?: string              // for a pending pair: what the slice changes
 }
@@ -56,14 +65,19 @@ const PHONE_HOME = 'S4: phone Home (column at 5vh, 16px gutter, 15px question, w
 
 const shell = (surface: SurfaceId): Pair[] => [
   { id: `${surface}.sidebar`, surface, mock: '.side', app: 'aside.sidebar', checks: ['chrome', 'colour'], widths: DESK, use: 'decorative', status: 'active' },
-  { id: `${surface}.brand-row`, surface, mock: '.side .brand', app: '.sidebar-head', checks: ['chrome'], widths: DESK, status: 'active' },
+  { id: `${surface}.brand-row`, surface, mock: '.side .brand', app: '.sidebar-head', checks: ['chrome'], text: true, widths: DESK, status: 'active' },
   { id: `${surface}.collapse`, surface, mock: '#sideTog', app: '.sidebar-toggle', checks: ['chrome'], widths: DESK, unordered: true,
     status: 'pending:S1', why: 'S1 gives the brand row the mockup collapse button position (app 28px at x 218, mockup 32px)' },
-  { id: `${surface}.nav`, surface, mock: '.nav button', app: 'aside nav button', checks: ['chrome', 'type', 'colour'], list: true, widths: DESK,
+  // Lucide names are S1's choice; the slice that turns this pair on confirms them.
+  { id: `${surface}.nav`, surface, mock: '.nav button', app: 'aside nav button', checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', widths: DESK,
+    icon: [['plus', 'plus'], ['search', 'search'], ['clock', 'clock'], ['inbox', 'inbox'], ['lib', 'library'], ['gear', 'settings-2'], ['trash', 'trash-2']].map(([mock, app]) => ({ mock, app })),
+    dataText: { mock: ['.cnt'], app: ['.nav-count'] }, states: ['hover', 'selected'], selected: { mock: '.nav button.on', app: 'aside nav button.selected' },
     status: 'pending:S1', why: 'S1: New research, Search (in the list), Current research, Awaiting you, Library, Settings, Trash' },
   { id: `${surface}.recents-label`, surface, mock: '#recentsH', app: '.recents-label', checks: ['chrome', 'type', 'colour'], widths: DESK,
     status: 'pending:S1', why: 'S1: uppercase 11px label, no collapse toggle' },
   { id: `${surface}.recent-row`, surface, mock: '.recents .rrow', app: '.recent-list .recent-row', checks: ['chrome', 'type'], widths: DESK,
+    list: 'data', expected: ctx => Math.min(12, ctx.researches), states: ['hover', 'selected'],
+    selected: { mock: '.recents .rrow.on', app: '.recent-list .recent-row.is-active' },
     status: 'pending:S1', why: 'S1: status icon, 13px title, short time' },
   { id: `${surface}.access`, surface, mock: '.side-foot .access', app: '.access-status', checks: ['chrome', 'type', 'colour'], widths: DESK,
     status: 'pending:S2', why: 'S1/S2: proxy line and Scopus line (§2.3 copy), backend in S2' },
@@ -96,9 +110,12 @@ export const PAIRS: Pair[] = [
   ...phoneLater({ id: 'home.send', surface: 'home', mock: '.comp-row .send', app: '.send-button', checks: ['chrome', 'icon'], icon: { mock: 'up', app: 'arrow-up' }, status: 'active' }, 'S4', PHONE_HOME),
   { id: 'home.send-style', surface: 'home', mock: '.comp-row .send', app: '.send-button', checks: ['colour'],
     status: 'pending:S4', why: 'S4: filled 32px send without the 1px button border' },
-  { id: 'home.mode-chips', surface: 'home', mock: '.chips .chip', app: '.mode-chips .chip', checks: ['chrome', 'type', 'colour'], list: true,
+  { id: 'home.mode-chips', surface: 'home', mock: '.chips .chip', app: '.mode-chips .chip', checks: ['chrome', 'type', 'colour'], list: 'fixed',
+    states: ['hover', 'selected'], selected: { mock: '.chips .chip.on', app: '.mode-chips .chip.on' },
     status: 'pending:S5b', why: 'S5b: intent chips (needs S5a intent backend)' },
-  { id: 'home.cards', surface: 'home', mock: '.cards .card', app: '.home-cards .card', checks: ['content', 'type'], list: true,
+  // Resume (one research exists) plus up to two Suggested cards from stored unanswered aspects (Q4).
+  { id: 'home.cards', surface: 'home', mock: '.cards .card', app: '.home-cards .card', checks: ['content', 'type'], list: 'data',
+    expected: ctx => (ctx.researches ? 1 : 0) + Math.min(2, ctx.suggestions),
     status: 'pending:S5b', why: 'S5b: Resume and Suggested cards' },
   { id: 'home.hint', surface: 'home', mock: '.home .hint', app: '.home-hint', checks: ['content', 'type', 'colour'],
     status: 'pending:S4', why: 'S4: the shortcut hint line' },
@@ -119,7 +136,8 @@ export const PAIRS: Pair[] = [
     status: 'pending:S7a', why: 'S7a: the tabs become thread + rail + panel' },
   { id: 'research.question', surface: 'research', mock: '.thread .q', app: '.chat-question', checks: ['content', 'type', 'colour'],
     status: 'pending:S8', why: 'S8: question bubble with scope label and date · revision' },
-  { id: 'research.steps', surface: 'research', mock: '.steps .step', app: '.chat-steps .chat-step', checks: ['content', 'type'], list: true,
+  { id: 'research.steps', surface: 'research', mock: '.steps .step', app: '.chat-steps .chat-step', checks: ['content', 'type'], list: 'fixed',
+    text: false,  // each step line mixes the phase with its counts; S9 separates them and sets `dataText` before turning this on
     status: 'pending:S9', why: 'S9: one line per phase' },
   { id: 'research.usage-line', surface: 'research', mock: '.steps .usage-line', app: '.usage-line', checks: ['content', 'type', 'colour'],
     status: 'pending:S9', why: 'S9: role · model usage line' },
@@ -135,7 +153,8 @@ export const PAIRS: Pair[] = [
     status: 'pending:S22b', why: 'S22b: sticky follow-up composer' },
   { id: 'research.rail', surface: 'research', mock: '.rail', app: '.rail', checks: ['chrome'], widths: DESK, breakpoint: true,
     status: 'pending:S11', why: 'S11: artifacts rail, hidden under 1100px' },
-  { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box', app: '.rail .box', checks: ['content', 'type'], list: true, widths: DESK,
+  { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box', app: '.rail .box', checks: ['content', 'type'], list: 'fixed', widths: DESK,
+    dataText: { mock: ['.tnum', 'button.li span', 'button.li em'], app: ['.tnum', '.rail-data'] },
     status: 'pending:S11', why: 'S11: artifacts, waiting, funnel, depth, run and usage boxes' },
 ]
 

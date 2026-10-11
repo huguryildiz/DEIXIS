@@ -257,7 +257,7 @@ export type Variant = { width: number; theme: Theme }
 export type Side = { mock: Measured | null; app: Measured | null }
 const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol
 
-const baseId = (id: string) => id.replace(/\[\d+\]$/, '')
+const baseId = (id: string) => id.replace(/(\[\d+\]|\{selected \d+\})+$/, '')
 
 /** Presence: an active pair is found and visible on both sides. Lists are counted item by item in `checkList`. */
 export function checkPresence(pair: Pair, m: Side): string[] {
@@ -465,15 +465,38 @@ export async function checkList(pair: Pair, v: Variant, mock: Page, app: Page, c
   for (let i = 0; i < count && mockItems.length; i++) {
     const item = { ...pair, id: `${pair.id}[${i}]` }
     failures.push(...await checkItem(pair, item, { mock: mockItems[data ? 0 : i], app: appItems[i] }, v, mock, app, i, data))
+    if (pair.checks.includes('colour')) failures.push(...await checkColourStates(item, v, mock, app, i, data ? 0 : i))
   }
   return { failures, first: { mock: mockItems[0] ?? null, app: appItems[0] ?? null } }
 }
 
-/** Hover and selected states of a pair's `color` (plan §4.1): each state is produced on both pages (pointer over the
- *  element; the pair's `selected` selectors for the selected item) and checked like the default one. An exception
- *  element must declare which of these states it has (`states`). */
-export async function checkColourStates(pair: Pair, v: Variant, mock: Page, app: Page): Promise<string[]> {
-  const first = await measure(mock, pair.mock, MOCK_EXCLUDE, PROBE)
+/** Marks the `index`-th match (after exclusions) so a state can be produced on exactly that element. */
+async function target(page: Page, selector: string, exclude: string[], index: number): Promise<string | null> {
+  const found = await page.evaluate(({ selector, exclude, index }) => {
+    document.querySelectorAll('[data-parity-target]').forEach(el => el.removeAttribute('data-parity-target'))
+    const el = [...document.querySelectorAll(selector)].filter(e => !exclude.some(x => e.closest(x)))[index]
+    el?.setAttribute('data-parity-target', '')
+    return !!el
+  }, { selector, exclude, index })
+  return found ? '[data-parity-target]' : null
+}
+
+async function hoverMeasure(page: Page, selector: string, exclude: string[], probe: string[], index: number): Promise<Measured | null> {
+  const mark = await target(page, selector, exclude, index)
+  if (!mark) return null
+  await page.locator(mark).hover()
+  const m = await measure(page, mark, [], probe)
+  await page.mouse.move(0, 0)
+  return m
+}
+
+/** Hover and selected states of a pair's `color` (plan §4.1), for the item at `index` (a list checks every item, each
+ *  with its own exception and contrast use). Hover moves the pointer over that very element on both pages; the selected
+ *  state reads the pair's `selected` selectors (every selected item, matched by position). An exception element must
+ *  declare which of these states it has (`states`). `mockIndex` is the mockup item compared with it (a data list
+ *  compares every row with the mockup's first). */
+export async function checkColourStates(pair: Pair, v: Variant, mock: Page, app: Page, index = 0, mockIndex = index): Promise<string[]> {
+  const first = (await measureAll(mock, pair.mock, MOCK_EXCLUDE, PROBE, pair.dataText?.mock))[mockIndex]
   if (!first) return []
   const fallback = exceptionFor(pair, 'color', v.theme, first)
   if (fallback && !pair.states) return [`${pair.id}: exception ${fallback.id} applies; declare the element's states (hover, selected) in the map`]
@@ -481,19 +504,18 @@ export async function checkColourStates(pair: Pair, v: Variant, mock: Page, app:
   for (const state of pair.states ?? []) {
     if (fallback && !fallback.states.includes(state)) continue  // the exception does not cover this state
     if (state === 'hover') {
-      const [ml, al] = [mock.locator(pair.mock).first(), app.locator(pair.app).first()]
-      await ml.hover()
-      const mm = await measure(mock, pair.mock, MOCK_EXCLUDE, PROBE)
-      await mock.mouse.move(0, 0)
-      await al.hover()
-      const am = await measure(app, pair.app, APP_EXCLUDE, [])
-      await app.mouse.move(0, 0)
-      out.push(...checkStateColour(pair, { mock: mm, app: am }, v, 'hover', fallback))
-    } else {
+      const m = { mock: await hoverMeasure(mock, pair.mock, MOCK_EXCLUDE, PROBE, mockIndex), app: await hoverMeasure(app, pair.app, APP_EXCLUDE, [], index) }
+      if (!m.mock || !m.app) { out.push(`${pair.id}: hover item missing (mockup ${!!m.mock}, app ${!!m.app})`); continue }
+      out.push(...checkStateColour(pair, m, v, 'hover', fallback))
+    } else if (index === 0) {  // the selected items are one set per pair, checked once
       if (!pair.selected) { out.push(`${pair.id}: declares a selected state but no \`selected\` selectors`); continue }
-      const m = { mock: await measure(mock, pair.selected.mock, MOCK_EXCLUDE, PROBE), app: await measure(app, pair.selected.app, APP_EXCLUDE, []) }
-      if (!m.mock || !m.app) { out.push(`${pair.id}: selected item missing (mockup ${!!m.mock}, app ${!!m.app})`); continue }
-      out.push(...checkStateColour(pair, m, v, 'selected', fallback))
+      const [ms, as] = [await measureAll(mock, pair.selected.mock, MOCK_EXCLUDE, PROBE), await measureAll(app, pair.selected.app, APP_EXCLUDE, [])]
+      if (!ms.length || !as.length) { out.push(`${pair.id}: selected item missing (mockup ${ms.length}, app ${as.length})`); continue }
+      for (let k = 0; k < as.length; k++) {
+        const m = { mock: ms[Math.min(k, ms.length - 1)], app: as[k] }
+        out.push(...checkStateColour({ ...pair, id: as.length > 1 ? `${pair.id}{selected ${k}}` : pair.id }, m, v, 'selected',
+          exceptionFor(pair, 'color', v.theme, m.mock) ?? fallback))
+      }
     }
   }
   return out
@@ -512,8 +534,8 @@ export async function gateSurface(pairs: Pair[], v: Variant, mock: Page, app: Pa
       const side: Side = { mock: await measure(mock, pair.mock, MOCK_EXCLUDE, PROBE, pair.dataText?.mock), app: await measure(app, pair.app, APP_EXCLUDE, [], pair.dataText?.app) }
       measured.set(pair.id, side)
       failures.push(...await checkItem(pair, pair, side, v, mock, app, 0, false))
+      if (pair.checks.includes('colour')) failures.push(...await checkColourStates(pair, v, mock, app))
     }
-    if (pair.checks.includes('colour')) failures.push(...await checkColourStates(pair, v, mock, app))
   }
   failures.push(...checkOrder(pairs, measured))
   return failures

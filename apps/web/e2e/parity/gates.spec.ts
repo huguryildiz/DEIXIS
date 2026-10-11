@@ -120,3 +120,24 @@ test('an exception element is checked in default, hover and selected states agai
     await Promise.all([mock.close(), app.close()])
   }
 })
+
+test('in a list, every item is checked in its states: a wrong hover on the second item alone is rejected', async ({ browser }) => {
+  const mock = await browser.newPage(), app = await browser.newPage()
+  try {
+    const v = { width: 1280, theme: 'light' as const }
+    const ctx = { researches: 1, suggestions: 0 }
+    const rows = '<nav><button class="hint">a</button><button class="hint">b</button><button class="hint">c</button></nav>'
+    await mock.setContent(css('.hint{color:#9aa0a8}') + rows)
+    const pair = { id: 'hints', surface: 'home' as const, mock: '.hint', app: '.hint', checks: ['colour' as const], list: 'fixed' as const,
+      status: 'active' as const, states: ['hover' as const] }
+    await app.setContent(css('.hint{color:#5b6475}') + rows)
+    expect((await checkList(pair, v, mock, app, ctx)).failures).toEqual([])
+    await app.setContent(css('.hint{color:#5b6475}.hint:nth-child(2):hover{color:#9aa0a8}') + rows)
+    const failures = (await checkList(pair, v, mock, app, ctx)).failures
+    expect(failures.join('\n')).toMatch(/hints\[1\]: color app #9aa0a8 is not the approved #5b6475 .*hover/)
+    expect(failures.join('\n')).toMatch(/hints\[1\]: text contrast .*hover/)
+    expect(failures.filter(f => /hints\[(0|2)\]/.test(f))).toEqual([])
+  } finally {
+    await Promise.all([mock.close(), app.close()])
+  }
+})

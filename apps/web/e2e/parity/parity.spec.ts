@@ -113,18 +113,23 @@ async function showApp(page: Page, base: string, surface: Surface, research: str
   await page.waitForTimeout(300)  // let entrance transitions settle before measuring
 }
 
-/** The fixture facts data lists count from: researches on the server, suggestions from current valid answers (Q4). */
+type AnswerView = { status: string; created_at: string; applicability: string; source_text_changed: boolean; unanswered_aspects?: string[] }
+
+/** The fixture facts data lists count from. Suggestions follow S5a's rule (Q4): from each research only its latest
+ *  structurally valid answer, and only while it is current (same question and source selection, no source text
+ *  changed); at most two in all. */
 async function fixtureContext(base: string): Promise<FixtureContext> {
   const api = await apiRequest.newContext({ baseURL: base, extraHTTPHeaders: { origin: base } })
   try {
     const list = (await (await api.get('/api/researches')).json()) as Array<{ id: string }> | { researches: Array<{ id: string }> }
     const researches = Array.isArray(list) ? list : list.researches
-    const aspects = new Set<string>()
+    let suggestions = 0
     for (const r of researches) {
-      const view = (await (await api.get(`/api/researches/${r.id}`)).json()) as { answers: Array<{ status: string; unanswered_aspects?: string[] }> }
-      for (const a of view.answers) if (a.status === 'structurally_valid') for (const x of a.unanswered_aspects ?? []) aspects.add(x)
+      const view = (await (await api.get(`/api/researches/${r.id}`)).json()) as { answers: AnswerView[] }
+      const latest = view.answers.filter(a => a.status === 'structurally_valid').sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+      if (latest && latest.applicability === 'current' && !latest.source_text_changed) suggestions += (latest.unanswered_aspects ?? []).length
     }
-    return { researches: researches.length, suggestions: aspects.size }
+    return { researches: researches.length, suggestions: Math.min(2, suggestions) }
   } finally {
     await api.dispose()
   }

@@ -3636,4 +3636,5 @@ const tr: Record<string, string> = {
   'The file is neither BibTeX (.bib) nor RIS (.ris)': 'Dosya ne BibTeX (.bib) ne de RIS (.ris) biçiminde',
   'The file holds more than 500 entries; import it in parts': "Dosyada 500'den fazla kayıt var; parça parça içe aktarın",
   'No entry in the file could be read': 'Dosyadaki hiçbir kayıt okunamadı',
+  "The file's @string definitions expand to far more text than the file holds": "Dosyadaki @string tanımları dosyanın içerdiğinden çok daha fazla metne açılıyor",
 }

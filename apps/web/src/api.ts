@@ -1541,7 +1541,7 @@ export type ReferenceImportEntry = {
   duplicate_of: number | null  // the index of the earlier entry in this file that names the same record
 }
 export type ReferenceImportErrorCode = 'unclosed_value' | 'unbalanced_braces' | 'unclosed_entry' | 'malformed_field'
-  | 'missing_value' | 'undefined_string' | 'unclosed_comment' | 'missing_key' | 'no_title' | 'invalid_doi'
+  | 'missing_value' | 'undefined_string' | 'value_too_long' | 'unclosed_comment' | 'missing_key' | 'no_title' | 'invalid_doi'
   | 'unclosed_record' | 'outside_record'
 export type ReferenceImportError = { index: number | null; line: number; key: string | null; code: ReferenceImportErrorCode; message: string }
 export type ReferenceImport = {
@@ -1550,7 +1550,7 @@ export type ReferenceImport = {
 }
 // A refused file answers with one of these codes (ApiError.code); 'import_no_entries' carries `errors` in ApiError.details.
 export type ReferenceImportRefusal = 'import_too_large' | 'import_not_text' | 'import_unknown_format'
-  | 'import_too_many_entries' | 'import_no_entries'
+  | 'import_too_many_entries' | 'import_expansion_too_large' | 'import_no_entries'
 export type LibraryZoteroImport = ZoteroImport & { saved: string[]; already_saved: string[] }
 
 export const libraryImportsApi = {

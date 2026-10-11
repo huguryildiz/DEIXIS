@@ -167,3 +167,54 @@ def test_pathological_files_stop_early_in_bounded_time(data):
     except b.ImportRefused as refused:
         assert refused.code == "import_too_many_entries"
     assert time.perf_counter() - started < 3.0
+
+
+def bounded(run, seconds=3.0, peak_bytes=64 * 1024 * 1024):
+    """Run `run()` and assert it stayed within the time and the traced memory given."""
+    import time
+    import tracemalloc
+    tracemalloc.start()
+    started = time.perf_counter()
+    try:
+        return run()
+    finally:
+        elapsed = time.perf_counter() - started
+        peak = tracemalloc.get_traced_memory()[1]
+        tracemalloc.stop()
+        assert elapsed < seconds and peak < peak_bytes, (elapsed, peak)
+
+
+def test_a_doubling_string_stops_at_the_value_limit():
+    text = ('@string{x = "a"}\n' + "@string{x = x # x}\n" * 31
+            + "@article{k, title = x}\n@article{over, title = {SYNTHETIC} # x}\n")
+    entries, errors = bounded(lambda: b.parse_bibtex(text))
+    # 16 doublings reach the limit of 65,536 characters; the 15 after it are errors and x keeps its last good value,
+    # which one more character makes too long for an entry.
+    assert [e.code for e in errors] == ["value_too_long"] * 16 and errors[-1].key == "over"
+    assert [e.key for e in entries] == ["k"] and entries[0].title == "a" * b.MAX_VALUE_CHARS
+
+
+def test_expansion_past_the_file_budget_refuses_the_whole_file(monkeypatch):
+    big = "@string{x = \"" + "a" * 60_000 + "\"}\n"
+    uses = "@article{k, title = {SYNTHETIC}, " + ", ".join(f"f{i} = x" for i in range(400)) + "}\n"
+    with pytest.raises(b.ImportRefused) as refused:
+        bounded(lambda: b.parse_bibtex(big + uses))
+    assert refused.value.code == "import_expansion_too_large"
+    # The same file with fewer uses stays within the budget.
+    small = "@article{k, title = {SYNTHETIC}, f1 = x, f2 = x}\n"
+    assert [e.key for e in b.parse_bibtex(big + small)[0]] == ["k"]
+
+
+def test_string_definitions_and_an_unclosed_comment_count_toward_the_cap(monkeypatch):
+    monkeypatch.setattr(b, "MAX_ENTRIES", 3)
+    with pytest.raises(b.ImportRefused) as refused:
+        b.parse_bibtex("@string{a = 1}\n@string{b = 2}\n@string{c = 3}\n@string{d = 4}\n")
+    assert refused.value.code == "import_too_many_entries"
+    with pytest.raises(b.ImportRefused):
+        b.parse_bibtex("@article{a, title={A}}\n@article{b, title={B}}\n@article{c, title={C}}\n@comment{open")
+
+
+def test_a_long_wrapped_ris_value_reads_in_linear_time():
+    data = b"TY  - JOUR\nTI  - SYNTHETIC wrapped\nAB  - start\n" + b"word\n" * 800_000 + b"ER  -\n"
+    _, entries, _ = bounded(lambda: b.read_file(data, "x.ris"), peak_bytes=256 * 1024 * 1024)
+    assert entries[0].abstract.startswith("start word word") and len(entries[0].abstract) == len("start") + 5 * 800_000

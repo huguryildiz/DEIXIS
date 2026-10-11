@@ -8,8 +8,10 @@ at any `@type{` (as in BibTeX), so a field value that holds `@word{` literally i
 skips only its keyword; only `@string` macros and the month names are expanded.
 
 Parsing is bounded: the file is at most `MAX_FILE_BYTES`, both parsers stop with a refusal once entries and errors
-together pass `MAX_ENTRIES`, a field value never scans past the next entry head, and line numbers are counted in one
-pass. The route runs it off the event loop.
+together pass `MAX_ENTRIES` (successful @string definitions count too), a field value never scans past the next entry
+head, and line numbers are counted in one pass. @string expansion is measured before it is copied: a value over
+`MAX_VALUE_CHARS` is an error of its entry (or @string), and a file whose values together pass `EXPANSION_FACTOR` times
+its length is refused whole (`import_expansion_too_large`). The route runs it off the event loop.
 
 An entry's DOI is resolved through the existing lookups: OpenAlex `works_by_dois` for up to 100 DOIs a request, then
 Crossref `crossref_work` one DOI at a time for the DOIs OpenAlex did not confirm (at most `CROSSREF_FALLBACK_MAX`). A
@@ -45,6 +47,12 @@ Format = Literal["bibtex", "ris"]
 
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_ENTRIES = 500
+# @string expansion is bounded before anything is copied: one field value (macros joined with `#`) holds at most
+# MAX_VALUE_CHARS characters, else that entry (or @string) is an error; all values of the file together hold at most
+# EXPANSION_FACTOR times the file's length (at least MIN_EXPANSION_BUDGET), else the whole file is refused.
+MAX_VALUE_CHARS = 64 * 1024
+EXPANSION_FACTOR = 4
+MIN_EXPANSION_BUDGET = 1024 * 1024
 CROSSREF_FALLBACK_MAX = 20
 PROVIDER = "reference_file"  # one of store.UNVERIFIED_DOI_PROVIDERS and library_items.USER_SUPPLIED_PROVIDERS
 ORIGINS = {"bibtex": "bibtex_import", "ris": "ris_import"}
@@ -270,9 +278,22 @@ _VALUE_STOP = re.compile(r'[\\{}"@]')
 _BRACES = re.compile(r"[{}]")
 
 
+class _Budget:
+    """The characters every field value of the file may still hold, macros expanded."""
+
+    def __init__(self, text: str):
+        self.remaining = max(EXPANSION_FACTOR * len(text), MIN_EXPANSION_BUDGET)
+
+    def take(self, size: int) -> None:
+        if size > self.remaining:
+            raise ImportRefused(422, "import_expansion_too_large",
+                                "The file's @string definitions expand to far more text than the file holds")
+        self.remaining -= size
+
+
 class _BibReader:
-    def __init__(self, text: str, start: int, macros: dict[str, str]):
-        self.text, self.pos, self.macros = text, start, macros
+    def __init__(self, text: str, start: int, macros: dict[str, str], budget: _Budget):
+        self.text, self.pos, self.macros, self.budget = text, start, macros, budget
 
     def ws(self) -> None:
         self.pos = _WS.match(self.text, self.pos).end()
@@ -306,25 +327,33 @@ class _BibReader:
         raise _Malformed("unclosed_value", "a field value is not closed before the end of the file")
 
     def value(self) -> str:
-        parts = []
+        """One field value with its `#` parts joined. Each part is measured against MAX_VALUE_CHARS before it is kept
+        and the whole value against the file's budget before it is joined, so a macro that doubles itself never grows
+        past the limit and nothing is copied for a value that is refused."""
+        parts, size = [], 0
         while True:
             self.ws()
             char = self.text[self.pos:self.pos + 1]
             if char in ("{", '"'):
-                parts.append(self.delimited(char))
+                part = self.delimited(char)
             elif (match := _NUMBER.match(self.text, self.pos)):
-                parts.append(match.group(0))
+                part = match.group(0)
                 self.pos = match.end()
             elif (match := _IDENT.match(self.text, self.pos)):
                 name = match.group(0).lower()
                 if name not in self.macros:
                     raise _Malformed("undefined_string", f"@string {match.group(0)} is not defined")
-                parts.append(self.macros[name])
+                part = self.macros[name]
                 self.pos = match.end()
             else:
                 raise _Malformed("missing_value", "a field has no value")
+            if size + len(part) > MAX_VALUE_CHARS:
+                raise _Malformed("value_too_long", f"a field value is longer than {MAX_VALUE_CHARS} characters")
+            size += len(part)
+            parts.append(part)  # a reference to the macro's string, not a copy
             self.ws()
             if self.text[self.pos:self.pos + 1] != "#":
+                self.budget.take(size)  # the join below is the only copy
                 return "".join(parts)
             self.pos += 1
 
@@ -373,8 +402,8 @@ class _Lines:
         return self.line
 
 
-def _over_cap(entries: list[Entry], errors: list[EntryError]) -> None:
-    if len(entries) + len(errors) > MAX_ENTRIES:
+def _over_cap(entries: list[Entry], errors: list[EntryError], strings: int = 0) -> None:
+    if len(entries) + len(errors) + strings > MAX_ENTRIES:
         raise ImportRefused(422, "import_too_many_entries",
                             f"The file holds more than {MAX_ENTRIES} entries; import it in parts")
 
@@ -384,12 +413,14 @@ def parse_bibtex(text: str) -> tuple[list[Entry], list[EntryError]]:
     between entries is a comment. `@comment{…}` and `@preamble{…}` are skipped with their whole braced body, so an
     entry commented out inside one is not imported; a body that never closes ends the file (one error).
 
-    Stops with `ImportRefused` as soon as entries and errors together pass `MAX_ENTRIES`, before reading further."""
+    Stops with `ImportRefused` as soon as entries, errors and @string definitions together pass `MAX_ENTRIES`, before
+    reading further, and when the file's values expand past its budget (`_Budget`)."""
     entries: list[Entry] = []
     errors: list[EntryError] = []
     macros = dict(_MONTHS)
     lines = _Lines(text)
-    index, pos = 0, 0
+    budget = _Budget(text)
+    index, pos, strings = 0, 0, 0
     while (head := _HEAD.search(text, pos)) is not None:
         start, kind, closing = head.start(), head.group(1).lower(), "}" if head.group(2) == "{" else ")"
         line = lines.at(start)
@@ -401,17 +432,19 @@ def parse_bibtex(text: str) -> tuple[list[Entry], list[EntryError]]:
             if end is None:
                 errors.append(EntryError(None, line, None, "unclosed_comment",
                                          f"@{kind} is not closed; the rest of the file is part of it"))
+                _over_cap(entries, errors, strings)
                 break
             pos = end
             continue
         if kind == "string":
-            reader = _BibReader(text, head.end(), macros)
+            reader = _BibReader(text, head.end(), macros, budget)
             try:
                 macros.update(reader.fields(closing))
                 pos = reader.pos
+                strings += 1
             except _Malformed as exc:
                 errors.append(EntryError(None, line, None, exc.code, f"@string: {exc}"))
-                _over_cap(entries, errors)
+            _over_cap(entries, errors, strings)
             continue
         index += 1
         key_match = _KEY.match(text, head.end())
@@ -419,14 +452,14 @@ def parse_bibtex(text: str) -> tuple[list[Entry], list[EntryError]]:
             errors.append(EntryError(index, line, None, "missing_key", "the entry has no citation key"))
         else:
             key = key_match.group(1)
-            reader = _BibReader(text, key_match.end(), macros)
+            reader = _BibReader(text, key_match.end(), macros, budget)
             try:
                 raw = reader.fields(closing)
                 pos = reader.pos  # read to its end: an entry without a title is still not searched for heads
                 entries.append(_bibtex_entry(index, key, kind, raw))
             except _Malformed as exc:
                 errors.append(EntryError(index, line, key, exc.code, str(exc)))
-        _over_cap(entries, errors)
+        _over_cap(entries, errors, strings)
     return entries, errors
 
 
@@ -466,13 +499,13 @@ _RIS_VENUES = ("T2", "JF", "JO", "JA", "J2", "BT", "PB")
 def parse_ris(text: str) -> tuple[list[Entry], list[EntryError]]:
     entries: list[Entry] = []
     errors: list[EntryError] = []
-    record: list[list[str]] | None = None
+    record: list[tuple[str, list[str]]] | None = None  # each tag with its value's lines, joined once at the end
     index, record_line, stray = 0, 0, False
 
     def close(problem: tuple[str, str] | None) -> None:
         tags: dict[str, list[str]] = {}
-        for tag, value in record or []:
-            tags.setdefault(tag, []).append(value.strip())
+        for tag, parts in record or []:
+            tags.setdefault(tag, []).append(" ".join(parts).strip())
         key = (tags.get("ID") or [None])[0] or None
         if problem:
             errors.append(EntryError(index, record_line, key, *problem))
@@ -499,7 +532,7 @@ def parse_ris(text: str) -> tuple[list[Entry], list[EntryError]]:
             if not line.strip():
                 continue
             if record is not None:
-                record[-1][1] += " " + line.strip()  # a wrapped value continues the tag before it
+                record[-1][1].append(line.strip())  # a wrapped value continues the tag before it
             else:
                 outside(number, "text")
             continue
@@ -508,14 +541,14 @@ def parse_ris(text: str) -> tuple[list[Entry], list[EntryError]]:
             if record is not None:
                 close(("unclosed_record", "the record is not closed with ER before the next TY"))
             index += 1
-            record, record_line, stray = [[tag, value]], number, False
+            record, record_line, stray = [(tag, [value])], number, False
         elif record is None:
             outside(number, tag)
         elif tag == "ER":
             close(None)
             record = None
         else:
-            record.append([tag, value])
+            record.append((tag, [value]))
     if record is not None:
         close(("unclosed_record", "the record is not closed with ER"))
     return entries, errors

@@ -1476,6 +1476,8 @@ export const researchModelApi = {
     request<ResearchView & { model_changes: ResearchModelChange[] }>(`/api/researches/${id}/models`, json('PUT', body)),
   recheckColumn: (id: string, tableId: string, columnId: string, expectedVersion: number, idempotencyKey: string) =>
     request<Run>(`/api/researches/${id}/tables/${tableId}/columns/${columnId}/recheck`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+}
+
 // Library-owned items (api/library_routes.py, S19a). A saved item is one source version: two versions of a work saved
 // together stay two items. `metadata_origin` is 'user_supplied' for an uploaded file's or imported entry's fields until
 // a provider confirms them (`metadata_confirmed_by`).

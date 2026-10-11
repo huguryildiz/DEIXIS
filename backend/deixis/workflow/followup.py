@@ -24,9 +24,11 @@ import re
 from typing import Any
 
 from deixis.domain import contracts
+from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow import fast_answer, small_batch
+from deixis.workflow.evidence_deps import EVIDENCE_STATUS_SQL
 from deixis.workflow.late_revision import REVISION_INPUT
 
 TASK = "followup_answer"
@@ -164,6 +166,9 @@ def changed(store: Any, research_id: str, frozen_pool: dict[str, Any]) -> str | 
 
 
 def _guard(flow: Any, run: dict[str, Any], frozen_pool: dict[str, Any]) -> None:
+    # The send gate is the last look before each call, the repair's included: a pause, a cancel or a newer question
+    # revision that arrived while the connection was checked or the first output came back stops the call unsent.
+    flow._checkpoint(run["id"], run["scope_revision"])
     if reason := changed(flow.store, run["research_id"], frozen_pool):
         flow._fail(run["id"], reason, {"note": "Ask the follow-up again to answer it from the research as it is now."})
 
@@ -331,11 +336,17 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
     if row["status"] in PUBLISHED:
         draft = json.loads(row["draft_json"])
         cited: dict[str, list[dict[str, Any]]] = {}
+        # As the answer view marks its quotes (D45, D50, SW21): a quote of a source removed from this research, of a
+        # removed or replaced PDF, or of a superseded text extraction still opens what was read, and says so.
+        removed = {r[0] for r in store.conn.execute(
+            "SELECT source_version_id FROM corpus_memberships WHERE research_id = ? AND removed_at IS NOT NULL",
+            (row["research_id"],))}
         for link in store.conn.execute(
-                "SELECT l.*, p.kind, p.physical_page, p.printed_label, v.title, v.year, v.version_label, v.work_id"
+                "SELECT l.*, p.kind, p.physical_page, p.printed_label, p.text_source, v.title, v.year, v.version_label,"
+                f" v.work_id, {EVIDENCE_STATUS_SQL} AS evidence_status, {RENDITION_SQL} AS rendition"
                 " FROM followup_turn_links l JOIN passages p ON p.id = l.passage_id"
-                " JOIN source_versions v ON v.id = l.source_version_id WHERE l.turn_id = ? ORDER BY l.rowid",
-                (row["id"],)):
+                " JOIN source_versions v ON v.id = l.source_version_id LEFT JOIN source_assets a ON a.id = p.asset_id"
+                " WHERE l.turn_id = ? ORDER BY l.rowid", (row["id"],)):
             cited.setdefault(link["claim_label"], []).append({
                 "passage_id": link["passage_id"], "source_version_id": link["source_version_id"],
                 "work_id": link["work_id"], "title": link["title"], "year": link["year"],
@@ -343,12 +354,17 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
                 "reading_depth": "abstract" if link["kind"] == "abstract" else "selected_sections",
                 "locator": {"kind": link["kind"], "physical_page": link["physical_page"],
                             "printed_label": link["printed_label"]},
-                "anchor_text": link["anchor_text"], "anchor_match": link["anchor_match"]})
+                "anchor_text": link["anchor_text"], "anchor_match": link["anchor_match"],
+                "evidence_status": link["evidence_status"], "text_source": link["text_source"],
+                "removed_from_research": link["source_version_id"] in removed, "rendition": bool(link["rendition"])})
         answer = {"answer_language": draft["answer_language"], "outcome": draft["outcome"],
                   "claims": [{"label": c["claim_label"], "text": c["text"], "support_type": c["support_type"],
                               "citations": cited.get(c["claim_label"], [])} for c in draft["claims"]],
                   "unanswered_aspects": draft["unanswered_aspects"]}
     validation = json.loads(row["validation_json"]) if row["validation_json"] else None
+    if answer is not None:
+        # The validation warnings stored with the answer (math, several sources), as the answer view's `validation`.
+        answer["warnings"] = (validation or {}).get("warnings", [])
     return {
         "id": row["id"], "research_id": row["research_id"], "scope_revision": row["scope_revision"],
         "question": row["question"], "status": row["status"], "created_at": row["created_at"],

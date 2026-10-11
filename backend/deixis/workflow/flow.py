@@ -5174,6 +5174,14 @@ class ResearchFlow:
                                            error_code="invalid_model_output", error=repair_issues)
                     return {"invalid": True, "raw_output": invalid_raw, "issues": repair_issues,
                             "step_input_id": invalid_input, "repair_skipped": "budget_exhausted"} | output
+                if repair_issues is not None and task_type == "followup_answer":
+                    # A follow-up whose calls are spent with an invalid output stored (a call lost to a transport
+                    # error took one) closes as that unverified draft; pausing again could never send the repair.
+                    output = {"step_input_id": invalid_input}
+                    self.store.finish_step(step["id"], "failed", output=output,
+                                           error_code="invalid_model_output", error=repair_issues)
+                    return {"invalid": True, "raw_output": invalid_raw, "issues": repair_issues,
+                            "step_input_id": invalid_input, "repair_skipped": "budget_exhausted"} | output
                 if budget_short == "skip":
                     # A concurrent sender checked the room before this call and a repair in flight took it. The
                     # work is not reached: no decision is written for it and the run finishes rather than pausing.

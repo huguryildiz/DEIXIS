@@ -1625,6 +1625,9 @@ export type FollowupCitation = {
   version_label: string | null; reading_depth: 'abstract' | 'selected_sections'
   locator: { kind: string; physical_page: number | null; printed_label: string | null }
   anchor_text: string; anchor_match: 'exact' | 'normalized' | 'fuzzy'
+  // As on the answer's Evidence: the file or extraction the quote was read from may since be removed, replaced or
+  // superseded; the source may since be removed from this research; Europe PMC text drawn as a PDF by DEIXIS.
+  evidence_status: EvidenceStatus; text_source: Evidence['text_source']; removed_from_research: boolean; rendition: boolean
 }
 export type FollowupClaim = { label: string; text: string; support_type: 'source_stated' | 'analyst_inference'; citations: FollowupCitation[] }
 export type FollowupTurn = {
@@ -1638,6 +1641,7 @@ export type FollowupTurn = {
   answer: {
     answer_language: string; outcome: 'answered' | 'partly_answered' | 'not_answered'
     claims: FollowupClaim[]; unanswered_aspects: string[]
+    warnings: ValidationIssue[]  // stored validation warnings (math, several sources), as the answer's `validation.warnings`
   } | null
   issues: { code: string; path: string; message: string }[]
 }

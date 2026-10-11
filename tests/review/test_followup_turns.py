@@ -573,3 +573,94 @@ def test_a_failed_link_insert_rolls_the_turn_and_its_event_back_together(tmp_pat
         assert row["published_at"] is None and row["draft_json"] is None and row["step_input_id"] is None
         assert store.conn.execute("SELECT COUNT(*) FROM followup_turn_links").fetchone()[0] == 0
         assert not store.conn.execute("SELECT 1 FROM events WHERE type = 'followup_answered'").fetchone()
+
+
+def test_a_pause_at_the_first_invalid_output_sends_no_repair_until_resumed(tmp_path):
+    holder = {}
+
+    def invalid_and_pause(si):
+        if not holder.get("paused"):
+            holder["paused"] = True  # the first output comes back invalid while a pause is requested
+            holder["app"].state.store.update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
+                                                 pause_reason="user_requested")
+        return json.dumps(json.loads(valid_response(si)) | {"claims": [], "citation_anchors": []})
+
+    adapter = FakeAdapter(invalid_and_pause)
+    holder["app"] = app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        turn = ask(client, rid).json()
+        _, run = wait_run(client, rid, turn["run"]["id"])
+        # The send gate checks the pause before the repair is built: no second call while paused.
+        assert (run["status"], run["pause_reason"]) == ("paused", "user_requested") and len(adapter.calls) == 1
+        client.post(f"/api/runs/{run['id']}/resume")
+        _, run = wait_run(client, rid, run["id"])
+        turn = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()
+        # The resumed run sends the one repair from the stored invalid output, then closes fail-closed.
+        assert run["status"] == "completed" and turn["status"] == "unverified_draft" and len(adapter.calls) == 2
+
+
+def test_a_question_revision_during_the_health_check_sends_no_first_call(tmp_path):
+    holder = {}
+
+    class RevisingAdapter(FakeAdapter):
+        async def health(self, refresh=False):
+            store = holder["app"].state.store
+            opened = store.conn.execute("SELECT run_id FROM run_steps WHERE operation_key = ?",
+                                        (followup.TASK,)).fetchone()
+            if opened and not holder.get("revised"):
+                holder["revised"] = True
+                research = store.research(store.run(opened["run_id"])["research_id"])
+                store.revise_scope(research["id"], research["version"], "A revised SYNTHETIC question about slots?", None)
+            return await super().health(refresh)
+
+    adapter = RevisingAdapter()
+    holder["app"] = app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        turn = ask(client, rid).json()
+        _, run = wait_run(client, rid, turn["run"]["id"])
+        assert holder.get("revised") and adapter.calls == []
+        assert (run["status"], run["pause_reason"]) == ("cancelled", "scope_revised")
+        assert client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()["status"] == "pending"
+
+
+def test_spent_calls_after_a_transport_error_close_the_stored_invalid_output_as_a_draft(tmp_path):
+    from deixis.models.adapter import ModelStepResult
+
+    adapter = FakeAdapter(lambda si: json.dumps(json.loads(valid_response(si)) | {"claims": [], "citation_anchors": []}),
+                          fail=lambda si: ModelStepResult("failed", error="SYNTHETIC connection reset")
+                          if len(adapter.calls) == 1 else None)
+    app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        turn = ask(client, rid).json()
+        _, run = wait_run(client, rid, turn["run"]["id"])
+        assert run["status"] == "paused" and app.state.store.run(run["id"])["usage"]["model_calls"] == 1
+        client.post(f"/api/runs/{run['id']}/resume")
+        _, run = wait_run(client, rid, run["id"])
+        turn = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()
+        # The second call came back invalid and no call is left for its repair: the turn closes as that draft
+        # instead of pausing again with budget_exhausted.
+        assert (run["status"], run["pause_reason"]) == ("completed", None), run
+        assert turn["status"] == "unverified_draft" and turn["answer"] is None and turn["issues"]
+        assert len(adapter.calls) == 2 and app.state.store.run(run["id"])["usage"]["model_calls"] == 2
+
+
+def test_follow_up_citations_carry_the_answer_views_evidence_marks_and_warnings(tmp_path):
+    app = app_for(tmp_path, FakeAdapter())
+    with TestClient(app) as client:
+        session(client)
+        rid, (svid,) = research(client)
+        turn = answered(client, rid)
+        (citation,) = turn["answer"]["claims"][0]["citations"]
+        assert (citation["evidence_status"], citation["removed_from_research"], citation["rendition"]) == ("current", False, False)
+        assert citation["text_source"] == "text_layer" and turn["answer"]["warnings"] == []
+        aid = asset_of(app.state.store, svid)
+        assert client.request("DELETE", f"/api/researches/{rid}/sources", json={"source_version_ids": [svid]}).status_code == 200
+        (citation,) = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()["answer"]["claims"][0]["citations"]
+        assert citation["removed_from_research"] is True and citation["source_version_id"] == svid
+        assert app.state.store.asset_impact(aid)["followup_quotes"] == 1

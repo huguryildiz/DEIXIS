@@ -135,7 +135,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
   .app.sidebar-collapsed .main-shell{margin-left:56px}
   .app.sidebar-collapsed .sidebar-head{flex-direction:column;gap:6px;padding:12px 0 8px}
   .app.sidebar-collapsed .brand{padding:0}
-  .app.sidebar-collapsed .sidebar-label,.app.sidebar-collapsed .recents-label,.app.sidebar-collapsed .recent-list,.app.sidebar-collapsed .access,.app.sidebar-collapsed .access-retry,.app.sidebar-collapsed .user-name,.app.sidebar-collapsed .user>button{display:none}
+  .app.sidebar-collapsed .sidebar-label,.app.sidebar-collapsed .recents-label,.app.sidebar-collapsed .recent-list,.app.sidebar-collapsed .access,.app.sidebar-collapsed .access-retry,.app.sidebar-collapsed .bgcard,.app.sidebar-collapsed .user-name,.app.sidebar-collapsed .user>button{display:none}
   .app.sidebar-collapsed .sidebar nav button{justify-content:center;padding:8px 0}
   .app.sidebar-collapsed .nav-count{position:absolute;top:1px;right:4px;margin:0;padding:0 4px;font-size:9.5px;line-height:14px}
   .app.sidebar-collapsed .sidebar-foot{margin-top:auto;justify-items:center;border-top:0}
@@ -265,6 +265,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
    and a footer on the sidebar surface. */
 .dialog-scrim{position:fixed;inset:0;z-index:60;background:rgb(15 20 25/.32);transition:opacity .16s ease}
 .dialog-scrim[data-starting-style],.dialog-scrim[data-ending-style]{opacity:0}
+/* 560px: in the mockup every dialog is `.pal.dlg`, and `.pal{max-width:560px}` comes after `.dlg{max-width:480px}` (measured 560 at 1280) */
 .dialog{position:fixed;top:14vh;left:50%;z-index:61;display:flex;flex-direction:column;width:calc(100vw - 32px);max-width:560px;max-height:calc(86vh - 16px);overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow-float);font-family:var(--font-sans);font-size:14px;line-height:1.5;transform:translateX(-50%);transition:opacity .16s ease,transform .16s ease}
 .dialog[data-starting-style],.dialog[data-ending-style]{opacity:0;transform:translate(-50%,4px)}
 .dialog-head{display:flex;flex:none;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--line)}

@@ -445,7 +445,7 @@ export default function App() {
       </div>
       {actionMessage && route.view !== 'trash' && <p className="sidebar-action-message" role="status">{actionMessage}</p>}
       <div className="sidebar-foot">
-        {!collapsed && <BackgroundJobs researches={researches} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />}
+        <BackgroundJobs researches={researches} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />
         {/* The foot keeps one DOM shape while its reads arrive (profile, proxy, Scopus): only text, inline style and data attributes change. */}
         <button type="button" className="access" onClick={() => go({ view: 'settings', tab: 'connections' })} aria-label={accessName} title={t('Institutional access settings')}>
           <span className="access-label" style={proxy?.address ? undefined : { display: 'none' }}>{proxy?.address ? t('Institutional access · {label}', { label: proxyLabel }) : ''}</span>

@@ -113,3 +113,16 @@ test('an OCR run fails while the sheet is open: its own run status is shown as F
   await expect(page.locator('.jobs-sheet')).toHaveCount(0)
   await expect(page.locator('.sidebar-find')).toBeFocused()
 })
+
+test('a sidebar collapsed on the desktop still shows the background card in the phone drawer', async ({ page }) => {
+  await page.route('**/api/equation-reader', route => route.fulfill({ json: READING }))
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto(server.url())
+  await expect(page.locator('.sidebar-foot .bgcard')).toBeVisible()
+  await page.getByRole('button', { name: 'Collapse sidebar' }).click()
+  await expect(page.locator('.sidebar-foot .bgcard')).toBeHidden()
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: 'Open navigation' }).click()
+  await expect(page.locator('.sidebar-foot .bgcard')).toBeVisible()
+  await expect(page.locator('.sidebar-foot .bgcard')).toContainText('Reading equations')
+})

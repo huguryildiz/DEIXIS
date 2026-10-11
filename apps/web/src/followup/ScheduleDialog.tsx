@@ -51,7 +51,7 @@ export function ScheduleDialog({ researchId, scopeRevision, kind, watch, dark, a
   const save = () => command.start({ mode: frequency ? 'interval' : 'manual', interval_days: frequency || null, catch_up: frequency ? catchUp : null,
     ...(watch ? { expected_schedule_version: watch.schedule_version } : { kind, expected_scope_revision: scopeRevision }) })
   return <Dialog.Root open onOpenChange={open => { if (!open) onClose() }}>
-    <Dialog.Portal><Dialog.Backdrop className="confirm-dialog-backdrop" />
+    <Dialog.Portal><Dialog.Backdrop className="dialog-scrim" />
       <Dialog.Popup className={`followup-dialog ${dark ? 'dark' : ''}`} finalFocus={() => opener?.isConnected ? opener : true}>
         <Dialog.Title>{t(watch ? 'Schedule follow-up' : 'Enable follow-up')}</Dialog.Title>
         <Dialog.Description>{t(kindLabels[kind])}</Dialog.Description>

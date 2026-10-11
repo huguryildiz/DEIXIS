@@ -877,6 +877,7 @@ def create_app(
         return JSONResponse(exc.extra_fields | {"detail": exc.detail, "code": exc.code}, status_code=exc.status_code)
 
     from deixis.api.home_routes import register_home_routes
+    from deixis.api.export_routes import register_export_routes
     from deixis.api.shell_routes import register_shell_routes
     from deixis.api.usage_routes import register_usage_routes
     from deixis.api.watch_routes import register_watch_routes
@@ -885,6 +886,7 @@ def create_app(
     register_shell_routes(app)
     register_usage_routes(app)
     register_home_routes(app)
+    register_export_routes(app)
 
     @app.exception_handler(WatchRefusal)
     async def watch_refusal(_: Request, exc: WatchRefusal):

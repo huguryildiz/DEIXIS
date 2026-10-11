@@ -1445,3 +1445,15 @@ export type Suggestion = { text: string; research_id: string; research_title: st
 export const homeApi = {
   suggestions: () => request<{ suggestions: Suggestion[] }>('/api/suggestions'),
 }
+
+// DOCX and XLSX downloads (api/export_routes.py). `lang` and `style` are the interface language and the citation style
+// the browser uses for its own Markdown and CSV, so the files read the same; the evidence report keeps its own language.
+export type ExportLanguage = 'en' | 'tr'
+export type ExportCitationStyle = 'apa' | 'ieee' | 'mla' | 'chicago'
+const exportQuery = (lang: ExportLanguage, style: ExportCitationStyle) => `?lang=${lang}&style=${style}`
+export const answerDocxUrl = (researchId: string, answerId: string, lang: ExportLanguage, style: ExportCitationStyle) =>
+  `/api/researches/${encodeURIComponent(researchId)}/answers/${encodeURIComponent(answerId)}/export/docx${exportQuery(lang, style)}`
+export const tableExportUrl = (researchId: string, tableId: string, format: 'xlsx' | 'docx', lang: ExportLanguage, style: ExportCitationStyle) =>
+  `/api/researches/${encodeURIComponent(researchId)}/tables/${encodeURIComponent(tableId)}/export/${format}${exportQuery(lang, style)}`
+export const reportDocxUrl = (researchId: string, reportId: string) =>
+  `/api/researches/${encodeURIComponent(researchId)}/reports/${encodeURIComponent(reportId)}/export/docx`

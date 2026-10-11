@@ -284,6 +284,16 @@ export default function App() {
     setLanguage(next)
   }
 
+  // The phone drawer closes with its own button or Escape, and hands focus back to the menu button.
+  const menuButton = useRef<HTMLButtonElement>(null)
+  const closeDrawer = useCallback(() => { setSidebar(false); menuButton.current?.focus() }, [])
+  useEffect(() => {
+    if (!sidebar) return
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) closeDrawer() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [sidebar, closeDrawer])
+
   function toggleCollapsed() {
     const next = !collapsed
     setCollapsed(next)
@@ -331,7 +341,8 @@ export default function App() {
   }
 
   const activeId = route.view === 'research' ? route.id : null
-  const currentResearch = currentId && researches.some(r => r.id === currentId) ? currentId : null
+  // The research opened last; before any was opened in this browser, the most recently updated one.
+  const currentResearch = currentId && researches.some(r => r.id === currentId) ? currentId : researches[0]?.id ?? null
   // "Awaiting you": open queue rows and works waiting for the person's PDF over every research, the two kept apart in the tooltip.
   const awaitingQueue = researches.reduce((sum, r) => sum + r.awaiting.queue, 0)
   const awaitingPdf = researches.reduce((sum, r) => sum + r.awaiting.pdf, 0)
@@ -363,11 +374,11 @@ export default function App() {
   const accessName = [proxy?.address ? `${t('Institutional access · {label}', { label: proxyLabel })}: ${proxyState.text}` : proxyState.text, scopusState?.text].filter(Boolean).join('. ')
 
   return <div className={`app ${dark ? 'dark' : ''} ${collapsed ? 'sidebar-collapsed' : ''} ${sidebarWidth !== null ? 'sidebar-resized' : ''} ${resizing ? 'sidebar-resizing' : ''}`} style={sidebarWidth !== null ? { '--sidebar-width': `${sidebarWidth}px` } as CSSProperties : undefined}>
-    {sidebar && <button className="mobile-scrim" aria-label={t('Close navigation')} onClick={() => setSidebar(false)} />}
     <aside ref={asideRef} className={`sidebar ${sidebar ? 'is-open' : ''}`}>
       <div className="sidebar-head">
         <button className="brand" aria-label={t('DEIXIS home')} onClick={() => go({ view: 'home' })}><span className="brand-mark" aria-hidden="true">{brandLogo}</span><span className="sidebar-label">DEIXIS</span></button>
-        <button type="button" className="sidebar-toggle" onClick={toggleCollapsed} aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')} title={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}><PanelLeft size={16} aria-hidden="true" /></button>
+        {/* On a phone the drawer's own button closes it (mockup: no scrim). */}
+        <button type="button" className="sidebar-toggle" onClick={sidebar ? closeDrawer : toggleCollapsed} aria-label={t(sidebar ? 'Close navigation' : collapsed ? 'Expand sidebar' : 'Collapse sidebar')} title={t(sidebar ? 'Close navigation' : collapsed ? 'Expand sidebar' : 'Collapse sidebar')}><PanelLeft size={16} aria-hidden="true" /></button>
       </div>
       <nav aria-label={t('Main navigation')}>
         <button className={route.view === 'home' ? 'selected' : ''} onClick={() => go({ view: 'home' })} title={t('New research')}><Plus size={16} aria-hidden="true" /><span className="sidebar-label">{t('New research')}</span></button>
@@ -378,7 +389,7 @@ export default function App() {
         <button className={route.view === 'settings' ? 'selected' : ''} onClick={() => go({ view: 'settings' })} title={t('Settings')}><SlidersHorizontal size={16} aria-hidden="true" /><span className="sidebar-label">{t('Settings')}</span></button>
         <button className={route.view === 'trash' ? 'selected' : ''} onClick={() => go({ view: 'trash' })} title={t('Trash')}><Trash2 size={16} aria-hidden="true" /><span className="sidebar-label">{t('Trash')}</span></button>
       </nav>
-      <div className="recents-label" id="recent-label">{t('Recent research')}</div>
+      <div className="recents-label" id="recent-label"><span>{t('Recent research')}</span></div>
       <div id="recent-list" className="recent-list" role="group" aria-labelledby="recent-label">
         {listError && <p>{t('Local service unavailable: {error}', { error: listError })}</p>}
         {!listError && !researches.length && <p>{t('Your questions will find a home here.')}</p>}
@@ -423,7 +434,7 @@ export default function App() {
     </aside>
     <div className="main-shell">
       <div className="mobilebar">
-        <button type="button" className="mobile-menu" aria-label={t('Open navigation')} onClick={() => setSidebar(true)}><Menu size={16} aria-hidden="true" /></button>
+        <button type="button" ref={menuButton} className="mobile-menu" aria-label={t('Open navigation')} onClick={() => setSidebar(true)}><Menu size={16} aria-hidden="true" /></button>
         <b className="mobilebar-brand" aria-hidden="true">DEIXIS</b>
       </div>
       <main>

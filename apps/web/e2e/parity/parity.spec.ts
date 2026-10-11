@@ -106,8 +106,19 @@ async function pagesFor(browser: Browser, width: number, theme: Theme) {
   return { mock, app, scratch, close: () => Promise.all([mockContext.close(), appContext.close(), scratchContext.close()]) }
 }
 
+// The mockup's normal state has background work in the sidebar foot ("In the background · N"). The app shows the same
+// card from one SYNTHETIC equation-reader read: the reader installed, one library PDF being read and two waiting. Only
+// this read is answered here; everything else comes from the fixture server.
+const READER = {
+  installed: true, package: 'marker-pdf', path: '', size_bytes: 0, models_downloaded: true, disk_free_gb: 100,
+  install: { available: true, unavailable_reason: null, url: '' }, job: null,
+  reading: { asset_id: 'ast_parity', title: 'SYNTHETIC library PDF', pages: 12, started_at: new Date().toISOString() },
+  pdfs: { read: 4, reading: 1, pending: 2 },
+}
+
 async function showApp(page: Page, base: string, surface: Surface, research: string) {
   await surface.prepare?.(page)
+  await page.route('**/api/equation-reader', route => route.fulfill({ json: READER }))
   await page.goto(`${base}/${surface.app.replace('{research}', research)}`)
   await surface.open?.(page)
   await page.locator(surface.ready).first().waitFor()

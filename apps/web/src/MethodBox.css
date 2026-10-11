@@ -1,11 +1,15 @@
-.method-box{margin:18px 0 6px}
-.method-detail{columns:280px 2;column-gap:32px;padding:4px 0 14px 24px}
+/* How the answer was reached (mockup .methods): one quiet box on the side surface, its one line under the heading. */
+.method-box.search-summary{margin:18px 0 6px;padding:0 16px;border:1px solid var(--line);border-radius:12px;background:var(--sidebar-surface)}
+.method-box.search-summary summary{flex-wrap:wrap;justify-content:flex-start;gap:2px 8px;padding:12px 0;font-size:13px}
+.method-box.search-summary summary>span{gap:7px;font-weight:600}
+.method-box.search-summary summary small{flex:1 1 100%;color:var(--muted);font-size:12.5px;line-height:1.55;text-align:left}
+.method-detail{columns:280px 2;column-gap:32px;padding:0 0 14px}
 .method-detail>section{break-inside:avoid;margin-bottom:12px}
 .method-box:not([open]) .method-detail{display:none}
-.method-text{margin:2px 0 6px;color:var(--ink);font-size:12px;line-height:1.55}
+.method-text{margin:2px 0 6px;color:var(--ink-2);font-size:12.5px;line-height:1.55}
 .method-queries li{align-items:flex-start}
 .method-queries li>span{min-width:0;overflow-wrap:anywhere}
-.method-queries code{font-size:11px;color:var(--ink)}
-.method-queries small{display:block;color:var(--muted);font-size:11px}
+.method-queries code{font-size:11.5px;color:var(--ink)}
+.method-queries small{display:block;color:var(--muted);font-size:11.5px}
 .method-queries strong{white-space:nowrap}
-.method-unmeasured{margin:8px 0 0;padding-left:16px;color:var(--muted);font-size:11px;line-height:1.5}
+.method-unmeasured{margin:8px 0 0;padding-left:16px;color:var(--muted);font-size:11.5px;line-height:1.5}

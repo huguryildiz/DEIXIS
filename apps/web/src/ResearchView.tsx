@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpenText, ChevronRight, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListMinus, ListPlus, LoaderCircle, Replace, RotateCcw, ScanText, Sigma, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, Search, ShieldCheck, Sparkles, Table2, Trash2, Upload, UserPen, X, type LucideIcon } from 'lucide-react'
+import { Activity, ArrowUpDown, ArrowUpRight, BadgeCheck, Ban, BookOpenText, ChevronDown, ChevronRight, CircleCheck, CircleDot, CircleX, Copy, Download, FilePlus2, FileText, FileUp, Filter, Hand, Info, ListChecks, ListMinus, ListPlus, LoaderCircle, Replace, RotateCcw, ScanText, Sigma, MessageSquareQuote, Pause, PencilLine, Play, Quote, RotateCw, Search, ShieldCheck, Sparkles, Table2, Trash2, Upload, UserPen, X, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip } from '@/components/ui/tooltip'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Menu as MenuPrimitive } from '@base-ui/react/menu'
+import { api, ApiError, bibliographyUrl, prismaSUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
 import { serviceErrorText, serviceErrorSentence, serviceKind, serviceWaitingText, connectionName, accessParts, citedText, fetchReasonText, fileRestoreNote, fileRestoreText, fileRestoreTone, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, recoveryDecisionText, recoveryReasonText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, seedSkipText, seedUseText, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING, LATE_REVISION_QUEUED, LATE_REVISION_SKIPPED, lateRevisionReasons } from './labels'
 import { PassageSheet } from './PassageSheet'
@@ -465,45 +466,69 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // Files dropped on the PDF panel of an sw research go to the waiting view's version-checked match (slice 18a).
   const waitingCount = view.counts.waiting_for_pdf ?? 0
   const dropForWaiting = (files: File[]) => { setWaitingFiles(files); goTab('waiting'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  // The revision form stays at the end of the page; the top row only takes the person there.
+  const reviseQuestion = () => {
+    const field = document.getElementById('revise-question')
+    field?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })
+    field?.focus({ preventScroll: true })
+  }
   return <section className="research-view legacy-research">
-    {/* The hint takes the row that already exists above the title: reserving it there keeps the field from pushing the counts down
-        while the title is edited, and it leaves the scope revision readable. */}
-    <div className={`section-label${titleEditing ? ' is-editing' : ''}`}>
-      <span>{t('Research')} <span>· {t('revision {n}', { n: view.research.current_scope_revision })}</span></span>
+    {/* One 46px row carries the title, the live run and its controls, and the research-level actions, so they reach every tab.
+        A table run is controlled on the Evidence tab above its table; here its chip only links there. */}
+    <div className={`research-topbar${titleEditing ? ' is-editing' : ''}`}>
+      <div className="research-topbar-title">
+        {titleEditing
+          /* While the title is being edited the heading gives way to the field: a heading whose whole content is a field has no
+             name to announce. The field restates the heading's type recipe (see .research-title-input) so nothing moves. */
+          ? <textarea
+            ref={titleInput}
+            className="research-title-input"
+            aria-label={t('Research title')}
+            aria-describedby="research-title-hint"
+            value={titleDraft}
+            rows={1}
+            maxLength={160}
+            spellCheck={false}
+            onChange={e => { setTitleDraft(e.target.value); sizeTitleField(e.target) }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); commitTitle() }
+              else if (e.key === 'Escape') { e.preventDefault(); cancelTitle() }
+            }}
+            onBlur={commitTitle}
+          />
+          : <TypewriterTitle text={heading} onStartEdit={beginTitleEdit} />}
+      </div>
       {titleEditing && <span className="research-title-hint" id="research-title-hint">
         {titleDraft.length > 120
           ? `${t('Enter saves, Escape cancels')} · ${t('{count} of 160 characters', { count: String(titleDraft.length) })}`
           : t('Enter saves, Escape cancels')}
       </span>}
-    </div>
-    {titleEditing
-      ? <div className="research-title-block">
-        {/* While the title is being edited the heading gives way to the field: a heading whose whole content is a field has no
-            name to announce. The field restates the heading's type recipe (see .research-title-input) so nothing moves. */}
-        <textarea
-          ref={titleInput}
-          className="research-title-input"
-          aria-label={t('Research title')}
-          aria-describedby="research-title-hint"
-          value={titleDraft}
-          rows={1}
-          maxLength={160}
-          spellCheck={false}
-          onChange={e => { setTitleDraft(e.target.value); sizeTitleField(e.target) }}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { e.preventDefault(); commitTitle() }
-            else if (e.key === 'Escape') { e.preventDefault(); cancelTitle() }
-          }}
-          onBlur={commitTitle}
-        />
-      </div>
-      : <div className="research-title-block">
-        <TypewriterTitle text={heading} onStartEdit={beginTitleEdit} />
-        {heading === view.scope.question && !active && run?.status !== 'paused' && <Button variant="ghost" size="sm" className="research-title-suggest" disabled={busy} onClick={startTitle}
-          title={t('The model names the research from its question and included sources, in at most 15 words.')}><Sparkles size={14} aria-hidden />{t('Suggest a short title')}</Button>}
+      {candidateRun && tab !== 'candidates' && <button type="button" className="run-chip" aria-label={t('Open the Candidates tab to control this run')} onClick={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); goTab('candidates') }}>
+        <span className={`run-chip-dot${ACTIVE.has(candidateRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[candidateRun.kind])} · {t(runStatusLabels[candidateRun.status])}<ChevronRight size={13} aria-hidden />
+      </button>}
+      {watchRun && tab !== 'followup' && <button type="button" className="run-chip" aria-label={t('Open the Follow-up tab to control this run')} onClick={() => goTab('followup')}>
+        <span className={`run-chip-dot${ACTIVE.has(watchRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels.watch_check)} · {t(runStatusLabels[watchRun.status])}<ChevronRight size={13} aria-hidden />
+      </button>}
+      {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? tab !== 'evidence' && <button type="button" className="run-chip" title={t('Open the Evidence tab to control this run')} onClick={() => { goTab('evidence'); setPicked([]) }}>
+        <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
+      </button>
+      : run && run.kind !== 'watch_check' && !CANDIDATE_KINDS.has(run.kind) && (active || run.status === 'paused') && <div className="run-strip">
+        <span className={`run-strip-status${active ? ' is-live' : ' is-paused'}`} data-run-id={run.id} tabIndex={-1}>{active ? <LoaderCircle size={13} className="chat-spin" aria-hidden /> : <Pause size={12} aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
+        {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" className="run-strip-pause" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
+        {run.status === 'paused'
+          && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0) && <Button variant="default" size="sm" disabled={busy} onClick={() => { const origin = document.activeElement; void act(() => api.controlRun(run.id, 'resume')).then(ok => { if (ok) toRunStatus(run.id, origin) }) }}><Play size={14} />{t('Resume')}</Button>}
+        <Button variant="destructive" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />{t('Cancel')}</Button>
       </div>}
+      {!titleEditing && heading === view.scope.question && !active && run?.status !== 'paused' && <Button variant="ghost" size="sm" className="research-title-suggest research-topbar-action" disabled={busy} onClick={startTitle}
+        title={t('The model names the research from its question and included sources, in at most 15 words.')}><Sparkles size={14} aria-hidden />{t('Suggest a short title')}</Button>}
+      <Button variant="ghost" size="sm" className="research-topbar-action research-revise" onClick={reviseQuestion}><PencilLine size={14} aria-hidden />{t('Revise question')}</Button>
+      <ExportMenu researchId={id} included={included > 0} cited={view.counts.cited > 0} prisma={Boolean(view.counts.flow)} />
+    </div>
+
+    <div className="research-body">
     {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the tab that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
+      <span className="research-revision">{t('Research')} · {t('revision {n}', { n: view.research.current_scope_revision })}</span>
       {/* A count is shown once it has something to say; a row of zeroes while the run works is noise, not a boundary. */}
       {([['unique', 'Unique works', 'all'], ['included', 'Included', 'included'], ['inspected', 'Given to the model', 'all'], ['cited', 'Cited', null]] as const)
         .filter(([key]) => view.counts[key] > 0)
@@ -515,27 +540,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { goTab(String(value)); setPicked([]) }}>
       <div className="research-tabs-bar">
         <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger><TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger><TabsTrigger value="waiting">{t('Waiting for your PDF')} <span className="research-tab-count">{waitingCount}</span></TabsTrigger><TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="followup">{t('Follow-up')}{(followupCount.loading || followupCount.count !== null) && <span className="research-tab-count" aria-label={followupCount.loading ? t('Loading follow-up') : undefined} title={followupCount.loading ? t('Loading follow-up') : undefined}>{followupCount.loading ? '…' : followupCount.count}</span>}</TabsTrigger><TabsTrigger value="candidates" tabIndex={0}>{t('Candidates')} <span className="research-tab-count" title={candidateCount === null ? t('Loading candidates…') : undefined}>{candidateCount ?? '…'}</span></TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + view.reportRuns.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
-        {/* The live run carries its own quiet Pause; these controls ride with the tabs so pause, resume and cancel stay reachable from every tab.
-            A table run is controlled on the Evidence tab above its table; elsewhere the bar only links there. */}
-        {candidateRun && tab !== 'candidates' && <button type="button" className="run-chip" aria-label={t('Open the Candidates tab to control this run')} onClick={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); goTab('candidates') }}>
-          <span className={`run-chip-dot${ACTIVE.has(candidateRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[candidateRun.kind])} · {t(runStatusLabels[candidateRun.status])}<ChevronRight size={13} aria-hidden />
-        </button>}
-        {watchRun && tab !== 'followup' && <button type="button" className="run-chip" aria-label={t('Open the Follow-up tab to control this run')} onClick={() => goTab('followup')}>
-          <span className={`run-chip-dot${ACTIVE.has(watchRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels.watch_check)} · {t(runStatusLabels[watchRun.status])}<ChevronRight size={13} aria-hidden />
-        </button>}
-        {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? tab !== 'evidence' && <button type="button" className="run-chip" title={t('Open the Evidence tab to control this run')} onClick={() => { goTab('evidence'); setPicked([]) }}>
-          <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
-        </button>
-        : run && run.kind !== 'watch_check' && !CANDIDATE_KINDS.has(run.kind) && (active || run.status === 'paused') && <div className="run-strip">
-          <span className="run-strip-status" data-run-id={run.id} tabIndex={-1}>{active && <LoaderCircle size={13} className="chat-spin" aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
-          {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
-          {run.status === 'paused'
-            && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0) && <Button variant="default" size="sm" disabled={busy} onClick={() => { const origin = document.activeElement; void act(() => api.controlRun(run.id, 'resume')).then(ok => { if (ok) toRunStatus(run.id, origin) }) }}><Play size={14} />{t('Resume')}</Button>}
-          <Button variant="destructive" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />{t('Cancel')}</Button>
-        </div>}
       </div>
 
-      <TabsContent value="answer">
+      <TabsContent value="answer" className="research-thread">
         {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
         <Transcript view={{ ...view, runs: view.runs.filter(r => TRANSCRIPT_KINDS.has(r.kind)) }} modelText={modelText}
           onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
@@ -672,6 +679,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <RevisionForm key={view.research.version} question={view.scope.question} disabled={busy || active}
       keyTerms={view.scope.key_terms ?? ''} keyTermsRef={keyTerms}
       onSubmit={(text, terms) => act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
+    </div>
     <ConfirmDialog open={Boolean(removeTarget)} dark={dark} title={t('Remove PDF?')}
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}
@@ -1006,6 +1014,35 @@ function ExportLinks({ researchId, sources }: { researchId: string; sources: 'in
       <a href={bibliographyUrl(researchId, 'ris', sources)} download title={t('RIS file of the {label} (Zotero, EndNote, Mendeley)', { label })}>.ris</a>
     </span>
   </span>
+}
+
+// The research-level downloads that already exist, in one menu: bibliography files for reference managers and the
+// PRISMA-S search report. A group shows only when its file has something in it.
+function ExportMenu({ researchId, included, cited, prisma }: { researchId: string; included: boolean; cited: boolean; prisma: boolean }) {
+  if (!included && !cited && !prisma) return null
+  const link = (href: string, format: string, title: string) => <MenuPrimitive.LinkItem key={href} href={href} download title={title} closeOnClick className="research-export-item">
+    <Download size={15} aria-hidden /><span>{format}</span>
+  </MenuPrimitive.LinkItem>
+  const bibliography = (sources: 'included' | 'cited') => {
+    const label = t(sources === 'included' ? 'included sources' : 'cited sources')
+    return <DropdownMenuGroup>
+      <DropdownMenuLabel className="research-export-label">{t(sources === 'included' ? 'Export included' : 'Export cited')}</DropdownMenuLabel>
+      {link(bibliographyUrl(researchId, 'bibtex', sources), 'BibTeX (.bib)', t('BibTeX file of the {label} (LaTeX, Zotero, JabRef)', { label }))}
+      {link(bibliographyUrl(researchId, 'ris', sources), 'RIS (.ris)', t('RIS file of the {label} (Zotero, EndNote, Mendeley)', { label }))}
+    </DropdownMenuGroup>
+  }
+  return <DropdownMenu>
+    <DropdownMenuTrigger render={<Button variant="default" size="sm" className="research-export" />}><Download size={14} aria-hidden />{t('Export')}<ChevronDown size={13} aria-hidden /></DropdownMenuTrigger>
+    <DropdownMenuContent align="end" className="research-export-menu w-auto">
+      {included && bibliography('included')}
+      {cited && bibliography('cited')}
+      {prisma && <DropdownMenuGroup>
+        <DropdownMenuLabel className="research-export-label">{t('Search report (PRISMA-S)')}</DropdownMenuLabel>
+        {link(prismaSUrl(researchId, 'md'), 'Markdown (.md)', t('The search reported against the 16 PRISMA-S items, as Markdown'))}
+        {link(prismaSUrl(researchId, 'json'), 'JSON (.json)', t('The search reported against the 16 PRISMA-S items, as JSON'))}
+      </DropdownMenuGroup>}
+    </DropdownMenuContent>
+  </DropdownMenu>
 }
 
 // The reason field takes focus only if focus is still on the Exclude control or has fallen to the page body; it is not taken from another control.

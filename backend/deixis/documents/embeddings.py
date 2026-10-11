@@ -241,10 +241,14 @@ async def embed_openai_compatible(client: httpx.AsyncClient, base_url: str, key:
 
 
 def chosen(setting: dict[str, Any] | None) -> tuple[str, str | None]:
-    """The provider and model semantic search uses: the saved choice, else Gemini when its key is set, else off."""
+    """The provider and model semantic search uses: the saved choice, else Gemini when its key is set, else the
+    built-in model when it is downloaded and its files check out (D7), else off. Downloading it is the person's act;
+    nothing here downloads it."""
     if setting:
         return setting["provider"], setting.get("model")
-    return ("gemini", MODEL) if os.environ.get(KEY_ENVS["gemini"]) else ("off", None)
+    if os.environ.get(KEY_ENVS["gemini"]):
+        return "gemini", MODEL
+    return ("builtin", BUILTIN_MODEL) if local_embedding.builtin_available() else ("off", None)
 
 
 @dataclass(frozen=True)

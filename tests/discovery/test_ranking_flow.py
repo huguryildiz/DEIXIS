@@ -334,6 +334,32 @@ def test_the_four_code_signals_rank_the_same_with_the_embedding_off_failing_or_o
     assert all("rescued" not in output for output in (off_output, broken_output, on_output))
 
 
+def test_a_choice_that_changes_during_planning_does_not_reach_the_protocol(tmp_path, monkeypatch):
+    """D7: the similarity step freezes its model before planning; a setting saved (or a built-in model that became
+    ready) while the run plans changes neither the ranking nor the model the protocol names."""
+    from deixis.workflow.flow import ResearchFlow
+
+    planned = ResearchFlow._criterion
+
+    async def criterion_after_a_change(self, run, scope, vocabulary):
+        self.store.set_setting("semantic_search", {"provider": "gemini", "model": "gemini-embedding-2"})
+        return await planned(self, run, scope, vocabulary)
+
+    monkeypatch.setattr(ResearchFlow, "_criterion", criterion_after_a_change)
+    app = app_for(tmp_path, monkeypatch, Pool(), adapter=DeadAdapter())
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        output = step_output(app.state.store, run_id, "ranking")
+        body = app.state.store.current_protocol(rid, run["scope_revision"])["body"]
+        saved = app.state.store.setting("semantic_search")
+    finally:
+        client.__exit__(None, None, None)
+    assert saved["provider"] == "gemini"
+    assert output["embedding_model"] is None
+    assert next(s["model"] for s in body["signals"] if s["signal"] == "embedding") is None
+
+
 def test_embedding_contributes_to_fused_order_without_rescue_promotion(tmp_path, monkeypatch):
     """Embedding participates in fusion; historical rescue stays in the benchmark."""
     # The embedder puts one bakery record first; the code signals cannot tell it from the other bakery records.

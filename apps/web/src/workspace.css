@@ -1138,6 +1138,8 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 
 /* Inline notices (Notice.tsx): a blocking error, something that needs attention, or information. */
 .notice{--notice:var(--muted);display:flex;align-items:flex-start;gap:10px;margin:0 0 16px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface);color:var(--ink-2);font-size:13px;line-height:1.55}
+.notice .semantic-setup-text{margin:0 0 8px}
+.notice .semantic-setup-progress{display:flex;align-items:center;gap:6px;margin:0 0 8px}
 .notice>svg{flex:none;margin-top:2px;color:var(--notice)}
 .notice>div{min-width:0;overflow-wrap:anywhere}
 .notice.is-error{--notice:var(--tone-exclude);border-color:transparent;background:var(--error-surface)}

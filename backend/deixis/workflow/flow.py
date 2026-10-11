@@ -565,7 +565,7 @@ class ResearchFlow:
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                 scope, run["budget"], None, queries,
                 self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
-                approval=approval, embedding_model=self._embedding_model(), routing=self._routing_step(run_id),
+                approval=approval, embedding_model=self._protocol_embedding_model(run_id), routing=self._routing_step(run_id),
                 fast_path_search=fast_plan, seed_match=seed_context,
             ), reason=reason)
             self.store.finish_step(protocol_step["id"], "succeeded",
@@ -1256,6 +1256,16 @@ class ResearchFlow:
         if provider == "off" or not model:
             return None
         return embeddings.Embedder(provider, model).stored_model
+
+    def _protocol_embedding_model(self, run_id: str) -> str | None:
+        """The model the protocol names: the one this run's similarity step froze when it opened, before planning, so a
+        setting saved or a built-in model that became ready during planning (D7) never makes the protocol name a model
+        the ranking does not read. The built-in model's thread count is a cache identity, not part of the name."""
+        output = (self.store.existing_step(run_id, "source_similarity") or {}).get("output") or {}
+        if not output.get("fast_path_queue"):
+            return self._embedding_model()
+        stored = output.get("stored_model")
+        return stored.split(":threads=", 1)[0] if stored else None
 
     async def _ranking(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> list[str]:
         """Order this revision's records by rank fusion before screening reads them; returns the inspection order.

@@ -61,6 +61,15 @@ def no_model_api_keys(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_registered_builtin_model(monkeypatch):
+    """The built-in model's integrity is registered module-wide by an app; with nothing saved, a ready model is the
+    default (D7), so one test's app never leaks it into another test."""
+    from deixis.documents import local_embedding
+
+    monkeypatch.setattr(local_embedding, "_registered", None)
+
+
+@pytest.fixture(autouse=True)
 def memory_keychain(monkeypatch):
     """Tests never read or write the real system keychain."""
     previous, backend = keyring.get_keyring(), MemoryKeyring()

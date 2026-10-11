@@ -12,6 +12,7 @@ import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroPanel } from './ZoteroPanel'
 import { ConnectionIcon } from './connectionIcons'
 import { Notice } from './Notice'
+import { SemanticSetupNote } from './SemanticNotes'
 import { defaultEffort, exposesEffortControl, listedEffort } from './modelEffort'
 
 export const effortLabels: Record<Effort, string> = { quick: 'Quick', standard: 'Standard', detailed: 'Detailed' }
@@ -412,6 +413,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void addFiles(e.target.files); e.target.value = '' }} />
     <div className="composer-caption"><span>{busy ? t('Saving research…') : caption}</span><span>⌘ / Ctrl + Enter</span></div>
     {connections && !models.length && <Notice tone="attention">{t('No model connection is ready: {reason}. A research needs a model that a connection lists; model steps pause until the chosen connection is ready, and no other model is used instead.', { reason: notReadyReasons(connections) })}</Notice>}
+    <SemanticSetupNote />
     {error && <Notice tone="error">{error}</Notice>}
   </section>
 }

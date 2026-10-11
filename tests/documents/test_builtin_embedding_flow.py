@@ -231,8 +231,11 @@ def test_options_list_the_built_in_model_second_and_refuse_it_until_it_is_instal
     assert refused.status_code == 422 and refused.json()["detail"] == "Not downloaded"
     assert (saved["provider"], saved["model"]) == ("builtin", "bge-small-en-v1.5@aa8f8b0:256")
     assert embeddings.Embedder("builtin", saved["model"]).stored_model == "builtin:bge-small-en-v1.5@aa8f8b0:256"
-    # The built-in model is never chosen by itself.
-    assert embeddings.chosen(None) == ("off", None)
+    # Nothing saved and no Gemini key: off until the model is downloaded and its files check out, then the built-in
+    # model (D7). It is never downloaded by itself, and a saved Off still wins.
+    assert (view["provider"], view["explicit"]) == ("off", False)
+    assert embeddings.chosen(None) == ("builtin", local_embedding.MODEL_ID)
+    assert embeddings.chosen({"provider": "off", "model": None}) == ("off", None)
     monkeypatch.setenv("GEMINI_API_KEY", "SYNTHETIC-key")
     assert embeddings.chosen(None) == ("gemini", embeddings.MODEL)
 

@@ -25,6 +25,16 @@ export function t(text: string, vars?: Record<string, string | number>): string 
 }
 
 const tr: Record<string, string> = {
+  'Could not check semantic search: {message}': 'Anlamsal arama denetlenemedi: {message}',
+  'Semantic search is off, so sources are ranked by their keywords only. The built-in model ranks them by meaning; it runs on this computer and needs no key.': 'Anlamsal arama kapalı, bu yüzden kaynaklar yalnız anahtar kelimelerine göre sıralanıyor. Yerleşik model onları anlamına göre sıralar; bu bilgisayarda çalışır ve anahtar istemez.',
+  'It needs about {total} MB of disk, plus about {python} MB if uv has to download Python 3.12, plus uv’s download cache (not measured).': 'Yaklaşık {total} MB disk ister; uv Python 3.12’yi indirmek zorunda kalırsa yaklaşık {python} MB daha, ayrıca uv’nin indirme önbelleği (ölçülmedi).',
+  'Download the built-in model again': 'Yerleşik modeli yeniden indir',
+  'Starting the download…': 'İndirme başlatılıyor…',
+  'Downloading the built-in model: step {step} of {steps}': 'Yerleşik model indiriliyor: adım {step} / {steps}',
+  'Downloading the built-in model…': 'Yerleşik model indiriliyor…',
+  'The last download failed. Settings → Connections shows the details.': 'Son indirme başarısız oldu. Ayrıntılar Ayarlar → Bağlantılar bölümünde.',
+  'Download the built-in model': 'Yerleşik modeli indir',
+  'The download needs uv. Settings → Connections → Semantic search shows how to install it.': 'İndirme için uv gerekiyor. Nasıl kurulacağı Ayarlar → Bağlantılar → Anlamsal arama bölümünde.',
   'The key works.': 'Anahtar çalışıyor.',
   'Key saved, but the service test failed.': 'Anahtar kaydedildi, ancak servis testi başarısız oldu.',
   'The key was not saved.': 'Anahtar kaydedilmedi.',

@@ -263,6 +263,23 @@ async def works_by_ids(client: httpx.AsyncClient, ids: list[str], api_key: str |
     return _works_page(response, outcome, None)
 
 
+async def works_by_dois(client: httpx.AsyncClient, dois: list[str], api_key: str | None = None,
+                        contact_email: str | None = None,
+                        max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
+    """The records of up to 100 works named by their DOIs (`filter=doi:a|b…`), with their reference lists."""
+    if not 0 < len(dois) <= MAX_IDS_PER_REQUEST or any(c in doi for doi in dois for c in "|,"):
+        raise ValueError("works_by_dois takes 1 to 100 DOIs without '|' or ','")
+    params: dict[str, Any] = {"filter": "doi:" + "|".join(dois), "per_page": len(dois), "select": CHAIN_SELECT}
+    if contact_email:
+        params["mailto"] = contact_email
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    access_mode = "api_key" if api_key else "keyless"
+    description = f"GET {WORKS_URL} filter=doi:{'|'.join(dois)} per_page={len(dois)} access={access_mode}"
+    response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
+                                   (api_key,), max_rate_limit_retries=max_rate_limit_retries)
+    return _works_page(response, outcome, None)
+
+
 async def count_works(client: httpx.AsyncClient, query: str, *, api_key: str | None = None,
                       mailto: str | None = None) -> int | None:
     """How many works the query matches, read from `meta.count` alone (SW2.2).

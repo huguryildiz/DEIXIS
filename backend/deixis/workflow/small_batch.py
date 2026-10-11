@@ -297,8 +297,7 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
         priority = sorted({heads[wid] for wid in store.work_ids(list(user_selected)).values() if wid in heads})
         priority_pool = [ranking._work_row(head, by_work[versions[head]["work_id"]]) for head in priority]
         in_pool = {row["id"]: row for row in pool.values()}
-        verified = [row for head in ranking.verified_seeds(store, rid, scope)
-                    if (row := in_pool.get(head) or ranking._seed_row(head, versions)) is not None]
+        verified = ranking.seed_rows(store, run, scope, versions, in_pool)
         terms = (store.existing_step(run["id"], "vocabulary_expansion") or {}).get("output") or {}
         from deixis.workflow.expansion import expansion_blocks
         query, blocks = ranking.query_vocabulary(scope, vocabulary,

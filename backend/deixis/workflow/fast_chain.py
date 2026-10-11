@@ -15,7 +15,7 @@ from deixis.providers import facade
 from deixis.providers.common import FIRST_PAGE
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import transaction
-from deixis.workflow import chaining, fast_path, ranking, small_batch
+from deixis.workflow import chaining, fast_path, ranking, seed_match, small_batch
 
 
 def work_id(value):
@@ -107,9 +107,20 @@ class Round:
             return {}, None
         return payload, digest
 
+    def pdf_seed(self):
+        """The seed PDF's matched work as the first chain seed, read only from the protocol (D2); None otherwise."""
+        context = seed_match.frozen(self.store, self.run)
+        if not context or context["status"] != "matched":
+            return None
+        return {"rank": 0, "source_version_id": context["source_version_id"], "work_id": context["work_id"],
+                "title_key": context["title_key"], "openalex_id": context["openalex_id"],
+                "references": context["referenced_works"], "references_read": context["references_read"],
+                "origin": "seed_pdf", "payload_sha256": context["lookups"][-1]["payload_sha256"]}
+
     def choose(self, identities, origin, previous=()):
         chosen = []
-        seen = {key for seed in previous for key in (seed["work_id"], "title:" + seed["title_key"])}
+        # An OpenAlex identity is a key too, so the seed PDF's own record is never chosen again under another title.
+        seen = {key for seed in previous for key in (seed["work_id"], "title:" + seed["title_key"], "oa:" + seed["openalex_id"])}
         for svid in ranking.verified_seeds(self.store, self.run["research_id"], self.scope):
             source = self.store.source(svid)
             seen |= {source["work_id"], "title:" + chaining.norm_title(source["title"])}
@@ -119,7 +130,7 @@ class Round:
                 continue
             source = self.store.source(svid)
             title = chaining.norm_title(source["title"])
-            keys = {source["work_id"], "title:" + title}
+            keys = {source["work_id"], "title:" + title, "oa:" + oid}
             if keys & seen:
                 continue
             seen |= keys
@@ -141,7 +152,9 @@ class Round:
             row = self.store.conn.execute("SELECT raw_payload_path FROM search_runs WHERE step_id = ?", (step["id"],)).fetchone() if step else None
             payload, digest = self.payload(row[0] if row else None)
             identities = [(oid, raw, digest) for raw in payload.get("results", []) if (oid := work_id(raw.get("id")))]
-            seeds = self.choose(identities, "semantic")
+            pdf = self.pdf_seed()
+            previous = [pdf] if pdf else []
+            seeds = previous + self.choose(identities, "semantic", previous)
             return {"seeds": seeds, "missing": self.policy["chain_seeds"] - len(seeds),
                     "semantic_status": step["status"] if step else "missing", "payload_sha256": digest}
         seeds = self.save("fast_chain:seeds", snapshot)["seeds"]
@@ -164,8 +177,8 @@ class Round:
             model, reason = self.flow._ranking_embedding(self.run, self.scope)
             scores = fast_path.ranking_similarities(self.store, self.run, model) if model else {}
             query, blocks = ranking.query_vocabulary(self.scope, self.vocabulary, {})
-            verified = [ranking._seed_row(svid, versions) for svid in ranking.verified_seeds(self.store, self.run["research_id"], self.scope)]
-            ranked = ranking.rank_pool(pool, [r for r in verified if r], query, blocks, model, scores, reason,
+            verified = ranking.seed_rows(self.store, self.run, self.scope, versions, {})
+            ranked = ranking.rank_pool(pool, verified, query, blocks, model, scores, reason,
                                        ranking.joint_terms(self.store, self.scope, self.vocabulary))
             identities = []
             for svid in ranked["fused"]:

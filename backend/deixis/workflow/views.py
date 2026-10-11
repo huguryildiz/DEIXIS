@@ -341,6 +341,18 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         return _research_view(store, research_id)
 
 
+def _seed_use(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, Any]:
+    """What the seed PDF did in this revision's search, read from the protocol it froze (D2): `selected` before any
+    search, `not_used` when the protocol froze without it or for another file, else the seed step's status."""
+    frozen = store.current_protocol(research_id, scope["revision"])
+    if frozen is None:
+        return {"status": "selected"}
+    context = frozen["body"].get("seed_match")
+    if not context or context["asset_sha256"] != scope["seed_snapshot"]["asset_sha256"]:
+        return {"status": "not_used"}
+    return {key: context.get(key) for key in ("status", "basis", "title", "doi", "openalex_id")}
+
+
 def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     conn = store.conn
     research = store.research(research_id)
@@ -354,6 +366,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                                                       "extraction_version", "title", "title_basis", "page_count", "text_pages")}
                           | {"passage_count": len(seed["passages"])} if seed else None)
     scope_view["seed_status"] = store.seed_status(research_id, scope)
+    scope_view["seed_use"] = _seed_use(store, research_id, scope) if seed else None
     # An sw research may ask for an answer with no included work once this revision's search finished (SW22, D106).
     scope_view["discovery_completed"] = store.discovery_completed(research_id)
     # The providers a query may go to; a verification connector in the scope is not one (D87), nor Scopus in an sw

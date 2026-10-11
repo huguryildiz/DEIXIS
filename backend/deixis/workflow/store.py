@@ -1049,13 +1049,15 @@ class Store:
         step["output"] = json.loads(step.pop("output_json")) if step["output_json"] else None
         return step
 
-    def search_query_of(self, research_id: str, scope_revision: int, run_id: str) -> dict[str, Any] | None:
-        """The newest succeeded model-query step of another run of this scope revision (D92), or None."""
+    def search_query_of(self, research_id: str, scope_revision: int, run_id: str,
+                        operation_key: str = "search_query") -> dict[str, Any] | None:
+        """The newest succeeded model-query step of another run of this scope revision (D92), or None; with
+        `operation_key`, the newest succeeded step of that key (the seed match, D2)."""
         row = self.conn.execute(
             "SELECT s.run_id, s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id"
-            " WHERE r.research_id = ? AND r.scope_revision = ? AND r.id != ? AND s.operation_key = 'search_query'"
+            " WHERE r.research_id = ? AND r.scope_revision = ? AND r.id != ? AND s.operation_key = ?"
             " AND s.status = 'succeeded' AND s.output_json IS NOT NULL ORDER BY r.created_at DESC, s.rowid DESC LIMIT 1",
-            (research_id, scope_revision, run_id)).fetchone()
+            (research_id, scope_revision, run_id, operation_key)).fetchone()
         return {"run_id": row["run_id"], "output": json.loads(row["output_json"])} if row else None
 
     def choose_code_query(self, run_id: str) -> dict[str, Any]:

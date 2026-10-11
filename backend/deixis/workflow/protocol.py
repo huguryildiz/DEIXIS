@@ -78,7 +78,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                    approval: dict[str, Any] | None = None,
                    embedding_model: str | None = None,
                    routing: dict[str, Any] | None = None,
-                   fast_path_search: dict[str, Any] | None = None) -> dict[str, Any]:
+                   fast_path_search: dict[str, Any] | None = None,
+                   seed_match: dict[str, Any] | None = None) -> dict[str, Any]:
     """The body a research freezes. `vocabulary` is the sw workflow's code vocabulary step output (SW2).
 
     Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
@@ -137,6 +138,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "language_hint": scope.get("language_hint"),
         "source_scope": scope["source_scope"],
         "seed_mode": scope.get("seed_mode", "question_only"),
+        # The seed PDF's frozen context (seed_pdf_v1, D2): what the chain, the semantic query and the ranking read.
+        **({"seed_match": seed_match} if seed_match else {}),
         # What a record must contain to be included, and the words an author of such a paper writes (SW15). Null
         # here means the criterion was not built — no sw workflow, or fewer than two valid proposals.
         "inclusion_criterion": criterion["criterion"] if criterion else None,

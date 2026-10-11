@@ -115,6 +115,9 @@ export type Scope = {
   discovery_completed?: boolean
   seed: { source_version_id: string; asset_id: string; asset_sha256: string; extraction_version: string
     title: string; title_basis: string; page_count: number | null; text_pages: number; passage_count: number } | null
+  // What the seed PDF did in this revision's search, from the protocol it froze (D2).
+  seed_use?: { status: 'selected' | 'not_used' | 'matched' | 'no_match' | 'no_first_page_text' | 'lookup_failed' | 'skipped'
+    basis?: string | null; title?: string | null; doi?: string | null; openalex_id?: string | null } | null
   providers: string[]; search_providers: string[]; effort: Effort; model_connection: string; requested_model: string | null; reasoning_effort: string | null
   // null literature model: the research model runs the search steps (researches created before model roles).
   literature_model: string | null; literature_reasoning_effort: string | null

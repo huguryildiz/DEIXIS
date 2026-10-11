@@ -384,7 +384,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   test('setup: a question starts search and screening through the composer', async () => {
     await startResearch(page, server, 'SYNTHETIC: How is molecule release scheduling optimized?', 'Files + academic search')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    await expect(page.locator('.research-seed')).toContainText('PDF passages from')
+    await expect(page.locator('.research-seed')).toContainText('its pages guided the similar-paper search')
     for (const fact of ['Files + academic search', 'Standard depth']) await expect(page.locator('.research-facts')).toContainText(fact)
     // The answer the fast path starts after discovery is the latest run, so the finished discovery run is folded: open it.
     const discovery = page.locator('.chat-toggle', { hasText: 'Ran search & screening' })

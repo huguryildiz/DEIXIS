@@ -133,9 +133,14 @@ def tfidf_scores(pool: list[dict[str, Any]], seeds: list[dict[str, Any]]) -> dic
 
     scores = {}
     for row in pool:
-        others = [seed for seed in seeds if seed["work_id"] != row["work_id"]]
+        others = [seed for seed in seeds if not same_work(seed, row)]
         scores[row["id"]] = max((cosine(vectors[row["id"]], seed_vectors[seed["id"]]) for seed in others), default=0.0)
     return scores
+
+
+def same_work(seed: dict[str, Any], row: dict[str, Any]) -> bool:
+    """A record never counts a version of its own work as a seed; the seed PDF is also its OpenAlex copy (D2)."""
+    return seed["work_id"] == row["work_id"] or bool(seed.get("seed_pdf") and seed["own_ids"] & row["own_ids"])
 
 
 def graph_scores(pool: list[dict[str, Any]], seeds: list[dict[str, Any]]) -> dict[str, float]:
@@ -149,7 +154,7 @@ def graph_scores(pool: list[dict[str, Any]], seeds: list[dict[str, Any]]) -> dic
         mine, own = row["references"] or frozenset(), row["own_ids"]
         total = 0.0
         for seed in seeds:
-            if seed["work_id"] == row["work_id"]:
+            if same_work(seed, row):
                 continue
             theirs = seed["references"] or frozenset()
             if mine and theirs:
@@ -360,6 +365,32 @@ def _seed_row(svid: str, versions: dict[str, dict[str, Any]]) -> dict[str, Any] 
             "references": frozenset(version["references"]) if version["references_read"] else None}
 
 
+def seed_rows(store: Any, run: dict[str, Any], scope: dict[str, Any], versions: dict[str, dict[str, Any]],
+              in_pool: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """The verified seeds' rows, the seed PDF's read through the context its run's protocol froze (D2)."""
+    from deixis.workflow import seed_match
+    context = seed_match.frozen(store, run)
+    rows = []
+    for svid in verified_seeds(store, run["research_id"], scope):
+        row = in_pool.get(svid) or _seed_row(svid, versions)
+        if row is not None:
+            rows.append(pdf_row(row, context) if context and svid == context["source_version_id"] else row)
+    # A record the user also included that is the seed PDF's own OpenAlex copy is the same seed, counted once.
+    pdf = next((row for row in rows if row.get("seed_pdf")), None)
+    return [row for row in rows if pdf is None or row is pdf or not same_work(pdf, row)]
+
+
+def pdf_row(row: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """The seed PDF as the ranking reads it: the matched work's title, abstract, identity and references, or, with
+    no match, the head of its first page in place of a title made from the file name."""
+    if context["status"] != "matched":
+        return row | {"title": context["first_page_text"] or row["title"], "seed_pdf": True}
+    return row | {"title": context["title"], "abstract": context["abstract"] or row["abstract"],
+                  "own_ids": frozenset(row["own_ids"]) | {context["openalex_id"]},
+                  "references": frozenset(context["referenced_works"]) if context["references_read"] else row["references"],
+                  "seed_pdf": True}
+
+
 def verified_seeds(store: Any, research_id: str, scope: dict[str, Any]) -> list[str]:
     """The records this research has verified: what the user included, and the scope's own seed (SW7.5).
 
@@ -442,7 +473,8 @@ def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_
     ranks = {name: mean_ranks(score, availability(pool, name)) for name, score in scores.items()}
     # Code seeds fill the graph's seed list up to GRAPH_SEEDS, taken from the top of BM25 plus blocks (fuse.py seedsB).
     verified_works = {row["work_id"] for row in verified}
-    code = [in_pool[rid] for rid in fuse(ranks, ("bm25", "blocks")) if in_pool[rid]["work_id"] not in verified_works]
+    code = [in_pool[rid] for rid in fuse(ranks, ("bm25", "blocks")) if in_pool[rid]["work_id"] not in verified_works
+            and not any(same_work(seed, in_pool[rid]) for seed in verified)]
     graph_seeds = verified + code[: max(0, GRAPH_SEEDS - len(verified))]
 
     reasons: dict[str, str] = {}
@@ -504,8 +536,7 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     query_words, blocks = query_vocabulary(scope, vocabulary, expansion_terms)
     in_pool = {row["id"]: row for row in pool}
 
-    verified = [row for svid in verified_seeds(store, research_id, scope)
-                if (row := in_pool.get(svid) or _seed_row(svid, versions)) is not None]
+    verified = seed_rows(store, run, scope, versions, in_pool)
     from deixis.workflow import fast_path
     similarities = fast_path.ranking_similarities(store, run, embedding_model) if embedding_model else {}
     ranked = rank_pool(pool, verified, query_words, blocks, embedding_model, similarities, off_reason,

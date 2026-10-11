@@ -625,3 +625,15 @@ export const auditStratumLabels: Record<string, string> = {
   F1: 'Included by two agreeing runs', F2: 'Criterion not met (two agreeing runs)',
   A1: 'Out of scope at the abstract stage (model runs)', A2: 'Out of scope at the abstract stage (code rule)',
 }
+
+// What the seed PDF did in this revision's search (D2); the past tense only for what the protocol says happened.
+export function seedUseText(status: string | undefined, title: string) {
+  switch (status) {
+    case 'matched': return t('{title} (OpenAlex) guided the search: citation chain, similar-paper search and query writing.', { title })
+    case 'no_match': case 'no_first_page_text': return t('The PDF was not found in OpenAlex; its pages guided the similar-paper search and query writing.')
+    case 'lookup_failed': return t('OpenAlex could not be asked; the PDF’s pages guided the similar-paper search and query writing.')
+    case 'skipped': return t('OpenAlex is not in scope; the PDF’s pages guided query writing.')
+    case 'not_used': return t('This search ran without the PDF.')
+    default: return t('This PDF will guide the next search.')
+  }
+}

@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
-import { serviceErrorText, serviceErrorSentence, serviceKind, serviceWaitingText, connectionName, accessParts, citedText, fetchReasonText, fileRestoreNote, fileRestoreText, fileRestoreTone, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, recoveryDecisionText, recoveryReasonText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, stepLabel, verdictLabels, versionText, versionTones } from './labels'
+import { serviceErrorText, serviceErrorSentence, serviceKind, serviceWaitingText, connectionName, accessParts, citedText, fetchReasonText, fileRestoreNote, fileRestoreText, fileRestoreTone, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, recoveryDecisionText, recoveryReasonText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING, LATE_REVISION_QUEUED, LATE_REVISION_SKIPPED, lateRevisionReasons } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { TextRecovery } from './TextRecovery'
@@ -543,7 +543,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         </button>}
         {view.scope.source_scope === 'attached_and_academic' && <div className="research-seed">
           <div><strong>{t('PDF guiding the search')}</strong><p>{view.scope.seed_status === 'ready'
-            ? t('{n} PDF passages from {title} guided the search.', { n: view.scope.seed?.passage_count ?? 0, title: view.scope.seed?.title ?? '' })
+            ? seedUseText(view.scope.seed_use?.status, view.scope.seed_use?.title ?? view.scope.seed?.title ?? '')
             : view.scope.seed_status === 'question_only'
               ? t('This earlier research searches from the question. Choose a PDF to guide a later search.')
               : t('Choose a readable PDF before searching scholarly providers.')}</p></div>

@@ -47,6 +47,7 @@ from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import abstract_stage
 from deixis.workflow import small_batch
 from deixis.workflow import fast_path
+from deixis.workflow import seed_match as seed_match_rules
 from deixis.workflow import adjudication
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import chaining
@@ -524,6 +525,9 @@ class ResearchFlow:
         if scope["seed_mode"] == "uploaded_seed" and self.store.seed_status(rid, scope) != "ready":
             self._pause(run_id, "seed_unavailable")
         vocabulary = criterion = approval = None
+        # The seed PDF's OpenAlex work is looked up before anything else plans, so the query writer and the protocol
+        # read the same context (D2).
+        seed_context = await self._seed_match(run, scope)
         # The first search's words come from code, so no model runs before the search (SW2.3).
         vocabulary, queries = await self._vocabulary(run, scope)
         vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
@@ -537,12 +541,12 @@ class ResearchFlow:
             # A later discovery run of the same scope revision may plan other queries; that is a new protocol revision
             # with its reason, never an edit of the first one (SW14.2).
             reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
-            fast_plan = fast_search.build_plan(self.store, run, scope, queries)
+            fast_plan = fast_search.build_plan(self.store, run, scope, queries, seed_context)
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                 scope, run["budget"], None, queries,
                 self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
                 approval=approval, embedding_model=self._embedding_model(), routing=self._routing_step(run_id),
-                fast_path_search=fast_plan,
+                fast_path_search=fast_plan, seed_match=seed_context,
             ), reason=reason)
             self.store.finish_step(protocol_step["id"], "succeeded",
                                    output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
@@ -694,7 +698,10 @@ class ResearchFlow:
             stored = step["output"]
             return self._proposed(run_id, search_query_rules.settled(stored["vocabulary"], stored["queries"]),
                                   stored["queries"])
+        seed_sha, seed_rows = self._seed_passages(run_id, scope)
         earlier = self.store.search_query_of(rid, revision, run_id) if step["output"] is None else None
+        if earlier is not None and earlier["output"].get("seed_passages_sha256") != seed_sha:
+            earlier = None  # a query written without this run's seed pages is not this run's query (D2)
         if earlier is not None:
             # D92 is one call per scope revision: the query the user already saw is searched again, and the approval
             # the earlier run closed is reapplied to that same query, never to one the user has not seen.
@@ -732,7 +739,9 @@ class ResearchFlow:
         self._checkpoint(run_id, revision)
         failure: dict[str, Any] | None = None
         try:
-            answer = await self._model_step(run, scope, f"search_query:{attempt}", "search_query", optional=True)
+            answer = await self._model_step(run, scope, f"search_query:{attempt}", "search_query", optional=True,
+                                            source_ids=[seed_rows[0]["source_version_id"]] if seed_rows else None,
+                                            passage_rows=seed_rows)
         except OptionalStepFailed as exc:
             failure = {"reason": exc.reason, "detail": exc.detail}
         else:
@@ -769,8 +778,16 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         self.store.finish_step(step["id"], "succeeded", output=output | {
             "status": "ready", "vocabulary": built, "queries": queries,
-            "query_compiler": query_compiler.BLOCKS_VERSION})
+            "query_compiler": query_compiler.BLOCKS_VERSION, "seed_passages_sha256": seed_sha})
         return self._proposed(run_id, built, queries)
+
+    def _seed_passages(self, run_id: str, scope: dict[str, Any]) -> tuple[str | None, list[dict[str, Any]] | None]:
+        """The seed PDF's frozen excerpt the query writer reads, and its fingerprint, when this run matched a seed
+        (D2); a run whose seed step never opened writes its query as it always did."""
+        step = self.store.existing_step(run_id, "seed_match")
+        if step is None or step["status"] != "succeeded" or not scope["seed_snapshot"]:
+            return None, None
+        return step["output"]["seed_passages_sha256"], [dict(p) for p in scope["seed_snapshot"]["passages"]]
 
     def _query_attempt(self, run_id: str, attempt: int, failure: dict[str, Any]) -> dict[str, Any]:
         """A failed search_query call as the protocol keeps it: the StepInput and the package it was sent, when one
@@ -921,6 +938,95 @@ class ResearchFlow:
                          **({"routing": routing} if routing else {})},
             "approval": record})
         return vocabulary, queries, criterion, record
+
+    async def _seed_match(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any] | None:
+        """The OpenAlex work the seed PDF is, or why there is none, as the context the protocol freezes (D2).
+
+        Runs only for a ready seed and before this run's protocol is frozen: a run whose protocol froze without it
+        finishes the way it began. At most two lookups, each kept in its own step, so a resumed run sends neither
+        again once it has an answer. A failed lookup does not stop the run; the context says so and the PDF's own
+        pages still guide the query. A second discovery run of the scope revision takes the first one's match.
+        """
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        if scope["seed_mode"] != "uploaded_seed" or scope["seed_snapshot"] is None:
+            return None
+        step = self.store.existing_step(run_id, "seed_match")
+        if step is not None and step["status"] == "succeeded":
+            return step["output"]
+        frozen = self.store.existing_step(run_id, "protocol")
+        if step is None and frozen is not None and frozen["status"] == "succeeded":
+            return None
+        snapshot = scope["seed_snapshot"]
+        step = step or self.store.step(run_id, "seed_match", "code:seed_match")
+        self.store.start_step(step["id"])
+        earlier = self.store.search_query_of(rid, revision, run_id, "seed_match")
+        if earlier is not None and earlier["output"]["asset_sha256"] == snapshot["asset_sha256"]:
+            output = earlier["output"] | {"reused_from_run": earlier["output"].get("reused_from_run", earlier["run_id"])}
+            self.store.finish_step(step["id"], "succeeded", output=output)
+            return output
+        head, title_region, first_page = seed_match_rules.first_pages(self.store, snapshot)
+        context = {"rule": seed_match_rules.RULE, "status": None, "basis": None,
+                   "source_version_id": snapshot["source_version_id"],
+                   "work_id": self.store.source(snapshot["source_version_id"])["work_id"],
+                   "asset_sha256": snapshot["asset_sha256"],
+                   "seed_passages_sha256": seed_match_rules.passages_sha256(snapshot),
+                   "first_page_text": first_page,
+                   "lookups": []}
+        connector = CONNECTORS["openalex"]
+        if not head:
+            context["status"] = "no_first_page_text"
+        elif "openalex" not in scope["providers"] or connector.access_mode() == "not_configured":
+            context["status"] = "skipped"
+        else:
+            context.update(await self._seed_lookups(run, head, title_region, connector))
+        self.store.finish_step(step["id"], "succeeded", output=context)
+        self._checkpoint(run_id, revision)
+        return context
+
+    async def _seed_lookups(self, run: dict[str, Any], head: str, title_region: str, connector: Connector) -> dict[str, Any]:
+        """The DOI lookup, then the meaning search only when no DOI record's title stands at the head of page 1."""
+        api_key, mailto = connector.api_key(), self.deps.settings.contact_email
+        lookups = []
+        dois = seed_match_rules.dois_in(head)
+        if dois:
+            found = await self._seed_lookup(run, "seed_match:doi", lambda: openalex.works_by_dois(
+                self.deps.http, dois, api_key=api_key, contact_email=mailto))
+            lookups.append(found["summary"])
+            if found["failed"]:
+                return {"status": "lookup_failed", "lookups": lookups}
+            work, hits = seed_match_rules.pick(title_region, found["works"])
+            if work is not None:
+                return seed_match_rules.matched(work, "doi_title") | {"lookups": lookups}
+            if hits > 1:
+                return {"status": "no_match", "ambiguous": True, "lookups": lookups}
+        found = await self._seed_lookup(run, "seed_match:semantic", lambda: openalex.search_semantic(
+            self.deps.http, head[:seed_match_rules.SEMANTIC_QUERY_CHARS], seed_match_rules.SEMANTIC_PER_PAGE,
+            api_key, mailto, references=True))
+        lookups.append(found["summary"])
+        if found["failed"]:
+            return {"status": "lookup_failed", "lookups": lookups}
+        work, hits = seed_match_rules.pick(title_region, found["works"])
+        if work is not None:
+            return seed_match_rules.matched(work, "title") | {"lookups": lookups}
+        return {"status": "no_match", "ambiguous": hits > 1, "lookups": lookups}
+
+    async def _seed_lookup(self, run: dict[str, Any], key: str,
+                           send: Callable[[], Awaitable[SearchOutcome]]) -> dict[str, Any]:
+        """One seed lookup, stored with its works before the step ends; a finished one is read back, not sent again."""
+        sub = self.store.existing_step(run["id"], key)
+        if sub is not None and sub["status"] in ("succeeded", "failed") and sub["output"]:
+            return sub["output"]
+        sub = sub or self.store.step(run["id"], key, "code:seed_match_lookup")
+        self.store.start_step(sub["id"])
+        outcome = await send()
+        ok = outcome.status in ("completed", "zero_results")
+        output = {"failed": not ok, "works": (outcome.raw_payload or {}).get("results", []) if ok else [],
+                  "summary": {"key": key, "status": outcome.status, "retries": outcome.retries,
+                              "request": outcome.request_description,
+                              "payload_sha256": seed_match_rules.payload_sha256(outcome.raw_payload)}}
+        self.store.finish_step(sub["id"], "succeeded" if ok else "failed", output=output,
+                               error_code=None if ok else outcome.status)
+        return output
 
     async def _source_routing(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                               queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:

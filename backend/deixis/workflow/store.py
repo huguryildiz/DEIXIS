@@ -3368,10 +3368,13 @@ class Store:
     # ---- usage reads (parity slice S16): counted from what is stored, never estimated ----------------------------------
 
     def openalex_rate_limit_rows(self, since: str, limit: int = 100) -> list[tuple[str, str | None]]:
-        """(retrieved_at, error_json) of the newest OpenAlex search rows at or after `since`, newest first. The rate-limit
-        headers of each response are inside the error_json (`rate_limit`)."""
+        """(retrieved_at, error_json) of the newest OpenAlex search rows at or after `since` that carry a remaining-budget
+        header, newest first (rows without one never crowd out an older usable row). The headers of each response are
+        inside the error_json (`rate_limit`)."""
         return [(row["retrieved_at"], row["error_json"]) for row in self.conn.execute(
             "SELECT retrieved_at, error_json FROM search_runs WHERE provider = 'openalex' AND retrieved_at >= ?"
+            " AND json_valid(error_json) AND (json_extract(error_json, '$.rate_limit.\"x-ratelimit-remaining\"') IS NOT NULL"
+            " OR json_extract(error_json, '$.rate_limit.\"x-ratelimit-remaining-usd\"') IS NOT NULL)"
             " ORDER BY retrieved_at DESC, id DESC LIMIT ?", (since, limit))]
 
     def model_call_counts(self, since: str | None = None, until: str | None = None, run_id: str | None = None) -> dict[str, int]:

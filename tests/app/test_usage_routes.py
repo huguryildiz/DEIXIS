@@ -176,19 +176,20 @@ def row(minutes_before, headers=None, *, at=NOON):
 
 
 EMPTY = {"provider": "openalex", "unit": None, "remaining": None, "limit": None, "used_fraction": None,
-         "reset_at": None, "as_of": None}
+         "reset_at": None, "as_of": None, "source": "last_stored_response"}
 
 
 def test_a_dollar_budget_with_its_limit_gives_remaining_limit_and_used_fraction_and_the_reset_time():
     headers = {"x-ratelimit-remaining-usd": "0.75", "x-ratelimit-limit-usd": "1", "x-ratelimit-reset": "3600"}
     result = usage_routes.budget([row(10, headers)], NOON)
     assert result == {"provider": "openalex", "unit": "usd", "remaining": 0.75, "limit": 1.0, "used_fraction": 0.25,
-                      "reset_at": "2026-10-11T12:50:00.000+00:00", "as_of": "2026-10-11T11:50:00.000+00:00"}
+                      "reset_at": "2026-10-11T12:50:00.000+00:00", "as_of": "2026-10-11T11:50:00.000+00:00",
+                      "source": "last_stored_response"}
 
 
 def test_a_count_budget_reads_the_plain_limit_headers():
     result = usage_routes.budget([row(1, {"x-ratelimit-remaining": "900", "x-ratelimit-limit": "1000"})], NOON)
-    assert (result["unit"], result["remaining"], result["limit"], result["used_fraction"]) == ("requests", 900.0, 1000.0, 0.1)
+    assert (result["unit"], result["remaining"], result["limit"], result["used_fraction"]) == ("credits", 900.0, 1000.0, 0.1)
 
 
 def test_without_a_limit_header_only_the_remaining_figure_is_given_and_no_denominator_is_invented():
@@ -280,3 +281,14 @@ def test_the_budget_route_reads_the_newest_stored_openalex_headers_of_today(serv
     body = client.get("/api/openalex/budget-today").json()
     assert (body["unit"], body["remaining"], body["limit"]) == ("usd", 0.8, 1.0)
     assert body["used_fraction"] == pytest.approx(0.2)
+
+
+def test_many_newer_rows_without_headers_do_not_hide_an_older_usable_one(served):
+    store, client = served
+    rid, run = research(store)
+    now = datetime.now(UTC)
+    store_search(store, rid, run, {"x-ratelimit-remaining": "640", "x-ratelimit-limit": "1000"}, at=now - timedelta(minutes=5))
+    for n in range(150):  # more than any row cap: newer OpenAlex rows that carry no budget header
+        store_search(store, rid, run, {} if n % 2 else {"retry-after": "1"}, at=now - timedelta(seconds=n + 1))
+    body = client.get("/api/openalex/budget-today").json()
+    assert (body["unit"], body["remaining"], body["limit"], body["source"]) == ("credits", 640.0, 1000.0, "last_stored_response")

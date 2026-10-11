@@ -2,7 +2,8 @@
 
 Both are read from what the app stored. The model calls are the rows of `model_sessions`, never an estimate. The OpenAlex
 numbers are the rate-limit headers of the newest stored OpenAlex response since the last daily reset (midnight UTC, when
-OpenAlex renews its daily budget); a denominator is given only when OpenAlex sent a limit header with it. Nothing here
+OpenAlex renews its daily budget); a denominator is given only when OpenAlex sent a limit header with it. The answer says it is the last stored response
+(`source`) and when that was (`as_of`); it is not a live reading. Nothing here
 writes, asks a provider or starts a run.
 """
 
@@ -21,6 +22,8 @@ from deixis.storage.db import now
 ROLES = ("answer", "literature", "reviewer")  # the three roles the Settings page sets a model for
 REVIEWER_TASKS = ("answer_review",)
 DAY_SECONDS = 86400
+# The figure is what OpenAlex said in the last stored response, not a live reading; `as_of` is that response's time.
+SOURCE = "last_stored_response"
 
 
 def role_of(task_type: str) -> str:
@@ -78,8 +81,9 @@ def day_start(moment: datetime) -> datetime:
 def budget(rows: list[tuple[str, str | None]], moment: datetime) -> dict[str, Any]:
     """OpenAlex's budget today from stored rows (newest first; each is its retrieval time and error_json).
 
-    The newest row that carries a remaining figure wins. The dollar variant is used when present, else the request count;
-    the two are never mixed. A limit counts only from the same unit. `used_fraction` exists only with a limit.
+    The newest row that carries a remaining figure wins. The dollar variant is used when present, else the plain header figure, which
+    is OpenAlex credits (a search costs several), not requests; credits are never converted to dollars or requests and
+    the two units are never mixed. A limit counts only from the same unit. `used_fraction` exists only with a limit.
     """
     since = day_start(moment)
     for retrieved_at, error_json in rows:
@@ -91,7 +95,7 @@ def budget(rows: list[tuple[str, str | None]], moment: datetime) -> dict[str, An
         if when < since or not isinstance(headers, dict):
             continue
         for unit, remaining_key, limit_key in (("usd", "x-ratelimit-remaining-usd", "x-ratelimit-limit-usd"),
-                                               ("requests", "x-ratelimit-remaining", "x-ratelimit-limit")):
+                                               ("credits", "x-ratelimit-remaining", "x-ratelimit-limit")):
             remaining = _number(headers.get(remaining_key))
             if remaining is None:
                 continue
@@ -104,9 +108,9 @@ def budget(rows: list[tuple[str, str | None]], moment: datetime) -> dict[str, An
             used = (min(1.0, max(0.0, float((limit - remaining) / limit))) if limit else None)
             return {"provider": "openalex", "unit": unit, "remaining": float(remaining),
                     "limit": float(limit) if limit else None, "used_fraction": used,
-                    "reset_at": iso(reset), "as_of": iso(when)}
+                    "reset_at": iso(reset), "as_of": iso(when), "source": SOURCE}
     return {"provider": "openalex", "unit": None, "remaining": None, "limit": None, "used_fraction": None,
-            "reset_at": None, "as_of": None}
+            "reset_at": None, "as_of": None, "source": SOURCE}
 
 
 def register_usage_routes(app) -> None:

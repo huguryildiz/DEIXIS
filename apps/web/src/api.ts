@@ -1407,7 +1407,7 @@ export const shellApi = {
 
 // Usage reads (api/usage_routes.py): model calls counted from stored sessions by Settings role, and OpenAlex's budget
 // today from the newest stored rate-limit headers. `limit` and `used_fraction` are null when OpenAlex sent no limit
-// header; the UI then shows "$X left today" or "N left today" (unit usd / requests). All null: nothing stored since the
+// header; the UI then shows "$X left today" or "N credits left today" (unit usd / credits). All null: nothing stored since the
 // last daily reset (midnight UTC).
 export type UsageRole = 'answer' | 'literature' | 'reviewer'
 export type RoleUsage = { role: UsageRole; calls: number; share: number | null }
@@ -1416,8 +1416,11 @@ export type Usage = {
   total: number; roles: RoleUsage[]
 }
 export type OpenAlexBudgetToday = {
-  provider: 'openalex'; unit: 'usd' | 'requests' | null; remaining: number | null; limit: number | null
-  used_fraction: number | null; reset_at: string | null; as_of: string | null
+  provider: 'openalex'; unit: 'usd' | 'credits' | null; remaining: number | null; limit: number | null
+  used_fraction: number | null; reset_at: string | null
+  // The figure is OpenAlex's last stored response (source), received at as_of; not a live reading. Credits are not
+  // requests (a search costs several) and are never converted to dollars.
+  as_of: string | null; source: 'last_stored_response'
 }
 
 export const usageApi = {

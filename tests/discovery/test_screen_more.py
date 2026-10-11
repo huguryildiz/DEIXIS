@@ -395,6 +395,61 @@ def test_the_answer_reads_the_version_screen_more_read_when_the_cutoff_held_anot
     assert shown and shown[0]["source_version_id"] == other and shown[0]["cutoff_source_version_id"] == cutoff_record
 
 
+def test_a_work_whose_abstract_is_on_a_version_no_search_offered_is_not_planned(tmp_path, monkeypatch):
+    rid, discovery_id = discovered(tmp_path, monkeypatch, 100, no_abstract=range(45, 100))
+    h = harness(tmp_path)
+    items = listing(h.store, discovery_id)["items"]
+    has_abstract = lambda svid: h.store.conn.execute(
+        "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)).fetchone()
+    # The 55 records without an abstract head the list; the read window took 25 of them, 30 sit right below it.
+    assert [bool(has_abstract(i["head"])) for i in items] == [False] * 55 + [True] * 45
+    blocked = [i["work_id"] for i in items[25:55]]
+    for work_id in blocked:  # another version a provider listed, with an abstract, but not a search candidate
+        other = new_id("srv")
+        h.store.conn.execute("INSERT INTO source_versions (id, work_id, title, origin, version_label, created_at)"
+                             " VALUES (?, ?, 'SYNTHETIC accepted version', 'provider', 'acceptedVersion', ?)",
+                             (other, work_id, now()))
+        h.store.add_to_corpus(rid, other, "search", candidate=False)
+        h.store._insert_passage(other, None, "abstract", None, None, "provider", None, None,
+                                "We vary the irrigation scheduling of an open field crop and report the water it used.")
+    page = screen_more.unscreened(h.store, rid, 0, 100)
+    rows = {i["work_id"]: i for i in page["items"]}
+    assert all(rows[w]["has_abstract"] and not rows[w]["screenable"] for w in blocked)
+    assert {rows[w]["not_screenable_reason"] for w in blocked} == {"abstract_not_on_a_searched_version"}
+    assert page["total"] == 75 and page["screenable"] == 45
+
+    # Planned first, the 30 blocked works would take most of every run and be read by none of them.
+    first = screen_more.request(h.store, rid, None)
+    assert first["target"]["work_ids"] == [i["work_id"] for i in items[55:95]]
+    assert execute(h, first)["status"] == "completed"
+    second = screen_more.request(h.store, rid, None)
+    assert second["target"]["work_ids"] == [i["work_id"] for i in items[95:100]]
+    assert execute(h, second)["status"] == "completed"
+    assert len(sent_batches(h)) == 6 and not set(blocked) & set(h.store.work_ids(sum(sent_batches(h), [])).values())
+    with pytest.raises(screen_more.NothingToScreen):  # a third request finds nothing it could read
+        screen_more.request(h.store, rid, None)
+    assert screen_more.unscreened(h.store, rid)["total"] == 30  # still listed as found and not read
+
+
+def test_a_planned_work_the_stage_did_not_read_is_not_planned_again(tmp_path, monkeypatch):
+    rid, _ = discovered(tmp_path, monkeypatch, 60)
+    h = harness(tmp_path)
+    run = screen_more.request(h.store, rid, None)
+    skipped = run["target"]["heads"][0]
+    stage = h.flow._abstract_code_stage
+
+    def without_first(run_, scope, vocabulary, order, **options):  # a work the stage leaves out for any reason
+        return stage(run_, scope, vocabulary, [svid for svid in order if svid != skipped], **options)
+
+    monkeypatch.setattr(h.flow, "_abstract_code_stage", without_first)
+    assert execute(h, run)["status"] == "completed"
+    monkeypatch.setattr(h.flow, "_abstract_code_stage", stage)
+    row = next(i for i in screen_more.unscreened(h.store, rid, 0, 100)["items"] if i["source_version_id"] == skipped)
+    assert (row["screenable"], row["not_screenable_reason"]) == (False, "screen_more_could_not_read")
+    with pytest.raises(screen_more.NothingToScreen):
+        screen_more.request(h.store, rid, None)  # no loop on the same work
+
+
 # ---- F12 and the routes ------------------------------------------------------------------------------------------
 
 

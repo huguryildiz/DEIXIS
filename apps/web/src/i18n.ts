@@ -3637,4 +3637,6 @@ const tr: Record<string, string> = {
   'The file holds more than 500 entries; import it in parts': "Dosyada 500'den fazla kayıt var; parça parça içe aktarın",
   'No entry in the file could be read': 'Dosyadaki hiçbir kayıt okunamadı',
   "The file's @string definitions expand to far more text than the file holds": "Dosyadaki @string tanımları dosyanın içerdiğinden çok daha fazla metne açılıyor",
+  // UI parity S20: the screen_more run kind.
+  'Abstract screening of more works': 'Daha fazla çalışmanın özet taraması',
 }

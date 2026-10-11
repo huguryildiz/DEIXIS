@@ -179,7 +179,7 @@ export type Step = {
     // The full-text reading plan: the works it froze.
     works?: unknown[] } | null
 }
-export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search'
+export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
@@ -1586,6 +1586,7 @@ export const libraryImportsApi = {
 export type UnscreenedWork = {
   work_id: string; source_version_id: string; title: string | null; year: number | null; venue: string | null
   doi: string | null; authors: unknown[]; has_abstract: boolean; screenable: boolean
+  not_screenable_reason: 'no_abstract' | 'abstract_not_on_a_searched_version' | 'screen_more_could_not_read' | null
   signals: { rank: number; similarity: number | null }
 }
 export type UnscreenedPage = {

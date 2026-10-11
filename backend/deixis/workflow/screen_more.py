@@ -16,6 +16,7 @@ embedding similarity it was frozen with are prioritization signals (AGENTS.md), 
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from deixis.domain import canonical
@@ -76,24 +77,59 @@ def _screened_works(store: Any, rid: str) -> tuple[set[str], dict[str, str]]:
     return screened, facts["heads"]
 
 
-def _works_with_abstract(store: Any, rid: str) -> set[str]:
-    """Works with an abstract of their own on any version still in the research: what the model can be shown."""
-    return {row[0] for row in store.conn.execute(
-        "SELECT DISTINCT v.work_id FROM passages p JOIN source_versions v ON v.id = p.source_version_id"
-        " JOIN corpus_memberships m ON m.source_version_id = v.id AND m.research_id = ? AND m.removed_at IS NULL"
-        " WHERE p.kind = 'abstract' AND length(trim(p.text)) > 0", (rid,))}
+def _works_with_abstract(store: Any, rid: str) -> dict[str, set[str]]:
+    """The versions still in the research with an abstract of their own, by work."""
+    found: dict[str, set[str]] = {}
+    for row in store.conn.execute(
+            "SELECT DISTINCT v.id, v.work_id FROM passages p JOIN source_versions v ON v.id = p.source_version_id"
+            " JOIN corpus_memberships m ON m.source_version_id = v.id AND m.research_id = ? AND m.removed_at IS NULL"
+            " WHERE p.kind = 'abstract' AND length(trim(p.text)) > 0", (rid,)):
+        found.setdefault(row["work_id"], set()).add(row["id"])
+    return found
+
+
+def _readable_works(store: Any, rid: str, with_abstract: dict[str, set[str]]) -> set[str]:
+    """Works the abstract stage can send to the model, by the stage's own rule: it builds its rows from search
+    candidates only (`ResearchFlow._abstract_stage`), and reads a version with an abstract of its own whose current
+    abstract decision is not a lookup code (`abstract_stage.reading_version`). An abstract on a version that is not a
+    candidate (another version a provider listed) is never sent."""
+    candidates = {c["source_version_id"] for c in store.candidates(rid)}
+    lookup = {row[0] for row in store.conn.execute(
+        "SELECT source_version_id FROM stage_decisions WHERE research_id = ? AND stage = 'abstract'"
+        f" AND superseded_at IS NULL AND reason_code IN ({','.join('?' * len(abstract_stage.LOOKUP_CODES))})",
+        (rid, *abstract_stage.LOOKUP_CODES))}
+    return {work_id for work_id, svids in with_abstract.items() if any(s in candidates and s not in lookup for s in svids)}
+
+
+def _tried_without_result(store: Any, rid: str, revision: int) -> set[tuple[str, str]]:
+    """(work, head) pairs a completed Screen more run of this revision planned and wrote no decision for: the stage
+    could not read them, so they are not planned again while the work keeps that head (a run reaches every batch; a
+    batch the budget left still writes `abstract_not_read`, and an unusable answer writes `abstract_not_proposed`)."""
+    tried: set[tuple[str, str]] = set()
+    for run in store.conn.execute("SELECT id, target_json FROM runs WHERE research_id = ? AND kind = 'screen_more'"
+                                  " AND scope_revision = ? AND status = 'completed'", (rid, revision)):
+        wrote = {row[0] for row in store.conn.execute(
+            "SELECT DISTINCT v.work_id FROM stage_decisions d JOIN run_steps s ON s.id = d.step_id"
+            " JOIN source_versions v ON v.id = d.source_version_id WHERE s.run_id = ?", (run["id"],))}
+        target = json.loads(run["target_json"])
+        tried |= {(work_id, head) for work_id, head in zip(target["work_ids"], target["heads"]) if work_id not in wrote}
+    return tried
 
 
 def _unscreened(store: Any, rid: str, listing: dict[str, Any]) -> list[dict[str, Any]]:
     """The list's never-screened works, in list order, each with its current head and whether it can be read.
 
-    A work no longer in the research is left out. `screenable` needs an abstract on some version and a head that is
-    a search candidate of the current revision: the abstract stage reads nothing else, and this run fetches no
-    abstracts (no provider request), so a work without one stays listed but is never planned.
+    A work no longer in the research is left out. `screenable` holds only what the abstract stage will actually send:
+    a head that is a search candidate of the current revision (the stage plans by head) and a readable version
+    (`_readable_works`), and not a work an earlier completed run already planned without result. This run fetches no
+    abstracts (no provider request), so any other work stays listed, with the reason, and is never planned: no run
+    plans a work it cannot read, and none can loop on one.
     """
     revision = store.research(rid)["current_scope_revision"]
     screened, heads = _screened_works(store, rid)
-    readable = _works_with_abstract(store, rid)
+    with_abstract = _works_with_abstract(store, rid)
+    readable = _readable_works(store, rid, with_abstract)
+    tried = _tried_without_result(store, rid, revision)
     offered = {c["source_version_id"] for c in store.candidates(rid, revision) if c["origin"] != "user"}
     rows = []
     for item in listing["items"]:
@@ -101,8 +137,11 @@ def _unscreened(store: Any, rid: str, listing: dict[str, Any]) -> list[dict[str,
         head = heads.get(work_id)
         if head is None or work_id in screened:
             continue
-        rows.append({"item": item, "head": head, "has_abstract": work_id in readable,
-                     "screenable": work_id in readable and head in offered})
+        reason = ("no_abstract" if work_id not in with_abstract else
+                  "abstract_not_on_a_searched_version" if work_id not in readable or head not in offered else
+                  "screen_more_could_not_read" if (work_id, head) in tried else None)
+        rows.append({"item": item, "head": head, "has_abstract": work_id in with_abstract,
+                     "screenable": reason is None, "not_screenable_reason": reason})
     return rows
 
 
@@ -123,6 +162,7 @@ def unscreened(store: Any, rid: str, offset: int = 0, limit: int = 50) -> dict[s
             "work_id": item["work_id"], "source_version_id": head, "title": source["title"], "year": source["year"],
             "venue": source["venue"], "doi": source["doi"], "authors": source["authors"],
             "has_abstract": row["has_abstract"], "screenable": row["screenable"],
+            "not_screenable_reason": row["not_screenable_reason"],
             "signals": {"rank": item["position"], "similarity": similarities.get(item["head"])}})
     return {"research_id": rid, "discovery_run_id": discovery["id"], "scope_revision": discovery["scope_revision"],
             "manifest_hash": listing["manifest_hash"], "list_size": len(listing["items"]),

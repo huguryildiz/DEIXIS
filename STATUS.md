@@ -8,6 +8,7 @@
 - Tohum PDF artık aramayı yönlendiriyor (11 Eki, D2): PDF OpenAlex'te bulunursa atıf zincirinin ilk tohumu olur, benzer makale araması ve sorgu yazımı PDF'i de okur, sıralama onu doğru tanır. Sahte verili testlerle doğrulandı; gerçek sorularda faydası ölçülmedi.
 - Yalnız eklenen PDF'lerle cevap artık PDF'leri geniş okuyor (11 Eki, D4): önce her PDF'ten en çok 6 pasaj gidiyordu, şimdi 48 pasajlık sınır PDF'ler arasında bölünüyor ve kaynakça parçaları sona kalıyor. Dört canlı koşuda (gpt-5.6-luna, her biri tek koşu) dört cevap da yapısal kontrolden geçti; iddiaları insan kontrol etmedi.
 - Birden çok tohum PDF ve Zotero (11 Eki, D3): en çok 5 PDF birlikte aramayı yönlendiriyor; yüklenen PDF'ler ve Zotero PDF'leri aynı yoldan geçiyor, yalnız Zotero koleksiyonuyla başlanınca da arama kendiliğinden başlıyor. Zotero kaydının DOI'si, kapağı boş PDF'lerin de eşleşmesini sağlıyor. Araştırma sayfası her PDF için ne işe yaradığını yazıyor. Sahte verili testlerle doğrulandı; canlı ölçüm yok.
+- Arayüz yeni tasarıma geçti (11 Eki, D5): mockup v24'ün görünümü 7 parçada uygulamaya taşındı (renkler ve yazı tipleri, sol menü, ana sayfa ve yazma kutusu, araştırma sayfası, yan paneller, kaynaklar/kuyruk/kanıt tablosu, kütüphane/ayarlar/çöp). Yapı ve davranış aynı; arkasında backend olmayan mockup düğmeleri eklenmedi. Mockup ile ekran görüntüsü kıyası 17 hata buldu, hepsi düzeltildi; 39 karar maddesinden 14'ü mockup'a uyarlandı, 25'i bilerek bırakıldı (`.local/design/port-visual-diff.md`). Tarayıcı testleri 210/210; her parçayı Sol inceledi. Ertelenen: sağ sütun, kütüphanenin üç bölmeli düzeni, ilk kurulum kartı.
 - Sahip uygulamayı gözle kontrol ediyor; bulduğu sorunlar sırayla düzeltilir. P10 (macOS paketi) bu kontrol bitene kadar bekliyor.
 
 ## Sıradaki
@@ -53,6 +54,7 @@
 ### Kod
 
 - Kuyruk sürücüsü (K03) prompt boyutunda düşüyor; yeniden çıkarımın arka plan okuyucusu matriste sınanmıyor; geri yüklemeden sonra açık PDF görüntüleyici eski belgeyi gösteriyor.
+- Arayüz: kuyrukta yapışkan cevap alanı tam genişlik düğmelerle büyüdü (1280×900'de ~300 px), kısa ekranda odak örtülmesi sınanmadı; TR/EN değişiminde seçili sekme şeritte görünür kaydırılmayabilir; telefonda rapor ikon düğmelerinin görünür ipucu yok. `tests/documents/test_arxiv_source_archive.py` içinde 1 test arayüz işinden önce de düşüyor.
 - İlk cevap taslağı atıf çapası kurallarını sık bozuyor; onarım cevap başına 1–2 dk ekliyor. CI yok; paralel testlerde ara sıra hata; P9 yükseltme kontrolünde 15 bilinen teardown hatası.
 
 ### Canlı deneme bulguları (4–5 Eki)

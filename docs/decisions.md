@@ -4,6 +4,19 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D10 — OpenAlex semantic requests overlap behind a 1.5 s start gate; pages hold 100 records
+Status: accepted (owner approved both, 12 Oct 2026; code reviewed by Sol over four rounds) · Date: 2026-10-12 · Writer: Claude
+Context: D6's live check (11–12 Oct) found each seed's semantic request took 5–6 s and ran one after another, taking search time from the keyword pages. OpenAlex documents semantic search at one request per second and `per_page` at most 100 (200 is deprecated; help.openalex.org, read 12 Oct).
+Decision:
+- Every OpenAlex semantic attempt, retries included, waits at one process-wide start gate (`openalex.SEMANTIC_PACER`, 1.5 s between starts); replies may overlap. A start is claimed when the caller wakes, so callers that overslept together still start 1.5 s apart.
+- A version 2 plan's seed requests run concurrently; each is written after the one before it, so search rows, events, request indexes and first admission keep seed order.
+- After its gate wait a request sends nothing when the run's OpenAlex quota ran out meanwhile (recorded `quota_exhausted`, as before) or the run stopped or passed its search deadline (page left unwritten; the seed is cancelled `deadline`). Such an attempt counts as no request.
+- `openalex.MAX_RESULTS` is 100. The fast path already asked 100 a page; the old page-allowance formula now allows twice the pages for the same read depth.
+Limits:
+- 1.5 s comes from one live probe (12 Oct, 6 overlapping requests): 1.0 s drew one 429, 1.25 s and 1.5 s none. Not measured under other keys, load or networks.
+- If an earlier seed task raises (a code or database fault, not a provider error), or the process dies while a later reply waits for its turn, that reply is lost and the request is sent again on resume (one paid request). Writing it out of order was rejected because it changes first admission.
+- The time saved per seeded run is not measured live.
+
 ## D9 — An answer the person starts may read works screened after the cutoff
 Status: accepted (decided with Sol over S20's review rounds, 12 Oct 2026) · Date: 2026-10-12 · Writer: Claude
 Context: A discovery-bound answer reads only the evidence the read stage held at its cutoff (old D253). "Screen more" (F13, slice S20, run kind `screen_more`) screens works below the read window later, so without a change its candidates would never reach an answer, and regenerating the answer would give the same text.

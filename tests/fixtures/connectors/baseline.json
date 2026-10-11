@@ -16,7 +16,7 @@
         {
           "endpoint_id": null,
           "max_reachable": null,
-          "max_results": 200,
+          "max_results": 100,
           "options": [
             {
               "name": "reference_count",
@@ -230,7 +230,7 @@
         {
           "endpoint_id": null,
           "max_reachable": null,
-          "max_results": 200,
+          "max_results": 100,
           "options": [],
           "page_gap": 0.0,
           "paging": "cursor",

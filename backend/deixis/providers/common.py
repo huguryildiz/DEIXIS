@@ -12,7 +12,7 @@ import re
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
 import httpx
@@ -27,6 +27,9 @@ FIRST_PAGE = "*"  # asks a provider for the first page of a paged read; an offse
 
 _transport_collector: ContextVar[list[dict[str, Any]] | None] = ContextVar("search_transport", default=None)
 fast_openalex_pacing: ContextVar[bool] = ContextVar("fast_openalex_pacing", default=False)
+# Set by the caller for one dispatch and read after a start gate's wait: "quota_exhausted" once this run's quota for the
+# provider ran out, "stopped" once the run was stopped or its deadline passed, None to send.
+send_blocked: ContextVar[Callable[[], str | None] | None] = ContextVar("send_blocked", default=None)
 
 
 @contextmanager
@@ -160,7 +163,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                max_retry_wait: float = MAX_RETRY_WAIT_SECONDS,
                max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
                rate_limit_statuses: tuple[int, ...] = (429,),
-               json_body: Any = None) -> tuple[httpx.Response | None, SearchOutcome]:
+               json_body: Any = None, start_pacer: Any = None) -> tuple[httpx.Response | None, SearchOutcome]:
     """One GET, or a POST when `json_body` is given, with bounded retries on 429.
 
     Returns the 200 response, or None with the classified failure outcome.
@@ -175,8 +178,13 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     `rate_limit_statuses` is which statuses read as a rate limit. It is 429 everywhere but arXiv, which answers a
     too-frequent request with 406 (measured 2026-09-22): without this its searches die on the first refusal and no
     effort's waiting rule (D88) ever applies to them.
+
+    `start_pacer` (a `pacing.StartPacer`) spaces the start of every attempt, retries included, without waiting for
+    another request's reply (OpenAlex semantic search). `send_blocked`, checked after that wait, sends nothing when the
+    run's quota ran out or the run stopped meanwhile.
     """
     retries = 0
+    gated = False  # the last attempt was stopped at its start gate and is not counted
     def finish(response, outcome):
         if outcome.status not in {"completed", "zero_results"}:
             outcome.service_kind = service_error_kind(outcome.error_kind or outcome.http_status or outcome.status,
@@ -186,9 +194,9 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
         if entries is not None:
             parts = urlsplit(url)
             location = f"{parts.scheme}://{parts.netloc.rsplit('@', 1)[-1]}{parts.path}"
-            attempts = outcome.retries + 1
+            attempts = outcome.retries + int(not gated)
             entries.append({"url": redact(location, *secrets), "attempts": attempts,
-                            "sends": attempts - int(outcome.delivery_class == "before_send"),
+                            "sends": attempts - int(outcome.delivery_class == "before_send" and not gated),
                             "retries": outcome.retries, "status": outcome.status,
                             "http_status": outcome.http_status, "delivery_class": outcome.delivery_class})
         return response, outcome
@@ -198,6 +206,13 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
             if fast_openalex_pacing.get() and urlsplit(url).hostname == "api.openalex.org":
                 from deixis.providers.pacing import FAST_OPENALEX_PACER
                 await FAST_OPENALEX_PACER.wait()
+            if start_pacer is not None:
+                await start_pacer.start()
+                if (blocked := send_blocked.get()) is not None and (why := blocked()):
+                    gated, quota = True, why == "quota_exhausted"
+                    return finish(None, SearchOutcome("rate_limited" if quota else "failed", "before_send", description,
+                                                      access_mode, error_kind="quota_exhausted" if quota else None, retries=retries,
+                                                      error=f"Not sent after its start wait: {why}"))
             # A body makes this a POST; everything else — the Semantic Scholar gate (D67), the bounded 429 retries
             # and the failure classes — is the same path every provider request takes.
             def attempt() -> Any:

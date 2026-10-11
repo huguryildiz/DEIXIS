@@ -186,6 +186,31 @@ def test_past_the_search_deadline_a_seed_request_is_closed_unsent(tmp_path, monk
         assert not [q for q in transport.semantic_queries if q.startswith(SEED_TITLE)]
 
 
+def test_a_seed_request_whose_deadline_falls_while_it_waits_for_its_start_is_not_sent(tmp_path, monkeypatch):
+    """The second seed passed its deadline check before the first was sent; the start gate checks it again."""
+    transport = Scripted(records(), records(), by_doi=[seed_work()])
+    app, _ = app_for(tmp_path, monkeypatch, transport=transport)
+    real = fast_search.fast_path.past_deadline
+
+    def past(store, run, stage):
+        # The deadline falls once the first seed's request has gone out.
+        return stage == "search" and any(q.startswith(SEED_TITLE) for q in transport.semantic_queries) or real(store, run, stage)
+
+    monkeypatch.setattr(fast_search.fast_path, "past_deadline", past)
+    with client_of(app) as client:
+        rid = research(client)
+        a, b = upload(client, rid, "a.pdf", SEED_PDF), upload(client, rid, "b.pdf", pdf_of(TITLE_B))
+        select(client, rid, source_version_ids=[a, b])
+        run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        wait(client, rid, run_id)
+        store = app.state.store
+        assert store.existing_step(run_id, "search:fast:semantic:seed:0")["status"] == "succeeded"
+        second = store.existing_step(run_id, "search:fast:semantic:seed:1")
+        assert (second["status"], second["error_code"]) == ("cancelled", "deadline")
+        texts = [s["query_text"] for s in protocol_body(store, run_id)["fast_path_search"]["seed_semantic"]]
+        assert texts[0] in transport.semantic_queries and texts[1] not in transport.semantic_queries
+
+
 def test_a_seed_request_admits_no_more_than_its_limit(tmp_path, monkeypatch):
     transport = Scripted(records(), records(), seeded=[titled(4100 + i, f"SYNTHETIC seed find {i}") for i in range(30)],
                          by_doi=[seed_work()])
@@ -200,11 +225,13 @@ def test_a_seed_request_admits_no_more_than_its_limit(tmp_path, monkeypatch):
         assert held == [f"W{4100 + i}" for i in range(25)]
 
 
-def test_an_exhausted_openalex_quota_sends_no_further_seed_request(tmp_path, monkeypatch):
+def test_an_exhausted_openalex_quota_sends_nothing_after_the_seed_requests(tmp_path, monkeypatch):
+    """The seed requests overlap, so each one already on its way takes its own 429 (OpenAlex charges nothing for a 4xx);
+    nothing OpenAlex is sent after the quota answer."""
     class Quota(Scripted):
         def __call__(self, request):
             text = request.url.params.get("search.semantic", "")
-            if text.startswith(SEED_TITLE):
+            if text.startswith(SEED_TITLE) or text.startswith(TITLE_B + "\n"):
                 self.semantic_queries.append(text)
                 return httpx.Response(429, headers={"x-ratelimit-remaining-usd": "0"}, json={"error": "SYNTHETIC"})
             return super().__call__(request)
@@ -218,15 +245,16 @@ def test_an_exhausted_openalex_quota_sends_no_further_seed_request(tmp_path, mon
         run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
         wait(client, rid, run_id)
         store = app.state.store
-        first, second = (store.existing_step(run_id, f"search:fast:semantic:seed:{i}") for i in (0, 1))
-        assert first["status"] == "failed" and json.loads(first["error_json"])["error_kind"] == "quota_exhausted"
-        assert second["status"] == "failed" and second["delivery_class"] == "before_send"
-        # Nothing semantic went out after the question's request but the refused first seed: B's request was held.
-        semantic = [entry for entry in transport.log if entry[0] == "semantic"]
-        assert semantic[-1][1] == QUESTION
+        for i in (0, 1):
+            step = store.existing_step(run_id, f"search:fast:semantic:seed:{i}")
+            assert step["status"] == "failed" and json.loads(step["error_json"])["error_kind"] == "quota_exhausted"
+        assert not [e for e in transport.log if e[0] == "keyword"]
+        first = store.existing_step(run_id, "search:0")
+        assert first["status"] == "failed" and first["delivery_class"] == "before_send"
 
 
-def test_a_run_stopped_between_two_seed_requests_resumes_without_sending_the_first_again(tmp_path, monkeypatch):
+def test_a_run_stopped_after_its_seed_requests_resumes_without_sending_them_again(tmp_path, monkeypatch):
+    """A pause asked while the seed requests are out takes effect once they are written, before any keyword page."""
     from deixis.workflow.flow import ResearchFlow
     original, state = ResearchFlow._checkpoint, {}
 
@@ -248,7 +276,9 @@ def test_a_run_stopped_between_two_seed_requests_resumes_without_sending_the_fir
         run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
         wait(client, rid, run_id, statuses=("paused",))
         store = app.state.store
-        assert store.existing_step(run_id, "search:fast:semantic:seed:1") is None
+        assert [store.existing_step(run_id, f"search:fast:semantic:seed:{i}")["status"] for i in (0, 1)] == [
+            "succeeded", "succeeded"]
+        assert not [e for e in transport.log if e[0] == "keyword"]
         assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
         _, run = wait(client, rid, run_id)
         assert run["status"] == "completed", run
@@ -257,6 +287,50 @@ def test_a_run_stopped_between_two_seed_requests_resumes_without_sending_the_fir
         assert [output(store, run_id, f"search:fast:semantic:seed:{i}")["fast_path_request"]["request_index"]
                 for i in (0, 1)] == [1, 2]
         assert sum(q == QUESTION for q in transport.semantic_queries) == 1
+
+
+def test_seed_requests_overlap_and_are_written_in_seed_order(tmp_path, monkeypatch):
+    """The first seed's reply comes back last; the second request went out before it, and the first is still written
+    first (request index, search run, candidate order)."""
+    events = []
+
+    class Slow(Scripted):
+        def __call__(self, request):
+            text = request.url.params.get("search.semantic", "")
+            if text.startswith(SEED_TITLE) or text.startswith(TITLE_B + "\n"):
+                which = "a" if text.startswith(SEED_TITLE) else "b"
+                events.append(("start", which))
+                reply = super().__call__(request)
+
+                async def later():
+                    await asyncio.sleep(0.4 if which == "a" else 0.0)
+                    events.append(("reply", which))
+                    return reply
+                return later()
+            return super().__call__(request)
+
+    transport = Slow(records(), records(), seeded=[titled(4200, SEED_ONLY_TITLE)], by_doi=[seed_work()])
+    app, _ = app_for(tmp_path, monkeypatch, transport=transport)
+    with client_of(app) as client:
+        rid = research(client)
+        a, b = upload(client, rid, "a.pdf", SEED_PDF), upload(client, rid, "b.pdf", pdf_of(TITLE_B))
+        select(client, rid, source_version_ids=[a, b])
+        run_id, _ = discovery(client, rid)
+        store = app.state.store
+        # B's text also opened its seed lookup (D3) before the plan; the last two starts are the seed requests.
+        assert events[-4:] == [("start", "a"), ("start", "b"), ("reply", "b"), ("reply", "a")]
+        rows = store.conn.execute(
+            "SELECT s.operation_key FROM search_runs r JOIN run_steps s ON s.id = r.step_id"
+            " WHERE s.operation_key LIKE 'search:fast:semantic:seed:%' ORDER BY r.rowid").fetchall()
+        assert [r[0] for r in rows] == ["search:fast:semantic:seed:0", "search:fast:semantic:seed:1"]
+        assert [output(store, run_id, f"search:fast:semantic:seed:{i}")["fast_path_request"]["request_index"]
+                for i in (0, 1)] == [1, 2]
+        # The work both seeds found is the first seed's find.
+        found = store.find_source_by_identifier("openalex", "W4200")
+        hit = store.conn.execute(
+            "SELECT s.operation_key FROM candidates c JOIN search_runs r ON r.id = c.search_run_id"
+            " JOIN run_steps s ON s.id = r.step_id WHERE c.source_version_id = ?", (found,)).fetchone()
+        assert hit[0] == "search:fast:semantic:seed:0"
 
 
 def test_searching_a_finished_run_again_sends_no_seed_request(tmp_path, monkeypatch):

@@ -79,8 +79,8 @@ def test_the_keyword_cap_is_this_research_s_effort(library, tmp_path, effort, ca
     library.run["budget"]["fast_path"] = fast_path.freeze_budget({}, effort)
     providers = DistinctPages(openalex_total=1200)
     research_flow, scope = keyword_reader(library, tmp_path, providers, effort=effort)
-    rows = read_pages(research_flow, library, scope, keyword_plan(library, scope, page_size=200))
-    assert providers.openalex == [(start, min(200, cap - start)) for start in range(0, cap, 200)]
+    rows = read_pages(research_flow, library, scope, keyword_plan(library, scope, page_size=100))
+    assert providers.openalex == [(start, min(100, cap - start)) for start in range(0, cap, 100)]
     assert (rows[-1]["stop_reason"], rows[-1]["read_limit"], rows[-1]["read_total"]) == ("record_cap", cap, cap)
     assert rows[-1]["unread_count"] == 1200 - cap  # nothing read is dropped; what was not read is counted
 
@@ -89,11 +89,11 @@ def test_the_page_request_allowance_shrinks_with_the_effort():
     """The allowance is derived from the effort's own read limit and its own waiting, and from nothing else."""
     query = {"provider_id": "openalex"}
     allowances = {effort: flow.page_allowance(query, effort, {}) for effort in SW_READ_LIMIT}
-    # openalex serves 200 records a page: quick reads 2 pages at 1 + 0 + 2 requests each, standard 5 at 1 + 1 + 2,
-    # detailed 5 at 1 + 2 + 2 (10 pages before D90 lowered its read limit to 1,000). The allowance is the query's own
-    # (D89); a retry action adds what it adds to the run.
-    assert allowances == {"quick": 2 * 3, "standard": 5 * 4, "detailed": 5 * 5}
-    assert flow.page_allowance(query, "quick", {"retry_provider_requests": 2}) == 2 * 3 + 2
+    # openalex serves 100 records a page (200 before OpenAlex deprecated it): quick reads 4 pages at 1 + 0 + 2 requests
+    # each, standard 10 at 1 + 1 + 2, detailed 10 at 1 + 2 + 2. The allowance is the query's own (D89); a retry action
+    # adds what it adds to the run.
+    assert allowances == {"quick": 4 * 3, "standard": 10 * 4, "detailed": 10 * 5}
+    assert flow.page_allowance(query, "quick", {"retry_provider_requests": 2}) == 4 * 3 + 2
     assert allowances["quick"] < allowances["standard"] < allowances["detailed"]
 
 

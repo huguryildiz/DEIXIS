@@ -40,7 +40,7 @@ from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
 from deixis.providers import openalex, query_compiler, facade, contract
-from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi
+from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, send_blocked
 from deixis.providers.registry import CONNECTORS, Connector, endpoint_options, reading, search_providers
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.concurrency import ModelCallLimiter
@@ -2008,15 +2008,27 @@ class ResearchFlow:
                 return SearchOutcome("rate_limited", "before_send", "Suppressed: provider quota exhausted in this run",
                                      "api_key" if key else "keyless", error_kind="quota_exhausted")
             self.store.add_usage(run_id, "provider_requests", reserve, query=query_key)
-            # A paged read supplies the connector's search options.
-            dispatched = await facade.dispatch_search(connector.provider_id, self.deps.http, query["query_text"], limit, key,
-                                             self.deps.settings.contact_email,
-                                             **({"cursor": page.cursor, "max_rate_limit_retries": page.rate_limit_retries,
-                                                 **connector.sw_options, **endpoint_options(query)} if page else {}))
+            # A request that waited at a start gate (D6 seed requests overlap) checks the quota guard and the stop again
+            # before it is sent.
+            def why_not() -> str | None:
+                if connector.provider_id in self._quota_out.get(run_id, set()):
+                    return "quota_exhausted"
+                return "stopped" if stop is not None and stop() else None
+            blocked = send_blocked.set(why_not)
+            try:
+                # A paged read supplies the connector's search options.
+                dispatched = await facade.dispatch_search(connector.provider_id, self.deps.http, query["query_text"], limit,
+                                                 key, self.deps.settings.contact_email,
+                                                 **({"cursor": page.cursor, "max_rate_limit_retries": page.rate_limit_retries,
+                                                     **connector.sw_options, **endpoint_options(query)} if page else {}))
+            finally:
+                send_blocked.reset(blocked)
             outcome = dispatched.outcome
             actual = sum(entry["attempts"] for entry in dispatched.transport)
             sends = sum(entry["sends"] for entry in dispatched.transport)
             self.store.settle_usage(run_id, query_key, actual - reserve, sends)
+            if not sends and why_not() == "stopped":
+                return None  # nothing went out and the run stopped: the page is left unwritten, as before a network retry
             transport["reserved"] = transport.get("reserved", 0) + reserve
             transport["attempts"] = transport.get("attempts", 0) + actual
             transport["sends"] = transport.get("sends", 0) + sends

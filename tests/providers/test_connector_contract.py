@@ -685,6 +685,7 @@ def test_same_title_different_doi_preserves_distinct_sources(dispatch_flow):
     assert flow.store.find_source_by_identifier("arxiv", "2101.00001v2") == v2
 
 
+@pytest.mark.provider_pacing
 def test_complete_synthetic_connector_needs_no_suite_branch(monkeypatch):
     async def search(client, query, limit, key, contact, **kw):
         outcome = await registry.openalex.search_works(client, query, limit, key, contact, **kw)

@@ -837,6 +837,102 @@ def test_the_semantic_request_never_sends_more_than_openalex_accepts():
     assert "x" * 1501 not in outcome.request_description
 
 
+def test_a_semantic_request_spaces_every_attempt_start_and_waits_for_no_other_reply():
+    """OpenAlex semantic search allows one request per second: the pacer spaces starts, retries included, and holds no
+    lock through a reply (help.openalex.org, read 2026-10-12)."""
+    from deixis.providers import openalex
+    waits, seen = [], []
+
+    class Spy:
+        async def start(self):
+            waits.append(len(seen))
+
+    def handler(request):
+        seen.append(request.url.params["search.semantic"])
+        if len(seen) == 1:
+            return httpx.Response(429, json={"error": "SYNTHETIC busy"})
+        return httpx.Response(200, json={"meta": {"count": 0}, "results": []})
+
+    from unittest.mock import patch
+    from deixis.providers import common, pacing
+    real_sleep = asyncio.sleep
+
+    async def no_wait(seconds):
+        await real_sleep(0)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await openalex.search_semantic(client, "q", 10)
+    with patch.object(openalex, "SEMANTIC_PACER", Spy()), patch.object(common.asyncio, "sleep", no_wait):
+        outcome = asyncio.run(go())
+    # One slot is taken before each attempt: the first request and its retry after the 429.
+    assert outcome.status in ("completed", "zero_results") and waits == [0, 1] and len(seen) == 2
+    assert openalex.MAX_RESULTS == 100 and isinstance(openalex.SEMANTIC_PACER, pacing.StartPacer)
+
+
+def test_callers_that_overslept_together_still_start_one_interval_apart():
+    """A start is claimed when its caller wakes, not when it began to wait: after a stall the waiters do not all go."""
+    from unittest.mock import patch
+    from deixis.providers import pacing
+    real_sleep, clock, starts = asyncio.sleep, {"now": 100.0}, []
+
+    async def go():
+        stalled = asyncio.Event()
+
+        async def sleep(seconds):
+            if not stalled.is_set():
+                await stalled.wait()  # the loop stalls; every waiter wakes at once when it ends
+            else:
+                clock["now"] += seconds
+                await real_sleep(0)
+
+        async def stall():
+            for _ in range(3):
+                await real_sleep(0)
+            clock["now"] = 110.0
+            stalled.set()
+
+        gate = pacing.StartPacer(1.5)
+
+        async def one():
+            await gate.start()
+            starts.append(clock["now"])
+        with patch.object(pacing.asyncio, "sleep", sleep):
+            await asyncio.gather(one(), one(), one(), stall())
+    with patch.object(pacing.time, "monotonic", lambda: clock["now"]):
+        asyncio.run(go())
+    assert starts[0] == 100.0 and len(starts) == 3 and all(b - a >= 1.5 for a, b in zip(starts, starts[1:]))
+
+
+def test_a_request_waiting_for_its_start_sends_nothing_once_the_quota_ran_out():
+    from deixis.providers import common, openalex
+    from unittest.mock import patch
+    seen = []
+
+    class Gate:
+        async def start(self):
+            pass
+
+    def handler(request):
+        seen.append(request.url)
+        return httpx.Response(200, json={"meta": {"count": 0}, "results": []})
+
+    async def go(why):
+        token = common.send_blocked.set(lambda: why)
+        try:
+            with common.collect_transport() as entries:
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                    return await openalex.search_semantic(client, "q", 10), entries
+        finally:
+            common.send_blocked.reset(token)
+    with patch.object(openalex, "SEMANTIC_PACER", Gate()):
+        (quota, quota_entries), (stopped, stopped_entries) = asyncio.run(go("quota_exhausted")), asyncio.run(go("stopped"))
+    assert not seen and quota.error_kind == "quota_exhausted" and quota.delivery_class == "before_send"
+    assert (stopped.status, stopped.delivery_class, stopped.error_kind) == ("failed", "before_send", None)
+    # An attempt stopped at its gate costs no request allowance: nothing is counted, nothing was sent.
+    assert [(e["attempts"], e["sends"]) for e in quota_entries + stopped_entries] == [(0, 0), (0, 0)]
+
+
 def test_openalex_counts_a_letter_outside_the_basic_plane_twice():
     """OpenAlex counts UTF-16 code units: 1,500 characters with three math italic letters were refused as 1,503
     (measured live, 11 Oct 2026, a battery seed PDF's first page)."""

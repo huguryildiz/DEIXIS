@@ -51,6 +51,18 @@ class StartPacer:
         self._lock = threading.Lock()
         self._next = 0.0
 
+    async def start(self):
+        """Wait until this start is one interval after the last start, checked when the caller wakes: callers that
+        overslept together (a stalled loop, a suspended machine) still start one interval apart."""
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                if now >= self._next:
+                    self._next = now + self.interval_seconds
+                    return
+                delay = self._next - now
+            await asyncio.sleep(delay)
+
     async def wait(self):
         with self._lock:
             start = max(time.monotonic(), self._next)

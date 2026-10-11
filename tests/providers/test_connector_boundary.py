@@ -122,7 +122,8 @@ def test_descriptors_registry_and_module_policy():
             expected = {name: defaults[name].default for name in ("rate_limit_statuses", "unstated_wait", "timeout")}
             expected.update(max_retry_wait=common.MAX_RETRY_WAIT_SECONDS,
                             max_rate_limit_retries=common.MAX_RATE_LIMIT_RETRIES, min_interval=0.0, shared_gate=None)
-            assert asdict(r) == expected | registry.CONNECTORS[pid].retry
+            own = registry.CONNECTORS[pid].endpoints.get(endpoint.endpoint_id) if endpoint.endpoint_id else None
+            assert asdict(r) == expected | registry.CONNECTORS[pid].retry | ((own and own.retry) or {})
     assert facades["biorxiv"].descriptor.lineage == "openalex"
     assert facades["biorxiv"].descriptor.host == facades["openalex"].descriptor.host
     for connector in registry.CONNECTORS.values():

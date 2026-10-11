@@ -35,6 +35,7 @@ class Endpoint:
     options: tuple[str, ...] = ()
     page_gap: float | None = None
     query_syntax: QuerySyntax | None = None
+    retry: dict[str, Any] | None = None  # this endpoint's own retry fields over the connector's
 
 
 @dataclass(frozen=True)
@@ -134,7 +135,9 @@ CONNECTORS = {c.provider_id: c for c in (
               sw_options={"reference_count": True, "references": True}, options=("sort", "publication_date"),
               host=_host(openalex.WORKS_URL), adapter_revision=3,
               endpoints={"semantic": Endpoint("single_page", 50, 50,
-                         options=("reference_count", "references"), query_syntax=QuerySyntax("plain"))},
+                         options=("reference_count", "references"), query_syntax=QuerySyntax("plain"),
+                         retry={"min_interval": openalex.SEMANTIC_PACER.interval_seconds,
+                                "shared_gate": "openalex.SEMANTIC_PACER"})},
               capabilities={"id_lookup": CapabilityBinding(_openalex_lookup, openalex.MAX_IDS_PER_REQUEST),
                             "citing_works": CapabilityBinding(_openalex_citing, openalex.MAX_RESULTS,
                                 options=(OptionDescriptor("sort", "str", None),

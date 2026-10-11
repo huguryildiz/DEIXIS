@@ -85,7 +85,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "field_distribution: the test's own transport answers the routing request (D93)")
     config.addinivalue_line("markers", "process: starts and kills real processes (P9 H2); run with -m process -n 0")
     config.addinivalue_line("markers", "slow: listed in tests/slow_tests.txt; left out of a run with no -m and no path")
-    config.addinivalue_line("markers", "provider_pacing: the test keeps the real arXiv and Semantic Scholar request gaps")
+    config.addinivalue_line("markers", "provider_pacing: the test keeps the real arXiv, Semantic Scholar and OpenAlex semantic request gaps")
 
 
 SLOW_TESTS = Path(__file__).with_name("slow_tests.txt")
@@ -118,13 +118,16 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(autouse=True)
 def no_provider_pacing(request, monkeypatch):
-    """arXiv's 3 s and Semantic Scholar's 2 s request gaps are real time; a test not about them does not wait them out."""
+    """arXiv's 3 s, Semantic Scholar's 2 s and OpenAlex semantic search's 1.5 s request gaps are real time; a test not
+    about them does not wait them out."""
     if request.node.get_closest_marker("provider_pacing"):
         return
-    from deixis.providers import arxiv, pacing
+    from deixis.providers import arxiv, openalex, pacing
 
     monkeypatch.setattr(arxiv, "MIN_INTERVAL_SECONDS", 0.0)
     monkeypatch.setattr(pacing.SEMANTIC_SCHOLAR_PACER, "interval_seconds", 0.0)
+    monkeypatch.setattr(openalex.SEMANTIC_PACER, "interval_seconds", 0.0)
+    monkeypatch.setattr(openalex.SEMANTIC_PACER, "_next", 0.0)
 
 
 @pytest.fixture(autouse=True)

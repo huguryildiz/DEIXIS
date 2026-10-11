@@ -50,7 +50,8 @@ def descriptor_for(connector: registry.Connector, order: int) -> contract.Connec
                  connector.max_reachable, connector.page_gap, connector.total,
                  options(tuple(connector.sw_options) + connector.options), retry),)
     endpoints += tuple(contract.EndpointDescriptor(eid, e.paging, e.max_results, e.max_reachable,
-                       connector.page_gap if e.page_gap is None else e.page_gap, e.total, options(e.options), retry)
+                       connector.page_gap if e.page_gap is None else e.page_gap, e.total, options(e.options),
+                       contract.RetryPolicy(**(policy | connector.retry | e.retry)) if e.retry else retry)
                        for eid, e in connector.endpoints.items())
     return contract.ConnectorDescriptor(
         pid, connector.display_name if connector.display_name is not None else pid,

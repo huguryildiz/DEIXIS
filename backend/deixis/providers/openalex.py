@@ -7,8 +7,8 @@ headers are returned. Keyless and keyed modes have different daily budgets; the
 actual mode and returned limit headers are recorded per call.
 
 Paging (docs.openalex.org, "Paging", read 2026-09-21): `cursor=*` starts a cursor read, every answer carries
-`meta.next_cursor` for the next page and a null one ends it; `per_page` goes up to 200 and cursor paging has no depth
-limit, while basic paging stops at 10,000.
+`meta.next_cursor` for the next page and a null one ends it; cursor paging has no depth limit, while basic paging
+stops at 10,000. `per_page` goes up to 100: 200 still answers but the help pages call it deprecated (read 2026-10-12).
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Any
 
 import httpx
 
-from deixis.providers.pacing import SerialRequestPacer
+from deixis.providers.pacing import StartPacer
 
 from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, OtherVersion, ProviderRecord, SearchOutcome,
                                      normalize_doi, send)
@@ -30,7 +30,10 @@ __all__ = ["OtherVersion", "ProviderRecord", "SearchOutcome", "citing_works", "c
 
 PROVIDER_ID = "openalex"
 WORKS_URL = "https://api.openalex.org/works"
-SEMANTIC_PACER = SerialRequestPacer(1.0)
+# `search.semantic` allows one request per second (help.openalex.org/api/semantic-search, read 2026-10-12). Starts are
+# spaced and replies overlap. Measured live 12 Oct 2026, six overlapping requests per gap: 1.0 s got one 429, 1.25 s and
+# 1.5 s none; 1.5 s keeps slack at the boundary, as the Semantic Scholar gap does.
+SEMANTIC_PACER = StartPacer(1.5)
 # The longest `search.semantic` value OpenAlex accepts; a longer one is refused with HTTP 400 "Search query too long"
 # (measured 11 Oct 2026: 1,500 characters pass, 2,000 do not). OpenAlex counts UTF-16 code units: a letter outside the
 # Basic Multilingual Plane (a PDF's math italic 𝑆, say) counts twice (measured 11 Oct 2026: 1,500 characters holding three
@@ -62,7 +65,7 @@ RATE_LIMIT_HEADERS = (
     "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset",
     "x-ratelimit-cost-usd", "x-ratelimit-remaining-usd", "x-ratelimit-limit-usd",
 )
-MAX_RESULTS = 200
+MAX_RESULTS = 100
 # A count needs no record. OpenAlex refuses per_page=0, so the smallest page is asked for and only meta.count read.
 COUNT_PER_PAGE = 1
 COUNT_SELECT = "id"
@@ -190,9 +193,9 @@ async def search_semantic(client, query, per_page, api_key=None, contact_email=N
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     access = "api_key" if api_key else "keyless"
     description = f"GET {WORKS_URL} search.semantic={semantic_text(query)!r} per_page={params['per_page']} access={access}"
-    response, outcome = await SEMANTIC_PACER.run(lambda: send(client, WORKS_URL, params, headers, description, access,
+    response, outcome = await send(client, WORKS_URL, params, headers, description, access,
                                    RATE_LIMIT_HEADERS + ("x-ratelimit-credits-used",), (api_key,),
-                                   max_rate_limit_retries=max_rate_limit_retries))
+                                   max_rate_limit_retries=max_rate_limit_retries, start_pacer=SEMANTIC_PACER)
     return _works_page(response, outcome, None)
 
 

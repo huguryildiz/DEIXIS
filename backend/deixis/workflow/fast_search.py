@@ -159,7 +159,7 @@ async def execute(flow, run, scope, plan, retry_failed):
     def stopped():
         return flow._stop_requested(run_id, run["scope_revision"]) or fast_path.past_deadline(store, run, "search")
 
-    async def send_page(query, key, number, cursor, before, total, limit, klass, index, terminal=None):
+    async def send_page(query, key, number, cursor, before, total, limit, klass, index, terminal=None, after=None):
         nonlocal failure
         connector = reading(query)
         allowance = page_allowance(query, effort, run["budget"])
@@ -203,6 +203,9 @@ async def execute(flow, run, scope, plan, retry_failed):
         finished = now()
         if query["provider_id"] == "openalex" and klass == 1 and s2_task:
             await s2_task
+        if after is not None:
+            # An earlier request in admission order writes first, whichever reply came back first.
+            await after
         dispatched = outcome if isinstance(outcome, facade.Dispatched) else None
         answer = dispatched.outcome if dispatched else outcome
         returned = dispatched.returned_count if dispatched else len(answer.records)
@@ -262,20 +265,38 @@ async def execute(flow, run, scope, plan, retry_failed):
     if chain:
         chain.initial()
     flow._checkpoint(run_id, run["scope_revision"])
-    # D6: each seed's own semantic request, in seed order, after the chain chose its first seeds from the question's
-    # page and before the keyword pages; an unseeded plan has none, so its indexes are unchanged.
-    for spec in plan.get("seed_semantic") or []:
+    # D6: each seed's own semantic request, after the chain chose its first seeds from the question's page and before
+    # the keyword pages; an unseeded plan has none, so its indexes are unchanged. The requests start one pacer gap
+    # apart and their replies overlap (`openalex.SEMANTIC_PACER`); each is written after the one before it, so
+    # admission and candidate order follow seed order.
+    async def seed_request(spec, index, previous):
         key = seed_key(spec)
-        result, _ = await send_page(spec, key, 0, FIRST_PAGE, 0, None, spec["limit"], 0, request_index, "single_page")
+        result, _ = await send_page(spec, key, 0, FIRST_PAGE, 0, None, spec["limit"], 0, index, "single_page",
+                                    after=previous)
+        if previous is not None:
+            await previous
         if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
             step = store.step(run_id, key, "provider_search:openalex")
             if step["status"] in ("pending", "running"):
                 store.finish_step(step["id"], "cancelled", error_code="deadline",
                                   output={"stop_reason": "deadline", "result_count": 0})
-        request_index += 1
         consumer = flow._fast_consumers.get(run_id)
         if consumer:
             consumer.notify()
+
+    seed_tasks = []
+    for spec in plan.get("seed_semantic") or []:
+        seed_tasks.append(asyncio.create_task(seed_request(spec, request_index, seed_tasks[-1] if seed_tasks else None)))
+        request_index += 1
+    try:
+        for task in seed_tasks:
+            await task
+    finally:
+        for task in seed_tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*seed_tasks, return_exceptions=True)
+    if seed_tasks:
         flow._checkpoint(run_id, run["scope_revision"])
 
     async def s2_page():

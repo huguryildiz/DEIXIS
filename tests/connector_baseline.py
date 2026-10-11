@@ -144,7 +144,7 @@ def fake_clock():
         now[0] += seconds
 
     with ExitStack() as stack:
-        stack.enter_context(patch.object(openalex.SEMANTIC_PACER, "_last_finished", 0.0))
+        stack.enter_context(patch.object(openalex.SEMANTIC_PACER, "_next", 0.0))
         for module in (common, arxiv, pacing):
             stack.enter_context(patch.object(module.asyncio, "sleep", sleep))
         stack.enter_context(patch.object(arxiv.time, "monotonic", lambda: now[0]))

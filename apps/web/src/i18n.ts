@@ -3683,6 +3683,9 @@ const tr: Record<string, string> = {
   'Your questions will find a home here.': 'Sorularınız burada birikecek.',
   '{done} of {total} {unit}': '{done} / {total} {unit}',
   'Finished': 'Bitenler',
-  'Keeps running while you are on another page. Text read in the background joins the next answer.': 'Siz başka bir sayfadayken de sürer. Arka planda okunan metin bir sonraki cevaba katılır.',
+  'Keeps running while you are on another page. Text read in the background can be used in the next answer if it qualifies.': 'Siz başka bir sayfadayken de sürer. Arka planda okunan metin, uygun bulunursa sonraki cevapta kullanılabilir.',
+  'Not confirmed as finished': 'Bittiği doğrulanmadı',
+  'Status unknown': 'Durum bilinmiyor',
+  '{read} read · {none} without equations · {failed} failed': '{read} okundu · {none} denklemsiz · {failed} başarısız',
   'Language': 'Dil',
 }

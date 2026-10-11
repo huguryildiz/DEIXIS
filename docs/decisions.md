@@ -4,6 +4,14 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D4 — An answer over attached PDFs reads them in full width
+Status: accepted (owner 11 Oct 2026: "uygun") · Date: 2026-10-11 · Writer: Claude · Reviewer: gpt-6.1-sol medium (code 6 rounds)
+Context: A live attached-only answer (gpt-5.6-luna, two IEEE PDFs, 77 passages, limit 48) gave the model 12 passages: every source was capped at six (`MAX_PASSAGES_PER_SOURCE`), two of the twelve were reference-list chunks, and the second paper's result pages never reached the answer, which then said its key number was missing.
+Decision:
+- When the research uses attached files only (`source_scope = attached`), the cap per source is `max(6, limit // number of sources)`, so one to eight PDFs share the whole limit. Other scopes keep six.
+- A passage that reads as a numbered reference list (`_reference_list` in `workflow/flow.py`: three entries such as "[4] H. U. Yildiz," with three years, starting near the top, after nothing or after the end of a previous entry) is ranked after every other passage in the topic order, a crowded source's pages and the criterion order. It is never dropped, so a misread conclusion is only ranked lower.
+Limits: Four live runs, one each (gpt-5.6-luna, 11 Oct): the same two PDFs again (48 passages, 6 claims, the second paper's ">50% lifetime" result now cited), one 24-page review alone (48 passages, 10 claims), three directional-antenna papers (16 each, 9 claims, all three cited), two other papers (24 each, 7 claims). All four answers `structurally_valid`; the run's own reviewer marked 28 claims supported and 4 partly supported. No person checked the claims. The detector misses author-year reference lists and was checked on two IEEE papers only.
+
 ## D2 — The seed PDF guides the search (seed_pdf_v1)
 Status: accepted (owner 11 Oct 2026: "planı yaz ve Sol'a inceletip kodla") · Date: 2026-10-11 · Writer: Claude · Reviewer: gpt-6.1-sol medium (plan 3 rounds, code 2 rounds)
 Context: In a "Files + academic search" research the UI always picks a seed PDF and said its passages "guided the search", but no search step read them. The semantic query was the question alone, the chain seeds were the top semantic results, and the ranking saw the upload with a file-name title, no abstract and no references.

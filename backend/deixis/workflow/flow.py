@@ -87,6 +87,13 @@ INFERENCE_CAP_KEY = "grounded_answer_inference_cap"  # D260: one rewrite of a va
 NO_INCLUDABLE_SOURCE = "no_includable_source"
 MAX_ABSTRACT_CHARS = 2500
 MAX_PASSAGES_PER_SOURCE = 6  # passages one included source may contribute to an answer step
+# A numbered bibliography entry: "[4] H. U. Yildiz," or "[12] Smith, J.". Body text cites as "in [5] considering".
+REFERENCE_ENTRY_RE = re.compile(r"\[\d{1,3}\]\s+(?:[A-Z]\.|[A-Z][a-z]+,)")
+REFERENCE_LIST_MIN_ENTRIES = 3  # a passage with this many entries, each with a year, is part of the reference list
+REFERENCE_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+# What a passage holds before its first entry when it starts inside the list: the end of the previous entry
+# ("..., pp. 33\u201338." or "..., Oct. 2021.") or a running header ("VOL. 12, NO. 22, 15 NOVEMBER 2025").
+REFERENCE_TAIL_RE = re.compile(r",[^,]{0,40}(?:(?:19|20)\d{2}|\d+\s*[\u2013-]\s*\d+)\.?$")
 PDF_PAGES_PER_SOURCE = 2  # PDF passages a source adds to its abstract when the included sources outnumber the passage limit
 MAX_SMALL_PDF_CHARS = 60_000  # bounded full extracted text for a single attached PDF
 MAX_SMALL_PDF_PAGES = 12
@@ -116,6 +123,19 @@ TIMEOUT_RETRIED_TASKS = ("abstract_screening", "fulltext_adjudication")
 # A route that did not answer, so the work it was tried for is decided by no code and is tried again (SW10, D35).
 UNANSWERED_FETCH_CODES = ("fetch_timeout", "fetch_failed")
 UNANSWERED_LOOKUP_STATUSES = ("timeout", "rate_limited", "failed")
+
+
+def _reference_list(text: str) -> bool:
+    """True for a passage of a paper's numbered reference list, which states no finding an answer could cite.
+
+    Whatever comes before the first entry must be short or itself part of the list, so a passage whose
+    conclusions run into the list is kept.
+    """
+    entries = list(REFERENCE_ENTRY_RE.finditer(text))
+    if len(entries) < REFERENCE_LIST_MIN_ENTRIES or len(REFERENCE_YEAR_RE.findall(text)) < REFERENCE_LIST_MIN_ENTRIES:
+        return False
+    before = text[:entries[0].start()].strip()
+    return entries[0].start() <= len(text) / 3 and (len(before) <= 40 or bool(REFERENCE_TAIL_RE.search(before)))
 
 
 def fuse_rankings(*rankings: list[dict[str, Any]], k: int = RRF_K) -> list[dict[str, Any]]:
@@ -3591,6 +3611,11 @@ class ResearchFlow:
         ranked = self.store.search_passages(included, fts, limit * 3)
         if semantic is not None:
             ranked = fuse_rankings(ranked, semantic)[: limit * 3]
+        # A reference-list passage goes to the end: a misread one is ranked lower, not lost.
+        ranked = sorted(ranked, key=lambda p: _reference_list(p["text"]))
+        # Only attached files: the few PDFs share the whole limit, so a two-PDF answer can read their result pages.
+        per_source = (max(MAX_PASSAGES_PER_SOURCE, limit // max(1, len(included)))
+                      if scope.get("source_scope") == "attached" else MAX_PASSAGES_PER_SOURCE)
         best = {}
         for p in ranked:
             best.setdefault(p["source_version_id"], p)
@@ -3608,8 +3633,9 @@ class ResearchFlow:
         with_pdf = [svid for svid in with_text if any(q["kind"] == "pdf_page" for q in passages_of[svid])]
         # Scored once per retrieval, in memory: the phrase score is a pure function of stored text and stored
         # phrases and belongs to no shared passage row, because phrases are this research's and passages are not.
-        criterion_of = {svid: criterion_passages.criterion_order(
-            [q for q in passages_of[svid] if q["kind"] == "pdf_page"], patterns) for svid in included
+        criterion_of = {svid: sorted(criterion_passages.criterion_order(
+            [q for q in passages_of[svid] if q["kind"] == "pdf_page"], patterns), key=lambda q: _reference_list(q["text"]))
+            for svid in included
         } if patterns else {}
         if len(with_text) + PDF_PAGES_PER_SOURCE * len(with_pdf) > limit:
             # One passage per source would leave too little room for PDF pages (D55). A source with PDF text gives its
@@ -3632,6 +3658,7 @@ class ResearchFlow:
                     # already given as `first` is not offered again, or it would spend one of the two places.
                     offered = {q["id"] for q in pages}
                     pages = self._two_quota_pages(pages, [q for q in criterion_of.get(svid, []) if q["id"] in offered])
+                    pages.sort(key=lambda q: _reference_list(q["text"]))
                 for q in ([first] if first else []) + pages[:PDF_PAGES_PER_SOURCE]:
                     if len(selected) < limit:
                         selected[q["id"]] = q
@@ -3661,14 +3688,14 @@ class ResearchFlow:
                 if depth >= len(ordered):
                     continue
                 p = ordered[depth]
-                if p["id"] not in selected and taken.get(svid, 0) < MAX_PASSAGES_PER_SOURCE:
+                if p["id"] not in selected and taken.get(svid, 0) < per_source:
                     selected[p["id"]] = p
                     taken[svid] = taken.get(svid, 0) + 1
                     added += 1
         for p in ranked:
             if len(selected) >= limit:
                 break
-            if p["id"] not in selected and taken.get(p["source_version_id"], 0) < MAX_PASSAGES_PER_SOURCE:
+            if p["id"] not in selected and taken.get(p["source_version_id"], 0) < per_source:
                 selected[p["id"]] = p
                 taken[p["source_version_id"]] = taken.get(p["source_version_id"], 0) + 1
         return list(selected.values())

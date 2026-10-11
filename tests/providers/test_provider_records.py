@@ -220,7 +220,7 @@ def test_short_attached_pdf_supplies_later_pages_without_the_multi_source_cap():
 
 @pytest.mark.parametrize(("page_count", "chunk_count"), [(49, 49), (400, 10)])
 def test_large_attached_pdf_keeps_bounded_passage_selection(page_count, chunk_count):
-    from deixis.workflow.flow import MAX_PASSAGES_PER_SOURCE, ResearchFlow
+    from deixis.workflow.flow import ResearchFlow
 
     pages = [{"id": f"page-{n}", "source_version_id": "source", "asset_id": "asset", "kind": "pdf_page", "physical_page": n,
               "text": f"SYNTHETIC scheduling evidence on page {n}."} for n in range(1, chunk_count + 1)]
@@ -237,7 +237,8 @@ def test_large_attached_pdf_keeps_bounded_passage_selection(page_count, chunk_co
     flow.store = RetrievalStore()
     selected = flow._retrieve("research", {"question": "How is scheduling optimized?", "revision": 1,
                                             "source_scope": "attached"}, ["source"], 48)
-    assert len(selected) == MAX_PASSAGES_PER_SOURCE
+    # D4: a lone attached PDF too large to give whole is bounded by the run's limit, not by six passages.
+    assert len(selected) == min(48, chunk_count)
 
 
 def test_well_formed_queries_for_every_provider_pass():

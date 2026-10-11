@@ -6,6 +6,7 @@
 
 - Temiz başlangıç bitti (10–11 Eki): hızlı yol tek arama yolu, eski arama/cevap yolları ve eski veri desteği silindi, şema tek baseline'dan başlıyor. Bugünkü yapı yeni başlangıç noktası. Temizlikten sonra testler ve tarayıcı testleri geçiyor. Canlı kontrol (11 Eki, gpt-5.6-luna, gerçek OpenAlex, boş veri klasörü): irs2021 ve dbr_vbf, Hızlı 2,8 / 1,7 dk, Standart 4,2 / 3,0 dk; dört cevap da yapısal kontrolden geçti (`structurally_valid`). Her biri tek koşu; kaynakların iddiaları gerçekten desteklediği puanlanmadı.
 - Tohum PDF artık aramayı yönlendiriyor (11 Eki, D2): PDF OpenAlex'te bulunursa atıf zincirinin ilk tohumu olur, benzer makale araması ve sorgu yazımı PDF'i de okur, sıralama onu doğru tanır. Sahte verili testlerle doğrulandı; gerçek sorularda faydası ölçülmedi.
+- Yalnız eklenen PDF'lerle cevap artık PDF'leri geniş okuyor (11 Eki, D4): önce her PDF'ten en çok 6 pasaj gidiyordu, şimdi 48 pasajlık sınır PDF'ler arasında bölünüyor ve kaynakça parçaları sona kalıyor. Dört canlı koşuda (gpt-5.6-luna, her biri tek koşu) dört cevap da yapısal kontrolden geçti; iddiaları insan kontrol etmedi.
 - Sahip uygulamayı gözle kontrol ediyor; bulduğu sorunlar sırayla düzeltilir. P10 (macOS paketi) bu kontrol bitene kadar bekliyor.
 
 ## Sıradaki

@@ -478,6 +478,7 @@ export type Answer = {
   late_revision?: { kind: 'updated_with_full_text'; base_answer_id: string; base_report_version: number | null; upgraded_sources: number; late_excluded: number }
   late_revision_status?: { status: 'waiting_fetch' | 'reading' | 'answering' | 'published' | 'skipped' | 'failed'; skip_reason: string | null; revision_answer_id: string | null; late_excluded: number }
   abstract_only_sources?: number
+  screened_after_cutoff?: ScreenedAfterCutoff[]
   id: string; run_id: string; status: 'structurally_valid' | 'unverified_draft' | 'clarification' | 'no_evidence'
   scope_revision: number; applicability: 'current' | 'stale_scope' | 'stale_selection'; answer_language: string | null; created_at: string
   report_version: number | null; report_title: string | null
@@ -1579,7 +1580,8 @@ export const libraryImportsApi = {
 // list) and `signals.similarity` (the embedding score it was ranked with, null when none) are prioritization signals,
 // not relevance or quality. `screenable` is false for a work with no abstract to read. `screenMore` queues one run
 // (kind `screen_more`) over the next 40 screenable works, read twice per batch of 20; it never includes a source, its
-// candidates move the selection revision (an earlier answer reads `stale_selection`) and the next answer reads them.
+// candidates move the selection revision as each batch is written (an earlier answer reads `stale_selection`), and a
+// new answer the person starts reads them as abstract-based evidence (`Answer.screened_after_cutoff`).
 // 409 while another run of the research is active; 422 with `code` `no_completed_discovery` or `nothing_left`.
 export type UnscreenedWork = {
   work_id: string; source_version_id: string; title: string | null; year: number | null; venue: string | null
@@ -1596,4 +1598,10 @@ export const screenMoreApi = {
     request<UnscreenedPage>(`/api/researches/${encodeURIComponent(id)}/unscreened?offset=${offset}&limit=${limit}`),
   screenMore: (id: string, idempotencyKey: string) =>
     request<Run>(`/api/researches/${encodeURIComponent(id)}/screen-more`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }),
+}
+// Works an answer read only because a Screen more run made them candidates after the read cutoff: abstract-based
+// evidence (`evidence_basis: 'abstract_screening'`), to be labelled "screened after the cutoff (abstract screening)".
+// Only an answer the person starts reads them; the answer in place when Screen more ran stays as it was.
+export type ScreenedAfterCutoff = {
+  work_id: string; source_version_id: string; screen_more_run_id: string; evidence_basis: 'abstract_screening'; route: 'abstract'
 }

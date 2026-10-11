@@ -175,17 +175,22 @@ def request(store: Any, rid: str, idempotency_key: str | None) -> dict[str, Any]
 
 
 def _candidate_works(store: Any, run_id: str) -> list[str]:
-    """Works this run made abstract-stage candidates, whose decision still stands."""
+    """Works this run's two model reads made abstract-stage candidates, whose decision still stands. A code candidate
+    (both gate blocks in the title) read no abstract, so it is not evidence a later answer can take (`answer_admissions`)
+    and does not move the selection revision; the person can still include it by hand."""
     return sorted({row[0] for row in store.conn.execute(
         "SELECT DISTINCT v.work_id FROM stage_decisions d JOIN run_steps s ON s.id = d.step_id"
         " JOIN source_versions v ON v.id = d.source_version_id WHERE s.run_id = ? AND d.stage = 'abstract'"
-        " AND d.outcome = 'candidate' AND d.superseded_at IS NULL", (run_id,))})
+        " AND d.outcome = 'candidate' AND d.decided_by = 'model_agreement' AND d.superseded_at IS NULL", (run_id,))})
 
 
 def mark_answer(store: Any, run: dict[str, Any]) -> None:
     """Move the research's selection revision once per new set of candidates this run made, so an answer made before
-    them reads as made for an earlier selection (`result_applicability`: `stale_selection`). The next discovery-bound
-    answer reads these candidates (`answer_candidates`). Keyed by the set, a replay writes nothing twice."""
+    them reads as made for an earlier selection (`result_applicability`: `stale_selection`). A new answer the person
+    starts may read them (`answer_admissions`). Keyed by the set, a replay or a resent batch writes nothing twice.
+
+    Called inside the transaction that writes a batch's decisions (`ResearchFlow._close_abstract_batch` runs it as the
+    run's close hook), so a crash cannot leave candidates stored and the earlier answer still `current`."""
     works = _candidate_works(store, run["id"])
     if not works:
         return
@@ -204,19 +209,88 @@ def mark_answer(store: Any, run: dict[str, Any]) -> None:
 
 
 def answer_candidates(store: Any, rid: str, scope_revision: int) -> dict[str, dict[str, Any]]:
-    """Current abstract-stage candidates written by `screen_more` runs of this question revision, by record:
-    the decision and its run. Only these extend a discovery-bound answer beyond its read cutoff."""
+    """Current abstract-stage candidates the two model reads of a `screen_more` run of this question revision wrote,
+    by record: the decision, its step and its run."""
     decisions = DecisionStore(store)
     key = decisions.staleness_key(rid)
     found = {}
     for row in store.conn.execute(
             "SELECT d.*, s.run_id AS screen_run_id FROM stage_decisions d JOIN run_steps s ON s.id = d.step_id"
             " JOIN runs r ON r.id = s.run_id WHERE r.research_id = ? AND r.kind = 'screen_more' AND r.scope_revision = ?"
-            " AND d.stage = 'abstract' AND d.outcome = 'candidate' AND d.superseded_at IS NULL", (rid, scope_revision)):
+            " AND d.stage = 'abstract' AND d.outcome = 'candidate' AND d.decided_by = 'model_agreement'"
+            " AND d.superseded_at IS NULL", (rid, scope_revision)):
         decision = dict(row)
         if not decisions.is_stale(decision, key):
-            found[decision["source_version_id"]] = {"decision_id": decision["id"], "run_id": decision["screen_run_id"]}
+            found[decision["source_version_id"]] = {"decision_id": decision["id"], "step_id": decision["step_id"],
+                                                    "run_id": decision["screen_run_id"]}
     return found
+
+
+def answer_admissions(store: Any, rid: str, scope_revision: int) -> dict[str, dict[str, Any]]:
+    """The Screen more candidates a new, person-started answer may read beyond the read cutoff, by record (the version
+    the two runs read), each with the abstract passages to give; fail-closed.
+
+    A record is left out when its work left the research; when the person's own selection of the work's current head
+    is anything but included (the head may have changed since the cutoff: a published version of a screened preprint),
+    or the person excluded or set back any version of the work; when the work's outcome is a full-text or abstract
+    exclusion or `versions_disagree`; and when the record's stored title, abstract, DOI, year or venue is no longer
+    what both model runs were shown (`small_batch.abstract_reusable`), so only the abstract text read then is given.
+    """
+    from deixis.workflow.flow import MAX_ABSTRACT_CHARS
+    from deixis.workflow.ranking import _versions
+
+    found = answer_candidates(store, rid, scope_revision)
+    if not found:
+        return {}
+    decisions = DecisionStore(store)
+    facts = decisions.facts(rid)
+    heads = facts["heads"]
+    work_of = store.work_ids(list(found))
+    person: dict[str, dict[str, str]] = {}
+    for row in store.conn.execute(
+            "SELECT s.source_version_id, s.state, v.work_id FROM selections s JOIN source_versions v"
+            " ON v.id = s.source_version_id WHERE s.research_id = ? AND s.origin = 'user'", (rid,)):
+        person.setdefault(row["work_id"], {})[row["source_version_id"]] = row["state"]
+    candidate_ids = {c["source_version_id"]: c["candidate_id"] for c in store.candidates(rid)}
+    versions = _versions(store, rid)
+    admitted = {}
+    for svid, info in found.items():
+        work_id = work_of.get(svid)
+        head = heads.get(work_id)
+        if head is None or svid not in versions or svid not in candidate_ids:
+            continue
+        chosen = person.get(work_id, {})
+        if head in chosen and chosen[head] != "included":
+            continue
+        if head not in chosen and any(state != "included" for state in chosen.values()):
+            continue
+        outcome = decisions.work_outcome(rid, work_id, facts)
+        if outcome.get("outcome") in ("criterion_not_met", "out_of_scope") or outcome.get("reason_code") == "versions_disagree":
+            continue
+        if not small_batch.abstract_reusable(store, {"step_id": info["step_id"]}, candidate_ids[svid], versions[svid],
+                                             MAX_ABSTRACT_CHARS):
+            continue
+        abstract_ids = [row[0] for row in store.conn.execute(
+            "SELECT id FROM passages WHERE source_version_id = ? AND kind = 'abstract' ORDER BY rowid LIMIT 1", (svid,))]
+        admitted[svid] = info | {"work_id": work_id, "current_head": head, "abstract_ids": abstract_ids}
+    return admitted
+
+
+def answer_view(store: Any, answer_run_id: str | None) -> list[dict[str, Any]]:
+    """The works an answer read beyond its read cutoff because a Screen more run made them candidates: abstract-based
+    evidence screened after the cutoff, for the answer view to label as such."""
+    from deixis.workflow import fast_answer
+    from deixis.workflow.late_revision import REVISION_INPUT
+
+    if answer_run_id is None:
+        return []
+    step = store.existing_step(answer_run_id, REVISION_INPUT) or store.existing_step(answer_run_id, fast_answer.INPUT)
+    if step is None or step["status"] != "succeeded" or not step["output"]:
+        return []
+    return [{"work_id": row["work_id"], "source_version_id": row["source_version_id"],
+             "screen_more_run_id": row["screened_after_cutoff"], "evidence_basis": row.get("evidence_basis"),
+             "route": row["route"]}
+            for row in step["output"].get("items", []) if row.get("screened_after_cutoff")]
 
 
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
@@ -235,12 +309,14 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None
     # The discovery's expansion terms, frozen into this run under the key the abstract stage reads them from.
     expansion = (store.existing_step(target["discovery_run_id"], "vocabulary_expansion") or {}).get("output") or {}
     small_batch.save_code(flow, run, "vocabulary_expansion", "code:vocabulary_expansion", lambda: expansion)
+    heads = target["heads"]
+    # Every batch close publishes its decisions and the selection-revision move in one transaction.
+    flow._abstract_close_hooks[run_id] = lambda: mark_answer(store, run)
     try:
-        await flow._abstract_stage(run, scope, vocabulary, order=target["heads"], batch_key=BATCH_KEY,
-                                   read_limit=len(target["heads"]))
-        flow._checkpoint(run_id, revision)
+        await flow._abstract_stage(run, scope, vocabulary, order=heads, batch_key=BATCH_KEY, read_limit=len(heads))
     finally:
-        mark_answer(store, run)
+        flow._abstract_close_hooks.pop(run_id, None)
+    flow._checkpoint(run_id, revision)
     small_batch.save_code(flow, run, SUMMARY_KEY, "code:screen_more_summary", lambda: summary(store, run))
 
 

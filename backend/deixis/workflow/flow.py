@@ -326,6 +326,7 @@ class ResearchFlow:
         self._send_by: dict[str, Callable[[], Any]] = {}
         self._quota_out: dict[str, set[str]] = {}
         self._openalex_budget: dict[str, acquisition.OpenAlexBudget] = {}
+        self._abstract_close_hooks: dict[str, Callable[[], None]] = {}  # per run; see `_close_abstract_batch`
         from deixis.workflow.background_fetch import BackgroundFetchLane, FetchSlots
         if getattr(deps, "fetch_slots", None) is None:
             deps.fetch_slots = FetchSlots()
@@ -1666,6 +1667,20 @@ class ResearchFlow:
         return dict(sorted(written.items()))
 
     def _close_abstract_batch(self, run: dict[str, Any], number: int, rows: list[dict[str, Any]],
+                              outputs: list[dict[str, Any] | None], runs: int,
+                              prefix: str = "abstract_screening") -> None:
+        """Close one batch (`_write_abstract_batch`). A run that registered a close hook (UI parity S20: `screen_more`
+        moves the selection revision for the candidates it writes) has the batch's writes and the hook's committed in
+        one transaction, so no crash can leave one without the other."""
+        hook = getattr(self, "_abstract_close_hooks", {}).get(run["id"])
+        if hook is None:
+            self._write_abstract_batch(run, number, rows, outputs, runs, prefix)
+            return
+        with transaction(self.store.conn):
+            self._write_abstract_batch(run, number, rows, outputs, runs, prefix)
+            hook()
+
+    def _write_abstract_batch(self, run: dict[str, Any], number: int, rows: list[dict[str, Any]],
                               outputs: list[dict[str, Any] | None], runs: int,
                               prefix: str = "abstract_screening") -> None:
         """Store what each run proposed for each record of the batch and write the code the two of them mean.

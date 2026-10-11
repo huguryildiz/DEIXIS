@@ -14,12 +14,16 @@ from deixis.config import Settings
 from deixis.domain import skill
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
-from deixis.workflow import screen_more, small_batch
+from deixis.storage.db import new_id, now
+from deixis.workflow import fast_answer, screen_more, small_batch
+from deixis.workflow.views import research_view
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.store import Store
 from deixis.workflow.worker import Worker
 from fakes import FakeAdapter, valid_response
 from test_fetch_overlap_flow import discover, output
+from test_abstract_flow import HALF
+from test_fulltext_flow import Transport, work
 from test_small_batch_flow import app_for, client_of
 
 ACTIVE = ("queued", "running", "pause_requested")
@@ -40,9 +44,11 @@ def settle(client, rid, timeout=60):
     raise AssertionError("the research's runs did not settle")
 
 
-def discovered(tmp_path, monkeypatch, n):
-    """A quick discovery (read window N = 25) over `n` SYNTHETIC works the model reads, every run settled."""
-    app, _ = app_for(tmp_path, monkeypatch, n, model_works=True)
+def discovered(tmp_path, monkeypatch, n, preprints=False):
+    """A quick discovery (read window N = 25) over `n` SYNTHETIC works the model reads, every run settled. With
+    `preprints`, every record is a submitted version, so a published version added later heads its work."""
+    records = [work(i, title=HALF, version="submittedVersion") for i in range(n)] if preprints else None
+    app, _ = app_for(tmp_path, monkeypatch, n, model_works=True, transport=Transport(records) if records else None)
     with client_of(app) as client:
         rid, run_id, _, run = discover(client, effort="quick")
         assert run["status"] == "completed", run
@@ -127,9 +133,10 @@ def test_screen_more_reads_the_next_forty_twice_per_batch_and_includes_nothing(t
 
     after = screen_more.unscreened(h.store, rid, 0, 100)
     assert after["total"] == 25 and [i["signals"]["rank"] for i in after["items"]] == list(range(66, 91))
-    assert h.store.selection_revision(rid) == revision + 1  # the answer made before is for an earlier selection
-    assert execute(h, run)["status"] == "completed"  # run again: nothing sent twice, no second move
-    assert len(sent_batches(h)) == 4 and h.store.selection_revision(rid) == revision + 1
+    # Each batch's candidates moved the revision as they were written: the answer made before is for an earlier one.
+    assert h.store.selection_revision(rid) == revision + 2
+    assert execute(h, run)["status"] == "completed"  # run again: nothing sent twice, no further move
+    assert len(sent_batches(h)) == 4 and h.store.selection_revision(rid) == revision + 2
 
     second = screen_more.request(h.store, rid, None)
     assert second["target"]["heads"] == [item["head"] for item in frozen["items"][65:90]]
@@ -160,15 +167,26 @@ def test_screen_more_resumes_after_a_crash_without_resending_a_finished_call(tmp
     h = harness(tmp_path)
     run = screen_more.request(h.store, rid, None)
 
+    revision = h.store.selection_revision(rid)
+    earlier = [a["id"] for a in research_view(h.store, rid)["answers"] if a["applicability"] == "current"]
+    assert earlier
+    seen = []
+
     def crash_on_third(si):
         if len(h.adapter.calls) == 3:
+            # The first batch's candidates and the revision move were committed together, before anything else ran.
+            seen.append(h.store.selection_revision(rid))
             h.adapter.before = None
             raise Crash
 
     h.adapter.before = crash_on_third
     with pytest.raises(Crash):
         execute(h, run)
+    assert seen == [revision + 1]
     assert Worker.recover(SimpleNamespace(store=h.store))["runs"] == 1
+    assert h.store.selection_revision(rid) == revision + 1
+    answers = {a["id"]: a["applicability"] for a in research_view(h.store, rid)["answers"]}
+    assert all(answers[aid] == "stale_selection" for aid in earlier)  # no stored candidate behind a "current" answer
     assert h.store.run(run["id"])["pause_reason"] == "backend_restarted"
     steps = screening_steps(h.store, run["id"])
     assert sorted(steps.values()) == ["outcome_unknown", "succeeded", "succeeded"]
@@ -262,6 +280,81 @@ def test_a_work_the_person_already_decided_is_neither_listed_nor_planned(tmp_pat
     assert page["total"] == 34 and head not in {i["source_version_id"] for i in page["items"]}
     run = screen_more.request(h.store, rid, None)
     assert head not in run["target"]["heads"] and len(run["target"]["heads"]) == 34
+
+
+def new_answer(h, rid, **extra):
+    scope = h.store.scope(rid, h.store.research(rid)["current_scope_revision"])
+    budget = fast_answer.answer_run_budget(h.store, rid, scope) | extra
+    run = execute(h, h.store.create_run(rid, "answer", budget, None))
+    assert run["status"] == "completed", run
+    h.store.conn.execute("UPDATE runs SET status = 'cancelled' WHERE research_id = ? AND status = 'queued'", (rid,))
+    return output(h.store, run["id"], fast_answer.INPUT)
+
+
+def test_only_a_new_answer_the_person_starts_reads_screen_more_candidates(tmp_path, monkeypatch):
+    rid, _ = discovered(tmp_path, monkeypatch, 60)
+    h = harness(tmp_path)
+    run = screen_more.request(h.store, rid, None)
+    assert execute(h, run)["status"] == "completed"
+    automatic = new_answer(h, rid, trigger="auto_after_discovery")
+    assert not [r for r in automatic["items"] if r.get("screened_after_cutoff")]
+    started = new_answer(h, rid)
+    later = [r for r in started["items"] if r.get("screened_after_cutoff")]
+    assert len(later) == 35 and {r["evidence_basis"] for r in later} == {"abstract_screening"}
+    assert all(r["route"] == "abstract" and len(r["abstract_ids"]) == 1 for r in later)
+    shown = {a["run_id"]: a["screened_after_cutoff"] for a in research_view(h.store, rid)["answers"]}
+    marked = [rows for rows in shown.values() if rows]
+    assert len(marked) == 1 and len(marked[0]) == 35  # the person's answer only; the automatic one reads none
+    assert {x["evidence_basis"] for x in marked[0]} == {"abstract_screening"}
+
+
+def test_a_new_head_the_person_excluded_keeps_its_work_out_of_the_answer(tmp_path, monkeypatch):
+    rid, _ = discovered(tmp_path, monkeypatch, 60, preprints=True)
+    h = harness(tmp_path)
+    run = screen_more.request(h.store, rid, None)
+    assert execute(h, run)["status"] == "completed"
+    kept_preprint, excluded_preprint = run["target"]["heads"][:2]
+    published = {}
+    for preprint in (kept_preprint, excluded_preprint):  # a published version of the work joins after Screen more
+        svid = new_id("srv")
+        h.store.conn.execute("INSERT INTO source_versions (id, work_id, title, doi, origin, version_label, created_at)"
+                             " VALUES (?, ?, ?, ?, 'provider', 'publishedVersion', ?)",
+                             (svid, h.store.source(preprint)["work_id"], "SYNTHETIC published version",
+                              f"10.1/published.{svid}", now()))
+        h.store.add_to_corpus(rid, svid, "user_upload")
+        assert h.store.work_heads(rid)[h.store.source(preprint)["work_id"]] == svid
+        published[preprint] = svid
+    version = h.store.conn.execute("SELECT version FROM selections WHERE research_id = ? AND source_version_id = ?",
+                                   (rid, published[excluded_preprint])).fetchone()[0]
+    h.store.set_user_selection(rid, published[excluded_preprint], "excluded", version, "SYNTHETIC not this work")
+
+    rows = {r["source_version_id"]: r for r in new_answer(h, rid)["items"]}
+    assert rows[kept_preprint]["screened_after_cutoff"] == run["id"]
+    assert rows[kept_preprint]["head_after_cutoff"] == published[kept_preprint]  # the version change is recorded
+    assert excluded_preprint not in rows  # the person's exclusion of the new head keeps the work out
+
+
+def test_an_excluded_or_disagreeing_work_is_not_admitted(tmp_path, monkeypatch):
+    rid, _ = discovered(tmp_path, monkeypatch, 60)
+    h = harness(tmp_path)
+    run = screen_more.request(h.store, rid, None)
+    assert execute(h, run)["status"] == "completed"
+    first, second, third = run["target"]["heads"][:3]
+    from deixis.workflow.decisions import DecisionStore
+    decisions = DecisionStore(h.store)
+    decisions.record(rid, first, "criterion_absent")  # a full-text exclusion of the work
+    other = new_id("srv")  # another version of the second work, read in full and included: the versions disagree
+    h.store.conn.execute("INSERT INTO source_versions (id, work_id, title, origin, version_label, created_at)"
+                         " VALUES (?, ?, 'SYNTHETIC other version', 'provider', 'acceptedVersion', ?)",
+                         (other, h.store.source(second)["work_id"], now()))
+    h.store.add_to_corpus(rid, other, "search", candidate=False)
+    decisions.record(rid, second, "criterion_absent")
+    decisions.record(rid, other, "all_parts_verified")
+    assert decisions.work_outcome(rid, h.store.source(second)["work_id"])["reason_code"] == "versions_disagree"
+    # A second abstract stored after the reads: the record's abstract is no longer the text both runs were shown.
+    h.store._insert_passage(third, None, "abstract", None, None, "provider", None, None, "SYNTHETIC a newer abstract.")
+    admitted = screen_more.answer_admissions(h.store, rid, 1)
+    assert len(admitted) == 32 and not {first, second, third} & set(admitted)
 
 
 # ---- F12 and the routes ------------------------------------------------------------------------------------------

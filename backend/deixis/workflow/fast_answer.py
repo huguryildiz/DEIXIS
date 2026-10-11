@@ -236,15 +236,20 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
     if changed:
         for row in rows:
             apply_user(row, selections.get(row["head"]) or humans.get(row["work_id"]))
-    # UI parity S20: a work the read stage did not reach, which a person's "Screen more" run (F13) has since made an
-    # abstract-stage candidate on this very version, is read from its abstract like the cutoff's own candidates.
-    from deixis.workflow import screen_more
-    later = screen_more.answer_candidates(store, rid, run["scope_revision"])
-    for row in rows:
-        found = later.get(row["source_version_id"])
-        if found and row["route"] == "abstract" and row["reason"] in ("outside_read_window", "not_screened_at_cutoff"):
-            row.update(reason=None, decision_id=found["decision_id"], abstract_decision_id=found["decision_id"],
-                       screened_after_cutoff=found["run_id"])
+    # UI parity S20: an answer the person starts (no `trigger`: not the automatic answer after a discovery, not a late
+    # revision) also reads a work the read stage did not reach that a "Screen more" run (F13) has since made a
+    # candidate from its abstract, on this very version, unless the person or a later stage excluded it
+    # (`screen_more.answer_admissions`, fail-closed). It is abstract-based evidence and is marked as such.
+    if run["budget"].get("trigger") is None:
+        from deixis.workflow import screen_more
+        later = screen_more.answer_admissions(store, rid, run["scope_revision"])
+        for row in rows:
+            found = later.get(row["source_version_id"])
+            if found and row["route"] == "abstract" and row["reason"] in ("outside_read_window", "not_screened_at_cutoff"):
+                row.update(reason=None, decision_id=found["decision_id"], abstract_decision_id=found["decision_id"],
+                           abstract_ids=found["abstract_ids"], screened_after_cutoff=found["run_id"],
+                           evidence_basis="abstract_screening",
+                           **({"head_after_cutoff": found["current_head"]} if found["current_head"] != row["head"] else {}))
     members = {r["id"]: dict(r) for r in store.conn.execute(
         "SELECT v.* FROM source_versions v JOIN corpus_memberships m ON m.source_version_id = v.id"
         " WHERE m.research_id = ? AND m.removed_at IS NULL", (rid,))}

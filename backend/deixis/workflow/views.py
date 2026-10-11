@@ -14,6 +14,7 @@ from deixis.workflow import approval as approval_rules
 from deixis.workflow import flow_counts as flow_rules
 from deixis.workflow import overrides as override_rules
 from deixis.workflow import probes as probe_rules
+from deixis.workflow import screen_more
 from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy, request_outcomes
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import chunk_numbers, equation_state, equations_to_check, latex_numbers
@@ -629,6 +630,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "applicability": result_applicability(a["scope_revision"], research["current_scope_revision"],
                                                   a["selection_revision"], research["selection_revision"]),
             "answer_language": a["answer_language"], "created_at": a["created_at"], "claims": claims,
+            # Works this answer read only because a person's Screen more run made them candidates after the read
+            # cutoff: abstract-based evidence, screened after the cutoff (UI parity S20).
+            "screened_after_cutoff": screen_more.answer_view(store, a["run_id"]),
             "limitations": (draft or {}).get("limitations", []) if a["status"] == "structurally_valid" else [],
             "unanswered_aspects": (draft or {}).get("unanswered_aspects", []) if a["status"] == "structurally_valid" else [],
             "capability_notice": (draft or {}).get("capability_notice") if a["status"] == "structurally_valid" else None,

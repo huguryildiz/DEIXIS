@@ -1,0 +1,223 @@
+/* Research page, Sources tab: search summary, source list and rows, Zotero panel, selection bar, text recovery. Split from workspace.css (S0b). */
+/* Screening tones: include / exclude / uncertain, shared by the proposal verdict and the selection toggle. */
+.sources-panel,.activity-panel{margin-top:2px}
+.workspace-pane-head{display:flex;align-items:flex-end;justify-content:space-between;gap:22px;margin:0 0 18px;padding:3px 0 17px;border-bottom:1px solid var(--line)}
+.workspace-pane-head h2{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:18px;font-weight:650;letter-spacing:-.025em}
+.workspace-pane-head p{max-width:72ch;margin:5px 0 0!important;color:var(--muted);font-size:12px;line-height:1.55!important}
+.search-summary{margin:0 0 16px;border-bottom:1px solid var(--line)}
+.search-summary summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:9px 2px;color:var(--ink);font-size:12px;cursor:pointer;list-style:none}
+.search-summary summary::-webkit-details-marker{display:none}
+.search-summary summary>span{display:inline-flex;align-items:center;gap:8px;font-weight:600}
+.search-summary svg.search-summary-chevron{color:var(--muted);transform:rotate(90deg);transition:transform .16s ease}
+.search-summary:not([open]) svg.search-summary-chevron{transform:rotate(0)}
+.search-summary summary small{color:var(--muted);font-size:11px;font-weight:400}
+.search-summary svg{color:var(--accent)}
+.search-summary-list{display:grid;gap:0;padding:2px 0 10px 24px}
+.search-summary:not([open]) .search-summary-list{display:none}
+.search-summary-list>div{display:grid;grid-template-columns:minmax(180px,1fr) minmax(250px,1.15fr);gap:14px;padding:7px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 38%);font-size:11.5px;line-height:1.5}
+.search-summary-list span{min-width:0;overflow:hidden;color:var(--ink);text-overflow:ellipsis;white-space:nowrap}
+.search-summary-list small{color:var(--muted);font-size:11px}
+/* Sources (mockup .tabs over .toolbar): the state filters as an underline strip with counts, then one row of search, pick-all and filters. */
+.source-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 6px;padding:0 0 10px;border-bottom:1px solid var(--line)}
+.source-filters{display:flex;flex:1 1 100%;gap:2px;margin-bottom:2px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.source-filters::-webkit-scrollbar{display:none}
+.source-filters button{display:inline-flex;flex:none;align-items:baseline;gap:4px;padding:7px 10px;border-bottom:2px solid transparent;background:none;color:var(--muted);font-size:12.5px;font-weight:500;white-space:nowrap;transition:color .16s ease,border-color .16s ease}
+.source-filters button:hover{color:var(--ink)}
+.source-filters button span{color:var(--muted);font-size:12px;font-weight:450;font-variant-numeric:tabular-nums}
+.source-filters button[aria-pressed=true]{border-bottom-color:var(--accent);color:var(--ink)}
+.app .source-filters button:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;border-radius:5px}
+@media (prefers-reduced-motion:reduce){.source-filters button{transition:none}}
+.source-search{flex:0 1 260px;min-width:170px;display:flex;align-items:center;gap:6px;height:30px;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--muted)}
+.source-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.app .source-search input:focus-visible{outline:none}
+.source-search input{flex:1;min-width:0;height:100%;background:transparent;border:0;outline:none;font-size:13px;color:var(--ink)}
+.app .source-toolbar [data-slot=select-trigger]{height:30px;gap:6px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);box-shadow:none;color:var(--ink-2);font-size:13px}
+.app .source-toolbar [data-slot=select-trigger]:hover{background:var(--hover-surface);color:var(--ink)}
+.app .source-toolbar .source-pdf-filter{min-width:132px}
+.source-filter-option{display:flex;align-items:center;justify-content:space-between;gap:22px;width:100%}
+.source-filter-option small{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.sort-option small{display:block;margin-top:2px;font-size:11px;line-height:1.35;color:var(--muted-foreground)}
+.source-empty button{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.source-list{border-top:0}
+.source-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:start;padding:14px 4px;border-bottom:1px solid var(--line)}
+/* A picked row takes the accent tint (mockup tr.sel); the checkbox sits on the title line. */
+.app .sources-panel .source-row.has-pick{padding-left:34px}
+.app .sources-panel .source-row.is-other-version.has-pick{padding-left:46px}
+.app .sources-panel .source-pick{top:17px;left:10px}
+.app .sources-panel .source-row.is-other-version .source-pick{left:22px}
+.app .sources-panel .source-row.is-picked{background:var(--accent-tint)}
+.source-row.is-excluded .source-main>strong{color:var(--muted)}
+.source-row.is-other-version{margin-left:18px;padding-left:14px;border-left:2px solid var(--line)}
+.source-row.is-other-version .source-main>strong{font-weight:500}
+/* The exclusion reason (mockup .why-bar): a quiet band on the side surface with one field and its button. */
+.reason-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--sidebar-surface)}
+.reason-form input{flex:1;min-width:180px;height:30px;padding:0 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);font-size:13px;color:var(--ink)}
+.reason-form input:focus{border-color:var(--accent)}
+.reason-form input::placeholder{color:var(--muted)}
+.version-note{display:block;margin:0 0 4px;color:var(--muted);font-size:11px;line-height:1.5}
+.source-main>strong,.source-main small{display:block}
+.source-main .source-title{color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.35;font-weight:500;letter-spacing:-.005em;text-wrap:balance}
+.source-main small{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5}
+/* Citation-style byline (mockup .src-m): authors · year, then venue in italics with volume, pages and the OpenAlex count. */
+.source-main .source-byline,.pdf-ready-head .source-byline{display:grid;gap:0;margin-top:3px;font-size:12px;line-height:1.45;color:var(--muted)}
+.source-main .source-byline em,.pdf-ready-head .source-byline em{font-style:italic;color:var(--ink-2)}
+/* Version, access, similarity and provenance as neutral pills (mockup .pill) with a dot in the attribute's tone; the text names it. */
+.source-status{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px;font-size:11.5px;line-height:1.5;color:var(--muted)}
+.source-fact{--fact:var(--muted);display:inline-flex;align-items:center;gap:6px;color:color-mix(in srgb,var(--fact),var(--ink) 22%)}
+.source-status .source-fact{gap:5px;min-height:21px;padding:0 7px;border:1px solid var(--line);border-radius:5px;color:var(--muted);line-height:1.4}
+.source-status .source-fact.is-cited{color:var(--accent)}
+.source-fact:not(.is-plain)::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;background:var(--fact)}
+.source-fact.is-plain{color:var(--muted)}
+.source-fact.is-published{--fact:var(--tone-include)}
+.source-fact.is-text{--fact:var(--attr-text)}
+.source-fact.is-accepted{--fact:var(--attr-accepted)}
+.source-fact.is-submitted{--fact:var(--attr-submitted)}
+.source-fact.is-abstract{--fact:var(--attr-abstract)}
+.source-fact.is-ocr{--fact:var(--tone-uncertain)}
+.source-fact.is-cited{--fact:var(--accent)}
+.source-fact.is-unstated{--fact:var(--muted)}
+.source-fact.is-similarity{--fact:var(--attr-similarity);font-variant-numeric:tabular-nums;cursor:help}
+.source-main .proposal>svg{display:inline;vertical-align:-2px;margin-right:5px;color:var(--muted)}
+.legacy-research .proposal{font-size:12px!important;margin:8px 0 0!important;line-height:1.55}
+.legacy-research .proposal.is-model{display:flex;gap:8px;margin-top:9px!important;padding:0;border-radius:0;background:none;color:var(--ink-2);font-size:12.5px!important;line-height:1.5}
+.proposal .proposal-tag{flex:none;font-size:12px;font-weight:500;color:var(--muted);white-space:nowrap}
+.proposal em{font-style:normal;color:var(--ink);font-weight:600}
+.proposal .verdict{--pill:var(--muted);color:var(--pill);font-weight:600}
+.verdict.is-include{--pill:var(--tone-include)}
+.verdict.is-exclude{--pill:var(--tone-exclude)}
+.verdict.is-uncertain{--pill:var(--tone-uncertain)}
+.legacy-research .proposal.is-stale{padding-left:9px;border-left:2px solid var(--accent);color:var(--ink)}
+.proposal span span{font-size:11px}
+.proposal>span:not(.proposal-tag){min-width:0}
+.proposal.ocr-note{display:flex;align-items:flex-start;gap:6px;color:var(--muted)}
+.proposal.ocr-note>svg{flex:none;margin:3px 0 0;color:var(--muted)}
+.pdf-ready-head .ocr-note{margin-top:6px!important}
+.pdf-text-page h4 .ref-pill{margin-left:8px;vertical-align:1px}
+/* Footer: the PDF lookup summary, then the actions. */
+.source-foot{display:grid;justify-items:start;gap:2px;margin-top:8px}
+/* Row actions (mockup .rowacts): accent text actions with small icons; Remove PDF keeps the destructive tone. */
+.source-links{display:flex;flex-wrap:wrap;gap:0 2px;margin-left:-6px;font-size:12px}
+.source-links :is(a,button){display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 6px;border:0;border-radius:6px;color:var(--accent);font-weight:500;text-decoration:none}
+.source-links :is(a,button):hover:not(:disabled){background:var(--hover-surface);text-decoration:underline;text-underline-offset:2px}
+.source-links :is(a,button)>svg{width:13px;height:13px;color:currentColor}
+.source-links .connection-icon{width:13px;height:13px}
+.source-links button:disabled{color:var(--muted);cursor:wait}
+.source-links .source-asset-actions{display:inline-flex;flex-wrap:wrap;gap:0 2px}
+.source-links .is-destructive,.source-links .is-destructive>svg{color:var(--destructive)}
+.pdf-search-status{width:fit-content;max-width:100%;margin-top:10px;padding:6px 12px 6px 10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--raised-surface);display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;color:var(--ink);font-size:12.5px;line-height:1.55}
+.pdf-search-status strong{font-weight:600}
+.pdf-search-spin{flex:none;color:var(--accent);animation:pdf-search-rot .9s linear infinite}
+@keyframes pdf-search-rot{to{transform:rotate(360deg)}}
+.pdf-search-services{display:inline-flex;align-items:center}
+.pdf-search-services .connection-icon{display:inline-flex;width:20px;height:20px;padding:3px;border:1px solid var(--strong-line);border-radius:50%;background:var(--raised-surface);color:var(--ink)}
+.pdf-search-services .connection-icon+.connection-icon{margin-left:-6px}
+.pdf-search-services .connection-icon svg,.pdf-search-muted .connection-icon svg{width:100%;height:100%}
+.pdf-search-muted{display:inline-flex;align-items:center;gap:5px;color:var(--muted)}
+.pdf-search-muted .connection-icon{display:inline-flex;width:13px;height:13px}
+.pdf-search-sep{width:1px;height:14px;background:var(--strong-line)}
+.pdf-search-status .evidence-run-time{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){.pdf-search-spin{animation:none}}
+.source-provenance{justify-self:stretch;min-width:0}
+.source-provenance summary{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 7px;padding:5px 0;color:var(--muted);font-size:12px;line-height:1.5;cursor:pointer;list-style:none}
+.source-provenance summary::-webkit-details-marker{display:none}
+.source-provenance summary strong{color:var(--ink);font-weight:600}
+.source-provenance summary>span:last-child{font-variant-numeric:tabular-nums}
+.source-provenance-chev{flex:none;align-self:center;color:var(--muted);transition:transform .15s ease}
+.source-provenance[open] .source-provenance-chev{transform:rotate(90deg)}
+@media(prefers-reduced-motion:reduce){.source-provenance-chev{transition:none}}
+.pdf-lookup-wrap{margin-top:4px;max-width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--raised-surface)}
+.pdf-lookup{width:100%;min-width:520px;border-collapse:collapse;font-size:12px;line-height:1.5}
+.pdf-lookup th{padding:7px 12px;border-bottom:1px solid var(--line);color:var(--muted);font-size:11.5px;font-weight:600;text-align:left}
+.pdf-lookup td{padding:6px 12px;border-bottom:1px solid var(--line);color:var(--muted);vertical-align:top}
+.pdf-lookup tr:last-child td{border-bottom:0}
+.pdf-lookup .pdf-lookup-service{color:var(--ink);white-space:nowrap}
+.pdf-lookup-service .connection-icon{width:12px;height:12px;margin-right:6px;vertical-align:-1px}
+.pdf-lookup .pdf-lookup-count{font-variant-numeric:tabular-nums}
+.pdf-lookup td.is-ok{color:var(--tone-include)}
+.pdf-lookup td.is-warn{color:var(--tone-uncertain)}
+.pdf-lookup td.is-bad{color:var(--tone-exclude)}
+.pdf-lookup-file{display:block}
+.pdf-lookup :is(a,button){color:var(--accent)}
+.pdf-lookup button:disabled{color:var(--muted);cursor:wait}
+.section-actions{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px}
+.reference-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.export-links{display:inline-flex;align-items:stretch;height:36px;border:1px solid var(--strong-line);border-radius:9px;background:var(--raised-surface);overflow:hidden;color:var(--muted)}
+.export-links-label{display:inline-flex;align-items:center;gap:7px;padding:0 11px;font-size:12px;font-weight:500;white-space:nowrap}
+.export-links-label svg{color:var(--muted)}
+.export-formats{display:inline-flex;align-items:stretch;border-left:1px solid var(--strong-line)}
+.export-links a{display:inline-flex;align-items:center;padding:0 10px;color:var(--ink);font-size:12px;font-weight:600;text-decoration:none;transition:background-color .16s ease,color .16s ease}
+.export-links a+a{border-left:1px solid var(--strong-line)}
+.export-links a:hover{background:color-mix(in srgb,var(--accent),transparent 91%);color:var(--accent)}
+.export-links a:focus-visible{position:relative;z-index:1;outline:2px solid var(--accent);outline-offset:-2px}
+.source-add-actions{display:inline-flex;align-items:center;gap:7px}
+.export-links+.source-add-actions{padding-left:10px;border-left:1px solid var(--line)}
+.app .source-action{height:36px;gap:8px;padding:0 13px;border-color:var(--strong-line);border-radius:9px;background:var(--raised-surface);color:var(--ink);font-size:12.5px;font-weight:600;transition:border-color .16s ease,background-color .16s ease,color .16s ease}
+.app .source-action:hover{border-color:color-mix(in srgb,var(--accent),var(--line) 45%);background:color-mix(in srgb,var(--accent),transparent 95%);color:var(--accent)}
+.app .source-action .connection-icon{display:grid;place-items:center;width:17px;height:17px}
+.app .source-action .connection-icon svg{width:17px;height:17px}
+.app .source-action.is-primary{border-color:var(--accent);background:var(--accent);color:var(--paper)}
+.app .source-action.is-primary:hover{border-color:color-mix(in srgb,var(--accent),var(--ink) 12%);background:color-mix(in srgb,var(--accent),var(--ink) 10%);color:var(--paper)}
+.app .source-action[aria-expanded=true]{border-color:var(--accent);background:color-mix(in srgb,var(--accent),transparent 91%);color:var(--accent)}
+@media (max-width:720px){.section-actions{flex:1 1 100%;justify-content:flex-start}.zotero-panel-head .source-filters{order:1}}
+@media (max-width:540px){.section-actions{align-items:stretch}.export-links{width:100%}.export-links-label{flex:1}.source-add-actions{width:100%}.export-links+.source-add-actions{padding:8px 0 0;border-top:1px solid var(--line);border-left:0}.app .source-action{flex:1;padding-inline:10px}}
+@media (prefers-reduced-motion:reduce){.app .source-action,.export-links a{transition:none}}
+.intake-menu-item>.connection-icon{width:17px;height:17px;color:var(--primary)}
+.attachment-chip .connection-icon{width:13px;height:13px}
+.zotero-panel{display:grid;gap:10px;margin:0 0 16px;padding:14px 16px;border:1px solid var(--line);border-radius:8px}
+.zotero-panel-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.zotero-panel-head strong{margin-right:auto;font-size:13px}
+.zotero-panel p{margin:0;font-size:12px;color:var(--muted)}
+.zotero-panel-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.zotero-empty{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--ink),transparent 97%)}
+.zotero-empty>div{flex:1 1 180px;min-width:0}
+.zotero-empty strong{display:block;font-size:13px;font-weight:600;color:var(--ink)}
+.zotero-empty .zotero-empty-icon{display:grid;place-items:center;flex:none;width:34px;height:34px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+.zotero-empty .connection-icon{width:16px;height:16px}
+.app .zotero-panel [data-slot=select-trigger]{min-width:min(280px,100%);height:32px;color:var(--ink);border-color:var(--line)}
+/* The decision control (mockup .seg): a quiet segmented control; the chosen state takes its tone's notice surface and ink. */
+.selection-toggle{display:inline-flex;flex:none;justify-self:start;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden;background:var(--paper)}
+.selection-toggle button{min-height:26px;padding:3px 9px;font-size:12px;font-weight:500;color:var(--muted);background:transparent}
+.selection-toggle button+button{border-left:1px solid var(--strong-line)}
+.selection-toggle button:not(:disabled):hover{background:var(--hover-surface);color:var(--ink)}
+.app .selection-toggle button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.selection-toggle button[aria-pressed=true]{background:var(--selected-surface);color:var(--ink)}
+.selection-toggle button.is-included[aria-pressed=true]{background:var(--ok-surface);color:var(--ok-ink)}
+.selection-toggle button.is-pending[aria-pressed=true]{background:var(--warn-surface);color:var(--warn-ink)}
+.selection-toggle button.is-excluded[aria-pressed=true]{background:var(--error-surface);color:var(--error-ink)}
+/* The selection bar of the Sources tab (mockup .selbar): the side surface and 13px type; it stays pinned above the list. */
+.app .sources-panel .selection-bar{padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface);box-shadow:var(--shadow-float);font-size:13px}
+.app .sources-panel .selection-bar>strong{font-weight:500}
+.app .sources-panel .selection-bar-actions [data-slot=button]{height:30px;border-radius:7px;font-size:13px}
+@media(max-width:760px){
+  .research-facts{gap:6px 16px}
+  .research-tabs [data-slot=tabs-list]{gap:0}
+  .source-row{grid-template-columns:1fr}
+  .source-search{flex:1 1 100%}
+  .workspace-pane-head{align-items:flex-start;flex-direction:column}
+  .search-summary-list>div{grid-template-columns:1fr;gap:2px}
+  .activity-day{grid-template-columns:1fr;gap:8px}
+  .activity-day>h3{position:static;margin-top:0}
+  .activity-list li{grid-template-columns:48px minmax(0,1fr);gap:8px}
+}
+.source-focus{margin:8px 0 4px;color:var(--muted);font-size:12.5px}
+.source-focus button{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+/* Semantic search notes in a research (slice 21): the conditional line under the answer and table buttons, the
+   built-in model's English sentence and its form at the top of the Sources tab. */
+.semantic-upload-note{margin:6px 0 0;max-width:76ch;color:var(--muted);font-size:12px;line-height:1.5}
+.english-question-line{margin:0 0 10px;max-width:76ch;color:var(--muted);font-size:12.5px;line-height:1.5;overflow-wrap:anywhere}
+.english-question{display:grid;gap:8px;margin:0 0 14px;max-width:76ch}
+.english-question form{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.english-question input{flex:1 1 280px;min-width:0;height:32px;padding:0 11px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);color:var(--ink);font-family:inherit;font-size:13px}
+.english-question input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* Recovery describes recorded operations; identifiers disclose only on request. */
+.text-recovery { margin-block: 10px; color: var(--muted); font-size: 12px; }
+.text-recovery p { margin-block: 6px; overflow-wrap: anywhere; }
+.text-recovery-result { color: var(--ink); }
+.text-recovery-result.is-error { color: var(--error-ink); }
+.text-recovery-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.text-recovery-disclosure { display: inline-flex; align-items: center; gap: 4px; margin-block: 6px; color: var(--muted); }
+.text-recovery-history { padding-inline-start: 20px; }
+.text-recovery-history > li { padding-block: 8px; border-top: 1px solid var(--line); }
+.text-recovery-identifiers { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.text-recovery-identifiers div { margin-block: 6px; }
+.text-recovery-identifiers dd { margin-inline-start: 0; color: var(--ink); }

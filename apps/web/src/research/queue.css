@@ -1,0 +1,180 @@
+/* Research page, human queue, flow block and audit sample. Split from workspace.css (S0b). */
+/* ---- the human queue of an sw research (slice 17, D97) ---- */
+.queue-panel{margin-top:2px}
+.queue-panel p{margin:0}
+.queue-panel .queue-empty{display:grid;gap:4px}
+.queue-panel .queue-layout{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);align-items:start}
+.queue-panel .queue-list-pane{position:sticky;top:0;display:flex;flex-direction:column;gap:10px;max-height:100vh;min-width:0;padding-right:22px}
+.queue-panel .queue-filters{display:grid;gap:8px}
+.queue-panel .queue-chips{display:flex;flex-wrap:wrap;gap:6px}
+.queue-panel .queue-chips button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12.5px;white-space:nowrap;cursor:pointer}
+.queue-panel .queue-chips button span{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.queue-panel .queue-chips button:hover{background:var(--hover-surface);color:var(--ink)}
+/* The chosen filter (mockup .ghost.tint): accent tint, accent line and accent text. */
+.queue-panel .queue-chips button[aria-pressed=true]{border-color:var(--accent-line);background:var(--accent-tint);color:var(--accent);font-weight:500}
+.queue-panel .queue-chips button[aria-pressed=true] span{color:var(--accent)}
+.queue-panel .queue-reason-filter{max-width:100%}
+.queue-panel .queue-list{min-height:0;overflow:auto;border-top:1px solid var(--line);outline:none}
+.queue-panel .queue-list:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.queue-panel .queue-row{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;padding:11px 8px;border-bottom:1px solid var(--line);cursor:pointer}
+.queue-panel .queue-row:hover{background:var(--hover-surface)}
+.queue-panel .queue-row.is-selected{background:var(--selected-surface)}
+.queue-panel .queue-row.is-selected :is(.queue-row-facts,.queue-row-place){color:color-mix(in srgb,var(--muted),var(--ink) 25%)}
+/* Queue pills are neutral like the Sources and Library pills: grey text on a hairline, the version's tone only as a dot. */
+.queue-panel .ref-pill{gap:5px;padding:0 6px;border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);font-size:11.5px;font-weight:400;line-height:19px}
+.queue-panel .ref-pill>svg{display:none}
+.queue-panel .ref-pill:is(.is-abstract,.is-text,.is-ocr,.is-published,.is-accepted,.is-submitted,.is-removed,.is-cited,.is-similarity)::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pill)}
+.queue-panel .queue-row.is-selected .ref-pill{color:color-mix(in srgb,var(--muted),var(--ink) 25%)}
+.queue-panel .queue-list:focus-visible .queue-row.is-selected{outline:2px solid var(--accent);outline-offset:-2px}
+.queue-panel .queue-row-place{padding-top:2px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
+.queue-panel .queue-row-main{display:grid;gap:5px;min-width:0}
+.queue-panel .queue-row-title{display:-webkit-box;overflow:hidden;color:var(--ink);font-family:var(--font-sans);font-size:13.5px;font-weight:500;line-height:1.35;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+.queue-panel .queue-row-facts{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;color:var(--muted);font-size:11.5px}
+.queue-panel .queue-row-chain{font-style:italic}
+.queue-panel .queue-group-head{margin:14px 0 0;padding:0 8px 6px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:600}
+.queue-panel .queue-filter-empty{padding:14px 8px}
+.queue-panel .queue-keys{margin:0;color:var(--muted);font-size:11px}
+@media (hover:none){.queue-panel .queue-keys{display:none}}
+/* The open row as a card (mockup .qcard): its meta line is the header band on the side surface; the answers sit in the card foot. */
+.queue-panel .queue-detail{min-width:0;padding:0 18px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.queue-panel .queue-detail>.notice{margin-top:14px}
+.queue-panel .queue-detail-head{display:grid;gap:8px;justify-items:start;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.queue-panel .queue-detail-meta{justify-self:stretch;margin:0 -18px 4px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--muted);font-size:12px}
+.queue-panel .queue-detail>.queue-detail-head:first-child .queue-detail-meta{border-radius:11px 11px 0 0}
+.queue-panel .queue-detail-title{margin:0;outline:none}
+.queue-panel .queue-detail-title button{color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:500;line-height:1.4;letter-spacing:-.005em;text-align:left;text-wrap:pretty;cursor:pointer}
+.queue-panel .queue-detail-title button:hover{text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent),transparent 50%);text-underline-offset:3px}
+.queue-panel .queue-detail-title:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:3px}
+.queue-panel .queue-detail-head .source-chips{margin-top:0}
+.queue-panel .queue-open-page{margin-top:4px}
+.queue-panel .queue-question{display:grid;gap:6px;padding:16px 0;border-bottom:1px solid var(--line)}
+.queue-panel .queue-question p{margin:0}
+.queue-panel .queue-question-text{color:var(--ink);font-size:15px;font-weight:600;line-height:1.45}
+.queue-panel .queue-question-context{color:var(--muted);font-size:13px;line-height:1.5}
+.queue-panel .queue-question-definition{max-width:76ch;color:var(--muted);font-family:var(--font-sans);font-size:14px;line-height:1.55}
+.queue-panel .queue-why{color:var(--muted);font-size:12.5px;line-height:1.55}
+.queue-panel .queue-why span{color:var(--ink);font-weight:550}
+.queue-panel .queue-why code{margin-left:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--muted)}
+/* The two reads side by side (mockup .reads): one bordered box each. */
+.queue-panel .queue-runs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:14px 0;border-bottom:1px solid var(--line)}
+.queue-panel .queue-run{min-width:0;padding:0 12px 4px;border:1px solid var(--line);border-radius:8px}
+.queue-panel .queue-run>h4{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:12px 0 0;color:var(--ink);font-size:13px;font-weight:600}
+.queue-panel .queue-run-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:12px 0 4px;color:var(--ink);font-size:13px;font-weight:600}
+.queue-panel .queue-run-head small{color:var(--muted);font-size:11.5px;font-weight:400}
+.queue-panel .queue-part{padding:10px 0;border-top:1px solid var(--line)}
+.queue-panel .queue-part-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0;color:var(--ink);font-size:13px;font-weight:550}
+.queue-panel .queue-part-asked{color:var(--accent);font-size:11.5px;font-weight:500}
+.queue-panel .queue-quote{position:relative;margin:8px 0 6px;padding:0 0 0 16px;color:var(--ink);font-family:var(--font-sans);font-size:15px;line-height:1.6;overflow-wrap:anywhere}
+.queue-panel .queue-quote::before{content:'“';position:absolute;top:-4px;left:0;color:color-mix(in srgb,var(--muted),transparent 35%);font-family:var(--font-sans);font-size:24px;line-height:1}
+.queue-panel .queue-part-note{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:0;color:var(--muted);font-size:12px}
+.queue-panel .queue-page-link{display:inline-flex;align-items:center;gap:2px;color:var(--accent);font-size:12px;font-weight:500;cursor:pointer}
+.queue-panel .queue-page-link:hover{text-decoration:underline;text-underline-offset:3px}
+.queue-panel .queue-rationale{margin:6px 0 0;color:var(--muted);font-family:var(--font-sans);font-size:14px;line-height:1.55}
+.queue-panel .queue-closest{display:grid;gap:12px;padding:16px 0;border-bottom:1px solid var(--line)}
+.queue-panel .queue-closest .notice{margin:0 0 8px}
+.queue-panel .queue-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.queue-panel .queue-pair h5,.queue-panel .queue-identity h4,.queue-panel .queue-cues h4{margin:0 0 6px;color:var(--ink);font-size:12.5px;font-weight:600}
+.queue-panel .queue-identity{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;padding:16px 0;border-bottom:1px solid var(--line)}
+.queue-panel .queue-first-page{max-height:280px;overflow:auto;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--page-surface);color:var(--page-ink);font-family:var(--font-serif);font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.queue-panel .queue-serif{margin:0 0 8px;color:var(--ink);font-family:var(--font-sans);font-size:15px;line-height:1.55;overflow-wrap:anywhere}
+.queue-panel .queue-cues{padding:16px 0}
+.queue-panel .queue-cues ul{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.queue-panel .queue-cues li{display:grid;gap:2px}
+.queue-panel .queue-cues li .queue-serif{margin:0}
+.queue-panel .queue-muted{margin:0;color:var(--muted);font-size:12.5px;line-height:1.55}
+.queue-panel .queue-kept-note{margin-top:6px;overflow-wrap:anywhere}
+.queue-panel .queue-kept-note q{font-style:italic}
+.queue-panel .queue-link{color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.queue-panel .queue-foot{position:sticky;bottom:0;z-index:3;display:grid;justify-content:stretch;gap:10px;margin:8px -18px 0;padding:12px 18px 14px;border-top:1px solid var(--line);border-radius:0 0 11px 11px;background:var(--paper);color:var(--ink);font-size:13px}
+.queue-panel .queue-foot .notice{margin:0}
+/* The answers (mockup .qopts): bordered choices; the one filled button stays the PDF confirmation. */
+.queue-panel .queue-answers{display:grid;gap:4px}
+.queue-panel .queue-answers [data-slot=button]{justify-content:flex-start;width:100%;height:auto;min-height:36px;padding:7px 12px;border-radius:8px;font-size:13px;text-align:left;white-space:normal}
+.queue-panel .queue-answers [data-slot=button]:not(.bg-primary):hover:not(:disabled){border-color:var(--accent-line)}
+.queue-panel .queue-note{display:grid;gap:4px;color:var(--ink);font-size:12.5px;font-weight:550}
+.queue-panel .queue-note>span{display:flex;justify-content:space-between;gap:10px}
+.queue-panel .queue-note small{color:var(--muted);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums}
+.queue-panel .queue-note textarea{width:100%;min-height:52px;padding:8px 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--ink);font:inherit;font-size:13px;font-weight:400;line-height:1.5;resize:vertical}
+.queue-panel .queue-note textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.queue-panel .queue-note-toggle{display:inline-flex;align-items:center;gap:6px;justify-self:start;color:var(--muted);font-size:12.5px;cursor:pointer}
+.queue-panel .queue-note-toggle:hover{color:var(--ink)}
+.queue-panel .queue-foot-note{margin:0;color:var(--muted);font-size:11px;line-height:1.5}
+.queue-panel .queue-back{display:inline-flex;align-items:center;gap:6px;margin:12px 0;color:var(--accent);font-size:13px;font-weight:500;cursor:pointer}
+.queue-panel .queue-decided{margin-top:28px;border-top:1px solid var(--line)}
+.queue-panel .queue-decided summary{display:flex;align-items:center;gap:6px;padding:14px 0 10px;color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;list-style:none}
+.queue-panel .queue-decided summary::-webkit-details-marker{display:none}
+.queue-panel .queue-decided[open] .queue-decided-chevron{transform:rotate(90deg)}
+.queue-panel .queue-decided-chevron{transition:transform .16s ease}
+.queue-panel .queue-decided ul{margin:0;padding:0;list-style:none}
+.queue-panel .queue-decided li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:start;padding:11px 0;border-top:1px solid var(--line)}
+.queue-panel .queue-decided-title{color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:500;line-height:1.35;text-align:left;cursor:pointer}
+.queue-panel .queue-decided-title:hover{text-decoration:underline;text-underline-offset:3px}
+.queue-panel .queue-decided-note{margin:4px 0 0;color:var(--ink);font-size:12.5px;line-height:1.5}
+.research-view .chat-queue-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0 0;color:var(--ink);font-size:13px}
+.research-view .chat-queue-line>svg{color:var(--tone-uncertain)}
+.research-view .chat-queue-line>span[aria-hidden]{color:var(--muted)}
+.research-view .chat-queue-line button{color:var(--accent);font-weight:550;cursor:pointer}
+.research-view .chat-queue-line button:hover{text-decoration:underline;text-underline-offset:3px}
+@media (max-width:1050px){.queue-panel .queue-layout{grid-template-columns:minmax(0,300px) minmax(0,1fr)}.queue-panel .queue-runs,.queue-panel .queue-pair,.queue-panel .queue-identity{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:760px){
+  .queue-panel .queue-layout{display:block}
+  .queue-panel .queue-layout.is-detail .queue-list-pane,.queue-panel .queue-layout:not(.is-detail) .queue-detail{display:none}
+  .queue-panel .queue-list-pane{position:static;max-height:none;padding-right:0}
+  .queue-panel .queue-list{overflow:visible}
+  .queue-panel .queue-detail{padding:0 14px}
+  .queue-panel .queue-detail-meta{margin-inline:-14px;padding-inline:14px}
+  .queue-panel .queue-foot{margin-inline:-14px;padding-inline:14px}
+  .queue-panel .queue-detail-title button{font-size:15px}
+  .queue-panel .queue-answers{flex-direction:column}
+  .queue-panel .queue-answers>button{width:100%}
+}
+/* Stacked answers make the pinned bar about half of a short viewport (54% of 450 px at 200% zoom): it covers the row title and the controls the keyboard focuses, so there it scrolls with the page (WCAG 2.4.11). */
+@media (max-width:760px) and (max-height:700px){.queue-panel .queue-foot{position:static}}
+
+/* The flow of an sw research (slice 20): the Sources tab's flow block, the line under an answer, the override count and
+   the audit sample. Counts only, set as quiet interface text; nothing here is styled as success. */
+.flow-block summary small{flex:1;min-width:0;text-align:right;line-height:1.45}
+.flow-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start;gap:10px 14px;padding:4px 0 14px 24px}
+/* Each count list is a box (mockup .plist): a head band on the side surface, then rows on hairlines. */
+.flow-detail>div{min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.flow-block:not([open]) .flow-detail{display:none}
+.flow-head{margin:6px 0 4px;color:var(--ink);font-size:12px;font-weight:600}
+.flow-detail .flow-head{margin:0;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink);font-size:12.5px;font-weight:600;line-height:1.45}
+.flow-list{margin:0;padding:0;list-style:none}
+.flow-list li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 38%);color:var(--ink);font-size:12px;line-height:1.45}
+.flow-detail .flow-list li{padding:7px 12px;border-top:1px solid var(--line);font-size:12.5px}
+.flow-detail .flow-list li:first-child{border-top:0}
+.flow-list strong{font-weight:600;font-variant-numeric:tabular-nums}
+.flow-note{margin:6px 0 0;color:var(--muted);font-size:11.5px;line-height:1.5}
+.flow-detail .flow-note{margin:0;padding:7px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.5}
+.flow-detail .flow-report{grid-column:1/-1;justify-self:start}
+.answer-flow{display:grid;gap:3px;max-width:760px;margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.55}
+.answer-flow p{margin:0}
+.answer-flow .is-attention{color:var(--warn-ink)}
+.queue-panel .overrides-line{margin:-6px 0 16px;color:var(--ink);font-size:12.5px;line-height:1.55}
+.queue-panel .audit-panel{margin-top:28px;padding-top:14px;border-top:1px solid var(--line)}
+.queue-panel .audit-panel h3{margin:0 0 4px;color:var(--ink);font-size:14px;font-weight:600}
+.queue-panel .audit-group{margin-top:16px}
+.queue-panel .audit-group-head,.queue-panel .audit-subhead{margin:0 0 4px;color:var(--ink);font-size:13px;font-weight:600}
+.queue-panel .audit-subhead{margin-top:12px;font-size:12.5px;font-weight:550}
+.queue-panel .audit-group-head small,.queue-panel .audit-subhead small{margin-left:6px;color:var(--muted);font-size:11.5px;font-weight:400}
+.queue-panel .audit-result{margin:0 0 6px;color:var(--ink);font-size:12.5px}
+.queue-panel .audit-rows{margin:0;padding:0;list-style:none}
+.queue-panel .audit-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;align-items:start;padding:11px 0;border-top:1px solid var(--line)}
+.queue-panel .audit-row-main{display:grid;gap:4px;min-width:0}
+.queue-panel .audit-question{margin:2px 0 0;color:var(--ink);font-size:13px;font-weight:550}
+.queue-panel .audit-runs{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:6px;color:var(--ink);font-size:12.5px;line-height:1.5}
+.queue-panel .audit-runs p,.queue-panel .audit-quote{margin:0;color:var(--ink);font-size:12.5px;line-height:1.5}
+.queue-panel .audit-answered{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:flex-end}
+.queue-panel .audit-answers{justify-content:flex-end;max-width:420px}
+.queue-panel .audit-abstract{margin-top:22px;padding-top:12px;border-top:1px solid var(--line)}
+@media (max-width:760px){
+  .flow-detail{padding-left:0}
+  .flow-block summary{flex-wrap:wrap}
+  .flow-block summary small{text-align:left;flex-basis:100%}
+  .queue-panel .audit-row{grid-template-columns:minmax(0,1fr)}
+  .queue-panel .audit-answers,.queue-panel .audit-answered{justify-content:flex-start;max-width:none}
+}
+.queue-panel .audit-row-main .queue-link{justify-self:start;padding:0;font-size:12.5px}
+.queue-panel .audit-panel .empty-inline{margin:0;padding:2px 0 0;font-size:12.5px}
+.queue-panel .audit-answered .queue-link{padding:0;font-size:12.5px}

@@ -44,10 +44,13 @@ def settle(client, rid, timeout=60):
     raise AssertionError("the research's runs did not settle")
 
 
-def discovered(tmp_path, monkeypatch, n, preprints=False):
+def discovered(tmp_path, monkeypatch, n, preprints=False, no_abstract=()):
     """A quick discovery (read window N = 25) over `n` SYNTHETIC works the model reads, every run settled. With
-    `preprints`, every record is a submitted version, so a published version added later heads its work."""
-    records = [work(i, title=HALF, version="submittedVersion") for i in range(n)] if preprints else None
+    `preprints`, every record is a submitted version, so a published version added later heads its work; the records
+    numbered in `no_abstract` come without one."""
+    records = ([work(i, title=HALF, version="submittedVersion" if preprints else "publishedVersion",
+                     **({"abstract": None} if i in no_abstract else {})) for i in range(n)]
+               if preprints or no_abstract else None)
     app, _ = app_for(tmp_path, monkeypatch, n, model_works=True, transport=Transport(records) if records else None)
     with client_of(app) as client:
         rid, run_id, _, run = discover(client, effort="quick")
@@ -355,6 +358,41 @@ def test_an_excluded_or_disagreeing_work_is_not_admitted(tmp_path, monkeypatch):
     h.store._insert_passage(third, None, "abstract", None, None, "provider", None, None, "SYNTHETIC a newer abstract.")
     admitted = screen_more.answer_admissions(h.store, rid, 1)
     assert len(admitted) == 32 and not {first, second, third} & set(admitted)
+
+
+def test_the_answer_reads_the_version_screen_more_read_when_the_cutoff_held_another(tmp_path, monkeypatch):
+    rid, discovery_id = discovered(tmp_path, monkeypatch, 60, no_abstract=range(30, 60))
+    h = harness(tmp_path)
+    # A work below the read window whose record has no abstract gets another version that has one (version B).
+    item = next(i for i in listing(h.store, discovery_id)["items"][25:] if not h.store.conn.execute(
+        "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (i["head"],)).fetchone())
+    cutoff_record, work_id = item["head"], item["work_id"]
+    other = new_id("srv")
+    h.store.conn.execute("INSERT INTO source_versions (id, work_id, title, origin, version_label, created_at)"
+                         " VALUES (?, ?, 'SYNTHETIC irrigation scheduling of an open field crop, accepted', 'provider',"
+                         " 'acceptedVersion', ?)", (other, work_id, now()))
+    h.store.add_to_corpus(rid, other, "search", scope_revision=1)  # a search record too, so the stage can send it
+    h.store._insert_passage(other, None, "abstract", None, None, "provider", None, None,
+                            "We vary the irrigation scheduling of an open field crop and report the water it used.")
+    assert h.store.work_heads(rid)[work_id] == cutoff_record
+    run = screen_more.request(h.store, rid, None)
+    assert cutoff_record in run["target"]["heads"]
+    assert execute(h, run)["status"] == "completed"
+    assert other in sent_batches(h)[0] + sent_batches(h)[2]  # both runs read version B, not the cutoff's record
+    assert other in screen_more.answer_admissions(h.store, rid, 1)
+
+    rows = [r for r in new_answer(h, rid)["items"] if r["work_id"] == work_id]
+    assert len(rows) == 1  # still one row per work: B replaced A
+    row = rows[0]
+    abstract = h.store.conn.execute("SELECT id FROM passages WHERE source_version_id = ? AND kind = 'abstract'",
+                                    (other,)).fetchone()[0]
+    assert (row["source_version_id"], row["cutoff_source_version_id"]) == (other, cutoff_record)
+    assert row["version"]["title"] == h.store.source(other)["title"] and row["abstract_ids"] == [abstract]
+    decision = h.store.conn.execute("SELECT source_version_id FROM stage_decisions WHERE id = ?",
+                                    (row["decision_id"],)).fetchone()[0]
+    assert decision == other and row["reason"] is None and row["evidence_basis"] == "abstract_screening"
+    shown = [x for a in research_view(h.store, rid)["answers"] for x in a["screened_after_cutoff"] if x["work_id"] == work_id]
+    assert shown and shown[0]["source_version_id"] == other and shown[0]["cutoff_source_version_id"] == cutoff_record
 
 
 # ---- F12 and the routes ------------------------------------------------------------------------------------------

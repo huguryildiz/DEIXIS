@@ -1604,4 +1604,6 @@ export const screenMoreApi = {
 // Only an answer the person starts reads them; the answer in place when Screen more ran stays as it was.
 export type ScreenedAfterCutoff = {
   work_id: string; source_version_id: string; screen_more_run_id: string; evidence_basis: 'abstract_screening'; route: 'abstract'
+  // The record the read cutoff held for the work when the runs read another version of it; null when the same.
+  cutoff_source_version_id: string | null
 }

@@ -238,14 +238,22 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
             apply_user(row, selections.get(row["head"]) or humans.get(row["work_id"]))
     # UI parity S20: an answer the person starts (no `trigger`: not the automatic answer after a discovery, not a late
     # revision) also reads a work the read stage did not reach that a "Screen more" run (F13) has since made a
-    # candidate from its abstract, on this very version, unless the person or a later stage excluded it
-    # (`screen_more.answer_admissions`, fail-closed). It is abstract-based evidence and is marked as such.
+    # candidate from its abstract, unless the person or a later stage excluded it (`screen_more.answer_admissions`,
+    # fail-closed). The work is matched, not the record: the version both runs read may not be the cutoff row's, so
+    # the row is rebuilt for that version (its metadata, abstract and decision) and stays one row per work. It is
+    # abstract-based evidence and is marked as such.
     if run["budget"].get("trigger") is None:
         from deixis.workflow import screen_more
-        later = screen_more.answer_admissions(store, rid, run["scope_revision"])
+        later = screen_more.admissions_by_work(screen_more.answer_admissions(store, rid, run["scope_revision"]))
         for row in rows:
-            found = later.get(row["source_version_id"])
+            found = later.get(row["work_id"])
             if found and row["route"] == "abstract" and row["reason"] in ("outside_read_window", "not_screened_at_cutoff"):
+                read = found["source_version_id"]
+                if read != row["source_version_id"]:
+                    source = store.source(read)
+                    row.update(cutoff_source_version_id=row["source_version_id"], source_version_id=read,
+                               version={k: source.get(k) for k in VERSION_FIELDS}, fulltext_ids=[], asset_id=None,
+                               fulltext_decision_id=None, file_unverified=False)
                 row.update(reason=None, decision_id=found["decision_id"], abstract_decision_id=found["decision_id"],
                            abstract_ids=found["abstract_ids"], screened_after_cutoff=found["run_id"],
                            evidence_basis="abstract_screening",

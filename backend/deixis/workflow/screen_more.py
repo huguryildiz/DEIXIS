@@ -9,7 +9,8 @@ Nothing is included here (SW1.2): a work the two runs agree on becomes an abstra
 or a full-text reading includes it.
 
 A work counts as screened once a person decided it, or it holds a current (not stale) decision at the full-text stage
-or an abstract-stage decision other than "not read" (`abstract_stage.UNREAD_CODES`). The list's position and the
+or an abstract-stage decision other than "not read" (`NOT_READ_CODES`: the stage's own unread codes, and the lookup's
+"no abstract" codes, which say no abstract was there to read, so a version that has one can still be read). The list's position and the
 embedding similarity it was frozen with are prioritization signals (AGENTS.md), never relevance or quality.
 """
 
@@ -28,6 +29,7 @@ POLICY = "screen_more_v1"
 SIZE = 40
 MAX_PAGE = 100
 SUMMARY_KEY = "screen_more:summary"
+NOT_READ_CODES = abstract_stage.UNREAD_CODES + ("no_abstract", "abstract_not_found")
 BATCH_KEY = "screen_more"
 SIGNALS_NOTE = ("Rank is the work's place in the discovery's frozen list and similarity the embedding score that list "
                 "was ranked with; both are prioritization signals, not relevance or quality verdicts.")
@@ -65,7 +67,7 @@ def _screened_works(store: Any, rid: str) -> tuple[set[str], dict[str, str]]:
                 break
             if decisions.is_stale(decision, facts["stale_key"]):
                 continue
-            if decision["stage"] == "fulltext" or decision["reason_code"] not in abstract_stage.UNREAD_CODES:
+            if decision["stage"] == "fulltext" or decision["reason_code"] not in NOT_READ_CODES:
                 screened.add(work_id)
                 break
     screened |= {row[0] for row in store.conn.execute(
@@ -276,6 +278,18 @@ def answer_admissions(store: Any, rid: str, scope_revision: int) -> dict[str, di
     return admitted
 
 
+def admissions_by_work(admitted: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """One admitted record per work, the version the runs read: the work's current head when it is one of them, else
+    the smallest identifier, so which row came first cannot choose."""
+    by_work: dict[str, dict[str, Any]] = {}
+    for svid in sorted(admitted):
+        info = admitted[svid] | {"source_version_id": svid}
+        held = by_work.get(info["work_id"])
+        if held is None or (svid == info["current_head"] and held["source_version_id"] != info["current_head"]):
+            by_work[info["work_id"]] = info
+    return by_work
+
+
 def answer_view(store: Any, answer_run_id: str | None) -> list[dict[str, Any]]:
     """The works an answer read beyond its read cutoff because a Screen more run made them candidates: abstract-based
     evidence screened after the cutoff, for the answer view to label as such."""
@@ -288,6 +302,7 @@ def answer_view(store: Any, answer_run_id: str | None) -> list[dict[str, Any]]:
     if step is None or step["status"] != "succeeded" or not step["output"]:
         return []
     return [{"work_id": row["work_id"], "source_version_id": row["source_version_id"],
+             "cutoff_source_version_id": row.get("cutoff_source_version_id"),
              "screen_more_run_id": row["screened_after_cutoff"], "evidence_basis": row.get("evidence_basis"),
              "route": row["route"]}
             for row in step["output"].get("items", []) if row.get("screened_after_cutoff")]

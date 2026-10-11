@@ -3,20 +3,28 @@
 Parsing is fail-closed per entry: an entry the parser cannot read completely (an unclosed brace, a field without a
 value, an undefined @string, a RIS record without `ER`, no title, a malformed DOI) is reported with its position and
 left out; the entries around it still import. No new dependency: the subset read is the one reference managers write
-(Zotero, JabRef, Mendeley, EndNote exports), with LaTeX accents turned into Unicode.
+(Zotero, JabRef, Mendeley, EndNote exports), with LaTeX accents turned into Unicode. Known limits: an entry starts
+at any `@type{` (as in BibTeX), so a field value that holds `@word{` literally is read as unclosed; `@comment(…)`
+skips only its keyword; only `@string` macros and the month names are expanded.
+
+Parsing is bounded: the file is at most `MAX_FILE_BYTES`, both parsers stop with a refusal once entries and errors
+together pass `MAX_ENTRIES`, a field value never scans past the next entry head, and line numbers are counted in one
+pass. The route runs it off the event loop.
 
 An entry's DOI is resolved through the existing lookups: OpenAlex `works_by_dois` for up to 100 DOIs a request, then
 Crossref `crossref_work` one DOI at a time for the DOIs OpenAlex did not confirm (at most `CROSSREF_FALLBACK_MAX`). A
 confirmed DOI stores the provider's record, merged by DOI with a stored record under the existing rules
 (`Store.upsert_provider_source`), and the entry's own fields are not written. An entry whose DOI no provider confirmed
 reuses a stored record with that DOI, else becomes a record of its own under the `reference_file` mapping that never
-merges by DOI (as a Zotero item does not), so a mistyped DOI cannot take over another work's record. Its metadata
+merges by DOI (as a Zotero item does not), so a mistyped DOI cannot take over another work's record, nor join one as its version through an arXiv DOI
+(`store.UNVERIFIED_DOI_PROVIDERS`). Its metadata
 stays `user_supplied` until a provider confirms it. Versions are never merged: one entry is one source version.
 """
 
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import re
 import unicodedata
@@ -38,7 +46,7 @@ Format = Literal["bibtex", "ris"]
 MAX_FILE_BYTES = 5 * 1024 * 1024
 MAX_ENTRIES = 500
 CROSSREF_FALLBACK_MAX = 20
-PROVIDER = "reference_file"
+PROVIDER = "reference_file"  # one of store.UNVERIFIED_DOI_PROVIDERS and library_items.USER_SUPPLIED_PROVIDERS
 ORIGINS = {"bibtex": "bibtex_import", "ris": "ris_import"}
 ABSTRACT_ORIGINS = {"bibtex": "user_bibtex_abstract", "ris": "user_ris_abstract"}
 _DOI = re.compile(r"10\.\d{4,9}/\S+")
@@ -252,11 +260,14 @@ _BIBTEX_TYPES = {"article": "journalArticle", "inproceedings": "conferencePaper"
                  "mastersthesis": "thesis", "thesis": "thesis", "techreport": "report", "report": "report"}
 _BIBTEX_VENUES = ("journal", "journaltitle", "booktitle", "school", "institution", "publisher", "organization")
 _MONTHS = {m: m.capitalize() for m in ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")}
-_ENTRY_START = re.compile(r"(?m)^[ \t]*@")
-_HEAD = re.compile(r"@\s*([A-Za-z]+)\s*([{(])")
-_KEY = re.compile(r"\s*([^\s,{}()=\"#%]+)\s*,")
+_HEAD = re.compile(r"@[ \t\r\n]*([A-Za-z]+)[ \t\r\n]*([{(])")
+_KEY = re.compile(r"\s*([^\s,{}()=\"#%@]+)\s*,")
 _NAME = re.compile(r"\s*([A-Za-z][\w\-:.+]*)\s*=\s*")
 _IDENT = re.compile(r"[A-Za-z_][\w\-:.+]*")
+_NUMBER = re.compile(r"\d+")
+_WS = re.compile(r"\s*")
+_VALUE_STOP = re.compile(r'[\\{}"@]')
+_BRACES = re.compile(r"[{}]")
 
 
 class _BibReader:
@@ -264,21 +275,22 @@ class _BibReader:
         self.text, self.pos, self.macros = text, start, macros
 
     def ws(self) -> None:
-        while self.pos < len(self.text) and self.text[self.pos].isspace():
-            self.pos += 1
+        self.pos = _WS.match(self.text, self.pos).end()
 
     def delimited(self, opening: str) -> str:
-        """A `{…}` or `"…"` value without its delimiters; braces inside must balance."""
+        """A `{…}` or `"…"` value without its delimiters; braces inside must balance. A value never runs into the
+        next entry head (`@type{`), so one broken entry cannot swallow the entries after it."""
         text, depth, start = self.text, 0, self.pos + 1
         i = start
-        while i < len(text):
-            char = text[i]
+        while (stop := _VALUE_STOP.search(text, i)) is not None:
+            i, char = stop.start(), stop.group(0)
             if char == "\\":
                 i += 2
                 continue
-            if char == "\n" and _ENTRY_START.match(text, i + 1):
-                raise _Malformed("unclosed_value", "a field value is not closed before the next entry")
-            if char == "{":
+            if char == "@":
+                if _HEAD.match(text, i):
+                    raise _Malformed("unclosed_value", "a field value is not closed before the next entry")
+            elif char == "{":
                 depth += 1
             elif char == "}":
                 if depth == 0:
@@ -287,7 +299,7 @@ class _BibReader:
                         return text[start:i]
                     raise _Malformed("unbalanced_braces", "a field value has a closing brace without an opening one")
                 depth -= 1
-            elif char == '"' and opening == '"' and depth == 0:
+            elif opening == '"' and depth == 0:
                 self.pos = i + 1
                 return text[start:i]
             i += 1
@@ -300,8 +312,7 @@ class _BibReader:
             char = self.text[self.pos:self.pos + 1]
             if char in ("{", '"'):
                 parts.append(self.delimited(char))
-            elif char.isdigit():
-                match = re.compile(r"\d+").match(self.text, self.pos)
+            elif (match := _NUMBER.match(self.text, self.pos)):
                 parts.append(match.group(0))
                 self.pos = match.end()
             elif (match := _IDENT.match(self.text, self.pos)):
@@ -338,41 +349,84 @@ class _BibReader:
                 raise _Malformed("unclosed_entry", "the entry is not closed")
 
 
+def _group_end(text: str, opening: int) -> int | None:
+    """The position after the brace that closes the `{` at `opening`, or None when it never closes."""
+    depth = 0
+    for match in _BRACES.finditer(text, opening):
+        if match.start() and text[match.start() - 1] == "\\":
+            continue
+        depth += 1 if match.group(0) == "{" else -1
+        if depth == 0:
+            return match.end()
+    return None
+
+
+class _Lines:
+    """Line numbers of increasing positions, counted in one pass over the file."""
+
+    def __init__(self, text: str):
+        self.text, self.pos, self.line = text, 0, 1
+
+    def at(self, pos: int) -> int:
+        self.line += self.text.count("\n", self.pos, pos)
+        self.pos = pos
+        return self.line
+
+
+def _over_cap(entries: list[Entry], errors: list[EntryError]) -> None:
+    if len(entries) + len(errors) > MAX_ENTRIES:
+        raise ImportRefused(422, "import_too_many_entries",
+                            f"The file holds more than {MAX_ENTRIES} entries; import it in parts")
+
+
 def parse_bibtex(text: str) -> tuple[list[Entry], list[EntryError]]:
+    """Read the file the way BibTeX does: an entry starts at any `@type{` or `@type(`, anywhere on a line, and text
+    between entries is a comment. `@comment{…}` and `@preamble{…}` are skipped with their whole braced body, so an
+    entry commented out inside one is not imported; a body that never closes ends the file (one error).
+
+    Stops with `ImportRefused` as soon as entries and errors together pass `MAX_ENTRIES`, before reading further."""
     entries: list[Entry] = []
     errors: list[EntryError] = []
     macros = dict(_MONTHS)
-    index = 0
-    for start in [m.end() - 1 for m in _ENTRY_START.finditer(text)]:
-        line = text.count("\n", 0, start) + 1
-        head = _HEAD.match(text, start)
-        kind = head.group(1).lower() if head else None
+    lines = _Lines(text)
+    index, pos = 0, 0
+    while (head := _HEAD.search(text, pos)) is not None:
+        start, kind, closing = head.start(), head.group(1).lower(), "}" if head.group(2) == "{" else ")"
+        line = lines.at(start)
+        pos = start + 1  # where the next entry is looked for when this one cannot be read
         if kind in ("comment", "preamble"):
+            if head.group(2) == "(":
+                continue
+            end = _group_end(text, head.end() - 1)
+            if end is None:
+                errors.append(EntryError(None, line, None, "unclosed_comment",
+                                         f"@{kind} is not closed; the rest of the file is part of it"))
+                break
+            pos = end
             continue
         if kind == "string":
             reader = _BibReader(text, head.end(), macros)
             try:
-                defined = reader.fields("}" if head.group(2) == "{" else ")")
+                macros.update(reader.fields(closing))
+                pos = reader.pos
             except _Malformed as exc:
                 errors.append(EntryError(None, line, None, exc.code, f"@string: {exc}"))
-                continue
-            macros.update(defined)
+                _over_cap(entries, errors)
             continue
         index += 1
-        if head is None:
-            errors.append(EntryError(index, line, None, "malformed_entry", "an entry does not start with @type{"))
-            continue
         key_match = _KEY.match(text, head.end())
-        key = key_match.group(1) if key_match else None
         if key_match is None:
             errors.append(EntryError(index, line, None, "missing_key", "the entry has no citation key"))
-            continue
-        reader = _BibReader(text, key_match.end(), macros)
-        try:
-            raw = reader.fields("}" if head.group(2) == "{" else ")")
-            entries.append(_bibtex_entry(index, key, kind, raw))
-        except _Malformed as exc:
-            errors.append(EntryError(index, line, key, exc.code, str(exc)))
+        else:
+            key = key_match.group(1)
+            reader = _BibReader(text, key_match.end(), macros)
+            try:
+                raw = reader.fields(closing)
+                pos = reader.pos  # read to its end: an entry without a title is still not searched for heads
+                entries.append(_bibtex_entry(index, key, kind, raw))
+            except _Malformed as exc:
+                errors.append(EntryError(index, line, key, exc.code, str(exc)))
+        _over_cap(entries, errors)
     return entries, errors
 
 
@@ -422,19 +476,24 @@ def parse_ris(text: str) -> tuple[list[Entry], list[EntryError]]:
         key = (tags.get("ID") or [None])[0] or None
         if problem:
             errors.append(EntryError(index, record_line, key, *problem))
-            return
-        try:
-            entries.append(_ris_entry(index, key, tags))
-        except _Malformed as exc:
-            errors.append(EntryError(index, record_line, key, exc.code, str(exc)))
+        else:
+            try:
+                entries.append(_ris_entry(index, key, tags))
+            except _Malformed as exc:
+                errors.append(EntryError(index, record_line, key, exc.code, str(exc)))
+        _over_cap(entries, errors)
 
     def outside(number: int, what: str) -> None:
         nonlocal stray
         if not stray:  # one error for a run of stray lines
             stray = True
             errors.append(EntryError(None, number, None, "outside_record", f"{what} stands outside a TY … ER record"))
+            _over_cap(entries, errors)
 
-    for number, line in enumerate(text.splitlines(), start=1):
+    # Read lazily: a file of millions of short lines never becomes a list of them. Universal newlines, so CRLF and a
+    # lone CR end a line as LF does.
+    for number, line in enumerate(io.StringIO(text, newline=None), start=1):
+        line = line.rstrip("\n")
         match = _RIS_LINE.match(line)
         if match is None:
             if not line.strip():
@@ -492,9 +551,8 @@ def read_file(data: bytes, filename: str | None, fmt: Format | None = None
         raise ImportRefused(413, "import_too_large", "Reference file larger than 5 MB")
     text = decode(data)
     fmt = fmt or detect_format(filename, text)
+    # Both parsers stop as soon as entries and errors together pass MAX_ENTRIES.
     entries, errors = parse_bibtex(text) if fmt == "bibtex" else parse_ris(text)
-    if len(entries) + sum(e.index is not None for e in errors) > MAX_ENTRIES:
-        raise ImportRefused(422, "import_too_many_entries", f"The file holds more than {MAX_ENTRIES} entries; import it in parts")
     return fmt, entries, errors
 
 
@@ -563,15 +621,17 @@ async def resolve_dois(http: httpx.AsyncClient, dois: list[str], contact_email: 
 # -------------------------------------------------------------------------------------------------------- the import
 
 def _fold(value: str | None) -> str:
-    return re.sub(r"[^a-z0-9]+", "", unicodedata.normalize("NFKD", value or "").encode("ascii", "ignore").decode().lower())
+    """NFKC and casefold, keeping the letters and digits of every script; spacing and punctuation drop out. Accents
+    are kept, so `Müller` and `Muller` are different names."""
+    text = unicodedata.normalize("NFKC", unicodedata.normalize("NFKC", value or "").casefold())
+    return "".join(ch for ch in text if unicodedata.category(ch)[0] in "LN" or unicodedata.category(ch) in ("Mn", "Mc"))
 
 
 def identity(entry: Entry) -> str:
     """The same entry imported again, from either format, finds the record it made the first time."""
     if entry.doi:
         return f"doi:{entry.doi}"
-    first_author = entry.authors[0].split()[-1] if entry.authors and entry.authors[0].split() else ""
-    basis = "|".join((_fold(entry.title), str(entry.year or ""), _fold(first_author)))
+    basis = "|".join((_fold(entry.title), str(entry.year or ""), _fold(entry.authors[0] if entry.authors else "")))
     return "entry:" + hashlib.sha256(basis.encode()).hexdigest()[:24]
 
 

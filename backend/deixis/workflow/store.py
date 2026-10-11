@@ -32,6 +32,9 @@ TEXT_RETRY_REFUSALS = ("asset_removed", "no_holding_research", "membership_chang
                       "baseline_changed", "run_active", "input_not_verified", "file_missing", "file_mismatch")
 TEXT_RETRY_INTERRUPTIONS = ("storage_full", "storage_unavailable", "cancelled", "unexpected_error", "process_ended")
 ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
+# Importers whose DOI no provider confirmed (a .bib / .ris entry, S19b): their record never joins another record's work
+# by that DOI, and no other record joins theirs, so a mistyped DOI cannot make an entry a version of another work.
+UNVERIFIED_DOI_PROVIDERS = ("reference_file",)
 # Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
 STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze", "read_equations", "equations_skipped",
                      "code:fulltext_plan", "code:fulltext_work", "code:fulltext_summary", "code:criterion_phrases",
@@ -1505,9 +1508,13 @@ class Store:
 
     def _insert_provider_record(self, provider: str, record: Any, payload_path: str | None) -> tuple[str, str]:
         ts, svid = now(), new_id("srv")
+        unverified = ", ".join("?" * len(UNVERIFIED_DOI_PROVIDERS))
         same_preprint = self.conn.execute(
-            "SELECT work_id FROM source_versions WHERE doi = ? ORDER BY created_at, id LIMIT 1", (record.doi,)
-        ).fetchone() if record.doi and record.doi.startswith(ARXIV_DOI_PREFIX) else None
+            "SELECT work_id FROM source_versions v WHERE doi = ? AND NOT EXISTS (SELECT 1 FROM identifier_mappings m"
+            f" WHERE m.source_version_id = v.id AND m.provider IN ({unverified})) ORDER BY created_at, id LIMIT 1",
+            (record.doi, *UNVERIFIED_DOI_PROVIDERS),
+        ).fetchone() if (record.doi and record.doi.startswith(ARXIV_DOI_PREFIX)
+                         and provider not in UNVERIFIED_DOI_PROVIDERS) else None
         if same_preprint:
             wid = same_preprint["work_id"]
         else:

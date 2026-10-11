@@ -12,7 +12,7 @@ EP  - 9
 DO  - 10.5555/syn.hit
 AB  - A first line of the abstract
   that wraps to a second line.
-ER  - 
+ER  -
 
 TY  - CONF
 TI  - SYNTHETIC record never closed
@@ -26,5 +26,5 @@ ER  -
 
 TY  - RPRT
 AU  - Untitled, Una
-ER  - 
+ER  -
 stray text after the last record

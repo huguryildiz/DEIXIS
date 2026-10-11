@@ -113,3 +113,57 @@ def test_identity_is_the_same_for_the_same_entry_in_either_format():
     _, bib, _ = b.read_file(b"@book{k, title={SYNTHETIC Same Book}, author={Example, Rae}, year={2001}}", "x.bib")
     _, ris, _ = b.read_file(b"TY  - BOOK\nTI  - SYNTHETIC same book\nAU  - Example, Rae\nPY  - 2001\nER  - \n", "x.ris")
     assert b.identity(bib[0]) == b.identity(ris[0]) and b.identity(bib[0]).startswith("entry:")
+
+
+@pytest.mark.parametrize("first, second", [
+    ("@book{a, title={量子通信研究}, author={王, 伟}, year={2020}}", "@book{b, title={光纤网络研究}, author={李, 娜}, year={2020}}"),
+    ("@book{a, title={量子通信研究}, author={王, 伟}, year={2020}}", "@book{b, title={量子通信研究}, author={李, 娜}, year={2020}}"),
+    ("@book{a, title={Квантовая связь}, author={Иванов, Иван}, year={2020}}",
+     "@book{b, title={Оптические сети}, author={Иванов, Иван}, year={2020}}"),
+    ("@book{a, title={SYNTHETIC Étude}, author={M\\\"uller, Jörg}, year={2020}}",
+     "@book{b, title={SYNTHETIC Etude}, author={Muller, Jorg}, year={2020}}"),
+    ("@book{a, title={SYNTHETIC same}, author={Example, Rae}, year={2020}}",
+     "@book{b, title={SYNTHETIC same}, author={Example, Ray}, year={2020}}"),  # the full first author counts
+])
+def test_different_works_without_a_doi_keep_different_identities(first, second):
+    entries, errors = b.parse_bibtex(first + "\n" + second)
+    assert errors == [] and len(entries) == 2
+    assert b.identity(entries[0]) != b.identity(entries[1])
+
+
+def test_entries_on_one_line_and_commented_out_entries():
+    text = ("@article{a, title={SYNTHETIC one}} @article{b, title={SYNTHETIC two}}\n"
+            "@comment{\n  @article{hidden, title={SYNTHETIC commented out}}\n}\n"
+            "Mail me at someone@example.org; this line is a comment.\n"
+            "@preamble{\"\\newcommand{\\noop}[1]{}\"}@article{c, title={SYNTHETIC three}}\n")
+    entries, errors = b.parse_bibtex(text)
+    assert [e.key for e in entries] == ["a", "b", "c"] and errors == []
+    entries, errors = b.parse_bibtex("@article{a, title={SYNTHETIC}}\n@comment{never closed\n@article{b, title={X}}")
+    assert [e.key for e in entries] == ["a"] and [(e.code, e.line) for e in errors] == [("unclosed_comment", 2)]
+
+
+def test_crlf_and_trailing_spaces_read_like_the_fixture():
+    data = (FIXTURES / "synthetic.ris").read_bytes()
+    plain = b.read_file(data, "x.ris")
+    crlf = b.read_file(data.replace(b"\n", b"\r\n").replace(b"ER  -\r\n", b"ER  - \r\n"), "x.ris")
+    old_mac = b.read_file(data.replace(b"\n", b"\r"), "x.ris")
+    assert plain == crlf == old_mac
+
+
+@pytest.mark.parametrize("data", [
+    b"@\n" * 2_000_000,  # four MB of lone @ signs: no entry, nothing collected
+    b"@a{\n" * 1_000_000,  # a million broken entry starts: refused at the cap
+    b"@a{k, t={" * 500_000,  # values that never close, all on one line
+    b"TY  - JOUR\n" * 400_000,  # RIS records never closed
+    b"%" * 4_000_000 + b"@article{k, title={SYNTHETIC late}}",
+], ids=["lone-at-signs", "broken-starts", "open-values-one-line", "ris-unclosed", "long-comment"])
+def test_pathological_files_stop_early_in_bounded_time(data):
+    import time
+    assert len(data) <= b.MAX_FILE_BYTES
+    started = time.perf_counter()
+    try:
+        _, entries, errors = b.read_file(data, "x.ris" if data.startswith(b"TY") else "x.bib")
+        assert len(entries) + len(errors) <= b.MAX_ENTRIES
+    except b.ImportRefused as refused:
+        assert refused.code == "import_too_many_entries"
+    assert time.perf_counter() - started < 3.0

@@ -8,6 +8,7 @@ research gets the one version per work that adding a Library work to a research 
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from pathlib import Path
@@ -183,7 +184,8 @@ def register_library_routes(app, settings: Settings) -> None:
         store = store_of(request)
         data = await file.read(bibtex_ris.MAX_FILE_BYTES + 1)
         try:
-            fmt, entries, errors = bibtex_ris.read_file(data, file.filename, format)
+            # Off the event loop: parsing a large file is CPU work and touches no shared state.
+            fmt, entries, errors = await asyncio.to_thread(bibtex_ris.read_file, data, file.filename, format)
         except bibtex_ris.ImportRefused as exc:
             raise UploadRefused(exc.status, exc.code, exc.detail) from None
         if not entries:

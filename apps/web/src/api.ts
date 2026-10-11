@@ -1541,7 +1541,7 @@ export type ReferenceImportEntry = {
   duplicate_of: number | null  // the index of the earlier entry in this file that names the same record
 }
 export type ReferenceImportErrorCode = 'unclosed_value' | 'unbalanced_braces' | 'unclosed_entry' | 'malformed_field'
-  | 'missing_value' | 'undefined_string' | 'malformed_entry' | 'missing_key' | 'no_title' | 'invalid_doi'
+  | 'missing_value' | 'undefined_string' | 'unclosed_comment' | 'missing_key' | 'no_title' | 'invalid_doi'
   | 'unclosed_record' | 'outside_record'
 export type ReferenceImportError = { index: number | null; line: number; key: string | null; code: ReferenceImportErrorCode; message: string }
 export type ReferenceImport = {

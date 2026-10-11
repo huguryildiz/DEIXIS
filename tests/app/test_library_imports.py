@@ -258,3 +258,32 @@ def test_zotero_collection_goes_into_the_library_with_its_pdfs(tmp_path, monkeyp
 
         assert client.post("/api/library/zotero-imports", json={"source": "local", "collection_key": "bad"}).status_code == 422
         assert client.post("/api/library/zotero-imports", json={"source": "web", "collection_key": COLLECTION}).status_code == 422
+
+
+def arxiv_record(record_id, title):
+    from deixis.providers.common import ProviderRecord
+    return ProviderRecord(provider_record_id=record_id, title=title, authors=["Ada Provider"], year=2021, venue="arXiv",
+                          publication_type="preprint", doi="10.48550/arxiv.2101.00001", landing_url=None,
+                          oa_pdf_url=None, oa_pdf_version=None, version_label="submittedVersion", abstract=None,
+                          abstract_origin=None, identifiers={}, raw={}, merge_by_doi=False)
+
+
+def test_an_unconfirmed_arxiv_doi_never_joins_or_takes_in_another_work(tmp_path):
+    providers = Providers(openalex_status=500, crossref_status=503)
+    app = app_for(tmp_path, providers)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        with transaction(store.conn):
+            v1, _ = store.upsert_provider_source("arxiv", arxiv_record("2101.00001v1", "SYNTHETIC arXiv preprint"), None)
+            v2, _ = store.upsert_provider_source("arxiv", arxiv_record("2101.00001v2", "SYNTHETIC arXiv preprint"), None)
+        # Trusted arXiv versions of one preprint still share their work (D46).
+        assert store.source(v1)["work_id"] == store.source(v2)["work_id"]
+        entry = b"@article{wrong, title = {SYNTHETIC unrelated paper}, doi = {10.48550/arXiv.2101.00001}}"
+        row = upload(client, "wrong.bib", entry).json()["reference_import"]["entries"][0]
+        assert (row["lookup"], row["record"]) == ("failed", "user_supplied")
+        assert row["work_id"] != store.source(v1)["work_id"]
+        # Nor does a trusted version stored later join the unconfirmed entry's work.
+        with transaction(store.conn):
+            v3, _ = store.upsert_provider_source("arxiv", arxiv_record("2101.00001v3", "SYNTHETIC arXiv preprint"), None)
+        assert store.source(v3)["work_id"] == store.source(v1)["work_id"] != row["work_id"]

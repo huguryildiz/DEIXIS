@@ -130,3 +130,65 @@ def test_new_research_from_a_set_holds_those_works_in_attached_scope(tmp_path):
         assert not store.is_active_member(rid, published)
         # A table research gets its study table holding the attached works.
         assert store.conn.execute("SELECT COUNT(*) FROM evidence_tables WHERE research_id = ?", (rid,)).fetchone()[0] == 1
+
+
+def test_a_zotero_import_saved_to_the_library_stays_user_supplied(tmp_path):
+    from test_zotero import COLLECTION, app_for as zotero_app, start, zotero_client
+    files = {}
+    for key in ("PDFA1234", "LNKD1234", "STND1234"):
+        path = tmp_path / f"{key} file.pdf"
+        path.write_bytes(make_pdf([f"SYNTHETIC text of {key}"]))
+        files[key] = path.as_uri()
+    app = zotero_app(tmp_path, zotero_client(files, []))
+    with TestClient(app) as client:
+        rid = start(client)
+        imported = client.post(f"/api/researches/{rid}/zotero-imports", json={"source": "local", "collection_key": COLLECTION})
+        assert imported.status_code == 201, imported.text
+        svids = [s["source_version_id"] for s in imported.json()["sources"]]
+        # The import stores provider records; their fields are still the person's own Zotero entries.
+        assert {app.state.store.source(s)["origin"] for s in svids} == {"provider"}
+        assert client.post("/api/library/items", json={"source_version_ids": svids}).status_code == 201
+        rows = app.state.store.conn.execute("SELECT DISTINCT metadata_origin FROM library_items").fetchall()
+        assert [r[0] for r in rows] == ["user_supplied"]
+
+
+def test_new_research_from_a_set_writes_nothing_when_a_work_goes_during_the_model_check(tmp_path):
+    from fakes import FakeAdapter
+    adapter = FakeAdapter()
+    app = app_for(tmp_path, adapter)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        origin = create(client, source_scope="attached")
+        work_id, _, _ = seed_work(store, origin)
+        health = adapter.health
+
+        async def purge_during_check(refresh=False):
+            # A purge that runs while the route awaits the model list.
+            if store.conn.execute("SELECT 1 FROM researches WHERE id = ?", (origin,)).fetchone():
+                store.trash_research(origin)
+                store.purge_research(origin)
+            return await health(refresh=refresh)
+
+        adapter.health = purge_during_check
+        response = client.post("/api/library/researches", json=MODEL | {"work_ids": [work_id]})
+        assert response.status_code == 404, response.text
+        assert store.conn.execute("SELECT COUNT(*) FROM researches").fetchone()[0] == 0
+
+
+def test_the_pdf_of_a_saved_item_opens_without_a_research_and_others_do_not(tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        saved = client.post("/api/library/uploads", files=pdf_file("saved.pdf", "SYNTHETIC saved copy.")).json()
+        asset = client.get(f"/api/library/works/{saved['work_id']}").json()["versions"][0]["asset"]["id"]
+        response = client.get(f"/api/library/assets/{asset}")
+        assert response.status_code == 200 and response.content.startswith(b"%PDF-")
+        assert response.headers["content-type"] == "application/pdf"
+        rid = create(client, source_scope="attached")
+        held = client.post(f"/api/researches/{rid}/uploads", files=pdf_file("held.pdf", "SYNTHETIC unsaved copy."))
+        unsaved = store.conn.execute("SELECT id FROM source_assets WHERE source_version_id = ?",
+                                     (held.json()["uploaded_source_version_id"],)).fetchone()[0]
+        assert client.get(f"/api/library/assets/{unsaved}").status_code == 404
+        assert client.get("/api/library/assets/ast_missing").status_code == 404

@@ -146,6 +146,58 @@ def check_offered(listed: list[dict[str, Any]] | None, connection: str, model: s
         raise HTTPException(422, f"Reasoning effort '{effort}' is not offered for {model}")
 
 
+async def checked_research_models(adapters: dict[str, Any], body: CreateResearch) -> tuple[str | None, str | None]:
+    """Refuse a research request whose scope or models do not fit; returns (literature, review) connections.
+
+    Awaits each connection's model list, so a caller writes the research only after this returns, with no await
+    between its own checks and the write.
+    """
+    if body.seed_mode == "uploaded_seed" and body.source_scope != "attached_and_academic":
+        raise HTTPException(422, "A PDF seed requires Files + academic search")
+    if body.intent == "papers" and body.source_scope == "attached":
+        raise HTTPException(422, "Finding papers needs academic search")
+    listed: dict[str, list[dict[str, Any]] | None] = {}
+
+    async def check_role(connection: str, model: str, effort: str | None) -> None:
+        if connection not in listed:
+            adapter = adapters.get(connection)
+            if adapter is None:
+                raise HTTPException(422, f"Model connection '{connection}' is not available")
+            listed[connection] = (await adapter.health()).get("models")
+        check_offered(listed[connection], connection, model, effort)
+
+    # Each role's model must be listed by that role's own connection (D28).
+    await check_role(body.model_connection, body.requested_model, body.reasoning_effort)
+    literature_connection = review_connection = None
+    if body.literature_model is not None:
+        literature_connection = body.literature_connection or body.model_connection
+        await check_role(literature_connection, body.literature_model, body.literature_reasoning_effort)
+    elif body.literature_reasoning_effort is not None or body.literature_connection is not None:
+        raise HTTPException(422, "A literature reasoning effort or connection needs a literature model")
+    if body.review_mode == "custom":
+        if body.review_model is None:
+            raise HTTPException(422, "A custom reviewer needs a review model")
+        review_connection = body.review_connection or body.model_connection
+        await check_role(review_connection, body.review_model, body.review_reasoning_effort)
+    elif body.review_model is not None or body.review_reasoning_effort is not None or body.review_connection is not None:
+        raise HTTPException(422, f"A review model is only kept with review_mode 'custom', not '{body.review_mode}'")
+    return literature_connection, review_connection
+
+
+def create_research_row(store: Store, body: CreateResearch, literature_connection: str | None,
+                        review_connection: str | None) -> str:
+    # Every connector with the access it needs is in scope; the model picks which of the searchable ones to
+    # query, and a verification connector stays in scope for the records whose DOI is already known (D87).
+    providers = configured_providers() if body.source_scope != "attached" else []
+    return store.create_research(body.question, body.source_scope, body.effort, providers,
+                                 body.model_connection, body.requested_model, body.language_hint, body.reasoning_effort,
+                                 body.literature_model, body.literature_reasoning_effort,
+                                 body.review_mode, body.review_model, body.review_reasoning_effort,
+                                 literature_connection=literature_connection, review_connection=review_connection,
+                                 seed_mode=body.seed_mode,
+                                 key_terms=body.key_terms, intent=body.intent)
+
+
 class KeyValue(BaseModel):
     value: str = Field(min_length=8, max_length=400, pattern=r"^\S+$")
 
@@ -1074,46 +1126,9 @@ def create_app(
 
     @app.post("/api/researches", status_code=201)
     async def create_research(body: CreateResearch, request: Request) -> dict[str, Any]:
-        if body.seed_mode == "uploaded_seed" and body.source_scope != "attached_and_academic":
-            raise HTTPException(422, "A PDF seed requires Files + academic search")
-        if body.intent == "papers" and body.source_scope == "attached":
-            raise HTTPException(422, "Finding papers needs academic search")
-        listed: dict[str, list[dict[str, Any]] | None] = {}
-
-        async def check_role(connection: str, model: str, effort: str | None) -> None:
-            if connection not in listed:
-                adapter = request.app.state.adapters.get(connection)
-                if adapter is None:
-                    raise HTTPException(422, f"Model connection '{connection}' is not available")
-                listed[connection] = (await adapter.health()).get("models")
-            check_offered(listed[connection], connection, model, effort)
-
-        # Each role's model must be listed by that role's own connection (D28).
-        await check_role(body.model_connection, body.requested_model, body.reasoning_effort)
-        literature_connection = review_connection = None
-        if body.literature_model is not None:
-            literature_connection = body.literature_connection or body.model_connection
-            await check_role(literature_connection, body.literature_model, body.literature_reasoning_effort)
-        elif body.literature_reasoning_effort is not None or body.literature_connection is not None:
-            raise HTTPException(422, "A literature reasoning effort or connection needs a literature model")
-        if body.review_mode == "custom":
-            if body.review_model is None:
-                raise HTTPException(422, "A custom reviewer needs a review model")
-            review_connection = body.review_connection or body.model_connection
-            await check_role(review_connection, body.review_model, body.review_reasoning_effort)
-        elif body.review_model is not None or body.review_reasoning_effort is not None or body.review_connection is not None:
-            raise HTTPException(422, f"A review model is only kept with review_mode 'custom', not '{body.review_mode}'")
-        # Every connector with the access it needs is in scope; the model picks which of the searchable ones to
-        # query, and a verification connector stays in scope for the records whose DOI is already known (D87).
-        providers = configured_providers() if body.source_scope != "attached" else []
+        connections = await checked_research_models(request.app.state.adapters, body)
         store = store_of(request)
-        rid = store.create_research(body.question, body.source_scope, body.effort, providers,
-                                    body.model_connection, body.requested_model, body.language_hint, body.reasoning_effort,
-                                    body.literature_model, body.literature_reasoning_effort,
-                                    body.review_mode, body.review_model, body.review_reasoning_effort,
-                                    literature_connection=literature_connection, review_connection=review_connection,
-                                    seed_mode=body.seed_mode,
-                                    key_terms=body.key_terms, intent=body.intent)
+        rid = create_research_row(store, body, *connections)
         return research_view(store, rid)
 
     @app.get("/api/settings")

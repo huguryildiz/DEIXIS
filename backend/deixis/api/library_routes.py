@@ -12,13 +12,14 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import File, HTTPException, Request, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.api.app import CreateResearch, disk_full_refused, store_upload
+from deixis.api.app import CreateResearch, checked_research_models, create_research_row, disk_full_refused, store_upload
 from deixis.config import Settings
 from deixis.documents import pdf
 from deixis.workflow import bibliography, file_restore, intent, library_items, text_retry
+from deixis.storage.db import transaction
 from deixis.workflow.store import Store
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, research_view
 
@@ -123,17 +124,32 @@ def register_library_routes(app, settings: Settings) -> None:
     @app.post("/api/library/researches", status_code=201)
     async def new_research_from_set(body: NewResearchFromSet, request: Request) -> dict[str, Any]:
         store = store_of(request)
-        works = [_library_work(store, work_id) for work_id in dict.fromkeys(body.work_ids)]
-        # The research itself is created by the one create route, so model and scope checks stay in one place.
-        create = next(route.endpoint for route in request.app.router.routes
-                      if getattr(route, "path", None) == "/api/researches" and "POST" in (getattr(route, "methods", None) or ()))
-        created = await create(CreateResearch(**body.model_dump(exclude={"work_ids"})), request)
-        rid = created["research"]["id"]
-        added = []
-        for work in works:
-            version = library_version_to_add(work)
-            store.add_to_corpus(rid, version["source_version_id"], "library", selection_state="included",
-                                selection_origin="user")
-            added.append(version["source_version_id"])
-        intent.attached_ingested(store, rid)
-        return research_view(store, rid) | {"added_source_version_ids": added}
+        work_ids = list(dict.fromkeys(body.work_ids))
+        for work_id in work_ids:  # an unknown work is refused before the model lists are asked
+            _library_work(store, work_id)
+        connections = await checked_research_models(request.app.state.adapters, CreateResearch(
+            **body.model_dump(exclude={"work_ids"})))
+        # No await from here on: the works are read again (a purge may have run during the model checks), and the
+        # research, its sources and its study table are written in one transaction, or nothing is.
+        versions = [library_version_to_add(_library_work(store, work_id))["source_version_id"] for work_id in work_ids]
+        with transaction(store.conn):
+            rid = create_research_row(store, body, *connections)
+            for svid in versions:
+                store.add_to_corpus(rid, svid, "library", selection_state="included", selection_origin="user")
+            intent.attached_ingested(store, rid)
+        return research_view(store, rid) | {"added_source_version_ids": versions}
+
+    @app.get("/api/library/assets/{asset_id}")
+    async def get_asset(asset_id: str, request: Request) -> FileResponse:
+        """The PDF in use of a saved item, read-only, for a version no research may hold."""
+        store = store_of(request)
+        asset = store.asset(asset_id)
+        saved = store.conn.execute("SELECT 1 FROM library_items WHERE source_version_id = ?",
+                                   (asset["source_version_id"],)).fetchone()
+        if asset["removed_at"] is not None or saved is None:
+            raise HTTPException(404, "Asset is not part of the library")
+        root = settings.papers_dir.resolve()
+        path = (root / asset["storage_path"]).resolve()
+        if not path.is_relative_to(root) or not path.exists():
+            raise HTTPException(404, "File missing")
+        return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": "inline", "Cache-Control": "no-cache"})

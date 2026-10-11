@@ -1404,3 +1404,24 @@ export const shellApi = {
   contactEmail: () => request<ContactEmailSetting>('/api/contact-email'),
   saveContactEmail: (email: string | null) => request<ContactEmailSetting>('/api/contact-email', json('PUT', { email })),
 }
+
+// Usage reads (api/usage_routes.py): model calls counted from stored sessions by Settings role, and OpenAlex's budget
+// today from the newest stored rate-limit headers. `limit` and `used_fraction` are null when OpenAlex sent no limit
+// header; the UI then shows "$X left today" or "N left today" (unit usd / requests). All null: nothing stored since the
+// last daily reset (midnight UTC).
+export type UsageRole = 'answer' | 'literature' | 'reviewer'
+export type RoleUsage = { role: UsageRole; calls: number; share: number | null }
+export type Usage = {
+  period: 'month' | 'run'; run_id?: string; since?: string; until?: string; as_of: string
+  total: number; roles: RoleUsage[]
+}
+export type OpenAlexBudgetToday = {
+  provider: 'openalex'; unit: 'usd' | 'requests' | null; remaining: number | null; limit: number | null
+  used_fraction: number | null; reset_at: string | null; as_of: string | null
+}
+
+export const usageApi = {
+  usageThisMonth: () => request<Usage>('/api/usage?period=month'),
+  usageOfRun: (runId: string) => request<Usage>(`/api/usage?period=run&run_id=${encodeURIComponent(runId)}`),
+  openAlexBudgetToday: () => request<OpenAlexBudgetToday>('/api/openalex/budget-today'),
+}

@@ -3364,3 +3364,23 @@ class Store:
                 " ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
                 (key, dumps(value), now()),
             )
+
+    # ---- usage reads (parity slice S16): counted from what is stored, never estimated ----------------------------------
+
+    def openalex_rate_limit_rows(self, since: str, limit: int = 100) -> list[tuple[str, str | None]]:
+        """(retrieved_at, error_json) of the newest OpenAlex search rows at or after `since`, newest first. The rate-limit
+        headers of each response are inside the error_json (`rate_limit`)."""
+        return [(row["retrieved_at"], row["error_json"]) for row in self.conn.execute(
+            "SELECT retrieved_at, error_json FROM search_runs WHERE provider = 'openalex' AND retrieved_at >= ?"
+            " ORDER BY retrieved_at DESC, id DESC LIMIT ?", (since, limit))]
+
+    def model_call_counts(self, since: str | None = None, until: str | None = None, run_id: str | None = None) -> dict[str, int]:
+        """Model calls per step task type, one per stored model session (a call that failed still counts). Either the
+        window [since, until) over the session's start time, or one run."""
+        where, args = ("m.run_id = ?", (run_id,)) if run_id is not None else ("m.started_at >= ? AND m.started_at < ?", (since, until))
+        return {row["task_type"]: row["calls"] for row in self.conn.execute(
+            "SELECT i.task_type AS task_type, COUNT(*) AS calls FROM model_sessions m"
+            f" JOIN step_inputs i ON i.id = m.step_input_id WHERE {where} GROUP BY i.task_type", args)}
+
+    def run_exists(self, run_id: str) -> bool:
+        return self.conn.execute("SELECT 1 FROM runs WHERE id = ?", (run_id,)).fetchone() is not None

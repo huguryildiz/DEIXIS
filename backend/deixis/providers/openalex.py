@@ -47,7 +47,7 @@ REFERENCE_COUNT_FIELD = "referenced_works_count"
 REFERENCES_FIELD = "referenced_works"
 RATE_LIMIT_HEADERS = (
     "x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset",
-    "x-ratelimit-cost-usd", "x-ratelimit-remaining-usd",
+    "x-ratelimit-cost-usd", "x-ratelimit-remaining-usd", "x-ratelimit-limit-usd",
 )
 MAX_RESULTS = 200
 # A count needs no record. OpenAlex refuses per_page=0, so the smallest page is asked for and only meta.count read.

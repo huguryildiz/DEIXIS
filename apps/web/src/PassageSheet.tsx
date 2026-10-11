@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, assetUrl, type AssetText, type Passage, type Source } from './api'
-import { locatorText, providerName, versionText, versionTones } from './labels'
+import { citedText, locatorText, providerName, versionText, versionTones } from './labels'
 import { t, uiLocale } from './i18n'
 import { PassageMathText } from './PassageMathText'
 import { ConnectionIcon } from './connectionIcons'
@@ -135,13 +135,13 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const selectionText = { included: 'Included', excluded: 'Excluded', pending: 'Undecided' } as const
   return <Sheet open={openPassageId !== null || openAssetId !== null || detailsOnly} onOpenChange={open => { if (!open) onClose() }}>
     <SheetContent className={`detail-sheet source-sheet ${full ? 'is-full' : ''} ${dark ? 'dark' : ''}`}>
-      <SheetHeader><SheetTitle>{t('Source details')}</SheetTitle>
+      <SheetHeader><SheetTitle><FileText aria-hidden />{t('Source details')}</SheetTitle>
         <Button variant="ghost" size="icon-sm" className="sheet-expand" aria-label={t(full ? 'Collapse panel' : 'Expand to full page')} title={t(full ? 'Collapse panel' : 'Expand to full page')} onClick={() => setFull(v => !v)}>{full ? <Minimize2 /> : <Maximize2 />}</Button><SheetDescription className="sr-only">{passage ? t('Cited passage: {locator}', { locator: locatorText(passage) }) : assetText ? t('PDF source') : detailsOnly ? t('Source') : t(error ? 'Unavailable' : 'Loading passage…')}</SheetDescription></SheetHeader>
       <div className="sheet-body">
         {error && <Notice tone="error">{error}</Notice>}
         {!passage && !assetText && !detailsOnly && !error && <p>{t(openAssetId ? 'Loading PDF text…' : 'Loading passage…')}</p>}
         {(passage || assetText || detailsOnly) && source && <>
-          {(source.source_key || source.venue || source.year) && <p className="source-venue"><SourceKey value={source.source_key} />{source.venue && <i>{source.venue}</i>}{source.venue && source.year && <span aria-hidden className="source-dot" />}{source.year}</p>}
+          {(source.source_key || source.venue || source.year || source.cited_by_count !== null) && <p className="source-venue"><SourceKey value={source.source_key} />{source.venue && <i>{source.venue}</i>}{source.venue && source.year && <span aria-hidden className="source-dot" />}{source.year}{source.cited_by_count !== null && <>{(source.venue || source.year) && <span aria-hidden className="source-dot" />}<span>{citedText(source.cited_by_count)}</span></>}</p>}
           <h2 className="source-title">{source.title}</h2>
           {source.authors.length > 0 && <p className="source-byline">{source.authors.length > 3 && !allAuthors
             ? <>{source.authors.slice(0, 2).join(', ')}, <button className="author-more" onClick={() => setAllAuthors(true)}>{t('and {n} more', { n: source.authors.length - 2 })}</button></>
@@ -158,7 +158,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
               : source.landing_url && <a className="source-link-chip" href={source.landing_url} target="_blank" rel="noreferrer"><Link2 size={13} aria-hidden /><span>{t('Publisher page')}</span><ExternalLink size={12} aria-hidden /></a>}
           </div>
           {row && <dl className="source-role">
-            <div><dt>{t('Screening')}</dt><dd>{t(selectionText[row.selection.state])}</dd></div>
+            <div><dt>{t('Screening')}</dt><dd className={`is-${row.selection.state}`}>{t(selectionText[row.selection.state])}</dd></div>
             <div><dt>{t('Similarity')}</dt><dd title={t('Used for ordering only; it is not a relevance judgment.')}>{row.similarity === null ? '—' : row.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</dd></div>
             <div><dt>{t('Latest answer')}</dt><dd>{t(row.cited_in_latest_answer ? 'Cited' : 'Not cited')}</dd></div>
           </dl>}

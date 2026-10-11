@@ -5,10 +5,10 @@
 .report-ready-bar{height:4px;margin:14px 0;background:var(--line)}
 .report-ready-bar span{display:block;height:100%;background:var(--accent)}
 .report-ready .text-link{border:0;background:none;color:var(--accent);font-size:13px;text-decoration:underline;cursor:pointer}
-.evidence-report-content .evidence-report-section{margin:0 0 34px}
-.evidence-report-section h2{margin:0 0 13px;color:var(--ink);font-family:var(--font-sans);font-size:18px;font-weight:650;line-height:1.35;text-wrap:balance}
-.evidence-report-paragraph{margin:0 0 15px;color:var(--ink);font-family:var(--font-sans);font-size:18px;line-height:1.72}
-.evidence-report-paragraph-group{margin-bottom:17px}
+.evidence-report-content .evidence-report-section{margin:0 0 24px}
+.evidence-report-section h2{margin:0 0 8px;color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:600;line-height:1.4;text-wrap:balance}
+.evidence-report-paragraph{margin:0 0 12px;color:var(--ink);font-family:var(--font-sans);font-size:14.5px;line-height:1.65}
+.evidence-report-paragraph-group{margin-bottom:12px}
 .evidence-report-equation{display:block;text-align:right;font-family:var(--font-sans);font-size:12px}
 .evidence-report-fine,.evidence-report-provenance{font-family:var(--font-sans);font-size:11px;line-height:1.55;color:var(--muted)}
 .evidence-report-provenance{margin:35px 0 0;padding-top:18px;border-top:1px solid var(--line)}
@@ -38,16 +38,15 @@
 .evidence-report-table caption{margin-bottom:8px;color:var(--muted);text-align:left;font-size:11px}
 .evidence-report-table th,.evidence-report-table td{min-width:120px;padding:9px 12px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
 .evidence-report-table thead th{font-weight:650}
-.evidence-report-references{padding-left:0;list-style:none;font-family:var(--font-sans);font-size:16px;line-height:1.65}
-.evidence-report-references li{margin-bottom:8px}
+.evidence-report-references{display:grid;gap:10px;padding-left:0;list-style:none;font-family:var(--font-sans);font-size:13px;line-height:1.5}
+.evidence-report-references li{margin:0}
 .evidence-report-references button{padding:0;border:0;background:none;color:var(--accent);font:inherit;text-align:left;text-decoration:underline;cursor:pointer}
-@media(max-width:760px){.evidence-report-paragraph{font-size:17px}.evidence-report-content .evidence-report-section{margin-bottom:28px}}
 @media(prefers-reduced-motion:reduce){.report-ready-bar span{transition:none}}
-.report-toolbar-actions [data-slot=button][aria-pressed=true]{background:var(--selected-surface)}
+.report-toolbar-actions [data-slot=button][aria-pressed=true]{background:var(--selected-surface);color:var(--ink)}
 @media(max-width:600px){.report-toolbar-actions .report-export-label{display:none}}
 .candidate-aspects { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); font-family: var(--font-sans); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .candidate-aspects, .candidate-aspects * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
-.candidate-aspects h3 { font-size: 17px; font-weight: 600; text-wrap: balance; }
+.candidate-aspects h3 { font-size: 15px; font-weight: 600; text-wrap: balance; }
 .candidate-aspects ul { padding-left: 22px; }
 .candidate-aspects li { padding: 8px 0; }
 .candidate-aspects [data-stored-text] { white-space: pre-wrap; }

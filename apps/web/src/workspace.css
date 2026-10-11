@@ -78,8 +78,9 @@
 /* The tabs (mockup .tabs): small muted labels, the selected one in ink over a 2px accent underline, counts as plain text. */
 .research-tabs-bar{display:flex;align-items:flex-end;border-bottom:1px solid var(--line)}
 .research-tabs .research-tabs-bar [data-slot=tabs-list]{flex:1;width:auto;border-bottom:0}
-.run-strip{display:flex;align-items:center;gap:6px;flex:none}
-.run-strip-status{display:inline-flex;align-items:center;gap:7px;margin-right:2px;padding:3px 10px;border:1px solid var(--accent-line);border-radius:999px;background:var(--accent-tint);color:var(--accent);font-size:12px;white-space:nowrap}
+.run-strip{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:0 1 auto;min-width:0}
+.run-strip-status{display:inline-flex;align-items:center;gap:7px;min-width:0;margin-right:2px;padding:3px 10px;border:1px solid var(--accent-line);border-radius:999px;background:var(--accent-tint);color:var(--accent);font-size:12px;white-space:nowrap}
+@media(max-width:760px){.run-strip-status{white-space:normal;overflow-wrap:anywhere}}
 .run-strip-status.is-paused{border-color:transparent;background:var(--warn-surface);color:var(--warn-ink)}
 .run-strip .run-strip-pause{border-color:var(--strong-line);background:var(--paper);color:var(--ink-2)}
 .run-strip .run-strip-pause:hover{background:var(--hover-surface);color:var(--ink)}
@@ -169,42 +170,74 @@
 .artifact-list button>span{flex:1;min-width:0}
 .artifact-list strong{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:14px;font-weight:500;line-height:1.4}
 .artifact-list small{display:block;margin-top:2px;font-size:12px;line-height:1.4;color:var(--muted)}
-.report-sheet[data-slot=sheet-content]{width:min(980px,72vw);max-width:calc(100vw - 56px);gap:0;border-color:var(--line);background:var(--paper)}
-.detail-sheet.report-sheet [data-slot=sheet-header].report-toolbar{position:relative;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:16px;min-height:62px;padding:10px 50px 10px 20px;border-bottom:1px solid var(--line);background:var(--paper)}
-.report-toolbar-title{display:flex;align-items:center;gap:11px;min-width:0;color:var(--muted)}
-.report-toolbar-title svg{flex:none}
-.report-toolbar [data-slot=sheet-title]{overflow:hidden;color:var(--ink);font-family:var(--font-sans);font-size:14px;font-weight:550;line-height:1.4;letter-spacing:-.01em;text-overflow:ellipsis;white-space:nowrap}
-.report-toolbar-actions{display:flex;align-items:center;gap:3px;flex:none}
-.report-toolbar-actions [data-slot=button]{height:34px;padding-inline:10px;color:var(--ink);font-size:12px}
-.report-toolbar-actions [data-slot=button]:hover,.report-sheet [data-slot=sheet-close]:hover{background:color-mix(in srgb,var(--ink),transparent 92%)}
-.report-sheet [data-slot=sheet-close]{top:14px;right:12px;color:var(--ink)}
-.report-scroll{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;background:color-mix(in srgb,var(--paper),var(--ink) 1.5%)}
-.report-document{width:min(790px,calc(100% - 80px));min-height:100%;margin:0 auto;padding:clamp(48px,7vw,78px) 0 110px;color:var(--ink)}
-.report-document-head{display:block;height:auto;margin-bottom:46px;padding:0 0 28px;border-bottom:1px solid var(--line)}
-.report-document-head p{margin:0 0 11px;color:var(--accent);font-size:11.5px;font-weight:650}
-.report-document-head h1{margin:0;max-width:25ch;color:var(--ink);font-family:var(--font-serif);font-size:clamp(35px,4.2vw,54px);font-weight:470;line-height:1.06;letter-spacing:-.035em}
-.report-document-head time{display:block;margin-top:18px;color:var(--muted);font-size:12px}
+/* Sheets as panels (S5). Every sheet sits on the shared base in App.css (46px head with a hairline, 13.5px/500 title,
+   30px icon buttons, about 56% wide, `.is-full` full width). The title may lead with a 16px muted icon; a visible
+   description sits under the title inside the head. */
+.detail-sheet[data-slot=sheet-content]{gap:0}
+.detail-sheet [data-slot=sheet-title]{display:flex;align-items:center;gap:8px;min-width:0;overflow-wrap:anywhere}
+.detail-sheet [data-slot=sheet-title]>svg{flex:none;width:16px;height:16px;color:var(--muted)}
+/* Report sheet (S5): the shared panel head carries the title and a quiet toolbar; the document is a 680px column with a
+   27px serif title, sans claims at 14.5px and 15px section heads (mockup `.report`). */
+.detail-sheet.report-sheet [data-slot=sheet-header].report-toolbar{position:relative;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;min-height:46px;padding:7px 46px 7px 14px;border-bottom:1px solid var(--line);background:var(--paper)}
+.report-toolbar-title{display:flex;align-items:center;gap:8px;min-width:0;color:var(--muted)}
+.report-toolbar-title svg{flex:none;width:16px;height:16px}
+.report-toolbar [data-slot=sheet-title]{display:block;overflow:hidden;color:var(--ink);font-family:var(--font-sans);font-size:13.5px;font-weight:500;line-height:1.4;letter-spacing:0;text-overflow:ellipsis;white-space:nowrap}
+.report-toolbar-actions{display:flex;align-items:center;gap:2px;flex:none}
+.report-toolbar-actions [data-slot=button]{height:30px;gap:6px;padding-inline:8px;border-radius:7px;color:var(--ink-2);font-size:12.5px;font-weight:500}
+.report-toolbar-actions [data-slot=button] svg{color:var(--muted)}
+.report-toolbar-actions [data-slot=button]:hover{background:var(--hover-surface);color:var(--ink)}
+.report-scroll{min-height:0;flex:1;overflow-y:auto;overscroll-behavior:contain;background:var(--paper)}
+.report-document{width:100%;max-width:680px;min-height:100%;margin:0;padding:26px 30px 60px;color:var(--ink);font-size:14.5px;line-height:1.65}
+.detail-sheet.is-full .report-document{margin-inline:auto}
+/* Title first, then one meta line: "Report · V2 · 9 October 2026". */
+.report-document-head{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:baseline;column-gap:6px;height:auto;margin-bottom:22px;padding:0 0 16px;border-bottom:1px solid var(--line)}
+.report-document-head>*{grid-column:1/-1}
+.report-document-head h1{order:-1;margin:0 0 6px;color:var(--ink);font-family:var(--font-serif);font-size:27px;font-weight:500;line-height:1.22;letter-spacing:-.2px;text-wrap:balance}
+.report-document-head>p:first-child{grid-column:1;margin:0;color:var(--muted);font-size:12.5px;font-weight:400}
+.report-document-head>p:first-child+h1+time{grid-column:2;display:block;margin:0;color:var(--muted);font-size:12.5px}
+.report-document-head>p:first-child+h1+time::before{content:"·";margin-right:6px;color:var(--faint)}
+.report-document-head p{margin:6px 0 0;color:var(--muted);font-size:12.5px}
 .report-content.legacy-answer{margin:0}
-.report-content>.section-label{margin-bottom:24px}
-.report-content .answer-section h3,.report-content>h3,.report-content .reference-head h3{margin:34px 0 13px;color:var(--ink);font-family:var(--font-sans);font-size:18px;font-weight:650;line-height:1.35;letter-spacing:-.018em}
+.report-content>.section-label{margin-bottom:14px;color:var(--muted);font-size:12.5px}
+.report-content .answer-section h3,.report-content>h3,.report-content .reference-head h3{margin:24px 0 8px;color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:600;line-height:1.4;letter-spacing:0}
 .report-content .answer-section:first-of-type h3{margin-top:0}
-.report-content .claim{margin:0 0 17px;color:var(--ink);font-family:var(--font-sans);font-size:18px;line-height:1.72}
-.report-content .plain-list{font-family:var(--font-sans);font-size:16px;line-height:1.75}
+.report-content .answer-paragraph{margin:0 0 12px;color:var(--ink);font-family:var(--font-sans);font-size:14.5px;line-height:1.65}
+.report-content .answer-paragraph .answer-lead{font-weight:600}
+.report-content .claim{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:14.5px;line-height:1.65}
+.report-content .plain-list{margin:0 0 12px;padding-left:18px;font-family:var(--font-sans);font-size:14.5px;line-height:1.65}
 .report-content em{font-family:var(--font-serif);font-size:1.06em}
-.report-content .reference-head{margin-top:42px}
-.report-content .reference-list button{padding-block:14px}
-.report-content .legacy-mini-note{margin-top:32px;padding-top:18px;border-top:1px solid var(--line)}
+.report-content .reference-head{margin:24px 0 10px}
+.report-content .reference-head h3{margin:0}
+.report-content .legacy-mini-note{margin-top:20px;padding-top:12px;border-top:1px solid var(--line);font-size:12px!important}
+.report-sheet .support-badge{padding:1px 5px;border-color:transparent;background:var(--ui-accent);color:var(--muted);font-size:10.5px;font-weight:500;letter-spacing:0}
+/* Numbered reference list: number column, entry, then neutral pills (mockup `.refs`). */
+.report-sheet .reference-list{display:grid;gap:10px;padding:0!important;border-top:0;counter-reset:ref}
+.report-sheet .reference-list li{display:grid;grid-template-columns:22px minmax(0,1fr);align-items:start;border-bottom:0;counter-increment:ref}
+.report-sheet .reference-list li::before{content:counter(ref) ".";padding-top:1px;color:var(--muted);font-size:13px;line-height:1.5;font-variant-numeric:tabular-nums}
+.report-sheet .reference-list li:has(.ref-num)::before{content:none}
+.report-sheet .reference-list li:has(.ref-num){grid-template-columns:minmax(0,1fr)}
+.report-sheet .reference-list button{gap:6px;padding:0;font-size:13px;line-height:1.5}
+.report-sheet .reference-list .ref-num{min-width:22px;color:var(--muted);font-weight:400}
+.report-sheet .reference-list .ref-key{margin-top:1px}
+.report-sheet .ref-pills{gap:5px;margin-top:4px}
+/* Neutral pills inside sheets: grey text on a hairline, the reading depth or version shown only by a coloured dot. */
+.detail-sheet .ref-pill{gap:5px;padding:0 6px;border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);font-size:11.5px;font-weight:400;line-height:19px}
+.detail-sheet .ref-pill>svg{display:none}
+.detail-sheet .ref-pill:is(.is-abstract,.is-text,.is-ocr,.is-published,.is-accepted,.is-submitted,.is-removed,.is-cited,.is-similarity)::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pill)}
+.report-sheet .export-links{height:30px;border-radius:7px}
+.report-sheet .reference-head [data-slot=select-trigger]{height:30px;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12.5px}
+.report-sheet .reference-head [data-slot=select-trigger]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@container report-sheet (max-width:820px){.report-toolbar-actions .report-export-label{display:none}}
+.report-sheet[data-slot=sheet-content]{container:report-sheet/inline-size}
 @media(max-width:760px){
   .report-artifact{padding:12px 14px}
   .report-artifact-preview{display:none}
-  .report-sheet[data-slot=sheet-content]{width:100vw;max-width:100vw}
-  .detail-sheet.report-sheet [data-slot=sheet-header].report-toolbar{align-items:flex-start;min-height:112px;padding:13px 48px 12px 16px}
-  .report-toolbar-title{padding-top:7px}
-  .report-toolbar-actions{position:absolute;left:10px;bottom:9px}
-  .report-document{width:calc(100% - 36px);padding:42px 0 80px}
-  .report-document-head{margin-bottom:34px}
-  .report-document-head h1{font-size:36px}
-  .report-content .claim{font-size:17px}
+  .detail-sheet.report-sheet [data-slot=sheet-header].report-toolbar{flex-wrap:wrap;row-gap:4px;padding:8px 46px 6px 14px}
+  .report-toolbar-title{flex:1 1 100%;min-height:30px}
+  /* The second row starts under the title text (14px padding + 16px icon + 8px gap), not at the edge. */
+  .report-toolbar-actions{flex-wrap:wrap;margin-left:24px}
+  .report-document{padding:22px 18px 60px}
+  .report-document-head h1{font-size:24px}
 }
 @media(prefers-reduced-motion:reduce){.report-artifact,.report-artifact-open{transition:none}}
 .chat-group{padding:0}
@@ -591,58 +624,60 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .legacy-research h1.is-typing>span::after{content:'';display:inline-block;width:2px;height:.78em;margin-left:.1em;background:var(--accent);vertical-align:-.02em;animation:title-caret .65s steps(1,end) infinite}
 @keyframes title-caret{50%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.legacy-research h1.is-typing>span::after{display:none;animation:none}}
-/* Source details sheet: title, byline, links, then the stored passage (layout follows Elicit's source panel). */
-.source-sheet[data-slot=sheet-content]{width:min(460px,94vw);max-width:94vw;gap:0}
-.detail-sheet.source-sheet [data-slot=sheet-header]{gap:0;padding:17px 92px 16px 22px;border-bottom:1px solid var(--line)}
-.source-sheet .sheet-expand{position:absolute;top:13px;right:50px;color:var(--ink)}
-.source-sheet :is(.sheet-expand,[data-slot=sheet-close]):hover{background:color-mix(in srgb,var(--ink),transparent 91%);color:var(--ink)}
-.source-sheet.is-full[data-slot=sheet-content]{width:100vw;max-width:100vw}
+/* Source details sheet (S5, HANDOFF A1–A9): the shared 46px panel head, then one meta line, a 17px sans title, a grey
+   byline, neutral pills with a coloured dot, the screening facts as one grey line, and a 13.5px body. */
+.detail-sheet.source-sheet [data-slot=sheet-header]{padding-right:84px}
+.source-sheet .sheet-expand{position:absolute;top:8px;right:42px;width:30px;height:30px;border-radius:7px;color:var(--muted)}
+.source-sheet .sheet-expand:hover{background:var(--hover-surface);color:var(--ink)}
 .source-sheet.is-full:not(.is-pdf) .sheet-body>*{max-width:820px;margin-inline:auto}
 .source-sheet :is(h2,h3,[data-slot=sheet-title]){font-family:var(--font-sans);letter-spacing:0}
-.source-sheet [data-slot=sheet-title]{margin:0;font-size:16px;line-height:1.5;font-weight:500;color:var(--ink)}
-.source-sheet [data-slot=sheet-close]{top:13px;right:14px;color:var(--ink)}
-.detail-sheet.source-sheet .sheet-body{padding:22px 22px 32px;font-size:14px;line-height:1.6;overflow-y:auto}
-.source-sheet .source-venue{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0 0 8px;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums}
-.source-venue i{color:var(--ink);font-family:var(--font-sans);font-size:14px}
+.detail-sheet.source-sheet .sheet-body{padding:16px 20px 32px;font-size:13px;line-height:1.6;overflow-y:auto}
+.source-sheet .source-venue{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;margin:0 0 4px;color:var(--muted);font-size:12.5px;line-height:1.5;font-variant-numeric:tabular-nums}
+.source-venue i{color:var(--muted);font-family:var(--font-sans);font-size:12.5px;font-style:normal}
 .source-dot{width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.6}
-.source-sheet h2.source-title{margin:0 0 10px;color:var(--ink);font-family:var(--font-sans);font-size:24px;font-weight:500;line-height:1.2;letter-spacing:-.018em;text-wrap:balance}
+.source-sheet h2.source-title{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:17px;font-weight:600;line-height:1.35;letter-spacing:-.1px;text-wrap:balance}
 .source-byline{margin:4px 0 0;font-size:14px;line-height:1.5}
-.source-sheet .source-byline{display:block;font-size:13.5px;color:var(--muted)}
+.source-sheet .source-byline{display:block;margin-top:4px;font-size:12.5px;color:var(--muted)}
 .author-more{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
-.source-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:14px}
-.source-chips .ref-pill{padding:3px 10px;font-size:12px}
-.source-link-chip{display:inline-flex;min-width:0;max-width:100%;align-items:center;gap:6px;padding:2px 10px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:12px;line-height:1.5}
-.source-link-chip span{overflow:hidden;font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
-.source-link-chip:hover{border-color:var(--accent);color:var(--accent)}
-.source-link-chip .connection-icon{flex:none;width:14px;height:14px;color:var(--accent)}
+.source-chips{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:8px}
+.source-link-chip{display:inline-flex;min-width:0;max-width:100%;align-items:center;gap:5px;padding:0 6px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:11.5px;line-height:19px}
+.source-link-chip span{overflow:hidden;font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.source-link-chip:hover{border-color:var(--accent-line);color:var(--accent)}
+.source-link-chip .connection-icon{flex:none;width:12px;height:12px;color:var(--accent)}
 .source-link-chip svg{flex:none}
-.source-role{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:18px 0 0;padding:11px 0;border-block:1px solid var(--line)}
-.source-role dt{margin:0;color:var(--muted);font-size:12px;font-weight:600}
-.source-role dd{margin:2px 0 0;color:var(--ink);font-size:13px;font-variant-numeric:tabular-nums}
-.source-notice{display:flex;gap:9px;margin:16px 0 0;padding:9px 11px;border-radius:7px;background:color-mix(in srgb,var(--ink),transparent 95%);color:var(--muted);font-size:12.5px;line-height:1.5}
+/* Screening, similarity and the latest answer as one grey line; only the screening word carries its tone. */
+.source-role{display:flex;flex-wrap:wrap;gap:0 6px;margin:10px 0 0;padding:0;border:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.source-role>div{display:inline-flex;gap:4px}
+.source-role>div+div::before{content:"·";color:var(--faint)}
+.source-role dt{margin:0;color:var(--muted);font-size:12.5px;font-weight:400}
+.source-role dd{margin:0;color:var(--ink-2);font-size:12.5px;font-variant-numeric:tabular-nums}
+.source-role dd.is-included{color:var(--tone-include)}
+.source-role dd.is-excluded{color:var(--tone-exclude)}
+.source-role dd.is-pending{color:var(--tone-uncertain)}
+.source-notice{display:flex;gap:9px;margin:12px 0 0;padding:9px 11px;border-radius:8px;background:var(--hover-surface);color:var(--ink-2);font-size:12.5px;line-height:1.5}
 .source-notice svg{flex:none;margin-top:2px;color:var(--tone-uncertain)}
-.source-sheet-foot{display:flex;flex:none;flex-wrap:wrap;justify-content:space-between;gap:4px 16px;padding:12px 22px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
-.source-sheet-foot b{color:var(--ink);font-weight:600}
+.source-sheet-foot{display:flex;flex:none;flex-wrap:wrap;justify-content:space-between;gap:4px 16px;padding:10px 20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+.source-sheet-foot b{color:var(--ink-2);font-weight:500}
 .doi-glyph{stroke:var(--paper)}
 .doi-glyph-dot{fill:var(--paper)}
 /* One underline tab strip for hand-built tablists (source view, settings); it matches the research tabs. */
-.tab-strip{display:flex;gap:20px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
-.tab-strip button{position:relative;flex:none;padding:10px 0 11px;border:0;background:none;color:var(--muted);font-size:13px;font-weight:500;line-height:1;white-space:nowrap;cursor:pointer}
-.tab-strip button[aria-selected=true]{color:var(--ink);font-weight:600}
+.tab-strip{display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.tab-strip button{position:relative;flex:none;padding:8px 10px 9px;border:0;background:none;color:var(--muted);font-size:12.5px;font-weight:500;line-height:1;white-space:nowrap;cursor:pointer}
+.tab-strip button[aria-selected=true]{color:var(--ink);font-weight:500}
 .tab-strip button[aria-selected=true]::after{content:'';position:absolute;right:0;bottom:0;left:0;height:2px;border-radius:2px;background:var(--accent)}
 .tab-strip button:not([aria-disabled=true]):hover{color:var(--ink)}
-.tab-strip button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tab-strip button:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;border-radius:5px}
 .tab-strip button[aria-disabled=true]{opacity:.45;cursor:not-allowed}
-.source-view-tabs{margin:16px 0 2px}
-.source-sheet h3.source-section{margin:22px 0 8px;color:var(--muted);font-size:12px;font-weight:600}
+.source-view-tabs{margin:14px 0 2px}
+.source-sheet h3.source-section{margin:16px 0 6px;color:var(--muted);font-size:12px;font-weight:600}
 .citation-highlight-note{margin:0 0 13px;padding:9px 11px;border:1px solid color-mix(in srgb,var(--tone-uncertain),transparent 62%);border-radius:6px;background:color-mix(in srgb,var(--tone-uncertain),transparent 92%);color:var(--ink);font-size:12px;line-height:1.55}
-.source-sheet .passage-text{margin:0;max-width:64ch;color:var(--ink);font-family:var(--font-sans);font-size:16px;line-height:1.68}
+.source-sheet .passage-text{margin:0;max-width:72ch;color:var(--ink-2);font-family:var(--font-sans);font-size:13.5px;line-height:1.65}
 .asset-text-view{min-width:0}
 .pdf-text-page+.pdf-text-page{margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
 .pdf-text-page .passage-text+.passage-text{margin-top:.8em}
-.pdf-text-heading{margin:1.6em 0 .55em;color:var(--ink);font-family:var(--font-sans);font-size:22px;font-weight:550;line-height:1.25;letter-spacing:-.005em}
-.source-sheet .pdf-text-title{margin:.2em 0 .7em;max-width:30ch;color:var(--ink);font-family:var(--font-sans);font-size:28px;font-weight:500;line-height:1.2;letter-spacing:-.01em;text-wrap:balance}
-.pdf-text-heading.is-sub{margin:1.3em 0 .45em;font-size:18px;font-weight:550}
+.pdf-text-heading{margin:1.4em 0 .4em;color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:600;line-height:1.35;letter-spacing:0}
+.source-sheet .pdf-text-title{margin:.2em 0 .6em;max-width:40ch;color:var(--ink);font-family:var(--font-sans);font-size:17px;font-weight:600;line-height:1.35;letter-spacing:-.1px;text-wrap:balance}
+.pdf-text-heading.is-sub{margin:1.2em 0 .3em;font-size:13.5px;font-weight:600}
 .pdf-text-page h4+.pdf-text-heading{margin-top:.4em}
 .pdf-text-table{margin:.9em 0;overflow-x:auto;border:1px solid var(--line);border-radius:8px}
 .pdf-text-table table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.45;color:var(--ink)}
@@ -657,18 +692,18 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .pdf-text-contents button:hover{background:var(--hover-surface)}
 .pdf-text-figure{margin:1.1em 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--page-surface)}
 .pdf-text-figure img{display:block;width:100%;height:auto;max-height:560px;object-fit:contain}
-.source-sheet .pdf-text-figure figcaption{margin-top:10px;color:var(--page-ink);font-family:var(--font-sans);font-size:14px;line-height:1.5}
+.source-sheet .pdf-text-figure figcaption{margin-top:10px;color:var(--page-ink);font-family:var(--font-sans);font-size:12.5px;line-height:1.5}
 .pdf-text-figure small{display:block;margin-top:6px;color:var(--page-muted);font-size:11px}
 .source-sheet .pdf-text-xref{padding:0;color:var(--accent);font:inherit;text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent),transparent 60%);text-underline-offset:3px;cursor:pointer}
 .source-sheet .pdf-text-xref:hover{text-decoration-color:var(--accent)}
 .pdf-text-tip{max-width:26rem}
-.source-sheet .passage-text.pdf-text-bio{font-size:14.5px;line-height:1.6;color:color-mix(in srgb,var(--ink),var(--muted) 35%)}
+.source-sheet .passage-text.pdf-text-bio{font-size:13px;line-height:1.6;color:color-mix(in srgb,var(--ink),var(--muted) 35%)}
 .pdf-text-tip-entry{display:block}
 .pdf-text-tip-entry+.pdf-text-tip-entry{margin-top:6px}
 .source-sheet .is-jump-target{animation:pdf-jump 1.6s ease-out}
 @keyframes pdf-jump{0%,30%{background:color-mix(in srgb,var(--accent),transparent 80%);border-radius:4px}100%{background:transparent}}
 @media(prefers-reduced-motion:reduce){.source-sheet .is-jump-target{animation:none;outline:2px solid color-mix(in srgb,var(--accent),transparent 50%)}}
-.source-sheet .passage-text.pdf-text-note{color:var(--muted);font-size:13px;line-height:1.5}
+.source-sheet .passage-text.pdf-text-note{color:var(--muted);font-size:12.5px;line-height:1.5}
 .pdf-text-notes-toggle{margin-left:10px;color:var(--muted);font-size:11px;font-weight:500;letter-spacing:0;text-transform:none;text-decoration:underline dotted;text-underline-offset:3px}
 .pdf-text-page h4{margin:0 0 8px;color:var(--muted);font-size:12px;font-weight:600}
 .source-sheet .citation-highlight{margin:0 -.04em;padding:.06em .08em;border-radius:3px;background:color-mix(in srgb,var(--accent),transparent 80%);color:var(--ink);box-decoration-break:clone;-webkit-box-decoration-break:clone;scroll-margin-block:30vh}
@@ -688,14 +723,14 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .source-pdf-view{min-height:0;margin-top:18px;border-top:1px solid var(--line)}
 .source-pdf-view .pdf-viewer{height:clamp(460px,calc(100vh - 250px),760px)}
 .pdf-viewer{display:flex;height:100%;min-height:0;flex-direction:column;background:color-mix(in srgb,var(--ink),transparent 94%)}
-.pdf-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;min-height:56px;padding:7px 24px;border-bottom:1px solid var(--line);background:var(--paper);color:var(--muted)}
-.pdf-page-controls,.pdf-zoom-controls{display:flex;align-items:center;gap:8px}
+.pdf-toolbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;min-height:44px;padding:5px 16px;border-bottom:1px solid var(--line);background:var(--paper);color:var(--muted)}
+.pdf-page-controls,.pdf-zoom-controls{display:flex;align-items:center;gap:6px;font-size:12.5px}
 .pdf-page-controls{justify-self:start;white-space:nowrap}.pdf-zoom-controls{justify-self:center}
-.pdf-toolbar button,.pdf-download{display:inline-grid;width:34px;height:34px;place-items:center;border-radius:6px;color:var(--muted)}
+.pdf-toolbar button,.pdf-download{display:inline-grid;width:30px;height:30px;place-items:center;border-radius:7px;color:var(--muted)}
 .pdf-toolbar button:hover:not(:disabled),.pdf-download:hover{background:color-mix(in srgb,var(--ink),transparent 92%);color:var(--ink)}
 .pdf-toolbar button:disabled{opacity:.35;cursor:not-allowed}
-.pdf-toolbar svg{width:18px;height:18px}
-.pdf-page-controls input{width:46px;height:36px;border:1px solid var(--line);border-radius:5px;background:var(--paper);color:var(--ink);text-align:center;font-variant-numeric:tabular-nums}
+.pdf-toolbar svg{width:16px;height:16px}
+.pdf-page-controls input{width:42px;height:30px;border:1px solid var(--strong-line);border-radius:5px;font-size:12.5px;background:var(--paper);color:var(--ink);text-align:center;font-variant-numeric:tabular-nums}
 .pdf-zoom-controls span{min-width:48px;text-align:center;font-size:12px;font-variant-numeric:tabular-nums}
 .pdf-download{justify-self:end}
 .pdf-document{min-height:0;flex:1;overflow:auto;padding:18px 20px 42px;text-align:center}
@@ -1038,17 +1073,17 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .jobs-ring-track{stroke:color-mix(in srgb,var(--line),transparent 20%)}
 .jobs-ring-fill{stroke:var(--tone-include);stroke-linecap:round}
 .jobs-ring-count{position:absolute;font-size:11px;font-weight:600;color:var(--ink)}
-.detail-sheet.jobs-sheet{width:560px}
-.jobs-sheet-body{display:grid;gap:22px;align-content:start}
+.jobs-sheet-body{display:grid;gap:18px;align-content:start}
+.jobs-sheet .jobs-sheet-body{padding-top:16px}
 .jobs-item{display:grid;gap:4px}
 .jobs-item+.jobs-item{padding-top:18px;border-top:1px solid var(--line)}
 .jobs-item-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .jobs-item-research{display:inline-flex;align-items:center;gap:6px;min-width:0;padding:0;border:0;background:none;color:var(--accent);font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .jobs-item-research:hover{text-decoration:underline}
 .jobs-sheet .pdf-ready{margin:6px 0 0}
-.jobs-sheet .pdf-ready h2,.jobs-ocr h2{margin:0;font-family:var(--font-sans);font-size:21px;font-weight:500}
+.jobs-sheet .pdf-ready h2,.jobs-ocr h2{margin:0;font-family:var(--font-sans);font-size:15px;font-weight:600}
 .jobs-ocr{display:grid;gap:10px;margin-top:6px}
-.jobs-item-heading{margin:0 0 8px;font-family:var(--font-sans);font-size:21px;font-weight:500}
+.jobs-item-heading{margin:0 0 8px;font-family:var(--font-sans);font-size:15px;font-weight:600}
 .jobs-ocr p{margin:0;color:var(--muted);font-size:13px}
 
 /* Inline notices (Notice.tsx): a blocking error, something that needs attention, or information. */

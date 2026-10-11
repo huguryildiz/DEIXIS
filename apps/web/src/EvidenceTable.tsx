@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { ArchiveRestore, ArrowUpRight, BadgeCheck, BookOpenText, ChevronRight, Download, Ellipsis, FileText, Info, LayoutTemplate, ListPlus, Lock, Maximize2, Minimize2, Pause, PencilLine, Play, Plus, RotateCw, Save, ShieldAlert, Sparkles, Trash2, TriangleAlert, X } from 'lucide-react'
+import { ArchiveRestore, ArrowUpRight, BadgeCheck, BookOpenText, ChevronRight, Columns3, Download, Ellipsis, FileText, Info, LayoutTemplate, ListPlus, Lock, Maximize2, Minimize2, Pause, PencilLine, Play, Plus, RotateCw, Save, ShieldAlert, Sparkles, Table2, Trash2, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -598,7 +598,7 @@ function ColumnEditor({ target, busy, dark, onSave, onRemove, onClose }: { targe
   }
   return <Sheet open onOpenChange={open => { if (!open) onClose() }}>
     <SheetContent className={`detail-sheet evidence-sheet ${dark ? 'dark' : ''}`}>
-      <SheetHeader><SheetTitle>{t(target.mode === 'edit' ? 'Edit column' : 'Add column')}</SheetTitle>
+      <SheetHeader><SheetTitle><Columns3 aria-hidden />{t(target.mode === 'edit' ? 'Edit column' : 'Add column')}</SheetTitle>
         <SheetDescription className={target.mode === 'suggestion' ? undefined : 'sr-only'}>{target.mode === 'suggestion' ? t('From a model suggestion. It joins the table only when you save it.') : t('Column definition')}</SheetDescription></SheetHeader>
       <form className="sheet-body evidence-form" onSubmit={e => { e.preventDefault(); submit() }}>
         <label className="evidence-field"><span>{t('Short name')}</span><input value={name} maxLength={80} onChange={e => setName(e.target.value)} /></label>
@@ -717,7 +717,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
   const accessTone = row.access_level === 'abstract' ? 'is-abstract' : row.access_level === 'pdf_available' ? 'is-text' : ''
   return <Sheet open onOpenChange={open => { if (!open) onClose() }}>
     <SheetContent className={`detail-sheet evidence-sheet cell-sheet ${dark ? 'dark' : ''}`}>
-      <SheetHeader><SheetTitle>{column.name}</SheetTitle>
+      <SheetHeader><SheetTitle><Table2 aria-hidden />{column.name}</SheetTitle>
         <SheetDescription className="cell-source"><SourceKey value={row.source_key} /><i>{row.title}</i>{row.year && <span>{row.year}</span>}</SheetDescription>
         <div className="cell-pills">
           <span className={`ref-pill is-${versionTones[row.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(row.version_label)}</span>

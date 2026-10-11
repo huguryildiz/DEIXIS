@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, ChevronRight, CirclePause, Pause, Play } from 'lucide-react'
+import { Activity, ArrowRight, ChevronRight, CirclePause, Pause, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, type EquationReader, type ResearchSummary, type ResearchView, type Run, type RunStatus, type Source } from './api'
@@ -96,7 +96,7 @@ export function BackgroundJobs({ researches, collapsed, dark, onOpenResearch }: 
       </button>}
     <Sheet open={open && count > 0} onOpenChange={setOpen}>
       <SheetContent className={`detail-sheet jobs-sheet ${dark ? 'dark' : ''}`}>
-        <SheetHeader><SheetTitle>{t('Background work')}</SheetTitle><SheetDescription>{t('Keeps running while you are on another page.')}</SheetDescription></SheetHeader>
+        <SheetHeader><SheetTitle><Activity aria-hidden />{t('Background work')}</SheetTitle><SheetDescription>{t('Keeps running while you are on another page.')}</SheetDescription></SheetHeader>
         <div className="sheet-body jobs-sheet-body">
           {jobs.map(job => <section key={job.run.id} className="jobs-item">
             <div className="jobs-item-head">

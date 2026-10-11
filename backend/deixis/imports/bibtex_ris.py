@@ -17,8 +17,8 @@ An entry's DOI is resolved through the existing lookups: OpenAlex `works_by_dois
 Crossref `crossref_work` one DOI at a time for the DOIs OpenAlex did not confirm (at most `CROSSREF_FALLBACK_MAX`). A
 confirmed DOI stores the provider's record, merged by DOI with a stored record under the existing rules
 (`Store.upsert_provider_source`), and the entry's own fields are not written. A record a DOI names is used only when
-its title agrees with the entry's (`titles_agree`); otherwise a mistyped DOI would put another paper, and its abstract,
-under the entry. An entry whose DOI no provider confirmed reuses a stored record with that DOI and an agreeing title,
+its title and year agree exactly with the entry's (`titles_agree`); otherwise a mistyped DOI would put another paper, and its abstract,
+under the entry. An entry whose DOI no provider confirmed reuses a stored record with that DOI that agrees the same way,
 else becomes a record of its own under the `reference_file` mapping that never merges by DOI (as a Zotero item does
 not); its identity is DOI, title, year and first author together (`identity`), never the DOI alone, and a record made
 before for the same entry is reused as it stands, never filled from a later entry. So a mistyped DOI cannot take over
@@ -303,6 +303,7 @@ class _BibReader:
     def __init__(self, text: str, start: int, macros: dict[str, str], budget: _Budget):
         self.text, self.pos, self.macros, self.budget = text, start, macros, budget
         self.reach = start  # the furthest position read; a failed entry is never read again up to it
+        self._scanned = start
 
     def resume(self) -> int:
         return max(self.pos, self.reach)
@@ -313,16 +314,23 @@ class _BibReader:
     def delimited(self, opening: str) -> str:
         """A `{…}` or `"…"` value without its delimiters; braces inside must balance. A value never runs into the
         next entry head (`@type{`), so one broken entry cannot swallow the entries after it."""
-        text, depth, start = self.text, 0, self.pos + 1
-        i = start
+        try:
+            return self._delimited(opening, self.pos + 1)
+        finally:
+            # Every way out, value or error, leaves `reach` past all this read scanned, so resume() never goes back.
+            self.reach = max(self.reach, self._scanned)
+
+    def _delimited(self, opening: str, start: int) -> str:
+        text, depth, i = self.text, 0, start
+        self._scanned = start
         while (stop := _VALUE_STOP.search(text, i)) is not None:
             i, char = stop.start(), stop.group(0)
+            self._scanned = i  # an error below leaves reach here; the next head is looked for from this point on
             if char == "\\":
                 i += 2
                 continue
             if char == "@":
                 if _HEAD.match(text, i):
-                    self.reach = i
                     raise _Malformed("unclosed_value", "a field value is not closed before the next entry")
             elif char == "{":
                 depth += 1
@@ -338,7 +346,7 @@ class _BibReader:
                 return text[start:i]
             i += 1
         # Read to the end (an escaped `\@type{` is not an entry head inside a value): nothing after it is read again.
-        self.reach = len(text)
+        self._scanned = len(text)
         raise _Malformed("unclosed_value", "a field value is not closed before the end of the file")
 
     def value(self) -> str:
@@ -719,22 +727,29 @@ def identity(entry: Entry) -> str:
     return "entry:" + hashlib.sha256(basis.encode()).hexdigest()[:32]
 
 
-def titles_agree(entry_title: str, record_title: str) -> bool:
-    """Whether a record a DOI names is the work the entry names, by title. Deliberately strict: a disagreement keeps
-    the entry as the person's own record, which loses nothing, while a false agreement would put another paper's
-    record (and its abstract) under the entry. Agreement is the same folded title, one folded title containing the
-    other when the shorter is at least half the longer (a subtitle), or, for titles of three words or more, 80% of
-    the shorter title's words in the other."""
-    a, b = _fold(entry_title), _fold(record_title)
-    if not a or not b:
+_DASHES = "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d"
+_QUOTES = "\u2018\u2019\u201a\u201b\u2032\u0060\u00b4"
+_DOUBLE_QUOTES = "\u201c\u201d\u201e\u201f\u2033\u00ab\u00bb"
+
+
+def strict_title(title: str) -> str:
+    """NFKC and casefold, whitespace collapsed, dash and quotation-mark variants made one; every other character,
+    `+`, `#` and `&` included, kept as it is."""
+    text = unicodedata.normalize("NFKC", title).casefold()
+    text = text.translate({**{ord(c): "-" for c in _DASHES}, **{ord(c): "'" for c in _QUOTES},
+                           **{ord(c): '"' for c in _DOUBLE_QUOTES}})
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def titles_agree(entry_title: str, entry_year: int | None, record_title: str, record_year: int | None) -> bool:
+    """Whether a record a DOI names is the work the entry names: the same `strict_title`, and the same year when both
+    have one. Nothing looser (no subtitle, word-share or symbol-blind rule): a disagreement keeps the entry as the
+    person's own record, which loses nothing, while a false agreement would put another paper's record and abstract
+    under the entry."""
+    if entry_year is not None and record_year is not None and entry_year != record_year:
         return False
-    short, long_ = sorted((a, b), key=len)
-    if a == b or (short in long_ and 2 * len(short) >= len(long_)):
-        return True
-    words = [set(_fold(w) for w in re.findall(r"\w+", unicodedata.normalize("NFKC", t).casefold())) - {""}
-             for t in (entry_title, record_title)]
-    fewer = min(words, key=len)
-    return len(fewer) >= 3 and len(words[0] & words[1]) >= 0.8 * len(fewer)
+    a, b = strict_title(entry_title), strict_title(record_title)
+    return bool(a) and a == b
 
 
 def user_record(entry: Entry, fmt: Format) -> ProviderRecord:
@@ -769,14 +784,15 @@ async def import_entries(store: Store, http: httpx.AsyncClient, payloads_dir: Pa
             confirmed_by, svid, mismatch = None, None, None
             existing = store.find_source_by_identifier("doi", entry.doi) if entry.doi else None
             if found is not None and found.status == "confirmed":
-                if titles_agree(entry.title, found.record.title):
+                if titles_agree(entry.title, entry.year, found.record.title, found.record.year):
                     svid, _ = store.upsert_provider_source(found.provider, found.record, found.payload_path)
                     confirmed_by, record = found.provider, "provider"
                 else:
                     mismatch = found.record.title
             elif existing is not None:
-                stored = store.source(existing)["title"]
-                if titles_agree(entry.title, stored):
+                stored_record = store.source(existing)
+                stored = stored_record["title"]
+                if titles_agree(entry.title, entry.year, stored, stored_record["year"]):
                     mapping = store.conn.execute(
                         "SELECT provider FROM identifier_mappings WHERE source_version_id = ? AND scheme = 'doi'"
                         " ORDER BY id LIMIT 1", (existing,)).fetchone()

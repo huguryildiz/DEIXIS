@@ -227,6 +227,17 @@ def test_a_long_wrapped_ris_value_reads_in_linear_time():
     assert entries[0].abstract.startswith("start word word") and len(entries[0].abstract) == len("start") + 5 * 800_000
 
 
+@pytest.mark.parametrize("data, code", [
+    (b'@a{k,t="' + rb'\@a{k,t="' * 200_000 + b"}" * 200_001, "unbalanced_braces"),
+    (b"@a{k,t={" + rb"\@a{k,t={" * 200_000 + b"}" * 200_000 + b"}}" + b"}" * 5, None),
+], ids=["unbalanced-after-escaped-heads", "closing-floods"])
+def test_no_error_path_reads_a_region_twice(data, code):
+    _, entries, errors = bounded(lambda: b.read_file(data, "x.bib"), seconds=2.0, peak_bytes=None)
+    assert len(entries) + len(errors) <= 2
+    if code:
+        assert [e.code for e in errors] == [code]
+
+
 def test_escaped_heads_inside_unclosed_values_are_read_once():
     data = rb"\@a{k,t={" * 500_000
     assert len(data) <= b.MAX_FILE_BYTES
@@ -236,16 +247,19 @@ def test_escaped_heads_inside_unclosed_values_are_read_once():
 
 
 @pytest.mark.parametrize("entry, record, agree", [
-    ("SYNTHETIC Diffusion Scheduling", "Synthetic diffusion scheduling.", True),
-    ("SYNTHETIC diffusion scheduling", "SYNTHETIC diffusion scheduling: a survey of methods", True),
-    ("量子通信研究", "量子通信研究：综述", True),
-    ("量子通信研究", "光纤网络研究", False),
-    ("Introduction", "Introduction to SYNTHETIC molecular communication networks", False),
-    ("SYNTHETIC relay budget under drift", "SYNTHETIC relay budget under drift and noise in channels", True),
-    ("SYNTHETIC my real paper on relays", "SYNTHETIC unrelated provider paper", False),
+    ("SYNTHETIC Diffusion  Scheduling", "synthetic diffusion scheduling", True),
+    ("SYNTHETIC pages 1–2 “quoted” it’s", "synthetic pages 1-2 \u201equoted\u201d it's", True),
+    ("SYNTHETIC C++ Primer", "SYNTHETIC C Primer", False),
+    ("SYNTHETIC C# & F#", "SYNTHETIC C and F", False),
+    ("SYNTHETIC deep learning for wireless networks", "SYNTHETIC deep learning for optical networks", False),
+    ("SYNTHETIC relay budget", "SYNTHETIC relay budget: a survey", False),
+    ("量子通信研究", "量子通信研究：综述", False),
+    ("量子通信研究", "量子通信研究", True),
 ])
-def test_titles_agree(entry, record, agree):
-    assert b.titles_agree(entry, record) is agree
+def test_titles_agree_only_on_the_strict_title(entry, record, agree):
+    assert b.titles_agree(entry, 2020, record, 2020) is agree
+    assert b.titles_agree(entry, 2020, record, None) is agree  # a missing year does not decide
+    assert b.titles_agree(entry, 2020, record, 2021) is False
 
 
 def test_format_detection_and_author_splitting_stay_linear_on_long_whitespace():

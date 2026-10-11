@@ -19,9 +19,9 @@ from test_zotero import COLLECTION, ROWS, no_fetch
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "imports"
 
 
-def work(doi, title, wid):
+def work(doi, title, wid, year=2021):
     return {"id": f"https://openalex.org/{wid}", "doi": f"https://doi.org/{doi}", "display_name": title,
-            "publication_year": 2021, "type": "article", "ids": {"openalex": f"https://openalex.org/{wid}"},
+            "publication_year": year, "type": "article", "ids": {"openalex": f"https://openalex.org/{wid}"},
             "authorships": [{"author": {"display_name": "Ada Provider"}}],
             "primary_location": {"version": "publishedVersion", "source": {"display_name": "Provider Journal"}},
             "best_oa_location": None, "abstract_inverted_index": None}
@@ -110,7 +110,7 @@ def test_bibtex_import_resolves_dois_and_marks_whose_metadata_each_item_carries(
     crossref_item = {"DOI": "10.5555/SYN.Crossref", "title": ["SYNTHETIC Crossref record"], "type": "journal-article",
                      "author": [{"given": "Cy", "family": "Ross"}], "issued": {"date-parts": [[2018]]},
                      "container-title": ["Crossref Journal"], "URL": "https://doi.org/10.5555/syn.crossref"}
-    providers = Providers(works=[work("10.5555/syn.hit", "SYNTHETIC diffusion scheduling with alpha-stable noise and Müller's étude", "W100")],
+    providers = Providers(works=[work("10.5555/syn.hit", "SYNTHETIC diffusion  scheduling with $\\alpha$‐stable noise & Müller’s étude", "W100")],
                           crossref={"10.5555/syn.crossref": crossref_item})
     app = app_for(tmp_path, providers)
     extra = b"\n@article{cr2018, title = {SYNTHETIC {C}rossref Record}, doi = {10.5555/syn.crossref}}\n"
@@ -128,7 +128,7 @@ def test_bibtex_import_resolves_dois_and_marks_whose_metadata_each_item_carries(
         assert (hit["lookup"], hit["record"], hit["confirmed_by"]) == ("confirmed", "provider", "openalex")
         source = store.source(hit["source_version_id"])
         # The provider's record is stored, not the entry's own fields.
-        assert (source["title"], source["authors"]) == ("SYNTHETIC diffusion scheduling with alpha-stable noise and Müller's étude", ["Ada Provider"])
+        assert (source["title"], source["authors"]) == ("SYNTHETIC diffusion  scheduling with $\\alpha$‐stable noise & Müller’s étude", ["Ada Provider"])
         origin, metadata, by, at = item(store, hit["source_version_id"])
         assert (origin, metadata, by) == ("bibtex_import", "user_supplied", "openalex") and at is not None
 
@@ -182,7 +182,7 @@ def test_a_provider_error_leaves_the_entry_user_supplied_and_a_stored_doi_record
 
 
 def test_duplicates_in_a_file_and_a_second_import_add_nothing(tmp_path):
-    providers = Providers(works=[work("10.5555/syn.hit", "SYNTHETIC RIS diffusion record", "W100")])
+    providers = Providers(works=[work("10.5555/syn.hit", "SYNTHETIC RIS diffusion record", "W100", 2019)])
     app = app_for(tmp_path, providers)
     with TestClient(app) as raw:
         client = session(raw)
@@ -351,3 +351,28 @@ def test_each_provider_says_what_it_did(tmp_path, monkeypatch):
         assert c["lookups"] == [{"provider": "openalex", "outcome": "not_asked", "reason": "doi_not_filterable"},
                                 {"provider": "crossref", "outcome": "not_asked", "reason": "crossref_limit"}]
         assert [r["lookup"] for r in (a, b_, c)] == ["failed", "failed", "failed"]
+
+
+@pytest.mark.parametrize("entry_title, entry_year, record_title, confirmed", [
+    ("SYNTHETIC C++ Primer", 2020, "SYNTHETIC C Primer", False),
+    ("SYNTHETIC deep learning for wireless networks", 2020, "SYNTHETIC deep learning for optical networks", False),
+    ("SYNTHETIC relay budget", 2020, "SYNTHETIC relay budget: a survey", False),  # a subtitle is another title
+    ("SYNTHETIC relay budget", 2019, "SYNTHETIC relay budget", False),  # the year differs
+    ("SYNTHETIC Relay   Budget -- Drift's Notes", 2020, "synthetic relay budget – drift’s notes", True),
+])
+def test_a_doi_record_confirms_an_entry_only_with_the_same_title_and_year(tmp_path, entry_title, entry_year,
+                                                                         record_title, confirmed):
+    providers = Providers(works=[work("10.5555/syn.t", record_title, "W5", 2020)])
+    app = app_for(tmp_path, providers)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        text = f"@article{{t, title = {{{entry_title}}}, year = {entry_year}, doi = {{10.5555/syn.t}}}}".encode()
+        row = upload(client, "t.bib", text).json()["reference_import"]["entries"][0]
+        if confirmed:
+            assert (row["record"], row["confirmed_by"], row["title_mismatch"]) == ("provider", "openalex", None)
+            assert store.source(row["source_version_id"])["title"] == record_title
+        else:
+            assert (row["record"], row["confirmed_by"], row["title_mismatch"]) == ("user_supplied", None, record_title)
+            assert store.find_source_by_identifier("openalex", "W5") is None
+            assert item(store, row["source_version_id"])[1:] == ("user_supplied", None, None)

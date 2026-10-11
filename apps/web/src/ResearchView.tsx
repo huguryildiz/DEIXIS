@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, bibliographyUrl, subscribe, type ActivityEvent, type Answer, type AssetImpact, type Evidence, type Limitation, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ValidationIssue, type Verdict, type ZoteroSource } from './api'
-import { serviceErrorText, serviceErrorSentence, serviceKind, serviceWaitingText, connectionName, accessParts, citedText, fetchReasonText, fileRestoreNote, fileRestoreText, fileRestoreTone, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, recoveryDecisionText, recoveryReasonText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, versionText, versionTones } from './labels'
+import { serviceErrorText, serviceErrorSentence, serviceKind, serviceWaitingText, connectionName, accessParts, citedText, fetchReasonText, fileRestoreNote, fileRestoreText, fileRestoreTone, locatorText, pageLocator, pauseReasonText, providerName, queueAnsweredText, recoveryDecisionText, recoveryReasonText, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, seedSkipText, seedUseText, stepLabel, verdictLabels, versionText, versionTones } from './labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING, LATE_REVISION_QUEUED, LATE_REVISION_SKIPPED, lateRevisionReasons } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { TextRecovery } from './TextRecovery'
@@ -30,7 +30,7 @@ import { ConnectionIcon } from './connectionIcons'
 import { ModelName } from './ModelName'
 import { useModelText } from './modelText'
 import { ConfirmDialog } from './ConfirmDialog'
-import { effortLabels, effortOptions, Option, scopeOptions } from './Home'
+import { effortLabels, effortOptions, MAX_SEED_PDFS, Option, scopeOptions } from './Home'
 import { citationStyles, formatReference, formatReferenceText, type CitationStyle } from './citations'
 import { OCR_LABEL, ocrLanguagesText, ocrOffer } from './ocr'
 import { OcrButton, OcrNote } from './OcrNote'
@@ -130,6 +130,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [openEvidenceReportId, setOpenEvidenceReportId] = useState<string | null>(null)
   // Sources chosen for a table or for removal (D50). Kept only while the Sources tab is open.
   const [picked, setPicked] = useState<string[]>([])
+  // Boxes ticked on the PDF list but not saved yet; null shows the PDFs the research stored.
+  const [seedPick, setSeedPick] = useState<string[] | null>(null)
   const [removal, setRemoval] = useState<{ ids: string[]; versions: number; elsewhere: number | null } | null>(null)
   const [tableStart, setTableStart] = useState<{ ids: string[]; notIncluded: number } | null>(null)
   const [focusTable, setFocusTable] = useState<string | null>(null)
@@ -289,9 +291,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const hasAcademic = view.scope.source_scope !== 'attached'
   const needsSeed = view.scope.source_scope === 'attached_and_academic' && view.scope.seed_mode === 'uploaded_seed'
   const seedSearchReady = !needsSeed || view.scope.seed_status === 'ready'
-  const seedCandidates = view.sources.filter(source =>
-    (source.origin === 'user_upload' || source.added_by === 'zotero_import' || source.added_by === 'library')
-    && source.has_pdf_text && source.access.assets.length > 0)
+  // The backend decides which PDFs can guide a search; the page lists them and sends back the ticked ones in list order.
+  const seedCandidates = view.scope.seed_candidates
+  const storedSeedIds = view.scope.seeds.map(seed => seed.source_version_id).filter(sourceId => seedCandidates.some(c => c.source_version_id === sourceId))
+  const tickedSeeds = seedPick ?? storedSeedIds
+  const seedTitle = (sourceId: string) => view.sources.find(source => source.source_version_id === sourceId)?.title ?? sourceId
   const included = view.counts.included
 
   // Only the run returned by this successful request can receive its focus handoff.
@@ -309,7 +313,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (!seedSearchReady) { toast('error', t('Choose a readable PDF to guide the search.')); return }
     return act(() => api.startRun(id, 'discovery', crypto.randomUUID()))
   }
-  const selectSeed = (sourceId: string) => act(() => api.setSeed(id, sourceId, view.research.version), t('PDF selected for the next search.'))
+  // A new choice goes in candidate order; refreshing the current text re-sends the stored seeds in their stored order,
+  // removed ones included, so the backend keeps the order and records any it can no longer use (D3).
+  const saveSeeds = async (ids: string[], keepOrder = false) => {
+    const orderedIds = keepOrder ? ids : seedCandidates.map(c => c.source_version_id).filter(sourceId => ids.includes(sourceId))
+    if (await act(() => api.setSeeds(id, { source_version_ids: orderedIds }, view.research.version), t('PDFs selected for the next search.'))) setSeedPick(null)
+  }
   const startTitle = () => act(() => api.startRun(id, 'research_title', crypto.randomUUID()))
   const upload = (list: FileList | null) => list && act(async () => { for (const file of Array.from(list)) {
     const next = await api.upload(id, file)
@@ -542,24 +551,39 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
         </button>}
         {view.scope.source_scope === 'attached_and_academic' && <div className="research-seed">
-          <div><strong>{t('PDF guiding the search')}</strong><p>{view.scope.seed_status === 'ready'
-            ? seedUseText(view.scope.seed_use?.status, view.scope.seed_use?.title ?? view.scope.seed?.title ?? '')
-            : view.scope.seed_status === 'question_only'
-              ? t('This earlier research searches from the question. Choose a PDF to guide a later search.')
-              : t('Choose a readable PDF before searching scholarly providers.')}</p></div>
-          <Select value={view.scope.seed?.source_version_id ?? ''} onValueChange={value => { if (value) void selectSeed(value) }}>
-            <SelectTrigger aria-label={t('PDF guiding the search')} disabled={busy || active || !seedCandidates.length}>
-              <SelectValue placeholder={t('Choose PDF')}>{(value: string) =>
-                seedCandidates.find(source => source.source_version_id === value)?.title ?? view.scope.seed?.title ?? t('Choose PDF')
-              }</SelectValue>
-            </SelectTrigger>
-            <SelectContent align="end">{seedCandidates.map(source =>
-              <SelectItem key={source.source_version_id} value={source.source_version_id}>{source.title}</SelectItem>)}</SelectContent>
-          </Select>
-          {view.scope.seed_status === 'stale' && view.scope.seed && seedCandidates.some(source => source.source_version_id === view.scope.seed?.source_version_id) &&
-            <Button variant="outline" size="sm" disabled={busy || active} onClick={() => void selectSeed(view.scope.seed!.source_version_id)}>{t('Use current PDF text')}</Button>}
-          {view.scope.seed_status === 'stale' && <Notice tone="attention">{t('The selected PDF changed or was removed. Select a current PDF again before searching.')}</Notice>}
-          {view.scope.seed_status === 'ready' && view.scope.seed?.page_count != null && view.scope.seed.text_pages < view.scope.seed.page_count &&
+          <div><strong>{t('PDFs guiding the search')}</strong>
+            {view.scope.seed_status === 'ready' || (view.scope.seed_status === 'stale' && view.scope.seeds.length)
+              ? <ul className="research-seed-uses">{view.scope.seeds.map(seed =>
+                  <li key={seed.source_version_id}><span>{seed.title}</span>{seedUseText(seed.use)}</li>)}</ul>
+              : <p>{view.scope.seed_status === 'question_only'
+                  ? t('This earlier research searches from the question. Choose PDFs to guide a later search.')
+                  : t('Choose readable PDFs before searching scholarly providers.')}</p>}
+          </div>
+          {seedCandidates.length > 0 && <fieldset className="research-seed-pick" disabled={busy || active}>
+            <legend className="sr-only">{t('Choose the PDFs that guide the search')}</legend>
+            {seedCandidates.map(candidate => {
+              const checked = tickedSeeds.includes(candidate.source_version_id)
+              return <label key={candidate.source_version_id}>
+                <input type="checkbox" checked={checked} disabled={!checked && tickedSeeds.length >= MAX_SEED_PDFS}
+                  onChange={e => setSeedPick(e.target.checked ? [...tickedSeeds, candidate.source_version_id] : tickedSeeds.filter(sourceId => sourceId !== candidate.source_version_id))} />
+                <span>{candidate.title}</span>
+              </label>
+            })}
+            <div className="research-seed-pick-foot">
+              <Button variant="outline" size="sm" disabled={busy || active || !tickedSeeds.length} onClick={() => void saveSeeds(tickedSeeds)}>{t('Use selected PDFs')}</Button>
+              <small>{t('{n} of {max} chosen', { n: tickedSeeds.length, max: MAX_SEED_PDFS })}
+                {tickedSeeds.length >= MAX_SEED_PDFS && seedCandidates.length > MAX_SEED_PDFS ? ` · ${t('untick one to choose another')}` : ''}
+                {active ? ` · ${t('available when the run ends')}` : ''}</small>
+            </div>
+          </fieldset>}
+          {view.scope.seed_status === 'stale' && storedSeedIds.length > 0 &&
+            <Button variant="outline" size="sm" disabled={busy || active} onClick={() => void saveSeeds(view.scope.seeds.map(seed => seed.source_version_id), true)}>{t('Use current PDF text')}</Button>}
+          {view.scope.seed_status === 'stale' && <Notice tone="attention">{t('A selected PDF changed or was removed. Select the current PDFs again before searching.')}</Notice>}
+          {view.scope.seed_not_selected.length > 0 &&
+            <Notice tone="info">{t('Only {max} PDFs can guide a search. Left out: {titles}.', { max: MAX_SEED_PDFS, titles: view.scope.seed_not_selected.map(item => item.title).join('; ') })}</Notice>}
+          {view.scope.seed_skipped.length > 0 &&
+            <Notice tone="attention">{t('Not used: {items}.', { items: view.scope.seed_skipped.map(item => `${seedTitle(item.source_version_id)} (${seedSkipText(item.reason)})`).join('; ') })}</Notice>}
+          {view.scope.seed_status === 'ready' && view.scope.seeds.some(seed => seed.page_count != null && seed.text_pages < seed.page_count) &&
             <Notice tone="attention">{t('Some PDF pages have no extracted text; the search uses only the readable passages.')}</Notice>}
           {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
         </div>}

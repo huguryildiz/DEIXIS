@@ -69,7 +69,7 @@ from deixis.workflow import search_query as search_query_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
 from deixis.workflow.equations import EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, equation_state
-from deixis.workflow.store import ACTIVE_RUN_STATUSES, NotFound, RunInProgress, Store
+from deixis.workflow.store import ACTIVE_RUN_STATUSES, NotFound, RunInProgress, Store, seed_source_ids
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
 
 log = logging.getLogger(__name__)
@@ -760,7 +760,7 @@ class ResearchFlow:
         failure: dict[str, Any] | None = None
         try:
             answer = await self._model_step(run, scope, f"search_query:{attempt}", "search_query", optional=True,
-                                            source_ids=[seed_rows[0]["source_version_id"]] if seed_rows else None,
+                                            source_ids=seed_source_ids(scope) if seed_rows else None,
                                             passage_rows=seed_rows)
         except OptionalStepFailed as exc:
             failure = {"reason": exc.reason, "detail": exc.detail}
@@ -802,12 +802,13 @@ class ResearchFlow:
         return self._proposed(run_id, built, queries)
 
     def _seed_passages(self, run_id: str, scope: dict[str, Any]) -> tuple[str | None, list[dict[str, Any]] | None]:
-        """The seed PDF's frozen excerpt the query writer reads, and its fingerprint, when this run matched a seed
-        (D2); a run whose seed step never opened writes its query as it always did."""
+        """Every seed PDF's frozen excerpt the query writer reads, in canonical order, and their fingerprint, when this
+        run looked its seeds up (D2, D3); a run whose seed step never opened writes its query as it always did."""
         step = self.store.existing_step(run_id, "seed_match")
-        if step is None or step["status"] != "succeeded" or not scope["seed_snapshot"]:
+        if step is None or step["status"] != "succeeded" or not scope["seeds"]:
             return None, None
-        return step["output"]["seed_passages_sha256"], [dict(p) for p in scope["seed_snapshot"]["passages"]]
+        return (seed_match_rules.contexts(step["output"])["seed_passages_sha256"],
+                [dict(p) for seed in scope["seeds"] for p in seed["passages"]])
 
     def _query_attempt(self, run_id: str, attempt: int, failure: dict[str, Any]) -> dict[str, Any]:
         """A failed search_query call as the protocol keeps it: the StepInput and the package it was sent, when one
@@ -960,36 +961,130 @@ class ResearchFlow:
         return vocabulary, queries, criterion, record
 
     async def _seed_match(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any] | None:
-        """The OpenAlex work the seed PDF is, or why there is none, as the context the protocol freezes (D2).
+        """The OpenAlex work each seed PDF is, or why there is none, as the envelope the protocol freezes (D2, D3).
 
-        Runs only for a ready seed and before this run's protocol is frozen: a run whose protocol froze without it
-        finishes the way it began. At most two lookups, each kept in its own step, so a resumed run sends neither
-        again once it has an answer. A failed lookup does not stop the run; the context says so and the PDF's own
-        pages still guide the query. A second discovery run of the scope revision takes the first one's match.
+        Runs only for a ready seed set and before this run's protocol is frozen: a run whose protocol froze without
+        it finishes the way it began, and a run that opened D2's step finishes under D2's rule. One DOI request for
+        every seed, then one meaning search per seed that is still open, each kept in its own step, so a resumed run
+        sends none again once it has an answer. A failed lookup does not stop the run; the context says so and the
+        PDF's own pages still guide the query. A second discovery run of the scope revision takes the first one's
+        match when its seed key is this one's.
         """
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-        if scope["seed_mode"] != "uploaded_seed" or scope["seed_snapshot"] is None:
+        if scope["seed_mode"] != "uploaded_seed" or not scope["seeds"]:
             return None
         step = self.store.existing_step(run_id, "seed_match")
         if step is not None and step["status"] == "succeeded":
-            return step["output"]
+            return seed_match_rules.contexts(step["output"])
         frozen = self.store.existing_step(run_id, "protocol")
         if step is None and frozen is not None and frozen["status"] == "succeeded":
             return None
-        snapshot = scope["seed_snapshot"]
-        step = step or self.store.step(run_id, "seed_match", "code:seed_match")
+        if step is not None and step["kind"] == "code:seed_match":
+            return seed_match_rules.contexts(await self._seed_match_v1(run, scope, step))
+        step = step or self.store.step(run_id, "seed_match", "code:seed_match_v2")
         self.store.start_step(step["id"])
         earlier = self.store.search_query_of(rid, revision, run_id, "seed_match")
-        if earlier is not None and earlier["output"]["asset_sha256"] == snapshot["asset_sha256"]:
+        if (earlier is not None and earlier["output"].get("rule") == seed_match_rules.RULE
+                and earlier["output"]["seed_key"] == scope["seed_key"]):
+            output = earlier["output"] | {"reused_from_run": earlier["output"].get("reused_from_run", earlier["run_id"])}
+            self.store.finish_step(step["id"], "succeeded", output=output)
+            return output
+        seeds = scope["seeds"]
+        texts = [seed_match_rules.first_pages(self.store, seed) for seed in seeds]
+        contexts = [{"status": None, "basis": None, "source_version_id": seed["source_version_id"],
+                     "work_id": self.store.source(seed["source_version_id"])["work_id"],
+                     "asset_sha256": seed["asset_sha256"],
+                     "seed_passages_sha256": seed_match_rules.passages_sha256([seed]),
+                     "first_page_text": first_page, "lookups": [], "record_check": None}
+                    for seed, (_, _, first_page) in zip(seeds, texts)]
+        connector = CONNECTORS["openalex"]
+        if "openalex" not in scope["providers"] or connector.access_mode() == "not_configured":
+            for context, (head, _, _) in zip(contexts, texts):
+                context["status"] = "no_first_page_text" if not head else "skipped"
+        else:
+            await self._seed_lookups(run, seeds, texts, contexts, connector)
+        envelope = {"rule": seed_match_rules.RULE, "seed_key": scope["seed_key"],
+                    "seed_passages_sha256": seed_match_rules.passages_sha256(seeds), "seeds": contexts}
+        self.store.finish_step(step["id"], "succeeded", output=envelope)
+        self._checkpoint(run_id, revision)
+        return envelope
+
+    async def _seed_lookups(self, run: dict[str, Any], seeds: list[dict[str, Any]], texts: list[tuple[str, str, str]],
+                            contexts: list[dict[str, Any]], connector: Connector) -> None:
+        """seed_pdf_v2 (D3): one DOI request for every seed's page DOIs and record DOIs, each seed decided from the
+        works of its own DOIs only, then one meaning search per seed that neither matched nor was ambiguous.
+
+        A record's own DOI decides only when the work's title is the record's title and stands in the record region
+        (`record_region`); otherwise D2's rule reads the seed's page DOIs. A seed whose DOIs could not be looked up is
+        `lookup_failed` and gets no meaning search, as in D2."""
+        api_key, mailto = connector.api_key(), self.deps.settings.contact_email
+        page = [seed_match_rules.dois_in(head) for head, _, _ in texts]
+        record = [list(seed.get("record_dois") or []) for seed in seeds]
+        asked = sorted({doi for dois in page + record for doi in dois})
+        works, failed, summary = [], False, None
+        if asked:
+            found = await self._seed_lookup(run, "seed_match:v2:doi", lambda: openalex.works_by_dois(
+                self.deps.http, asked, api_key=api_key, contact_email=mailto, per_page=openalex.MAX_IDS_PER_REQUEST),
+                complete=True)
+            works, failed, summary = found["works"], found["failed"], found["summary"]
+        open_seeds = []
+        for i, (seed, context, (head, title_region, _)) in enumerate(zip(seeds, contexts, texts)):
+            if page[i] or record[i]:
+                context["lookups"].append(summary)
+            if record[i]:
+                work, status = (None, "lookup_failed") if failed else seed_match_rules.record_decision(
+                    seed_match_rules.record_region(self.store, seed), seed, works)
+                context["record_check"] = {"dois": record[i], "status": status}
+                if work is not None:
+                    context.update(seed_match_rules.matched(work, "record_doi"))
+                    continue
+            if failed and (page[i] or record[i]):
+                context["status"] = "lookup_failed"
+                continue
+            if not head:
+                context["status"] = "no_first_page_text"
+                continue
+            if page[i]:
+                work, hits = seed_match_rules.pick(
+                    title_region, [w for w in works if seed_match_rules.doi_of(w) in page[i]])
+                if work is not None:
+                    context.update(seed_match_rules.matched(work, "doi_title"))
+                    continue
+                if hits > 1:
+                    context.update({"status": "no_match", "ambiguous": True})
+                    continue
+            open_seeds.append(i)
+        for i in open_seeds:
+            head, title_region, _ = texts[i]
+            found = await self._seed_lookup(run, f"seed_match:v2:semantic:{i}", lambda head=head: openalex.search_semantic(
+                self.deps.http, head[:seed_match_rules.SEMANTIC_QUERY_CHARS], seed_match_rules.SEMANTIC_PER_PAGE,
+                api_key, mailto, references=True))
+            contexts[i]["lookups"].append(found["summary"])
+            if found["failed"]:
+                contexts[i]["status"] = "lookup_failed"
+                continue
+            work, hits = seed_match_rules.pick(title_region, found["works"])
+            contexts[i].update(seed_match_rules.matched(work, "title") if work is not None
+                               else {"status": "no_match", "ambiguous": hits > 1})
+
+    async def _seed_match_v1(self, run: dict[str, Any], scope: dict[str, Any], step: dict[str, Any]) -> dict[str, Any]:
+        """D2's seed step, kept so a run that opened it before seed_pdf_v2 finishes under its own rule and reads back
+        the lookups it already sent (D3). Returns D2's single context."""
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        snapshot = scope["seeds"][0]
+        self.store.start_step(step["id"])
+        earlier = self.store.search_query_of(rid, revision, run_id, "seed_match")
+        if (earlier is not None and earlier["output"].get("rule") == seed_match_rules.RULE_V1
+                and earlier["output"]["asset_sha256"] == snapshot["asset_sha256"]):
             output = earlier["output"] | {"reused_from_run": earlier["output"].get("reused_from_run", earlier["run_id"])}
             self.store.finish_step(step["id"], "succeeded", output=output)
             return output
         head, title_region, first_page = seed_match_rules.first_pages(self.store, snapshot)
-        context = {"rule": seed_match_rules.RULE, "status": None, "basis": None,
+        context = {"rule": seed_match_rules.RULE_V1, "status": None, "basis": None,
                    "source_version_id": snapshot["source_version_id"],
                    "work_id": self.store.source(snapshot["source_version_id"])["work_id"],
                    "asset_sha256": snapshot["asset_sha256"],
-                   "seed_passages_sha256": seed_match_rules.passages_sha256(snapshot),
+                   "seed_passages_sha256": seed_match_rules.passages_sha256([snapshot]),
                    "first_page_text": first_page,
                    "lookups": []}
         connector = CONNECTORS["openalex"]
@@ -998,13 +1093,13 @@ class ResearchFlow:
         elif "openalex" not in scope["providers"] or connector.access_mode() == "not_configured":
             context["status"] = "skipped"
         else:
-            context.update(await self._seed_lookups(run, head, title_region, connector))
+            context.update(await self._seed_lookups_v1(run, head, title_region, connector))
         self.store.finish_step(step["id"], "succeeded", output=context)
         self._checkpoint(run_id, revision)
         return context
 
-    async def _seed_lookups(self, run: dict[str, Any], head: str, title_region: str, connector: Connector) -> dict[str, Any]:
-        """The DOI lookup, then the meaning search only when no DOI record's title stands at the head of page 1."""
+    async def _seed_lookups_v1(self, run: dict[str, Any], head: str, title_region: str, connector: Connector) -> dict[str, Any]:
+        """The DOI lookup, then the meaning search only when no DOI record's title stands at the head of page 1 (D2)."""
         api_key, mailto = connector.api_key(), self.deps.settings.contact_email
         lookups = []
         dois = seed_match_rules.dois_in(head)
@@ -1031,8 +1126,11 @@ class ResearchFlow:
         return {"status": "no_match", "ambiguous": hits > 1, "lookups": lookups}
 
     async def _seed_lookup(self, run: dict[str, Any], key: str,
-                           send: Callable[[], Awaitable[SearchOutcome]]) -> dict[str, Any]:
-        """One seed lookup, stored with its works before the step ends; a finished one is read back, not sent again."""
+                           send: Callable[[], Awaitable[SearchOutcome]], complete: bool = False) -> dict[str, Any]:
+        """One seed lookup, stored with its works before the step ends; a finished one is read back, not sent again.
+
+        With `complete`, a reply that holds fewer works than its `meta.count` (or names no count) is a failed lookup
+        (`incomplete`): a work cut off the page could have made a match ambiguous (D3)."""
         sub = self.store.existing_step(run["id"], key)
         if sub is not None and sub["status"] in ("succeeded", "failed") and sub["output"]:
             return sub["output"]
@@ -1040,6 +1138,10 @@ class ResearchFlow:
         self.store.start_step(sub["id"])
         outcome = await send()
         ok = outcome.status in ("completed", "zero_results")
+        if ok and complete:
+            returned = len((outcome.raw_payload or {}).get("results") or [])
+            if outcome.provider_total is None or outcome.provider_total > returned:
+                ok, outcome.status = False, "incomplete"
         output = {"failed": not ok, "works": (outcome.raw_payload or {}).get("results", []) if ok else [],
                   "summary": {"key": key, "status": outcome.status, "retries": outcome.retries,
                               "request": outcome.request_description,

@@ -163,7 +163,8 @@ def test_the_scope_seed_and_a_users_file_are_brought_works_and_not_positives(sto
     store.add_to_corpus(lib.rid, uploaded, "user_upload", candidate=False)
     seed = lib.work()
     store.conn.execute("UPDATE scope_revisions SET seed_snapshot_json = ? WHERE research_id = ?",
-                       (db.dumps({"source_version_id": seed, "passages": []}), lib.rid))
+                       (db.dumps({"version": 2, "seeds": [{"source_version_id": seed, "passages": []}],
+                                  "not_selected": [], "skipped": [], "seed_key": None}), lib.rid))
     found = lib.probe()
     assert found["brought"] == {lib.work_of(uploaded), lib.work_of(seed)}
     assert found["verified"] == {}

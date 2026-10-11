@@ -107,6 +107,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     from deixis.workflow.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
     from deixis.workflow.search_query import THRESHOLDS as SEARCH_QUERY_THRESHOLDS
     from deixis.workflow.chaining import policy as chain_policy
+    from deixis.workflow import seed_match as seed_match_rules
 
     queried = [t for t in vocabulary["terms"] if not t["dropped"]] if vocabulary else []
     # The words this research reads a title for a survey with, and the ones its own question took away (SW5.1).
@@ -138,8 +139,9 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "language_hint": scope.get("language_hint"),
         "source_scope": scope["source_scope"],
         "seed_mode": scope.get("seed_mode", "question_only"),
-        # The seed PDF's frozen context (seed_pdf_v1, D2): what the chain, the semantic query and the ranking read.
-        **({"seed_match": seed_match} if seed_match else {}),
+        # The seed PDFs' frozen contexts (seed_pdf_v1, D2; seed_pdf_v2, D3): what the chain, the semantic query and
+        # the ranking read. A run that began under D2 freezes D2's single context.
+        **({"seed_match": seed_match_rules.stored(seed_match)} if seed_match else {}),
         # What a record must contain to be included, and the words an author of such a paper writes (SW15). Null
         # here means the criterion was not built — no sw workflow, or fewer than two valid proposals.
         "inclusion_criterion": criterion["criterion"] if criterion else None,

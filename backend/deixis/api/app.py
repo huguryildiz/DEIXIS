@@ -21,7 +21,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from keyring.errors import KeyringError
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from deixis import credentials, local_tools
@@ -261,9 +261,21 @@ class ResearchTitleChange(BaseModel):
     expected_version: int
 
 
+SourceVersionId = Annotated[str, Field(pattern=r"^srv_[0-9A-Za-z]{8,40}$")]
+
+
 class SeedSelection(BaseModel):
-    source_version_id: str = Field(pattern=r"^srv_[0-9A-Za-z]{8,40}$")
+    """One PDF, an ordered list of 1 to 50, or every eligible PDF; exactly one of the three (D3)."""
+    source_version_id: SourceVersionId | None = None
+    source_version_ids: list[SourceVersionId] | None = Field(default=None, min_length=1, max_length=50)
+    all_eligible: Literal[True] | None = None
     expected_version: int
+
+    @model_validator(mode="after")
+    def one_selection(self) -> "SeedSelection":
+        if sum(value is not None for value in (self.source_version_id, self.source_version_ids, self.all_eligible)) != 1:
+            raise ValueError("Send exactly one of source_version_id, source_version_ids or all_eligible")
+        return self
 
 
 class LibraryAddition(BaseModel):
@@ -1321,7 +1333,9 @@ def create_app(
     @app.post("/api/researches/{research_id}/seed")
     async def select_seed(research_id: str, body: SeedSelection, request: Request) -> dict[str, Any]:
         store = store_of(request)
-        store.set_seed(research_id, body.expected_version, body.source_version_id)
+        store.set_seeds(research_id, body.expected_version,
+                        [body.source_version_id] if body.source_version_id else body.source_version_ids,
+                        all_eligible=bool(body.all_eligible))
         return research_view(store, research_id)
 
     @app.post("/api/researches/{research_id}/runs", status_code=202)

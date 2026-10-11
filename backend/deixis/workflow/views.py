@@ -21,7 +21,9 @@ from deixis.workflow.queue import _snapshot as snapshot, context as queue_contex
 from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
 from deixis.workflow import waiting as waiting_rules
 from deixis.providers.registry import search_providers
-from deixis.workflow.store import EVIDENCE_STATUS_SQL, NotFound, Store
+from deixis.workflow.store import ENDED_RUN_STATUSES, EVIDENCE_STATUS_SQL, NotFound, Store
+from deixis.workflow import chaining as chaining_rules
+from deixis.workflow import seed_match as seed_match_rules
 from deixis.workflow.evidence_deps import latest_completed_restore, passage_dependencies
 from deixis.workflow.report.passage_freshness import passage_freshness
 from deixis.workflow import recovery_view
@@ -341,16 +343,107 @@ def research_view(store: Store, research_id: str) -> dict[str, Any]:
         return _research_view(store, research_id)
 
 
-def _seed_use(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, Any]:
-    """What the seed PDF did in this revision's search, read from the protocol it froze (D2): `selected` before any
-    search, `not_used` when the protocol froze without it or for another file, else the seed step's status."""
+SEED_VIEW_KEYS = ("source_version_id", "asset_id", "asset_sha256", "extraction_version", "title", "title_basis",
+                  "page_count", "text_pages")
+
+
+def _same_seeds(envelope: dict[str, Any] | None, scope: dict[str, Any]) -> bool:
+    """Whether a frozen seed envelope was made for the scope's current seeds (D3): a v2 one by its seed key; D2's
+    single context by its file, its source and the fingerprint of its excerpt, since it has no seed key."""
+    if not envelope or not envelope["seeds"]:
+        return False
+    if envelope["rule"] != seed_match_rules.RULE_V1:
+        return envelope["seed_key"] == scope["seed_key"]
+    context, seeds = envelope["seeds"][0], scope["seeds"]
+    return (len(seeds) == 1 and context["source_version_id"] == seeds[0]["source_version_id"]
+            and context["asset_sha256"] == seeds[0]["asset_sha256"]
+            and context["seed_passages_sha256"] == seed_match_rules.passages_sha256(seeds))
+
+
+def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[dict[str, Any]]:
+    """What each seed PDF did in this revision's search (D2, D3): `selected` before any protocol, `not_used` when the
+    protocol froze without these seeds, else its match from the protocol and what read it, from the stored steps of
+    the discovery run that froze that protocol. A use is True or False once its step settled and None (not known
+    yet) while the run may still reach it."""
+    seeds = scope["seeds"]
     frozen = store.current_protocol(research_id, scope["revision"])
     if frozen is None:
-        return {"status": "selected"}
-    context = frozen["body"].get("seed_match")
-    if not context or context["asset_sha256"] != scope["seed_snapshot"]["asset_sha256"]:
-        return {"status": "not_used"}
-    return {key: context.get(key) for key in ("status", "basis", "title", "doi", "openalex_id")}
+        return [{"state": "selected"} for _ in seeds]
+    envelope = seed_match_rules.contexts(frozen["body"].get("seed_match"))
+    if not _same_seeds(envelope, scope):
+        return [{"state": "not_used"} for _ in seeds]
+    row = store.conn.execute(
+        "SELECT r.id, r.status FROM runs r JOIN run_steps s ON s.run_id = r.id WHERE r.research_id = ?"
+        " AND r.scope_revision = ? AND r.kind = 'discovery' AND s.operation_key = 'protocol' AND s.status = 'succeeded'"
+        " AND json_extract(s.output_json, '$.protocol_revision') = ? ORDER BY r.created_at DESC, r.id DESC LIMIT 1",
+        (research_id, scope["revision"], frozen["protocol_revision"])).fetchone()
+    # A paused run may still reach a step; only an ended one settles what it never did.
+    run_id, active = (row["id"], row["status"] not in ENDED_RUN_STATUSES) if row else (None, False)
+
+    def step(key: str) -> dict[str, Any] | None:
+        return store.existing_step(run_id, key) if run_id else None
+
+    def settled(found: dict[str, Any] | None) -> bool | None:
+        if found is None or found["status"] in ("pending", "running"):
+            return None if active else False
+        return {"succeeded": True, "outcome_unknown": None}.get(found["status"], False)
+
+    query = step("search_query")
+    if query is None:
+        writing, detail = (False, "code_query") if run_id else (None, None)
+    elif query["status"] != "succeeded":
+        writing, detail = None, None
+    else:
+        out = query["output"] or {}
+        writing = out.get("status") == "ready" and bool(out.get("seed_passages_sha256"))
+        detail = ("reused" if out.get("reused_from_run") else None) if writing else \
+            {"skipped": out.get("reason"), "code_only": "code_only"}.get(out.get("status"), "written_without_seed")
+    semantic_plan = (frozen["body"].get("fast_path_search") or {}).get("semantic") or {}
+    # A plan frozen before seed_parts (D2) names its one seed's text by `seed_text`; the seed's text went in only when
+    # the frozen query is longer than the question part and its separator, `(q[:2000] + " " + text)[:2000]`.
+    sentence = english_question_rules.embedding_query(store, scope)
+    v1_part = bool(semantic_plan.get("seed_text") and sentence and semantic_plan.get("query_text")
+                   and len(semantic_plan["query_text"]) > len(sentence[0][:2000]) + 1)
+    semantic_step = settled(step("search:fast:semantic"))
+    seeds_step = step("fast_chain:seeds")
+    chained = ({s["source_version_id"] for s in seeds_step["output"]["seeds"] if s["origin"] == "seed_pdf"}
+               if seeds_step and seeds_step["status"] == "succeeded" else None)
+    plans = [found for key in ("fast_chain:plan", "fast_chain:plan_fallback")
+             if (found := step(key)) is not None and found["status"] == "succeeded"]
+    by_source = {context["source_version_id"]: context for context in envelope["seeds"]}
+    uses = []
+    for seed in seeds:
+        svid = seed["source_version_id"]
+        context = by_source.get(svid)
+        if context is None:
+            uses.append({"state": "not_used"})
+            continue
+        parts = semantic_plan.get("seed_parts")
+        has_part = (any(part["source_version_id"] == svid for part in parts) if parts is not None
+                    else v1_part)
+        requests = None
+        if plans:
+            requests = {"planned": 0, "sent": 0, "unsent": 0, "unknown": 0}
+            for found in plans:
+                for spec in found["output"]["requests"]:
+                    if not any((link[0] if isinstance(link, list) else link) == svid for link in spec.get("links") or []):
+                        continue
+                    requests["planned"] += 1
+                    sent = store.existing_step(run_id, spec["key"])
+                    # A request not yet settled is planned only; `request_sent` decides the rest (v4).
+                    if sent is None or sent["status"] in ("pending", "running"):
+                        continue
+                    outcome = chaining_rules.request_sent(sent)
+                    requests["unknown" if outcome is None else "sent" if outcome else "unsent"] += 1
+        elif not active and run_id:
+            requests = {"planned": 0, "sent": 0, "unsent": 0, "unknown": 0}
+        uses.append({"state": "used", "run_id": run_id, "run_active": active,
+                     "match": {key: context.get(key) for key in ("status", "basis", "title", "doi", "openalex_id")},
+                     "query_writing": writing, "query_writing_detail": detail,
+                     "semantic": semantic_step if has_part else False,
+                     "chain": (svid in chained) if chained is not None else (None if active else False),
+                     "chain_requests": requests})
+    return uses
 
 
 def _research_view(store: Store, research_id: str) -> dict[str, Any]:
@@ -360,13 +453,13 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     # One queue context: the facts and every work's outcome, read once for all four (slice 19).
     ctx = queue_context(store, research_id)
     probe = probe_rules.probe_set(ctx)
-    seed = scope["seed_snapshot"]
-    scope_view = {key: value for key, value in scope.items() if key != "seed_snapshot"}
-    scope_view["seed"] = ({key: seed[key] for key in ("source_version_id", "asset_id", "asset_sha256",
-                                                      "extraction_version", "title", "title_basis", "page_count", "text_pages")}
-                          | {"passage_count": len(seed["passages"])} if seed else None)
+    scope_view = dict(scope)
+    # Each seed PDF in canonical order with what it did in this revision's search (D3); never its excerpt's text.
+    scope_view["seeds"] = [{key: seed[key] for key in SEED_VIEW_KEYS} | {"passage_count": len(seed["passages"]), "use": use}
+                           for seed, use in zip(scope["seeds"], _seed_uses(store, research_id, scope))]
+    scope_view["seed_candidates"] = (store.seed_candidates(research_id)
+                                     if scope["source_scope"] == "attached_and_academic" else [])
     scope_view["seed_status"] = store.seed_status(research_id, scope)
-    scope_view["seed_use"] = _seed_use(store, research_id, scope) if seed else None
     # An sw research may ask for an answer with no included work once this revision's search finished (SW22, D106).
     scope_view["discovery_completed"] = store.discovery_completed(research_id)
     # The providers a query may go to; a verification connector in the scope is not one (D87), nor Scopus in an sw

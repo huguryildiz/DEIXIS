@@ -7,6 +7,7 @@
 - Temiz başlangıç bitti (10–11 Eki): hızlı yol tek arama yolu, eski arama/cevap yolları ve eski veri desteği silindi, şema tek baseline'dan başlıyor. Bugünkü yapı yeni başlangıç noktası. Temizlikten sonra testler ve tarayıcı testleri geçiyor. Canlı kontrol (11 Eki, gpt-5.6-luna, gerçek OpenAlex, boş veri klasörü): irs2021 ve dbr_vbf, Hızlı 2,8 / 1,7 dk, Standart 4,2 / 3,0 dk; dört cevap da yapısal kontrolden geçti (`structurally_valid`). Her biri tek koşu; kaynakların iddiaları gerçekten desteklediği puanlanmadı.
 - Tohum PDF artık aramayı yönlendiriyor (11 Eki, D2): PDF OpenAlex'te bulunursa atıf zincirinin ilk tohumu olur, benzer makale araması ve sorgu yazımı PDF'i de okur, sıralama onu doğru tanır. Sahte verili testlerle doğrulandı; gerçek sorularda faydası ölçülmedi.
 - Yalnız eklenen PDF'lerle cevap artık PDF'leri geniş okuyor (11 Eki, D4): önce her PDF'ten en çok 6 pasaj gidiyordu, şimdi 48 pasajlık sınır PDF'ler arasında bölünüyor ve kaynakça parçaları sona kalıyor. Dört canlı koşuda (gpt-5.6-luna, her biri tek koşu) dört cevap da yapısal kontrolden geçti; iddiaları insan kontrol etmedi.
+- Birden çok tohum PDF ve Zotero (11 Eki, D3): en çok 5 PDF birlikte aramayı yönlendiriyor; yüklenen PDF'ler ve Zotero PDF'leri aynı yoldan geçiyor, yalnız Zotero koleksiyonuyla başlanınca da arama kendiliğinden başlıyor. Zotero kaydının DOI'si, kapağı boş PDF'lerin de eşleşmesini sağlıyor. Araştırma sayfası her PDF için ne işe yaradığını yazıyor. Sahte verili testlerle doğrulandı; canlı ölçüm yok.
 - Sahip uygulamayı gözle kontrol ediyor; bulduğu sorunlar sırayla düzeltilir. P10 (macOS paketi) bu kontrol bitene kadar bekliyor.
 
 ## Sıradaki
@@ -41,7 +42,7 @@
 
 ### Ölçülmedi (gerçek model ya da gerçek kullanım gerekiyor)
 
-- Tohum PDF (D2): eşleştirmenin doğruluğu ve tohumun hedefleri ilk 20'ye taşıyıp taşımadığı ölçülmedi; plan 3 soru × tohumlu/tohumsuz canlı koşu öneriyor (`.local/seed-pdf-plan.md`). Arayüz cümlesi zincir bitmeden geçmiş zaman kullanıyor (backlog).
+- Tohum PDF (D2, D3): eşleştirmenin doğruluğu ve birden çok tohumun katkısı ve tohumun hedefleri ilk 20'ye taşıyıp taşımadığı ölçülmedi; plan 3 soru × tohumlu/tohumsuz canlı koşu öneriyor (`.local/seed-pdf-plan.md`).
 - Rapor kalitesi: tek gerçek raporda (H9e) çoğu ölçüt aralık dışında; tablo hücreleri bölüm girdisinde kesiliyor, çok parçalı iddiada çapa tek parçayı taşıyor.
 - Denklem, soy zinciri, kill-search'ün en yakın işleri bulması ve gerçek Codex ile çökme kurtarma ölçülmedi; rapor düzenlemede 18 işlemden 5'i ölçüldü; sahibin günlük kullanım kaydı yok. Yayımlanmış bir makalenin fikri aday diye verilince kill-search'ün onu bulup bulmadığı denenmedi.
 

@@ -107,15 +107,23 @@ class Round:
             return {}, None
         return payload, digest
 
-    def pdf_seed(self):
-        """The seed PDF's matched work as the first chain seed, read only from the protocol (D2); None otherwise."""
-        context = seed_match.frozen(self.store, self.run)
-        if not context or context["status"] != "matched":
-            return None
-        return {"rank": 0, "source_version_id": context["source_version_id"], "work_id": context["work_id"],
-                "title_key": context["title_key"], "openalex_id": context["openalex_id"],
-                "references": context["referenced_works"], "references_read": context["references_read"],
-                "origin": "seed_pdf", "payload_sha256": context["lookups"][-1]["payload_sha256"]}
+    def pdf_seeds(self):
+        """The seed PDFs' matched works as the first chain seeds, in canonical order and once per OpenAlex work, read
+        only from the protocol (D2, D3); one seed PDF is D2's seed 0."""
+        envelope = seed_match.frozen(self.store, self.run)
+        seeds, seen = [], set()
+        for context in envelope["seeds"] if envelope else []:
+            if context["status"] != "matched" or context["openalex_id"] in seen:
+                continue
+            seen.add(context["openalex_id"])
+            seeds.append({"rank": len(seeds), "source_version_id": context["source_version_id"],
+                          "work_id": context["work_id"], "title_key": context["title_key"],
+                          "openalex_id": context["openalex_id"], "references": context["referenced_works"],
+                          "references_read": context["references_read"], "origin": "seed_pdf",
+                          "payload_sha256": context["lookups"][-1]["payload_sha256"]})
+            if len(seeds) >= self.policy["chain_seeds"]:
+                break
+        return seeds
 
     def choose(self, identities, origin, previous=()):
         chosen = []
@@ -152,8 +160,7 @@ class Round:
             row = self.store.conn.execute("SELECT raw_payload_path FROM search_runs WHERE step_id = ?", (step["id"],)).fetchone() if step else None
             payload, digest = self.payload(row[0] if row else None)
             identities = [(oid, raw, digest) for raw in payload.get("results", []) if (oid := work_id(raw.get("id")))]
-            pdf = self.pdf_seed()
-            previous = [pdf] if pdf else []
+            previous = self.pdf_seeds()
             seeds = previous + self.choose(identities, "semantic", previous)
             return {"seeds": seeds, "missing": self.policy["chain_seeds"] - len(seeds),
                     "semantic_status": step["status"] if step else "missing", "payload_sha256": digest}

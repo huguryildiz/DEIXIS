@@ -367,17 +367,23 @@ def _seed_row(svid: str, versions: dict[str, dict[str, Any]]) -> dict[str, Any] 
 
 def seed_rows(store: Any, run: dict[str, Any], scope: dict[str, Any], versions: dict[str, dict[str, Any]],
               in_pool: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """The verified seeds' rows, the seed PDF's read through the context its run's protocol froze (D2)."""
+    """The verified seeds' rows, each seed PDF's read through the context its run's protocol froze (D2, D3)."""
     from deixis.workflow import seed_match
-    context = seed_match.frozen(store, run)
+    envelope = seed_match.frozen(store, run)
+    by_source = {context["source_version_id"]: context for context in envelope["seeds"]} if envelope else {}
     rows = []
     for svid in verified_seeds(store, run["research_id"], scope):
         row = in_pool.get(svid) or _seed_row(svid, versions)
         if row is not None:
-            rows.append(pdf_row(row, context) if context and svid == context["source_version_id"] else row)
-    # A record the user also included that is the seed PDF's own OpenAlex copy is the same seed, counted once.
-    pdf = next((row for row in rows if row.get("seed_pdf")), None)
-    return [row for row in rows if pdf is None or row is pdf or not same_work(pdf, row)]
+            rows.append(pdf_row(row, by_source[svid]) if svid in by_source else row)
+    # Two seed PDFs of one work count once, the first in canonical order; a record the user also included that is a
+    # seed PDF's own OpenAlex copy is that seed, counted once.
+    pdfs: list[dict[str, Any]] = []
+    for row in rows:
+        if row.get("seed_pdf") and not any(same_work(pdf, row) for pdf in pdfs):
+            pdfs.append(row)
+    return [row for row in rows if any(row is pdf for pdf in pdfs)
+            or (not row.get("seed_pdf") and not any(same_work(pdf, row) for pdf in pdfs))]
 
 
 def pdf_row(row: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
@@ -392,19 +398,18 @@ def pdf_row(row: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
 
 
 def verified_seeds(store: Any, research_id: str, scope: dict[str, Any]) -> list[str]:
-    """The records this research has verified: what the user included, and the scope's own seed (SW7.5).
+    """The records this research has verified: the scope's own seeds, and what the user included (SW7.5).
 
-    A record the model included is not verified. Order is the record identifier, so nothing here depends on which
-    row the database returned first.
+    A record the model included is not verified. The seeds come first in their canonical order (D3), then the other
+    included records by identifier, so nothing here depends on which row the database returned first.
     """
+    from deixis.workflow.store import seed_source_ids
     chosen = {row[0] for row in store.conn.execute(
         "SELECT s.source_version_id FROM selections s JOIN corpus_memberships m"
         " ON m.research_id = s.research_id AND m.source_version_id = s.source_version_id AND m.removed_at IS NULL"
         " WHERE s.research_id = ? AND s.origin = 'user' AND s.state = 'included'", (research_id,))}
-    seed = (scope.get("seed_snapshot") or {}).get("source_version_id")
-    if seed:
-        chosen.add(seed)
-    return sorted(chosen)
+    seeds = seed_source_ids(scope)
+    return seeds + sorted(chosen - set(seeds))
 
 
 def query_vocabulary(scope: dict[str, Any], vocabulary: dict[str, Any],

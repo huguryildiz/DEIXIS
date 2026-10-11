@@ -23,7 +23,7 @@ from typing import Any
 from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX
 from deixis.workflow.fulltext import OWNED_CODES as RETRIEVAL_CODES
 from deixis.workflow.ranking import SIGNALS
-from deixis.workflow.store import COPIED_SELECTION_REASON, Store
+from deixis.workflow.store import COPIED_SELECTION_REASON, Store, seed_source_ids
 
 # A display constant, not a protocol threshold (SW13 found every interval with 20–29 positives held zero). Below it
 # the signal table says the confirmed works are too few to judge by; at or above it, the numbers are only numbers.
@@ -102,8 +102,7 @@ def probe_set(ctx: Any) -> dict[str, Any]:
         "SELECT DISTINCT v.work_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
         f" WHERE m.research_id = ? AND m.removed_at IS NULL AND m.added_by IN ({','.join('?' * len(BROUGHT_BY))})",
         (rid, *BROUGHT_BY))}
-    seed = (store.scope(rid).get("seed_snapshot") or {}).get("source_version_id")
-    if seed:
+    for seed in seed_source_ids(store.scope(rid)):
         row = store.conn.execute("SELECT work_id FROM source_versions WHERE id = ?", (seed,)).fetchone()
         if row is not None:
             brought.add(row[0])

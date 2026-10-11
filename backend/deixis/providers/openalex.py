@@ -265,16 +265,22 @@ async def works_by_ids(client: httpx.AsyncClient, ids: list[str], api_key: str |
 
 async def works_by_dois(client: httpx.AsyncClient, dois: list[str], api_key: str | None = None,
                         contact_email: str | None = None,
-                        max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> SearchOutcome:
-    """The records of up to 100 works named by their DOIs (`filter=doi:a|b…`), with their reference lists."""
+                        max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES,
+                        per_page: int | None = None) -> SearchOutcome:
+    """The records of up to 100 works named by their DOIs (`filter=doi:a|b…`), with their reference lists.
+
+    `per_page` defaults to one record per DOI; a caller that must see every work sharing a DOI asks for more (D3)."""
     if not 0 < len(dois) <= MAX_IDS_PER_REQUEST or any(c in doi for doi in dois for c in "|,"):
         raise ValueError("works_by_dois takes 1 to 100 DOIs without '|' or ','")
-    params: dict[str, Any] = {"filter": "doi:" + "|".join(dois), "per_page": len(dois), "select": CHAIN_SELECT}
+    per_page = per_page or len(dois)
+    if not len(dois) <= per_page <= MAX_IDS_PER_REQUEST:
+        raise ValueError("works_by_dois reads one page of at most 100 records")
+    params: dict[str, Any] = {"filter": "doi:" + "|".join(dois), "per_page": per_page, "select": CHAIN_SELECT}
     if contact_email:
         params["mailto"] = contact_email
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     access_mode = "api_key" if api_key else "keyless"
-    description = f"GET {WORKS_URL} filter=doi:{'|'.join(dois)} per_page={len(dois)} access={access_mode}"
+    description = f"GET {WORKS_URL} filter=doi:{'|'.join(dois)} per_page={per_page} access={access_mode}"
     response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
                                    (api_key,), max_rate_limit_retries=max_rate_limit_retries)
     return _works_page(response, outcome, None)

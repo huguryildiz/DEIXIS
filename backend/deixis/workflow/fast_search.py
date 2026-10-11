@@ -14,15 +14,34 @@ from deixis.storage.db import now, transaction
 from deixis.workflow import english_question, fast_path, seed_match
 
 
+def seed_query(question, envelope):
+    """The semantic query with the seed PDFs' text behind the question, which is never cut, and what of each seed went
+    in (D2, D3). One seed: D2's string. Several: the room the question leaves, less one separator per seed, shared
+    equally; a seed whose share is empty adds nothing. Returns (query, seed_text, seed_parts)."""
+    texts = [(c["source_version_id"], *seed_match.seed_text(c)) for c in envelope["seeds"]]
+    q = question[:2000]
+    if len(texts) == 1:
+        svid, text, origin = texts[0]
+        if not text.strip():
+            return question, None, []
+        chars = max(0, min(len(text), 2000 - len(q) - 1))
+        return (q + " " + text)[:2000], origin, [{"source_version_id": svid, "origin": origin, "chars": chars}] if chars else []
+    share = max(0, 2000 - len(q) - len(texts)) // len(texts)
+    parts = [(svid, origin, text[:share]) for svid, text, origin in texts if text[:share].strip()]
+    origins = [origin for _, text, origin in texts if text.strip()]
+    query = (q + " " + " ".join(part for _, _, part in parts))[:2000] if parts else q
+    return query, origins or None, [{"source_version_id": svid, "origin": origin, "chars": len(part)}
+                                    for svid, origin, part in parts]
+
+
 def build_plan(store, run, scope, queries, seed_context=None):
     policy = run["budget"]["fast_path"]
     sentence = english_question.embedding_query(store, scope)
-    seed = None
-    text, origin = seed_match.seed_text(seed_context) if seed_context else ("", None)
-    if sentence and text.strip():
-        # The seed PDF's text rides behind the question, which is never cut (D2); the ranking keeps the question alone.
-        sentence = ((sentence[0][:2000] + " " + text)[:2000], sentence[1])
-        seed = origin
+    seed, parts = None, []
+    if sentence and seed_context:
+        # The seed PDFs' text rides behind the question (D2, D3); the ranking keeps the question alone.
+        query, seed, parts = seed_query(sentence[0], seed_context)
+        sentence = (query, sentence[1])
     deep = policy["mode"] == "deep"
     keyword = [{"index": i, "query": q} for i, q in enumerate(queries) if q["provider_id"] == "openalex"]
     s2_index = next((i for i, q in enumerate(queries)
@@ -31,7 +50,7 @@ def build_plan(store, run, scope, queries, seed_context=None):
     return {"version": 1, "semantic": {"provider_id": "openalex", "endpoint": "semantic",
             "query_text": sentence[0][:2000] if sentence else None, "limit": policy["semantic_top"],
             "query_origin": sentence[1] if sentence else english_question.MISSING,
-            **({"seed_text": seed} if seed else {})},
+            **({"seed_text": seed} if seed else {}), **({"seed_parts": parts} if seed_context else {})},
             "keywords": keyword, "keyword_cap": policy["keyword_record_cap"] - (500 if deep else 0),
             "page_size": 100, "order": "page_then_query", "s2_bulk": s2 if deep else None,
             "s2_bulk_index": s2_index,

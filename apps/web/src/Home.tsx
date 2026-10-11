@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
-import { api, type Connections, type Effort, type EffortLimits, type ModelOption, type ModelRole, type RoleModelSetting, type SourceScope, type ZoteroSource } from './api'
+import { api, ApiError, type Connections, type Effort, type EffortLimits, type ModelOption, type ModelRole, type RoleModelSetting, type SourceScope, type ZoteroSource } from './api'
 import { connectionName, fileRestoreNote, fileRestoreTone, isPlannedModel, reasoningLabel, scopeLabels } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroPanel } from './ZoteroPanel'
@@ -20,7 +20,7 @@ export const effortLabels: Record<Effort, string> = { quick: 'Quick', standard: 
 export const scopeOptions: Record<SourceScope, { icon: LucideIcon; detail: string }> = {
   academic: { icon: Globe, detail: 'Searches the connected scholarly providers' },
   attached: { icon: Paperclip, detail: 'Only the PDFs you add; no search runs' },
-  attached_and_academic: { icon: Layers, detail: 'Search scholarly providers using a selected PDF and your question' },
+  attached_and_academic: { icon: Layers, detail: 'Search scholarly providers using your PDFs and your question' },
 }
 export const effortOptions: Record<Effort, { icon: LucideIcon }> = {
   quick: { icon: Zap },
@@ -50,6 +50,8 @@ export const connectionModels = (connections: Connections): ConnectionModel[] =>
 export const notReadyReasons = (connections: Connections) =>
   Object.values(connections.models).filter(h => !h.ready && !isPlannedModel(h.reason)).map(h => `${connectionName(h.connection)}: ${h.reason ?? ''}`).join('; ')
 
+// The most PDFs that guide one search (D3); the backend enforces it.
+export const MAX_SEED_PDFS = 5
 const DEFAULT_REVIEWER = '__default'
 const NO_REVIEW = '__off'
 
@@ -188,7 +190,6 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const [defaults, setDefaults] = useState<Record<ModelRole, RoleModelSetting> | null>(null)
   const [modelsOpen, setModelsOpen] = useState(false)
   const [files, setFiles] = useState<File[]>([])
-  const [seedFilename, setSeedFilename] = useState<string | null>(null)
   // A Zotero collection chosen before the research exists; it is imported right after the research is created.
   const [zotero, setZotero] = useState<{ source: ZoteroSource; key: string; name: string } | null>(null)
   const [zoteroOpen, setZoteroOpen] = useState(false)
@@ -222,7 +223,6 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const efforts = chosen?.reasoning_efforts ?? []
   const needsFiles = scope === 'attached'
   const needsSource = scope !== 'academic'
-  const chosenSeed = files.length === 1 ? files[0].name : seedFilename && files.some(file => file.name === seedFilename) ? seedFilename : null
 
   function chooseModel(id: string, list = models) {
     const next = list.find(m => m.id === id)
@@ -248,7 +248,6 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
     if (!question.trim() || busy) return
     if (needsFiles && !files.length && !zotero) { setError(t('Attach at least one PDF to use “Attached files”.')); return }
     if (scope === 'attached_and_academic' && !files.length && !zotero) { setError(t('Add a PDF or Zotero collection to guide the search.')); return }
-    if (scope === 'attached_and_academic' && files.length > 1 && !chosenSeed) { setError(t('Choose which PDF guides the search.')); return }
     const literatureChoice = models.find(m => m.id === literature)
     if (!chosen || !literatureChoice) { setError(t('Choose the answer and literature models first. DEIXIS does not pick them for you.')); return }
     setBusy(true)
@@ -268,12 +267,10 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
         review_reasoning_effort: customReviewer ? listedEffort(models, reviewer, reviewerReasoning) : null })
       id = view.research.id
       let latestView = view
-      const uploaded = new Map<string, string>()
       step = 'Research saved, but DEIXIS could not attach the PDFs: {message}. You can retry from the research page.'
       for (const file of files) {
         const added = await api.upload(id, file)
         if (added.file_restore) toast(fileRestoreTone(added.file_restore), [t('PDF added and included. Its text was extracted page by page (no OCR).'), fileRestoreNote(added.file_restore)].filter(Boolean).join(' '))
-        uploaded.set(file.name, added.uploaded_source_version_id)
         latestView = added
       }
       step = 'Research saved, but DEIXIS could not import the Zotero collection: {message}. You can retry from the research page.'
@@ -283,9 +280,17 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
         const { notes } = imported.zotero_import
         if (notes.length) toast('warning', notes.map(n => `${n.title}: ${t(n.note, n.vars)}.`).join(' '))
       }
-      if (scope === 'attached_and_academic' && chosenSeed) {
-        step = 'Research saved, but the selected PDF could not guide the search: {message}. Choose a readable PDF on the research page.'
-        latestView = await api.setSeed(id, uploaded.get(chosenSeed)!, latestView.research.version)
+      if (scope === 'attached_and_academic') {
+        step = 'Research saved, but the PDFs could not guide the search: {message}. Choose a readable PDF on the research page.'
+        try {
+          latestView = await api.setSeeds(id, { all_eligible: true }, latestView.research.version)
+        } catch (e) {
+          // 409 is a real conflict: another choice was stored meanwhile. Do not search on a guess; let the person check it.
+          if (e instanceof ApiError && e.status === 409) { toast('warning', t('The PDF choice changed elsewhere; check it on the research page.')); onCreated(id); return }
+          throw e
+        }
+        const left = latestView.scope.seed_not_selected.length
+        if (left) toast('warning', t('{n} PDFs guide the search; {m} were left out (limit 5).', { n: latestView.scope.seeds.length, m: left }))
       }
       step = 'Research saved, but DEIXIS could not start the search: {message}. You can retry from the research page.'
       if (scope === 'academic' || (scope === 'attached_and_academic' && latestView.scope.seed_status === 'ready'))
@@ -304,7 +309,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const caption = t(needsFiles
     ? 'Only attached PDFs are used; no academic search runs.'
     : scope === 'attached_and_academic'
-      ? 'The selected PDF and your question guide the scholarly search. Only included sources are used in the answer.'
+      ? 'Your PDFs and your question guide the scholarly search. Only included sources are used in the answer.'
       : 'Connected scholarly providers are searched; the literature model chooses which of them to query.')
   const modelName = (id: string) => models.find(m => m.id === id)?.display_name ?? id.slice(id.indexOf(':') + 1)
   const defaultName = defaults?.reviewer.model ? modelName(modelKey(defaults.reviewer.model_connection, defaults.reviewer.model)) : null
@@ -321,28 +326,21 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
 
   // Bytes as the file manager shows them, so a large attachment is recognisable before it is uploaded.
   const fileSize = (bytes: number) => bytes >= 1_000_000 ? t('{n} MB', { n: (bytes / 1_000_000).toFixed(1) }) : t('{n} KB', { n: Math.max(1, Math.round(bytes / 1000)) })
-  // A mixed search reads one PDF into its plan (D63); with several attached, the chips themselves choose it.
-  const seedChoice = scope === 'attached_and_academic' && files.length > 1
+  // A mixed search is guided by up to five of the attached PDFs (D3); with several files the chips say so.
+  const guiding = scope === 'attached_and_academic' && files.length > 1
   const chips = <div className="attachments" aria-label={t('PDFs to attach')}>
     {zotero && <div className="attachment-chip">
       <span className="attachment-chip-main"><span className="attachment-icon" aria-hidden><ConnectionIcon id="zotero" /></span><span className="attachment-name" title={zotero.name}>{zotero.name}</span><small>Zotero</small></span>
       <button type="button" className="attachment-remove" aria-label={t('Remove {name}', { name: zotero.name })} onClick={() => setZotero(null)}><X size={13} /></button>
     </div>}
-    {files.map(file => {
-      const guiding = seedFilename === file.name
-      return <div key={file.name} className={`attachment-chip${seedChoice && guiding ? ' is-seed' : ''}`}>
-        {seedChoice
-          ? <label className="attachment-chip-main">
-              <input type="radio" name="seed-file" aria-label={file.name} checked={guiding} onChange={() => setSeedFilename(file.name)} />
-              <span className="attachment-name" title={file.name}>{file.name}</span><small>{guiding ? t('guides the search') : fileSize(file.size)}</small>
-            </label>
-          : <span className="attachment-chip-main">
-              <span className="attachment-icon" aria-hidden><FileText size={13} /></span>
-              <span className="attachment-name" title={file.name}>{file.name}</span><small>{fileSize(file.size)}</small>
-            </span>}
+    {files.map((file, index) =>
+      <div key={file.name} className="attachment-chip">
+        <span className="attachment-chip-main">
+          <span className="attachment-icon" aria-hidden><FileText size={13} /></span>
+          <span className="attachment-name" title={file.name}>{file.name}</span><small>{guiding && index < MAX_SEED_PDFS ? t('guides the search') : fileSize(file.size)}</small>
+        </span>
         <button type="button" className="attachment-remove" aria-label={t('Remove {name}', { name: file.name })} onClick={() => setFiles(old => old.filter(f => f.name !== file.name))}><X size={13} /></button>
-      </div>
-    })}
+      </div>)}
   </div>
 
   return <section className="welcome">
@@ -354,13 +352,10 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
         onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit() } }} />
       {zoteroOpen && <ZoteroPanel busy={busy} action={t('Use this collection')} onClose={() => setZoteroOpen(false)}
         onImport={(source, key, name) => { setZotero({ source, key, name }); setZoteroOpen(false); if (scope === 'academic') setScope('attached_and_academic') }} />}
-      {/* One chip per attachment: the file icon, its name, and its size. When a mixed search needs a guiding PDF, the same
-          chips carry the choice, so the files are not listed a second time under them. */}
-      {(files.length > 0 || zotero) && (seedChoice
-        ? <fieldset className="attachments-choice"><legend>{t('PDF guiding the search')}</legend>{chips}</fieldset>
-        : chips)}
+      {/* One chip per attachment: the file icon, its name, and its size (or that it guides the search). */}
+      {(files.length > 0 || zotero) && chips}
       {scope === 'attached_and_academic' && files.length === 0 && zotero &&
-        <p className="composer-hint">{t('After import, choose a readable PDF on the research page before searching.')}</p>}
+        <p className="composer-hint">{t('The imported PDFs guide the search.')}</p>}
       <div className="composer-controls">
         <div className="composer-options">
           <DropdownMenu>
@@ -400,7 +395,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
               </button>
             : <span className="composer-model" title={connections ? notReadyReasons(connections) : ''}>{t('Models: {state}', { state: t(connections ? 'no connection ready' : 'checking…') })}</span>}
         </div>
-        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero) || (scope === 'attached_and_academic' && files.length > 1 && !chosenSeed)} aria-label={t('Start research')}><ArrowUpRight size={20} /></Button>
+        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero)} aria-label={t('Start research')}><ArrowUpRight size={20} /></Button>
       </div>
       {modelsOpen && models.length > 0 && <div className="composer-options composer-models">
         <ModelPicker role={t(modelRoles.answer.label)} icon={modelRoles.answer.icon} hint={t(modelRoles.answer.hint)} models={models} value={model}

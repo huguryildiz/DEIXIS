@@ -39,6 +39,12 @@ STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "p
 STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
 MAX_SEED_PASSAGES = 4
 MAX_SEED_CHARS = 5600
+MAX_SEEDS = 5  # a seed is an ordered set of at most five PDFs (D3)
+MAX_RECORD_DOIS = 3
+SEED_REASONS = {"not_a_source": "The selected source is not part of this research",
+                "not_added_by_user": "Choose a PDF you added to this research",
+                "no_pdf": "The selected source has no PDF",
+                "no_readable_text": "The selected PDF has no readable text; read its scanned pages with OCR first"}
 
 
 def _step_view_output(row: Any) -> dict[str, Any] | None:
@@ -81,6 +87,31 @@ def _read_person_file(requests: dict[str, dict[str, Any]]) -> str | None:
 
 def title_key(title: str | None) -> str:
     return re.sub(r"\W+", " ", (title or "").casefold()).strip()
+
+
+def seed_key(seeds: list[dict[str, Any]]) -> str:
+    """The identity of an ordered seed set (D3): per seed its source, file, extraction, excerpt, title and record
+    DOIs. A second run reuses a match, and the page matches a protocol to the scope, by this key, not by file hash."""
+    return sha256_hex([{"source_version_id": s["source_version_id"], "asset_id": s["asset_id"],
+                        "asset_sha256": s["asset_sha256"], "extraction_version": s["extraction_version"],
+                        "passages": [p["text_sha256"] for p in s["passages"]], "title_basis": s["title_basis"],
+                        "title_key": title_key(s["title"]), "record_dois": s.get("record_dois") or []} for s in seeds])
+
+
+def read_seed_snapshot(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """A stored seed snapshot in the v2 form (D3). D2's single dict reads as a one-seed set without record DOIs; its
+    excerpt is kept as frozen, never cut again. No snapshot is an empty set."""
+    if not raw:
+        return {"version": 2, "seeds": [], "not_selected": [], "skipped": [], "seed_key": None}
+    if raw.get("version") == 2:
+        return raw
+    seeds = [raw | {"record_dois": raw.get("record_dois") or []}]
+    return {"version": 2, "seeds": seeds, "not_selected": [], "skipped": [], "seed_key": seed_key(seeds)}
+
+
+def seed_source_ids(scope: dict[str, Any]) -> list[str]:
+    """The scope's seed sources in their canonical order (D3)."""
+    return [s["source_version_id"] for s in scope.get("seeds") or []]
 
 
 def is_preprint(source: dict[str, Any]) -> bool:
@@ -131,6 +162,14 @@ class NotASource(Exception):
 
 class SeedUnavailable(Exception):
     """The selected seed is not a readable, current PDF in this research."""
+
+
+class _SeedRefused(Exception):
+    """Why one source cannot be a seed (a key of `SEED_REASONS`)."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
 
 
 class LegacyInspectionPolicyRemoved(Exception):
@@ -489,8 +528,9 @@ class Store:
             raise NotFound(f"{research_id} revision {revision}")
         scope = dict(row)
         scope["providers"] = json.loads(scope.pop("providers_json"))
-        snapshot = scope.pop("seed_snapshot_json", None)
-        scope["seed_snapshot"] = json.loads(snapshot) if snapshot else None
+        snapshot = read_seed_snapshot(json.loads(raw) if (raw := scope.pop("seed_snapshot_json", None)) else None)
+        scope["seeds"], scope["seed_key"] = snapshot["seeds"], snapshot["seed_key"]
+        scope["seed_not_selected"], scope["seed_skipped"] = snapshot["not_selected"], snapshot["skipped"]
         return scope
 
     def revise_scope(self, research_id: str, expected_version: int, question: str, steering: str | None,
@@ -558,13 +598,16 @@ class Store:
         return {"scope_revision": revision, "text": text, "origin": origin}
 
     def seed_status(self, research_id: str, scope: dict[str, Any] | None = None) -> str:
+        """`ready` when every seed's frozen excerpt is still its source's current text; one changed seed is `stale`."""
         scope = scope or self.scope(research_id)
-        snapshot = scope["seed_snapshot"]
-        if snapshot is None:
+        if not scope["seeds"]:
             return "missing" if scope["seed_mode"] == "uploaded_seed" else "question_only"
+        return "ready" if all(self._seed_current(research_id, seed) for seed in scope["seeds"]) else "stale"
+
+    def _seed_current(self, research_id: str, snapshot: dict[str, Any]) -> bool:
         svid, asset_id = snapshot["source_version_id"], snapshot["asset_id"]
         if not self.is_active_member(research_id, svid):
-            return "stale"
+            return False
         asset = self.conn.execute(
             "SELECT sha256, extraction_version FROM source_assets WHERE id = ? AND source_version_id = ? AND removed_at IS NULL",
             (asset_id, svid),
@@ -572,65 +615,162 @@ class Store:
         if not asset or (asset["sha256"], asset["extraction_version"]) != (
             snapshot["asset_sha256"], snapshot["extraction_version"]
         ):
-            return "stale"
+            return False
         passage_ids = [p["id"] for p in snapshot["passages"]]
         marks = ", ".join("?" for _ in passage_ids)
         current = {row[0] for row in self.conn.execute(
             f"SELECT id FROM passages WHERE asset_id = ? AND extraction_version IS ? AND id IN ({marks})",
             (asset_id, asset["extraction_version"], *passage_ids),
         )}
-        return "ready" if len(current) == len(passage_ids) else "stale"
+        return len(current) == len(passage_ids)
+
+    def _seed_material(self, research_id: str, source_version_id: str,
+                       passages: bool = True) -> tuple[dict[str, Any], Any, list[dict[str, Any]]]:
+        """A seed's source, its PDF in use and that PDF's readable pages; raises `_SeedRefused` with the reason it is
+        not one (D2's checks, in D2's order). The newest file wins, an equal time by file identifier (D3). Without
+        `passages` only whether one readable page exists is read, so listing candidates loads no page text."""
+        if not self.is_active_member(research_id, source_version_id):
+            raise _SeedRefused("not_a_source")
+        source = self.source(source_version_id)
+        added = self.conn.execute(
+            "SELECT added_by FROM corpus_memberships WHERE research_id = ? AND source_version_id = ? AND removed_at IS NULL",
+            (research_id, source_version_id),
+        ).fetchone()
+        if source["origin"] != "user_upload" and (not added or added["added_by"] not in ("zotero_import", "library")):
+            raise _SeedRefused("not_added_by_user")
+        asset = self.conn.execute(
+            "SELECT * FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL"
+            " ORDER BY retrieved_at DESC, id DESC LIMIT 1", (source_version_id,),
+        ).fetchone()
+        if asset is None:
+            raise _SeedRefused("no_pdf")
+        if not passages:
+            pages = self.conn.execute(
+                "SELECT text FROM passages WHERE source_version_id = ? AND asset_id = ? AND extraction_version IS ?"
+                " AND kind = 'pdf_page'", (source_version_id, asset["id"], asset["extraction_version"]))
+            if not any(row[0].strip() for row in pages):
+                raise _SeedRefused("no_readable_text")
+            return source, asset, []
+        readable = [p for p in self.passages_for(source_version_id)
+                    if p["asset_id"] == asset["id"] and p["kind"] == "pdf_page" and p["text"].strip()]
+        if not readable:
+            raise _SeedRefused("no_readable_text")
+        return source, asset, readable
+
+    def seed_candidates(self, research_id: str) -> list[dict[str, Any]]:
+        """The PDFs this research could take as seeds (D3): active sources the user uploaded or brought from Zotero or
+        the library, whose newest file has readable pages, in the order they were added."""
+        rows = self.conn.execute(
+            "SELECT m.source_version_id, m.added_by FROM corpus_memberships m JOIN source_versions v"
+            " ON v.id = m.source_version_id WHERE m.research_id = ? AND m.removed_at IS NULL"
+            " AND (v.origin = 'user_upload' OR m.added_by IN ('zotero_import', 'library'))"
+            " ORDER BY m.created_at, m.source_version_id", (research_id,)).fetchall()
+        candidates = []
+        for row in rows:
+            try:
+                source, _, _ = self._seed_material(research_id, row["source_version_id"], passages=False)
+            except _SeedRefused:
+                continue
+            candidates.append({"source_version_id": row["source_version_id"], "title": source["title"],
+                               "origin": "user_upload" if source["origin"] == "user_upload" else row["added_by"]})
+        return candidates
+
+    def _record_dois(self, source: dict[str, Any]) -> list[str]:
+        """A Zotero or library record's own DOIs, at most three a filter can carry; an upload has none (D3). A Zotero
+        record keeps its DOI on the record alone (it never merges by DOI), so the record's column counts with its
+        `doi` mappings."""
+        if source["origin"] == "user_upload":
+            return []
+        from deixis.providers.common import normalize_doi
+        named = [source.get("doi")] + [row[0] for row in self.conn.execute(
+            "SELECT value FROM identifier_mappings WHERE source_version_id = ? AND scheme = 'doi'", (source["id"],))]
+        values = {doi.casefold() for value in named if (doi := normalize_doi(value)) and not any(c in doi for c in "|,")}
+        return sorted(values)[:MAX_RECORD_DOIS]
+
+    @staticmethod
+    def _seed_excerpt(source_version_id: str, passages: list[dict[str, Any]], terms: set[str], n: int) -> list[dict[str, Any]]:
+        """One seed's bounded reading (D2's rule): its first readable pages, then the pages that share most words with
+        the question. With n seeds each gets `4 // n` pages (at least one) and `5600 // n` characters (D3); one seed
+        gets exactly D2's four pages and 5,600 characters."""
+        limit = MAX_SEED_PASSAGES if n == 1 else max(1, MAX_SEED_PASSAGES // n)
+        chars = MAX_SEED_CHARS // n
+        first = passages[:min(2, limit)]
+        rest = sorted(passages[len(first):], key=lambda p: -len(terms & set(re.findall(r"\w{3,}", p["text"].casefold()))))
+        selected = first + rest[:limit - len(first)]
+        per_passage = chars // len(selected)
+        given = []
+        for passage in selected:
+            excerpt = passage["text"][:per_passage]
+            if not excerpt:
+                continue
+            given.append({"id": passage["id"], "source_version_id": source_version_id,
+                          "kind": "pdf_page", "physical_page": passage["physical_page"],
+                          "printed_label": passage["printed_label"], "abstract_origin": None,
+                          "text_source": passage["text_source"], "text": excerpt,
+                          "text_sha256": hashlib.sha256(excerpt.encode()).hexdigest()})
+        return given
 
     def set_seed(self, research_id: str, expected_version: int, source_version_id: str) -> int:
-        """Freeze a bounded reading of one uploaded PDF in a new scope revision."""
+        """Freeze a bounded reading of one PDF in a new scope revision (D2)."""
+        return self.set_seeds(research_id, expected_version, [source_version_id])
+
+    def set_seeds(self, research_id: str, expected_version: int, source_version_ids: list[str] | None, *,
+                  all_eligible: bool = False) -> int:
+        """Freeze the seed set in a new scope revision: the PDFs named, in that order, or every candidate (D3).
+
+        One named PDF that cannot be a seed raises as D2 did; of several, those that cannot are listed as skipped, and
+        none left raises with the first reason. Above five usable PDFs the five whose first two pages share most of
+        the question's words are kept, in their own order, and the rest are listed as not selected. The same request
+        again writes nothing and returns the current revision before the version is checked, so a reply lost on the
+        way does not turn its repeat into a conflict.
+        """
         with transaction(self.conn):
             research = self.research(research_id)
-            check_expected_version(expected_version, research["version"])
             scope = self.scope(research_id)
             if scope["source_scope"] != "attached_and_academic":
                 raise SeedUnavailable("A PDF seed requires Files + academic search")
-            if not self.is_active_member(research_id, source_version_id):
-                raise NotASource(source_version_id)
-            source = self.source(source_version_id)
-            added = self.conn.execute(
-                "SELECT added_by FROM corpus_memberships WHERE research_id = ? AND source_version_id = ? AND removed_at IS NULL",
-                (research_id, source_version_id),
-            ).fetchone()
-            if source["origin"] != "user_upload" and (not added or added["added_by"] not in ("zotero_import", "library")):
-                raise SeedUnavailable("Choose a PDF you added to this research")
-            asset = self.conn.execute(
-                "SELECT * FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL ORDER BY retrieved_at DESC LIMIT 1",
-                (source_version_id,),
-            ).fetchone()
-            if asset is None:
-                raise SeedUnavailable("The selected source has no PDF")
-            passages = [p for p in self.passages_for(source_version_id)
-                        if p["asset_id"] == asset["id"] and p["kind"] == "pdf_page" and p["text"].strip()]
-            if not passages:
-                raise SeedUnavailable("The selected PDF has no readable text; read its scanned pages with OCR first")
+            asked = ([c["source_version_id"] for c in self.seed_candidates(research_id)] if all_eligible
+                     else list(dict.fromkeys(source_version_ids or [])))
+            usable, skipped = [], []
+            for svid in asked:
+                try:
+                    usable.append((svid, *self._seed_material(research_id, svid)))
+                except _SeedRefused as refused:
+                    if len(asked) == 1 and not all_eligible:
+                        if refused.reason == "not_a_source":
+                            raise NotASource(svid) from None
+                        raise SeedUnavailable(SEED_REASONS[refused.reason]) from None
+                    skipped.append({"source_version_id": svid, "reason": refused.reason})
+            if not usable:
+                raise SeedUnavailable(SEED_REASONS[skipped[0]["reason"]] if skipped
+                                      else "No PDF added to this research has readable text")
             terms = set(re.findall(r"\w{3,}", scope["question"].casefold()))
-            first = passages[:2]
-            rest = sorted(passages[2:], key=lambda p: -len(terms & set(re.findall(r"\w{3,}", p["text"].casefold()))))
-            selected = first + rest[:MAX_SEED_PASSAGES - len(first)]
-            per_passage = MAX_SEED_CHARS // len(selected)
-            given = []
-            for passage in selected:
-                excerpt = passage["text"][:per_passage]
-                if not excerpt:
-                    continue
-                given.append({"id": passage["id"], "source_version_id": source_version_id,
-                              "kind": "pdf_page", "physical_page": passage["physical_page"],
-                              "printed_label": passage["printed_label"], "abstract_origin": None,
-                              "text_source": passage["text_source"], "text": excerpt,
-                              "text_sha256": hashlib.sha256(excerpt.encode()).hexdigest()})
-            snapshot = {"source_version_id": source_version_id, "asset_id": asset["id"],
-                        "asset_sha256": asset["sha256"], "extraction_version": asset["extraction_version"],
-                        "title": source["title"], "year": source["year"], "version_label": source["version_label"],
-                        "title_basis": "filename" if source["origin"] == "user_upload" else "record",
-                        "page_count": asset["page_count"],
-                        "text_pages": len({p["physical_page"] for p in passages}), "passages": given}
-            if scope["seed_mode"] == "uploaded_seed" and scope["seed_snapshot"] == snapshot:
+            not_selected = []
+            if len(usable) > MAX_SEEDS:
+                scores = [len(terms & set(re.findall(r"\w{3,}", " ".join(
+                    p["text"] for p in passages if p["physical_page"] in (1, 2)).casefold())))
+                          for _, _, _, passages in usable]
+                kept = set(sorted(range(len(usable)), key=lambda i: (-scores[i], i))[:MAX_SEEDS])
+                not_selected = [{"source_version_id": usable[i][0], "title": usable[i][1]["title"], "score": scores[i]}
+                                for i in range(len(usable)) if i not in kept]
+                usable = [usable[i] for i in sorted(kept)]
+            seeds = []
+            for svid, source, asset, passages in usable:
+                seeds.append({"source_version_id": svid, "asset_id": asset["id"],
+                              "asset_sha256": asset["sha256"], "extraction_version": asset["extraction_version"],
+                              "title": source["title"], "year": source["year"], "version_label": source["version_label"],
+                              "title_basis": "filename" if source["origin"] == "user_upload" else "record",
+                              "page_count": asset["page_count"],
+                              "text_pages": len({p["physical_page"] for p in passages}),
+                              "passages": self._seed_excerpt(svid, passages, terms, len(usable)),
+                              "record_dois": self._record_dois(source)})
+            snapshot = {"version": 2, "seeds": seeds, "not_selected": not_selected, "skipped": skipped,
+                        "seed_key": seed_key(seeds)}
+            current = {"version": 2, "seeds": scope["seeds"], "not_selected": scope["seed_not_selected"],
+                       "skipped": scope["seed_skipped"], "seed_key": scope["seed_key"]}
+            if scope["seed_mode"] == "uploaded_seed" and current == snapshot:
                 return scope["revision"]
+            check_expected_version(expected_version, research["version"])
             revision = scope["revision"] + 1
             row = dict(self.conn.execute(
                 "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?", (research_id, scope["revision"])
@@ -651,7 +791,10 @@ class Store:
                 " SELECT research_id, ?, text, origin, ? FROM scope_english_questions WHERE research_id = ? AND scope_revision = ?",
                 (revision, now(), research_id, scope["revision"]))
             self._event(research_id, "seed_selected", {"scope_revision": revision,
-                                                       "source_version_id": source_version_id, "asset_id": asset["id"]})
+                                                       "source_version_id": seeds[0]["source_version_id"],
+                                                       "asset_id": seeds[0]["asset_id"],
+                                                       **({"source_version_ids": seed_source_ids(snapshot)}
+                                                          if len(seeds) > 1 else {})})
             return revision
 
     # ---- protocol ---------------------------------------------------------------------

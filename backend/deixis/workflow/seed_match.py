@@ -1,4 +1,5 @@
-"""Which OpenAlex work the user's seed PDF is, read from its own first two pages (seed_pdf_v1, D2).
+"""Which OpenAlex work each of the user's seed PDFs is, read from its own first two pages (seed_pdf_v1, D2;
+seed_pdf_v2 for an ordered set of up to five PDFs and a Zotero record's own DOI, D3).
 
 At most two lookups: the DOIs the first pages name, then one meaning search with the head of the first page. Either
 way a work is taken only when its title (four words or more) stands in the first two pages and exactly one work does
@@ -17,7 +18,8 @@ from deixis.documents import identity
 from deixis.providers.openalex import reconstruct_abstract
 from deixis.workflow.store import title_key
 
-RULE = "seed_pdf_v1"
+RULE_V1 = "seed_pdf_v1"
+RULE = "seed_pdf_v2"
 MAX_DOIS = 5
 SEMANTIC_PER_PAGE = 10
 SEMANTIC_QUERY_CHARS = 2000
@@ -81,23 +83,82 @@ def payload_sha256(payload: dict[str, Any] | None) -> str | None:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def passages_sha256(snapshot: dict[str, Any] | None) -> str | None:
-    """The fingerprint of the frozen excerpt a seeded run gives the query writer; None without a seed."""
-    if not snapshot:
+def passages_sha256(seeds: list[dict[str, Any]] | None) -> str | None:
+    """The fingerprint of the frozen excerpts a seeded run gives the query writer, every seed's in canonical order
+    (one seed: D2's value); None without a seed."""
+    if not seeds:
         return None
-    return hashlib.sha256("\n".join(p["text_sha256"] for p in snapshot["passages"]).encode()).hexdigest()
+    return hashlib.sha256("\n".join(p["text_sha256"] for s in seeds for p in s["passages"]).encode()).hexdigest()
+
+
+def contexts(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The one reader of a stored seed match (D3): a v2 envelope as it is, D2's single context as a one-seed envelope
+    that keeps the stored dict whole and has no seed key; None stays None."""
+    if not value:
+        return None
+    if value.get("rule") == RULE_V1:
+        return {"rule": RULE_V1, "seed_key": None, "seed_passages_sha256": value["seed_passages_sha256"],
+                "seeds": [value]}
+    return value
+
+
+def stored(envelope: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What a protocol freezes of an envelope: D2's dict for a v1 match, so a run that began under D2 freezes what
+    D2 would have; the envelope itself for v2."""
+    if not envelope:
+        return None
+    return envelope["seeds"][0] if envelope["rule"] == RULE_V1 else envelope
 
 
 def frozen(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
-    """The seed context this run's protocol froze, or None: no protocol yet, or one frozen without it (an unseeded
-    run, or one whose protocol was frozen before seed_pdf_v1). Never completed from live tables."""
+    """The seed contexts this run's protocol froze, as an envelope (`contexts`), or None: no protocol yet, or one
+    frozen without it (an unseeded run, or one whose protocol was frozen before seed_pdf_v1). Never completed from
+    live tables."""
     step = store.existing_step(run["id"], "protocol")
     if step is None or step["status"] != "succeeded" or not step["output"]:
         return None
     row = store.conn.execute(
         "SELECT body_json FROM protocol_records WHERE research_id = ? AND protocol_revision = ?",
         (run["research_id"], step["output"]["protocol_revision"])).fetchone()
-    return json.loads(row[0]).get("seed_match") if row else None
+    return contexts(json.loads(row[0]).get("seed_match")) if row else None
+
+
+def record_region(store: Any, snapshot: dict[str, Any]) -> str:
+    """Where a Zotero or library record's title must stand for its DOI to decide (D3): the first TITLE_REGION_CHARS
+    of the seed file's first physical page with text, page 1 or else page 2. Page 2 is never read when page 1 has
+    text, so a citation on page 2 never confirms the record; an image cover page lets page 2 stand in."""
+    rows = store.conn.execute(
+        "SELECT physical_page, text FROM passages WHERE asset_id = ? AND extraction_version IS ? AND kind = 'pdf_page'"
+        " AND physical_page IN (1, 2) ORDER BY physical_page, rowid",
+        (snapshot["asset_id"], snapshot["extraction_version"])).fetchall()
+    for page in (1, 2):
+        text = "\n".join(row["text"] for row in rows if row["physical_page"] == page)
+        if text.strip():
+            return text[:TITLE_REGION_CHARS]
+    return ""
+
+
+def doi_of(work: dict[str, Any]) -> str | None:
+    return str(work.get("doi") or "").removeprefix("https://doi.org/").casefold() or None
+
+
+def record_decision(region: str, snapshot: dict[str, Any], works: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str]:
+    """The one work a record's own DOI names whose title is the record's title (four words or more) and stands in
+    the record region, and the check's status: `confirmed`, `no_record` (no returned work has the DOI),
+    `title_differs`, `no_region_text`, `not_in_pdf` (the file is another paper) or `ambiguous` (two works pass)."""
+    named = [w for w in works if doi_of(w) in snapshot["record_dois"] and short_id(w.get("id"))]
+    if not named:
+        return None, "no_record"
+    key = title_key(snapshot["title"])
+    titled = [w for w in named if len(key.split()) >= identity.MIN_TITLE_WORDS and title_key(w.get("display_name")) == key]
+    if not titled:
+        return None, "title_differs"
+    if not region.strip():
+        return None, "no_region_text"
+    if f" {key} " not in f" {title_key(region)} ":
+        return None, "not_in_pdf"
+    found = {short_id(w.get("id")): w for w in titled}
+    return (next(iter(found.values())), "confirmed") if len(found) == 1 else (None, "ambiguous")
 
 
 def seed_text(context: dict[str, Any]) -> tuple[str, str]:

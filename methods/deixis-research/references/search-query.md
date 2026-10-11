@@ -54,7 +54,7 @@ Do not list both the singular and the plural of a term; the search treats them
 as one. Each term is 1 to 4 words, with no quotation marks, parentheses or
 Boolean operators, and no term appears twice.
 
-When `passages` is not empty, it holds pages of one paper the user chose to
+When `passages` is not empty, it holds pages of one or more papers the user chose to
 guide this search. Read it for the words its field uses: a term from those
 pages may go in either block when it fits the question. The question still
 decides what is searched; leave out what only that paper names (its system,

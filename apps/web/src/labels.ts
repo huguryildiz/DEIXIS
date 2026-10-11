@@ -1,4 +1,4 @@
-import type { Evidence, FileRestoreReceipt, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
+import type { Evidence, FileRestoreReceipt, SeedUse, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
@@ -626,14 +626,36 @@ export const auditStratumLabels: Record<string, string> = {
   A1: 'Out of scope at the abstract stage (model runs)', A2: 'Out of scope at the abstract stage (code rule)',
 }
 
-// What the seed PDF did in this revision's search (D2); the past tense only for what the protocol says happened.
-export function seedUseText(status: string | undefined, title: string) {
-  switch (status) {
-    case 'matched': return t('{title} (OpenAlex) guided the search: citation chain, similar-paper search and query writing.', { title })
-    case 'no_match': case 'no_first_page_text': return t('The PDF was not found in OpenAlex; its pages guided the similar-paper search and query writing.')
-    case 'lookup_failed': return t('OpenAlex could not be asked; the PDF’s pages guided the similar-paper search and query writing.')
-    case 'skipped': return t('OpenAlex is not in scope; the PDF’s pages guided query writing.')
-    case 'not_used': return t('This search ran without the PDF.')
-    default: return t('This PDF will guide the next search.')
+// What one seed PDF did in this revision's search (D3). Only what the stored steps report as true is named; a null
+// (not known yet) names nothing. The citation chain counts only when one of its requests for this PDF was sent. While a
+// run is active the wording is present tense, afterwards past.
+// Why a chosen PDF could not guide the search (D3).
+export function seedSkipText(reason: string) {
+  switch (reason) {
+    case 'not_a_source': return t('no longer in this research')
+    case 'not_added_by_user': return t('not a PDF you added')
+    case 'no_pdf': return t('no PDF')
+    case 'no_readable_text': return t('no readable text')
+    default: return reason
   }
+}
+
+export function seedUseText(use: SeedUse) {
+  if (use.state === 'selected') return t('Will guide the next search.')
+  if (use.state === 'not_used') return t('This search ran without it.')
+  const { match } = use
+  const active = use.run_active
+  const found = match.status === 'matched'
+    ? match.title ? t('Matched to “{title}” in OpenAlex', { title: match.title }) : t('Matched in OpenAlex')
+    : match.status === 'lookup_failed' ? t('OpenAlex could not be asked')
+    : match.status === 'skipped' ? t('OpenAlex is not in scope')
+    : t('Not found in OpenAlex')
+  const uses = [
+    use.chain && (use.chain_requests?.sent ?? 0) > 0 ? t('the citation chain') : '',
+    use.semantic ? t('the similar-paper search') : '',
+    use.query_writing ? t('query writing') : '',
+  ].filter(Boolean)
+  if (!uses.length) return `${found}.`
+  const list = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(uses)
+  return `${found}; ${t(active ? 'now used for {uses}' : 'used for {uses}', { uses: list })}.`
 }

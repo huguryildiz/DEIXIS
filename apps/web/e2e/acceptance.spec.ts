@@ -233,7 +233,7 @@ test('recent research moves to Trash, restores, then can be permanently deleted'
   } finally { await page.close(); await server.stop() }
 })
 
-test('mixed search asks which PDF guides it when several are attached', async ({ browser }) => {
+test('mixed search says the attached PDFs guide it when several are attached', async ({ browser }) => {
   const server = new FixtureServer(nextPort())
   await server.start()
   const page = await browser.newPage()
@@ -243,12 +243,13 @@ test('mixed search asks which PDF guides it when several are attached', async ({
     await page.getByLabel('Source scope').click()
     await page.getByRole('option', { name: 'Files + academic search' }).click()
     await page.locator('input[type=file]').first().setInputFiles([server.replacementPdf(), server.hostilePdf()])
-    await expect(page.getByRole('group', { name: 'PDF guiding the search' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Start research' })).toBeDisabled()
-    await page.getByRole('radio', { name: `replacement-${server.port}.pdf` }).check()
+    // No choice is asked: every attached PDF guides the search (up to five), and the chips say so.
+    await expect(page.getByRole('radio')).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Start research' })).toBeEnabled()
+    await expect(page.locator('.attachment-chip', { hasText: `replacement-${server.port}.pdf` })).toContainText('guides the search')
+    await expect(page.locator('.attachment-chip', { hasText: 'guides the search' })).toHaveCount(2)
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.getByRole('group', { name: 'PDF guiding the search' }).scrollIntoViewIfNeeded()
+    await page.getByLabel('PDFs to attach').scrollIntoViewIfNeeded()
     await shot(page, '00-seed-choice-mobile-light')
   } finally { await page.close(); await server.stop() }
 })
@@ -384,7 +385,12 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   test('setup: a question starts search and screening through the composer', async () => {
     await startResearch(page, server, 'SYNTHETIC: How is molecule release scheduling optimized?', 'Files + academic search')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    await expect(page.locator('.research-seed')).toContainText('its pages guided the similar-paper search')
+    // Past tense once the search ran; only the uses the stored steps report as true are named.
+    await expect(page.locator('.research-seed')).toContainText('Not found in OpenAlex; used for')
+    await expect(page.locator('.research-seed')).toContainText('the similar-paper search')
+    // The page lists the PDFs the backend offers as guides, with the saved one ticked.
+    await expect(page.locator('.research-seed').getByRole('checkbox')).toHaveCount(1)
+    await expect(page.locator('.research-seed').getByRole('checkbox')).toBeChecked()
     for (const fact of ['Files + academic search', 'Standard depth']) await expect(page.locator('.research-facts')).toContainText(fact)
     // The answer the fast path starts after discovery is the latest run, so the finished discovery run is folded: open it.
     const discovery = page.locator('.chat-toggle', { hasText: 'Ran search & screening' })

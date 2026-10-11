@@ -233,7 +233,7 @@ def test_s14b_frozen_seed_plan_lineage_and_candidate_guard(tmp_path):
         store.insert_step_input(seed_step["id"], seed_rid, seed_run["id"], 0,
             {"step_input_id": db.new_id("sti"), "task_type": "vocabulary", "scope_revision": seed_scope["revision"],
              "skill_package_hash": "SYNTHETIC", "question": {"text": seed_scope["question"]},
-             "seed": seed_scope["seed_snapshot"], "passages": [{"passage_id": lib.pid}]}, "base", "developer", "message", {})
+             "seed": seed_scope["seeds"], "passages": [{"passage_id": lib.pid}]}, "base", "developer", "message", {})
         store.update_run(seed_run["id"], status="completed")
         cell = dict(conn.execute("SELECT * FROM evidence_cells WHERE id = ?", (lib.rich["cell_id"],)).fetchone())
         earlier = store.create_upload_source("SYNTHETIC earlier method")

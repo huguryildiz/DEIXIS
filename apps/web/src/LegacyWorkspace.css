@@ -5,7 +5,15 @@
 .research-seed{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px;border-top:1px solid var(--line);padding:16px 0;margin-top:16px}
 .research-seed>div:first-child{flex:1 1 270px;min-width:0}.research-seed strong{font-size:13px;font-weight:600;color:var(--ink)}
 .research-seed p{font-size:12px;color:var(--muted);margin:3px 0 0;overflow-wrap:anywhere}
-.research-seed [data-slot=select-trigger]{max-width:min(100%,330px);min-width:180px}
+.research-seed-uses{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:6px}
+.research-seed-uses li{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.research-seed-uses li span{display:block;color:var(--ink);font-size:13px;font-weight:550}
+.research-seed-pick{flex:1 1 270px;min-width:0;border:0;margin:0;padding:0;display:grid;gap:6px}
+.research-seed-pick label{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--ink);cursor:pointer;overflow-wrap:anywhere}
+.research-seed-pick label:has(input:disabled){color:var(--muted);cursor:default}
+.research-seed-pick input{flex:none;width:13px;height:13px;margin-top:3px;accent-color:var(--accent)}
+.research-seed-pick-foot{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px}
+.research-seed-pick-foot small{font-size:12px;color:var(--muted)}
 .research-seed [data-slot=notice]{flex-basis:100%}
 
 /* Shared elevation and selection states across the legacy workspace views. */

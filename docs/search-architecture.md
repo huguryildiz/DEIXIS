@@ -1,6 +1,6 @@
 # Search architecture
 
-How a DEIXIS question becomes a ranked, read and answered set of sources, as the code stands on 11 Oct 2026 at commit `0566682` (policy `fast_path_v1`, seed rule `seed_pdf_v1`). Every box names the function or module that does the work, so the diagrams can be checked against the code.
+How a DEIXIS question becomes a ranked, read and answered set of sources, as the code stands on 11 Oct 2026 at commit `0566682` (policy `fast_path_v1`, seed rule `seed_pdf_v2` since D3). Every box names the function or module that does the work, so the diagrams can be checked against the code.
 
 A discovery run always takes the fast path. It moves through five clocked stages (plan, search, ranking, read, answer), each with a soft deadline. When it completes, an answer run is queued automatically, then an answer review run. Full text that arrives after the read cutoff can produce one late answer revision.
 
@@ -50,35 +50,39 @@ flowchart TD
     BP --> FZ[["protocol:freeze<br/>protocol + fast_path_search plan + hash"]]
 ```
 
-## 2a. Seed PDF (optional, `seed_pdf_v1`, D2)
+## 2a. Seed PDFs (optional, `seed_pdf_v2`, D3; one seed behaves as D2)
 
-The user can pick one of their own PDFs as a seed. This needs the "Files + academic search" source scope. `store.set_seed` freezes a bounded reading of the PDF in a new scope revision: the first two pages plus the pages that share the most words with the question. Before anything else in the plan stage, `_seed_match` looks up which OpenAlex work the PDF is. The protocol freezes that answer, and later steps read it only from the protocol.
+The user's own PDFs guide the search: up to five, uploaded files and Zotero or library PDFs alike. This needs the "Files + academic search" source scope. `store.seed_candidates` decides which sources can be seeds and `store.set_seeds` freezes them in a new scope revision, in order, with a bounded reading of each (one seed: the first two readable passages plus the passages that share the most words with the question; n seeds share the 5,600-character budget). With more than five candidates, the five that share the most question words are taken. Before anything else in the plan stage, `_seed_match` looks up which OpenAlex work each PDF is. The protocol freezes the answers, and later steps read them only from the protocol. A run that started under `seed_pdf_v1` finishes under it.
 
 ```mermaid
 flowchart TD
-    PDF["user picks a PDF they added<br/>store.set_seed → seed_snapshot (new scope revision)"] --> ST{"seed_status ready?"}
+    PDF["uploads + Zotero/library PDFs<br/>store.set_seeds → seeds[] (new scope revision)"] --> ST{"seed_status ready?<br/>(every seed)"}
     ST -->|"missing / stale"| SU(["pause: seed_unavailable"])
     ST -->|"ready"| M["_seed_match (first step of the plan)"]
 
-    subgraph M2["seed_match: at most 2 OpenAlex lookups"]
+    subgraph M2["seed_match: at most 1 + n OpenAlex lookups"]
         direction TB
-        DOI["1. DOIs named on pages 1–2 → works_by_dois"]
-        SEMQ["2. only if no DOI matched: one semantic search<br/>with the head of page 1"]
+        DOI["1. one works_by_dois for all seeds:<br/>DOIs on pages 1–2 + Zotero record DOIs<br/>(incomplete reply = failed)"]
+        REC{"record DOI: one work, record title,<br/>title at the head of the first page with text?"}
         RULE{"exactly one work whose title<br/>(≥ 4 words) stands at the head of page 1?"}
-        DOI --> RULE
+        SEMQ["2. per undecided seed: one semantic search<br/>with the head of pages 1–2"]
+        DOI --> REC
+        REC -->|"no"| RULE
+        RULE -->|"no decision"| SEMQ
         SEMQ --> RULE
     end
     M --> M2
-    RULE -->|"yes"| MATCH["matched: OpenAlex id, title, abstract, references"]
+    REC -->|"yes"| MATCH["matched: OpenAlex id, title, abstract, references"]
+    RULE -->|"yes"| MATCH
     RULE -->|"no / lookup failed"| NOM["not matched: first-page text only"]
 
-    MATCH --> CTX[["seed context, frozen in the protocol"]]
+    MATCH --> CTX[["seed contexts, frozen in the protocol"]]
     NOM --> CTX
 
-    CTX --> U1["search_query model reads the seed excerpt"]
-    CTX --> U2["semantic query = question + seed text<br/>(match abstract, or title + PDF excerpt)"]
-    CTX -->|"matched only"| U3["chain seed 0 (fast_chain.pdf_seed)"]
-    CTX --> U4["ranking: seed counts as a verified seed<br/>for TF-IDF and citation-graph signals,<br/>never scores against its own OpenAlex copy"]
+    CTX --> U1["search_query model reads every seed excerpt"]
+    CTX --> U2["semantic query = question + equal shares of seed text<br/>(seed_parts records what went in)"]
+    CTX -->|"matched only"| U3["chain seeds 0.. in seed order (fast_chain.pdf_seeds)"]
+    CTX --> U4["ranking: seeds count as verified seeds<br/>for TF-IDF and citation-graph signals,<br/>never score against their own OpenAlex copy"]
 ```
 
 ## 3. Search stage (with chain and embedding running alongside)
@@ -102,7 +106,7 @@ flowchart TD
     SEM -->|"chain.initial()"| CH
     subgraph CH["fast_chain.Round (OpenAlex only)"]
         direction TB
-        SEEDS["seeds: seed PDF's work first (if matched),<br/>then semantic page results<br/>(skipping verified seeds and duplicates)"] --> BK["backward: referenced works, batches of 50"]
+        SEEDS["seeds: seed PDFs' works first (if matched),<br/>then semantic page results<br/>(skipping verified seeds and duplicates)"] --> BK["backward: referenced works, batches of 50"]
         SEEDS --> FW["forward: works citing a seed, 25 each"]
         FB["fallback at search close: top up seeds<br/>from the fused ranking if too few"] --> BK
         FB --> FW
@@ -131,7 +135,7 @@ flowchart LR
         direction TB
         B["BM25 on title + abstract"]
         BL["concept-block hits"]
-        TF["TF-IDF cosine to seeds<br/>(user-included works + seed PDF)"]
+        TF["TF-IDF cosine to seeds<br/>(user-included works + seed PDFs)"]
         G["citation graph: coupling + direct citation"]
         E["embedding similarity (optional)"]
     end
@@ -201,7 +205,7 @@ Every step is a `run_steps` row keyed by `operation_key`. A step that already `s
 |---|---|
 | Run dispatch, discovery orchestration | `backend/deixis/workflow/flow.py` (`_execute_run`, `_discovery`) |
 | Policy, mode numbers, stage clock | `workflow/fast_path.py` |
-| Seed PDF match | `workflow/seed_match.py`, `flow._seed_match`, `store.set_seed` |
+| Seed PDF match | `workflow/seed_match.py`, `flow._seed_match`, `store.set_seeds`, `store.seed_candidates` |
 | Search requests | `workflow/fast_search.py` |
 | Citation chain round | `workflow/fast_chain.py` |
 | Embedding during search | `workflow/fast_embedding.py` |

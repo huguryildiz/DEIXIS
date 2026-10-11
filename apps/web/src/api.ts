@@ -108,16 +108,36 @@ export type LineagePlan = {
   failed_unchanged: { to: string; from: string; pair_fp: string }[]
 }
 
+export type SeedUse =
+  | { state: 'selected' }
+  | { state: 'not_used' }
+  | { state: 'used'; run_id: string | null
+      // The run that froze the protocol has not ended (a paused run counts as not ended).
+      run_active: boolean
+      match: { status: 'matched' | 'no_match' | 'no_first_page_text' | 'lookup_failed' | 'skipped'
+        basis: string | null; title: string | null; doi: string | null; openalex_id: string | null }
+      // null: not known yet (the step has not run).
+      query_writing: boolean | null; semantic: boolean | null; chain: boolean | null
+      query_writing_detail: 'reused' | 'code_query' | 'user_key_terms' | 'code_only' | 'written_without_seed' | null
+      // unknown: requests whose outcome was not proven.
+      chain_requests: { planned: number; sent: number; unsent: number; unknown: number } | null }
+export type SeedPdf = { source_version_id: string; asset_id: string; asset_sha256: string; extraction_version: string
+  title: string; title_basis: string; page_count: number | null; text_pages: number; passage_count: number; use: SeedUse }
+export type SeedCandidate = { source_version_id: string; title: string; origin: 'user_upload' | 'zotero_import' | 'library' }
+export type SeedSelection = { source_version_ids: string[] } | { all_eligible: true }
+
 export type Scope = {
   research_id: string; revision: number; question: string; language_hint: string | null; source_scope: SourceScope
   seed_mode: 'question_only' | 'uploaded_seed'; seed_status: 'question_only' | 'missing' | 'ready' | 'stale'
   // The current revision's search finished; an sw research may then answer with no included work (SW22).
   discovery_completed?: boolean
-  seed: { source_version_id: string; asset_id: string; asset_sha256: string; extraction_version: string
-    title: string; title_basis: string; page_count: number | null; text_pages: number; passage_count: number } | null
-  // What the seed PDF did in this revision's search, from the protocol it froze (D2).
-  seed_use?: { status: 'selected' | 'not_used' | 'matched' | 'no_match' | 'no_first_page_text' | 'lookup_failed' | 'skipped'
-    basis?: string | null; title?: string | null; doi?: string | null; openalex_id?: string | null } | null
+  // The PDFs that guide the search, in the order the backend froze them (at most five), each with what the search did with it (D3).
+  seeds: SeedPdf[]
+  // The backend decides which sources can guide a search; the page lists these and sends back a chosen subset.
+  seed_candidates: SeedCandidate[]
+  // Eligible PDFs left out because of the five-PDF limit, and chosen ones the backend could not use.
+  seed_not_selected: { source_version_id: string; title: string; score: number }[]
+  seed_skipped: { source_version_id: string; reason: 'not_a_source' | 'not_added_by_user' | 'no_pdf' | 'no_readable_text' }[]
   providers: string[]; search_providers: string[]; effort: Effort; model_connection: string; requested_model: string | null; reasoning_effort: string | null
   // null literature model: the research model runs the search steps (researches created before model roles).
   literature_model: string | null; literature_reasoning_effort: string | null
@@ -1112,8 +1132,8 @@ export const api = {
     form.append('file', file)
     return request<ResearchView & { uploaded_source_version_id: string; file_restore: FileRestoreReceipt | null }>(`/api/researches/${id}/uploads`, { method: 'POST', body: form })
   },
-  setSeed: (id: string, sourceVersionId: string, expectedVersion: number) =>
-    request<ResearchView>(`/api/researches/${id}/seed`, json('POST', { source_version_id: sourceVersionId, expected_version: expectedVersion })),
+  setSeeds: (id: string, selection: SeedSelection, expectedVersion: number) =>
+    request<ResearchView>(`/api/researches/${id}/seed`, json('POST', { ...selection, expected_version: expectedVersion })),
   uploadToSource: (id: string, sourceId: string, file: File) => {
     const form = new FormData()
     form.append('file', file)

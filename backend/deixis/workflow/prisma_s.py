@@ -33,7 +33,7 @@ from deixis.workflow import flow_counts as flow_rules
 from deixis.workflow import probes as probe_rules
 from deixis.workflow import queue
 from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX
-from deixis.workflow.store import ACTIVE_RUN_STATUSES, Store
+from deixis.workflow.store import ACTIVE_RUN_STATUSES, Store, seed_source_ids
 
 CHECKLIST = "PRISMA-S"
 CITATION = {"authors": "Rethlefsen ML, Kirtley S, Waffenschmidt S, Ayala AP, Moher D, Page MJ, Koffel JB",
@@ -328,13 +328,14 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
     brought = [dict(row) for row in conn.execute(
         "SELECT source_version_id, added_by FROM corpus_memberships WHERE research_id = ? AND removed_at IS NULL"
         " AND added_by != 'search' ORDER BY created_at, source_version_id", (research_id,))]
-    seed = (scope.get("seed_snapshot") or {}).get("source_version_id")
-    if brought or seed:
+    seeds = seed_source_ids(scope)
+    if brought or seeds:
         by = Counter(row["added_by"] for row in brought)
         items.append(_item(7, "reported",
                            f"{len(brought)} records were brought by the person"
-                           + (" and the question was seeded with an attached PDF" if seed else "") + ".",
-                           {"brought": dict(sorted(by.items())), "seed_source_version_id": seed},
+                           + ((" and the question was seeded with an attached PDF" if len(seeds) == 1 else
+                               f" and the question was seeded with {len(seeds)} attached PDFs") if seeds else "") + ".",
+                           {"brought": dict(sorted(by.items())), "seed_source_version_ids": seeds},
                            [f"corpus_memberships:{research_id}/{row['source_version_id']}" for row in brought]))
     else:
         items.append(_item(7, "not_recorded", "No other source was recorded in DEIXIS."))

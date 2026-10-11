@@ -112,6 +112,8 @@
     --selected-ink: #1f2328;
     --hover-surface: #f1f3f5;
     --bubble: #f2f4f6;
+    /* The located citation anchor (mark.citation-highlight): the mockup's yellow (D8). */
+    --mark: #fdf1b8;
     --strong-line: #d9dce1;
     --tone-include: #2d7a4d;
     --tone-uncertain: #985f0b;
@@ -195,6 +197,7 @@
     --selected-ink: #e7e9ec;
     --hover-surface: #252930;
     --bubble: #23272d;
+    --mark: #5a4d17;
     --strong-line: #363b42;
     --tone-include: #6cc48f;
     --tone-uncertain: #e2a54c;

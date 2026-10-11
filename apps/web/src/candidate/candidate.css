@@ -45,9 +45,8 @@
 .candidate-evidence li { margin-bottom: 16px; }
 .candidates-view summary { cursor: pointer; padding: 8px 0; }
 .candidates-view button:focus-visible, .candidates-view summary:focus-visible, .candidate-editor button:focus-visible, .candidate-evidence button:focus-visible, .candidate-evidence a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-/* Same accent tint as the source sheet's located-text mark (80% transparent in light, 72% in dark). */
-.candidate-passage .citation-highlight { margin: 0 -.04em; padding: .06em .08em; border-radius: 3px; background: color-mix(in srgb, var(--accent), transparent 80%); color: var(--ink); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-.dark .candidate-passage .citation-highlight, .candidate-evidence.dark .candidate-passage .citation-highlight { background: color-mix(in srgb, var(--accent), transparent 72%); }
+/* Same yellow as the source sheet's located-text mark (--mark, D8). */
+.candidate-passage .citation-highlight { margin: 0 -.04em; padding: .06em .08em; border-radius: 3px; background: var(--mark); color: var(--ink); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 @media (max-width: 760px) {
   .candidate-matrix caption { display: block; width: 100%; }
   .candidates-view { max-width: calc(100vw - 40px); }

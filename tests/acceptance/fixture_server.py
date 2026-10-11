@@ -20,6 +20,26 @@ repair; the other rows fill normally, so the missing-row report choice can be ex
 `VERY_LARGE_COUNT`, so the discovery run ends with `vocabulary_empty` or `vocabulary_too_broad` before any search; each
 vocabulary-labels call of such a question waits 0.5 s so the page sees the run running before it fails).
 
+Parity-harness markers (compare the app with the UI mockup; `test_parity_markers.py` drives each without a socket):
+"[parity]" (with `DEIXIS_FIXTURE_FULLTEXT=on`, Standard depth): 412 SYNTHETIC works each returned once (one semantic
+page of 50, the keyword query's cursor pages for the rest, no chaining), the two abstract-screening runs agree on the
+first 34 titles they see and leave the rest of the 50 out of scope, the first three PDFs fetched carry case J's queue
+scripts (choose_run, confirm_quote, find_part) and the other 17 of the 20 read are agreeing includes, and the answer
+cites 12 sources. "[oa-quota]": the keyword query's first page answers with a next cursor and every later keyword
+page is refused as a spent OpenAlex daily budget (429, `x-ratelimit-remaining-usd: 0`), so the run completes on the
+searches that answered. "[no-passages]": every work has neither abstract nor open PDF, so the automatic answer is
+`no_evidence` with nothing to give the model. "[no-include]": a research-title call holds the one worker for
+`NO_INCLUDE_HOLD_SECONDS`, so an answer run of another, files-only research queued behind it starts after the person
+excluded its only file and records `no_includable_source`. "[jobs-running]": three works whose open PDF downloads take
+`JOBS_FETCH_SECONDS` each, so a PDF collection run over them (once the person includes them) stays `running` about
+30 s. "[pause-at-read]": the first abstract-screening call asks for a pause as the pause button does, so the
+discovery run stops `paused` in its read stage; resuming finishes it. "[stale-seed]": once the answer is written and no
+run is active, the research's seed PDF is replaced by SYNTHETIC pages through `Store.replace_asset`, so
+`seed_status` reads `stale` until the person freezes the current text again. `--write-seed-pdf` writes the SYNTHETIC PDF
+these files-based markers upload.
+"[clarify]" (parity plan S0) is not provided: no backend path stores an answer with status `clarification`, so the
+state cannot be reached without a backend change.
+
 `DEIXIS_FIXTURE_FULLTEXT=on` (clean start slice 5b) switches on retrieval and reading for the A–I records, as the app
 ships: the fast path reads W901's PDF and W903's submitted manuscript (each names its DOI on page one) before its cutoff,
 so the answer it writes by itself cites PDF pages. Without it a fast-path answer cites abstracts only.
@@ -66,6 +86,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -326,6 +347,86 @@ EUROPEPMC_WORKS = {work["doi"].removeprefix("https://doi.org/"): (f"PMC9000{work
 WITHHELD_PDFS = {work["best_oa_location"]["pdf_url"] for _, work in EUROPEPMC_WORKS.values()} if EUROPEPMC_MODE else set()
 
 
+# "[parity]": a SYNTHETIC research shaped like the UI mockup's example (412 found, 50 screened, 34 past the abstract
+# stage, 20 read in full text, 12 cited, three queue rows). Every work is returned by exactly one search request: the
+# semantic page holds the first PARITY_SEMANTIC, the keyword query's cursor pages the rest, and citation chaining finds
+# nothing, so found and unique are both PARITY_TOTAL. Each work has an open PDF naming its DOI on page one.
+PARITY_TOTAL, PARITY_SEMANTIC, PARITY_PASS, PARITY_CITED = 412, 50, 34, 12
+# The titles name none of the query's second block (the question's own words), so code leaves every record to the two
+# abstract-screening runs instead of passing it on its title alone (`abstract_stage.code_outcome`, rule 4).
+PARITY_TOPICS = ("degree-constrained topology control", "coverage and node lifetime", "duty-cycled sleep scheduling",
+                 "battery-aware clustering")
+
+
+def parity_work(n: int) -> dict[str, Any]:
+    return work(f"W7{n:04d}", f"SYNTHETIC {PARITY_TOPICS[n % len(PARITY_TOPICS)]} in wireless sensor fields, study {n:03d}",
+                f"SYNTHETIC model {n:03d} relates k-connectivity to network lifetime and energy consumption in "
+                "wireless sensor networks.", "publishedVersion",
+                {"pdf_url": f"https://fixture.example/parity-{n:03d}.pdf", "version": "publishedVersion"},
+                f"https://doi.org/10.5555/parity-{n:03d}")
+
+
+PARITY_WORKS = [parity_work(n) for n in range(1, PARITY_TOTAL + 1)]
+# The first three parity PDFs fetched carry case J's reading scripts (`queue_reading`), one queue row kind each; the
+# rest are read as agreeing includes. Keyed by URL so a second fetch of a file gets the same pages.
+PARITY_QUEUE_KEYS = ("runs", "quote", "part")
+PARITY_ROLES: dict[str, str] = {}
+
+
+def parity_pages(url: str) -> list[str]:
+    n = url.rsplit("-", 1)[-1].removesuffix(".pdf")
+    if url not in PARITY_ROLES:
+        PARITY_ROLES[url] = PARITY_QUEUE_KEYS[len(PARITY_ROLES)] if len(PARITY_ROLES) < len(PARITY_QUEUE_KEYS) else "agree"
+    key = PARITY_ROLES[url]
+    if key in QUEUE_SENTENCES:
+        first, second = QUEUE_SENTENCES[key]
+        return [f"SYNTHETIC queue-{key} https://doi.org/10.5555/parity-{n} first page.\n{first}",
+                f"SYNTHETIC queue-{key} second page.\n{second}"]
+    return [f"SYNTHETIC parity model {n} https://doi.org/10.5555/parity-{n} first page.\n"
+            "We model k-connectivity as a constraint on node degree in a wireless sensor network.",
+            f"SYNTHETIC parity model {n} second page.\n"
+            "Results show that network lifetime falls as energy consumption rises with k."]
+
+
+def parity_openalex(request: httpx.Request) -> httpx.Response | None:
+    """The parity search answers; None leaves a request (count probes, field routing) to the common handler."""
+    params = request.url.params
+    if request.url.host != "api.openalex.org":
+        return httpx.Response(404)  # abstract lookups at other providers find nothing
+    if "filter" in params:
+        return httpx.Response(200, json={"meta": {"count": 0, "next_cursor": None}, "results": []})  # chaining: none
+    if "search.semantic" in params:
+        return httpx.Response(200, json={"meta": {"count": PARITY_SEMANTIC}, "results": PARITY_WORKS[:PARITY_SEMANTIC]})
+    if "search.title_and_abstract" in params and "cursor" in params:
+        cursor = params["cursor"]
+        start = PARITY_SEMANTIC if cursor == "*" else int(cursor.removeprefix("parity-"))
+        end = min(PARITY_TOTAL, start + int(params.get("per_page", "100")))
+        return httpx.Response(200, json={"meta": {"count": PARITY_TOTAL - PARITY_SEMANTIC,
+                                                  "next_cursor": f"parity-{end}" if end < PARITY_TOTAL else None},
+                                         "results": PARITY_WORKS[start:end]})
+    return None
+
+
+# "[no-passages]": works with neither an abstract nor an open PDF, so the answer has no passage to give the model.
+NO_PASSAGE_WORKS = [work(f"W96{n}", f"SYNTHETIC record without abstract or PDF {n}", "", doi=f"https://doi.org/10.5555/np{n}")
+                    for n in (1, 2, 3)]
+# "[jobs-running]": works with an open PDF whose download takes JOBS_FETCH_SECONDS, so a PDF collection run over them
+# stays `running` for about three times that.
+JOBS_WORKS = [work(f"W97{n}", f"SYNTHETIC slow PDF of a molecule release schedule {n}",
+                   f"SYNTHETIC release schedule {n} for molecular relay networks.", "publishedVersion",
+                   {"pdf_url": f"https://fixture.example/jobs-{n}.pdf", "version": "publishedVersion"},
+                   f"https://doi.org/10.5555/jobs-{n}") for n in (1, 2, 3)]
+JOBS_FETCH_SECONDS = 10.0
+# "[no-include]": how long the research-title call holds the worker, so a queued answer run starts only after the person
+# took their one included file out.
+NO_INCLUDE_HOLD_SECONDS = 3.0
+# "[stale-seed]": the seed's file once the answer is written; its text differs, so the frozen excerpt no longer is current.
+STALE_SEED_PAGES = ["SYNTHETIC replaced seed page one: k-connectivity and network lifetime, revised text.",
+                    "SYNTHETIC replaced seed page two: energy consumption, revised text."]
+SEED_PAGES = ["SYNTHETIC seed page one: k-connectivity and network lifetime in sensor networks.",
+              "SYNTHETIC seed page two: energy consumption of k-connected topologies."]
+
+
 def europepmc_search(request: httpx.Request) -> httpx.Response:
     doi = request.url.params.get("query", "").removeprefix('DOI:"').removesuffix('"')
     found = EUROPEPMC_WORKS.get(doi)
@@ -398,6 +499,32 @@ def queue_reading(si: dict[str, Any], output: dict[str, Any], question: str = ""
 PROBE_COUNT = 800
 RATE_LIMIT_MODE = False
 PROBE_MODE: str | None = None  # "[vocab-empty]" / "[vocab-broad]": what every count probe answers instead
+# Set from the question of each model call, like the flags above: "[parity]", "[oa-quota]", "[no-passages]", "[jobs-running]".
+PARITY_MODE = OA_QUOTA_MODE = NO_PASSAGES_MODE = JOBS_MODE = False
+
+
+def reset_markers() -> None:
+    """Every module flag back to its start, for tests that share a process (the browser server never needs it)."""
+    global RATE_LIMIT_MODE, PROBE_MODE, LINEAGE_MODE, LINEAGE_REJECT_MODE
+    global PARITY_MODE, OA_QUOTA_MODE, NO_PASSAGES_MODE, JOBS_MODE
+    RATE_LIMIT_MODE = LINEAGE_MODE = LINEAGE_REJECT_MODE = False
+    PARITY_MODE = OA_QUOTA_MODE = NO_PASSAGES_MODE = JOBS_MODE = False
+    PROBE_MODE = None
+    PARITY_ROLES.clear()
+
+
+def oa_quota(request: httpx.Request) -> httpx.Response | None:
+    """"[oa-quota]": the keyword query's first page answers and carries a next cursor; every later keyword page is
+    refused as OpenAlex refuses a spent daily budget (HTTP 429 with no budget left), which the app reads as
+    `quota_exhausted`, not as a short rate limit it would wait out."""
+    params = request.url.params
+    if "search.title_and_abstract" not in params or "cursor" not in params:
+        return None
+    if params["cursor"] == "*":
+        return httpx.Response(200, json={"meta": {"count": 2 * len(WORKS), "next_cursor": "oa-quota-2"}, "results": WORKS})
+    return httpx.Response(429, headers={"x-ratelimit-limit": "100000", "x-ratelimit-remaining": "0",
+                                        "x-ratelimit-remaining-usd": "0", "retry-after": "86400"},
+                          json={"error": "Rate limit exceeded", "message": "SYNTHETIC: the daily budget of this key is used up."})
 
 
 def openalex(request: httpx.Request) -> httpx.Response:
@@ -410,6 +537,10 @@ def openalex(request: httpx.Request) -> httpx.Response:
         return europepmc_search(request)
     if QUEUE_MODE and request.url.host != "api.openalex.org":
         return httpx.Response(404)  # a DOI lookup answers "no result"; the queue works' PDFs come from OpenAlex
+    if (NO_PASSAGES_MODE or JOBS_MODE) and request.url.host != "api.openalex.org":
+        return httpx.Response(404)  # no other provider supplies an abstract or an open copy
+    if PARITY_MODE and (answer := parity_openalex(request)) is not None:
+        return answer
     if params.get("group_by") == "primary_topic.field.id":
         # The source routing request (D93): a SYNTHETIC distribution in which one domain source's fields hold most
         # of the records and another's none.
@@ -424,11 +555,22 @@ def openalex(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"meta": {"count": count}, "results": []})
     if RATE_LIMIT_MODE and request.url.host == "api.openalex.org" and "search.title_and_abstract" in params:
         return httpx.Response(429, headers={"retry-after": "0"})
-    works = LINEAGE_REJECT_WORKS if LINEAGE_REJECT_MODE else LINEAGE_WORKS if LINEAGE_MODE else QUEUE_WORKS if QUEUE_MODE else WORKS
+    if OA_QUOTA_MODE and request.url.host == "api.openalex.org" and (answer := oa_quota(request)) is not None:
+        return answer
+    works = (LINEAGE_REJECT_WORKS if LINEAGE_REJECT_MODE else LINEAGE_WORKS if LINEAGE_MODE else QUEUE_WORKS if QUEUE_MODE
+             else NO_PASSAGE_WORKS if NO_PASSAGES_MODE else JOBS_WORKS if JOBS_MODE else WORKS)
     return httpx.Response(200, json={"meta": {"count": len(works)}, "results": works})
 
 
 async def fetch(url: str) -> FetchResult:
+    if url.startswith("https://fixture.example/parity-"):
+        return FetchResult("ok", data=make_pdf(parity_pages(url)), final_url=url, media_type="application/pdf", http_status=200)
+    if url.startswith("https://fixture.example/jobs-"):
+        await asyncio.sleep(JOBS_FETCH_SECONDS)
+        n = url.rsplit("-", 1)[-1].removesuffix(".pdf")
+        return FetchResult("ok", data=make_pdf([f"SYNTHETIC slow PDF {n}\nhttps://doi.org/10.5555/jobs-{n}",
+                                                "SYNTHETIC second page of the slow PDF."]),
+                           final_url=url, media_type="application/pdf", http_status=200)
     if url.startswith('https://fixture.example/l7-'):
         letter = url.rsplit('-', 1)[-1].removesuffix('.pdf')
         text = LINEAGE_PAGES[letter] + (' ' + LINEAGE_QUOTES['A'] if letter == 'A' and '/l7-reject-' in url else '')
@@ -460,6 +602,10 @@ class ScriptedCodex:
         self.failed_once: set[str] = set()
         self.unread_run: dict[str, str] = {}  # the one reading run per research that cannot read case L's file
         self.first_lineage_run: dict[str, str] = {}
+        self.app: Any = None  # the app this connection serves, set after `create_app` ("[pause-at-read]", "[stale-seed]")
+        self.parity_labels: dict[str, dict[str, str]] = {}  # "[parity]": each research's abstract label per title
+        self.paused: set[str] = set()  # "[pause-at-read]": researches whose pause was asked once
+        self.seed_tasks: dict[str, asyncio.Task] = {}  # "[stale-seed]": one file replacement per research
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         return {"connection": "codex", "ready": True, "reason": None, "installed": True, "signed_in": True,
@@ -500,6 +646,20 @@ class ScriptedCodex:
         global LINEAGE_MODE, LINEAGE_REJECT_MODE
         LINEAGE_REJECT_MODE = '[lineage-reject]' in question
         LINEAGE_MODE = '[lineage]' in question or LINEAGE_REJECT_MODE
+        global PARITY_MODE, OA_QUOTA_MODE, NO_PASSAGES_MODE, JOBS_MODE
+        PARITY_MODE, OA_QUOTA_MODE = "[parity]" in question, "[oa-quota]" in question
+        NO_PASSAGES_MODE, JOBS_MODE = "[no-passages]" in question, "[jobs-running]" in question
+        if "[no-include]" in question and task == "research_title":
+            await asyncio.sleep(NO_INCLUDE_HOLD_SECONDS)
+        if ("[pause-at-read]" in question and task == "abstract_screening" and self.app is not None
+                and si["research_id"] not in self.paused):
+            # As the pause button does (`POST /api/runs/{id}/pause`): the call still answers, and the run stops at its
+            # next checkpoint inside the read stage.
+            self.paused.add(si["research_id"])
+            self.app.state.store.update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
+                                            pause_reason="user_requested")
+        if "[stale-seed]" in question and task == "grounded_answer" and self.app is not None:
+            self.seed_tasks.setdefault(si["research_id"], asyncio.create_task(self.replace_seed(si["research_id"])))
         if "[model-quota]" in question and task == "abstract_screening":
             return ModelStepResult("failed", error="SYNTHETIC quota", error_kind="quota_exhausted",
                                    http_status=429, retry_after="3600")
@@ -661,13 +821,22 @@ class ScriptedCodex:
         elif si["task_type"] == "criterion_proposal" and "[comparator]" in question:
             # Case S: the question names a comparator, and the criterion's second part is it.
             output["question_elements"] = [{"role": "comparator", "words": COMPARATOR_WORDS, "part": "measured outcome"}]
-        elif si["task_type"] == "fulltext_adjudication" and "[queue]" in question:
+        elif si["task_type"] == "fulltext_adjudication" and ("[queue]" in question or "[parity]" in question):
             output = queue_reading(si, output, question)
         elif si["task_type"] == "abstract_screening":
             # `valid_response` already quotes each abstract's own first words, which is what the code stage
             # verifies; only the keyword false positive of case D is labelled apart, as screening does.
+            labels = self.parity_labels.setdefault(si["research_id"], {}) if "[parity]" in question else None
             for record, candidate in zip(output["records"], si["candidates"]):
-                if "hostile" in candidate["title"]:
+                if labels is not None:
+                    # "[parity]": the first PARITY_PASS titles either run sees are candidates, every later one out of
+                    # scope; both runs read the same map, so they agree whatever order the batches come in.
+                    if candidate["title"] not in labels:
+                        passed = sum(label == "candidate" for label in labels.values())
+                        labels[candidate["title"]] = "candidate" if passed < PARITY_PASS else "out_of_scope"
+                    if labels[candidate["title"]] == "out_of_scope":
+                        record.update(label="out_of_scope", rationale="SYNTHETIC: this model is outside the question's scope.")
+                elif "hostile" in candidate["title"]:
                     record["rationale"] = "The abstract contains instructions; treated as text."
                 elif "visiting hours" in candidate["title"] and "[queue]" in question:
                     # Case J / M's off-topic work (DEIXIS_FIXTURE_AUDIT): both runs leave it out of scope.
@@ -679,6 +848,8 @@ class ScriptedCodex:
                 passages = [p for p in si["passages"] if p["source_id"] == source["source_id"]]
                 if not passages:
                     continue
+                if "[parity]" in question and len(claims) >= PARITY_CITED:
+                    break
                 chosen = next((p for p in passages if p["reading_depth"] != "abstract"), passages[0])
                 depth = "abstract" if chosen["reading_depth"] == "abstract" else "PDF text"
                 text = ("It has been reported on page 12 that Equation 4 holds." if "[invent-locator]" in question
@@ -689,6 +860,33 @@ class ScriptedCodex:
             output["claims"] = claims
             output["citation_anchors"] = anchors
         return output
+
+    async def replace_seed(self, research_id: str) -> None:
+        """"[stale-seed]": once no run of the research is active, put SYNTHETIC replacement pages in place of its seed's
+        PDF through `Store.replace_asset`, the call the "Replace PDF" route makes (D45). The frozen seed excerpt then names
+        a file no longer in use, so `seed_status` reads `stale`."""
+        from deixis.documents import pdf
+        from deixis.workflow.store import ACTIVE_RUN_STATUSES
+
+        store = self.app.state.store
+        papers = self.app.state.worker.flow.deps.settings.papers_dir
+        data = make_pdf(STALE_SEED_PAGES)
+        sha = hashlib.sha256(data).hexdigest()
+        for _ in range(600):
+            await asyncio.sleep(0.1)
+            marks = ", ".join("?" for _ in ACTIVE_RUN_STATUSES)
+            if store.conn.execute(f"SELECT 1 FROM runs WHERE research_id = ? AND status IN ({marks})",
+                                  (research_id, *ACTIVE_RUN_STATUSES)).fetchone():
+                continue
+            seeds = store.scope(research_id)["seeds"]
+            if not seeds:
+                return
+            papers.mkdir(parents=True, exist_ok=True)
+            path = papers / f"{sha}.pdf"
+            path.write_bytes(data)
+            store.replace_asset(seeds[0]["asset_id"], sha, len(data), path.name, "user_upload", None,
+                                "SYNTHETIC replaced seed.pdf", pdf.extract_pdf(path), pdf.EXTRACTION_VERSION, pdf.chunk_page)
+            return
 
     async def cancel(self) -> bool:
         return False
@@ -837,10 +1035,14 @@ def main() -> None:
     parser.add_argument("--write-replacement-pdf", type=Path, help="Write a SYNTHETIC PDF used to replace a source's file (D45) and exit")
     parser.add_argument("--write-waiting-pdf", type=Path, help="Write the SYNTHETIC publisher file case K drops and exit")
     parser.add_argument("--write-reextract-pdfs", type=Path, help="Write SYNTHETIC R4 restoration PDFs and exit")
+    parser.add_argument("--write-seed-pdf", type=Path, help="Write the SYNTHETIC seed PDF of [stale-seed] / [no-include] and exit")
     args = parser.parse_args()
     keyring.set_keyring(MemoryKeyring())  # a browser run never reads or writes the system keychain (P9 H0a, plan 4 rule 5)
     if args.write_reextract_pdfs:
         seed_reextract(args.data_dir, write_pdfs_dir=args.write_reextract_pdfs)
+        return
+    if args.write_seed_pdf:
+        args.write_seed_pdf.write_bytes(make_pdf(SEED_PAGES))
         return
     if args.write_hostile_pdf:
         args.write_hostile_pdf.write_bytes(make_pdf([HOSTILE_PDF_TEXT]))
@@ -885,9 +1087,11 @@ def main() -> None:
         handler, local_embedder = fake_builtin(args.data_dir)
     if ARXIV_SOURCE_MODE:
         fake_arxiv_source()  # before create_app: SourceStore reads fetch_module.fetch_file at construction
-    app = create_app(settings, adapters={"codex": ScriptedCodex(args.data_dir)},
+    scripted = ScriptedCodex(args.data_dir)
+    app = create_app(settings, adapters={"codex": scripted},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=fetch,
                      local_embedder=local_embedder, xml_fetcher=europepmc_xml if EUROPEPMC_MODE else None)
+    scripted.app = app  # "[pause-at-read]" asks for a pause and "[stale-seed]" replaces a file through the app's store
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", timeout_graceful_shutdown=1)
 
 

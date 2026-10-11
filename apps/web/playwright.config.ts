@@ -11,4 +11,9 @@ export default defineConfig({
   workers: 4,
   reporter: [['list'], ['json', { outputFile: `${out}/results.json` }]],
   use: { channel: 'chrome', headless: true, viewport: { width: 1280, height: 900 }, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  // `npx playwright test` runs both; `--project parity` runs the mockup parity check alone (D8, e2e/parity/).
+  projects: [
+    { name: 'acceptance', testIgnore: /parity[\\/]/ },
+    { name: 'parity', testMatch: /parity[\\/].*\.spec\.ts$/, timeout: 240_000 },
+  ],
 })

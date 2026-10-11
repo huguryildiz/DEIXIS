@@ -166,8 +166,10 @@ above older ones; do not rewrite history merely to make it look consistent.
 ## Frontend and UX Changes
 
 - Read and follow `.impeccable.md`; it is the detailed design source of truth.
-- Treat Elicit as a density and progressive-disclosure reference, not a visual
-  specification. Preserve DEIXIS evidence semantics and visual identity.
+- The clickable mockup v24 (`.local/design/elicit-style-mockup/index.html`) is
+  the visual specification (D8): fixed UI matches it exactly, example data comes
+  from real records, and copy that would be false is corrected. Preserve DEIXIS
+  evidence semantics; declared differences live in `apps/web/e2e/parity/exceptions.ts`.
 - Render recorded backend state; never create a visual success state that outruns
   the underlying evidence or operation status.
 - Preserve keyboard operation, visible focus, semantic labels, contrast, light and

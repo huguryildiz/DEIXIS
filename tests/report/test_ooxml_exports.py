@@ -294,6 +294,30 @@ def test_answer_docx_is_the_browser_markdown_plus_quotes_and_access_limits(lang,
     assert quotes == [["“quote “one” & <two>”", "“a different quote of p1”"], ["“abstract quote”"], ["“ocr quote”"]]
 
 
+SOURCE_TEXT_CHANGED = {
+    "en": "A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.",
+    "tr": "Bu yanıtın okuduğu bir PDF, yanıt üretildikten sonra değiştirildi, kaldırıldı ya da metni yeniden çıkarıldı. Alıntılar okunan metni açmaya devam eder; güncel metni okumak için yeni bir yanıt üretin.",
+}
+
+
+@pytest.mark.parametrize("lang", ["en", "tr"])
+def test_answer_docx_carries_the_changed_source_text_notice_where_the_screen_shows_it(lang):
+    def items(answer):
+        return docx_items(ooxml.docx(answer_export.blocks(answer, SYNTHETIC_SOURCES, title="T", version=3, language=lang, style="apa")))
+
+    unchanged = items(SYNTHETIC_ANSWER | {"source_text_changed": False})
+    changed = items(SYNTHETIC_ANSWER | {"source_text_changed": True})
+    assert SOURCE_TEXT_CHANGED[lang] not in unchanged
+    # After the stale-selection notice and before the capability notice, as on screen; nothing else moves.
+    at = unchanged.index("SYNTHETIC notice & <tag>")
+    assert changed == unchanged[:at] + [SOURCE_TEXT_CHANGED[lang]] + unchanged[at:]
+    style = parts(ooxml.docx(answer_export.blocks(SYNTHETIC_ANSWER | {"source_text_changed": True}, SYNTHETIC_SOURCES, title="T",
+                                                  version=3, language=lang, style="apa")), DOCX_PARTS)["word/document.xml"]
+    quoted = [_p_text(p) for p in style.iter(W + "p") if (p.find(f"{W}pPr/{W}pStyle") is not None
+                                                         and p.find(f"{W}pPr/{W}pStyle").get(W + "val") == "Quote")]
+    assert SOURCE_TEXT_CHANGED[lang] in quoted
+
+
 def test_answer_docx_route_names_refusals_and_content(tmp_path):
     with TestClient(app_for(tmp_path)) as raw:
         client = session(raw)

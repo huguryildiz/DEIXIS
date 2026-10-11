@@ -3,7 +3,8 @@
 Same title line, notices, sections, citation labels, limits, cited passages and closing sentence, in the same order and
 language. Two additions: under each cited passage the stored anchor quote of every claim that cites it, verbatim
 (different quotes of one passage are never merged), because a Word file cannot open the passage the way the app does;
-and every limitation under Limits, including the access ones the screen shows with the PDF upload suggestions.
+every limitation under Limits, including the access ones the screen shows with the PDF upload suggestions; and the
+screen's notice that a PDF the answer read was replaced, removed or re-extracted since.
 Nothing is recomputed: claims, citations, locators and anchors come from the stored answer as the research view
 returns it.
 """
@@ -62,6 +63,10 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
                                      n=answer["scope_revision"]), style="Quote"))
     if answer.get("applicability") == "stale_selection":
         out.append(ooxml.paragraph(t("Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added."),
+                                   style="Quote"))
+    if answer.get("source_text_changed"):
+        # The screen's notice (AnswerBlock.tsx), in its place; the Markdown download leaves it out.
+        out.append(ooxml.paragraph(t("A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text."),
                                    style="Quote"))
     if answer.get("capability_notice"):
         out.append(ooxml.paragraph(answer["capability_notice"], style="Quote"))

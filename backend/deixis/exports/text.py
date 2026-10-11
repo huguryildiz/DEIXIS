@@ -22,6 +22,8 @@ TR: dict[str, str] = {
         "Bu yanıt sorunun {n}. revizyonu için üretildi ve güncel revizyona uygulanmıyor.",
     "Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.":
         "Bu yanıt üretildikten sonra kaynak seçiminiz değişti. Yanıt saklanır, ancak sonradan hariç tuttuğunuz kaynaklara atıf yapıyor veya eklediklerinizi içermiyor olabilir.",
+    "A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.":
+        "Bu yanıtın okuduğu bir PDF, yanıt üretildikten sonra değiştirildi, kaldırıldı ya da metni yeniden çıkarıldı. Alıntılar okunan metni açmaya devam eder; güncel metni okumak için yeni bir yanıt üretin.",
     "interpretation": "yorum",
     "Reviewer: {reason}": "İnceleyici: {reason}",
     "supported": "destekleniyor",

@@ -9,8 +9,9 @@ from __future__ import annotations
 from deixis.storage.db import now, transaction
 from deixis.workflow.store import NotFound, Store
 
-# Importers whose record carries the person's own bibliographic fields, stored through the provider-record path.
-USER_SUPPLIED_PROVIDERS = ("zotero",)
+# Importers whose record carries the person's own bibliographic fields, stored through the provider-record path: a
+# Zotero item, and a .bib / .ris entry no provider confirmed (`imports/bibtex_ris.py`, S19b).
+USER_SUPPLIED_PROVIDERS = ("zotero", "reference_file")
 
 
 def save(store: Store, svids: list[str], origin: str) -> list[str]:
@@ -29,10 +30,7 @@ def save(store: Store, svids: list[str], origin: str) -> list[str]:
             row = store.conn.execute("SELECT origin FROM source_versions WHERE id = ?", (svid,)).fetchone()
             if row is None:
                 raise NotFound(svid)
-            imported = store.conn.execute(
-                f"SELECT 1 FROM identifier_mappings WHERE source_version_id = ? AND provider IN"
-                f" ({', '.join('?' * len(USER_SUPPLIED_PROVIDERS))}) LIMIT 1", (svid, *USER_SUPPLIED_PROVIDERS)).fetchone()
-            provider = origin == "saved" and row["origin"] == "provider" and imported is None
+            provider = origin == "saved" and row["origin"] == "provider" and not has_user_supplied_mapping(store, svid)
             metadata_origin = "provider" if provider else "user_supplied"
             inserted = store.conn.execute(
                 "INSERT OR IGNORE INTO library_items (source_version_id, origin, metadata_origin, added_at)"
@@ -40,3 +38,25 @@ def save(store: Store, svids: list[str], origin: str) -> list[str]:
             if inserted.rowcount:
                 added.append(svid)
     return added
+
+
+def has_user_supplied_mapping(store: Store, svid: str) -> bool:
+    """Whether a user-supplied importer wrote this record, so some of its fields may be the person's own."""
+    return store.conn.execute(
+        f"SELECT 1 FROM identifier_mappings WHERE source_version_id = ? AND provider IN"
+        f" ({', '.join('?' * len(USER_SUPPLIED_PROVIDERS))}) LIMIT 1", (svid, *USER_SUPPLIED_PROVIDERS)).fetchone() is not None
+
+
+def confirm(store: Store, svid: str, provider: str) -> bool:
+    """This saved item's record is a provider's record of its DOI (a DOI lookup returned it, or the record stored under
+    that DOI is the provider's own): who confirmed it and when are set together (the
+    table's CHECK). Only a user-supplied item not confirmed before changes, and only a provider's record that no
+    user-supplied importer wrote (an upload's or an imported entry's fields stay the person's own). Returns whether the
+    item changed."""
+    row = store.conn.execute("SELECT origin FROM source_versions WHERE id = ?", (svid,)).fetchone()
+    if row is None or row["origin"] != "provider" or has_user_supplied_mapping(store, svid):
+        return False
+    changed = store.conn.execute(
+        "UPDATE library_items SET metadata_confirmed_by = ?, metadata_confirmed_at = ? WHERE source_version_id = ?"
+        " AND metadata_origin = 'user_supplied' AND metadata_confirmed_by IS NULL", (provider, now(), svid))
+    return bool(changed.rowcount)

@@ -1,5 +1,6 @@
 """Library-owned items (UI parity S19a, F14): save works, upload a PDF into the Library, export a bibliography for any
-set of works, and start a research over a set. The application middleware enforces loopback, Origin and CSRF.
+set of works, and start a research over a set; import a Zotero collection or a BibTeX / RIS file into the Library
+(S19b). The application middleware enforces loopback, Origin and CSRF.
 
 Versions are never merged: a saved item is one source version, an exported entry is one stored record, and a new
 research gets the one version per work that adding a Library work to a research already picks (D41).
@@ -7,17 +8,22 @@ research gets the one version per work that adding a Library work to a research 
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi import File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.api.app import CreateResearch, checked_research_models, create_research_row, disk_full_refused, store_upload
+from deixis.api.app import (CreateResearch, UploadRefused, ZoteroImport, attach_zotero_pdf, checked_research_models,
+                            create_research_row, disk_full_refused, store_upload)
 from deixis.config import Settings
 from deixis.documents import pdf
+from deixis.imports import bibtex_ris
+from deixis.providers import zotero
+from deixis.storage.db import new_id
 from deixis.workflow import bibliography, file_restore, intent, library_items, text_retry
 from deixis.storage.db import transaction
 from deixis.workflow.store import Store
@@ -138,6 +144,60 @@ def register_library_routes(app, settings: Settings) -> None:
                 store.add_to_corpus(rid, svid, "library", selection_state="included", selection_origin="user")
             intent.attached_ingested(store, rid)
         return research_view(store, rid) | {"added_source_version_ids": versions}
+
+    @app.post("/api/library/zotero-imports", status_code=201)
+    async def zotero_import(body: ZoteroImport, request: Request) -> dict[str, Any]:
+        """One Zotero collection's items into the Library ("Items are added to All works"), each with the text of its
+        first readable PDF. The records are Zotero's, so their metadata stays the person's own (`user_supplied`)."""
+        store = store_of(request)
+        library, http = zotero.library(body.source), request.app.state.http
+        items, rows = await zotero.collection_items(http, library, body.collection_key)
+        payload_path = f"{new_id('zot')}.json"
+        with disk_full_refused():
+            settings.payloads_dir.mkdir(parents=True, exist_ok=True)
+            (settings.payloads_dir / payload_path).write_text(json.dumps(rows), encoding="utf-8")
+        svids, saved, pdfs_added, notes = [], [], 0, []
+        for item in items:
+            # Stored and saved together, so a purge running during a PDF read cannot take the record.
+            with transaction(store.conn):
+                svid, _ = store.upsert_provider_source("zotero", item.record, payload_path)
+                saved += library_items.save(store, [svid], "zotero_import")
+            svids.append(svid)
+            if item.pdf_problem:
+                notes.append({"title": item.record.title, "note": item.pdf_problem, "vars": item.pdf_problem_vars})
+            if item.pdf_key is None or store.has_asset(svid):
+                continue
+            added, pdf_notes = await attach_zotero_pdf(store, settings, http, library, item, svid,
+                                                       request.app.state.fetch_pdf, None)
+            notes += pdf_notes
+            pdfs_added += added
+        return {"library": library_view(store), "zotero_import": {
+            "items": len(items), "pdfs_added": pdfs_added, "notes": notes, "saved": saved,
+            "already_saved": [s for s in dict.fromkeys(svids) if s not in saved]}}
+
+    @app.post("/api/library/reference-imports", status_code=201)
+    async def reference_import(request: Request, file: UploadFile = File(...),
+                               format: Literal["bibtex", "ris"] | None = Form(None)) -> Any:
+        """A BibTeX or RIS file into the Library: every readable entry, with the entries that could not be read listed
+        and left out. Nothing is stored when no entry can be read."""
+        store = store_of(request)
+        data = await file.read(bibtex_ris.MAX_FILE_BYTES + 1)
+        try:
+            fmt, entries, errors = bibtex_ris.read_file(data, file.filename, format)
+        except bibtex_ris.ImportRefused as exc:
+            raise UploadRefused(exc.status, exc.code, exc.detail) from None
+        if not entries:
+            return JSONResponse({"detail": "No entry in the file could be read", "code": "import_no_entries",
+                                 "errors": [e.view() for e in errors]}, status_code=422)
+        file_payload = f"{new_id('ref')}.{'bib' if fmt == 'bibtex' else 'ris'}"
+        with disk_full_refused():
+            settings.payloads_dir.mkdir(parents=True, exist_ok=True)
+            (settings.payloads_dir / file_payload).write_bytes(data)
+            result = await bibtex_ris.import_entries(store, request.app.state.http, settings.payloads_dir,
+                                                     settings.contact_email, entries, fmt, file_payload)
+        return {"library": library_view(store), "reference_import": {
+            "format": fmt, "filename": Path(file.filename or "").name or None, **result,
+            "errors": [e.view() for e in errors]}}
 
     @app.get("/api/library/assets/{asset_id}")
     async def get_asset(asset_id: str, request: Request) -> FileResponse:

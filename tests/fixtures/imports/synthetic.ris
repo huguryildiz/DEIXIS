@@ -1,0 +1,30 @@
+TY  - JOUR
+ID  - ris-one
+TI  - SYNTHETIC RIS diffusion record
+AU  - Lovelace, Ada
+AU  - Doe, John, Jr.
+PY  - 2019///
+T2  - Synthetic Journal
+VL  - 4
+IS  - 2
+SP  - 1
+EP  - 9
+DO  - 10.5555/syn.hit
+AB  - A first line of the abstract
+  that wraps to a second line.
+ER  - 
+
+TY  - CONF
+TI  - SYNTHETIC record never closed
+
+TY  - BOOK
+T1  - SYNTHETIC RIS book without DOI
+A1  - Example, Rae
+Y1  - 2001
+PB  - Synthetic Press
+ER  -
+
+TY  - RPRT
+AU  - Untitled, Una
+ER  - 
+stray text after the last record

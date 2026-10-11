@@ -1527,3 +1527,42 @@ export const libraryApi = {
   newResearchFromSet: (body: NewResearchFromSetBody) =>
     request<ResearchView & { added_source_version_ids: string[] }>('/api/library/researches', json('POST', body)),
 }
+
+// Library imports (api/library_routes.py, S19b). A Zotero collection or a BibTeX / RIS file goes into the Library, not
+// into a research. A .bib / .ris entry whose DOI a provider confirms is stored as that provider's record
+// (`record: 'provider'`, `confirmed_by`); one with a stored record under its DOI reuses it (`'existing'`); any other
+// entry is the person's own record (`'user_supplied'`). Entries that could not be read are listed in `errors` and left
+// out; `code` names the fault for translation, `message` is the English sentence.
+export type ReferenceImportFormat = 'bibtex' | 'ris'
+export type ReferenceImportEntry = {
+  index: number; key: string | null; title: string; doi: string | null
+  lookup: 'confirmed' | 'not_found' | 'failed' | 'no_doi'; record: 'provider' | 'existing' | 'user_supplied'
+  source_version_id: string; work_id: string; confirmed_by: string | null
+  duplicate_of: number | null  // the index of the earlier entry in this file that names the same record
+}
+export type ReferenceImportErrorCode = 'unclosed_value' | 'unbalanced_braces' | 'unclosed_entry' | 'malformed_field'
+  | 'missing_value' | 'undefined_string' | 'malformed_entry' | 'missing_key' | 'no_title' | 'invalid_doi'
+  | 'unclosed_record' | 'outside_record'
+export type ReferenceImportError = { index: number | null; line: number; key: string | null; code: ReferenceImportErrorCode; message: string }
+export type ReferenceImport = {
+  format: ReferenceImportFormat; filename: string | null; entries: ReferenceImportEntry[]
+  saved: string[]; already_saved: string[]; errors: ReferenceImportError[]
+}
+// A refused file answers with one of these codes (ApiError.code); 'import_no_entries' carries `errors` in ApiError.details.
+export type ReferenceImportRefusal = 'import_too_large' | 'import_not_text' | 'import_unknown_format'
+  | 'import_too_many_entries' | 'import_no_entries'
+export type LibraryZoteroImport = ZoteroImport & { saved: string[]; already_saved: string[] }
+
+export const libraryImportsApi = {
+  zotero: (source: ZoteroSource, collectionKey: string) =>
+    request<{ library: LibraryItemsView; zotero_import: LibraryZoteroImport }>('/api/library/zotero-imports',
+      json('POST', { source, collection_key: collectionKey })),
+  // The format comes from the file name or its first entry unless given.
+  referenceFile: (file: File, format?: ReferenceImportFormat) => {
+    const form = new FormData()
+    form.append('file', file)
+    if (format) form.append('format', format)
+    return request<{ library: LibraryItemsView; reference_import: ReferenceImport }>(
+      '/api/library/reference-imports', { method: 'POST', body: form })
+  },
+}

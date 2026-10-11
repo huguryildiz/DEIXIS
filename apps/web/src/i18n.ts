@@ -3630,4 +3630,10 @@ const tr: Record<string, string> = {
   'Searches using your PDFs and your question. Only included sources are used in the answer.': 'PDF’leriniz ve sorunuzla arar. Yanıtta yalnızca dahil edilen kaynaklar kullanılır.',
   'Ask a research question. DEIXIS searches, screens, reads and links every claim to a passage.': 'Bir araştırma sorusu sorun. DEIXIS arar, eler, okur ve her iddiayı bir pasaja bağlar.',
   '⌘ / Ctrl + Enter starts the research · ? shows shortcuts · Nothing is downloaded from paywalled sites': '⌘ / Ctrl + Enter araştırmayı başlatır · ? kısayolları gösterir · Ücretli sitelerden hiçbir şey indirilmez',
+  // UI parity S19b: refusals of a BibTeX / RIS import into the Library (the sentence is the key, as for uploads).
+  'Reference file larger than 5 MB': "Kaynakça dosyası 5 MB'tan büyük",
+  'The file is not readable text': 'Dosya okunabilir metin değil',
+  'The file is neither BibTeX (.bib) nor RIS (.ris)': 'Dosya ne BibTeX (.bib) ne de RIS (.ris) biçiminde',
+  'The file holds more than 500 entries; import it in parts': "Dosyada 500'den fazla kayıt var; parça parça içe aktarın",
+  'No entry in the file could be read': 'Dosyadaki hiçbir kayıt okunamadı',
 }

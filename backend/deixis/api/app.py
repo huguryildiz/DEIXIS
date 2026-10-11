@@ -636,6 +636,34 @@ def disk_full_refused() -> Iterator[None]:
         raise
 
 
+async def attach_zotero_pdf(store: Store, settings: Settings, http: httpx.AsyncClient, library: zotero.Library,
+                            item: zotero.ZoteroItem, svid: str, fetch_pdf: Callable[[str], Awaitable[Any]],
+                            research_id: str | None) -> tuple[bool, list[dict[str, Any]]]:
+    """Attach a Zotero item's first readable PDF to its record, like an upload; returns whether it was added and the
+    notes for the person. Shared by the research import and the Library import (S19b)."""
+    try:
+        data = await zotero.pdf_bytes(http, library, item.pdf_key, fetch_pdf)
+    except zotero.ZoteroError as exc:
+        return False, [{"title": item.record.title, "note": "PDF not added: {reason}", "vars": {"reason": str(exc)}}]
+    sha = hashlib.sha256(data).hexdigest()
+    try:
+        with disk_full_refused():
+            settings.papers_dir.mkdir(parents=True, exist_ok=True)
+            placement = await file_restore.store_pdf_file(store, settings.papers_dir, settings.recovery_dir, data,
+                                                          caller="zotero_import", research_id=research_id)
+            read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
+                storage_path=placement.path.name, sha256=sha, byte_size=len(data), lock=True)
+    except (text_retry.FileBusy, file_restore.FileRestoreRefused) as exc:
+        return False, [{"title": item.record.title, "note": "PDF not added: {reason}", "vars": {"reason": str(exc)}}]
+    # The file is the user's own copy from their library, like an upload; retrieved_from names the attachment.
+    store.add_asset_with_pages(svid, sha, len(data), placement.path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
+                               item.pdf_filename, read.extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
+                               input_observation=read.observation)
+    if read.observation is not None and read.observation["integrity"] != "verified":
+        return True, [{"title": item.record.title, "note": "PDF input not verified: " + text_retry.INPUT_CHANGED}]
+    return True, []
+
+
 class UploadRefused(Exception):
     """An upload `store_upload` refuses; `code` lets the page translate the sentence."""
 
@@ -1866,31 +1894,10 @@ def create_app(
                 notes.append({"title": item.record.title, "note": item.pdf_problem, "vars": item.pdf_problem_vars})
             if item.pdf_key is None or store.has_asset(svid):
                 continue
-            try:
-                data = await zotero.pdf_bytes(http, library, item.pdf_key, request.app.state.fetch_pdf)
-            except zotero.ZoteroError as exc:
-                notes.append({"title": item.record.title, "note": "PDF not added: {reason}", "vars": {"reason": str(exc)}})
-                continue
-            sha = hashlib.sha256(data).hexdigest()
-            try:
-                with disk_full_refused():
-                    settings.papers_dir.mkdir(parents=True, exist_ok=True)
-                    placement = await file_restore.store_pdf_file(store, settings.papers_dir, settings.recovery_dir, data,
-                                                                  caller="zotero_import", research_id=research_id)
-                    read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
-                        storage_path=placement.path.name, sha256=sha, byte_size=len(data), lock=True)
-            except (text_retry.FileBusy, file_restore.FileRestoreRefused) as exc:
-                notes.append({"title": item.record.title, "note": "PDF not added: {reason}", "vars": {"reason": str(exc)}})
-                continue
-            path = placement.path
-            extraction = read.extraction
-            # The file is the user's own copy from their library, like an upload; retrieved_from names the attachment.
-            store.add_asset_with_pages(svid, sha, len(data), path.name, "user_upload", f"zotero:{library.source}:{item.pdf_key}",
-                                       item.pdf_filename, extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
-                                       input_observation=read.observation)
-            if read.observation is not None and read.observation["integrity"] != "verified":
-                notes.append({"title": item.record.title, "note": "PDF input not verified: " + text_retry.INPUT_CHANGED})
-            pdfs_added += 1
+            added, pdf_notes = await attach_zotero_pdf(store, settings, http, library, item, svid,
+                                                       request.app.state.fetch_pdf, research_id)
+            notes += pdf_notes
+            pdfs_added += added
         intent.attached_ingested(store, research_id)
         return {**research_view(store, research_id), "zotero_import": {"items": len(items), "pdfs_added": pdfs_added, "notes": notes}}
 

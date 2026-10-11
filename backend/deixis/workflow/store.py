@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 from deixis.domain.canonical import sha256_hex
 from deixis.documents.jats import RENDITION_SQL
-from deixis.domain.rules import RevisionConflict, check_expected_version
+from deixis.domain.rules import RevisionConflict, apply_model_change, check_expected_version, role_model
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
 from deixis.workflow import links, recovery
 from deixis.workflow.source_keys import key_stem, suffixes
@@ -533,7 +533,49 @@ class Store:
         snapshot = read_seed_snapshot(json.loads(raw) if (raw := scope.pop("seed_snapshot_json", None)) else None)
         scope["seeds"], scope["seed_key"] = snapshot["seeds"], snapshot["seed_key"]
         scope["seed_not_selected"], scope["seed_skipped"] = snapshot["not_selected"], snapshot["skipped"]
+        # A person's model changes (UI parity S17, F10) hold for the research, whatever its revision: every scope read
+        # gives the models in effect now, so a step input built after a change carries the new model. What a finished
+        # step ran on stays in its StepInput and model session, never in this read.
+        for change in self.model_changes(research_id):
+            apply_model_change(scope, change["role"], change["to"])
         return scope
+
+    def model_changes(self, research_id: str) -> list[dict[str, Any]]:
+        """The research's model changes, oldest first: role, the model before and after, why, who and when."""
+        return [{"id": r["id"], "role": r["role"], "from": json.loads(r["from_json"]), "to": json.loads(r["to_json"]),
+                 "reason": r["reason"], "changed_by": r["changed_by"], "changed_at": r["changed_at"]}
+                for r in self.conn.execute("SELECT * FROM research_model_changes WHERE research_id = ? ORDER BY rowid",
+                                           (research_id,))]
+
+    def change_role_model(self, research_id: str, role: str, connection: str, model: str, reasoning_effort: str | None,
+                          expected_version: int, reason: str | None = None) -> dict[str, Any]:
+        """Move one role of a research to another model (UI parity S17, F10), recorded and shown, never silent.
+
+        Refused while a run of the research is executing (running or pause requested): a run keeps the models it
+        started or was resumed with, so every call it sends compares its answer's model with the model that call
+        asked for (`model_mismatch`). A queued run, a paused run once resumed, and every later run send their next
+        model steps to the new model; a step that already succeeded returns its stored output and is not sent again.
+        """
+        to = {"connection": connection, "model": model, "reasoning_effort": reasoning_effort}
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            executing = self.conn.execute(
+                "SELECT id FROM runs WHERE research_id = ? AND status IN ('running', 'pause_requested') LIMIT 1",
+                (research_id,)).fetchone()
+            if executing:
+                raise RevisionConflict(f"run {executing['id']} is running; pause it before changing a model")
+            before = role_model(self.scope(research_id), role, self.setting("reviewer"))
+            if {k: before[k] for k in to} == to and before.get("review_mode", "custom") == "custom":
+                raise ValueError(f"The {role} role already uses this model")
+            change_id, ts = new_id("rmc"), now()
+            self.conn.execute(
+                "INSERT INTO research_model_changes (id, research_id, role, from_json, to_json, reason, changed_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)", (change_id, research_id, role, dumps(before), dumps(to), reason, ts))
+            self.conn.execute("UPDATE researches SET version = version + 1, updated_at = ? WHERE id = ?", (ts, research_id))
+            self._event(research_id, "research_model_changed",
+                        {"change_id": change_id, "role": role, "from": before, "to": to, "reason": reason})
+        return self.model_changes(research_id)[-1]
 
     def revise_scope(self, research_id: str, expected_version: int, question: str, steering: str | None,
                      key_terms: str | None = None) -> int:

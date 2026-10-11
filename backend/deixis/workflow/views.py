@@ -823,7 +823,10 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "probes": probe_rules.probes_view(store, research_id, probe),
             # The reviewer the next answer would get: the research's own setting, else the app-wide default.
             "reviewer": {"mode": scope["review_mode"], "connection": reviewer[0] if reviewer else None, "model": reviewer[1] if reviewer else None,
-                         "reasoning_effort": reviewer[2] if reviewer else None}}
+                         "reasoning_effort": reviewer[2] if reviewer else None},
+            # Every model change a person made in this research, oldest first (UI parity S17, F10); `scope` and
+            # `reviewer` above already give the models in effect now.
+            "model_changes": store.model_changes(research_id)}
 
 
 def semantic_view(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, Any]:

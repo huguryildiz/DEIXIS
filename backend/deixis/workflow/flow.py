@@ -427,6 +427,8 @@ class ResearchFlow:
                 self._lineage_send_gate(run)
             elif run["kind"] == "cell_recheck":
                 await self._cell_recheck(run, scope)
+            elif run["kind"] == "table_column_recheck":
+                await self._table_column_recheck(run, scope)
             elif run["kind"] == "research_title":
                 await self._research_title(run, scope)
             elif run["kind"] == "report":
@@ -3975,6 +3977,45 @@ class ResearchFlow:
         self._checkpoint(run_id)
         if not self._save_cells(run, output, {target["column_id"]: target["cell_version"]}, recheck=True):
             self._fail(run_id, "invalid_model_output", {"step": "cell_recheck", "issues": output.get("issues")})
+
+    async def _table_column_recheck(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
+        """Ask again for every planned cell of one column, one step per cell in row order (UI parity S17, F20).
+
+        Each cell is a cell recheck of its own: the model never sees the cell's value, the result waits as a proposal
+        (D37), and the step's operation key is the cell's source, so a resumed run returns a finished cell's stored
+        output and sends no call for it. A row that left the table or lost its text since the request is skipped, and
+        a cell whose output holds nothing storable keeps its failed step; the other cells go on. The last step counts
+        what happened to the planned cells.
+        """
+        run_id, target = run["id"], run["target"]
+        tables = TableStore(self.store)
+        planned = [cell["source_version_id"] for cell in target["cells"]]
+        if not [c for c in self._live_columns(run, tables) if c["id"] == target["column_id"]]:
+            self._fail(run_id, "column_unavailable")
+        await self._read_equations(run, planned)
+        proposed, no_answer, skipped = [], [], []
+        for cell in target["cells"]:
+            svid = cell["source_version_id"]
+            self._checkpoint(run_id)
+            columns = [c for c in self._live_columns(run, tables) if c["id"] == target["column_id"]]
+            if not columns:
+                self._fail(run_id, "column_unavailable")
+            if svid not in tables.active_rows(target["table_id"]):
+                skipped.append(svid)
+                continue
+            output = await self._extraction(run, scope, f"column_recheck:{svid}", svid, columns, MAX_RECHECK_PASSAGES)
+            if output is None:
+                skipped.append(svid)
+                continue
+            self._checkpoint(run_id)
+            saved = self._save_cells(run, output, {target["column_id"]: cell["cell_version"]}, recheck=True)
+            (proposed if saved else no_answer).append(svid)
+        step = self.store.step(run_id, "column_recheck:summary", "table_column_recheck")
+        if step["status"] != "succeeded":
+            self.store.start_step(step["id"])
+            self.store.finish_step(step["id"], "succeeded", output={
+                "column_id": target["column_id"], "planned": len(planned), "proposed": proposed, "no_answer": no_answer,
+                "skipped": skipped, "rows_without_text": target["rows_without_text"]})
 
     async def _table_columns(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
         """Suggest columns from the question and the rows' titles and abstracts; nothing is added to the table."""

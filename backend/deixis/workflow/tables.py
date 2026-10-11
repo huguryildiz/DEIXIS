@@ -255,7 +255,7 @@ class TableStore:
         with transaction(self.conn):
             check_expected_version(expected_version, self._table(research_id, table_id)["version"])
             if self.conn.execute(
-                "SELECT 1 FROM runs WHERE kind IN ('table_fill', 'cell_recheck', 'table_columns', 'lineage_links') AND json_extract(target_json, '$.table_id') = ?"
+                "SELECT 1 FROM runs WHERE kind IN ('table_fill', 'cell_recheck', 'table_column_recheck', 'table_columns', 'lineage_links') AND json_extract(target_json, '$.table_id') = ?"
                 f" AND status IN ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1", (table_id, *ACTIVE_RUN_STATUSES)
             ).fetchone():
                 raise RevisionConflict("Cancel or finish the run working on this table before moving it to the trash")
@@ -719,6 +719,36 @@ class TableStore:
                 raise InvalidTableInput("This source has no stored text to read")
             target = {"table_id": table_id, "column_id": column_id, "source_version_id": svid, "cell_version": version}
             return self.store.create_run(research_id, "cell_recheck", {"max_model_calls": CALLS_PER_REQUEST, "max_provider_requests": 0},
+                                         key, target)
+
+    def request_column_recheck(self, research_id: str, table_id: str, column_id: str, expected_version: int,
+                               idempotency_key: str | None) -> dict[str, Any]:
+        """Queue a recheck of every cell of one column (UI parity S17, F20): one run, the column's rows in table order,
+        one step per cell. Each result waits as a proposal whatever the cell holds, as a cell recheck's does (D37).
+
+        `expected_version` is the column's version. The cells are planned here and stored with the run, each with the
+        version it had, so a resumed run reads the same cells. A row whose source has no stored text has nothing to
+        recheck; it is listed apart (`rows_without_text`) and gets no call.
+        """
+        key = self._key(research_id, idempotency_key)
+        with transaction(self.conn):
+            if replayed := self._replayed_run(key, "table_column_recheck"):
+                return replayed
+            self._table(research_id, table_id)
+            check_expected_version(expected_version, self._column(table_id, column_id)["version"])
+            versions = {r["source_version_id"]: r["version"] for r in self.conn.execute(
+                "SELECT source_version_id, version FROM evidence_cells WHERE column_id = ?", (column_id,))}
+            cells, without_text = [], []
+            for svid in self.active_rows(table_id):
+                if self.store.passages_for(svid):
+                    cells.append({"source_version_id": svid, "cell_version": versions.get(svid, 0)})
+                else:
+                    without_text.append(svid)
+            if not cells:
+                raise InvalidTableInput("No row of this column has stored text to read")
+            target = {"table_id": table_id, "column_id": column_id, "cells": cells, "rows_without_text": without_text}
+            return self.store.create_run(research_id, "table_column_recheck",
+                                         {"max_model_calls": CALLS_PER_REQUEST * len(cells), "max_provider_requests": 0},
                                          key, target)
 
     def request_column_suggestions(self, research_id: str, table_id: str, idempotency_key: str | None) -> dict[str, Any]:

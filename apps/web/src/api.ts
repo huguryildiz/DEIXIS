@@ -1457,3 +1457,23 @@ export const tableExportUrl = (researchId: string, tableId: string, format: 'xls
   `/api/researches/${encodeURIComponent(researchId)}/tables/${encodeURIComponent(tableId)}/export/${format}${exportQuery(lang, style)}`
 export const reportDocxUrl = (researchId: string, reportId: string) =>
   `/api/researches/${encodeURIComponent(researchId)}/reports/${encodeURIComponent(reportId)}/export/docx`
+// Research model changes and the column recheck run (S17; api/research_model_routes.py, api/table_routes.py).
+// A model change moves one role of a research to another model the connection lists; it is refused (409) while a run
+// of the research is running, and the next model steps of a queued, resumed or later run use it. Finished steps keep
+// what they ran on. The research view lists every change, oldest first, as `model_changes`.
+// A column recheck is one run (kind `table_column_recheck`) over the column's rows in table order; each result waits as
+// a proposal in its cell. Rows without stored text get no call and are listed in the run target as `rows_without_text`.
+export type RoleModel = { connection: string | null; model: string | null; reasoning_effort: string | null; review_mode?: ReviewMode }
+export type ResearchModelChange = {
+  id: string; role: ModelRole; from: RoleModel; to: RoleModel; reason: string | null; changed_by: 'person'; changed_at: string
+}
+export type ModelChangeRequest = {
+  role: ModelRole; connection: string; model: string; reasoning_effort: string | null; reason?: string; expected_version: number
+}
+
+export const researchModelApi = {
+  changeModel: (id: string, body: ModelChangeRequest) =>
+    request<ResearchView & { model_changes: ResearchModelChange[] }>(`/api/researches/${id}/models`, json('PUT', body)),
+  recheckColumn: (id: string, tableId: string, columnId: string, expectedVersion: number, idempotencyKey: string) =>
+    request<Run>(`/api/researches/${id}/tables/${tableId}/columns/${columnId}/recheck`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+}

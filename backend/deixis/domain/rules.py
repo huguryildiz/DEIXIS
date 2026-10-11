@@ -190,6 +190,34 @@ def effective_reviewer(scope: dict[str, Any], default: dict[str, Any] | None) ->
     return None
 
 
+# The roles a person can move to another model inside one research (UI parity S17, F10), with the scope columns that
+# hold each role's model. The names are the Settings roles.
+ROLE_MODEL_COLUMNS = {
+    "answer": ("model_connection", "requested_model", "reasoning_effort"),
+    "literature": ("literature_connection", "literature_model", "literature_reasoning_effort"),
+    "reviewer": ("review_connection", "review_model", "review_reasoning_effort"),
+}
+
+
+def apply_model_change(scope: dict[str, Any], role: str, to: dict[str, Any]) -> None:
+    """Put a recorded model change into a scope read, in place. A reviewer change makes the research's reviewer its own
+    (`custom`): the person named the model, so the app-wide default no longer decides it."""
+    connection, model, effort = ROLE_MODEL_COLUMNS[role]
+    scope.update({connection: to["connection"], model: to["model"], effort: to.get("reasoning_effort")})
+    if role == "reviewer":
+        scope["review_mode"] = "custom"
+
+
+def role_model(scope: dict[str, Any], role: str, reviewer_default: dict[str, Any] | None) -> dict[str, Any]:
+    """The model a role's next step would run on: what `step_model` and `effective_reviewer` give."""
+    if role == "reviewer":
+        reviewer = effective_reviewer(scope, reviewer_default) or (None, None, None)
+        return {"connection": reviewer[0], "model": reviewer[1], "reasoning_effort": reviewer[2],
+                "review_mode": scope.get("review_mode") or "default"}
+    connection, model, effort = step_model(scope, "abstract_screening" if role == "literature" else "grounded_answer")
+    return {"connection": connection, "model": model, "reasoning_effort": effort}
+
+
 def schema_repairs(task_type: str) -> int:
     return 0 if task_type in NO_REPAIR_TASKS else MAX_SCHEMA_REPAIRS
 

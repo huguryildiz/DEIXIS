@@ -1388,7 +1388,7 @@ export type ProxyTest = {
   proxy_reachable: boolean; proxy_http_status: number | null
   proxy_error: 'unresolved' | 'blocked_url' | 'timeout' | 'failed' | null; proxy_error_detail: string | null
   scopus_complete: ScopusCompleteFact; scopus_configured: boolean
-  address: string; route: string | null; tested_at: string
+  address: string; route: string | null; route_changed_during_test: boolean; tested_at: string
 }
 export type ProxySettings = {
   address: string | null; label: string | null; label_default: string | null; label_is_default: boolean

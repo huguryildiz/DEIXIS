@@ -685,6 +685,9 @@ def create_app(
         app.state.store, app.state.worker, app.state.adapters = store, worker, adapter_map
         app.state.package, app.state.owner = package, owner
         app.state.http, app.state.fetch_pdf = http, fetcher or fetch_module.fetch_pdf
+        # A connection opened now, for a check that must not ride a pooled one from before a network change (VPN).
+        app.state.fresh_http = lambda: (nullcontext(http_client) if http_client else
+                                        httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent(settings.contact_email)}))
         app.state.fetch_xml = xml_fetcher or acquisition.fetch_xml  # Europe PMC's full text (SW21)
         app.state.institutional_access = None
         app.state.local_tools = local_tools.LocalTools(http)

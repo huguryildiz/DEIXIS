@@ -43,6 +43,7 @@ def validate(address: str | None) -> str | None:
         parts = urlsplit(address.replace(PLACEHOLDER, "x"))
         netloc = urlsplit(address).netloc
         hostname = parts.hostname
+        parts.port  # noqa: B018  (raises ValueError for a port that is not a number from 0 to 65535)
     except ValueError:
         raise ProxyRefused("The proxy address is not a valid address") from None
     if parts.scheme != "https":

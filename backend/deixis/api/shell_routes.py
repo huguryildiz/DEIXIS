@@ -41,30 +41,46 @@ EMAIL_SHAPE = re.compile(r"^[^@\s<>\"',;]+@[^@\s<>\"',;]+\.[^@\s<>\"',;]+$")
 # ---- F1: awaiting counts ---------------------------------------------------------------------------------------------
 
 
+def shared_pdf_state(store: Store) -> tuple[int, int, int]:
+    """What the PDF side of every research's count shares: the PDF files and their passages. A file added, replaced,
+    removed, restored, confirmed or re-read for one research changes it for any research holding the same source
+    version, and only the calling research gets an event for it. Read once per poll, not per research."""
+    conn = store.conn
+    files = hash(tuple(tuple(row) for row in conn.execute(
+        "SELECT id, removed_at, identity_confirmed_at, extraction_status, extraction_version, page_count,"
+        " replaced_by_asset_id FROM source_assets ORDER BY rowid")))
+    passages = conn.execute("SELECT COUNT(*), COALESCE(MAX(rowid), 0) FROM passages").fetchone()
+    return files, passages[0], passages[1]
+
+
 class AwaitingCache:
-    """Open queue rows and works waiting for the person's PDF, per research, kept by the research's latest event id.
+    """Open queue rows and works waiting for the person's PDF, per research, kept while nothing they read has changed.
 
     The queue's decisions and the PDFs a person attaches are written in the same transaction as their event (CLAUDE.md,
-    Storage), so a count computed at event N is still true while the latest event is N. The two numbers stay apart."""
+    Storage), so a count computed at event N of a research holds while its latest event is N. Files and passages are
+    shared between researches and are not always written with an event of every research that holds them, so the key
+    also holds the shared PDF state (`shared_pdf_state`). The two numbers stay apart."""
 
     def __init__(self) -> None:
-        self._seen: dict[str, tuple[int, dict[str, int]]] = {}
+        self._seen: dict[str, tuple[tuple[int, tuple[int, int, int]], dict[str, int]]] = {}
 
-    def counts(self, store: Store, research_id: str) -> dict[str, int]:
+    def counts(self, store: Store, research_id: str, shared: tuple[int, int, int] | None = None) -> dict[str, int]:
         latest = store.conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
+        key = (latest, shared if shared is not None else shared_pdf_state(store))
         held = self._seen.get(research_id)
-        if held is not None and held[0] == latest:
+        if held is not None and held[0] == key:
             return dict(held[1])
         with queue._snapshot(store.conn):
             ctx = queue.context(store, research_id)
             value = {"queue": queue.queue_counts(store, research_id, ctx)["queue"],
                      "pdf": len(waiting.for_context(ctx)[1])}
-        self._seen[research_id] = (latest, value)
+        self._seen[research_id] = (key, value)
         return dict(value)
 
     def annotate(self, store: Store, researches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        shared = shared_pdf_state(store)
         for item in researches:
-            item["awaiting"] = self.counts(store, item["id"])
+            item["awaiting"] = self.counts(store, item["id"], shared)
         listed = {item["id"] for item in researches}
         for gone in [rid for rid in self._seen if rid not in listed]:
             del self._seen[gone]
@@ -138,6 +154,12 @@ def proxy_root(address: str) -> str:
     return f"{parts.scheme}://{parts.netloc}/"
 
 
+def proxy_client() -> httpx.AsyncClient:
+    """A client of its own for the proxy test: it ignores HTTPS_PROXY, ALL_PROXY and the like (as `fetch` does), so the
+    request goes to the host named, to the address that was checked. The shared provider client is not touched."""
+    return httpx.AsyncClient(trust_env=False, timeout=PROXY_TEST_SECONDS, headers={"User-Agent": fetch.user_agent()})
+
+
 async def proxy_answer(client: httpx.AsyncClient, address: str) -> dict[str, Any]:
     """One GET of the proxy host through `fetch`'s protections: a public address only, the checked address pinned, one
     request at a time to the host. The answer is read from the status line and headers; no body is read and no redirect
@@ -151,6 +173,8 @@ async def proxy_answer(client: httpx.AsyncClient, address: str) -> dict[str, Any
                 async with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False,
                                          timeout=PROXY_TEST_SECONDS) as response:
                     out["proxy_reachable"], out["proxy_http_status"] = True, response.status_code
+    except ValueError as exc:  # an address stored before ports were checked, e.g. https://host:99999/
+        out["proxy_error"], out["proxy_error_detail"] = "blocked_url", f"not a valid address: {exc}"
     except fetch.BlockedUrl as exc:
         # An address that does not resolve did not answer; a refused (non-public) address was never asked.
         out["proxy_error"] = "unresolved" if "does not resolve" in str(exc) else "blocked_url"
@@ -179,8 +203,10 @@ def proxy_settings(store: Store, route: str | None = None) -> dict[str, Any]:
     test = store.setting(PROXY_TEST_SETTING)
     return {"address": address, "label": label or default, "label_default": default, "label_is_default": not label,
             "test": test,
-            # A test belongs to the address and the network route it was made on; the person is told when either moved.
-            "test_is_current": bool(test) and test.get("address") == address and test.get("route") == route}
+            # A test belongs to the address and the network route it was made on; the person is told when either moved,
+            # and when the route moved while the test ran (then it measured an unknown route).
+            "test_is_current": bool(test) and test.get("address") == address and test.get("route") == route
+            and not test.get("route_changed_during_test")}
 
 
 # ---- F15: the contact email ------------------------------------------------------------------------------------------
@@ -231,13 +257,15 @@ def register_shell_routes(app) -> None:
         address = store.setting(proxy.SETTING)
         if not address:
             raise HTTPException(422, "No institution proxy address is set")
-        client = request.app.state.http
-        reached = await proxy_answer(client, address)
-        scopus_complete, scopus_configured = await scopus_fact(client)
+        route_before = await asyncio.to_thread(scopus.route_source)
+        async with proxy_client() as client:
+            reached = await proxy_answer(client, address)
+        async with request.app.state.fresh_http() as fresh:  # a new connection: no pooled one from before a VPN change
+            scopus_complete, scopus_configured = await scopus_fact(fresh)
         route = await asyncio.to_thread(scopus.route_source)
         store.set_setting(PROXY_TEST_SETTING, reached | {
             "scopus_complete": scopus_complete, "scopus_configured": scopus_configured,
-            "address": address, "route": route, "tested_at": now()})
+            "address": address, "route": route, "route_changed_during_test": route != route_before, "tested_at": now()})
         return proxy_settings(store, route)
 
     @app.get("/api/contact-email")

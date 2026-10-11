@@ -27,13 +27,6 @@ PUBLIC = "93.184.216.34"
 PAGES = ["SYNTHETIC page one"]
 
 
-def make_app(tmp_path, handler=None, monkeypatch=None):
-    http = httpx.AsyncClient(transport=httpx.MockTransport(handler or (lambda request: httpx.Response(200, json={}))))
-    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, search_query="code", fulltext_fetch="off")
-    return create_app(settings, adapters={"fake": FakeAdapter()}, http_client=http, start_worker=False,
-                      extra_hosts=("testserver",), trusted_clients=("testclient",))
-
-
 def open_client(app):
     client = TestClient(app)
     client.__enter__()
@@ -41,27 +34,49 @@ def open_client(app):
     return client
 
 
+class Calls(list):
+    """Every request the mocked transports saw, and which client carried it: `shared` (the app's provider client),
+    `fresh` (the new connection for the Scopus check) or `proxy` (the proxy test's own client)."""
+
+    def __init__(self):
+        super().__init__()
+        self.tags = []
+
+    def by(self, tag):
+        return [request for t, request in self.tags if t == tag]
+
+
 @pytest.fixture
 def served(tmp_path, monkeypatch):
-    """An app whose HTTP transport records its calls and answers by host; the proxy host resolves to a public address."""
-    calls, answers = [], {}
+    """An app whose HTTP transports record their calls and answer by host; the proxy host resolves to a public address."""
+    calls, answers = Calls(), {}
 
-    def handler(request):
-        calls.append(request)
-        answer = answers.get(request.url.host)
-        if isinstance(answer, Exception):
-            raise answer
-        return answer or httpx.Response(200, json={})
+    def handler_for(tag):
+        def handler(request):
+            calls.append(request)
+            calls.tags.append((tag, request))
+            answer = answers.get(request.url.host)
+            if isinstance(answer, Exception):
+                raise answer
+            return answer(request) if callable(answer) else (answer or httpx.Response(200, json={}))
+        return handler
+
+    def client_for(tag):
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler_for(tag)))
 
     async def resolve(host, port):
         return answers.get("resolve", [PUBLIC])
 
     monkeypatch.setattr(fetch, "_resolve", resolve)
     monkeypatch.setattr(scopus, "route_source", lambda: "192.168.0.2")
+    monkeypatch.setattr(shell_routes, "proxy_client", lambda: client_for("proxy"))
     monkeypatch.delenv("DEIXIS_CONTACT_EMAIL", raising=False)
     monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
-    app = make_app(tmp_path, handler)
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, search_query="code", fulltext_fetch="off")
+    app = create_app(settings, adapters={"fake": FakeAdapter()}, http_client=client_for("shared"), start_worker=False,
+                     extra_hosts=("testserver",), trusted_clients=("testclient",))
     client = open_client(app)
+    app.state.fresh_http = lambda: client_for("fresh")
     try:
         yield app, client, calls, answers
     finally:
@@ -105,6 +120,28 @@ def test_awaiting_keeps_queue_rows_and_pdf_waits_apart_and_follows_a_queue_and_a
     store._event(lib.rid, "waiting_pdf_attached", {"source_version_id": waiting_work, "work_id": lib.work_of(waiting_work),
                                                    "asset_id": "ast_synthetic", "reading": None})
     assert awaiting_of(client, lib.rid) == {"queue": 0, "pdf": 1}
+
+
+def test_a_pdf_added_through_one_research_changes_the_pdf_count_of_another_that_shares_the_version(served):
+    app, client, _, _ = served
+    store = app.state.store
+    one, other = Lib(store, "irrigation"), Lib(store, "irrigation")
+    shared = one.work()
+    store.add_to_corpus(other.rid, shared, "library", selection_state="included", selection_origin="user")
+    for lib in (one, other):
+        step = write_plan(lib, [shared])
+        lib.ds.record(lib.rid, shared, "no_fulltext", step_id=step)
+    assert awaiting_of(client, one.rid)["pdf"] == awaiting_of(client, other.rid)["pdf"] == 1
+    # The file is stored for the version: an event reaches the research it was added through, none reaches the other.
+    one.text(shared, PAGES)
+    store._event(one.rid, "waiting_pdf_attached", {"source_version_id": shared, "work_id": one.work_of(shared),
+                                                   "asset_id": "ast_synthetic", "reading": None})
+    assert awaiting_of(client, one.rid)["pdf"] == 0
+    assert awaiting_of(client, other.rid)["pdf"] == 0
+    # Taking the file away again, again with an event for the calling research only.
+    asset = store.conn.execute("SELECT id FROM source_assets WHERE source_version_id = ?", (shared,)).fetchone()[0]
+    store.remove_asset(one.rid, shared, asset)
+    assert awaiting_of(client, one.rid)["pdf"] == awaiting_of(client, other.rid)["pdf"] == 1
 
 
 def test_a_research_with_nothing_waiting_has_zero_of_both(served):
@@ -164,8 +201,8 @@ def test_a_proxy_host_that_answers_is_reachable_with_its_status_and_scopus_is_a_
     test = client.post("/api/institution-proxy/test").json()["test"]
     assert (test["proxy_reachable"], test["proxy_http_status"], test["proxy_error"]) == (True, status, None)
     assert (test["scopus_complete"], test["scopus_configured"]) == ("confirmed", True)
-    asked = [request for request in calls if request.url.host == PUBLIC]
-    assert len(asked) == 1 and asked[0].method == "GET" and asked[0].headers["host"] == "proxy.synthetic.example"
+    asked = calls.by("proxy")
+    assert [request.url.host for request in calls.by("shared")] == [] and len(asked) == 1 and asked[0].method == "GET" and asked[0].headers["host"] == "proxy.synthetic.example"
     assert asked[0].url.path == "/" and not asked[0].url.query  # the host itself, not the login path or any target
     # The stored result comes back from the settings read, current for this address and route.
     again = client.get("/api/institution-proxy/settings").json()
@@ -192,7 +229,7 @@ def test_without_a_scopus_key_that_fact_is_could_not_check_and_scopus_is_not_ask
     answers[PUBLIC] = httpx.Response(200)
     test = client.post("/api/institution-proxy/test").json()["test"]
     assert (test["scopus_complete"], test["scopus_configured"]) == ("could_not_check", False)
-    assert [request.url.host for request in calls] == [PUBLIC]
+    assert [request.url.host for request in calls] == [PUBLIC] and calls.by("fresh") == []
 
 
 def test_a_proxy_host_that_times_out_did_not_answer(served):
@@ -235,6 +272,58 @@ def test_the_test_needs_an_address_and_the_csrf_token_and_goes_stale_when_the_ad
     set_proxy(client, "https://other.synthetic.example/login?url=")
     stale = client.get("/api/institution-proxy/settings").json()
     assert stale["test"]["address"] == PROXY and stale["test_is_current"] is False
+
+
+def test_the_scopus_check_rides_a_new_connection_and_the_proxy_test_a_client_of_its_own_never_the_shared_one(served, monkeypatch):
+    _, client, calls, answers = served
+    monkeypatch.setenv("SCOPUS_API_KEY", "SECRET")
+    set_proxy(client)
+    answers[PUBLIC] = httpx.Response(200)
+    client.post("/api/institution-proxy/test")
+    assert [r.url.host for r in calls.by("fresh")] == ["api.elsevier.com"]
+    assert [r.url.host for r in calls.by("proxy")] == [PUBLIC] and calls.by("shared") == []
+
+
+def test_a_route_that_moved_while_the_test_ran_leaves_the_result_not_current(served, monkeypatch):
+    _, client, _, answers = served
+    monkeypatch.setenv("SCOPUS_API_KEY", "SECRET")
+    route = ["192.168.0.2"]
+    monkeypatch.setattr(scopus, "route_source", lambda: route[0])
+    set_proxy(client)
+    answers[PUBLIC] = httpx.Response(200)
+
+    def vpn_starts(request):
+        route[0] = "10.10.9.22"  # the VPN came up between the first look at the route and the end of the test
+        return httpx.Response(200, json={})
+    answers["api.elsevier.com"] = vpn_starts
+    moved = client.post("/api/institution-proxy/test").json()
+    assert moved["test"]["route_changed_during_test"] is True and moved["test_is_current"] is False
+    assert client.get("/api/institution-proxy/settings").json()["test_is_current"] is False  # stays so on a steady route
+    answers["api.elsevier.com"] = httpx.Response(200, json={})
+    steady = client.post("/api/institution-proxy/test").json()
+    assert steady["test"]["route_changed_during_test"] is False and steady["test_is_current"] is True
+
+
+def test_the_proxy_test_ignores_the_proxy_environment_variables(monkeypatch):
+    # The module's own factory (no fixture patches it here): with HTTPS_PROXY and ALL_PROXY set it mounts no proxy.
+    for name in ("HTTPS_PROXY", "ALL_PROXY", "HTTP_PROXY"):
+        monkeypatch.setenv(name, "http://127.0.0.1:9")
+    assert httpx.AsyncClient()._mounts != {}  # the same environment does route a default client
+    assert shell_routes.proxy_client()._mounts == {}
+
+
+def test_a_proxy_address_with_a_bad_port_is_refused_on_save(served):
+    _, client, _, _ = served
+    for address in ("https://proxy.synthetic.example:99999/login?url=", "https://proxy.synthetic.example:abc/login?url="):
+        assert client.put("/api/institution-proxy", json={"address": address}).status_code == 422
+    set_proxy(client, "https://proxy.synthetic.example:8443/login?url=")
+
+
+def test_a_stored_address_with_a_bad_port_gives_a_controlled_answer_not_an_error(served):
+    app, client, calls, _ = served
+    app.state.store.set_setting("institution_proxy", "https://proxy.synthetic.example:99999/login?url=")
+    test = client.post("/api/institution-proxy/test").json()["test"]
+    assert (test["proxy_reachable"], test["proxy_error"]) == (False, "blocked_url") and calls == []
 
 
 # ---- F15: the contact email ----------------------------------------------------------------------------------------

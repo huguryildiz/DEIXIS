@@ -3689,6 +3689,7 @@ const tr: Record<string, string> = {
   '{read} read · {none} without equations · {failed} failed': '{read} okundu · {none} denklemsiz · {failed} başarısız',
   'Language': 'Dil',
   'Nothing is running.': 'Çalışan bir iş yok.',
+  'Background work could not be read; its status is unknown.': 'Arka plandaki işler okunamadı; durumları bilinmiyor.',
   'Access check could not run': 'Erişim denetimi yapılamadı',
   'Proxy check could not run': 'Proxy denetimi yapılamadı',
 }

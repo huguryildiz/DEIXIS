@@ -66,11 +66,15 @@ async function openSheet(page: Page) {
   await expect(page.locator('.jobs-sheet')).toBeVisible()
 }
 
-// The sheet after its only job has ended: no card in the sidebar, the sheet still open, nothing running.
-async function expectEnded(page: Page) {
+const UNKNOWN = 'Background work could not be read; its status is unknown.'
+
+// The sheet after its only job has left the list: no card in the sidebar, the sheet still open, and "Nothing is
+// running" only when every read answered (otherwise the unknown sentence).
+async function expectEnded(page: Page, readsAnswered = true) {
   await expect(page.locator('.sidebar-foot .bgcard')).toHaveCount(0, { timeout: 15_000 })
   await expect(page.locator('.jobs-sheet')).toBeVisible()
-  await expect(page.locator('.jobs-sheet')).toContainText('Nothing is running.')
+  await expect(page.locator('.jobs-sheet')).toContainText(readsAnswered ? 'Nothing is running.' : UNKNOWN)
+  await expect(page.locator('.jobs-sheet')).not.toContainText(readsAnswered ? UNKNOWN : 'Nothing is running.')
 }
 
 test('the equation reader finishes while the sheet is open: it stays, with the read, no-equation and failed counts under Finished', async ({ page }) => {
@@ -91,7 +95,7 @@ test('the equation reader cannot be read any more: the sheet stays and the job i
   await page.route('**/api/equation-reader', route => failing ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC failure' } }) : route.fulfill({ json: READING }))
   await openSheet(page)
   failing = true
-  await expectEnded(page)
+  await expectEnded(page, false)
   await expect(page.locator('.jobs-sheet h3')).toHaveText(['Not confirmed as finished'])
   await expect(page.locator('.jobs-sheet .job', { hasText: 'Reading equations' })).toContainText('Status unknown')
   await expect(page.locator('.jobs-sheet svg.lucide-check')).toHaveCount(0)
@@ -112,6 +116,19 @@ test('an OCR run fails while the sheet is open: its own run status is shown as F
   await page.keyboard.press('Escape')
   await expect(page.locator('.jobs-sheet')).toHaveCount(0)
   await expect(page.locator('.sidebar-find')).toBeFocused()
+})
+
+test('the research view cannot be read while an OCR run is listed: the sheet says the state is unknown, not that nothing runs', async ({ page }) => {
+  let failing = false
+  await page.route('**/api/equation-reader', route => route.fulfill({ json: NO_READER }))
+  await page.route('**/api/researches', route => route.fulfill({ json: [summary('running')] }))
+  await page.route('**/api/researches/res_jobs', route => failing ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC failure' } }) : route.fulfill({ json: view('running') }))
+  await openSheet(page)
+  await expect(page.locator('.jobs-sheet .job')).toContainText('1 of 3 pages')
+  failing = true
+  await expectEnded(page, false)
+  await expect(page.locator('.jobs-sheet .job', { hasText: 'Reading with OCR' })).toContainText('Status unknown')
+  await expect(page.locator('.jobs-sheet svg.lucide-check')).toHaveCount(0)
 })
 
 test('a sidebar collapsed on the desktop still shows the background card in the phone drawer', async ({ page }) => {

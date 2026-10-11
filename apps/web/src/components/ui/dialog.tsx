@@ -4,7 +4,7 @@ import { XIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { t } from "@/i18n"
 
-// The mockup's dialog shell (`.pal.dlg`): a scrim, a 480px card 14vh from the top, a head with an icon, the title and a
+// The mockup's dialog shell (`.pal.dlg`): a scrim, a 560px card (mockup `.pal` after `.dlg`) 14vh from the top, a head with an icon, the title and a
 // close button, a body, and an optional footer on the sidebar surface. Theme follows html.dark like every portal.
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {

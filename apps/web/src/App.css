@@ -261,7 +261,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 @media (prefers-reduced-motion:no-preference){.toast{animation:toast-in .18s ease-out}}
 @keyframes toast-in{from{opacity:0;transform:translate(-50%,8px)}}
 
-/* Dialog shell (mockup `.pal.dlg`): a scrim, a 480px card 14vh from the top, a head with icon, title and close, a body,
+/* Dialog shell (mockup `.pal.dlg`): a scrim, a 560px card (mockup `.pal` after `.dlg`) 14vh from the top, a head with icon, title and close, a body,
    and a footer on the sidebar surface. */
 .dialog-scrim{position:fixed;inset:0;z-index:60;background:rgb(15 20 25/.32);transition:opacity .16s ease}
 .dialog-scrim[data-starting-style],.dialog-scrim[data-ending-style]{opacity:0}

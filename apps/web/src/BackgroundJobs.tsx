@@ -57,8 +57,9 @@ export function BackgroundJobs({ researches, dark, onOpenResearch }: {
   const candidates = researches.filter(r => r.last_run_kind && JOB_KINDS.has(r.last_run_kind) && r.last_run_status && LIVE.has(r.last_run_status))
 
   // The research list is refreshed every few seconds; each refresh reloads the views of the researches with a PDF run.
+  const [viewsFailed, setViewsFailed] = useState(false)
   const load = () => Promise.all(candidates.map(r => api.research(r.id).then(view => [r.id, view] as const, () => null)))
-    .then(entries => setViews(Object.fromEntries(entries.filter(e => e !== null))))
+    .then(entries => { setViews(Object.fromEntries(entries.filter(e => e !== null))); setViewsFailed(entries.some(e => e === null)) })
   // A failed read of the equation reader keeps the last answer and marks it stale: its job is then of unknown status, never finished.
   const [reader, setReader] = useState<EquationReader | null>(null)
   const [readerFailed, setReaderFailed] = useState(false)
@@ -127,7 +128,8 @@ export function BackgroundJobs({ researches, dark, onOpenResearch }: {
         finalFocus={() => card.current?.isConnected ? card.current : document.querySelector<HTMLElement>('.sidebar-find')}>
         <SheetHeader><SheetTitle><Clock size={16} aria-hidden="true" /><span>{title}</span></SheetTitle></SheetHeader>
         <div className="jobs-body">
-          {!jobs.length && <p className="jobs-none">{t('Nothing is running.')}</p>}
+          {/* "Nothing is running" only when every read answered; after a failed read the state is unknown. */}
+          {!jobs.length && <p className="jobs-none">{t(readerFailed || viewsFailed ? 'Background work could not be read; its status is unknown.' : 'Nothing is running.')}</p>}
           {jobs.map(job => <div key={job.key} className="job">
             <b>{job.paused ? <CirclePause size={14} className="jobs-paused" aria-hidden="true" /> : <span className="spin" aria-hidden="true" />}<span className="job-name">{job.label}</span>
               <span className="job-count">{progress(job)}</span>

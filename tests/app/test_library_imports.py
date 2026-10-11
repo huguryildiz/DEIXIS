@@ -376,3 +376,26 @@ def test_a_doi_record_confirms_an_entry_only_with_the_same_title_and_year(tmp_pa
             assert (row["record"], row["confirmed_by"], row["title_mismatch"]) == ("user_supplied", None, record_title)
             assert store.find_source_by_identifier("openalex", "W5") is None
             assert item(store, row["source_version_id"])[1:] == ("user_supplied", None, None)
+
+
+def test_a_confirmed_doi_never_confirms_a_stored_record_of_another_title(tmp_path):
+    from deixis.providers.openalex import _record
+    providers = Providers(works=[work("10.5555/syn.cpp", "SYNTHETIC C++ Primer", "W11", 2020)])
+    app = app_for(tmp_path, providers)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        # A record stored earlier under the same DOI with another title (another provider, same DOI mapping).
+        with transaction(store.conn):
+            stored, _ = store.upsert_provider_source("openalex", _record(work("10.5555/syn.cpp", "SYNTHETIC C Primer", "W10", 2020)), None)
+        before = store.source(stored)
+        mappings = providers_of(store, stored)
+        text = b"@book{cpp, title = {SYNTHETIC C++ Primer}, year = 2020, doi = {10.5555/syn.cpp}}"
+        row = upload(client, "cpp.bib", text).json()["reference_import"]["entries"][0]
+        assert (row["lookup"], row["record"], row["confirmed_by"]) == ("confirmed", "user_supplied", None)
+        assert row["title_mismatch"] == "SYNTHETIC C Primer" and row["source_version_id"] != stored
+        assert store.source(row["source_version_id"])["title"] == "SYNTHETIC C++ Primer"
+        # The stored record is untouched: same fields, no new mapping, not saved or confirmed.
+        assert store.source(stored) == before and providers_of(store, stored) == mappings
+        assert store.find_source_by_identifier("openalex", "W11") is None
+        assert item(store, stored) is None

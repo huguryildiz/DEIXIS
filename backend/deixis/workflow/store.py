@@ -1373,6 +1373,14 @@ class Store:
         ).fetchone()
         return row["source_version_id"] if row else None
 
+    def provider_source_target(self, provider: str, record: Any) -> str | None:
+        """The stored source version `upsert_provider_source` would reuse for this record (it keeps that record's own
+        fields), or None when it would store a new one."""
+        existing = self.find_source_by_identifier(provider, record.provider_record_id)
+        if existing is None and record.doi and record.merge_by_doi:
+            existing = self.find_source_by_identifier("doi", record.doi)
+        return existing
+
     def upsert_provider_source(self, provider: str, record: Any, payload_path: str | None) -> tuple[str, bool]:
         """Reuse the provider's own record mapping, else a source version with the same normalized DOI.
 
@@ -1382,9 +1390,7 @@ class Store:
         (an arXiv version, or another provider's record of the preprint) are separate versions of one work (D46).
         Other versions the provider lists for the record become separate source versions of the same work.
         """
-        existing = self.find_source_by_identifier(provider, record.provider_record_id)
-        if existing is None and record.doi and record.merge_by_doi:
-            existing = self.find_source_by_identifier("doi", record.doi)
+        existing = self.provider_source_target(provider, record)
         with transaction(self.conn):
             if existing:
                 svid, wid = existing, self.source(existing)["work_id"]

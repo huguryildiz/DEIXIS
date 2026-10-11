@@ -784,11 +784,18 @@ async def import_entries(store: Store, http: httpx.AsyncClient, payloads_dir: Pa
             confirmed_by, svid, mismatch = None, None, None
             existing = store.find_source_by_identifier("doi", entry.doi) if entry.doi else None
             if found is not None and found.status == "confirmed":
-                if titles_agree(entry.title, entry.year, found.record.title, found.record.year):
+                # The record the upsert would keep is checked, not only the answer: a stored record for the same DOI
+                # keeps its own title and year, and must be the entry's work too. On any disagreement nothing is
+                # written to a provider record.
+                target = store.provider_source_target(found.provider, found.record)
+                kept = store.source(target) if target is not None else None
+                if not titles_agree(entry.title, entry.year, found.record.title, found.record.year):
+                    mismatch = found.record.title
+                elif kept is not None and not titles_agree(entry.title, entry.year, kept["title"], kept["year"]):
+                    mismatch = kept["title"]
+                else:
                     svid, _ = store.upsert_provider_source(found.provider, found.record, found.payload_path)
                     confirmed_by, record = found.provider, "provider"
-                else:
-                    mismatch = found.record.title
             elif existing is not None:
                 stored_record = store.source(existing)
                 stored = stored_record["title"]

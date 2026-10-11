@@ -123,9 +123,11 @@ def replay(manifest: dict[str, Any]) -> dict[str, Any]:
         return stored | {"own_ids": set(stored["own_ids"]),
                          "references": set(stored["references"]) if stored["references"] is not None else None}
     pool, verified = [row(r) for r in manifest["pool"]], [row(r) for r in manifest["verified"]]
+    # A manifest without `graph_rule` was frozen before D6, or by an unseeded run: the rule before D6.
+    rule = manifest.get("graph_rule", "sum_v1")
     ranked = ranking.rank_pool(pool, verified,
                              set(manifest["query_words"]), manifest["blocks"], manifest["embedding_model"],
-                             manifest["similarities"], manifest["off_reason"], manifest["compared_terms"])
+                             manifest["similarities"], manifest["off_reason"], manifest["compared_terms"], rule)
     version = manifest.get("ranking_version", 1)
     top = ranked["fused"][:20]
     if version == 3:
@@ -135,11 +137,22 @@ def replay(manifest: dict[str, Any]) -> dict[str, Any]:
         by_id = {r["id"]: r for r in pool}
         seeds = verified + [by_id[rid] for rid in ranked["fused"]
                             if by_id[rid]["references"] and by_id[rid]["work_id"] not in verified_works][:GRAPH_SEEDS]
+        pdfs = [r for r in verified if r.get("seed_pdf")] if rule == "seed_max_v2" else []
+        if pdfs:
+            # D6: the seed PDFs follow the other seeds and count by the nearest one, and a seed PDF's OpenAlex copy
+            # (another work, the same identity) is never a second, summed seed.
+            seeds = [r for r in verified if not r.get("seed_pdf")] + [
+                by_id[rid] for rid in ranked["fused"] if by_id[rid]["references"]
+                and by_id[rid]["work_id"] not in verified_works
+                and not any(ranking.same_work(seed, by_id[rid]) for seed in verified)][:GRAPH_SEEDS] + pdfs
         if any(seed["references"] for seed in seeds):
-            graph = ranking.graph_scores(pool, seeds)
-            for r in pool:
-                graph[r["id"]] += sum(bool(r["own_ids"] & (seed["references"] or set()))
-                                      for seed in seeds if seed["work_id"] != r["work_id"])
+            if pdfs:
+                graph = ranking.graph_scores_v2(pool, seeds[:len(seeds) - len(pdfs)], pdfs, cited_twice=True)
+            else:
+                graph = ranking.graph_scores(pool, seeds)
+                for r in pool:
+                    graph[r["id"]] += sum(bool(r["own_ids"] & (seed["references"] or set()))
+                                          for seed in seeds if seed["work_id"] != r["work_id"])
             ranked["ranks"]["graph"] = ranking.mean_ranks(graph, ranking.availability(pool, "graph"))
             ranked["reasons"].pop("graph", None)
             ranked["graph_seeds"] = seeds
@@ -313,7 +326,9 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
             " WHERE m.research_id = ? AND m.removed_at IS NULL) GROUP BY work_id", (rid,))}
         for row in list(pool.values()) + priority_pool + verified:
             row["cited_by_count"] = counts.get(row["work_id"])
-        manifest = {"ranking_version": 3,
+        from deixis.workflow.fast_search import graph_rule
+        rule = graph_rule(store, run)
+        manifest = {"ranking_version": 3, **({"graph_rule": rule} if rule != "sum_v1" else {}),
                     "scope_revision": run["scope_revision"], "selection_revision": store.selection_revision(rid),
                     "protocol": store.existing_step(run["id"], "protocol")["output"],
                     "pool": sorted(pool.values(), key=lambda row: row["id"]), "priority_pool": priority_pool,

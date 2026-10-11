@@ -795,10 +795,13 @@ class ResearchFlow:
         built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, record)
         queries = search_query_rules.compile_queries(built, scope["providers"], run["budget"]["max_provider_requests"])
         built = search_query_rules.with_compiled(built, queries)
+        # D6, diagnosis only: the model's terms that share no word with the question and some word with the seeds.
+        seeded = {"seed_terms": search_query_rules.seed_terms(built["terms"], [scope["question"]] + [
+            row["text"] for row in [self.store.english_question(rid, revision)] if row], seed_rows)} if seed_rows else {}
         self.store.start_step(step["id"])
         self.store.finish_step(step["id"], "succeeded", output=output | {
             "status": "ready", "vocabulary": built, "queries": queries,
-            "query_compiler": query_compiler.BLOCKS_VERSION, "seed_passages_sha256": seed_sha})
+            "query_compiler": query_compiler.BLOCKS_VERSION, "seed_passages_sha256": seed_sha} | seeded)
         return self._proposed(run_id, built, queries)
 
     def _seed_passages(self, run_id: str, scope: dict[str, Any]) -> tuple[str | None, list[dict[str, Any]] | None]:
@@ -2006,10 +2009,12 @@ class ResearchFlow:
                        finished_at: str | None = None,
                        dispatched: facade.Dispatched | None = None,
                        transport: dict[str, Any] | None = None,
-                       admission: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]] | None:
+                       admission: dict[str, Any] | None = None,
+                       keep_found: bool = False) -> tuple[str, dict[str, Any]] | None:
         """Write one answered request: its payload, its search run, its records and its step's ending together.
 
-        For an sw page, `stop_reason` is the one the read decided when the page arrived (`_read_query`).
+        For an sw page, `stop_reason` is the one the read decided when the page arrived (`_read_query`). With
+        `keep_found`, an answered request's output also names the source versions it accepted (D6).
         A failure is returned as (pause reason, detail).
         """
         run_id, rid = run["id"], run["research_id"]
@@ -2074,7 +2079,7 @@ class ResearchFlow:
                            "provider_total": outcome.provider_total, "stop_reason": stop_reason}
             self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], "succeeded",
                                      step_output=output, first_rank=page.read_before if page else 0,
-                                     finished_at=finished_at)
+                                     finished_at=finished_at, keep_found=keep_found)
             return None
         final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
         self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], final,

@@ -5,6 +5,7 @@ import asyncio
 import json
 
 import httpx
+import pytest
 
 from deixis.workflow import fast_chain, fast_search, ranking, seed_match
 from deixis.workflow import store as store_module
@@ -78,6 +79,15 @@ def protocol_body(store, run_id):
     return json.loads(row[0])
 
 
+def d3_frozen(monkeypatch):
+    """Freeze the plan D3 wrote (`fast_path_search` version 1 with the seeds' text behind the question), as a run whose
+    protocol froze before D6 still has: the envelope reaches `build_plan` under another rule name, so it takes D3's
+    branch."""
+    build = fast_search.build_plan
+    monkeypatch.setattr(fast_search, "build_plan", lambda store, run, scope, queries, seed_context=None: build(
+        store, run, scope, queries, seed_context | {"rule": "frozen_before_d6"} if seed_context else seed_context))
+
+
 SEED_PDF = make_pdf([f"{SEED_TITLE}\nA. Author\ndoi:{SEED_DOI}\nAbstract. Deficit irrigation scheduling raises "
                      f"marketable tomato yield in greenhouses.", "Introduction. Irrigation scheduling ..."])
 
@@ -99,9 +109,13 @@ def test_matched_seed_guides_query_chain_ranking_and_protocol(tmp_path, monkeypa
         assert transport.doi_requests == [[SEED_DOI]] and not output(store, run_id, "seed_match:v2:semantic:0")
         body = protocol_body(store, run_id)
         assert body["seed_match"] == match
-        plan = body["fast_path_search"]["semantic"]
-        assert plan["query_text"].startswith(QUESTION) and SEED_TITLE in plan["query_text"]
-        assert plan["seed_text"] == "match_abstract" and len(plan["query_text"]) <= 1500
+        # D6: the question's request is the unseeded one; the seed asks on its own with its title and abstract.
+        assert body["fast_path_search"]["version"] == 2
+        assert body["fast_path_search"]["semantic"]["query_text"] == QUESTION
+        assert "seed_text" not in body["fast_path_search"]["semantic"]
+        [request] = body["fast_path_search"]["seed_semantic"]
+        assert request["query_text"].startswith(SEED_TITLE) and request["origin"] == "match_abstract"
+        assert request["source_version_id"] == svid and len(request["query_text"]) <= 1500
         seeds = output(store, run_id, "fast_chain:seeds")["seeds"]
         assert seeds[0]["origin"] == "seed_pdf" and seeds[0]["openalex_id"] == "W900" and seeds[0]["rank"] == 0
         assert len({s["openalex_id"] for s in seeds}) == len(seeds)
@@ -163,8 +177,7 @@ def test_a_cited_paper_on_page_two_is_not_taken_for_the_seed(tmp_path, monkeypat
         match = output(store, run_id, "seed_match")["seeds"][0]
         assert match["status"] == "no_match" and transport.doi_requests == [[OTHER_DOI]]
         assert len(transport.semantic_queries) >= 1
-        plan = protocol_body(store, run_id)["fast_path_search"]["semantic"]
-        assert plan["seed_text"] == "pdf_excerpt"
+        assert [r["origin"] for r in protocol_body(store, run_id)["fast_path_search"]["seed_semantic"]] == ["pdf_excerpt"]
         assert all(s["origin"] != "seed_pdf" for s in output(store, run_id, "fast_chain:seeds")["seeds"])
 
 
@@ -371,7 +384,10 @@ def test_2_one_seed_keeps_d2s_excerpt_and_n_seeds_share_it():
         assert given[0]["id"] == "p0" and len(given[0]["text"]) == chars // pages
 
 
-def test_3_three_seeds_send_one_doi_request_and_two_meaning_searches(tmp_path, monkeypatch):
+@pytest.mark.parametrize("frozen_before_d6", [False, True])
+def test_3_three_seeds_send_one_doi_request_and_two_meaning_searches(tmp_path, monkeypatch, frozen_before_d6):
+    if frozen_before_d6:
+        d3_frozen(monkeypatch)
     transport = SeedTransport(records(), by_doi=[seed_work()], semantic=[seed_work(910, TITLE_B, "10.1/b.910", ("W7",))])
     app, _ = app_for(tmp_path, monkeypatch, transport=transport)
     with client_of(app) as client:
@@ -386,14 +402,21 @@ def test_3_three_seeds_send_one_doi_request_and_two_meaning_searches(tmp_path, m
         assert [(s["source_version_id"], s["status"], s["basis"]) for s in match["seeds"]] == [
             (a, "matched", "doi_title"), (b, "matched", "title"), (c, "no_match", None)]
         assert transport.doi_requests == [[SEED_DOI]]
-        assert len([q for q in transport.semantic_queries if not q.startswith(QUESTION)]) == 2
+        lookups = [q for q in transport.semantic_queries if not q.startswith(QUESTION)]
+        assert len(lookups) == (2 if frozen_before_d6 else 2 + 3)
         assert output(store, run_id, "seed_match:v2:semantic:0") is None
         assert output(store, run_id, "seed_match:v2:semantic:1") and output(store, run_id, "seed_match:v2:semantic:2")
         body = protocol_body(store, run_id)
         assert body["seed_match"] == match
         plan = body["fast_path_search"]["semantic"]
-        assert plan["seed_text"] == ["match_abstract", "match_abstract", "pdf_excerpt"]
-        assert [p["source_version_id"] for p in plan["seed_parts"]] == [a, b, c] and len(plan["query_text"]) <= 1500
+        if frozen_before_d6:
+            assert plan["seed_text"] == ["match_abstract", "match_abstract", "pdf_excerpt"]
+            assert [p["source_version_id"] for p in plan["seed_parts"]] == [a, b, c] and len(plan["query_text"]) <= 1500
+            assert "seed_semantic" not in body["fast_path_search"]
+        else:
+            assert plan["query_text"] == QUESTION and "seed_parts" not in plan
+            assert [(r["source_version_id"], r["origin"], r["index"]) for r in body["fast_path_search"]["seed_semantic"]] == [
+                (a, "match_abstract", 0), (b, "match_abstract", 1), (c, "pdf_excerpt", 2)]
         seeds = output(store, run_id, "fast_chain:seeds")["seeds"]
         assert [(s["rank"], s["openalex_id"], s["origin"]) for s in seeds[:2]] == [(0, "W900", "seed_pdf"), (1, "W910", "seed_pdf")]
         assert all(s["origin"] != "seed_pdf" for s in seeds[2:])
@@ -402,6 +425,8 @@ def test_3_three_seeds_send_one_doi_request_and_two_meaning_searches(tmp_path, m
         assert [u["match"]["status"] for u in uses] == ["matched", "matched", "no_match"]
         assert [u["semantic"] for u in uses] == [True, True, True] and [u["chain"] for u in uses] == [True, True, False]
         assert uses[0]["query_writing"] is False and uses[0]["query_writing_detail"] == "code_query"
+        if not frozen_before_d6:
+            return
         # A seed whose text took no room in the semantic query did not guide it (v3, item 3).
         frozen = store.current_protocol(rid, store.scope(rid)["revision"])
         frozen["body"]["fast_path_search"]["semantic"]["seed_parts"] = [
@@ -703,7 +728,8 @@ def test_13_the_page_counts_only_what_really_read_each_seed(tmp_path, monkeypatc
         uses = {s["source_version_id"]: s["use"] for s in view["scope"]["seeds"]}
         assert all(u["query_writing"] is False and u["query_writing_detail"] == "code_query" for u in uses.values())
         assert store.existing_step(run_id, "search:fast:semantic")["status"] == "failed"
-        assert all(u["semantic"] is False for u in uses.values())
+        # D6: each seed's own request is not the question's; they were answered, so each seed guided the search.
+        assert all(u["semantic"] is True for u in uses.values())
         assert all(u["chain"] is True for u in uses.values())
         # Quick sends two forward requests: the third PDF is chained only through the backward request.
         requests = output(store, run_id, "fast_chain:plan")["requests"]
@@ -831,6 +857,7 @@ def test_a_failed_lookup_is_asked_again_by_the_next_run(tmp_path, monkeypatch):
 def test_a_seed_part_cut_off_on_sending_did_not_guide_the_semantic_search(tmp_path, monkeypatch):
     """A plan frozen before the 1,500-character limit may name seed parts that sending cut off; only parts that reached
     OpenAlex count as use (D3)."""
+    d3_frozen(monkeypatch)
     app, _ = app_for(tmp_path, monkeypatch, transport=SeedTransport(records(), by_doi=[seed_work()]))
     with client_of(app) as client:
         rid, svid = seeded(client, SEED_PDF)

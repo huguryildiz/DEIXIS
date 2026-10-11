@@ -2413,11 +2413,12 @@ class Store:
     # ---- research corpus -------------------------------------------------------------
     def record_search(self, search_fields: dict[str, Any], provider: str, records: list[Any], payload_path: str | None,
                       step_id: str, step_status: str, step_output: dict[str, Any] | None = None, first_rank: int = 0,
-                      **step_fields: Any) -> str:
+                      keep_found: bool = False, **step_fields: Any) -> str:
         """Commit the search run, normalized sources, candidates and the step outcome together.
 
         `first_rank` is how many records the query read on its earlier pages: a candidate's rank is its place in the
-        query, not in the page it arrived on (slice 04c). An unpaged search leaves it at 0.
+        query, not in the page it arrived on (slice 04c). An unpaged search leaves it at 0. With `keep_found` the
+        step output names the source versions this request wrote, before any is sent to its work's candidate (D6).
         """
         with transaction(self.conn):
             srid = self.add_search_run(**search_fields)
@@ -2454,6 +2455,8 @@ class Store:
                         (run["id"], admission["class"], admission["request_index"], position, svid, srid, ts,
                          status, ts if status == "from_store" else None, cut))
             output = {**step_output, "search_run_id": srid} if step_output is not None else None
+            if keep_found and output is not None:
+                output["accepted_source_version_ids"] = list(dict.fromkeys(found))
             self.finish_step(step_id, step_status, output=output, **step_fields)
         return srid
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
+from deixis.domain.vocabulary import words
 from deixis.providers import query_compiler
 from deixis.providers.query_compiler import quoted
 from deixis.workflow.approval import SIDE_LISTS
@@ -176,6 +177,20 @@ def vocabulary(code_vocabulary: dict[str, Any], code_queries: list[dict[str, Any
         "code_query": {"vocabulary": code_vocabulary, "queries": code_queries,
                        "searched": bool(code_queries) and not code_vocabulary["too_broad"]},
     }
+
+
+def seed_terms(terms: list[dict[str, Any]], question_texts: list[str], passages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """The searched terms the seeds brought rather than the question (D6, a diagnosis that changes nothing): a term
+    none of whose words stands in the question texts (the question and its saved English sentence) and some of whose
+    words stand in the seed excerpts the query writer read, with its block, in the terms' order."""
+    asked = {word.casefold() for text in question_texts for word in words(text)}
+    seeded = {word.casefold() for passage in passages for word in words(passage["text"])}
+    found = []
+    for term in terms:
+        mine = {word.casefold() for word in words(term["phrase"])}
+        if not term.get("dropped") and mine and not mine & asked and mine & seeded:
+            found.append({"phrase": term["phrase"], "block": term["block"]})
+    return found
 
 
 def is_model_written(vocabulary: dict[str, Any] | None) -> bool:

@@ -399,7 +399,11 @@ def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[di
         writing = out.get("status") == "ready" and bool(out.get("seed_passages_sha256"))
         detail = ("reused" if out.get("reused_from_run") else None) if writing else \
             {"skipped": out.get("reason"), "code_only": "code_only"}.get(out.get("status"), "written_without_seed")
-    semantic_plan = (frozen["body"].get("fast_path_search") or {}).get("semantic") or {}
+    search_plan = frozen["body"].get("fast_path_search") or {}
+    semantic_plan = search_plan.get("semantic") or {}
+    # D6: a version 2 plan sends each seed's own semantic request; the seed used it when that request succeeded.
+    seed_requests = ({spec["source_version_id"]: f"search:fast:semantic:seed:{spec['index']}"
+                      for spec in search_plan.get("seed_semantic") or []} if search_plan.get("version") == 2 else None)
     # A plan frozen before seed_parts (D2) names its one seed's text by `seed_text`; the seed's text went in only when
     # the query sent (cut to OpenAlex's limit) is longer than the question part and its separator.
     sentence = english_question_rules.embedding_query(store, scope)
@@ -448,7 +452,8 @@ def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[di
         uses.append({"state": "used", "run_id": run_id, "run_active": active,
                      "match": {key: context.get(key) for key in ("status", "basis", "title", "doi", "openalex_id")},
                      "query_writing": writing, "query_writing_detail": detail,
-                     "semantic": semantic_step if has_part else False,
+                     "semantic": (settled(step(seed_requests[svid])) if svid in seed_requests else False)
+                                 if seed_requests is not None else semantic_step if has_part else False,
                      "chain": (svid in chained) if chained is not None else (None if active else False),
                      "chain_requests": requests})
     return uses

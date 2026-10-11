@@ -36,9 +36,47 @@ def seed_query(question, envelope):
                                     for svid, origin, part in parts]
 
 
+def seed_requests(envelope, limit):
+    """One OpenAlex semantic request per seed with text (D6): the seed's own text (`seed_match.seed_text`) cut to what
+    OpenAlex accepts, in seed order; a seed with no text sends nothing. `index` is the seed's place in the envelope."""
+    specs = []
+    for i, context in enumerate(envelope["seeds"]):
+        text, origin = seed_match.seed_text(context)
+        if text.strip():
+            specs.append({"index": i, "source_version_id": context["source_version_id"], "origin": origin,
+                          "provider_id": "openalex", "endpoint": "semantic",
+                          "query_text": text[:openalex.SEMANTIC_MAX_CHARS], "limit": limit})
+    return specs
+
+
+def seed_key(spec):
+    return f"search:fast:semantic:seed:{spec['index']}"
+
+
+def plan_version(store, run):
+    """The `fast_path_search` version this run's protocol froze: 1 when it froze none or no protocol is frozen yet."""
+    step = store.existing_step(run["id"], "protocol")
+    if step is None or step["status"] != "succeeded" or not step["output"]:
+        return 1
+    row = store.conn.execute(
+        "SELECT body_json FROM protocol_records WHERE research_id = ? AND protocol_revision = ?",
+        (run["research_id"], step["output"]["protocol_revision"])).fetchone()
+    return ((json.loads(row[0]).get("fast_path_search") or {}).get("version", 1)) if row else 1
+
+
+def graph_rule(store, run):
+    """The graph rule the ranking reads, chosen by the frozen plan, never by live code (D6): a version 2 plan ranks the
+    seed PDFs by their nearest one (`seed_max_v2`), every other run as before (`sum_v1`)."""
+    return "seed_max_v2" if plan_version(store, run) == 2 else "sum_v1"
+
+
 def build_plan(store, run, scope, queries, seed_context=None):
     policy = run["budget"]["fast_path"]
     sentence = english_question.embedding_query(store, scope)
+    if seed_context and seed_context.get("rule") == seed_match.RULE:
+        # D6: the question's request is the unseeded one; each seed asks OpenAlex on its own, after it.
+        plan = build_plan(store, run, scope, queries)
+        return plan | {"version": 2, "seed_semantic": seed_requests(seed_context, policy["semantic_top"] // 2)}
     seed, parts = None, []
     if sentence and seed_context:
         # The seed PDFs' text rides behind the question (D2, D3); the ranking keeps the question alone.
@@ -190,8 +228,11 @@ async def execute(flow, run, scope, plan, retry_failed):
         with transaction(store.conn):
             step = store.step(run_id, key, f"provider_search:{connector.provider_id}")
             store.start_step(step["id"], started_at=started)
+            # A version 2 plan keeps the versions the question's request accepted, the only ones its first chain
+            # seeds may come from (D6).
             failure = flow._record_search(run, step, query, outcome, limit, page, reason,
-                                         finished, dispatched, transport, admission) or failure
+                                         finished, dispatched, transport, admission,
+                                         keep_found=key == "search:fast:semantic" and plan.get("version") == 2) or failure
             # Failed steps also retain terminal/cursor accounting for slot replay.
             if not ok:
                 store.set_step_output(step["id"], (store.step_output(step["id"]) or {}) | {
@@ -221,6 +262,21 @@ async def execute(flow, run, scope, plan, retry_failed):
     if chain:
         chain.initial()
     flow._checkpoint(run_id, run["scope_revision"])
+    # D6: each seed's own semantic request, in seed order, after the chain chose its first seeds from the question's
+    # page and before the keyword pages; an unseeded plan has none, so its indexes are unchanged.
+    for spec in plan.get("seed_semantic") or []:
+        key = seed_key(spec)
+        result, _ = await send_page(spec, key, 0, FIRST_PAGE, 0, None, spec["limit"], 0, request_index, "single_page")
+        if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
+            step = store.step(run_id, key, "provider_search:openalex")
+            if step["status"] in ("pending", "running"):
+                store.finish_step(step["id"], "cancelled", error_code="deadline",
+                                  output={"stop_reason": "deadline", "result_count": 0})
+        request_index += 1
+        consumer = flow._fast_consumers.get(run_id)
+        if consumer:
+            consumer.notify()
+        flow._checkpoint(run_id, run["scope_revision"])
 
     async def s2_page():
         if plan["s2_bulk"] is not None:

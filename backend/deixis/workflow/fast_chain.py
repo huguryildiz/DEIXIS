@@ -15,7 +15,7 @@ from deixis.providers import facade
 from deixis.providers.common import FIRST_PAGE
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import transaction
-from deixis.workflow import chaining, fast_path, ranking, seed_match, small_batch
+from deixis.workflow import chaining, fast_path, fast_search, ranking, seed_match, small_batch
 
 
 def work_id(value):
@@ -125,7 +125,9 @@ class Round:
                 break
         return seeds
 
-    def choose(self, identities, origin, previous=()):
+    def choose(self, identities, origin, previous=(), accepted=None):
+        """With `accepted` (a version 2 plan's first choice, D6), a work counts only through a version the question's
+        request itself accepted."""
         chosen = []
         # An OpenAlex identity is a key too, so the seed PDF's own record is never chosen again under another title.
         seen = {key for seed in previous for key in (seed["work_id"], "title:" + seed["title_key"], "oa:" + seed["openalex_id"])}
@@ -134,7 +136,7 @@ class Round:
             seen |= {source["work_id"], "title:" + chaining.norm_title(source["title"])}
         for oid, raw, digest in identities:
             svid = self.store.find_source_by_identifier("openalex", oid)
-            if not svid:
+            if not svid or (accepted is not None and svid not in accepted):
                 continue
             source = self.store.source(svid)
             title = chaining.norm_title(source["title"])
@@ -161,7 +163,13 @@ class Round:
             payload, digest = self.payload(row[0] if row else None)
             identities = [(oid, raw, digest) for raw in payload.get("results", []) if (oid := work_id(raw.get("id")))]
             previous = self.pdf_seeds()
-            seeds = previous + self.choose(identities, "semantic", previous)
+            accepted = None
+            if fast_search.plan_version(self.store, self.run) == 2:
+                # D6: only what the question's request accepted, never a record beyond its limit that the library
+                # already held, nor one a seed's own request brought.
+                accepted = set(((step or {}).get("output") or {}).get("accepted_source_version_ids") or []
+                               if step and step["status"] == "succeeded" else [])
+            seeds = previous + self.choose(identities, "semantic", previous, accepted)
             return {"seeds": seeds, "missing": self.policy["chain_seeds"] - len(seeds),
                     "semantic_status": step["status"] if step else "missing", "payload_sha256": digest}
         seeds = self.save("fast_chain:seeds", snapshot)["seeds"]
@@ -186,7 +194,8 @@ class Round:
             query, blocks = ranking.query_vocabulary(self.scope, self.vocabulary, {})
             verified = ranking.seed_rows(self.store, self.run, self.scope, versions, {})
             ranked = ranking.rank_pool(pool, verified, query, blocks, model, scores, reason,
-                                       ranking.joint_terms(self.store, self.scope, self.vocabulary))
+                                       ranking.joint_terms(self.store, self.scope, self.vocabulary),
+                                       fast_search.graph_rule(self.store, self.run))
             identities = []
             for svid in ranked["fused"]:
                 for version in sorted(by_work[versions[svid]["work_id"]], key=lambda v: (v["id"] != svid, v["id"])):

@@ -164,6 +164,21 @@ def graph_scores(pool: list[dict[str, Any]], seeds: list[dict[str, Any]]) -> dic
     return scores
 
 
+def graph_scores_v2(pool: list[dict[str, Any]], seeds: list[dict[str, Any]], pdfs: list[dict[str, Any]],
+                    cited_twice: bool = False) -> dict[str, float]:
+    """`seed_max_v2` (D6): `graph_scores` over the user's and the code's seeds, plus the seed PDFs' contribution taken
+    from the one PDF nearest the record (`max`), so nearness to several seed PDFs is not added up. `cited_twice` counts
+    a seed's citation of the record once more, per seed, as the frozen list's second pass does (D246)."""
+    def one(row: dict[str, Any], seed: dict[str, Any]) -> float:
+        if same_work(seed, row):
+            return 0.0
+        mine, own, theirs = row["references"] or frozenset(), row["own_ids"], seed["references"] or frozenset()
+        value = len(mine & theirs) / math.sqrt(len(mine) * len(theirs)) if mine and theirs else 0.0
+        return value + bool(seed["own_ids"] & mine) + bool(own & theirs) * (2 if cited_twice else 1)
+    return {row["id"]: sum(one(row, seed) for seed in seeds) + max((one(row, pdf) for pdf in pdfs), default=0.0)
+            for row in pool}
+
+
 def comparison_question(*texts: str | None) -> bool:
     """Whether any of these question texts holds a comparison word (D226)."""
     return any(COMPARISON_WORDS & set(words(text)) for text in texts if text)
@@ -466,12 +481,14 @@ def pool_rows(store: Any, research_id: str, revision: int) -> tuple[dict[str, di
 def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_words: set[str],
               blocks: dict[str, list[str]], embedding_model: str | None,
               similarities: dict[str, float], off_reason: str | None = None,
-              compared_terms: list[str] | None = None) -> dict[str, Any]:
+              compared_terms: list[str] | None = None, graph_rule: str = "sum_v1") -> dict[str, Any]:
     """The pure part of `rank_records`: every signal's ranks and the three orders, for these pool rows and seeds.
 
     No store is read and nothing is written, so the keyword ranking and the chain's ranking (D95), which runs this
     over the pool and the chained works together, are one computation. The joint signal runs only when
     `compared_terms` (from `joint_terms`) holds two or more forms (D226); otherwise the orders are what they were.
+    `graph_rule` comes from the run's frozen plan (D6): under `seed_max_v2` the seed PDFs take no code seed's place
+    and count by the nearest one (`graph_scores_v2`); `sum_v1` is the rule before D6.
     """
     in_pool = {row["id"]: row for row in pool}
     scores = {"bm25": bm25_scores(pool, query_words), "blocks": block_scores(pool, blocks)}
@@ -480,7 +497,9 @@ def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_
     verified_works = {row["work_id"] for row in verified}
     code = [in_pool[rid] for rid in fuse(ranks, ("bm25", "blocks")) if in_pool[rid]["work_id"] not in verified_works
             and not any(same_work(seed, in_pool[rid]) for seed in verified)]
-    graph_seeds = verified + code[: max(0, GRAPH_SEEDS - len(verified))]
+    pdfs = [row for row in verified if row.get("seed_pdf")] if graph_rule == "seed_max_v2" else []
+    others = [row for row in verified if not any(row is pdf for pdf in pdfs)]
+    graph_seeds = others + code[: max(0, GRAPH_SEEDS - len(others))] + pdfs
 
     reasons: dict[str, str] = {}
     if verified:
@@ -488,7 +507,8 @@ def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_
     else:
         reasons["tfidf"] = "no_verified_seeds"  # SW7.5: with unverified seeds the signal is left out entirely
     if any(seed["references"] for seed in graph_seeds):
-        scores["graph"] = graph_scores(pool, graph_seeds)
+        scores["graph"] = (graph_scores_v2(pool, graph_seeds[:len(graph_seeds) - len(pdfs)], pdfs) if pdfs
+                           else graph_scores(pool, graph_seeds))
     else:
         reasons["graph"] = "no_seed_with_references"
     forms = joint_forms(compared_terms or [])
@@ -544,8 +564,9 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     verified = seed_rows(store, run, scope, versions, in_pool)
     from deixis.workflow import fast_path
     similarities = fast_path.ranking_similarities(store, run, embedding_model) if embedding_model else {}
+    from deixis.workflow.fast_search import graph_rule
     ranked = rank_pool(pool, verified, query_words, blocks, embedding_model, similarities, off_reason,
-                       joint_terms(store, scope, vocabulary))
+                       joint_terms(store, scope, vocabulary), graph_rule(store, run))
     ranks, reasons, graph_seeds = ranked["ranks"], ranked["reasons"], ranked["graph_seeds"]
 
     step = store.step(run["id"], "ranking", "code:ranking")
@@ -557,7 +578,8 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                            "available": sum(available for _, available in ranks.get(name, {}).values())}
                     for name in SIGNALS},
         "seeds": sorted(([{"source_version_id": seed["id"], "kind": "verified"} for seed in verified]
-                         + [{"source_version_id": seed["id"], "kind": "code"} for seed in graph_seeds[len(verified):]]),
+                         + [{"source_version_id": seed["id"], "kind": "code"} for seed in graph_seeds
+                            if not any(seed is row for row in verified)]),
                         key=lambda seed: seed["source_version_id"]),
         # SW7.4 asks for this share with every ranking: more than half the measured pool had no list at all.
         "no_reference_list": len(no_references),

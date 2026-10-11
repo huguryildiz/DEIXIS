@@ -8,12 +8,13 @@
 - Tohum PDF artık aramayı yönlendiriyor (11 Eki, D2): PDF OpenAlex'te bulunursa atıf zincirinin ilk tohumu olur, benzer makale araması ve sorgu yazımı PDF'i de okur, sıralama onu doğru tanır. Sahte verili testlerle doğrulandı; gerçek sorularda faydası ölçülmedi.
 - Yalnız eklenen PDF'lerle cevap artık PDF'leri geniş okuyor (11 Eki, D4): önce her PDF'ten en çok 6 pasaj gidiyordu, şimdi 48 pasajlık sınır PDF'ler arasında bölünüyor ve kaynakça parçaları sona kalıyor. Dört canlı koşuda (gpt-5.6-luna, her biri tek koşu) dört cevap da yapısal kontrolden geçti; iddiaları insan kontrol etmedi.
 - Birden çok tohum PDF ve Zotero (11 Eki, D3): en çok 5 PDF birlikte aramayı yönlendiriyor; yüklenen PDF'ler ve Zotero PDF'leri aynı yoldan geçiyor, yalnız Zotero koleksiyonuyla başlanınca da arama kendiliğinden başlıyor. Zotero kaydının DOI'si, kapağı boş PDF'lerin de eşleşmesini sağlıyor. Araştırma sayfası her PDF için ne işe yaradığını yazıyor. Canlı ölçüm (11 Eki, 3 soru, tek koşu): PDF'ler 10'da 9 doğru makaleyle eşleşti, yanlış yok; 1 tohum hedefleri biraz öne taşıdı, 2–3 tohum iki soruda geriletti. Dondurulmuş kurala göre "yardımı gösterilemedi"; aynı ölçümde OpenAlex'in 1.500 karakter sınırı hatası bulunup düzeltildi.
+- Tohumlar artık soruyu bastırmıyor (11 Eki, D6, kod): soru OpenAlex'e tohumsuzdaki gibi kendi isteğiyle gidiyor, her tohum ayrı bir benzer-makale isteğiyle yeni aday getiriyor. Zincirin ilk tohumları yalnız sorunun kendi sonuçlarından seçiliyor. Sıralamada tohum PDF'leri soruya göre seçilen tohumların yerini almıyor, birden çok tohuma yakın olmak fazladan puan getirmiyor. Tohumsuz arama ve eski kuralla donmuş koşular değişmedi. Sahte verili testlerle doğrulandı; hedefleri öne taşıyıp taşımadığı henüz ölçülmedi (18 koşuluk canlı ölçüm sırada).
 - Arayüz yeni tasarıma geçti (11 Eki, D5): mockup v24'ün görünümü 7 parçada uygulamaya taşındı (renkler ve yazı tipleri, sol menü, ana sayfa ve yazma kutusu, araştırma sayfası, yan paneller, kaynaklar/kuyruk/kanıt tablosu, kütüphane/ayarlar/çöp). Yapı ve davranış aynı; arkasında backend olmayan mockup düğmeleri eklenmedi. Mockup ile ekran görüntüsü kıyası 17 hata buldu, hepsi düzeltildi; 39 karar maddesinden 14'ü mockup'a uyarlandı, 25'i bilerek bırakıldı (`.local/design/port-visual-diff.md`). Tarayıcı testleri 210/210; her parçayı Sol inceledi. Ertelenen: sağ sütun, kütüphanenin üç bölmeli düzeni, ilk kurulum kartı.
 - Sahip uygulamayı gözle kontrol ediyor; bulduğu sorunlar sırayla düzeltilir. P10 (macOS paketi) bu kontrol bitene kadar bekliyor.
 
 ## Sıradaki
 
-1. Sahibin gözle kontrolü ve bulduğu düzeltmeler.
+1. Sahibin gözle kontrolü ve bulduğu düzeltmeler. Yanında: D6'nın canlı ölçümü (3 soru × tohumsuz/1/3 tohum × 2 koşu, OpenAlex günlük kotası yenilenince, okul VPN'i açıkken).
 2. P10: macOS paketi (plan yerelde, `.local/p10-plan.md`); ardından arama işi (aşağıda "Arama").
 
 ## Baseline (10 Eki)
@@ -43,7 +44,7 @@
 
 ### Ölçülmedi (gerçek model ya da gerçek kullanım gerekiyor)
 
-- Tohum PDF (D2, D3): eşleştirmenin doğruluğu ve birden çok tohumun katkısı ve tohumun hedefleri ilk 20'ye taşıyıp taşımadığı ölçülmedi; plan 3 soru × tohumlu/tohumsuz canlı koşu öneriyor (`.local/seed-pdf-plan.md`).
+- Tohum PDF (D2, D3, D6): D3 kodu tek koşuyla ölçüldü (yukarıda); D6'nın hedefleri ilk 50'ye taşıyıp taşımadığı ve süreye etkisi ölçülmedi. Plan 18 koşu (`.local/seed-search-plan.md`, S4).
 - Rapor kalitesi: tek gerçek raporda (H9e) çoğu ölçüt aralık dışında; tablo hücreleri bölüm girdisinde kesiliyor, çok parçalı iddiada çapa tek parçayı taşıyor.
 - Denklem, soy zinciri, kill-search'ün en yakın işleri bulması ve gerçek Codex ile çökme kurtarma ölçülmedi; rapor düzenlemede 18 işlemden 5'i ölçüldü; sahibin günlük kullanım kaydı yok. Yayımlanmış bir makalenin fikri aday diye verilince kill-search'ün onu bulup bulmadığı denenmedi.
 

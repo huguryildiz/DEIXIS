@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, ChevronRight, FileText, FileUp, ListMinus, LoaderCircle, Pause, PencilLine, Play, Search, Sparkles, X } from 'lucide-react'
+import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Inbox, Lightbulb, ListMinus, LoaderCircle, Pause, PencilLine, Play, Search, Sparkles, Table2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
 import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, seedSkipText, seedUseText } from './labels'
 import { PassageSheet } from './PassageSheet'
@@ -35,6 +35,8 @@ import { ExportLinks, ExportMenu } from './research/ExportMenu'
 import { RevisionForm } from './research/RevisionForm'
 import { SelectionBar } from './research/SelectionBar'
 import { SourceList, type StateFilter } from './research/SourceList'
+import { SplitPanel, StackPanel } from './research/SplitPanel'
+import { PanelStackContext, panelFromSegment, usePanelStack, usePhone, URL_PANELS } from './research/usePanelStack'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const TRANSCRIPT_KINDS = new Set<RunKind>(['discovery', 'pdf_collection', 'fulltext_fetch', 'fulltext_adjudication', 'pdf_ocr', 'answer', 'report', 'review'])
@@ -94,7 +96,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [titleDraft, setTitleDraft] = useState('')
   const [error, setError] = useState('')
   const toast = useToast()
-  const [tab, setTab] = useState(initialTab === 'sources' || initialTab === 'queue' || initialTab === 'waiting' || initialTab === 'evidence' || initialTab === 'followup' || initialTab === 'candidates' || initialTab === 'artifacts' || initialTab === 'activity' ? initialTab : 'answer')
+  // The tabs became a side panel beside the thread (R10): the URL's last segment names the open panel, old tab names included.
+  const panels = usePanelStack(panelFromSegment(initialTab))
+  const panel = panels.current
+  const phone = usePhone()
   const [candidateCount, setCandidateCount] = useState<number | null>(null)
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null)
   const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean; reportCitation?: boolean } | null>(null)
@@ -107,8 +112,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [sourceFilter, setSourceFilter] = useState<StateFilter>('all')
   // One work the audit sample sent the person to (slice 20): the Sources list shows that work alone, by its id.
   const [sourceFocus, setSourceFocus] = useState<string | null>(null)
-  // Leaving the Sources tab ends that focus: coming back shows the whole list.
-  const goTab = (next: string) => { if (next !== 'sources') setSourceFocus(null); setTab(next) }
+  const openPanel = panels.open
   const [pdfFinding, setPdfFinding] = useState<string | null>(null)
   const [waitingFiles, setWaitingFiles] = useState<File[] | null>(null)
   const takeWaitingFiles = useCallback(() => setWaitingFiles(null), [])
@@ -130,14 +134,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const sourceFileInput = useRef<HTMLInputElement>(null)
   const replaceFileInput = useRef<HTMLInputElement>(null)
   const firstEvent = useRef<number | null>(null)
-  const tabsRef = useRef<HTMLDivElement>(null)
   // A run stopped for key terms sends the user here, to the one field that answers it.
   const keyTerms = useRef<HTMLInputElement>(null)
-  const jumped = useRef(false)
   const lastRun = useRef<{ id: string; status: RunStatus } | null>(null)
   // Runs another toast already announced when they were opened (a person's file whose attach opened its reading, 18b).
   const announcedRuns = useRef(new Set<string>())
   const titleInput = useRef<HTMLTextAreaElement>(null)
+  const moreButton = useRef<HTMLButtonElement>(null)
   // An edit session ends once: Enter, Escape or the blur that follows either one must not save a second time.
   const titleEditDone = useRef(true)
   const titleEditingRef = useRef(false)
@@ -176,13 +179,29 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const modelText = useModelText()
 
   const loaded = view !== null
+  // The open panel is written to the URL without a navigation, so the page is not opened again.
+  const urlPanel = [...panels.entries].reverse().find(entry => URL_PANELS.has(entry.name))?.name
   useEffect(() => {
-    // Opened at a tab (e.g. from quick find): bring the tabs into view and put keyboard focus on the chosen tab.
-    if (!loaded || !initialTab || jumped.current) return
-    jumped.current = true
-    tabsRef.current?.scrollIntoView({ block: 'start' })
-    tabsRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus({ preventScroll: true })
-  }, [loaded, initialTab])
+    const hash = `#/research/${id}${urlPanel ? `/${urlPanel}` : ''}`
+    if (window.location.hash !== hash) window.history.replaceState(window.history.state, '', hash)
+  }, [id, urlPanel])
+  // A link to this research's panel (e.g. "Open it in Awaiting your decision") opens that panel here.
+  useEffect(() => {
+    const onHash = () => {
+      const [hashId, segment] = window.location.hash.replace(/^#\/?research\//, '').split('/')
+      const name = hashId === id ? panelFromSegment(segment) : null
+      if (name) openPanel(name, { fresh: true })
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [id, openPanel])
+  // Leaving the Sources panel ends the audit sample's focus and the chosen rows: coming back shows the whole list.
+  const sourcesOpen = panels.entries.some(entry => entry.name === 'sources')
+  const [sourcesWereOpen, setSourcesWereOpen] = useState(sourcesOpen)
+  if (sourcesWereOpen !== sourcesOpen) {
+    setSourcesWereOpen(sourcesOpen)
+    if (!sourcesOpen) { setSourceFocus(null); setPicked([]) }
+  }
 
   useEffect(() => {
     if (!loaded) return
@@ -221,9 +240,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   }, [needsOcr, toast])
 
   useEffect(() => {
-    if (tab !== 'activity') return
+    if (panel !== 'activity') return
     api.events(id).then(setEvents).catch(e => toast('error', t('Could not load activity: {error}', { error: errorText(e) })))
-  }, [tab, id, view?.last_event_id, toast])
+  }, [panel, id, view?.last_event_id, toast])
 
   // Runs finish in the background, often while another tab is open: announce each status change of the latest run.
   useEffect(() => {
@@ -256,25 +275,6 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       case 'queued': case 'running': if (previous.status === 'paused') toast('success', t('{label} resumed.', { label })); break
     }
   }, [view, toast])
-
-  // On a narrow screen the tab strip scrolls sideways: bring the selected tab into it. Only the strip scrolls, never the page.
-  useEffect(() => {
-    const list = tabsRef.current?.querySelector<HTMLElement>('[data-slot=tabs-list]')
-    if (!list) return
-    const reveal = () => {
-      const active = list.querySelector<HTMLElement>('[role=tab][aria-selected=true]')
-      if (!active) return
-      const strip = list.getBoundingClientRect()
-      const box = active.getBoundingClientRect()
-      if (box.left < strip.left) list.scrollLeft -= strip.left - box.left + 16
-      else if (box.right > strip.right) list.scrollLeft += box.right - strip.right + 16
-    }
-    reveal()
-    // The strip also narrows when the window does.
-    const observer = new ResizeObserver(reveal)
-    observer.observe(list)
-    return () => observer.disconnect()
-  }, [tab, loaded])
 
   async function act(action: () => Promise<unknown>, success?: string, undo?: ToastAction) {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -424,7 +424,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const created = await api.createTable(id, { title: t('Evidence table'), rows: inSourceOrder(ids).map(s => s.source_version_id) }, crypto.randomUUID())
     setPicked([])
     setFocusTable(created.table.id)
-    goTab('evidence')
+    openPanel('table')
   }, t(ids.length === 1 ? 'Table started with {n} row.' : 'Table started with {n} rows.', { n: ids.length }))
   const askTableStart = (ids: string[]) => {
     const notIncluded = inSourceOrder(ids).filter(s => workState(s) !== 'included').length
@@ -436,7 +436,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     await api.addTableRows(id, table.id, inSourceOrder(ids).map(s => s.source_version_id), current.table.version)
     setPicked([])
     setFocusTable(table.id)
-    goTab('evidence')
+    openPanel('table')
   }, t('Rows added to {title}.', { title: table.title }))
 
   const ScopeIcon = scopeOptions[view.scope.source_scope].icon
@@ -454,37 +454,37 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // The stored title is the question cut to 160 characters until a valid answer names the research (D36); until then show it whole.
   const heading = view.scope.question.startsWith(view.research.title) ? view.scope.question : view.research.title
   // Each count is the way into the evidence it describes; the selection filter lives here so a count can set it.
-  const showSources = (filter: StateFilter) => { setSourceFocus(null); setSourceFilter(filter); goTab('sources'); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  const showSources = (filter: StateFilter) => { setSourceFocus(null); setSourceFilter(filter); openPanel('sources') }
   // An abstract-stage work of the audit sample is chosen with the source list's own controls: the list opens at that
   // work alone, found by its id (two works can share a title).
   const showInSources = (workId: string) => { showSources('all'); setSourceFocus(workId) }
-  const showAnswer = () => { goTab('answer'); requestAnimationFrame(() => document.getElementById('research-answer')?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })) }
+  const showAnswer = () => { panels.setWide(false); requestAnimationFrame(() => document.getElementById('research-answer')?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })) }
   // Reports are the research's artifacts: every answer that passed validation, newest first, with the number and title saved with it.
   const reports = view.answers.filter(a => a.status === 'structurally_valid').map(a => ({ answer: a, version: a.report_version ?? 0, title: a.report_title ?? heading }))
   const latestEvidenceReportRun = view.runs.find(r => r.kind === 'report' && r.target?.report_id === view.reportRuns[0]?.id)
-  // The latest report's sheet lives in its card on the Answer tab; from any other tab, or for an older version, it opens here.
-  const olderReport = reports.find(r => r.answer.id === openReportId && (r.answer.id !== answer?.id || tab !== 'answer'))
-  const openTable = (tableId: string) => { setFocusTable(tableId); goTab('evidence'); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  // The latest report's panel belongs to its card in the thread; an older version's panel opens from here.
+  const olderReport = reports.find(r => r.answer.id === openReportId && r.answer.id !== answer?.id)
+  const openTable = (tableId: string) => { setFocusTable(tableId); openPanel('table') }
   // Table cards sit under the report card, or at the end of the conversation before the first answer.
   const tableCards = tables && tables.length > 0 && <div className="table-artifacts">{tables.map(table => <TableCard key={table.id} table={table} onOpen={() => openTable(table.id)} />)}</div>
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
   // A research whose current search finished may answer with nothing included: the answer records that (SW22).
   const answersWithoutInclude = view.scope.discovery_completed === true
   const queueCount = (view.counts.queue ?? 0) + (view.counts.look_again ?? 0)
-  const showQueue = () => { goTab('queue'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  const showQueue = () => openPanel('queue')
   // Files dropped on the PDF panel of an sw research go to the waiting view's version-checked match (slice 18a).
   const waitingCount = view.counts.waiting_for_pdf ?? 0
-  const dropForWaiting = (files: File[]) => { setWaitingFiles(files); goTab('waiting'); setPicked([]); tabsRef.current?.scrollIntoView({ block: 'start' }) }
+  const dropForWaiting = (files: File[]) => { setWaitingFiles(files); openPanel('pdfs') }
   // The revision form stays at the end of the page; the top row only takes the person there.
   const reviseQuestion = () => {
     const field = document.getElementById('revise-question')
     field?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })
     field?.focus({ preventScroll: true })
   }
-  return <section className="research-view legacy-research">
+  return <PanelStackContext.Provider value={panels}><section className="research-view legacy-research">
     {/* One 46px row carries the title, the live run and its controls, and the research-level actions, so they reach every tab.
         A table run is controlled on the Evidence tab above its table; here its chip only links there. */}
-    <div className={`research-topbar${titleEditing ? ' is-editing' : ''}`}>
+    <div className={`research-topbar${titleEditing ? ' is-editing' : ''}`} inert={Boolean(phone && panel)}>
       <div className="research-topbar-title">
         {titleEditing
           /* While the title is being edited the heading gives way to the field: a heading whose whole content is a field has no
@@ -512,13 +512,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           ? `${t('Enter saves, Escape cancels')} · ${t('{count} of 160 characters', { count: String(titleDraft.length) })}`
           : t('Enter saves, Escape cancels')}
       </span>}
-      {candidateRun && tab !== 'candidates' && <button type="button" className="run-chip" aria-label={t('Open the Candidates tab to control this run')} onClick={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); goTab('candidates') }}>
+      {candidateRun && panel !== 'cands' && <button type="button" className="run-chip" aria-label={t('Open the Candidates panel to control this run')} onClick={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); openPanel('cands') }}>
         <span className={`run-chip-dot${ACTIVE.has(candidateRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[candidateRun.kind])} · {t(runStatusLabels[candidateRun.status])}<ChevronRight size={13} aria-hidden />
       </button>}
-      {watchRun && tab !== 'followup' && <button type="button" className="run-chip" aria-label={t('Open the Follow-up tab to control this run')} onClick={() => goTab('followup')}>
+      {watchRun && panel !== 'watch' && <button type="button" className="run-chip" aria-label={t('Open the Follow-up panel to control this run')} onClick={() => openPanel('watch')}>
         <span className={`run-chip-dot${ACTIVE.has(watchRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels.watch_check)} · {t(runStatusLabels[watchRun.status])}<ChevronRight size={13} aria-hidden />
       </button>}
-      {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? tab !== 'evidence' && <button type="button" className="run-chip" title={t('Open the Evidence tab to control this run')} onClick={() => { goTab('evidence'); setPicked([]) }}>
+      {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? panel !== 'table' && <button type="button" className="run-chip" title={t('Open the Evidence table panel to control this run')} onClick={() => openPanel('table')}>
         <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
       </button>
       : run && run.kind !== 'watch_check' && !CANDIDATE_KINDS.has(run.kind) && (active || run.status === 'paused') && <div className="run-strip">
@@ -532,10 +532,25 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         title={t('The model names the research from its question and included sources, in at most 15 words.')}><Sparkles size={14} aria-hidden /><span className="research-topbar-label">{t('Suggest a short title')}</span></Button>}
       <Button variant="ghost" size="sm" className="research-topbar-action research-revise" title={t('Revise question')} onClick={reviseQuestion}><PencilLine size={14} aria-hidden /><span className="research-topbar-label">{t('Revise question')}</span></Button>
       <ExportMenu researchId={id} included={included > 0} cited={view.counts.cited > 0} prisma={Boolean(view.counts.flow)} />
+      {/* Until the rail (S11) and the steps (S9) open their panels, this menu reaches every panel the tabs used to show. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button ref={moreButton} variant="ghost" size="icon-sm" className="research-topbar-more" aria-label={t('Research actions')} title={t('Research actions')} />}><Ellipsis size={16} aria-hidden /></DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="research-export-menu w-auto" finalFocus={false}>
+          {([['sources', 'Sources', BookOpen, view.sources.length], ['queue', 'Awaiting your decision', Inbox, queueCount], ['pdfs', 'Get more full text', FileText, waitingCount],
+            ['table', 'Evidence table', Table2, tables?.length ?? null], ['watch', 'Follow-up', Clock, followupCount.count], ['cands', 'Candidates', Lightbulb, candidateCount], ['activity', 'Activity', Clock, null]] as const)
+            .map(([name, label, Icon, count]) => <DropdownMenuItem key={name} className="research-export-item" onClick={() => openPanel(name, { opener: moreButton.current })}>
+              <Icon size={15} aria-hidden /><span>{t(label)}</span>{count !== null && <span className="research-tab-count">{count}</span>}
+            </DropdownMenuItem>)}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
 
+    <div className={`research-split${panel ? ' has-panel' : ''}${panel && panels.wide ? ' is-wide' : ''}`}>
+    {/* The thread scrolls on its own; the artifacts rail (S11 fills it) sits beside it while no panel is open. */}
+    <div className="research-thread-col" inert={Boolean(phone && panel)}>
+    <div className="research-thread-grid">
     <div className="research-body">
-    {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the tab that can show it. Scope and depth close the line. */}
+    {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the panel that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
       <span className="research-revision">{t('Research')} · {t('revision {n}', { n: view.research.current_scope_revision })}</span>
       {/* A count is shown once it has something to say; a row of zeroes while the run works is noise, not a boundary. */}
@@ -546,136 +561,71 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>
 
-    <div ref={tabsRef}><Tabs className="research-tabs" value={tab} onValueChange={value => { goTab(String(value)); setPicked([]) }}>
-      <div className="research-tabs-bar">
-        <TabsList><TabsTrigger value="answer">{t('Answer')}</TabsTrigger><TabsTrigger value="sources">{t('Sources')} <span className="research-tab-count">{view.sources.length}</span></TabsTrigger><TabsTrigger value="queue">{t('Awaiting your decision')} <span className="research-tab-count">{queueCount}</span></TabsTrigger><TabsTrigger value="waiting">{t('Waiting for your PDF')} <span className="research-tab-count">{waitingCount}</span></TabsTrigger><TabsTrigger value="evidence">{t('Evidence')}{tables && <> <span className="research-tab-count">{tables.length}</span></>}</TabsTrigger><TabsTrigger value="followup">{t('Follow-up')}{(followupCount.loading || followupCount.count !== null) && <span className="research-tab-count" aria-label={followupCount.loading ? t('Loading follow-up') : undefined} title={followupCount.loading ? t('Loading follow-up') : undefined}>{followupCount.loading ? '…' : followupCount.count}</span>}</TabsTrigger><TabsTrigger value="candidates" tabIndex={0}>{t('Candidates')} <span className="research-tab-count" title={candidateCount === null ? t('Loading candidates…') : undefined}>{candidateCount ?? '…'}</span></TabsTrigger><TabsTrigger value="artifacts">{t('Artifacts')} <span className="research-tab-count">{reports.length + view.reportRuns.length + (tables?.length ?? 0)}</span></TabsTrigger><TabsTrigger value="activity">{t('Activity')}</TabsTrigger></TabsList>
-      </div>
-
-      <TabsContent value="answer" className="research-thread">
-        {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
-        <Transcript view={{ ...view, runs: view.runs.filter(r => TRANSCRIPT_KINDS.has(r.kind)) }} modelText={modelText}
-          onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
-          onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
-          onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}
-          queueCount={queueCount} onOpenQueue={showQueue}
-          emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
-          latestAnswer={answer ? <><AnswerBlock eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
-        {!answer && tableCards}
-        {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
-          <span className="report-artifact-preview" aria-hidden="true"><strong>{heading}</strong></span>
-          <span className="report-artifact-copy"><span className="report-artifact-meta"><FileText size={13} aria-hidden />{view.reportRuns[0].status === 'valid' ? t('Evidence report · V{n}', { n: view.reportRuns[0].report_version ?? '' }) : view.reportRuns[0].status === 'draft' ? t('Evidence report · draft') : t('Evidence report · being written')}</span><strong>{heading}</strong>{view.reportRuns[0].status === 'in_progress' && <small role="status">{t(latestEvidenceReportRun?.status === 'paused' ? 'Report paused' : 'The report is being written.')}</small>}</span>
-          <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
-        </button>}
-        {view.scope.source_scope === 'attached_and_academic' && <div className="research-seed">
-          <div><strong>{t('PDFs guiding the search')}</strong>
-            {view.scope.seed_status === 'ready' || (view.scope.seed_status === 'stale' && view.scope.seeds.length)
-              ? <ul className="research-seed-uses">{view.scope.seeds.map(seed =>
-                  <li key={seed.source_version_id}><span>{seed.title}</span>{seedUseText(seed.use)}</li>)}</ul>
-              : <p>{view.scope.seed_status === 'question_only'
-                  ? t('This earlier research searches from the question. Choose PDFs to guide a later search.')
-                  : t('Choose readable PDFs before searching scholarly providers.')}</p>}
+      <div className="research-thread">
+      {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
+      <Transcript view={{ ...view, runs: view.runs.filter(r => TRANSCRIPT_KINDS.has(r.kind)) }} modelText={modelText}
+        onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
+        onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
+        onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}
+        queueCount={queueCount} onOpenQueue={showQueue}
+        emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
+        latestAnswer={answer ? <><AnswerBlock eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
+      {!answer && tableCards}
+      {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
+        <span className="report-artifact-preview" aria-hidden="true"><strong>{heading}</strong></span>
+        <span className="report-artifact-copy"><span className="report-artifact-meta"><FileText size={13} aria-hidden />{view.reportRuns[0].status === 'valid' ? t('Evidence report · V{n}', { n: view.reportRuns[0].report_version ?? '' }) : view.reportRuns[0].status === 'draft' ? t('Evidence report · draft') : t('Evidence report · being written')}</span><strong>{heading}</strong>{view.reportRuns[0].status === 'in_progress' && <small role="status">{t(latestEvidenceReportRun?.status === 'paused' ? 'Report paused' : 'The report is being written.')}</small>}</span>
+        <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
+      </button>}
+      {view.scope.source_scope === 'attached_and_academic' && <div className="research-seed">
+        <div><strong>{t('PDFs guiding the search')}</strong>
+          {view.scope.seed_status === 'ready' || (view.scope.seed_status === 'stale' && view.scope.seeds.length)
+            ? <ul className="research-seed-uses">{view.scope.seeds.map(seed =>
+                <li key={seed.source_version_id}><span>{seed.title}</span>{seedUseText(seed.use)}</li>)}</ul>
+            : <p>{view.scope.seed_status === 'question_only'
+                ? t('This earlier research searches from the question. Choose PDFs to guide a later search.')
+                : t('Choose readable PDFs before searching scholarly providers.')}</p>}
+        </div>
+        {seedCandidates.length > 0 && <fieldset className="research-seed-pick" disabled={busy || active}>
+          <legend className="sr-only">{t('Choose the PDFs that guide the search')}</legend>
+          {seedCandidates.map(candidate => {
+            const checked = tickedSeeds.includes(candidate.source_version_id)
+            return <label key={candidate.source_version_id}>
+              <input type="checkbox" checked={checked} disabled={!checked && tickedSeeds.length >= MAX_SEED_PDFS}
+                onChange={e => setSeedPick(e.target.checked ? [...tickedSeeds, candidate.source_version_id] : tickedSeeds.filter(sourceId => sourceId !== candidate.source_version_id))} />
+              <span>{candidate.title}</span>
+            </label>
+          })}
+          <div className="research-seed-pick-foot">
+            <Button variant="outline" size="sm" disabled={busy || active || !tickedSeeds.length} onClick={() => void saveSeeds(tickedSeeds)}>{t('Use selected PDFs')}</Button>
+            <small>{t('{n} of {max} chosen', { n: tickedSeeds.length, max: MAX_SEED_PDFS })}
+              {tickedSeeds.length >= MAX_SEED_PDFS && seedCandidates.length > MAX_SEED_PDFS ? ` · ${t('untick one to choose another')}` : ''}
+              {active ? ` · ${t('available when the run ends')}` : ''}</small>
           </div>
-          {seedCandidates.length > 0 && <fieldset className="research-seed-pick" disabled={busy || active}>
-            <legend className="sr-only">{t('Choose the PDFs that guide the search')}</legend>
-            {seedCandidates.map(candidate => {
-              const checked = tickedSeeds.includes(candidate.source_version_id)
-              return <label key={candidate.source_version_id}>
-                <input type="checkbox" checked={checked} disabled={!checked && tickedSeeds.length >= MAX_SEED_PDFS}
-                  onChange={e => setSeedPick(e.target.checked ? [...tickedSeeds, candidate.source_version_id] : tickedSeeds.filter(sourceId => sourceId !== candidate.source_version_id))} />
-                <span>{candidate.title}</span>
-              </label>
-            })}
-            <div className="research-seed-pick-foot">
-              <Button variant="outline" size="sm" disabled={busy || active || !tickedSeeds.length} onClick={() => void saveSeeds(tickedSeeds)}>{t('Use selected PDFs')}</Button>
-              <small>{t('{n} of {max} chosen', { n: tickedSeeds.length, max: MAX_SEED_PDFS })}
-                {tickedSeeds.length >= MAX_SEED_PDFS && seedCandidates.length > MAX_SEED_PDFS ? ` · ${t('untick one to choose another')}` : ''}
-                {active ? ` · ${t('available when the run ends')}` : ''}</small>
-            </div>
-          </fieldset>}
-          {view.scope.seed_status === 'stale' && storedSeedIds.length > 0 &&
-            <Button variant="outline" size="sm" disabled={busy || active} onClick={() => void saveSeeds(view.scope.seeds.map(seed => seed.source_version_id), true)}>{t('Use current PDF text')}</Button>}
-          {view.scope.seed_status === 'stale' && <Notice tone="attention">{t('A selected PDF changed or was removed. Select the current PDFs again before searching.')}</Notice>}
-          {view.scope.seed_not_selected.length > 0 &&
-            <Notice tone="info">{t('Only {max} PDFs can guide a search. Left out: {titles}.', { max: MAX_SEED_PDFS, titles: view.scope.seed_not_selected.map(item => item.title).join('; ') })}</Notice>}
-          {view.scope.seed_skipped.length > 0 &&
-            <Notice tone="attention">{t('Not used: {items}.', { items: view.scope.seed_skipped.map(item => `${seedTitle(item.source_version_id)} (${seedSkipText(item.reason)})`).join('; ') })}</Notice>}
-          {view.scope.seed_status === 'ready' && view.scope.seeds.some(seed => seed.page_count != null && seed.text_pages < seed.page_count) &&
-            <Notice tone="attention">{t('Some PDF pages have no extracted text; the search uses only the readable passages.')}</Notice>}
-          {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
-        </div>}
-        {/* Before the first answer, the next step is getting the included sources' PDFs (D49); the panel carries the answer button. */}
-        {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady} act={async (action, success) => { await act(action, success) }} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={dropForWaiting} /> :
-        /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
-           While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */
-        active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
-          <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
-          {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
-          {hasAcademic && (view.search_runs.length
-            ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
-            : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
-        </div><UploadedTextNote semantic={view.semantic} /></>}
-      </TabsContent>
-
-      <TabsContent value="sources">
-        <section className="sources-panel" aria-labelledby="sources-heading">
-        <div className="workspace-pane-head"><div><h2 id="sources-heading">{t('Sources and access')}</h2><p>{t('Only included sources are used when the answer is written. Undecided and excluded sources are left out.')}</p></div>
-          <div className="section-actions">
-            {included > 0 && <ExportLinks researchId={id} sources="included" />}
-            {view.scope.source_scope !== 'academic' && <>
-              <div className="source-add-actions">
-                <Button className="source-action" variant="outline" disabled={busy} aria-expanded={zoteroOpen} onClick={() => setZoteroOpen(open => !open)}><ConnectionIcon id="zotero" />{t('Add from Zotero')}</Button>
-                <Button className="source-action is-primary" variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}><FileUp size={16} />{t('Attach PDF')}</Button>
-              </div>
-            </>}
-          </div></div>
-        {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
-        <EnglishQuestion researchId={id} view={view} busy={busy} onSaved={next => { setView(next); toast('success', t('English sentence saved for this question revision.')) }} />
-        <FlowBlock researchId={id} counts={view.counts} />
-        {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {['completed', 'zero_results'].includes(s.status) ? t(s.status.replace('_', ' ')) : serviceErrorSentence({ kind: serviceKind(s.error?.service_kind ?? s.error?.error_kind ?? s.status, s.error?.http_status), service: providerName(s.provider), resetAt: s.error?.reset_at, effect: view.runs.find(r => r.id === s.run_id)?.status === 'completed' ? 'continued' : undefined })} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
-        {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
-          {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
-          <a href="#/trash">{t('Show in Trash')}</a></p>}
-        <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourceList sources={view.sources} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
-          onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
-          onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
-          onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
-          onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
-          onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} onRereadEquations={(source, assetId) => { void rereadEquations(source, assetId) }} pdfFinding={pdfFinding}
-          ocr={{ tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } }} /></TextRecoveryContext.Provider>
-        {picked.length > 0 && <SelectionBar researchId={id} count={picked.length} busy={busy} active={active} onStartTable={() => askTableStart(picked)} onAddToTable={table => { void addToTable(table, picked) }}
-          onRemove={() => { void askRemoval(picked) }} onClear={() => setPicked([])} />}
-        </section>
-      </TabsContent>
-
-      <TabsContent value="queue">
-        <HumanQueue researchId={id} view={view} dark={dark} onChanged={async () => { await load(); onChanged() }} onShowInSources={showInSources} />
-      </TabsContent>
-
-      <TabsContent value="waiting">
-        <WaitingForPdf researchId={id} view={view} busy={busy} incoming={waitingFiles} onIncomingTaken={takeWaitingFiles} onChanged={async (announced?: string) => { if (announced) announcedRuns.current.add(announced); await load(); onChanged() }} />
-      </TabsContent>
-
-      <TabsContent value="evidence">
-        <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
-      </TabsContent>
-
-      <TabsContent value="followup">
-        <FollowUpView researchId={id} view={view} dark={dark} onReload={followupCount.reload} onChanged={followupChanged} />
-      </TabsContent>
-
-      <TabsContent value="candidates" keepMounted>
-        <CandidatesView researchId={id} view={view} dark={dark} modelText={modelText} selection={candidateSelection} onCount={setCandidateCount} onRunChanged={() => { void load(); onChanged() }} />
-      </TabsContent>
-
-      <TabsContent value="artifacts">
-        <ArtifactsTab reports={reports} tables={tables} reportRuns={view.reportRuns} heading={heading} onOpenReport={setOpenReportId} onOpenEvidenceReport={setOpenEvidenceReportId} onOpenTable={openTable} />
-      </TabsContent>
-
-      <TabsContent value="activity">
-        <ActivityLog events={events} />
-      </TabsContent>
-    </Tabs></div>
-    {/* Outside the tabs: the answer's PDF suggestions attach through the same picker as the Sources tab. */}
+        </fieldset>}
+        {view.scope.seed_status === 'stale' && storedSeedIds.length > 0 &&
+          <Button variant="outline" size="sm" disabled={busy || active} onClick={() => void saveSeeds(view.scope.seeds.map(seed => seed.source_version_id), true)}>{t('Use current PDF text')}</Button>}
+        {view.scope.seed_status === 'stale' && <Notice tone="attention">{t('A selected PDF changed or was removed. Select the current PDFs again before searching.')}</Notice>}
+        {view.scope.seed_not_selected.length > 0 &&
+          <Notice tone="info">{t('Only {max} PDFs can guide a search. Left out: {titles}.', { max: MAX_SEED_PDFS, titles: view.scope.seed_not_selected.map(item => item.title).join('; ') })}</Notice>}
+        {view.scope.seed_skipped.length > 0 &&
+          <Notice tone="attention">{t('Not used: {items}.', { items: view.scope.seed_skipped.map(item => `${seedTitle(item.source_version_id)} (${seedSkipText(item.reason)})`).join('; ') })}</Notice>}
+        {view.scope.seed_status === 'ready' && view.scope.seeds.some(seed => seed.page_count != null && seed.text_pages < seed.page_count) &&
+          <Notice tone="attention">{t('Some PDF pages have no extracted text; the search uses only the readable passages.')}</Notice>}
+        {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
+      </div>}
+      {/* Before the first answer, the next step is getting the included sources' PDFs (D49); the panel carries the answer button. */}
+      {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady} act={async (action, success) => { await act(action, success) }} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={dropForWaiting} /> :
+      /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
+         While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */
+      active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
+        <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
+        {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
+        {hasAcademic && (view.search_runs.length
+          ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
+          : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
+      </div><UploadedTextNote semantic={view.semantic} /></>}
+      </div>
+    {/* The answer's PDF suggestions attach through the same picker as the Sources panel. */}
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />
     <input ref={sourceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void uploadToSource(e.target.files); e.target.value = '' }} />
     <input ref={replaceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void reviewReplacement(e.target.files); e.target.value = '' }} />
@@ -684,6 +634,64 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       keyTerms={view.scope.key_terms ?? ''} keyTermsRef={keyTerms}
       onSubmit={(text, terms) => act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
     </div>
+    {!panel && <aside className="research-rail" aria-labelledby="research-rail-title">
+      <h2 id="research-rail-title" className="research-rail-title">{t('Artifacts')} <span className="research-tab-count">{reports.length + view.reportRuns.length + (tables?.length ?? 0)}</span></h2>
+      <ArtifactsTab reports={reports} tables={tables} reportRuns={view.reportRuns} heading={heading} onOpenReport={setOpenReportId} onOpenEvidenceReport={setOpenEvidenceReportId} onOpenTable={openTable} />
+    </aside>}
+    </div>
+    </div>
+    {panel && <SplitPanel stack={panels} phone={phone} />}
+    </div>
+
+    {/* Each former tab is a panel; its content is unchanged and renders into the panel frame while it is open. */}
+    <StackPanel name="sources" title={t('Sources')} icon={BookOpen}>
+      <section className="sources-panel" aria-labelledby="sources-heading">
+      <div className="workspace-pane-head"><div><h2 id="sources-heading">{t('Sources and access')}</h2><p>{t('Only included sources are used when the answer is written. Undecided and excluded sources are left out.')}</p></div>
+        <div className="section-actions">
+          {included > 0 && <ExportLinks researchId={id} sources="included" />}
+          {view.scope.source_scope !== 'academic' && <>
+            <div className="source-add-actions">
+              <Button className="source-action" variant="outline" disabled={busy} aria-expanded={zoteroOpen} onClick={() => setZoteroOpen(open => !open)}><ConnectionIcon id="zotero" />{t('Add from Zotero')}</Button>
+              <Button className="source-action is-primary" variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}><FileUp size={16} />{t('Attach PDF')}</Button>
+            </div>
+          </>}
+        </div></div>
+      {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
+      <EnglishQuestion researchId={id} view={view} busy={busy} onSaved={next => { setView(next); toast('success', t('English sentence saved for this question revision.')) }} />
+      <FlowBlock researchId={id} counts={view.counts} />
+      {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {['completed', 'zero_results'].includes(s.status) ? t(s.status.replace('_', ' ')) : serviceErrorSentence({ kind: serviceKind(s.error?.service_kind ?? s.error?.error_kind ?? s.status, s.error?.http_status), service: providerName(s.provider), resetAt: s.error?.reset_at, effect: view.runs.find(r => r.id === s.run_id)?.status === 'completed' ? 'continued' : undefined })} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
+      {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
+        {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
+        <a href="#/trash">{t('Show in Trash')}</a></p>}
+      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourceList sources={view.sources} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
+        onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
+        onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
+        onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
+        onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
+        onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} onRereadEquations={(source, assetId) => { void rereadEquations(source, assetId) }} pdfFinding={pdfFinding}
+        ocr={{ tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } }} /></TextRecoveryContext.Provider>
+      {picked.length > 0 && <SelectionBar researchId={id} count={picked.length} busy={busy} active={active} onStartTable={() => askTableStart(picked)} onAddToTable={table => { void addToTable(table, picked) }}
+        onRemove={() => { void askRemoval(picked) }} onClear={() => setPicked([])} />}
+      </section>
+    </StackPanel>
+    <StackPanel name="queue" title={`${t('Awaiting your decision')} (${queueCount})`} icon={Inbox}>
+      <HumanQueue researchId={id} view={view} dark={dark} onChanged={async () => { await load(); onChanged() }} onShowInSources={showInSources} />
+    </StackPanel>
+    <StackPanel name="pdfs" title={t('Get more full text')} icon={FileText}>
+      <WaitingForPdf researchId={id} view={view} busy={busy} incoming={waitingFiles} onIncomingTaken={takeWaitingFiles} onChanged={async (announced?: string) => { if (announced) announcedRuns.current.add(announced); await load(); onChanged() }} />
+    </StackPanel>
+    <StackPanel name="table" title={t('Evidence table')} icon={Table2}>
+      <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
+    </StackPanel>
+    <StackPanel name="watch" title={t('Follow-up')} icon={Clock}>
+      <FollowUpView researchId={id} view={view} dark={dark} onReload={followupCount.reload} onChanged={followupChanged} />
+    </StackPanel>
+    <StackPanel name="cands" title={t('Candidates')} icon={Lightbulb} keepMounted>
+      <CandidatesView researchId={id} view={view} dark={dark} modelText={modelText} selection={candidateSelection} onCount={setCandidateCount} onRunChanged={() => { void load(); onChanged() }} />
+    </StackPanel>
+    <StackPanel name="activity" title={t('Activity')} icon={Clock}>
+      <ActivityLog events={events} />
+    </StackPanel>
     <ConfirmDialog open={Boolean(removeTarget)} dark={dark} title={t('Remove PDF?')}
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}
@@ -707,10 +715,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {olderReport && <AnswerBlock eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
       reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf} />}
     {openEvidenceReportId && <ReportView researchId={id} reportId={openEvidenceReportId} view={view} title={heading} dark={dark} onClose={() => setOpenEvidenceReportId(null)}
-      onOpenCandidate={candidate => { setOpenEvidenceReportId(null); setCandidateSelection({ ...candidate, id: candidate.card?.id ?? candidate.id }); goTab('candidates') }}
+      onOpenCandidate={candidate => { setOpenEvidenceReportId(null); setCandidateSelection({ ...candidate, id: candidate.card?.id ?? candidate.id }); openPanel('cands') }}
       onOpenCitation={(passageId, highlightText, expectHighlight) => setPassageTarget({ passageId, highlightText, fromCitation: expectHighlight, reportCitation: true })}
       onChanged={async () => { await load(); onChanged() }} />}
-    <PassageSheet researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} citationLabels={passageTarget?.reportCitation ? { marked: t('Exact text cited in this report'), mark: t('Exact text cited in this report'), unmarked: t('This report citation has no located text anchor, so its passage opens without a mark.') } : undefined} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
+    <PassageSheet asPanel={!passageTarget?.reportCitation} researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} citationLabels={passageTarget?.reportCitation ? { marked: t('Exact text cited in this report'), mark: t('Exact text cited in this report'), unmarked: t('This report citation has no located text anchor, so its passage opens without a mark.') } : undefined} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
       onRestoreSource={svid => { setPassageTarget(null); void act(() => api.restoreSources(id, [svid]), t('Restored to this research.')) }} />
-  </section>
+  </section></PanelStackContext.Provider>
 }

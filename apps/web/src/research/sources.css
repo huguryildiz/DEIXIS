@@ -190,7 +190,6 @@
 .app .sources-panel .selection-bar-actions [data-slot=button]{height:30px;border-radius:7px;font-size:13px}
 @media(max-width:760px){
   .research-facts{gap:6px 16px}
-  .research-tabs [data-slot=tabs-list]{gap:0}
   .source-row{grid-template-columns:1fr}
   .source-search{flex:1 1 100%}
   .workspace-pane-head{align-items:flex-start;flex-direction:column}

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BadgeCheck, BookOpenText, ExternalLink, FileText, Info, Link2, ListMinus, Maximize2, Minimize2, RotateCcw, ScanText, Sigma, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -15,6 +15,8 @@ import { PdfTextDocument, type CitationLabels } from './PdfTextDocument'
 import { AUTHOR_NOTE, readablePassageText } from './pdfText'
 import { Notice } from './Notice'
 import { OccurrenceNotice, StoredPdfNotice } from './occurrence'
+import { StackPanel } from './research/SplitPanel'
+import { usePanels } from './research/usePanelStack'
 
 // Marks every located anchor; overlapping anchors are merged into one mark, and the first mark is scrolled into view.
 export function HighlightedPassageText({ passage, highlightTexts, markLabel }: { passage: Pick<Passage, 'text' | 'kind'>; highlightTexts: string[]; markLabel?: string }) {
@@ -53,7 +55,7 @@ export function HighlightedPassageText({ passage, highlightTexts, markLabel }: {
 // sourceVersionId: open a source rather than a passage (one of `sources`): its PDF text, else its abstract, else its details alone.
 // initialPage: the PDF page a file opened without a passage starts on. citationLabels: the strip's words when the
 // text is opened for something other than an answer's citation (the human queue, slice 17).
-export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void }) {
+export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource, asPanel = false }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void; asPanel?: boolean }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   // The whole extracted text of the PDF a cited passage comes from: undefined while it loads, null when the passage opens alone.
@@ -133,10 +135,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const arxivVersion = sourceAsset?.equations?.route === 'arxiv_source' ? sourceAsset.equations.source?.version ?? null : null
   const pdfUnavailable = removed ? 'The PDF was removed from this source; its passages still open as text.' : 'PDF is not available for this source.'
   const selectionText = { included: 'Included', excluded: 'Excluded', pending: 'Undecided' } as const
-  return <Sheet open={openPassageId !== null || openAssetId !== null || detailsOnly} onOpenChange={open => { if (!open) onClose() }}>
-    <SheetContent className={`detail-sheet source-sheet ${full ? 'is-full' : ''} ${dark ? 'dark' : ''}`}>
-      <SheetHeader><SheetTitle><FileText aria-hidden />{t('Source details')}</SheetTitle>
-        <Button variant="ghost" size="icon-sm" className="sheet-expand" aria-label={t(full ? 'Collapse panel' : 'Expand to full page')} title={t(full ? 'Collapse panel' : 'Expand to full page')} onClick={() => setFull(v => !v)}>{full ? <Minimize2 /> : <Maximize2 />}</Button><SheetDescription className="sr-only">{passage ? t('Cited passage: {locator}', { locator: locatorText(passage) }) : assetText ? t('PDF source') : detailsOnly ? t('Source') : t(error ? 'Unavailable' : 'Loading passage…')}</SheetDescription></SheetHeader>
+  const isOpen = openPassageId !== null || openAssetId !== null || detailsOnly
+  const description = passage ? t('Cited passage: {locator}', { locator: locatorText(passage) }) : assetText ? t('PDF source') : detailsOnly ? t('Source') : t(error ? 'Unavailable' : 'Loading passage…')
+  const content = <>
       <div className="sheet-body">
         {error && <Notice tone="error">{error}</Notice>}
         {!passage && !assetText && !detailsOnly && !error && <p>{t(openAssetId ? 'Loading PDF text…' : 'Loading passage…')}</p>}
@@ -219,6 +220,27 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
         {row.provider_records.length > 0 && <span>{t('Found via')} {row.provider_records.map((id, i) => <Fragment key={id}>{i > 0 && ', '}<b>{providerName(id)}</b></Fragment>)}</span>}
         {row.added_at && <span>{t(row.origin === 'user_upload' ? 'Uploaded {date}' : 'Added {date}', { date: new Date(row.added_at).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short', year: 'numeric' }) })}</span>}
       </footer>}
+  </>
+  // On the research page the source opens as a side panel (mockup `detail`, P1): the panel's Full width replaces the
+  // sheet's expand button, and the PDF view widens the panel as it widened the sheet.
+  if (asPanel) return <SourcePanel open={isOpen} full={full} onFull={setFull} dark={dark} description={description} onClose={onClose}>{content}</SourcePanel>
+  return <Sheet open={isOpen} onOpenChange={open => { if (!open) onClose() }}>
+    <SheetContent className={`detail-sheet source-sheet ${full ? 'is-full' : ''} ${dark ? 'dark' : ''}`}>
+      <SheetHeader><SheetTitle><FileText aria-hidden />{t('Source details')}</SheetTitle>
+        <Button variant="ghost" size="icon-sm" className="sheet-expand" aria-label={t(full ? 'Collapse panel' : 'Expand to full page')} title={t(full ? 'Collapse panel' : 'Expand to full page')} onClick={() => setFull(v => !v)}>{full ? <Minimize2 /> : <Maximize2 />}</Button><SheetDescription className="sr-only">{description}</SheetDescription></SheetHeader>
+      {content}
     </SheetContent>
   </Sheet>
+}
+
+function SourcePanel({ open, full, onFull, dark, description, onClose, children }: { open: boolean; full: boolean; onFull: (full: boolean) => void; dark: boolean; description: string; onClose: () => void; children: ReactNode }) {
+  const stack = usePanels()
+  const setWide = stack?.setWide
+  // A request for the full page (the PDF view asks for it) widens the panel once; Full width then belongs to the panel.
+  const shown = stack?.current === 'detail'
+  useEffect(() => { if (shown && full) { setWide?.(true); onFull(false) } }, [shown, full, setWide, onFull])
+  return <StackPanel name="detail" open={open} onClose={onClose} title={t('Source details')} icon={FileText} className={`source-sheet source-panel${dark ? ' dark' : ''}`}>
+    <p className="sr-only">{description}</p>
+    {children}
+  </StackPanel>
 }

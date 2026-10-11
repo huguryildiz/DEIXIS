@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 import sys
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any, Callable
 
 
 def default_data_dir() -> Path:
@@ -17,6 +18,9 @@ def default_data_dir() -> Path:
     if sys.platform == "win32":
         return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "DEIXIS"
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "deixis"
+
+
+CONTACT_EMAIL_SETTING = "contact_email"
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,12 @@ class Settings:
     # slice 24 measures it; `auto` turns the route on (POSIX only). With `off` no source is requested and no PDF
     # extraction changes; readings already stored stay.
     arxiv_source: str = "off"
+    # Reads one `app_settings` value by key; `create_app` binds it to the store so the contact email the person set
+    # in Settings is found before the environment variable. Unset (tests that build Settings by hand): env only.
+    setting_reader: Callable[[str], Any] | None = field(default=None, compare=False, repr=False)
+
+    def bound_to(self, setting_reader: Callable[[str], Any]) -> "Settings":
+        return replace(self, setting_reader=setting_reader)
 
     @property
     def db_path(self) -> Path:
@@ -78,7 +88,9 @@ class Settings:
 
     @property
     def contact_email(self) -> str | None:
-        return os.environ.get("DEIXIS_CONTACT_EMAIL") or None
+        """The address set in Settings (F15), else DEIXIS_CONTACT_EMAIL."""
+        stored = self.setting_reader(CONTACT_EMAIL_SETTING) if self.setting_reader else None
+        return (stored if isinstance(stored, str) and stored else None) or os.environ.get("DEIXIS_CONTACT_EMAIL") or None
 
 
 def load_dotenv(path: Path) -> set[str]:

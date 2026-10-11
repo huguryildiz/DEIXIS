@@ -645,13 +645,15 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        nonlocal settings
         if issues := skill.integrity_issues():
             raise RuntimeError(f"method package integrity failed: {issues}")
         conn = db.connect(settings.db_path)
         db.migrate(conn)
         store = Store(conn, clock=clock)
         store.recovery_dir = settings.recovery_dir
-        http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent()})
+        settings = settings.bound_to(store.setting)  # the contact email set in Settings is read before the env var (F15)
+        http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent(settings.contact_email)})
         adapter_map = adapters if adapters is not None else {
             "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace"),
             "claude": ClaudeCodeAdapter(workspace=settings.data_dir / "claude-workspace"),
@@ -869,9 +871,11 @@ def create_app(
     async def review_refusal(_: Request, exc: ReviewRefusal):
         return JSONResponse(exc.extra_fields | {"detail": exc.detail, "code": exc.code}, status_code=exc.status_code)
 
+    from deixis.api.shell_routes import register_shell_routes
     from deixis.api.watch_routes import register_watch_routes
     from deixis.workflow.watch.store import WatchRefusal
     register_watch_routes(app)
+    register_shell_routes(app)
 
     @app.exception_handler(WatchRefusal)
     async def watch_refusal(_: Request, exc: WatchRefusal):
@@ -961,7 +965,7 @@ def create_app(
         if cached and not refresh and cached[1] == route and time.monotonic() < cached[0]:
             return cached[2]
         # A fresh connection: a pooled one opened before the route changed could still answer over the old network.
-        async with (nullcontext(http_client) if http_client else httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent()})) as client:
+        async with (nullcontext(http_client) if http_client else httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent(settings.contact_email)})) as client:
             entitled = await scopus.complete_view_entitled(client, key)
         result = {"status": {True: "institutional", False: "none", None: "unknown"}[entitled], "via": "scopus"}
         ttl = INSTITUTIONAL_ACCESS_TTL_SECONDS if entitled is not None else INSTITUTIONAL_ACCESS_RETRY_SECONDS
@@ -970,7 +974,7 @@ def create_app(
 
     @app.get("/api/researches")
     async def list_researches(request: Request) -> list[dict[str, Any]]:
-        return store_of(request).list_researches()
+        return request.app.state.awaiting.annotate(store_of(request), store_of(request).list_researches())
 
     @app.get("/api/library")
     async def library(request: Request) -> dict[str, Any]:

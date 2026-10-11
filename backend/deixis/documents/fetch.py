@@ -30,9 +30,10 @@ USER_AGENT = "DEIXIS/0.1 (local research workspace)"
 PDF_ACCEPT = "application/pdf, */*;q=0.1"
 
 
-def user_agent() -> str:
-    """USER_AGENT with the contact address publishers can write to, when DEIXIS_CONTACT_EMAIL is set."""
-    email = os.environ.get("DEIXIS_CONTACT_EMAIL")
+def user_agent(email: str | None = None) -> str:
+    """USER_AGENT with the contact address publishers can write to: `email` (the one set in Settings), else
+    DEIXIS_CONTACT_EMAIL when that is set."""
+    email = email or os.environ.get("DEIXIS_CONTACT_EMAIL")
     return f"DEIXIS/0.1 (local research workspace; mailto:{email})" if email else USER_AGENT
 
 

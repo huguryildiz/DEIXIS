@@ -622,6 +622,7 @@ export type ResearchSummary = {
   id: string; title: string; question: string; version: number; source_scope: SourceScope; effort: Effort; last_run_status: RunStatus | null
   last_run_kind: RunKind | null
   answer_count: number; followup_new: number; created_at: string; updated_at: string
+  awaiting: AwaitingCounts  // open queue rows and works waiting for the person's PDF, kept apart (S2)
 }
 export type TrashedResearch = { id: string; title: string; trashed_at: string }
 // The Trash page's groups (D50); a trashed research's tables and removed sources go and come back with it and are not listed.
@@ -1376,4 +1377,30 @@ export function subscribe(researchId: string, after: number, onEvent: () => void
   const source = new EventSource(`/api/researches/${researchId}/events/stream?after=${after}`)
   source.onmessage = () => onEvent()
   return () => source.close()
+}
+
+// App-shell endpoints (api/shell_routes.py): the awaiting counts on GET /api/researches, the OS profile name, the
+// institution proxy's label and test, and the contact email. The test states two separate facts; no combined verdict.
+export type AwaitingCounts = { queue: number; pdf: number }
+export type Profile = { full_name: string; initials: string }
+export type ScopusCompleteFact = 'confirmed' | 'not_confirmed' | 'could_not_check'
+export type ProxyTest = {
+  proxy_reachable: boolean; proxy_http_status: number | null
+  proxy_error: 'unresolved' | 'blocked_url' | 'timeout' | 'failed' | null; proxy_error_detail: string | null
+  scopus_complete: ScopusCompleteFact; scopus_configured: boolean
+  address: string; route: string | null; tested_at: string
+}
+export type ProxySettings = {
+  address: string | null; label: string | null; label_default: string | null; label_is_default: boolean
+  test: ProxyTest | null; test_is_current: boolean  // false when the address or the network route changed since the test
+}
+export type ContactEmailSetting = { email: string | null; environment_set: boolean; source: 'setting' | 'environment' | null }
+
+export const shellApi = {
+  profile: () => request<Profile>('/api/profile'),
+  proxySettings: () => request<ProxySettings>('/api/institution-proxy/settings'),
+  saveProxyLabel: (label: string | null) => request<ProxySettings>('/api/institution-proxy/label', json('PUT', { label })),
+  testProxy: () => request<ProxySettings>('/api/institution-proxy/test', { method: 'POST' }),
+  contactEmail: () => request<ContactEmailSetting>('/api/contact-email'),
+  saveContactEmail: (email: string | null) => request<ContactEmailSetting>('/api/contact-email', json('PUT', { email })),
 }

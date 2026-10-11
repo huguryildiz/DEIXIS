@@ -343,24 +343,18 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
       </div>)}
   </div>
 
-  // Home is one centred column: the composer (scope band on top, question, control row), then quiet notes under it.
+  // Home is one centred column. The composer keeps its tree; CSS draws the scope band on top and the control row below.
   return <section className="welcome home">
     <h1 className="sr-only" tabIndex={-1}>{uiLanguage() === 'tr' ? <><em>Sorunuz</em> sizi nereye götürüyor?</> : <>Where does your <em>question</em>{' '}lead?</>}</h1>
+    <p className="intro sr-only">{t('Ask a question. DEIXIS finds publications, lets you choose the sources, and links each claim to a passage you can open.')}</p>
     <form className="composer" onSubmit={e => { e.preventDefault(); void submit() }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); void addFiles(e.dataTransfer.files) }}>
-      <div className="composer-band">
-        <Select value={scope} onValueChange={value => { if (value) setScope(value as SourceScope) }}>
-          <SelectTrigger aria-label={t('Source scope')} title={t('Where DEIXIS looks for sources')}><SelectValue>{(value: string) => { const Icon = scopeOptions[value as SourceScope].icon; return <><Icon size={15} />{t(scopeLabels[value as SourceScope])}</> }}</SelectValue></SelectTrigger>
-          <SelectContent className="intake-select-content has-details" align="start" alignItemWithTrigger={false}>
-            <div className="intake-select-heading" aria-hidden="true">{t('Sources')}</div>
-              {(Object.keys(scopeLabels) as SourceScope[]).map(s => <SelectItem key={s} value={s}><Option icon={scopeOptions[s].icon} title={t(scopeLabels[s])} detail={t(scopeOptions[s].detail)} /></SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
       <label className="composer-label sr-only" htmlFor="research-question">{t('What would you like to investigate?')}</label>
       <Textarea id="research-question" aria-label={t('Research question')} placeholder={t('How is operations research used in molecular communication?')} value={question}
         onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit() } }} />
       {zoteroOpen && <ZoteroPanel busy={busy} action={t('Use this collection')} onClose={() => setZoteroOpen(false)}
         onImport={(source, key, name) => { setZotero({ source, key, name }); setZoteroOpen(false); if (scope === 'academic') setScope('attached_and_academic') }} />}
+      {/* One chip per attachment: the file icon, its name, and its size (or that it guides the search). */}
+      {(files.length > 0 || zotero) && chips}
       {scope === 'attached_and_academic' && files.length === 0 && zotero &&
         <p className="composer-hint">{t('The imported PDFs guide the search.')}</p>}
       <div className="composer-controls">
@@ -378,8 +372,20 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
-          {/* One chip per attachment: the file icon, its name, and its size (or that it guides the search). */}
-          {(files.length > 0 || zotero) && chips}
+          <Select value={scope} onValueChange={value => { if (value) setScope(value as SourceScope) }}>
+            <SelectTrigger className="composer-scope" aria-label={t('Source scope')} title={t('Where DEIXIS looks for sources')}><SelectValue>{(value: string) => { const Icon = scopeOptions[value as SourceScope].icon; return <><Icon size={15} />{t(scopeLabels[value as SourceScope])}</> }}</SelectValue></SelectTrigger>
+            <SelectContent className="intake-select-content has-details" align="start" alignItemWithTrigger={false}>
+              <div className="intake-select-heading" aria-hidden="true">{t('Sources')}</div>
+                {(Object.keys(scopeLabels) as SourceScope[]).map(s => <SelectItem key={s} value={s}><Option icon={scopeOptions[s].icon} title={t(scopeLabels[s])} detail={t(scopeOptions[s].detail)} /></SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={effort} onValueChange={value => { if (value) setEffort(value as Effort) }}>
+            <SelectTrigger aria-label={t('Research depth')} title={t('How much searching and reading a run may do')}><SelectValue>{(value: string) => { const Icon = effortOptions[value as Effort].icon; return <><Icon size={15} />{t(effortLabels[value as Effort])}</> }}</SelectValue></SelectTrigger>
+            <SelectContent className="intake-select-content has-details" align="start" alignItemWithTrigger={false}>
+              <div className="intake-select-heading" aria-hidden="true">{t('Research depth')}</div>
+                {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d}><Option icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={effortDetail(d, limits)} /></SelectItem>)}
+            </SelectContent>
+          </Select>
           {models.length > 0
             ? <button type="button" className="models-summary" aria-expanded={modelsOpen} title={t('Models for this research: answer, literature and reviewer')} onClick={() => setModelsOpen(open => !open)}>
                 <span className="models-summary-label">{t('Models')}<span className="sr-only">: </span></span>
@@ -389,13 +395,6 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
                 <ChevronDown size={14} aria-hidden className="models-summary-chevron" />
               </button>
             : <span className="composer-model" title={connections ? notReadyReasons(connections) : ''}>{t('Models: {state}', { state: t(connections ? 'no connection ready' : 'checking…') })}</span>}
-          <Select value={effort} onValueChange={value => { if (value) setEffort(value as Effort) }}>
-            <SelectTrigger aria-label={t('Research depth')} title={t('How much searching and reading a run may do')}><SelectValue>{(value: string) => { const Icon = effortOptions[value as Effort].icon; return <><Icon size={15} />{t(effortLabels[value as Effort])}</> }}</SelectValue></SelectTrigger>
-            <SelectContent className="intake-select-content has-details" align="start" alignItemWithTrigger={false}>
-              <div className="intake-select-heading" aria-hidden="true">{t('Research depth')}</div>
-                {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d}><Option icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={effortDetail(d, limits)} /></SelectItem>)}
-            </SelectContent>
-          </Select>
         </div>
         <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero)} aria-label={t('Start research')}><ArrowUp size={17} /></Button>
       </div>
@@ -411,7 +410,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
       </div>}
     </form>
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void addFiles(e.target.files); e.target.value = '' }} />
-    <p className="composer-caption"><span>{busy ? t('Saving research…') : caption}</span><span>⌘ / Ctrl + Enter</span></p>
+    <div className="composer-caption"><span>{busy ? t('Saving research…') : caption}</span><span>⌘ / Ctrl + Enter</span></div>
     {connections && !models.length && <Notice tone="attention">{t('No model connection is ready: {reason}. A research needs a model that a connection lists; model steps pause until the chosen connection is ready, and no other model is used instead.', { reason: notReadyReasons(connections) })}</Notice>}
     {error && <Notice tone="error">{error}</Notice>}
   </section>

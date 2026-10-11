@@ -34,41 +34,44 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .app .composer-options{gap:8px;min-width:0}
 
 /* Home: one centred 700px column about 11vh below the top. The composer is a floating box: a band in --accent-deep carries
-   the source scope, then the question, then a control row on the sidebar surface (+, attachments, models, depth, send).
-   Notes and the shortcut sit quietly under it. */
+   the source scope, then the question, then attachments and a control row on the sidebar surface (+, depth, models, send).
+   Notes and the shortcut sit quietly under it. The DOM is the original intake tree: the band is the box's 42px top border
+   (a border, not a pseudo-element or gradient, so contrast checks still resolve every background) and the scope trigger
+   (still inside .composer-options, so Tab order is unchanged) is placed on it absolutely. */
 .welcome.home{display:grid;gap:14px;width:100%;max-width:748px;margin:0 auto 48px;padding:max(0px,calc(11vh - 32px)) 24px 0}
-.app .composer{position:relative;background:var(--raised-surface);border:1px solid var(--accent-deep);border-radius:12px;box-shadow:var(--shadow-float);transition:border-color .15s ease,box-shadow .15s ease}
-.app .composer:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent),transparent 78%),var(--shadow-float)}
-.composer-band{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:11px 11px 0 0;background:var(--accent-deep)}
-/* White on the band: --accent-deep is #2e4877 / #3d5a8f, so white text stays above 4.5:1 even on the hover tint. */
-.app .composer-band [data-slot=select-trigger]{height:28px;gap:7px;padding:0 8px 0 9px;border:1px solid rgb(255 255 255/.24);border-radius:6px;background:rgb(255 255 255/.1);box-shadow:none;color:#fff;font-size:12.5px;font-weight:500}
-.app .composer-band [data-slot=select-trigger]:hover,.app .composer-band [data-slot=select-trigger][aria-expanded=true]{background:rgb(255 255 255/.16)}
-.app .composer-band [data-slot=select-trigger] svg{color:#fff}
-.app .composer-band [data-slot=select-trigger]:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:none}
+.app .composer{position:relative;background:var(--raised-surface);border:1px solid var(--accent-deep);border-top-width:42px;border-radius:12px;box-shadow:var(--shadow-float);transition:border-color .15s ease,box-shadow .15s ease}
+.app .composer:focus-within{border-color:var(--accent);border-top-color:var(--accent-deep);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent),transparent 78%),var(--shadow-float)}
+/* White on the band: --accent-deep is #2e4877 / #3d5a8f, so white text stays above 4.5:1 even on the hover tint.
+   The trigger's own background is opaque (the band mixed with white) so its text contrast does not depend on ::before. */
+.app .composer .composer-options [data-slot=select-trigger].composer-scope{position:absolute;top:-35px;left:7px;max-width:calc(100% - 14px);height:28px;gap:7px;padding:0 8px 0 9px;border:1px solid rgb(255 255 255/.24);border-radius:6px;background:color-mix(in srgb,var(--accent-deep),#fff 10%);box-shadow:none;color:#fff;font-size:12.5px;font-weight:500}
+.app .composer .composer-options [data-slot=select-trigger].composer-scope:hover,.app .composer .composer-options [data-slot=select-trigger].composer-scope[aria-expanded=true]{background:color-mix(in srgb,var(--accent-deep),#fff 16%)}
+.app .composer .composer-options .composer-scope svg,.app .composer .composer-options .composer-scope [data-slot=select-value] svg{color:#fff}
+.app .composer .composer-options .composer-scope:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:none}
 .app .composer textarea{display:block;width:100%;min-height:112px;padding:14px 16px;border:0;border-radius:0;background:transparent;box-shadow:none;color:var(--ink);font-size:15px;line-height:1.55;resize:none;outline:none}
 .app .composer textarea:focus-visible{border:0;box-shadow:none}
 .app .composer textarea::placeholder{color:var(--muted)}
 .app .composer .zotero-panel{margin:0 12px 12px}
-.composer-hint{margin:0;padding:0 16px 10px;color:var(--muted);font-size:12px}
+.composer-hint{margin:0;padding:6px 16px 0;background:var(--sidebar-surface);color:var(--muted);font-size:12px}
 .composer-controls{display:flex;align-items:flex-end;gap:8px;padding:8px 10px;border-top:1px solid var(--line);border-radius:0 0 11px 11px;background:var(--sidebar-surface)}
 .app .composer-controls .composer-options{flex:1;gap:8px}
 .app .composer-models{padding:10px;border-top:1px solid var(--line);background:var(--sidebar-surface);border-radius:0 0 11px 11px}
 .app .composer:has(.composer-models) .composer-controls{border-radius:0}
+/* Attachments (and the Zotero note) open the row area; the controls then continue it without a second hairline. */
+.app .composer :is(.attachments,.composer-hint)~.composer-controls{border-top:0}
 /* Row controls share one quiet look: 30px, hairline border, page surface. */
 .composer-add,.composer-model{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:30px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);padding:0 10px;font-size:13px;white-space:nowrap}
 .app .composer-add{width:30px;padding:0}
 .app .composer-add:hover,.app .composer-add[aria-expanded=true]{background:var(--hover-surface);color:var(--ink)}
 .composer-model{color:var(--muted);font-size:12.5px}
-.app .composer-controls .models-summary{flex:0 1 auto;min-width:0;min-height:30px;margin-left:auto;padding:0 9px 0 10px;background:var(--paper);color:var(--ink-2)}
-.app .composer-controls .composer-model{margin-left:auto}
+.app .composer-controls .models-summary{flex:0 1 auto;min-width:0;min-height:30px;padding:0 9px 0 10px;background:var(--paper);color:var(--ink-2)}
 .app .composer-controls .models-summary:hover,.app .composer-controls .models-summary[aria-expanded=true]{background:var(--hover-surface);color:var(--ink)}
 .app .composer-controls .composer-options [data-slot=select-trigger]{height:30px;gap:6px;padding:0 8px 0 10px;background:var(--paper);color:var(--ink-2);font-size:13px}
 .app .composer-controls .composer-options [data-slot=select-trigger]:hover{background:var(--hover-surface);color:var(--ink)}
 .app .composer .send-button{width:32px;height:32px;flex:none;border-radius:7px;background:var(--accent);color:var(--paper)}
 .app .composer .send-button:hover:not(:disabled){background:color-mix(in srgb,var(--accent),var(--ink) 14%)}
 .app .composer .send-button:disabled{opacity:.45}
-/* Attachments open the control row as a line of small file chips; several PDFs wrap inside that line. */
-.attachments{display:flex;order:-1;flex:1 1 100%;flex-wrap:wrap;gap:6px;min-width:0}
+/* Attachments sit above the controls on the row surface as small file chips; several PDFs wrap. */
+.attachments{display:flex;flex-wrap:wrap;gap:6px;min-width:0;padding:8px 10px 0;border-top:1px solid var(--line);background:var(--sidebar-surface)}
 .attachment-chip{display:flex;align-items:center;gap:2px;min-width:0;max-width:100%;height:28px;padding:0 2px 0 8px;border:1px solid var(--strong-line);border-radius:6px;background:var(--paper)}
 .attachment-chip-main{display:inline-flex;align-items:center;gap:6px;min-width:0;color:var(--ink);font-size:12px}
 .attachment-icon{display:grid;place-items:center;flex:none;color:var(--muted)}
@@ -85,7 +88,8 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
   .attachment-name{max-width:150px}
   .composer-controls{gap:6px;padding:8px}
   .app .composer-controls .composer-options{gap:6px}
-  .app .composer-controls .models-summary{margin-left:0;gap:4px;padding:0 7px 0 8px}
+  .app .composer-controls .models-summary{gap:4px;padding:0 7px 0 8px}
+  .attachments{padding:8px 8px 0}
   .app .composer-controls .composer-options [data-slot=select-trigger]{gap:5px;padding:0 6px 0 8px}
 }
 .model-role{display:inline-flex;align-items:center;gap:4px}

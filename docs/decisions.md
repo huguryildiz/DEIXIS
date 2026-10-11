@@ -4,6 +4,17 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D5 — The interface takes the mockup's look
+Status: accepted (owner 11 Oct 2026, after reviewing the clickable mockup) · Date: 2026-10-11 · Writer: Claude
+Context: The owner reviewed the clickable mockup (claude.ai artifact, v24; local copy `.local/design/elicit-style-mockup/`) and asked for its look in the app. The mockup follows Elicit's layout; DEIXIS keeps its own ink blue (#3b5b9a light, #93acdf dark) where Elicit uses teal. The design guide said not to copy Elicit's visual style, so the guide changes with the code.
+Decision:
+- Colours keep the editorial token names in `index.css` and take the mockup's values: white page, lighter side, hover and selected surfaces, darker ink. New tokens `--ink-2`, `--faint`, `--accent-deep`, `--accent-tint`, `--accent-line`, `--bubble` and `--shadow-float` exist in both themes. `--primary` and `--accent` do not change.
+- Contrast comes before the mockup: no text colour goes below 4.5:1 on a surface it sits on, so `--muted` stays #5b6475 in light, the include and uncertain tones and the abstract colour are a little darker than in the mockup, and `--faint` (icons and hairlines only) is held at 3:1.
+- Inter (`--font-sans`) is the face for the interface and for reading text: claims, passages, source titles and headings. Source Serif 4 (`--font-serif`) is kept for the report title, emphasis inside the report, the report preview card and the PDF first-page text in the queue. Both are bundled npm packages at fixed versions, so the app still works offline. Math stays in KaTeX's own fonts.
+- `.impeccable.md` describes the new look. Citation marks keep the accent tint, not the mockup's yellow.
+- Structure stays: research tabs and their URLs, modal sheets, class names and DOM. Later slices restyle the shell and the screens on top of these tokens. Nothing from the mockup that lacks a backend is built.
+Limits: This changes how the app looks, not what it does. Nobody tested whether the new look is easier to use. The mockup features without a backend listed in the port plan (follow-up chat turns, search-plan editing, usage meters, new export formats and the others) stay out.
+
 ## D4 — An answer over attached PDFs reads them in full width
 Status: accepted (owner 11 Oct 2026: "uygun") · Date: 2026-10-11 · Writer: Claude · Reviewer: gpt-6.1-sol medium (code 6 rounds)
 Context: A live attached-only answer (gpt-5.6-luna, two IEEE PDFs, 77 passages, limit 48) gave the model 12 passages: every source was capped at six (`MAX_PASSAGES_PER_SOURCE`), two of the twelve were reference-list chunks, and the second paper's result pages never reached the answer, which then said its key number was missing.

@@ -3,8 +3,8 @@
 
 /* Trash page groups */
 .app .trash-group{margin:0 0 34px}
-.app .trash-group>h2{display:flex;align-items:baseline;gap:9px;margin:0 0 10px;font-family:'Newsreader Variable',serif;font-size:22px;font-weight:500;letter-spacing:-.2px}
-.app .trash-group>h2 span{color:var(--muted);font-family:'DM Sans Variable',sans-serif;font-size:12.5px;font-weight:500}
+.app .trash-group>h2{display:flex;align-items:baseline;gap:9px;margin:0 0 10px;font-family:var(--font-sans);font-size:22px;font-weight:500;letter-spacing:-.2px}
+.app .trash-group>h2 span{color:var(--muted);font-family:var(--font-sans);font-size:12.5px;font-weight:500}
 .app .trash-group-note{margin:-2px 0 12px;color:var(--muted);font-size:12.5px;line-height:1.55}
 .app .trash-row>.trash-item{display:grid;grid-template-columns:minmax(0,1fr);gap:3px;white-space:normal}
 .app .trash-item strong{overflow:hidden;font-size:14px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}
@@ -28,7 +28,7 @@
 .app .trash-scope button:hover{background:var(--hover-surface);color:var(--ink)}
 .app .trash-scope button[aria-pressed=true]{border-color:transparent;background:color-mix(in srgb,var(--accent),transparent 88%);color:color-mix(in srgb,var(--accent),var(--ink) 25%);font-weight:600}
 /* A research is the container of the rows under it, so its head is a band with the research mark, set in the interface
-   sans; the rows keep the serif. Without that, a research question and an article title read as the same thing. */
+   sans at 600 weight; the rows are lighter titles. Without that, a research question and an article title read as the same thing. */
 .app .trash-research-head{position:sticky;top:54px;z-index:5;display:flex;align-items:flex-start;gap:9px;margin:14px 0 0;padding:10px 12px 10px 5px;border:1px solid var(--strong-line);border-radius:9px;background:var(--sidebar-surface)}
 .app .trash-research-mark{display:grid;flex:none;place-items:center;width:24px;height:24px;margin-top:1px;border-radius:6px;background:color-mix(in srgb,var(--accent),transparent 88%);color:var(--accent)}
 .app .trash-research-title{flex:1;min-width:0}
@@ -48,7 +48,7 @@
 .app .trash-ledger .trash-row.is-picked{background:color-mix(in srgb,var(--accent),transparent 92%)}
 .app .trash-ledger .trash-row>.trash-item{min-width:0;padding-right:18px}
 .app .trash-pick{flex:none;width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}
-.app .trash-ledger .trash-item strong{font-family:'Newsreader Variable',serif;font-size:16px;font-weight:450;line-height:21px}
+.app .trash-ledger .trash-item strong{font-family:var(--font-sans);font-size:16px;font-weight:450;line-height:21px}
 .app .trash-title{display:-webkit-box;max-width:100%;overflow:hidden;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;-webkit-box-orient:vertical;-webkit-line-clamp:2;cursor:pointer}
 .app .trash-title:hover{text-decoration:underline;text-underline-offset:3px}
 .app .trash-facts{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:4px 7px;padding-right:16px;color:var(--muted);font-size:12px;text-align:right}

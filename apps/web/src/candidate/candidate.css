@@ -13,8 +13,8 @@
 .candidate-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; min-width: 0; }
 .candidate-actions button, .candidates-view button, .candidate-editor button { max-width: 100%; white-space: normal; height: auto; min-height: 36px; overflow-wrap: anywhere; }
 .candidate-fine { color: var(--muted); font-size: 12px; }
-.candidate-claim, .candidate-passage, .candidate-evidence blockquote { font-family: 'Newsreader Variable', serif; font-size: 18px; line-height: 1.6; font-weight: 450; white-space: pre-wrap; }
-.candidate-evidence h3.candidate-claim { font-family: 'Newsreader Variable', serif; }
+.candidate-claim, .candidate-passage, .candidate-evidence blockquote { font-family: var(--font-sans); font-size: 18px; line-height: 1.6; font-weight: 450; white-space: pre-wrap; }
+.candidate-evidence h3.candidate-claim { font-family: var(--font-sans); }
 .candidate-list { list-style: none; padding: 0 !important; }
 .candidate-list > li { border-bottom: 1px solid var(--line); }
 .candidate-list-row { display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; padding: 16px 0; cursor: pointer; color: var(--ink); }
@@ -33,7 +33,7 @@
 .candidate-matrix th, .candidate-matrix td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; font-weight: 400; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .candidate-matrix thead th { font-weight: 600; }
 .candidate-matrix th:first-child { width: 30%; }
-.candidate-work-title { font-family: 'Newsreader Variable', serif; font-size: 17px; font-weight: 500; color: var(--accent); text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; overflow-wrap: anywhere; }
+.candidate-work-title { font-family: var(--font-sans); font-size: 17px; font-weight: 500; color: var(--accent); text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; overflow-wrap: anywhere; }
 .candidate-mobile-element { display: none; }
 .candidate-queries .connection-icon, .candidate-plan .connection-icon, .candidate-evidence .connection-icon { width: 14px; height: 14px; margin-right: 6px; }
 :is(.candidates-view, .candidate-editor, .candidate-evidence) :is(.model-name, .source-key) { min-width: 0; white-space: normal; }

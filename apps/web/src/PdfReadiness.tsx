@@ -273,7 +273,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
   </section>
 }
 
-// A row head in the Sources list style: serif title, authors · year, the venue in italics, then dotted facts.
+// A row head in the Sources list style: title, authors · year, the venue in italics, then dotted facts.
 type Fact = string | false | { text: string; tone: string }
 function RowHead({ record, facts, note }: { record: Source; facts: Fact[]; note?: ReactNode }) {
   const byline = [record.authors.join(', '), record.year].filter(Boolean).join(' · ')

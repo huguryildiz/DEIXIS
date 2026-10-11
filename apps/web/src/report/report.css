@@ -6,13 +6,13 @@
 .report-ready-bar span{display:block;height:100%;background:var(--accent)}
 .report-ready .text-link{border:0;background:none;color:var(--accent);font-size:13px;text-decoration:underline;cursor:pointer}
 .evidence-report-content .evidence-report-section{margin:0 0 34px}
-.evidence-report-section h2{margin:0 0 13px;color:var(--ink);font-family:'DM Sans Variable',sans-serif;font-size:18px;font-weight:650;line-height:1.35;text-wrap:balance}
-.evidence-report-paragraph{margin:0 0 15px;color:var(--ink);font-family:'Newsreader Variable',serif;font-size:18px;line-height:1.72}
+.evidence-report-section h2{margin:0 0 13px;color:var(--ink);font-family:var(--font-sans);font-size:18px;font-weight:650;line-height:1.35;text-wrap:balance}
+.evidence-report-paragraph{margin:0 0 15px;color:var(--ink);font-family:var(--font-sans);font-size:18px;line-height:1.72}
 .evidence-report-paragraph-group{margin-bottom:17px}
-.evidence-report-equation{display:block;text-align:right;font-family:'DM Sans Variable',sans-serif;font-size:12px}
-.evidence-report-fine,.evidence-report-provenance{font-family:'DM Sans Variable',sans-serif;font-size:11px;line-height:1.55;color:var(--muted)}
+.evidence-report-equation{display:block;text-align:right;font-family:var(--font-sans);font-size:12px}
+.evidence-report-fine,.evidence-report-provenance{font-family:var(--font-sans);font-size:11px;line-height:1.55;color:var(--muted)}
 .evidence-report-provenance{margin:35px 0 0;padding-top:18px;border-top:1px solid var(--line)}
-.evidence-report-claim-meta{padding:8px 0 10px 16px;border-left:1px solid var(--line);font-family:'DM Sans Variable',sans-serif;font-size:12px;color:var(--muted)}
+.evidence-report-claim-meta{padding:8px 0 10px 16px;border-left:1px solid var(--line);font-family:var(--font-sans);font-size:12px;color:var(--muted)}
 .evidence-report-claim-meta>span,.evidence-report-claim-meta>strong{display:inline-block;margin-right:12px}
 .evidence-report-claim-meta>div:not(.evidence-report-edit){display:flex;flex-direction:column;align-items:flex-start;gap:4px}
 .evidence-report-claim-meta button:not([data-slot=button]){max-width:100%;min-height:24px;padding:0;border:0;background:none;color:var(--accent);text-align:left;font-size:12px;cursor:pointer;overflow-wrap:anywhere}
@@ -34,18 +34,18 @@
 .evidence-report-changes ul{padding-left:20px;font-size:12px;color:var(--muted)}
 .evidence-report-changes [data-slot=button]{margin-top:8px}
 .evidence-report-table-scroll{max-width:100%;margin:18px 0 24px;overflow-x:auto}
-.evidence-report-table{width:100%;min-width:520px;border-collapse:collapse;font-family:'DM Sans Variable',sans-serif;font-size:12px;line-height:1.45}
+.evidence-report-table{width:100%;min-width:520px;border-collapse:collapse;font-family:var(--font-sans);font-size:12px;line-height:1.45}
 .evidence-report-table caption{margin-bottom:8px;color:var(--muted);text-align:left;font-size:11px}
 .evidence-report-table th,.evidence-report-table td{min-width:120px;padding:9px 12px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
 .evidence-report-table thead th{font-weight:650}
-.evidence-report-references{padding-left:0;list-style:none;font-family:'Newsreader Variable',serif;font-size:16px;line-height:1.65}
+.evidence-report-references{padding-left:0;list-style:none;font-family:var(--font-sans);font-size:16px;line-height:1.65}
 .evidence-report-references li{margin-bottom:8px}
 .evidence-report-references button{padding:0;border:0;background:none;color:var(--accent);font:inherit;text-align:left;text-decoration:underline;cursor:pointer}
 @media(max-width:760px){.evidence-report-paragraph{font-size:17px}.evidence-report-content .evidence-report-section{margin-bottom:28px}}
 @media(prefers-reduced-motion:reduce){.report-ready-bar span{transition:none}}
 .report-toolbar-actions [data-slot=button][aria-pressed=true]{background:var(--selected-surface)}
 @media(max-width:600px){.report-toolbar-actions .report-export-label{display:none}}
-.candidate-aspects { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); font-family: 'DM Sans Variable', sans-serif; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.candidate-aspects { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--line); font-family: var(--font-sans); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .candidate-aspects, .candidate-aspects * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
 .candidate-aspects h3 { font-size: 17px; font-weight: 600; text-wrap: balance; }
 .candidate-aspects ul { padding-left: 22px; }
@@ -53,7 +53,7 @@
 .candidate-aspects [data-stored-text] { white-space: pre-wrap; }
 .candidate-aspects button { height: auto; min-height: 36px; white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
 .candidate-aspects button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-.evidence-report-edit-check { margin-top: 18px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--ink); font-family: 'DM Sans Variable', sans-serif; font-size: 13px; line-height: 1.6; }
+.evidence-report-edit-check { margin-top: 18px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--ink); font-family: var(--font-sans); font-size: 13px; line-height: 1.6; }
 .report-document-head .evidence-report-edit-check p { margin: 6px 0; color: inherit; font-size: inherit; font-weight: 400; }
 .evidence-report-check-sentence, .evidence-report-check-action { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
 .evidence-report-check-sentence > p { flex: 1 1 360px; }
@@ -71,7 +71,7 @@
 .evidence-report-removed .opened, .evidence-report-removed[open] .closed { display: none; }
 .evidence-report-edit-check details[open] .opened, .evidence-report-removed[open] .opened { display: block; }
 .evidence-report-edit-check ul, .evidence-report-removed ul { padding-left: 22px; }
-.evidence-report-no-citation { color: var(--muted); font-family: 'DM Sans Variable', sans-serif; font-size: 12px; }
+.evidence-report-no-citation { color: var(--muted); font-family: var(--font-sans); font-size: 12px; }
 .evidence-report-removed { margin: 8px 0; }
 .evidence-report-edit fieldset { min-width: 0; margin: 0; padding: 10px 0; border: 0; border-top: 1px solid var(--line); }
 .evidence-report-edit legend { color: var(--ink); font-weight: 550; }

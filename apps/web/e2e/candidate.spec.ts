@@ -703,7 +703,7 @@ c.close()`, [f.rid, id])
     failEvidence = false
     await sheet.getByRole('button', { name: 'Retry' }).click()
     await expect(sheet.locator('mark')).toHaveText(QUOTE)
-    await expect(sheet.locator('h3.candidate-claim')).toHaveCSS('font-family', '"Newsreader Variable", serif')
+    await expect(sheet.locator('h3.candidate-claim')).toHaveCSS('font-family', '"Inter Variable", sans-serif')
     await expect(sheet).toContainText('For the whole claim')
     await expect(sheet).toContainText('not marked: shown separately')
     await expect(sheet).toContainText('SYNTHETIC novel gap text.')

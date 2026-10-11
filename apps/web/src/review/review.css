@@ -1,7 +1,7 @@
 .review-pane { padding: 28px clamp(18px, 3vw, 42px); color: var(--ink); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
 .review-pane header { display: block; height: auto; padding: 0; }
-.review-pane h2 { font-family: 'DM Sans Variable', sans-serif; font-size: 18px; font-weight: 600; }
-.review-pane h3 { font-family: 'DM Sans Variable', sans-serif; font-size: 17px; font-weight: 600; margin: 16px 0 8px; }
+.review-pane h2 { font-family: var(--font-sans); font-size: 18px; font-weight: 600; }
+.review-pane h3 { font-family: var(--font-sans); font-size: 17px; font-weight: 600; margin: 16px 0 8px; }
 .review-pane h4 { font-size: 15px; font-weight: 600; margin: 12px 0 6px; }
 .review-pane p { margin: 8px 0; }
 .review-pane dt { margin-top: 0; }
@@ -34,7 +34,7 @@
 .review-connection { display: flex; align-items: center; gap: 6px; }
 .review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 .review-finding { border-top: 1px solid var(--line); padding: 14px 0 18px; }
-.review-claim, .review-evidence blockquote { font-family: 'Newsreader Variable', serif; font-size: 18px; line-height: 1.68; max-width: 70ch; }
+.review-claim, .review-evidence blockquote { font-family: var(--font-sans); font-size: 18px; line-height: 1.68; max-width: 70ch; }
 .review-evidence { margin: 16px 0; }
 .review-evidence blockquote { margin: 12px 0 6px; padding-left: 12px; border-left: 1px solid var(--line); }
 .review-evidence p { color: var(--muted); font-size: 12px; }

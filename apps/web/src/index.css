@@ -6,7 +6,8 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'DM Sans Variable', sans-serif;
+    --font-sans: 'Inter Variable', sans-serif;
+    --font-serif: 'Source Serif 4 Variable', serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -48,23 +49,28 @@
 }
 
 :root {
-    --background: #f8f9fb;
-    --foreground: #262a30;
+    /* Fonts: Inter for the interface and all reading text, Source Serif 4 only for the report title, report emphasis and
+       document-page imitations (D5). Product CSS reads these two names, never a literal family. */
+    --font-sans: 'Inter Variable', sans-serif;
+    --font-serif: 'Source Serif 4 Variable', serif;
+
+    --background: #ffffff;
+    --foreground: #1f2328;
     --card: #ffffff;
-    --card-foreground: #262a30;
+    --card-foreground: #1f2328;
     --popover: #ffffff;
-    --popover-foreground: #262a30;
+    --popover-foreground: #1f2328;
     --primary: #3b5b9a;
     --primary-foreground: #ffffff;
     --secondary: #f1f3f5;
-    --secondary-foreground: #262a30;
+    --secondary-foreground: #1f2328;
     --ui-muted: #f1f3f5;
     --muted-foreground: #5b6475;
-    --ui-accent: #eceff3;
-    --accent-foreground: #262a30;
+    --ui-accent: #eef0f2;
+    --accent-foreground: #1f2328;
     --destructive: #b42318;
-    --border: #e3e6ea;
-    --input: #dde1e6;
+    --border: #e6e8eb;
+    --input: #d9dce1;
     --ring: #3b5b9a;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
@@ -72,44 +78,52 @@
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
-    --sidebar: #f1f3f6;
-    --sidebar-foreground: #262a30;
+    --sidebar: #f7f8f9;
+    --sidebar-foreground: #1f2328;
     --sidebar-primary: #3b5b9a;
     --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: #e9ecf0;
-    --sidebar-accent-foreground: #262a30;
-    --sidebar-border: #e3e6ea;
+    --sidebar-accent: #eef0f2;
+    --sidebar-accent-foreground: #1f2328;
+    --sidebar-border: #e6e8eb;
     --sidebar-ring: #3b5b9a;
-    --scrollbar-track: #f1f3f6;
+    --scrollbar-track: #f7f8f9;
     --scrollbar-thumb: #c7ced8;
     --scrollbar-thumb-hover: #3b5b9a;
 
     /* DEIXIS editorial tokens, used by all product CSS. They are defined once here so portaled sheets, dialogs, popovers and
        toasts get the same values as the app. shadcn's own muted and accent surfaces are --ui-muted and --ui-accent. */
-    --paper: #f8f9fb;
-    --ink: #262a30;
+    --paper: #ffffff;
+    --ink: #1f2328;
+    --ink-2: #3b4046;
     --muted: #5b6475;
+    /* Icons and hairline marks only, never text: 3:1 or better on every surface below. */
+    --faint: #828993;
     --line: #e6e8eb;
     --accent: #3b5b9a;
-    --sidebar-surface: #f1f3f6;
+    --accent-deep: #2e4877;
+    --accent-tint: #ebeff7;
+    --accent-line: #bfcce3;
+    --sidebar-surface: #f7f8f9;
     --raised-surface: #ffffff;
     --field-surface: #ffffff;
-    --selected-surface: #dadfe6;
-    --selected-ink: #262a30;
-    --hover-surface: #e2e6eb;
-    --strong-line: #dde1e6;
-    --tone-include: #2e8b4f;
-    --tone-uncertain: #b06d0f;
+    --selected-surface: #eef0f2;
+    --selected-ink: #1f2328;
+    --hover-surface: #f1f3f5;
+    --bubble: #f2f4f6;
+    --strong-line: #d9dce1;
+    --tone-include: #2d7a4d;
+    --tone-uncertain: #985f0b;
     --tone-exclude: #b42318;
+    --shadow-float: 0 1px 2px rgb(16 24 40 / .05), 0 6px 20px rgb(16 24 40 / .06);
 
     /* Source attributes (pills and fact dots) and status surfaces (chips, toasts, inline errors). */
-    --attr-abstract: #a8489a;
+    --attr-abstract: #6e7a8e;
     --attr-text: #2f6fdb;
     --attr-accepted: #7c5cc4;
     --attr-submitted: #aa6c0d;
     --attr-similarity: #39759b;
     --ok-ink: #2f6b45;
-    --ok-surface: #e4f1e7;
+    --ok-surface: #e6f3ea;
     --ok-line: #b9d8c2;
     --warn-ink: #8a5a0b;
     --warn-surface: #fbf0dc;
@@ -124,70 +138,77 @@
 }
 
 .dark {
-    --background: #15171b;
-    --foreground: #e6e8eb;
+    --background: #16181b;
+    --foreground: #e7e9ec;
     --card: #1f2329;
-    --card-foreground: #e6e8eb;
-    --popover: #242931;
-    --popover-foreground: #e6e8eb;
+    --card-foreground: #e7e9ec;
+    --popover: #1f2329;
+    --popover-foreground: #e7e9ec;
     --primary: #93acdf;
     --primary-foreground: #15171b;
-    --secondary: #2a2f37;
-    --secondary-foreground: #e6e8eb;
-    --ui-muted: #2a2f37;
-    --muted-foreground: #9aa2ad;
-    --ui-accent: #2c323b;
-    --accent-foreground: #e6e8eb;
-    --destructive: #e0786b;
-    --border: #353b45;
-    --input: #353b45;
+    --secondary: #252930;
+    --secondary-foreground: #e7e9ec;
+    --ui-muted: #252930;
+    --muted-foreground: #9aa1ab;
+    --ui-accent: #2a2e35;
+    --accent-foreground: #e7e9ec;
+    --destructive: #e8857a;
+    --border: #2b2f35;
+    --input: #363b42;
     --ring: #93acdf;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: #1b1e23;
-    --sidebar-foreground: #e6e8eb;
+    --sidebar: #1c1f23;
+    --sidebar-foreground: #e7e9ec;
     --sidebar-primary: #93acdf;
     --sidebar-primary-foreground: #15171b;
-    --sidebar-accent: #2c323b;
-    --sidebar-accent-foreground: #e6e8eb;
-    --sidebar-border: #353b45;
+    --sidebar-accent: #2a2e35;
+    --sidebar-accent-foreground: #e7e9ec;
+    --sidebar-border: #2b2f35;
     --sidebar-ring: #93acdf;
-    --scrollbar-track: #1b1e23;
+    --scrollbar-track: #1c1f23;
     --scrollbar-thumb: #46505e;
     --scrollbar-thumb-hover: #93acdf;
 
-    --paper: #15171b;
-    --ink: #e6e8eb;
-    --muted: #9aa2ad;
-    --line: #2b3038;
+    --paper: #16181b;
+    --ink: #e7e9ec;
+    --ink-2: #c9cdd2;
+    --muted: #9aa1ab;
+    --faint: #707781;
+    --line: #2b2f35;
     --accent: #93acdf;
-    --sidebar-surface: #1b1e23;
+    --accent-deep: #3d5a8f;
+    --accent-tint: #1e2636;
+    --accent-line: #34466b;
+    --sidebar-surface: #1c1f23;
     --raised-surface: #1f2329;
     --field-surface: #242931;
-    --selected-surface: #333a45;
-    --selected-ink: #e6e8eb;
-    --hover-surface: #2b313a;
-    --strong-line: #353b45;
-    --tone-include: #5fbf82;
-    --tone-uncertain: #e0a64a;
-    --tone-exclude: #e0786b;
+    --selected-surface: #2a2e35;
+    --selected-ink: #e7e9ec;
+    --hover-surface: #252930;
+    --bubble: #23272d;
+    --strong-line: #363b42;
+    --tone-include: #6cc48f;
+    --tone-uncertain: #e2a54c;
+    --tone-exclude: #e8857a;
+    --shadow-float: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .35);
 
-    --attr-abstract: #d98ccc;
-    --attr-text: #7aa7f0;
+    --attr-abstract: #8a94a3;
+    --attr-text: #86aef0;
     --attr-accepted: #a58ee0;
     --attr-submitted: #e0a64a;
     --attr-similarity: #7fb2d6;
     --ok-ink: #8fd0a4;
-    --ok-surface: #1f3327;
+    --ok-surface: #1d3326;
     --ok-line: #325a40;
     --warn-ink: #e7c27a;
-    --warn-surface: #342a17;
+    --warn-surface: #3a2c16;
     --warn-line: #5a4722;
     --error-ink: #f0a39b;
-    --error-surface: #3a1f1d;
+    --error-surface: #3b211e;
     --error-line: #6a3530;
     --page-surface: #f4f5f7;
     --page-ink: #3d434c;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, ChevronRight, Ellipsis, FlaskConical, Landmark, Library, LoaderCircle, Menu, Moon, PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings2, ShieldAlert, Sun, Trash2, type LucideIcon } from 'lucide-react'
+import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, Ellipsis, FlaskConical, Library, LoaderCircle, Menu, Moon, PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings2, Sun, Trash2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, type InstitutionalAccess, type ResearchSummary, type RunStatus } from './api'
@@ -74,6 +74,9 @@ function sinceLabel(iso: string): string {
   if (seconds < 7 * 86_400) return relative.format(-Math.floor(seconds / 86_400), 'day')
   return new Date(iso).toLocaleDateString(uiLocale(), { month: 'short', day: 'numeric' })
 }
+
+// The DEIXIS mark in the ink of the brand text, so it follows the theme.
+const brandLogo = <svg className="brand-logo" viewBox="3 0 64 64" fill="none" aria-hidden="true"><path d="M17 52V12H29C42.255 12 53 20.954 53 32S42.255 52 32 52C28.5 52 27 50 27 46.5V42" stroke="currentColor" strokeWidth="6" /><circle cx="27" cy="34" r="5" fill="currentColor" /></svg>
 
 export default function App() {
   const [route, setRoute] = useState<Route>(parseHash)
@@ -290,21 +293,28 @@ export default function App() {
   }
 
   const activeId = route.view === 'research' ? route.id : null
-  const crumb = t(route.view === 'settings' ? 'Settings' : route.view === 'trash' ? 'Trash' : route.view === 'research' ? 'Research' : route.view === 'library' ? 'Library' : 'New research')
+  // Theme and interface language sit at the foot of the sidebar on wide screens and in the top bar on phones; only one copy is shown at a time.
+  const shellPrefs = <div className="shell-prefs">
+    <div className="language-switch" role="group" aria-label={t('Interface language')}>
+      <button type="button" lang="tr" aria-label="Türkçe" aria-pressed={language === 'tr'} onClick={() => chooseLanguage('tr')}>TR</button>
+      <button type="button" lang="en" aria-label="English" aria-pressed={language === 'en'} onClick={() => chooseLanguage('en')}>EN</button>
+    </div>
+    <Button variant="ghost" size="icon" className="theme-toggle" onClick={toggleTheme} aria-label={t(dark ? 'Use light theme' : 'Use dark theme')} title={t(dark ? 'Use light theme' : 'Use dark theme')}>{dark ? <Sun size={16} /> : <Moon size={16} />}</Button>
+  </div>
 
   return <div className={`app ${dark ? 'dark' : ''} ${collapsed ? 'sidebar-collapsed' : ''} ${sidebarWidth !== null ? 'sidebar-resized' : ''} ${resizing ? 'sidebar-resizing' : ''}`} style={sidebarWidth !== null ? { '--sidebar-width': `${sidebarWidth}px` } as CSSProperties : undefined}>
     {sidebar && <button className="mobile-scrim" aria-label={t('Close navigation')} onClick={() => setSidebar(false)} />}
     <aside ref={asideRef} className={`sidebar ${sidebar ? 'is-open' : ''}`}>
       <div className="sidebar-head">
-        <button className="brand" aria-label={t('DEIXIS home')} onClick={() => go({ view: 'home' })}><span className="brand-mark" aria-hidden="true" /><span className="sidebar-label">DEIXIS</span></button>
-        <Button variant="ghost" size="icon" className="sidebar-toggle" onClick={toggleCollapsed} aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')} title={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}>{collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}</Button>
+        <button className="brand" aria-label={t('DEIXIS home')} onClick={() => go({ view: 'home' })}><span className="brand-mark" aria-hidden="true">{brandLogo}</span><span className="sidebar-label">DEIXIS</span></button>
+        <Button variant="ghost" size="icon" className="sidebar-toggle" onClick={toggleCollapsed} aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')} title={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}>{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</Button>
       </div>
-      <button type="button" className="sidebar-find" onClick={() => { rememberFocus(findOpener); setFindOpen(true) }} aria-label={t('Quick find')} aria-keyshortcuts="Meta+K Control+K" title={t('Quick find')}><Search size={16} /><span className="sidebar-label sidebar-find-label">{t('Search')}</span><kbd className="sidebar-label">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd></button>
+      <button type="button" className="sidebar-find" onClick={() => { rememberFocus(findOpener); setFindOpen(true) }} aria-label={t('Quick find')} aria-keyshortcuts="Meta+K Control+K" title={t('Quick find')}><Search size={16} aria-hidden="true" /><span className="sidebar-label sidebar-find-label">{t('Search')}</span><kbd className="sidebar-label">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd></button>
       <nav aria-label={t('Main navigation')}>
-        <button className={route.view === 'home' || route.view === 'research' ? 'selected' : ''} onClick={() => go({ view: 'home' })} title={t('Research')}><FlaskConical size={17} /> <span className="sidebar-label">{t('Research')}</span></button>
-        <button className={route.view === 'library' ? 'selected' : ''} onClick={() => go({ view: 'library' })} title={t('Library')}><Library size={17} /> <span className="sidebar-label">{t('Library')}</span></button>
-        <button className={route.view === 'settings' ? 'selected' : ''} onClick={() => go({ view: 'settings' })} title={t('Settings')}><Settings2 size={17} /> <span className="sidebar-label">{t('Settings')}</span></button>
-        <button className={route.view === 'trash' ? 'selected' : ''} onClick={() => go({ view: 'trash' })} title={t('Trash')}><Trash2 size={17} /> <span className="sidebar-label">{t('Trash')}</span></button>
+        <button className={route.view === 'home' || route.view === 'research' ? 'selected' : ''} onClick={() => go({ view: 'home' })} title={t('Research')}><FlaskConical size={16} /> <span className="sidebar-label">{t('Research')}</span></button>
+        <button className={route.view === 'library' ? 'selected' : ''} onClick={() => go({ view: 'library' })} title={t('Library')}><Library size={16} /> <span className="sidebar-label">{t('Library')}</span></button>
+        <button className={route.view === 'settings' ? 'selected' : ''} onClick={() => go({ view: 'settings' })} title={t('Settings')}><Settings2 size={16} /> <span className="sidebar-label">{t('Settings')}</span></button>
+        <button className={route.view === 'trash' ? 'selected' : ''} onClick={() => go({ view: 'trash' })} title={t('Trash')}><Trash2 size={16} /> <span className="sidebar-label">{t('Trash')}</span></button>
       </nav>
       <div className="recents-label">
         <button type="button" className="recents-toggle" aria-expanded={recentsOpen} aria-controls="recent-list" onClick={toggleRecents}>{t('Recent research')}<ChevronDown size={15} aria-hidden="true" /></button>
@@ -335,27 +345,25 @@ export default function App() {
         })}
       </div>
       {actionMessage && route.view !== 'trash' && <p className="sidebar-action-message" role="status">{actionMessage}</p>}
-      <div className="sidebar-divider" aria-hidden="true" />
-      <BackgroundJobs researches={researches} collapsed={collapsed} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />
-      <div className="access-status">
-        <span className={`access-chip ${institutionalStatus === 'institutional' ? '' : institutionalStatus === 'none' ? 'is-unavailable' : 'is-uncertain'}`} title={t(institutionalStatus === 'institutional' ? 'Scopus recognizes this network as institutional (campus network or university VPN). Updates when the network changes.' : institutionalStatus === 'none' ? 'University VPN or campus network is not detected. Turn it on to access institutional Scopus coverage.' : 'Institutional access status is not available yet. DEIXIS will check again when the network changes.')}>
-          {institutionalStatus === 'institutional' ? <Landmark size={13} aria-hidden="true" /> : <ShieldAlert size={13} aria-hidden="true" />}
-          <span className="sidebar-label">{t(institutionalStatus === 'institutional' ? 'Institutional access' : institutionalStatus === 'none' ? 'VPN required' : institutionalStatus === 'unknown' ? 'Access uncertain' : 'Checking access…')}</span>
-        </span>
-        {!collapsed && <span className="access-chip-note">{t(institutionalStatus === 'institutional' ? 'Campus network or university VPN detected.' : institutionalStatus === 'none' ? 'Turn on the university VPN for institutional Scopus access.' : institutionalStatus === 'unknown' ? 'Institutional access could not be verified.' : 'Checking the current network access.')}</span>}
+      <div className="sidebar-foot">
+        <BackgroundJobs researches={researches} collapsed={collapsed} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />
+        <div className="access-status" data-status={institutionalStatus} title={t(institutionalStatus === 'institutional' ? 'Scopus recognizes this network as institutional (campus network or university VPN). Updates when the network changes.' : institutionalStatus === 'none' ? 'University VPN or campus network is not detected. Turn it on to access institutional Scopus coverage.' : 'Institutional access status is not available yet. DEIXIS will check again when the network changes.')}>
+          <span className={`access-chip ${institutionalStatus === 'institutional' ? '' : institutionalStatus === 'none' ? 'is-unavailable' : 'is-uncertain'}`}>
+            <i className="access-dot" aria-hidden="true" />
+            <span className="sidebar-label">{t(institutionalStatus === 'institutional' ? 'Institutional access' : institutionalStatus === 'none' ? 'VPN required' : institutionalStatus === 'unknown' ? 'Access uncertain' : 'Checking access…')}</span>
+          </span>
+          {!collapsed && <span className="access-chip-note">{t(institutionalStatus === 'institutional' ? 'Campus network or university VPN detected.' : institutionalStatus === 'none' ? 'Turn on the university VPN for institutional Scopus access.' : institutionalStatus === 'unknown' ? 'Institutional access could not be verified.' : 'Checking the current network access.')}</span>}
+        </div>
+        {shellPrefs}
       </div>
       {!collapsed && <div className="sidebar-resizer" role="separator" aria-orientation="vertical" tabIndex={0} aria-label={t('Resize sidebar')} title={t('Drag to resize · double-click to reset')} aria-valuemin={SIDEBAR_MIN} aria-valuemax={SIDEBAR_MAX} aria-valuenow={sidebarWidth ?? asideWidth} onPointerDown={startResize} onKeyDown={resizeByKey} onDoubleClick={() => setSidebarWidth(null)} />}
     </aside>
     <div className="main-shell">
-      <header>
-        <div className="breadcrumb"><Button variant="ghost" size="icon" className="mobile-menu" aria-label={t('Open navigation')} onClick={() => setSidebar(true)}><Menu /></Button><span>{t('Workspace')}</span><ChevronRight size={13} /><strong>{crumb}</strong></div>
-        <div className="header-actions"><div className="language-switch" role="group" aria-label={t('Interface language')}>
-            <button type="button" lang="tr" aria-label="Türkçe" aria-pressed={language === 'tr'} onClick={() => chooseLanguage('tr')}>TR</button>
-            <span aria-hidden="true">/</span>
-            <button type="button" lang="en" aria-label="English" aria-pressed={language === 'en'} onClick={() => chooseLanguage('en')}>EN</button>
-          </div>
-          <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label={t(dark ? 'Use light theme' : 'Use dark theme')}>{dark ? <Sun size={17} /> : <Moon size={17} />}</Button></div>
-      </header>
+      <div className="mobilebar">
+        <Button variant="ghost" size="icon" className="mobile-menu" aria-label={t('Open navigation')} onClick={() => setSidebar(true)}><Menu size={18} /></Button>
+        <span className="mobilebar-brand" aria-hidden="true">{brandLogo}DEIXIS</span>
+        {shellPrefs}
+      </div>
       <main>
         {route.view === 'home' && <Home onCreated={id => { refreshList(); go({ view: 'research', id }) }} />}
         {route.view === 'research' && <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />}
@@ -364,7 +372,6 @@ export default function App() {
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>
       <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} />
-      <footer><span>{t('© 2026 DEIXIS · Designed & built by')} <a href="https://huguryildiz.com" target="_blank" rel="noopener noreferrer">Hüseyin Uğur Yıldız</a><a className="footer-github" href="https://github.com/huguryildiz/DEIXIS" target="_blank" rel="noopener noreferrer" aria-label={t('DEIXIS on GitHub')} title={t('DEIXIS on GitHub')}><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /></svg></a></span></footer>
     </div>
   </div>
 }

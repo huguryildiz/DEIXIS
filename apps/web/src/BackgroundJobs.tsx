@@ -81,7 +81,7 @@ export function BackgroundJobs({ researches, collapsed, dark, onOpenResearch }: 
         <svg viewBox="0 0 36 36" aria-hidden><circle cx="18" cy="18" r="15" className="jobs-ring-track" /><circle cx="18" cy="18" r="15" className="jobs-ring-fill" strokeDasharray={`${lead.total ? (94.2 * lead.done) / lead.total : 0} 94.2`} /></svg>
         <span className="jobs-ring-count">{count}</span>
       </button>
-      : <button type="button" className="jobs-card" onClick={() => setOpen(true)} aria-label={t('Background work: {n}', { n: count })}>
+      : <button type="button" className="jobs-card bgcard" onClick={() => setOpen(true)} aria-label={t('Background work: {n}', { n: count })}>
         <span className="jobs-card-head"><span>{t('In the background · {n}', { n: count })}</span><ChevronRight size={14} aria-hidden /></span>
         {jobs.map(job => <span key={job.run.id} className="jobs-card-row">
           <span className="jobs-card-line">{running(job) ? <span className="pdf-spin" aria-hidden /> : <CirclePause size={12} className="jobs-paused" aria-hidden />}<span className="jobs-card-label">{job.label}</span><span className="jobs-card-count">{job.total ? `${job.done} / ${job.total}${job.unit ? ` ${job.unit}` : ''}` : '…'}</span></span>

@@ -79,19 +79,9 @@ const all = [main, reading, queue, keys, motion, zoom]
 test.afterAll(async () => { await Promise.all(all.map(server => server.stop())) })
 
 const dismissToasts = async (page: Page) => { for (const button of await page.getByRole('button', { name: 'Dismiss notification' }).all()) await button.click().catch(() => {}) }
-// Home's semantic-search note arrives with /api/semantic-search, which probes the local tools when its 30 s cache has expired and can then
-// take seconds. A scan waits for that read, so the note never appears between the before and after DOM states.
-const SLOW_READS = new WeakMap<Page, Set<unknown>>()
-function trackSlowReads(page: Page) {
-  const open = new Set<unknown>()
-  SLOW_READS.set(page, open)
-  page.on('request', r => { if (new URL(r.url()).pathname === '/api/semantic-search') open.add(r) })
-  for (const event of ['requestfinished', 'requestfailed'] as const) page.on(event, r => { open.delete(r) })
-}
-async function slowReadsDone(page: Page) {
-  const open = SLOW_READS.get(page)
-  for (let waited = 0; open && open.size && waited < 15_000; waited += 50) await page.waitForTimeout(50)
-}
+// Home's note follows /api/semantic-search, which can take seconds (local tool probe): a scan waits for any open read of it.
+const openReads = new WeakMap<Page, Set<unknown>>()
+const trackReads = (page: Page) => { const open = new Set<unknown>(); openReads.set(page, open); page.on('request', r => { if (r.url().includes('/api/semantic-search')) open.add(r) }); page.on('requestfinished', r => { open.delete(r) }); page.on('requestfailed', r => { open.delete(r) }) }
 const settle = async (page: Page) => {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   await page.waitForTimeout(150)
@@ -346,7 +336,7 @@ async function scan(page: Page, screen: string, ensure?: () => Promise<void>) {
     await page.setViewportSize({ width: combo.width, height: combo.height })
     await page.emulateMedia({ colorScheme: combo.theme, reducedMotion: 'reduce' })  // no mid-fade colours; motion is X06
     if (ensure) await ensure()
-    await slowReadsDone(page)
+    for (let i = 0, open = openReads.get(page); open?.size && i < 100; i++) await page.waitForTimeout(50); openReads.get(page)?.clear()  // at most 5 s; a read the page left behind is dropped
     await settle(page)
     await still(page)
     expect(await page.locator('html').evaluate(el => el.classList.contains('dark')), `${screen}: theme ${combo.theme} applied`).toBe(combo.theme === 'dark')
@@ -455,7 +445,7 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     writeFindings()  // a stale file from an earlier run cannot satisfy the verdicts below
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce' })
     page = await context.newPage()
-    trackSlowReads(page)
+    trackReads(page)
     page.setDefaultTimeout(30_000)  // an action that cannot find its target fails the screen ("not reached") instead of hanging to the test timeout
   })
   test.afterAll(async () => { await page?.context().close() })

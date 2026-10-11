@@ -20,7 +20,7 @@ export function ConfirmDialog({ open, dark, title, description, context, childre
   onOpenChange: (open: boolean) => void
 }) {
   return <Dialog open={open} onOpenChange={next => { if (!busy) onOpenChange(next) }}>
-    <DialogContent className={`confirm-dialog ${dark ? 'dark' : ''}${neutral ? ' is-neutral' : ''}`} backdropClassName="confirm-dialog-backdrop" showCloseButton={false}
+    <DialogContent className={`confirm-dialog ${dark ? 'dark' : ''}${neutral ? ' is-neutral' : ''}`} backdropClassName="confirm-dialog-backdrop"
       icon={<span className="confirm-dialog-mark">{neutral ? <Info size={16} aria-hidden /> : <TriangleAlert size={16} aria-hidden />}</span>} title={title}>
       <DialogBody>
         <DialogDescription className="confirm-dialog-description">{description}</DialogDescription>

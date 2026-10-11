@@ -116,14 +116,26 @@ const READER = {
   pdfs: { read: 4, reading: 1, pending: 2 },
 }
 
+// The dialog surface opens the equation reader's Install confirm, so there the reader is SYNTHETIC and not installed.
+const READER_OFF = { ...READER, installed: false, models_downloaded: false, reading: null, pdfs: {} }
+
 async function showApp(page: Page, base: string, surface: Surface, research: string) {
   await surface.prepare?.(page)
-  await page.route('**/api/equation-reader', route => route.fulfill({ json: READER }))
+  await page.route('**/api/equation-reader', route => route.fulfill({ json: surface.reader === 'not-installed' ? READER_OFF : READER }))
+  // The mockup always has a current research; the app's "Current research" names the one opened last in this browser,
+  // so the [parity] research is opened first.
+  await page.goto(`${base}/#/research/${research}`)
+  await page.locator('.research-topbar').first().waitFor()
   await page.goto(`${base}/${surface.app.replace('{research}', research)}`)
   await surface.open?.(page)
   await page.locator(surface.ready).first().waitFor()
   await page.evaluate(() => document.fonts.ready)
   await page.waitForTimeout(300)  // let entrance transitions settle before measuring
+  if (surface.appAct) {
+    await surface.appAct(page)
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(300)
+  }
 }
 
 type AnswerView = { status: string; created_at: string; applicability: string; source_text_changed: boolean; unanswered_aspects?: string[] }
@@ -169,12 +181,15 @@ test.describe('parity: app against the mockup v24', () => {
   test.afterAll(async () => { await server.stop() })
 
   for (const surface of SURFACES) {
-    for (const width of WIDTHS) {
+    for (const width of surface.widths ?? WIDTHS) {
       for (const theme of THEMES) {
         test(`${surface.id} at ${width}, ${theme}`, async ({ browser }, info) => {
           const pages = await pagesFor(browser, width, theme)
           try {
             await driveMockup(pages.mock, surface.mock)
+            // The mockup's job and run simulations re-render the sidebar every few seconds; the state is set, so its timers stop.
+            await pages.mock.evaluate(() => { const last = window.setTimeout(() => {}, 0); for (let id = 1; id <= last; id++) { clearTimeout(id); clearInterval(id) } })
+            if (surface.mockAct) { await pages.mock.evaluate(surface.mockAct); await pages.mock.waitForTimeout(300) }
             await showApp(pages.app, server.url(), surface, research)
             const pairs = pairsFor(surface.id, width)
             const failures = await gateSurface(pairs, { width, theme }, pages.mock, pages.app, ctx)
@@ -183,6 +198,7 @@ test.describe('parity: app against the mockup v24', () => {
             info.annotations.push({ type: 'pixel-diff', description: diff })
             expect(failures, `${surface.id} ${width} ${theme}:\n${failures.join('\n')}`).toEqual([])
           } finally {
+            await surface.appUndo?.(pages.app).catch(() => {})
             await pages.close()
           }
         })

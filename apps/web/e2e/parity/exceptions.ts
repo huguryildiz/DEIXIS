@@ -72,7 +72,7 @@ export const EXCLUDED_MOCK_CONTROLS: Array<{ id: string; rule: string; selector:
   { id: 'states-switcher', rule: '§0 rule 2', selector: '#statesBtn' },
   { id: 'example-tag', rule: '§0 rule 2', selector: '.mock-tag' },
   { id: 'example-setup', rule: '§0 rule 2', selector: '.setup [data-scen="ok"]' },
-  { id: 'mockup-toast', rule: '§0 rule 2 (the state switcher announces itself in a toast)', selector: '.toast' },
+  { id: 'mockup-toast', rule: '§0 rule 2 (the state switcher announces itself in a toast)', selector: '.toast:not([data-parity])' },
   { id: 'not-in-mockup-rows', rule: '§0 rule 2 ("N more works … are not shown in this mockup")', selector: '.more-row' },
 ]
 
@@ -98,7 +98,9 @@ export const PLACEMENTS: Placement[] = [
   { id: 'counts-places', rule: '§2.2 (Q1)', slice: 'S11', container: 'unique and included in the Funnel panel; given and cited in the Answering step detail', app: null },
   { id: 'zotero-library-source', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S6', container: 'Zotero dialog body, between the lead note and the collections: "Zotero on this computer" / "zotero.org"', app: '.zotero-source' },
   { id: 'language-command', rule: '§2.4 (TR/EN placement)', slice: 'S1', container: 'Search palette: Türkçe / English rows when the query asks for "language" or "dil" (the Settings row is S24)', app: null },
-  { id: 'jobs-sheet-controls', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Jobs sheet job line: Pause / Resume of an OCR run and the research title as a link', app: '.job-action, .job-research' },
+  { id: 'jobs-sheet-controls', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Jobs sheet job line: Pause / Resume of an OCR run or a PDF collection, and the research title as a link', app: '.job-action, .job-research' },
+  { id: 'jobs-sheet-unconfirmed', rule: '§2.3 / AGENTS.md (no success beyond stored state)', slice: 'S1', container: 'Jobs sheet, under Finished: jobs whose own run failed, was cancelled, or could not be read ("Status unknown")', app: null },
+  { id: 'toast-dismiss', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Toast, after the text and the Undo link: the dismiss button (errors stay until dismissed)', app: '.toast-close' },
 ]
 
 /** Mockup copy replaced because it would be false (§2.3, Q2). The parity check compares structure, not text; behaviour
@@ -115,6 +117,7 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'budget-no-limit', rule: '§2.3 (Q2)', mock: 'N% of today\'s budget', app: '$X left today (when OpenAlex sends no limit header)' },
   { id: 'quota-continue', rule: '§2.3 (Q2, R19)', mock: 'Continue with the N finished searches', app: 'The run went on with the M that finished.' },
   { id: 'find-pdf-proxy-pill', rule: '§2.3 (Q2)', mock: 'TOBB ETÜ proxy', app: 'only the providers actually asked' },
+  { id: 'jobs-note', rule: '§2.3 (Q2; late_revision.py skips text that is not eligible)', mock: 'Text read in the background joins the next answer.', app: 'Text read in the background can be used in the next answer if it qualifies.' },
   { id: 'sign-in-terminal', rule: '§2.3 (Q2)', mock: 'Opens sign-in in a terminal', app: 'the CLI login command with Copy' },
   { id: 'zotero-lead', rule: '§2.3 (Q2, S6: one collection per import, D16; its own items only)', mock: 'Choose collections. DEIXIS reads their items and attached PDFs; it never changes your Zotero library.', app: 'Choose a collection. DEIXIS reads its own items (not its sub-collections) and each item’s first readable PDF; it never changes your Zotero library.' },
   { id: 'zotero-account', rule: '§2.3 (Q2, S6: the local app has no key; the zotero.org key is set in .env and its rights are not checked)', mock: 'Connected as the Zotero account in Settings · read-only key.', app: 'Reads Zotero on this computer through its local API · read-only. / Reads the zotero.org library set in .env · read-only.' },

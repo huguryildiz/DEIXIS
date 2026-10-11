@@ -239,21 +239,21 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 /* Sheet base: a 46px head with a hairline and icon buttons, about half the window wide; is-full takes the whole width.
    Low specificity on purpose so each sheet's own head rules still apply until they move to this base. */
 .detail-sheet :where([data-slot=sheet-header]){justify-content:center;min-height:46px;padding:11px 52px 11px 16px;border-bottom:1px solid var(--line)}
-.detail-sheet :where([data-slot=sheet-title]){margin:0;color:var(--ink);font-family:var(--font-sans);font-size:13.5px;font-weight:500;line-height:24px;letter-spacing:0}
+.detail-sheet :where([data-slot=sheet-title]){margin:0;color:var(--ink);font-family:var(--font-sans);font-size:13.5px;font-weight:500;line-height:1.5;letter-spacing:0}
 .detail-sheet :where([data-slot=sheet-description]){color:var(--muted);font-size:12px;line-height:1.45}
 .detail-sheet :where([data-slot=sheet-close]){top:8px;right:8px;width:30px;height:30px;border-radius:7px;color:var(--muted)}
 .detail-sheet :where([data-slot=sheet-close]):hover{background:var(--hover-surface);color:var(--ink)}
 
 /* Toast (mockup): one at a time, bottom-centre, on the ink ground for every tone. `.toast.is-*` stays for the tone; a
    warning or an error carries its icon and an error is an alert. Undo is a link-style action. */
-.toast{position:fixed;bottom:20px;left:50%;z-index:90;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 32px);padding:8px 8px 8px 14px;border-radius:8px;background:var(--ink);color:var(--paper);box-shadow:var(--shadow-float);font-family:var(--font-sans);font-size:13px;line-height:1.45;transform:translateX(-50%)}
+.toast{position:fixed;bottom:20px;left:50%;z-index:90;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 32px);padding:8px 8px 8px 14px;border-radius:8px;background:var(--ink);color:var(--paper);box-shadow:var(--shadow-float);font-family:var(--font-sans);font-size:13px;line-height:1.5;transform:translateX(-50%)}
 .toast-icon{flex:none}
 .toast.is-warning .toast-icon{color:color-mix(in srgb,var(--tone-uncertain),var(--paper) 35%)}
 .toast.is-error .toast-icon{color:color-mix(in srgb,var(--tone-exclude),var(--paper) 35%)}
 .toast-text{min-width:0}
 .toast button{display:inline-flex;flex:none;padding:2px;border:0;border-radius:4px;background:none;color:inherit;cursor:pointer}
 .toast button:focus-visible{outline:2px solid currentColor;outline-offset:1px}
-.toast .toast-action{margin-left:4px;padding:0 2px;color:var(--accent-line);font-weight:600;text-decoration:underline;text-underline-offset:2px}
+.toast .toast-action{margin-left:4px;padding:0 2px;border-radius:0;color:var(--accent-line);font-weight:600;text-decoration:underline;text-underline-offset:2px}
 .toast .toast-close{opacity:.7}
 .toast .toast-close:hover{opacity:1}
 @media (prefers-reduced-motion:no-preference){.toast{animation:toast-in .18s ease-out}}
@@ -263,14 +263,14 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
    and a footer on the sidebar surface. */
 .dialog-scrim{position:fixed;inset:0;z-index:60;background:rgb(15 20 25/.32);transition:opacity .16s ease}
 .dialog-scrim[data-starting-style],.dialog-scrim[data-ending-style]{opacity:0}
-.dialog{position:fixed;top:14vh;left:50%;z-index:61;display:flex;flex-direction:column;width:calc(100vw - 32px);max-width:480px;max-height:calc(86vh - 16px);overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow-float);font-family:var(--font-sans);transform:translateX(-50%);transition:opacity .16s ease,transform .16s ease}
+.dialog{position:fixed;top:14vh;left:50%;z-index:61;display:flex;flex-direction:column;width:calc(100vw - 32px);max-width:560px;max-height:calc(86vh - 16px);overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow-float);font-family:var(--font-sans);font-size:14px;line-height:1.5;transform:translateX(-50%);transition:opacity .16s ease,transform .16s ease}
 .dialog[data-starting-style],.dialog[data-ending-style]{opacity:0;transform:translate(-50%,4px)}
 .dialog-head{display:flex;flex:none;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--line)}
 .dialog-icon{display:grid;place-items:center;flex:none;color:var(--muted)}
-.dialog-title{flex:1;min-width:0;margin:0;font-family:var(--font-sans);font-size:14px;font-weight:600;line-height:1.4;letter-spacing:0;color:var(--ink)}
-.dialog-close{display:grid;place-items:center;flex:none;width:30px;height:30px;margin:-4px -6px -4px 0;border-radius:7px;color:var(--muted)}
+.dialog-title{flex:1;min-width:0;margin:0;font-family:var(--font-sans);font-size:14px;font-weight:600;line-height:1.5;letter-spacing:0;color:var(--ink)}
+.dialog-close{display:grid;place-items:center;flex:none;width:30px;height:30px;border-radius:7px;color:var(--muted)}
 .dialog-close:hover{background:var(--hover-surface);color:var(--ink)}
-.dialog-body{display:grid;gap:12px;padding:14px 16px;overflow:auto;font-size:13px;line-height:1.55}
+.dialog-body{display:grid;gap:12px;padding:14px 16px;overflow:auto;font-size:14px;line-height:1.5}
 .dialog-description{margin:0;color:var(--ink-2)}
 .dialog-footer{display:flex;flex:none;justify-content:flex-end;gap:8px;padding:10px 16px;border-top:1px solid var(--line);background:var(--sidebar-surface)}
 .confirm-dialog .confirm-dialog-mark{display:grid;place-items:center;color:var(--tone-exclude)}
@@ -281,7 +281,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .confirm-dialog-actions .confirm-dialog-cancel:hover{background:var(--hover-surface)}
 .confirm-dialog-actions .confirm-dialog-danger{background:var(--tone-exclude);color:var(--paper)}
 .confirm-dialog-actions .confirm-dialog-danger:hover{background:color-mix(in srgb,var(--tone-exclude),var(--ink) 10%)}
-@media(max-width:760px){.dialog{top:12px;max-height:calc(100svh - 24px)}.confirm-dialog-actions{flex-direction:column-reverse}.confirm-dialog-actions [data-slot=button]{width:100%}}
+@media(max-width:760px){.confirm-dialog-actions{flex-direction:column-reverse}.confirm-dialog-actions [data-slot=button]{width:100%}}
 @media(prefers-reduced-motion:reduce){.dialog,.dialog-scrim{transition:none}}
 
 /* Menus (mockup `.menu`): two-line rows, a LATER badge, file-type rows. The rest is in components/ui/dropdown-menu.tsx. */
@@ -297,7 +297,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .jobs-sheet [data-slot=sheet-title]{display:flex;align-items:center;gap:8px}
 .jobs-sheet [data-slot=sheet-title] svg{flex:none;color:var(--muted)}
 .jobs-body{display:grid;align-content:start;padding:18px 22px 40px;overflow:auto}
-.job{display:grid;gap:5px;padding:12px 0;border-top:1px solid var(--line)}
+.job{display:grid;gap:5px;padding:12px 0;border-top:1px solid var(--line);font-size:14px;line-height:1.5}
 .job:first-child{border-top:0}
 .job b{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500}
 .job b>svg{flex:none;color:var(--muted)}
@@ -314,4 +314,4 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .job-bar .is-checked{background:var(--accent-line)}
 .jobs-paused{color:var(--tone-uncertain)}
 .jobs-body h3{margin:6px 0 0;font-size:14px;font-weight:600}
-.jobs-body .foot-note{margin:14px 0 0;color:var(--muted);font-size:12px}
+.jobs-body .foot-note{margin:14px 0 0;color:var(--muted);font-size:13px;line-height:1.5}

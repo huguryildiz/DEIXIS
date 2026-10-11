@@ -92,6 +92,9 @@ function RecentStatus({ status }: { status: RunStatus | null }) {
   </span>
 }
 
+// The shell's phone layout (App.css, mockup v24): the sidebar becomes a drawer at this width.
+const PHONE_QUERY = '(max-width: 820px)'
+
 function readCurrent(): string | null {
   try { return localStorage.getItem('deixis-current') } catch { return null }
 }
@@ -284,11 +287,21 @@ export default function App() {
     setLanguage(next)
   }
 
-  // The phone drawer closes with its own button or Escape, and hands focus back to the menu button.
+  // The phone drawer closes with its own button or Escape, and hands focus back to the menu button. While it is closed
+  // it is inert (out of the tab order and the accessibility tree); opened, focus moves to its close button.
   const menuButton = useRef<HTMLButtonElement>(null)
+  const drawerClose = useRef<HTMLButtonElement>(null)
+  const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches)
+  useEffect(() => {
+    const media = window.matchMedia(PHONE_QUERY)
+    const onChange = () => setPhone(media.matches)
+    media.addEventListener('change', onChange)
+    return () => media.removeEventListener('change', onChange)
+  }, [])
   const closeDrawer = useCallback(() => { setSidebar(false); menuButton.current?.focus() }, [])
   useEffect(() => {
     if (!sidebar) return
+    drawerClose.current?.focus()
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !event.defaultPrevented) closeDrawer() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -341,8 +354,8 @@ export default function App() {
   }
 
   const activeId = route.view === 'research' ? route.id : null
-  // The research opened last; before any was opened in this browser, the most recently updated one.
-  const currentResearch = currentId && researches.some(r => r.id === currentId) ? currentId : researches[0]?.id ?? null
+  // The research opened last in this browser; disabled until one has been opened.
+  const currentResearch = currentId && researches.some(r => r.id === currentId) ? currentId : null
   // "Awaiting you": open queue rows and works waiting for the person's PDF over every research, the two kept apart in the tooltip.
   const awaitingQueue = researches.reduce((sum, r) => sum + r.awaiting.queue, 0)
   const awaitingPdf = researches.reduce((sum, r) => sum + r.awaiting.pdf, 0)
@@ -374,11 +387,11 @@ export default function App() {
   const accessName = [proxy?.address ? `${t('Institutional access · {label}', { label: proxyLabel })}: ${proxyState.text}` : proxyState.text, scopusState?.text].filter(Boolean).join('. ')
 
   return <div className={`app ${dark ? 'dark' : ''} ${collapsed ? 'sidebar-collapsed' : ''} ${sidebarWidth !== null ? 'sidebar-resized' : ''} ${resizing ? 'sidebar-resizing' : ''}`} style={sidebarWidth !== null ? { '--sidebar-width': `${sidebarWidth}px` } as CSSProperties : undefined}>
-    <aside ref={asideRef} className={`sidebar ${sidebar ? 'is-open' : ''}`}>
+    <aside ref={asideRef} className={`sidebar ${sidebar ? 'is-open' : ''}`} inert={phone && !sidebar}>
       <div className="sidebar-head">
         <button className="brand" aria-label={t('DEIXIS home')} onClick={() => go({ view: 'home' })}><span className="brand-mark" aria-hidden="true">{brandLogo}</span><span className="sidebar-label">DEIXIS</span></button>
         {/* On a phone the drawer's own button closes it (mockup: no scrim). */}
-        <button type="button" className="sidebar-toggle" onClick={sidebar ? closeDrawer : toggleCollapsed} aria-label={t(sidebar ? 'Close navigation' : collapsed ? 'Expand sidebar' : 'Collapse sidebar')} title={t(sidebar ? 'Close navigation' : collapsed ? 'Expand sidebar' : 'Collapse sidebar')}><PanelLeft size={16} aria-hidden="true" /></button>
+        <button type="button" ref={drawerClose} className="sidebar-toggle" onClick={sidebar ? closeDrawer : toggleCollapsed} aria-label={t(sidebar ? 'Close navigation' : collapsed ? 'Expand sidebar' : 'Collapse sidebar')} title={t(sidebar ? 'Close navigation' : collapsed ? 'Expand sidebar' : 'Collapse sidebar')}><PanelLeft size={16} aria-hidden="true" /></button>
       </div>
       <nav aria-label={t('Main navigation')}>
         <button className={route.view === 'home' ? 'selected' : ''} onClick={() => go({ view: 'home' })} title={t('New research')}><Plus size={16} aria-hidden="true" /><span className="sidebar-label">{t('New research')}</span></button>
@@ -412,7 +425,7 @@ export default function App() {
               /></div>
               : <button className="recent-open" onClick={event => openRecent(event, r.id)} onDoubleClick={() => beginRename(r)} title={`${r.question} · ${status}${followupText}`} aria-label={`${r.title} · ${status}${followupText}`}><RecentStatus status={r.last_run_status} /><span className="recent-title">{r.title}</span><span className="followup-sidebar-count" hidden={!r.followup_new} aria-label={followupText.slice(2)}>{r.followup_new}</span><time className="recent-time" dateTime={r.updated_at}>{shortAgo(r.updated_at, live)}</time></button>}
             <DropdownMenu><DropdownMenuTrigger className="recent-more" disabled={actionBusy === r.id} aria-label={t('Actions for {title}', { title: r.title })} title={t('More actions')}><Ellipsis size={16} /></DropdownMenuTrigger>
-              <DropdownMenuContent align="end"><DropdownMenuItem onClick={() => beginRename(r)}><PencilLine size={15} />{t('Rename')}</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => moveToTrash(r)}><Trash2 size={15} />{t('Move to Trash')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
+              <DropdownMenuContent align="start" sideOffset={6}><DropdownMenuItem onClick={() => beginRename(r)}><PencilLine size={15} />{t('Rename')}</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => moveToTrash(r)}><Trash2 size={15} />{t('Move to Trash')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
         })}
       </div>
       {actionMessage && route.view !== 'trash' && <p className="sidebar-action-message" role="status">{actionMessage}</p>}

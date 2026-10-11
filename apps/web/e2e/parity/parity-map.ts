@@ -9,7 +9,7 @@ import type { FixtureContext } from './gates'
 
 export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
-export type SurfaceId = 'home' | 'research' | 'zotero'
+export type SurfaceId = 'home' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -48,6 +48,15 @@ export type Surface = {
   prepare?: (page: Page) => Promise<unknown>
   /** After the page loads: the clicks that open this state (a dialog), before `ready` is awaited. */
   open?: (page: Page) => Promise<unknown>
+  /** Only at these viewport widths (default: every width). */
+  widths?: number[]
+  /** A state on top of the page (collapsed sidebar, drawer, sheet, toast, menu, dialog): the mockup script run after
+   *  `mock`, the app steps that open the same state, and the app steps that undo a change to the fixture afterwards. */
+  mockAct?: string
+  appAct?: (page: Page) => Promise<void>
+  appUndo?: (page: Page) => Promise<void>
+  /** The equation reader the app is shown with (default: one PDF being read, the background card's source). */
+  reader?: 'reading' | 'not-installed'
 }
 
 /** The Zotero library the dialog surface shows: SYNTHETIC collections shaped like the mockup's six (two of them
@@ -61,8 +70,15 @@ export const ZOTERO_COLLECTIONS = [
   { key: 'SYNF', name: 'SYNTHETIC Thesis reading list', items: 46, parent: null },
 ]
 
+export const WIDTHS = [1280, 390]
+export const THEMES: Theme[] = ['light', 'dark']
+export const BREAKPOINT = 1024
+const DESK = [1280]
+const PHONE = [390]
+
+const HOME = "setScenario('ok'); go('home')"
 export const SURFACES: Surface[] = [
-  { id: 'home', mock: "setScenario('ok'); go('home')", app: '#/', ready: '#research-question' },
+  { id: 'home', mock: HOME, app: '#/', ready: '#research-question' },
   { id: 'research', mock: "setScenario('ok')", app: '#/research/{research}', ready: '.research-topbar' },
   { id: 'zotero', mock: "setScenario('ok'); go('home'); zoteroDlg('home')", app: '#/', ready: '.zotero-dialog .zotero-cols label',
     prepare: page => page.route('**/api/zotero/collections**', route => route.fulfill({ json: { source: 'local', collections: ZOTERO_COLLECTIONS } })),
@@ -71,19 +87,46 @@ export const SURFACES: Surface[] = [
       await page.getByRole('menuitem', { name: /Zotero collection/ }).click()
       await page.mouse.move(0, 0)
     } },
+  // S1 states (plan O4–O7, S2, S20): the collapsed strip, the phone drawer, the jobs sheet, a toast with Undo, the
+  // recent row's menu and the dialog shell.
+  { id: 'collapsed', mock: HOME, mockAct: 'setSideOff(true)', app: '#/', ready: '#research-question', widths: DESK,
+    appAct: page => page.locator('.sidebar-toggle').click() },
+  { id: 'drawer', mock: HOME, mockAct: "document.getElementById('app').classList.add('nav-open')", app: '#/', ready: '#research-question', widths: PHONE,
+    appAct: async page => { await page.locator('.mobile-menu').click(); await page.locator('aside.sidebar.is-open').waitFor() } },
+  { id: 'jobs-sheet', mock: HOME, mockAct: 'st.jobsOpen = true; render()', app: '#/', ready: '#research-question', widths: DESK,
+    appAct: async page => { await page.locator('.sidebar-foot .bgcard').click(); await page.locator('.jobs-sheet').waitFor() } },
+  { id: 'toast', mock: HOME, mockAct: "toast('Moved to Trash.', () => {}); clearTimeout(tt); document.querySelector('.toast').dataset.parity = ''", app: '#/', ready: '#research-question', widths: DESK,
+    appAct: async page => {
+      await page.locator('.recent-list .recent-row').first().hover()
+      await page.locator('.recent-list .recent-more').first().click()
+      await page.getByRole('menuitem', { name: 'Move to Trash' }).click()
+      await page.locator('.toast .toast-action').waitFor()
+    },
+    appUndo: async page => {
+      if (await page.locator('.toast .toast-action').isVisible()) await page.locator('.toast .toast-action').click()
+      await page.locator('.recent-list .recent-row').first().waitFor()
+    } },
+  { id: 'menu', mock: HOME, mockAct: "st.menuArg = 0; document.querySelector('.rrow').classList.add('on'); menu('rmenu', document.querySelector('.rrow .rmore'))", app: '#/', ready: '#research-question', widths: DESK,
+    appAct: async page => {
+      await page.locator('.recent-list .recent-row').first().hover()
+      await page.locator('.recent-list .recent-more').first().click()
+      await page.locator('[data-slot=dropdown-menu-content]').waitFor()
+    } },
+  { id: 'dialog', mock: HOME, mockAct: "zoteroDlg('home')", app: '#/settings/connections', ready: '.connection-grid', reader: 'not-installed',
+    appAct: async page => {
+      await page.getByRole('button', { name: /^Marker/ }).click()
+      await page.locator('.connection-sheet').getByRole('button', { name: 'Install', exact: true }).click()
+      await page.locator('.dialog').waitFor()
+    } },
 ]
-
-export const WIDTHS = [1280, 390]
-export const THEMES: Theme[] = ['light', 'dark']
-export const BREAKPOINT = 1024
-const DESK = [1280]
-const PHONE = [390]
 
 // A pair that already matches on the desktop while its phone layout is a later slice's: two entries.
 const phoneLater = (pair: Pair, slice: string, why: string): Pair[] => [
   { ...pair, widths: DESK },
   { ...pair, id: `${pair.id}@390`, widths: PHONE, status: `pending:${slice}`, why },
 ]
+
+const NAV_ICONS = [['plus', 'plus'], ['search', 'search'], ['clock', 'clock'], ['inbox', 'inbox'], ['lib', 'library-big'], ['gear', 'sliders-horizontal'], ['trash', 'trash']].map(([mock, app]) => ({ mock, app }))
 
 const shell = (surface: SurfaceId): Pair[] => [
   { id: `${surface}.sidebar`, surface, mock: '.side', app: 'aside.sidebar', checks: ['chrome', 'colour'], widths: DESK, use: 'decorative', status: 'active' },
@@ -92,7 +135,7 @@ const shell = (surface: SurfaceId): Pair[] => [
     status: 'active' },
   // Lucide names confirmed by S1.
   { id: `${surface}.nav`, surface, mock: '.nav button', app: 'aside nav button', checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', widths: DESK,
-    icon: [['plus', 'plus'], ['search', 'search'], ['clock', 'clock'], ['inbox', 'inbox'], ['lib', 'library-big'], ['gear', 'sliders-horizontal'], ['trash', 'trash']].map(([mock, app]) => ({ mock, app })),
+    icon: NAV_ICONS,
     dataText: { mock: ['.cnt'], app: ['.nav-count'] }, states: ['hover', 'selected'], selected: { mock: '.nav button.on', app: 'aside nav button.selected' },
     status: 'active' },
   { id: `${surface}.recents-label`, surface, mock: '#recentsH', app: '.recents-label', checks: ['chrome', 'type', 'colour'], widths: DESK, states: [],
@@ -111,8 +154,44 @@ const shell = (surface: SurfaceId): Pair[] => [
     status: 'active' },
 ]
 
+// The S1 states. The drawer is the desktop sidebar opened over the page at 390; the collapsed strip shows icons only.
+const states: Pair[] = [
+  ...shell('drawer').filter(p => p.id !== 'drawer.mobilebar').map(p => ({ ...p, widths: PHONE })),
+  { id: 'collapsed.sidebar', surface: 'collapsed', mock: '.side', app: 'aside.sidebar', checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'collapsed.brand-row', surface: 'collapsed', mock: '.side .brand', app: '.sidebar-head', checks: ['chrome'], status: 'active' },
+  { id: 'collapsed.collapse', surface: 'collapsed', mock: '#sideTog', app: '.sidebar-toggle', checks: ['chrome'], unordered: true, status: 'active' },
+  { id: 'collapsed.nav', surface: 'collapsed', mock: '.nav button', app: 'aside nav button', checks: ['chrome', 'colour', 'icon'], list: 'fixed', text: false, icon: NAV_ICONS,
+    dataText: { mock: ['.cnt'], app: ['.nav-count'] }, states: ['hover', 'selected'], selected: { mock: '.nav button.on', app: 'aside nav button.selected' }, status: 'active' },
+  { id: 'collapsed.user-row', surface: 'collapsed', mock: '.side-foot .user', app: '.sidebar-foot .user', checks: ['chrome'], status: 'active' },
+  // O7: the right sheet over a scrim, here the jobs sheet; its rows come from the SYNTHETIC equation-reader read (one job).
+  { id: 'jobs-sheet.scrim', surface: 'jobs-sheet', mock: '.sheet-scrim', app: '[data-slot=sheet-overlay]', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'jobs-sheet.sheet', surface: 'jobs-sheet', mock: '#jobsSheet', app: '.jobs-sheet', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'jobs-sheet.head', surface: 'jobs-sheet', mock: '#jobsSheet .p-head', app: '.jobs-sheet [data-slot=sheet-header]', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'jobs-sheet.title', surface: 'jobs-sheet', mock: '#jobsSheet .p-head h2', app: '.jobs-sheet [data-slot=sheet-title]', checks: ['type', 'icon'], icon: { mock: 'clock', app: 'clock' }, unordered: true, status: 'active' },
+  { id: 'jobs-sheet.close', surface: 'jobs-sheet', mock: '#jobsSheet .p-head .ib', app: '.jobs-sheet [data-slot=sheet-close]', checks: ['chrome', 'icon'], icon: { mock: 'x', app: 'x' }, unordered: true, status: 'active' },
+  { id: 'jobs-sheet.job', surface: 'jobs-sheet', mock: '#jobsSheet .job', app: '.jobs-sheet .jobs-body > .job', checks: ['chrome', 'type'], list: 'data', expected: () => 1, unordered: true, status: 'active' },
+  // §2.3 copy: COPY_CHANGES jobs-note (the promise is conditional).
+  { id: 'jobs-sheet.note', surface: 'jobs-sheet', mock: '#jobsSheet .foot-note', app: '.jobs-sheet .foot-note', checks: ['content', 'type', 'colour'], states: [], unordered: true, status: 'active' },
+  // O4: toast bottom-centre on ink with an Undo link. Its dismiss button is a §2.2 placement (toast-dismiss), so the box is not compared.
+  { id: 'toast.toast', surface: 'toast', mock: '.toast', app: '.toast', checks: ['type', 'colour'], unordered: true, status: 'active' },
+  { id: 'toast.undo', surface: 'toast', mock: '.toast .tbtn', app: '.toast .toast-action', checks: ['type', 'colour'], text: true, unordered: true, status: 'active' },
+  // O5: the recent row's menu (Rename, Move to Trash as a danger row).
+  { id: 'menu.menu', surface: 'menu', mock: '.menu', app: '[data-slot=dropdown-menu-content]', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'menu.items', surface: 'menu', mock: '.menu button', app: '[data-slot=dropdown-menu-content] [data-slot=dropdown-menu-item]', checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed',
+    icon: [{ mock: 'pen', app: 'pencil-line' }, { mock: 'trash', app: 'trash' }], states: ['hover'], unordered: true, status: 'active' },
+  // O6: the dialog shell (mockup `.pal.dlg`), opened in the app by a confirm dialog (the equation reader's Install).
+  { id: 'dialog.scrim', surface: 'dialog', mock: '.scrim', app: '.dialog-scrim', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'dialog.dialog', surface: 'dialog', mock: '.pal.dlg', app: '.dialog', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'dialog.head', surface: 'dialog', mock: '.pal.dlg .pal-in', app: '.dialog-head', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'dialog.title', surface: 'dialog', mock: '.pal.dlg .pal-in b', app: '.dialog-title', checks: ['type'], unordered: true, status: 'active' },
+  { id: 'dialog.close', surface: 'dialog', mock: '.pal.dlg .pal-in .ib', app: '.dialog-close', checks: ['chrome', 'icon'], icon: { mock: 'x', app: 'x' }, unordered: true, status: 'active' },
+  { id: 'dialog.body', surface: 'dialog', mock: '.pal.dlg .dlg-b', app: '.dialog-body', checks: ['content'], unordered: true, status: 'active' },
+  { id: 'dialog.footer', surface: 'dialog', mock: '.pal.dlg .dlg-f', app: '.dialog-footer', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+]
+
 export const PAIRS: Pair[] = [
   ...shell('home'),
+  ...states,
   { id: 'home.composer', surface: 'home', mock: '.composer', app: 'form.composer', checks: ['chrome'], status: 'active' },
   { id: 'home.scope-button', surface: 'home', mock: '.band .band-btn', app: '.composer-scope', checks: ['chrome', 'type'],
     status: 'active' },

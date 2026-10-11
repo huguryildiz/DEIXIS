@@ -19,7 +19,7 @@ function DialogContent({ icon, title, className, backdropClassName, children, sh
 }) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Backdrop data-slot="dialog-scrim" className={cn("dialog-scrim", backdropClassName)} />
+      <DialogPrimitive.Backdrop forceRender data-slot="dialog-scrim" className={cn("dialog-scrim", backdropClassName)} />
       <DialogPrimitive.Popup data-slot="dialog-content" className={cn("dialog", className)} {...props}>
         <div className="dialog-head">
           {icon && <span className="dialog-icon">{icon}</span>}

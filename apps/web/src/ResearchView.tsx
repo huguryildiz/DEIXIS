@@ -267,6 +267,25 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     }
   }, [view, toast])
 
+  // On a narrow screen the tab strip scrolls sideways: bring the selected tab into it. Only the strip scrolls, never the page.
+  useEffect(() => {
+    const list = tabsRef.current?.querySelector<HTMLElement>('[data-slot=tabs-list]')
+    if (!list) return
+    const reveal = () => {
+      const active = list.querySelector<HTMLElement>('[role=tab][aria-selected=true]')
+      if (!active) return
+      const strip = list.getBoundingClientRect()
+      const box = active.getBoundingClientRect()
+      if (box.left < strip.left) list.scrollLeft -= strip.left - box.left + 16
+      else if (box.right > strip.right) list.scrollLeft += box.right - strip.right + 16
+    }
+    reveal()
+    // The strip also narrows when the window does.
+    const observer = new ResizeObserver(reveal)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [tab, loaded])
+
   async function act(action: () => Promise<unknown>, success?: string, undo?: ToastAction) {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setBusy(true)
@@ -520,8 +539,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         <Button variant="destructive" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />{t('Cancel')}</Button>
       </div>}
       {!titleEditing && heading === view.scope.question && !active && run?.status !== 'paused' && <Button variant="ghost" size="sm" className="research-title-suggest research-topbar-action" disabled={busy} onClick={startTitle}
-        title={t('The model names the research from its question and included sources, in at most 15 words.')}><Sparkles size={14} aria-hidden />{t('Suggest a short title')}</Button>}
-      <Button variant="ghost" size="sm" className="research-topbar-action research-revise" onClick={reviseQuestion}><PencilLine size={14} aria-hidden />{t('Revise question')}</Button>
+        title={t('The model names the research from its question and included sources, in at most 15 words.')}><Sparkles size={14} aria-hidden /><span className="research-topbar-label">{t('Suggest a short title')}</span></Button>}
+      <Button variant="ghost" size="sm" className="research-topbar-action research-revise" title={t('Revise question')} onClick={reviseQuestion}><PencilLine size={14} aria-hidden /><span className="research-topbar-label">{t('Revise question')}</span></Button>
       <ExportMenu researchId={id} included={included > 0} cited={view.counts.cited > 0} prisma={Boolean(view.counts.flow)} />
     </div>
 
@@ -911,8 +930,8 @@ function AnswerBlock({ researchId, title, version, answer, sources, busy, dark, 
           <SheetDescription className="sr-only">{t('Source-linked research report, version {n}.', { n: version })}</SheetDescription>
           <div className="report-toolbar-actions">
             <Button ref={reviewsButton} variant="ghost" size="sm" aria-label={t('Reviews, {n}', { n: reviewList.reviews.length })} aria-pressed={reviewMode} onClick={() => mode(!reviewMode)}>{t('Reviews')} <span className="research-tab-count" aria-hidden>{reviewList.reviews.length}</span></Button>
-            <Button variant="ghost" size="sm" onClick={() => { void copyReport() }}>{copied ? <CircleCheck size={16} /> : <Copy size={16} />}{t(copied ? 'Copied' : 'Copy')}</Button>
-            <Button variant="ghost" size="sm" onClick={downloadReport}><Download size={16} />{t('Download')}</Button>
+            <Button variant="ghost" size="sm" onClick={() => { void copyReport() }}>{copied ? <CircleCheck size={16} /> : <Copy size={16} />}<span className="report-head-label">{t(copied ? 'Copied' : 'Copy')}</span></Button>
+            <Button variant="ghost" size="sm" onClick={downloadReport}><Download size={16} /><span className="report-head-label">{t('Download')}</span></Button>
           </div>
         </SheetHeader>
         <div className="report-scroll" ref={scrollRoot}>

@@ -33,18 +33,18 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 
 .app .composer-options{gap:8px;min-width:0}
 
-/* Home: one centred 700px column about 11vh below the top. The composer is a floating box: a band in --accent-deep carries
+/* Home: one centred 700px column about 11vh below the top. The composer is a floating box: a band in --accent-band carries
    the source scope, then the question, then attachments and a control row on the sidebar surface (+, depth, models, send).
    Notes and the shortcut sit quietly under it. The DOM is the original intake tree: the band is the box's 42px top border
    (a border, not a pseudo-element or gradient, so contrast checks still resolve every background) and the scope trigger
    (still inside .composer-options, so Tab order is unchanged) is placed on it absolutely. */
 .welcome.home{display:grid;gap:14px;width:100%;max-width:748px;margin:0 auto 48px;padding:max(0px,calc(11vh - 32px)) 24px 0}
-.app .composer{position:relative;background:var(--raised-surface);border:1px solid var(--accent-deep);border-top-width:42px;border-radius:12px;box-shadow:var(--shadow-float);transition:border-color .15s ease,box-shadow .15s ease}
-.app .composer:focus-within{border-color:var(--accent);border-top-color:var(--accent-deep);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent),transparent 78%),var(--shadow-float)}
-/* White on the band: --accent-deep is #2e4877 / #3d5a8f, so white text stays above 4.5:1 even on the hover tint.
+.app .composer{position:relative;background:var(--raised-surface);border:1px solid var(--accent-band);border-top-width:42px;border-radius:12px;box-shadow:var(--shadow-float);transition:border-color .15s ease,box-shadow .15s ease}
+.app .composer:focus-within{border-color:var(--accent);border-top-color:var(--accent-band);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent),transparent 78%),var(--shadow-float)}
+/* White on the band: --accent-band is #2e4877 / #2b3b5c, so white text stays above 4.5:1 even on the hover tint.
    The trigger's own background is opaque (the band mixed with white) so its text contrast does not depend on ::before. */
-.app .composer .composer-options [data-slot=select-trigger].composer-scope{position:absolute;top:-35px;left:7px;max-width:calc(100% - 14px);height:28px;gap:7px;padding:0 8px 0 9px;border:1px solid rgb(255 255 255/.24);border-radius:6px;background:color-mix(in srgb,var(--accent-deep),#fff 10%);box-shadow:none;color:#fff;font-size:12.5px;font-weight:500}
-.app .composer .composer-options [data-slot=select-trigger].composer-scope:hover,.app .composer .composer-options [data-slot=select-trigger].composer-scope[aria-expanded=true]{background:color-mix(in srgb,var(--accent-deep),#fff 16%)}
+.app .composer .composer-options [data-slot=select-trigger].composer-scope{position:absolute;top:-35px;left:7px;max-width:calc(100% - 14px);height:28px;gap:7px;padding:0 8px 0 9px;border:1px solid rgb(255 255 255/.24);border-radius:6px;background:color-mix(in srgb,var(--accent-band),#fff 10%);box-shadow:none;color:#fff;font-size:12.5px;font-weight:500}
+.app .composer .composer-options [data-slot=select-trigger].composer-scope:hover,.app .composer .composer-options [data-slot=select-trigger].composer-scope[aria-expanded=true]{background:color-mix(in srgb,var(--accent-band),#fff 16%)}
 .app .composer .composer-options .composer-scope svg,.app .composer .composer-options .composer-scope [data-slot=select-value] svg{color:#fff}
 .app .composer .composer-options .composer-scope:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:none}
 .app .composer textarea{display:block;width:100%;min-height:112px;padding:14px 16px;border:0;border-radius:0;background:transparent;box-shadow:none;color:var(--ink);font-size:15px;line-height:1.55;resize:none;outline:none}
@@ -184,7 +184,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .app .composer-options [data-slot=select-trigger] [data-slot=select-value] svg{color:var(--muted)}
 
 /* Collapsible sidebar: a 56px icon strip on wide screens; phones keep the drawer. */
-.sidebar-head{display:flex;align-items:center;gap:6px;padding:10px 8px 8px 10px}
+.sidebar-head{display:flex;align-items:center;gap:6px;padding:14px 10px 10px 10px}
 .app .sidebar-toggle{margin-left:auto;width:30px;height:30px;border-radius:7px;color:var(--muted);flex-shrink:0}
 .sidebar,.main-shell{transition:width .18s ease,margin-left .18s ease,padding .18s ease}
 @media(max-width:760px){.sidebar-toggle{display:none}}
@@ -217,6 +217,8 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .main-shell main > :first-child{margin-top:0}
 .main-shell main{padding-top:32px}
 @media(max-width:760px){.main-shell main{padding-top:20px}}
+/* The research view starts with its own 46px topbar, so it sits at the top edge (under the bar on phones). */
+.main-shell main:has(> .research-view > .research-topbar:first-child){padding-top:0}
 
 /* Sidebar foot: background work, institutional access, then theme and language. */
 .sidebar-foot{display:grid;gap:8px;margin-top:auto;padding:10px 12px;border-top:1px solid var(--line)}

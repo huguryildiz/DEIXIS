@@ -9,7 +9,7 @@
 .app .recent-row:hover,.app .recent-row:has(.recent-more[data-popup-open]){background:var(--hover-surface)}
 .app .recent-row.is-active{background:var(--selected-surface)}
 .app .recent-list .recent-row button{display:flex;align-items:center;background:transparent}
-.app .recent-row>.recent-open{flex:1;min-width:0;gap:9px;padding:6px 6px 6px 10px}
+.app .recent-row>.recent-open{flex:1;min-width:0;gap:9px;padding:7px 6px 7px 10px}
 .app .recent-status{display:grid;place-items:center;width:16px;height:16px;flex:none;color:var(--recent-status-color,var(--muted))}
 .app .recent-status>svg{width:14px;height:14px}
 .app .recent-status:is([data-status="queued"],[data-status="running"]){--recent-status-color:var(--accent)}
@@ -23,7 +23,7 @@
 .app .recent-list button>.recent-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:1.5;color:var(--ink-2)}
 .app .recent-row.is-active .recent-title{color:var(--ink)}
 /* The row's title is renamed in place: the same row, with the label swapped for a field that keeps the row's own type. */
-.app .recent-row>.recent-open.is-renaming{display:flex;align-items:center;flex:1;min-width:0;gap:9px;padding:6px 6px 6px 10px}
+.app .recent-row>.recent-open.is-renaming{display:flex;align-items:center;flex:1;min-width:0;gap:9px;padding:7px 6px 7px 10px}
 .app .recent-title-input{flex:1;min-width:0;padding:0;border:0;background:none;color:var(--ink);font:inherit;line-height:1.5;font-size:13px}
 .app .recent-title-input:focus-visible{outline:2px solid var(--accent);outline-offset:0}
 .app .recent-time{flex:none;min-width:28px;margin-left:auto;font-size:11px;color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -31,7 +31,9 @@
 .app .recent-row{position:relative}
 .app .recent-row .recent-more{position:absolute;top:50%;right:4px;flex:none;width:24px;height:24px;justify-content:center;padding:0;border-radius:5px;color:var(--muted);opacity:0;transform:translateY(-50%)}
 .app .recent-row:is(:hover,:focus-within,.is-active) .recent-more,.app .recent-row .recent-more[data-popup-open]{opacity:1}
-.app .recent-row:is(:hover,:focus-within,.is-active) .recent-time,.app .recent-row:has(.recent-more[data-popup-open]) .recent-time{visibility:hidden}
+.app .recent-row:not(.is-active):is(:hover,:focus-within) .recent-time,.app .recent-row:not(.is-active):has(.recent-more[data-popup-open]) .recent-time{visibility:hidden}
+/* The open research keeps its time beside the ⋯ button, so the button joins the row instead of covering the time. */
+.app .recent-row.is-active .recent-more{position:static;margin-right:4px;transform:none}
 .app .recent-row .recent-more:hover{background:var(--line);color:var(--ink)}
 @media(hover:none){.app .recent-row .recent-more{position:static;margin-right:4px;opacity:1;transform:none}.app .recent-row .recent-time{visibility:visible}}
 .sidebar-action-message{padding:6px 16px;color:var(--muted);font-size:11.5px;line-height:1.4}
@@ -81,6 +83,13 @@
 .run-strip{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:0 1 auto;min-width:0}
 .run-strip-status{display:inline-flex;align-items:center;gap:7px;min-width:0;margin-right:2px;padding:3px 10px;border:1px solid var(--accent-line);border-radius:999px;background:var(--accent-tint);color:var(--accent);font-size:12px;white-space:nowrap}
 @media(max-width:760px){.run-strip-status{white-space:normal;overflow-wrap:anywhere}}
+/* Phones: the title keeps the row; Revise question and Suggest a short title drop to icons, their text stays as the
+   accessible name (and a tooltip). Export keeps its label. A live run strip still wraps to its own row. */
+@media(max-width:760px){
+  .research-topbar-title{flex-basis:110px}
+  .research-topbar .research-topbar-action:has(>.research-topbar-label){position:relative;width:30px;padding-inline:0}
+  .research-topbar .research-topbar-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+}
 .run-strip-status.is-paused{border-color:transparent;background:var(--warn-surface);color:var(--warn-ink)}
 .run-strip .run-strip-pause{border-color:var(--strong-line);background:var(--paper);color:var(--ink-2)}
 .run-strip .run-strip-pause:hover{background:var(--hover-surface);color:var(--ink)}
@@ -232,10 +241,13 @@
 @media(max-width:760px){
   .report-artifact{padding:12px 14px}
   .report-artifact-preview{display:none}
-  .detail-sheet.report-sheet [data-slot=sheet-header].report-toolbar{flex-wrap:wrap;row-gap:4px;padding:8px 46px 6px 14px}
-  .report-toolbar-title{flex:1 1 100%;min-height:30px}
-  /* The second row starts under the title text (14px padding + 16px icon + 8px gap), not at the edge. */
-  .report-toolbar-actions{flex-wrap:wrap;margin-left:24px}
+  /* One 46px row on a phone: the title gives way first, and Copy, Download and Evidence view drop to icons whose text stays
+     as their accessible name. Only an evidence report with every control may still wrap. */
+  .detail-sheet.report-sheet [data-slot=sheet-header].report-toolbar{flex-wrap:wrap;row-gap:4px;gap:4px 8px;padding:7px 46px 7px 14px}
+  .report-toolbar-title{flex:1 1 110px;min-height:30px}
+  .report-toolbar-actions{flex-wrap:wrap;margin-left:auto}
+  .report-toolbar-actions [data-slot=button]:has(>.report-head-label){position:relative;width:30px;padding-inline:0}
+  .report-toolbar-actions .report-head-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .report-document{padding:22px 18px 60px}
   .report-document-head h1{font-size:24px}
 }
@@ -345,9 +357,9 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .approval-block-head small{color:var(--muted);font-size:11.5px}
 .approval-chaining{margin-top:10px}
 .approval-hint{margin:6px 0 0;color:var(--muted);font-size:11.5px}
-.approval-toggle{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;width:100%;padding:10px 14px;border:0;background:none;color:var(--ink);font-size:12.5px;text-align:left;cursor:pointer}
+.approval-toggle{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:4px 10px;width:100%;padding:10px 14px;border:0;background:none;color:var(--ink);font-size:12.5px;text-align:left;cursor:pointer}
 .approval-toggle>svg{flex:none;color:var(--muted)}
-.approval-toggle small{color:var(--muted);font-size:11.5px}
+.approval-toggle small{grid-column:2;color:var(--muted);font-size:11.5px}
 .approval-diff{padding:0 14px 14px}
 .approval-diff-group{margin-top:10px}
 .approval-diff-group strong{display:block;font-size:12px;font-weight:600}
@@ -494,7 +506,7 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .reason-form input::placeholder{color:var(--muted)}
 .version-note{display:block;margin:0 0 4px;color:var(--muted);font-size:11px;line-height:1.5}
 .source-main>strong,.source-main small{display:block}
-.source-main .source-title{color:var(--ink);font-family:var(--font-sans);font-size:15px;line-height:1.35;font-weight:500;letter-spacing:-.005em;text-wrap:balance}
+.source-main .source-title{color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.35;font-weight:500;letter-spacing:-.005em;text-wrap:balance}
 .source-main small{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5}
 /* Citation-style byline (mockup .src-m): authors · year, then venue in italics with volume, pages and the OpenAlex count. */
 .source-main .source-byline,.pdf-ready-head .source-byline{display:grid;gap:0;margin-top:3px;font-size:12px;line-height:1.45;color:var(--muted)}
@@ -959,7 +971,7 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .pdf-ready{display:grid;gap:14px;max-width:1040px;margin:30px 0 8px;color:var(--ink)}
 .legacy-research .pdf-ready h2{margin:0;font-family:var(--font-sans);font-size:16px;font-weight:600;line-height:1.35;letter-spacing:-.005em;text-wrap:balance}
 .legacy-research .pdf-ready p{margin:0}
-.pdf-ready-lede{max-width:78ch;color:var(--muted);font-size:14px}
+.pdf-ready-lede{max-width:78ch;color:var(--muted);font-size:13px;line-height:1.6}
 .pdf-ready-lede a{color:var(--accent);text-underline-offset:3px}
 /* As many equal columns as cells: three, or four with the person's unread PDFs (slice 18b). Cells on hairline gaps (mockup .depth). */
 .pdf-ready-depth{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:1px;border:1px solid var(--line);border-radius:10px;background:var(--line);overflow:hidden}
@@ -1143,7 +1155,11 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .queue-panel .queue-row:hover{background:var(--hover-surface)}
 .queue-panel .queue-row.is-selected{background:var(--selected-surface)}
 .queue-panel .queue-row.is-selected :is(.queue-row-facts,.queue-row-place){color:color-mix(in srgb,var(--muted),var(--ink) 25%)}
-.queue-panel .queue-row.is-selected .ref-pill{color:color-mix(in srgb,var(--pill),var(--ink) 50%)}
+/* Queue pills are neutral like the Sources and Library pills: grey text on a hairline, the version's tone only as a dot. */
+.queue-panel .ref-pill{gap:5px;padding:0 6px;border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);font-size:11.5px;font-weight:400;line-height:19px}
+.queue-panel .ref-pill>svg{display:none}
+.queue-panel .ref-pill:is(.is-abstract,.is-text,.is-ocr,.is-published,.is-accepted,.is-submitted,.is-removed,.is-cited,.is-similarity)::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pill)}
+.queue-panel .queue-row.is-selected .ref-pill{color:color-mix(in srgb,var(--muted),var(--ink) 25%)}
 .queue-panel .queue-list:focus-visible .queue-row.is-selected{outline:2px solid var(--accent);outline-offset:-2px}
 .queue-panel .queue-row-place{padding-top:2px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
 .queue-panel .queue-row-main{display:grid;gap:5px;min-width:0}
@@ -1161,7 +1177,7 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .queue-panel .queue-detail-meta{justify-self:stretch;margin:0 -18px 4px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--muted);font-size:12px}
 .queue-panel .queue-detail>.queue-detail-head:first-child .queue-detail-meta{border-radius:11px 11px 0 0}
 .queue-panel .queue-detail-title{margin:0;outline:none}
-.queue-panel .queue-detail-title button{color:var(--ink);font-family:var(--font-sans);font-size:17px;font-weight:500;line-height:1.35;letter-spacing:-.01em;text-align:left;text-wrap:balance;cursor:pointer}
+.queue-panel .queue-detail-title button{color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:500;line-height:1.4;letter-spacing:-.005em;text-align:left;text-wrap:pretty;cursor:pointer}
 .queue-panel .queue-detail-title button:hover{text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent),transparent 50%);text-underline-offset:3px}
 .queue-panel .queue-detail-title:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:3px}
 .queue-panel .queue-detail-head .source-chips{margin-top:0}
@@ -1243,7 +1259,7 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
   .queue-panel .queue-detail{padding:0 14px}
   .queue-panel .queue-detail-meta{margin-inline:-14px;padding-inline:14px}
   .queue-panel .queue-foot{margin-inline:-14px;padding-inline:14px}
-  .queue-panel .queue-detail-title button{font-size:16px}
+  .queue-panel .queue-detail-title button{font-size:15px}
   .queue-panel .queue-answers{flex-direction:column}
   .queue-panel .queue-answers>button{width:100%}
 }

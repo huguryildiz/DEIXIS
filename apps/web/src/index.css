@@ -101,6 +101,8 @@
     --line: #e6e8eb;
     --accent: #3b5b9a;
     --accent-deep: #2e4877;
+    /* The composer band. Its own token because in dark the band is quieter than the filled primary (#3d5a8f). */
+    --accent-band: #2e4877;
     --accent-tint: #ebeff7;
     --accent-line: #bfcce3;
     --sidebar-surface: #f7f8f9;
@@ -138,6 +140,8 @@
 }
 
 .dark {
+    /* Native controls (checkboxes, radios, selects) render in their dark form. */
+    color-scheme: dark;
     --background: #16181b;
     --foreground: #e7e9ec;
     --card: #1f2329;
@@ -181,6 +185,7 @@
     --line: #2b2f35;
     --accent: #93acdf;
     --accent-deep: #3d5a8f;
+    --accent-band: #2b3b5c;
     --accent-tint: #1e2636;
     --accent-line: #34466b;
     --sidebar-surface: #1c1f23;

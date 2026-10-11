@@ -148,6 +148,28 @@ test.describe.serial('S7a: thread and side panel', () => {
     await expect(page.locator('[data-split-panel]')).toHaveCount(0)
   })
 
+  test('Back to Sources finds its search, PDF filter, sort and an unsaved reason as they were', async () => {
+    await page.goto(`${server.url()}/#/research/${rid}/sources`)
+    const sources = panel(page, 'Sources')
+    await sources.getByRole('searchbox', { name: 'Filter sources' }).fill('SYNTHETIC')
+    await sources.getByRole('combobox', { name: 'Filter sources by PDF availability' }).click()
+    await page.getByRole('option', { name: /^PDF attached/ }).click()
+    await sources.getByRole('combobox', { name: 'Sort sources' }).click()
+    await page.getByRole('option', { name: 'Title A–Z' }).click()
+    const row = sources.locator('.source-row').filter({ has: page.getByRole('button', { name: 'Read abstract' }) }).first()
+    await row.getByRole('button', { name: 'Exclude', exact: true }).click()
+    const reason = row.getByRole('textbox', { name: 'Reason for excluding this source' })
+    await reason.fill('SYNTHETIC reason not saved yet')
+    await row.getByRole('button', { name: 'Read abstract' }).click()
+    await expect(panel(page, 'Source details')).toBeVisible()
+    await panel(page, 'Source details').getByRole('button', { name: 'Back' }).click()
+    const back = panel(page, 'Sources')
+    await expect(back.getByRole('searchbox', { name: 'Filter sources' })).toHaveValue('SYNTHETIC')
+    await expect(back.getByRole('combobox', { name: 'Filter sources by PDF availability' })).toContainText('PDF attached')
+    await expect(back.getByRole('combobox', { name: 'Sort sources' })).toContainText('Title A–Z')
+    await expect(back.getByRole('textbox', { name: 'Reason for excluding this source' }).first()).toHaveValue('SYNTHETIC reason not saved yet')
+  })
+
   test('Full width hides the thread; beside the panel the thread stays usable', async () => {
     await page.goto(`${server.url()}/#/research/${rid}/sources`)
     const sources = panel(page, 'Sources')

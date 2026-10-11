@@ -63,9 +63,10 @@ export function SplitPanel({ stack, phone }: { stack: PanelStack; phone: boolean
   </section>
 }
 
-// One panel's content. It renders into the frame while it is the open panel. `keepMounted` keeps the content alive
-// while another panel or none is open (its count, its requests, a draft being typed): the content always renders into
-// the same detached element, which the frame takes in while the panel is open, so React never mounts it anew.
+// One panel's content. It renders into the frame while it is the open panel, and stays mounted while it is anywhere in
+// the stack, so Back returns to it as it was (search text, filters, a draft). `keepMounted` keeps it alive while it is
+// not in the stack at all (its count, its requests). The content always renders into the same detached element, which
+// the frame takes in while the panel is open, so React never mounts it anew.
 // A panel with `open` belongs to a target its owner holds (a source, a report): opening the target opens the panel,
 // and closing the panel clears the target.
 export function StackPanel({ name, title, icon: Icon, actions, className, open, onClose, keepMounted = false, children }: {
@@ -107,6 +108,6 @@ export function StackPanel({ name, title, icon: Icon, actions, className, open, 
   return <>
     {slots && createPortal(<div className="split-panel-head-main"><h2 id="split-panel-title" tabIndex={-1}><Icon size={16} aria-hidden /><span>{title}</span></h2>
       {actions && <div className="split-panel-actions">{actions}</div>}</div>, slots.head)}
-    {(slots || keepMounted) && createPortal(children, box)}
+    {(inStack || keepMounted) && createPortal(children, box)}
   </>
 }

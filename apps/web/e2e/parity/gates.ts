@@ -41,12 +41,14 @@ function fontsCss(): string {
 }
 
 /** The mockup wrapped in a doctype page with the app's local fonts. A missing file fails; it is never skipped.
- *  The published artifact gets a document skeleton with no body margin; the wrapper gives it the same (`body{margin:0}`). */
+ *  The published artifact gets a document skeleton with no body margin; the wrapper gives it the same (`body{margin:0}`).
+ *  The "Mockup · example data" tags are mockup-only controls (§0 rule 2): the app has none, so they take no room here
+ *  either (at 390 px one wraps the composer band onto a second row). */
 export async function openMockup(page: Page): Promise<void> {
   if (!existsSync(MOCKUP)) throw new Error(`Parity mockup not found: ${MOCKUP}. Set DEIXIS_PARITY_MOCKUP to the v24 index.html.`)
   const source = readFileSync(MOCKUP, 'utf8').replace(/<link[^>]*fonts\.(googleapis|gstatic)\.com[^>]*>/g, '')
   const html = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-    + `<link rel="stylesheet" href="${ORIGIN}/fonts.css"><style>body{margin:0}</style>${source}`
+    + `<link rel="stylesheet" href="${ORIGIN}/fonts.css"><style>body{margin:0}.mock-tag{display:none!important}</style>${source}`
   const css = fontsCss()
   await page.route('**/*', route => {
     const url = route.request().url()

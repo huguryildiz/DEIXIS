@@ -61,7 +61,6 @@ const phoneLater = (pair: Pair, slice: string, why: string): Pair[] => [
   { ...pair, widths: DESK },
   { ...pair, id: `${pair.id}@390`, widths: PHONE, status: `pending:${slice}`, why },
 ]
-const PHONE_HOME = 'S4: phone Home (column at 5vh, 16px gutter, 15px question, wrapped control row)'
 
 const shell = (surface: SurfaceId): Pair[] => [
   { id: `${surface}.sidebar`, surface, mock: '.side', app: 'aside.sidebar', checks: ['chrome', 'colour'], widths: DESK, use: 'decorative', status: 'active' },
@@ -91,25 +90,24 @@ const shell = (surface: SurfaceId): Pair[] => [
 
 export const PAIRS: Pair[] = [
   ...shell('home'),
-  // The composer frame matches; its band is drawn today as the frame's 42px top border, which S4 replaces with an element.
-  ...phoneLater({ id: 'home.composer', surface: 'home', mock: '.composer', app: 'form.composer', checks: ['chrome'], status: 'active' }, 'S4', PHONE_HOME),
+  { id: 'home.composer', surface: 'home', mock: '.composer', app: 'form.composer', checks: ['chrome'], status: 'active' },
   { id: 'home.scope-button', surface: 'home', mock: '.band .band-btn', app: '.composer-scope', checks: ['chrome', 'type'],
-    status: 'pending:S4', why: 'S4: the band holds the scope button with icon + label + chevron at the mockup size' },
+    status: 'active' },
   { id: 'home.band', surface: 'home', mock: '.composer .band', app: '.composer-band', checks: ['chrome', 'colour'],
-    status: 'pending:S4', why: 'S4: the band is drawn in CSS today; S4 gives it its own element' },
-  ...phoneLater({ id: 'home.question', surface: 'home', mock: 'textarea#q', app: '#research-question', checks: ['chrome', 'type', 'colour'], status: 'active' }, 'S4', PHONE_HOME),
-  ...phoneLater({ id: 'home.control-row', surface: 'home', mock: '.composer .comp-row', app: '.composer-controls', checks: ['chrome'], status: 'active' }, 'S4', PHONE_HOME),
+    status: 'active' },
+  { id: 'home.question', surface: 'home', mock: 'textarea#q', app: '#research-question', checks: ['chrome', 'type', 'colour'], status: 'active' },
+  { id: 'home.control-row', surface: 'home', mock: '.composer .comp-row', app: '.composer-controls', checks: ['chrome'], status: 'active' },
   { id: 'home.control-row-style', surface: 'home', mock: '.composer .comp-row', app: '.composer-controls', checks: ['colour'],
-    status: 'pending:S4', why: 'S4: the row has its own 11px bottom radius in the app; the mockup row is square inside the clipped composer' },
-  ...phoneLater({ id: 'home.add-sources', surface: 'home', mock: '.comp-row [data-menu="attach"]', app: '.composer-add', checks: ['chrome', 'colour', 'icon'],
-    icon: { mock: 'plus', app: 'plus' }, status: 'active' }, 'S4', PHONE_HOME),
+    status: 'active' },
+  { id: 'home.add-sources', surface: 'home', mock: '.comp-row [data-menu="attach"]', app: '.composer-add', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'plus', app: 'plus' }, status: 'active' },
   { id: 'home.models', surface: 'home', mock: '.comp-row [data-menu="models"]', app: '.models-summary', checks: ['chrome', 'type'],
-    status: 'pending:S4', why: 'S4: "Models" button right of the files, menu with one row per role' },
+    status: 'active' },
   { id: 'home.depth', surface: 'home', mock: '.comp-row [data-menu="depth"]', app: '[aria-label="Research depth"]', checks: ['chrome', 'type'],
-    status: 'pending:S4', why: 'S4: depth button moves right of Models' },
-  ...phoneLater({ id: 'home.send', surface: 'home', mock: '.comp-row .send', app: '.send-button', checks: ['chrome', 'icon'], icon: { mock: 'up', app: 'arrow-up' }, status: 'active' }, 'S4', PHONE_HOME),
+    status: 'active' },
+  { id: 'home.send', surface: 'home', mock: '.comp-row .send', app: '.send-button', checks: ['chrome', 'icon'], icon: { mock: 'up', app: 'arrow-up' }, status: 'active' },
   { id: 'home.send-style', surface: 'home', mock: '.comp-row .send', app: '.send-button', checks: ['colour'],
-    status: 'pending:S4', why: 'S4: filled 32px send without the 1px button border' },
+    status: 'active' },
   { id: 'home.mode-chips', surface: 'home', mock: '.chips .chip', app: '.mode-chips .chip', checks: ['chrome', 'type', 'colour'], list: 'fixed',
     states: ['hover', 'selected'], selected: { mock: '.chips .chip.on', app: '.mode-chips .chip.on' },
     status: 'pending:S5b', why: 'S5b: intent chips (needs S5a intent backend)' },
@@ -117,8 +115,8 @@ export const PAIRS: Pair[] = [
   { id: 'home.cards', surface: 'home', mock: '.cards .card', app: '.home-cards .card', checks: ['content', 'type'], list: 'data',
     expected: ctx => (ctx.researches ? 1 : 0) + Math.min(2, ctx.suggestions),
     status: 'pending:S5b', why: 'S5b: Resume and Suggested cards' },
-  { id: 'home.hint', surface: 'home', mock: '.home .hint', app: '.home-hint', checks: ['content', 'type', 'colour'],
-    status: 'pending:S4', why: 'S4: the shortcut hint line' },
+  { id: 'home.hint', surface: 'home', mock: '.home .hint', app: '.home-hint', checks: ['content', 'type', 'colour'], states: [],
+    status: 'active' },
 
   ...shell('research'),
   { id: 'research.topbar', surface: 'research', mock: '.topbar', app: '.research-topbar', checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },

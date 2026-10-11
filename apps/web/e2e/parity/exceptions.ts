@@ -107,6 +107,8 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'proxy-working', rule: '§2.3 (Q2)', mock: 'Working / VPN required / Access uncertain', app: 'Proxy reachable · article access not checked / Proxy did not answer' },
   { id: 'scopus-check', rule: '§2.3 (Q2)', mock: '(none)', app: 'Scopus full view confirmed / Scopus full view not confirmed / Scopus check could not run' },
   { id: 'guide-plural', rule: '§2.3 (Q2, Q3)', mock: 'PDF guiding the search · its title, abstract and references shape the query. The others are read as sources.', app: 'PDFs guiding the search · their titles, abstracts and references shape the query.' },
+  { id: 'scope-academic', rule: '§2.3 (Q2)', mock: 'Searches the connected scholarly sources', app: 'Searches scholarly sources to answer your question. (the model does not pick the providers: code rules route them)' },
+  { id: 'scope-pdfs-academic', rule: '§2.3 (Q2, Q3)', mock: 'Searches using a chosen PDF and your question', app: 'Searches using your PDFs and your question. Only included sources are used in the answer. (up to five PDFs guide the search, D3)' },
   { id: 'budget-no-limit', rule: '§2.3 (Q2)', mock: 'N% of today\'s budget', app: '$X left today (when OpenAlex sends no limit header)' },
   { id: 'quota-continue', rule: '§2.3 (Q2, R19)', mock: 'Continue with the N finished searches', app: 'The run went on with the M that finished.' },
   { id: 'find-pdf-proxy-pill', rule: '§2.3 (Q2)', mock: 'TOBB ETÜ proxy', app: 'only the providers actually asked' },
@@ -116,4 +118,10 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
 /** Q3: the composer's single-guide radio becomes check rows, one per eligible PDF (at most five), all checked (D3). */
 export const CHECK_ROWS: Array<{ id: string; rule: string; mock: string; app: string | null; slice: string }> = [
   { id: 'guide-check-rows', rule: 'Q3 (D3 kept)', mock: '.guide[role="radiogroup"] input[type="radio"]', app: null, slice: 'S5b' },
+]
+
+/** Marks the app draws that the mockup does not, kept for accessibility (WCAG 1.4.1: a selected state is not carried by
+ *  a background colour alone). The pairs compare the mockup's elements; these extras are not measured. */
+export const APP_ADDITIONS: Array<{ id: string; rule: string; app: string; slice: string }> = [
+  { id: 'selected-row-check', rule: 'WCAG 1.4.1 (selection shown by more than a background tint)', app: 'a check mark at the right of the selected row of the scope menu and the depth menu', slice: 'S4' },
 ]

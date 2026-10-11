@@ -1,20 +1,18 @@
 import { useEffect, useState } from 'react'
-import { Activity, ArrowRight, ChevronRight, CirclePause, Pause, Play } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Check, CirclePause, Clock, Pause, Play } from 'lucide-react'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, type EquationReader, type ResearchSummary, type ResearchView, type Run, type RunStatus, type Source } from './api'
-import { PdfReadiness } from './PdfReadiness'
-import { ReaderProgress } from './Connections'
 import { t } from './i18n'
 import { useToast } from './Toast'
 
 // PDF work that keeps going while the user is on another page (PDF collection, OCR, the equation reader over the library): a card at the foot of the sidebar
-// and a sheet with each run's detail. The research list names each research's latest run; the views give the progress.
+// and a 420px sheet with one line per job. The research list names each research's latest run; the views give the progress.
 
 const LIVE = new Set<RunStatus>(['queued', 'running', 'pause_requested', 'paused'])
 const JOB_KINDS = new Set(['pdf_collection', 'pdf_ocr', 'fulltext_fetch', 'fulltext_adjudication'])
 
-type Job = { research: ResearchSummary; view: ResearchView; run: Run; label: string; done: number; total: number; extra: number; unit: string }
+type Job = { key: string; research: ResearchSummary | null; run: Run | null; label: string; done: number; total: number; extra: number; unit: string; sub: string; paused: boolean }
+type Finished = { key: string; label: string; sub: string; total: number; unit: string }
 
 const reading = (view: ResearchView, record: Source) => (record.answer_reads_version_id ? view.sources.find(s => s.source_version_id === record.answer_reads_version_id) ?? record : record)
 
@@ -24,8 +22,9 @@ function jobOf(research: ResearchSummary, view: ResearchView): Job | null {
   const paused = run.status === 'paused'
   const steps = run.steps ?? []
   if (run.kind === 'pdf_ocr') {
+    // Pages come from the run's own steps: the page list found first, then one step per page read.
     const found = steps.find(s => s.kind === 'ocr_pages')?.output?.image_pages
-    return { research, view, run, label: t(paused ? 'OCR reading paused' : 'Reading with OCR'), done: steps.filter(s => s.kind === 'ocr_page' && s.status === 'succeeded').length, total: found ? found.length : 0, extra: 0, unit: t('pages') }
+    return { key: run.id, research, run, label: t(paused ? 'OCR reading paused' : 'Reading with OCR'), done: steps.filter(s => s.kind === 'ocr_page' && s.status === 'succeeded').length, total: found ? found.length : 0, extra: 0, unit: t('pages'), sub: research.title, paused }
   }
   // PDF collection: sources whose PDF is in hand, and sources already checked without an open copy.
   const records = view.sources.filter(s => s.version_role === 'record' && s.selection.state === 'included')
@@ -36,17 +35,19 @@ function jobOf(research: ResearchSummary, view: ResearchView): Job | null {
     const own = steps.filter(s => ids.has(s.operation_key.split(':')[1] ?? ''))
     if (own.length && !own.some(s => s.status === 'running' || s.status === 'queued')) none++
   }
-  return { research, view, run, label: t(paused ? 'PDF collection paused' : 'Collecting PDFs'), done: inHand, total: records.length, extra: none, unit: '' }
+  return { key: run.id, research, run, label: t(paused ? 'PDF collection paused' : 'Collecting PDFs'), done: inHand, total: records.length, extra: none, unit: t('sources'), sub: research.title, paused }
 }
 
 const pct = (n: number, total: number) => `${total ? (100 * n) / total : 0}%`
+const progress = (job: { done: number; total: number; unit: string }) => job.total ? t('{done} of {total} {unit}', { done: job.done, total: job.total, unit: job.unit }) : '…'
 
-export function BackgroundJobs({ researches, collapsed, dark, onOpenResearch }: {
-  researches: ResearchSummary[]; collapsed: boolean; dark: boolean; onOpenResearch: (id: string) => void
+export function BackgroundJobs({ researches, dark, onOpenResearch }: {
+  researches: ResearchSummary[]; dark: boolean; onOpenResearch: (id: string) => void
 }) {
   const [views, setViews] = useState<Record<string, ResearchView>>({})
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [seen, setSeen] = useState<Record<string, Job>>({})
   const toast = useToast()
   const candidates = researches.filter(r => r.last_run_kind && JOB_KINDS.has(r.last_run_kind) && r.last_run_status && LIVE.has(r.last_run_status))
 
@@ -59,64 +60,58 @@ export function BackgroundJobs({ researches, collapsed, dark, onOpenResearch }: 
     api.equationReader().then(setReader, () => setReader(null))
   }, [researches]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const jobs = candidates.flatMap(r => { const view = views[r.id]; const job = view && jobOf(r, view); return job ? [job] : [] })
+  const runJobs = candidates.flatMap(r => { const view = views[r.id]; const job = view && jobOf(r, view); return job ? [job] : [] })
   // The equation reader works through the library's stored PDFs (D52) while it has one in hand or any waiting.
   const readerPending = reader ? (reader.pdfs.pending ?? 0) + (reader.pdfs.reading ?? 0) : 0
   const readerOn = !!reader?.installed && (!!reader.reading || readerPending > 0)
   const readerDone = reader ? (reader.pdfs.read ?? 0) + (reader.pdfs.no_math ?? 0) + (reader.pdfs.failed ?? 0) : 0
-  const readerTotal = readerDone + readerPending
-  const count = jobs.length + (readerOn ? 1 : 0)
-  if (!count) return null
+  const readerJob: Job | null = readerOn && reader ? { key: 'equation-reader', research: null, run: null, label: t('Reading equations'), done: readerDone, total: readerDone + readerPending, extra: 0, unit: t('PDFs'), sub: reader.reading?.title ?? t('PDFs in the library'), paused: !reader.reading } : null
+  const jobs = readerJob ? [...runJobs, readerJob] : runJobs
+
+  // A job that leaves the list is listed under Finished when it ended well: its research's latest run completed, or the
+  // equation reader has nothing left to read. The last progress seen is kept for this session only.
+  if (jobs.some(job => { const old = seen[job.key]; return !old || old.done !== job.done || old.total !== job.total })) setSeen(old => ({ ...old, ...Object.fromEntries(jobs.map(job => [job.key, job])) }))
+  const liveKeys = new Set(jobs.map(job => job.key))
+  const finished: Finished[] = Object.values(seen).filter(job => !liveKeys.has(job.key)).flatMap(job => {
+    const summary = job.research && researches.find(r => r.id === job.research!.id)
+    const ended = job.run ? summary?.last_run_status === 'completed' && summary.last_run_kind === job.run.kind : !readerOn && readerPending === 0
+    return ended ? [{ key: job.key, label: job.run?.kind === 'pdf_ocr' ? t('Reading with OCR') : job.run ? t('Collecting PDFs') : t('Reading equations'), sub: job.sub, total: job.total, unit: job.unit }] : []
+  })
+
+  if (!jobs.length) return null
 
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true)
     try { await action() } catch (error) { toast('error', (error as Error).message) } finally { setBusy(false); void load() }
   }
-  const lead = jobs[0] ?? { label: t('Reading equations'), done: reader?.pdfs.read ?? 0, total: readerTotal }
-  const running = (job: Job) => job.run.status !== 'paused'
+  const title = t('In the background · {n}', { n: jobs.length })
 
   return <>
-    {collapsed
-      ? <button type="button" className="jobs-ring" onClick={() => setOpen(true)} aria-label={t('Background work: {n}', { n: count })} title={`${lead.label} · ${lead.done} / ${lead.total}`}>
-        <svg viewBox="0 0 36 36" aria-hidden><circle cx="18" cy="18" r="15" className="jobs-ring-track" /><circle cx="18" cy="18" r="15" className="jobs-ring-fill" strokeDasharray={`${lead.total ? (94.2 * lead.done) / lead.total : 0} 94.2`} /></svg>
-        <span className="jobs-ring-count">{count}</span>
-      </button>
-      : <button type="button" className="jobs-card bgcard" onClick={() => setOpen(true)} aria-label={t('Background work: {n}', { n: count })}>
-        <span className="jobs-card-head"><span>{t('In the background · {n}', { n: count })}</span><ChevronRight size={14} aria-hidden /></span>
-        {jobs.map(job => <span key={job.run.id} className="jobs-card-row">
-          <span className="jobs-card-line">{running(job) ? <span className="pdf-spin" aria-hidden /> : <CirclePause size={12} className="jobs-paused" aria-hidden />}<span className="jobs-card-label">{job.label}</span><span className="jobs-card-count">{job.total ? `${job.done} / ${job.total}${job.unit ? ` ${job.unit}` : ''}` : '…'}</span></span>
-          <span className="jobs-card-title">{job.research.title}</span>
-          <span className="jobs-bar" aria-hidden><i className="is-done" style={{ width: pct(job.done, job.total) }} /><i className="is-checked" style={{ width: pct(job.extra, job.total) }} /></span>
-        </span>)}
-        {readerOn && reader && <span className="jobs-card-row">
-          <span className="jobs-card-line">{reader.reading ? <span className="pdf-spin" aria-hidden /> : <CirclePause size={12} className="jobs-paused" aria-hidden />}<span className="jobs-card-label">{t('Reading equations')}</span><span className="jobs-card-count">{reader.pdfs.read ?? 0} / {readerTotal}</span></span>
-          <span className="jobs-card-title">{reader.reading?.title ?? t('PDFs in the library')}</span>
-          <span className="jobs-bar" aria-hidden><i className="is-done" style={{ width: pct(readerDone, readerTotal) }} /></span>
-        </span>}
-      </button>}
-    <Sheet open={open && count > 0} onOpenChange={setOpen}>
+    <button type="button" className="bgcard" onClick={() => setOpen(true)}>
+      <b><span className="spin" aria-hidden="true" />{title}</b>
+      <small>{jobs.map(job => `${job.label} ${job.done}/${job.total}`).join(' · ')}</small>
+    </button>
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetContent className={`detail-sheet jobs-sheet ${dark ? 'dark' : ''}`}>
-        <SheetHeader><SheetTitle><Activity aria-hidden />{t('Background work')}</SheetTitle><SheetDescription>{t('Keeps running while you are on another page.')}</SheetDescription></SheetHeader>
-        <div className="sheet-body jobs-sheet-body">
-          {jobs.map(job => <section key={job.run.id} className="jobs-item">
-            <div className="jobs-item-head">
-              <button type="button" className="jobs-item-research" onClick={() => { setOpen(false); onOpenResearch(job.research.id) }}>{job.research.title}<ArrowRight size={13} aria-hidden /></button>
-              {job.run.kind === 'pdf_ocr' && (running(job)
-                ? <Button variant="outline" size="sm" disabled={busy || job.run.status === 'pause_requested'} onClick={() => act(() => api.controlRun(job.run.id, 'pause'))}><Pause size={13} />{t('Pause')}</Button>
-                : <Button variant="outline" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(job.run.id, 'resume'))}><Play size={13} />{t('Resume')}</Button>)}
-            </div>
-            {job.run.kind === 'pdf_collection'
-              ? <PdfReadiness researchId={job.research.id} view={job.view} busy={busy} hasAcademic={false} act={act} onSearchAgain={() => {}} onAnswer={() => {}} onUpload={() => {}} ocrTool={null} onReadWithOcr={() => {}} />
-              : <div className="jobs-ocr">
-                <h2>{job.label}</h2>
-                <span className="jobs-bar" aria-hidden><i className="is-done" style={{ width: pct(job.done, job.total) }} /></span>
-                <p>{job.total ? t('{done} of {total} pages read', { done: job.done, total: job.total }) : t('Finding the pages without text…')}</p>
-              </div>}
-          </section>)}
-          {readerOn && reader && <section className="jobs-item">
-            <h2 className="jobs-item-heading">{t('Equation reader (Marker)')}</h2>
-            <ReaderProgress reader={reader} />
-          </section>}
+        <SheetHeader><SheetTitle><Clock size={16} aria-hidden="true" /><span>{title}</span></SheetTitle></SheetHeader>
+        <div className="jobs-body">
+          {jobs.map(job => <div key={job.key} className="job">
+            <b>{job.paused ? <CirclePause size={14} className="jobs-paused" aria-hidden="true" /> : <span className="spin" aria-hidden="true" />}<span className="job-name">{job.label}</span>
+              <span className="job-count">{progress(job)}</span>
+              {job.run?.kind === 'pdf_ocr' && (job.run.status !== 'paused'
+                ? <button type="button" className="job-action" disabled={busy || job.run.status === 'pause_requested'} onClick={() => act(() => api.controlRun(job.run!.id, 'pause'))}><Pause size={13} aria-hidden="true" />{t('Pause')}</button>
+                : <button type="button" className="job-action" disabled={busy} onClick={() => act(() => api.controlRun(job.run!.id, 'resume'))}><Play size={13} aria-hidden="true" />{t('Resume')}</button>)}
+            </b>
+            {job.research
+              ? <small><button type="button" className="job-research" onClick={() => { setOpen(false); onOpenResearch(job.research!.id) }}>{job.sub}</button></small>
+              : <small>{job.sub}</small>}
+            <div className="job-bar" aria-hidden="true"><i className="is-done" style={{ width: pct(job.done, job.total) }} />{job.extra > 0 && <i className="is-checked" style={{ width: pct(job.extra, job.total) }} />}</div>
+          </div>)}
+          {finished.length > 0 && <>
+            <h3>{t('Finished')}</h3>
+            {finished.map(item => <div key={item.key} className="job"><b><Check size={14} aria-hidden="true" />{item.label}</b><small>{item.sub} · {item.total} {item.unit}</small></div>)}
+          </>}
+          <p className="foot-note">{t('Keeps running while you are on another page. Text read in the background joins the next answer.')}</p>
         </div>
       </SheetContent>
     </Sheet>

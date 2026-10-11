@@ -106,13 +106,6 @@
 }
 @media(max-width:600px){.app .trash-row>.trash-item{width:100%}}
 
-/* Undo in a notification */
-.toast .toast-action{flex:none;padding:3px 10px;border:1px solid currentColor;border-radius:6px;font-size:12.5px;font-weight:600;line-height:1.4}
-.toast .toast-action:hover{background:color-mix(in srgb,currentColor,transparent 88%)}
-
-/* Neutral confirmation: an action that can be undone */
-.confirm-dialog.is-neutral .confirm-dialog-mark{background:color-mix(in srgb,var(--accent),transparent 88%);color:var(--accent)}
-
 /* Choosing sources */
 .app .source-row.has-pick{position:relative;padding-left:32px}
 .app .source-row.is-other-version.has-pick{padding-left:44px}

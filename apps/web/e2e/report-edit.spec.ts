@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { EditCheck, ReportClaim, ReportDetail, ResearchView } from '../src/api'
 import { nextPort } from './ports'
+import { chooseLanguage } from './language'
+import { switchTheme } from './theme'
 
 // Synthetic records, scripted model and mocked OpenAlex only.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -173,7 +175,7 @@ async function captureCheck(page: Page) {
     for (const dark of [false, true]) {
       await page.keyboard.press('Escape')
       const currentDark = await page.locator('html').evaluate(el => el.classList.contains('dark'))
-      if (currentDark !== dark) await page.getByRole('button', { name: dark ? 'Use dark theme' : 'Use light theme' }).click()
+      if (currentDark !== dark) await switchTheme(page, dark ? 'Switch to dark mode' : 'Switch to light mode')
       await page.getByRole('button', { name: 'Open evidence report' }).click()
       await panel(page).scrollIntoViewIfNeeded()
       await forbiddenWords(panel(page))
@@ -528,7 +530,7 @@ test('mocked provenance distinguishes complete removal, singular removal, no lin
   await expect(provenance).not.toContainText('The review covers')
   current.review = reviewed
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Türkçe', exact: true }).click()
+  await chooseLanguage(page, 'tr')
   await page.getByRole('button', { name: 'Kanıt raporunu aç' }).click()
   await expect(provenance).toContainText('İnceleme modelin temel sürümünü kapsar; insan düzenlemeleri incelenmedi.')
 })
@@ -539,7 +541,7 @@ test('Turkish current check and citation form have translated UI text', async ({
   await panel(page).getByRole('button', { name: 'Check edited text', exact: true }).click()
   await expect(panel(page).getByText('Current', { exact: true })).toBeVisible()
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Türkçe', exact: true }).click()
+  await chooseLanguage(page, 'tr')
   await page.getByRole('button', { name: 'Kanıt raporunu aç' }).click()
   await expect(panel(page).getByRole('status')).toContainText('1. sürümden sonra elle düzenlendi; düzenlenen metin kod kurallarıyla denetlendi')
   await expect(panel(page).getByRole('status')).toContainText('atıf yapılan kanıtın her cümleyi destekleyip desteklemediği denetlenmedi.')
@@ -794,7 +796,7 @@ test('keyboard editing returns focus and narrow panels, citation forms and histo
   for (const dark of [false, true]) {
     await page.keyboard.press('Escape')
     const currentDark = await page.locator('html').evaluate(el => el.classList.contains('dark'))
-    if (currentDark !== dark) await page.getByRole('button', { name: dark ? 'Use dark theme' : 'Use light theme' }).click()
+    if (currentDark !== dark) await switchTheme(page, dark ? 'Switch to dark mode' : 'Switch to light mode')
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('button', { name: 'Open evidence report' }).click()
     const form = await openEdit(page, 'III.1'), history = meta(page, 'III.1').locator('.evidence-report-history')

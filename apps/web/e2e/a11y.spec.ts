@@ -628,7 +628,7 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       await scan(page, '8a library', () => dismissToasts(page))
 
       // A research goes to the Trash; Undo is made to fail so the error toast stays until dismissed and every theme and width sees it.
-      await page.getByRole('button', { name: 'Research', exact: true }).click()
+      await page.getByRole('button', { name: 'New research', exact: true }).click()
       const recent = page.locator('.recent-row').first()
       await recent.getByRole('button', { name: /^Actions for/ }).click()
       await page.getByRole('menuitem', { name: 'Move to Trash' }).click()
@@ -1297,7 +1297,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
 
   test('quick find by shortcut, listbox by arrow keys, Escape; F: reload keeps the state', async () => {
     test.setTimeout(240_000)
-    await tabTo(page, page.getByRole('button', { name: 'Quick find' }), 'Quick find button')
+    await tabTo(page, page.getByRole('button', { name: 'Search', exact: true }), 'Quick find button')
     await page.keyboard.press('ControlOrMeta+k')
     const field = page.getByLabel('Find research, sources or pages')
     await expect(field).toBeVisible()
@@ -1316,7 +1316,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     expect(await field.getAttribute('aria-activedescendant'), 'ArrowUp comes back to the first option').toBe(first)
     await press(page, 'Escape', 'quick find')
     await expect(field).toHaveCount(0)
-    await expectReturn(page.getByRole('button', { name: 'Quick find' }), 'the Quick find button (opener before the shortcut)')
+    await expectReturn(page.getByRole('button', { name: 'Search', exact: true }), 'the Quick find button (opener before the shortcut)')
     // F: question, selection and reason survive a reload.
     await page.goto(mainUrl)
     await page.reload()
@@ -1330,7 +1330,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
   test('quick find: what has focus after a page, a research or a source result is chosen (from the button and by shortcut)', async () => {
     test.setTimeout(300_000)
     const field = page.getByLabel('Find research, sources or pages')
-    const button = page.getByRole('button', { name: 'Quick find' })
+    const button = page.getByRole('button', { name: 'Search', exact: true })
     const choose = async (via: 'button' | 'shortcut', kind: string, query: string, group: string) => {
       await page.goto(mainUrl.split('#')[0])  // every choice starts from the home screen, so each result changes the route
       await expect(page.getByLabel('Research question')).toBeVisible()

@@ -1,42 +1,4 @@
 /* Live research workspace additions; reuse the prototype's tokens and legacy-* building blocks. */
-.app .recents-label{display:flex;align-items:center;gap:2px;margin:18px 6px 4px;padding-left:10px;font-size:12px;font-weight:500;letter-spacing:0}
-.app .recents-toggle{display:inline-flex;align-items:center;gap:5px;margin-right:auto;padding:3px 0;color:var(--muted)}
-.app .recents-toggle:hover{color:var(--ink)}
-.app .recents-toggle svg{transition:transform .15s ease}
-.app .recents-toggle[aria-expanded="false"] svg{transform:rotate(-90deg)}
-.app .recent-row{display:flex;align-items:center;min-width:0;border-radius:7px}
-.app .recent-row+.recent-row{margin-top:1px}
-.app .recent-row:hover,.app .recent-row:has(.recent-more[data-popup-open]){background:var(--hover-surface)}
-.app .recent-row.is-active{background:var(--selected-surface)}
-.app .recent-list .recent-row button{display:flex;align-items:center;background:transparent}
-.app .recent-row>.recent-open{flex:1;min-width:0;gap:9px;padding:7px 6px 7px 10px}
-.app .recent-status{display:grid;place-items:center;width:16px;height:16px;flex:none;color:var(--recent-status-color,var(--muted))}
-.app .recent-status>svg{width:14px;height:14px}
-.app .recent-status:is([data-status="queued"],[data-status="running"]){--recent-status-color:var(--accent)}
-.app .recent-status[data-status="completed"]{--recent-status-color:var(--tone-include)}
-.app .recent-status:is([data-status="pause_requested"],[data-status="paused"]){--recent-status-color:var(--tone-uncertain)}
-.app .recent-status[data-status="failed"]{--recent-status-color:var(--tone-exclude)}
-.app .recent-status[data-status="cancelled"]{--recent-status-color:var(--muted)}
-.app .recent-status>svg.recent-status-spinning{animation:recent-status-spin 1.2s linear infinite}
-@keyframes recent-status-spin{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.app .recent-status>svg.recent-status-spinning{animation:none}}
-.app .recent-list button>.recent-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:1.5;color:var(--ink-2)}
-.app .recent-row.is-active .recent-title{color:var(--ink)}
-/* The row's title is renamed in place: the same row, with the label swapped for a field that keeps the row's own type. */
-.app .recent-row>.recent-open.is-renaming{display:flex;align-items:center;flex:1;min-width:0;gap:9px;padding:7px 6px 7px 10px}
-.app .recent-title-input{flex:1;min-width:0;padding:0;border:0;background:none;color:var(--ink);font:inherit;line-height:1.5;font-size:13px}
-.app .recent-title-input:focus-visible{outline:2px solid var(--accent);outline-offset:0}
-.app .recent-time{flex:none;min-width:28px;margin-left:auto;font-size:11px;color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-/* The relative time gives way to the row's actions button on hover, on focus and on the open research. */
-.app .recent-row{position:relative}
-.app .recent-row .recent-more{position:absolute;top:50%;right:4px;flex:none;width:24px;height:24px;justify-content:center;padding:0;border-radius:5px;color:var(--muted);opacity:0;transform:translateY(-50%)}
-.app .recent-row:is(:hover,:focus-within,.is-active) .recent-more,.app .recent-row .recent-more[data-popup-open]{opacity:1}
-.app .recent-row:not(.is-active):is(:hover,:focus-within) .recent-time,.app .recent-row:not(.is-active):has(.recent-more[data-popup-open]) .recent-time{visibility:hidden}
-/* The open research keeps its time beside the ⋯ button, so the button joins the row instead of covering the time. */
-.app .recent-row.is-active .recent-more{position:static;margin-right:4px;transform:none}
-.app .recent-row .recent-more:hover{background:var(--line);color:var(--ink)}
-@media(hover:none){.app .recent-row .recent-more{position:static;margin-right:4px;opacity:1;transform:none}.app .recent-row .recent-time{visibility:visible}}
-.sidebar-action-message{padding:6px 16px;color:var(--muted);font-size:11.5px;line-height:1.4}
 .trash-page{max-width:960px;margin:65px auto;padding:0 30px}
 .trash-page h1{font-size:44px}
 .trash-hint{color:var(--muted);font-size:14px;line-height:1.6;margin:14px 0 0}
@@ -51,7 +13,7 @@
 .trash-row button{gap:7px}
 .trash-delete{background:color-mix(in srgb,var(--destructive),transparent 92%);border-color:color-mix(in srgb,var(--destructive),transparent 78%);color:var(--destructive)}
 .trash-delete:hover{background:color-mix(in srgb,var(--destructive),transparent 84%)}
-@media(max-width:600px){.trash-row{align-items:flex-start;flex-direction:column}.trash-row>span{max-width:100%}.app .recent-row .recent-more{position:static;margin-right:4px;opacity:1;transform:none}.app .recent-row .recent-time{visibility:visible}}
+@media(max-width:600px){.trash-row{align-items:flex-start;flex-direction:column}.trash-row>span{max-width:100%}}
 .connection-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
 .connection-card{display:flex;align-items:center;gap:12px;min-width:0;min-height:64px;padding:12px 14px;border:1px solid var(--strong-line);border-radius:9px;background:var(--raised-surface);color:var(--ink);text-align:left;cursor:pointer;transition:border-color .15s ease,background-color .15s ease}
 .connection-card:hover{background:var(--hover-surface)}
@@ -74,16 +36,6 @@
 .planned-connections{margin-top:12px}
 .planned-connections summary{width:fit-content;cursor:pointer;color:var(--muted);font-size:12px;font-weight:600}
 .planned-connections summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-/* Toasts are portaled to <body> above sheets (z-50); dark follows the html.dark class. */
-.toast{--toast-ink:var(--ok-ink);--toast-surface:var(--ok-surface);--toast-line:var(--ok-line);position:fixed;right:20px;bottom:20px;z-index:60;display:flex;align-items:center;gap:10px;width:380px;max-width:calc(100vw - 40px);padding:12px 14px;border:1px solid var(--toast-line);border-radius:8px;background:var(--toast-surface);color:var(--toast-ink);font-family:var(--font-sans);font-size:13px;line-height:1.45;box-shadow:0 8px 30px #0000001a}
-.toast svg{flex:none}
-.toast span{flex:1}
-.toast button{display:inline-flex;padding:2px;border:0;border-radius:4px;background:none;color:inherit;cursor:pointer}
-.toast button:focus-visible{outline:2px solid currentColor;outline-offset:1px}
-.toast.is-warning{--toast-ink:var(--warn-ink);--toast-surface:var(--warn-surface);--toast-line:var(--warn-line)}
-.toast.is-error{--toast-ink:var(--error-ink);--toast-surface:var(--error-surface);--toast-line:var(--error-line)}
-@media (prefers-reduced-motion:no-preference){.toast{animation:toast-in .18s ease-out}}
-@keyframes toast-in{from{opacity:0;transform:translateY(8px)}}
 
 /* Quick find (Cmd/Ctrl+K). Rendered in a portal, so it carries its own theme tokens like the detail sheet. */
 .quick-find{position:fixed;z-index:60;top:12vh;left:50%;transform:translateX(-50%);width:min(620px,calc(100vw - 32px));max-height:min(560px,76vh);display:flex;flex-direction:column;overflow:hidden;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:0 18px 60px #0000002e;font-family:var(--font-sans)}
@@ -92,7 +44,7 @@
 .quick-find-field:focus-within{box-shadow:inset 0 -2px 0 var(--accent)}
 .quick-find-field input{flex:1;min-width:0;background:transparent;border:0;outline:none;color:var(--ink);font-size:15px}
 .quick-find-field input::placeholder{color:var(--muted)}
-.quick-find kbd,.sidebar-find kbd{font-family:inherit;font-size:10px;line-height:1.4;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+.quick-find kbd{font-family:inherit;font-size:10px;line-height:1.4;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
 .quick-find-list{overflow-y:auto;padding:6px;overscroll-behavior:contain}
 .quick-find-group{padding:10px 10px 4px;font-size:11.5px;font-weight:600;color:var(--muted)}
 .quick-find-option{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border-radius:6px;cursor:pointer;font-size:13px}
@@ -103,32 +55,7 @@
 .quick-find-option small{display:block;margin-top:2px;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .quick-find-empty{margin:0;padding:16px 10px;color:var(--muted);font-size:12px}
 .quick-find-note{margin:0;padding:9px 16px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
-.confirm-dialog{--raised:var(--raised-surface);--danger:var(--tone-exclude);--danger-ink:var(--paper);position:fixed;z-index:70;top:50%;left:50%;width:min(440px,calc(100vw - 32px));padding:24px;background:var(--raised);color:var(--ink);border:1px solid var(--line);border-radius:10px;box-shadow:0 20px 65px rgb(24 31 45/.22);font-family:var(--font-sans);transform:translate(-50%,-50%);transition:opacity .16s ease,transform .16s cubic-bezier(.22,1,.36,1)}
-.confirm-dialog[data-starting-style],.confirm-dialog[data-ending-style]{opacity:0;transform:translate(-50%,-48%) scale(.985)}
-.confirm-dialog-backdrop{position:fixed;inset:0;z-index:65;background:rgb(24 31 45/.34);backdrop-filter:blur(2px);transition:opacity .16s ease}
-.confirm-dialog-backdrop[data-starting-style],.confirm-dialog-backdrop[data-ending-style]{opacity:0}
-.confirm-dialog-heading{display:grid;grid-template-columns:32px minmax(0,1fr);gap:12px;align-items:start}
-.confirm-dialog-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:7px;background:color-mix(in srgb,var(--danger),transparent 88%);color:var(--danger)}
-.confirm-dialog-title{margin:1px 0 6px;font-family:var(--font-sans);font-size:23px;font-weight:500;line-height:1.2;letter-spacing:-.25px;color:var(--ink)}
-.confirm-dialog-description{margin:0;color:var(--muted);font-size:12.5px;line-height:1.65}
-.confirm-dialog-context{margin:18px 0 0;padding:10px 12px;border-block:1px solid var(--line);color:var(--ink);font-size:11.5px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.confirm-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
-.confirm-dialog-actions [data-slot=button]{min-width:92px;height:34px;border-radius:7px;box-shadow:none}
-.confirm-dialog-actions .confirm-dialog-cancel{border-color:var(--line);background:var(--raised);color:var(--ink)}
-.confirm-dialog-actions .confirm-dialog-cancel:hover{background:color-mix(in srgb,var(--ink),transparent 95%)}
-.confirm-dialog-actions .confirm-dialog-danger{background:var(--danger);color:var(--danger-ink)}
-.confirm-dialog-actions .confirm-dialog-danger:hover{background:color-mix(in srgb,var(--danger),var(--ink) 10%)}
-/* Institutional access in the sidebar foot: a status dot and one line; the longer note is read by screen readers and the title. */
-.access-status{display:flex;align-items:center;min-width:0;max-width:100%}
-.access-chip{--access-dot:var(--tone-include);display:inline-flex;align-items:center;gap:7px;min-width:0;color:var(--muted);font-size:12px;line-height:1.4;white-space:nowrap}
-.access-chip .sidebar-label{overflow:hidden;text-overflow:ellipsis}
-.access-dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--access-dot)}
-.access-chip.is-unavailable{--access-dot:var(--tone-uncertain);color:var(--warn-ink)}
-.access-chip.is-uncertain{--access-dot:var(--muted)}
-.access-chip-note{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.app.sidebar-collapsed .access-status{justify-content:center;padding:4px 0}
-@media(max-width:760px){.quick-find{top:12px;max-height:calc(100svh - 24px)}.confirm-dialog{padding:20px}.confirm-dialog-actions{flex-direction:column-reverse}.confirm-dialog-actions [data-slot=button]{width:100%}}
-@media(prefers-reduced-motion:reduce){.confirm-dialog,.confirm-dialog-backdrop{transition:none}}
+@media(max-width:760px){.quick-find{top:12px;max-height:calc(100svh - 24px)}}
 
 /* Settings · Connections tab */
 .status-chip.is-warning{--chip-ink:var(--warn-ink);--chip-surface:var(--warn-surface);--chip-line:var(--warn-line)}
@@ -225,46 +152,6 @@
 .proxy-form input{height:36px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--ink);font:inherit;font-size:13.5px}
 .proxy-form small{color:var(--muted);font-size:12px}
 .proxy-actions{display:flex;align-items:center;gap:14px;margin-top:4px}
-/* Sidebar search and the background PDF work card */
-.app .sidebar-find{display:flex;align-items:center;gap:10px;width:calc(100% - 12px);margin:4px 6px 1px;padding:7px 10px;border-radius:7px;background:transparent;color:var(--ink-2);font:inherit;font-size:13.5px;line-height:1.45;text-align:left;cursor:pointer}
-.app .sidebar-find>svg{flex:none;color:var(--muted)}
-.app .sidebar-find:hover{background:var(--hover-surface);color:var(--ink)}
-.app .sidebar-find .sidebar-find-label{flex:1}
-.app .sidebar-find:focus-visible,.jobs-card:focus-visible,.jobs-ring:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.jobs-card{display:grid;gap:6px;margin:0 -2px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink-2);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
-.jobs-card:hover{border-color:var(--strong-line)}
-.jobs-card-head{display:flex;align-items:center;justify-content:space-between;color:var(--ink-2);font-size:12.5px;font-weight:500}
-.jobs-card-head svg{color:var(--muted)}
-.jobs-card-row{display:grid;gap:3px;min-width:0}
-.jobs-card-line{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:400}
-.jobs-card-label{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.jobs-card-count{color:var(--muted);font-size:11.5px;font-weight:400;font-variant-numeric:tabular-nums}
-.jobs-card-title{padding-left:19px;overflow:hidden;color:var(--muted);font-size:11.5px;white-space:nowrap;text-overflow:ellipsis}
-.jobs-card .jobs-bar{margin-left:19px;height:3px}
-.jobs-card .pdf-spin{color:var(--accent)}
-.jobs-paused{flex:none;color:var(--tone-uncertain)}
-.jobs-bar{display:flex;height:6px;overflow:hidden;border-radius:3px;background:color-mix(in srgb,var(--line),transparent 30%)}
-.jobs-bar i{display:block;height:100%;transition:width .3s ease}
-.jobs-bar .is-done{background:var(--tone-include)}
-.jobs-bar .is-checked{background:color-mix(in srgb,var(--accent),transparent 45%)}
-.jobs-ring{position:relative;align-self:center;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid var(--line);border-radius:9px;background:var(--paper);cursor:pointer}
-.jobs-ring svg{width:28px;height:28px;transform:rotate(-90deg)}
-.jobs-ring circle{fill:none;stroke-width:3}
-.jobs-ring-track{stroke:color-mix(in srgb,var(--line),transparent 20%)}
-.jobs-ring-fill{stroke:var(--tone-include);stroke-linecap:round}
-.jobs-ring-count{position:absolute;font-size:11px;font-weight:600;color:var(--ink)}
-.jobs-sheet-body{display:grid;gap:18px;align-content:start}
-.jobs-sheet .jobs-sheet-body{padding-top:16px}
-.jobs-item{display:grid;gap:4px}
-.jobs-item+.jobs-item{padding-top:18px;border-top:1px solid var(--line)}
-.jobs-item-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.jobs-item-research{display:inline-flex;align-items:center;gap:6px;min-width:0;padding:0;border:0;background:none;color:var(--accent);font:inherit;font-size:13px;text-align:left;cursor:pointer}
-.jobs-item-research:hover{text-decoration:underline}
-.jobs-sheet .pdf-ready{margin:6px 0 0}
-.jobs-sheet .pdf-ready h2,.jobs-ocr h2{margin:0;font-family:var(--font-sans);font-size:15px;font-weight:600}
-.jobs-ocr{display:grid;gap:10px;margin-top:6px}
-.jobs-item-heading{margin:0 0 8px;font-family:var(--font-sans);font-size:15px;font-weight:600}
-.jobs-ocr p{margin:0;color:var(--muted);font-size:13px}
 
 /* Inline notices (Notice.tsx): a blocking error, something that needs attention, or information. */
 .notice{--notice:var(--muted);display:flex;align-items:flex-start;gap:10px;margin:0 0 16px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface);color:var(--ink-2);font-size:13px;line-height:1.55}

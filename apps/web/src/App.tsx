@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Ban, Check, CirclePause, CircleX, ChevronDown, Ellipsis, FlaskConical, Library, LoaderCircle, Menu, Moon, PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings2, Sun, Trash2, type LucideIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Check, Circle, Clock, Ellipsis, Inbox, LibraryBig, Menu, Moon, PanelLeft, Pause, PencilLine, Plus, Search, SlidersHorizontal, Sun, Trash2, TriangleAlert } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, ApiError, type InstitutionalAccess, type ResearchSummary, type RunStatus } from './api'
+import { api, ApiError, shellApi, type InstitutionalAccess, type Profile, type ProxySettings, type ResearchSummary, type RunStatus } from './api'
 import { runStatusLabels } from './labels'
 import { Home } from './Home'
 import { ResearchPage } from './ResearchView'
@@ -13,7 +12,7 @@ import { BackgroundJobs } from './BackgroundJobs'
 import { useToast } from './Toast'
 import { focusWhenLost } from './focus'
 import { TrashPage } from './TrashPage'
-import { setUiLanguage, t, uiLanguage, uiLocale, type UiLanguage } from './i18n'
+import { setUiLanguage, t, uiLanguage, type UiLanguage } from './i18n'
 import './App.css'
 import './Home.css'
 import './LegacyWorkspace.css'
@@ -30,10 +29,6 @@ type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } |
 type ThemeChoice = 'system' | 'light' | 'dark'
 
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent)
-const recentStatusIcons: Record<RunStatus, LucideIcon> = {
-  queued: LoaderCircle, running: LoaderCircle, pause_requested: LoaderCircle,
-  paused: CirclePause, completed: Check, failed: CircleX, cancelled: Ban,
-}
 const activeRunStatuses = new Set<RunStatus>(['queued', 'running', 'pause_requested'])
 const SIDEBAR_MIN = 200
 const SIDEBAR_MAX = 420
@@ -71,15 +66,34 @@ function readTheme(): ThemeChoice {
   try { const value = localStorage.getItem('deixis-theme'); return value === 'light' || value === 'dark' ? value : 'system' } catch { return 'system' }
 }
 
-// Short "how long ago" for the recent list; anything older than a week shows the date.
-function sinceLabel(iso: string): string {
-  const seconds = (Date.now() - new Date(iso).getTime()) / 1000
-  if (seconds < 60) return t('Just now')
-  const relative = new Intl.RelativeTimeFormat(uiLocale(), { numeric: 'auto', style: 'narrow' })
-  if (seconds < 3600) return relative.format(-Math.floor(seconds / 60), 'minute')
-  if (seconds < 86_400) return relative.format(-Math.floor(seconds / 3600), 'hour')
-  if (seconds < 7 * 86_400) return relative.format(-Math.floor(seconds / 86_400), 'day')
-  return new Date(iso).toLocaleDateString(uiLocale(), { month: 'short', day: 'numeric' })
+// Short "how long ago" for the recent list (mockup: 5m 2h 1d 1w 1mo); a research with a live run shows "now".
+function shortAgo(iso: string, live: boolean): string {
+  if (live) return t('now')
+  const minutes = Math.max(0, (Date.now() - new Date(iso).getTime()) / 60_000)
+  if (minutes < 60) return t('{n}m', { n: Math.max(1, Math.floor(minutes)) })
+  const hours = minutes / 60
+  if (hours < 24) return t('{n}h', { n: Math.floor(hours) })
+  const days = hours / 24
+  if (days < 7) return t('{n}d', { n: Math.floor(days) })
+  if (days < 30) return t('{n}w', { n: Math.floor(days / 7) })
+  if (days < 365) return t('{n}mo', { n: Math.floor(days / 30) })
+  return t('{n}y', { n: Math.floor(days / 365) })
+}
+
+// The recent row's status icon (mockup): check when finished, pause, warn for failed and cancelled, a spinner while live.
+function RecentStatus({ status }: { status: RunStatus | null }) {
+  const live = status !== null && activeRunStatuses.has(status)
+  return <span className="recent-status" data-status={status ?? 'none'}>
+    {live ? <span className="spin" aria-hidden="true" />
+      : status === 'completed' ? <Check size={14} aria-hidden="true" />
+      : status === 'paused' ? <Pause size={14} aria-hidden="true" />
+      : status === 'failed' || status === 'cancelled' ? <TriangleAlert size={14} aria-hidden="true" />
+      : <Circle size={14} aria-hidden="true" />}
+  </span>
+}
+
+function readCurrent(): string | null {
+  try { return localStorage.getItem('deixis-current') } catch { return null }
 }
 
 // The DEIXIS mark in the ink of the brand text, so it follows the theme.
@@ -104,12 +118,14 @@ export default function App() {
   const [findOpen, setFindOpen] = useState(false)
   const findOpener = useRef<HTMLElement | null>(null)
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('deixis-sidebar') === 'collapsed' } catch { return false } })
-  const [recentsOpen, setRecentsOpen] = useState(() => { try { return localStorage.getItem('deixis-recents') !== 'closed' } catch { return true } })
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(readSidebarWidth)
   const [resizing, setResizing] = useState(false)
   const asideRef = useRef<HTMLElement>(null)
   const [asideWidth, setAsideWidth] = useState(SIDEBAR_MIN)
   const [language, setLanguage] = useState<UiLanguage>(uiLanguage)
+  // The research opened last, for "Current research" (kept across reloads).
+  const [currentId, setCurrentId] = useState<string | null>(() => { const first = parseHash(); return first.view === 'research' ? first.id : readCurrent() })
+  const [profile, setProfile] = useState<Profile | null>(null)
   const toast = useToast()
   const dark = theme === 'dark' || (theme === 'system' && systemDark)
   // Which researches exist right now; views with their own data (the Library) reload when this changes.
@@ -124,7 +140,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const onHash = () => { setRoute(parseHash()); setSidebar(false); window.scrollTo(0, 0) }
+    const onHash = () => { const next = parseHash(); setRoute(next); if (next.view === 'research') setCurrentId(next.id); setSidebar(false); window.scrollTo(0, 0) }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
@@ -144,6 +160,11 @@ export default function App() {
   }, [])
   useEffect(() => { document.documentElement.classList.toggle('dark', dark) }, [dark])
   useEffect(() => { document.documentElement.lang = language }, [language])
+  useEffect(() => {
+    if (!currentId) return
+    try { localStorage.setItem('deixis-current', currentId) } catch { /* still kept for this tab */ }
+  }, [currentId])
+  useEffect(() => { shellApi.profile().then(setProfile, () => setProfile(null)) }, [])
 
   const refreshList = useCallback(() => {
     api.researches().then(list => { setResearches(list); setListError('') }).catch((error: Error) => setListError(error.message))
@@ -224,11 +245,27 @@ export default function App() {
     finally { setActionBusy(null) }
   }
 
-  // A university VPN can be switched on or off while DEIXIS is open. The backend asks Scopus again only when the network
-  // route changed, so this check is local and cheap and repeats every few seconds.
-  const [institutionalStatus, setInstitutionalStatus] = useState<InstitutionalAccess['status']>('not_checked')
+  // Two facts for the access line, each named by what was measured (plan §2.3): the institution proxy's host answered
+  // (article access is never tried), and Scopus grants its full view on this network. The backend asks Scopus again only
+  // when the network route changed, so both reads are local and cheap and repeat every few seconds. The proxy is tested
+  // again when its test is missing or no longer matches the address or the network route.
+  const [institutionalStatus, setInstitutionalStatus] = useState<InstitutionalAccess['status'] | null>(null)
+  const [proxy, setProxy] = useState<ProxySettings | null>(null)
+  const proxyTesting = useRef(false)
+  const proxyFailedFor = useRef<string | null>(null)  // an address whose test request itself failed is not retried every poll
+  const [proxyBusy, setProxyBusy] = useState(false)
   useEffect(() => {
-    const check = () => { api.institutionalAccess().then(result => setInstitutionalStatus(result.status)).catch(() => setInstitutionalStatus('unknown')) }
+    const check = () => {
+      api.institutionalAccess().then(result => setInstitutionalStatus(result.status)).catch(() => setInstitutionalStatus('unknown'))
+      shellApi.proxySettings().then(settings => {
+        setProxy(settings)
+        if (!settings.address || (settings.test && settings.test_is_current) || proxyTesting.current || proxyFailedFor.current === settings.address) return
+        proxyTesting.current = true
+        setProxyBusy(true)
+        const address = settings.address
+        shellApi.testProxy().then(setProxy, () => { proxyFailedFor.current = address }).finally(() => { proxyTesting.current = false; setProxyBusy(false) })
+      }, () => setProxy(null))
+    }
     check()
     const timer = window.setInterval(check, 5_000)
     window.addEventListener('focus', check)
@@ -293,49 +330,65 @@ export default function App() {
     setSidebarWidth(clampSidebar(current + (event.key === 'ArrowRight' ? 16 : -16)))
   }
 
-  function toggleRecents() {
-    const next = !recentsOpen
-    setRecentsOpen(next)
-    try { localStorage.setItem('deixis-recents', next ? 'open' : 'closed') } catch { /* the choice still applies for this tab */ }
-  }
-
   const activeId = route.view === 'research' ? route.id : null
-  // Theme and interface language sit at the foot of the sidebar on wide screens and in the top bar on phones; only one copy is shown at a time.
-  const shellPrefs = <div className="shell-prefs">
-    <div className="language-switch" role="group" aria-label={t('Interface language')}>
-      <button type="button" lang="tr" aria-label="Türkçe" aria-pressed={language === 'tr'} onClick={() => chooseLanguage('tr')}>TR</button>
-      <button type="button" lang="en" aria-label="English" aria-pressed={language === 'en'} onClick={() => chooseLanguage('en')}>EN</button>
-    </div>
-    <Button variant="ghost" size="icon" className="theme-toggle" onClick={toggleTheme} aria-label={t(dark ? 'Use light theme' : 'Use dark theme')} title={t(dark ? 'Use light theme' : 'Use dark theme')}>{dark ? <Sun size={16} /> : <Moon size={16} />}</Button>
-  </div>
+  const currentResearch = currentId && researches.some(r => r.id === currentId) ? currentId : null
+  // "Awaiting you": open queue rows and works waiting for the person's PDF over every research, the two kept apart in the tooltip.
+  const awaitingQueue = researches.reduce((sum, r) => sum + r.awaiting.queue, 0)
+  const awaitingPdf = researches.reduce((sum, r) => sum + r.awaiting.pdf, 0)
+  const awaitingTotal = awaitingQueue + awaitingPdf
+  const awaitingDetail = t('{queue} awaiting your decision · {pdf} waiting for your PDF', { queue: awaitingQueue, pdf: awaitingPdf })
+  const awaitingTarget = researches.find(r => r.id === currentResearch) ?? researches.find(r => r.awaiting.queue + r.awaiting.pdf > 0) ?? null
+  const openAwaiting = () => {
+    if (!awaitingTarget) return
+    const { queue, pdf } = awaitingTarget.awaiting
+    go({ view: 'research', id: awaitingTarget.id, tab: queue === 0 && pdf > 0 ? 'waiting' : 'queue' })
+  }
+  const awaitingOpen = route.view === 'research' && (route.tab === 'queue' || route.tab === 'waiting')
+  const openSearch = () => { rememberFocus(findOpener); setFindOpen(true) }
+  const themeName = t(dark ? 'Switch to light mode' : 'Switch to dark mode')
+
+  // The proxy line states only that the host answered; the Scopus line is the separate full-view check (plan §2.3).
+  const proxyLabel = proxy?.label ?? proxy?.label_default ?? ''
+  const proxyState: { tone: 'ok' | 'warn' | 'unc' | 'checking'; text: string } =
+    !proxy ? { tone: 'checking', text: t('Checking access…') }
+    : !proxy.address ? { tone: 'unc', text: t('No institutional access set up') }
+    : proxyBusy || !proxy.test || !proxy.test_is_current ? { tone: 'checking', text: t('Checking access…') }
+    : proxy.test.proxy_reachable ? { tone: 'ok', text: t('Proxy reachable · article access not checked') }
+    : { tone: 'warn', text: t('Proxy did not answer') }
+  const scopusState: { tone: 'ok' | 'warn' | 'unc'; text: string } | null =
+    institutionalStatus === 'institutional' ? { tone: 'ok', text: t('Scopus full view confirmed') }
+    : institutionalStatus === 'none' ? { tone: 'warn', text: t('Scopus full view not confirmed') }
+    : institutionalStatus === 'unknown' ? { tone: 'unc', text: t('Scopus check could not run') }
+    : null  // not configured, or not read yet
+  const accessName = [proxy?.address ? `${t('Institutional access · {label}', { label: proxyLabel })}: ${proxyState.text}` : proxyState.text, scopusState?.text].filter(Boolean).join('. ')
 
   return <div className={`app ${dark ? 'dark' : ''} ${collapsed ? 'sidebar-collapsed' : ''} ${sidebarWidth !== null ? 'sidebar-resized' : ''} ${resizing ? 'sidebar-resizing' : ''}`} style={sidebarWidth !== null ? { '--sidebar-width': `${sidebarWidth}px` } as CSSProperties : undefined}>
     {sidebar && <button className="mobile-scrim" aria-label={t('Close navigation')} onClick={() => setSidebar(false)} />}
     <aside ref={asideRef} className={`sidebar ${sidebar ? 'is-open' : ''}`}>
       <div className="sidebar-head">
         <button className="brand" aria-label={t('DEIXIS home')} onClick={() => go({ view: 'home' })}><span className="brand-mark" aria-hidden="true">{brandLogo}</span><span className="sidebar-label">DEIXIS</span></button>
-        <Button variant="ghost" size="icon" className="sidebar-toggle" onClick={toggleCollapsed} aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')} title={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}>{collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</Button>
+        <button type="button" className="sidebar-toggle" onClick={toggleCollapsed} aria-label={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')} title={t(collapsed ? 'Expand sidebar' : 'Collapse sidebar')}><PanelLeft size={16} aria-hidden="true" /></button>
       </div>
-      <button type="button" className="sidebar-find" onClick={() => { rememberFocus(findOpener); setFindOpen(true) }} aria-label={t('Quick find')} aria-keyshortcuts="Meta+K Control+K" title={t('Quick find')}><Search size={16} aria-hidden="true" /><span className="sidebar-label sidebar-find-label">{t('Search')}</span><kbd className="sidebar-label">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd></button>
       <nav aria-label={t('Main navigation')}>
-        <button className={route.view === 'home' || route.view === 'research' ? 'selected' : ''} onClick={() => go({ view: 'home' })} title={t('Research')}><FlaskConical size={16} /> <span className="sidebar-label">{t('Research')}</span></button>
-        <button className={route.view === 'library' ? 'selected' : ''} onClick={() => go({ view: 'library' })} title={t('Library')}><Library size={16} /> <span className="sidebar-label">{t('Library')}</span></button>
-        <button className={route.view === 'settings' ? 'selected' : ''} onClick={() => go({ view: 'settings' })} title={t('Settings')}><Settings2 size={16} /> <span className="sidebar-label">{t('Settings')}</span></button>
-        <button className={route.view === 'trash' ? 'selected' : ''} onClick={() => go({ view: 'trash' })} title={t('Trash')}><Trash2 size={16} /> <span className="sidebar-label">{t('Trash')}</span></button>
+        <button className={route.view === 'home' ? 'selected' : ''} onClick={() => go({ view: 'home' })} title={t('New research')}><Plus size={16} aria-hidden="true" /><span className="sidebar-label">{t('New research')}</span></button>
+        <button className="sidebar-find" onClick={openSearch} aria-label={t('Search')} aria-keyshortcuts="Meta+K Control+K" title={t('Search')}><Search size={16} aria-hidden="true" /><span className="sidebar-label">{t('Search')}</span><kbd className="sidebar-label">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd></button>
+        <button className={route.view === 'research' && !awaitingOpen ? 'selected' : ''} disabled={!currentResearch} onClick={() => { if (currentResearch) go({ view: 'research', id: currentResearch }) }} title={t(currentResearch ? 'Current research' : 'No research opened yet')}><Clock size={16} aria-hidden="true" /><span className="sidebar-label">{t('Current research')}</span></button>
+        <button className={awaitingOpen ? 'selected' : ''} disabled={!awaitingTarget} onClick={openAwaiting} aria-label={awaitingTotal ? `${t('Awaiting you')}: ${awaitingDetail}` : t('Awaiting you')} title={awaitingTotal ? `${t('Awaiting you')} · ${awaitingDetail}` : t('Awaiting you')}><Inbox size={16} aria-hidden="true" /><span className="sidebar-label">{t('Awaiting you')}</span>{awaitingTotal > 0 && <span className="nav-count" aria-hidden="true">{awaitingTotal}</span>}</button>
+        <button className={route.view === 'library' ? 'selected' : ''} onClick={() => go({ view: 'library' })} title={t('Library')}><LibraryBig size={16} aria-hidden="true" /><span className="sidebar-label">{t('Library')}</span></button>
+        <button className={route.view === 'settings' ? 'selected' : ''} onClick={() => go({ view: 'settings' })} title={t('Settings')}><SlidersHorizontal size={16} aria-hidden="true" /><span className="sidebar-label">{t('Settings')}</span></button>
+        <button className={route.view === 'trash' ? 'selected' : ''} onClick={() => go({ view: 'trash' })} title={t('Trash')}><Trash2 size={16} aria-hidden="true" /><span className="sidebar-label">{t('Trash')}</span></button>
       </nav>
-      <div className="recents-label">
-        <button type="button" className="recents-toggle" aria-expanded={recentsOpen} aria-controls="recent-list" onClick={toggleRecents}>{t('Recent research')}<ChevronDown size={15} aria-hidden="true" /></button>
-      </div>
-      <div id="recent-list" className="recent-list" hidden={!recentsOpen}>
+      <div className="recents-label" id="recent-label">{t('Recent research')}</div>
+      <div id="recent-list" className="recent-list" role="group" aria-labelledby="recent-label">
         {listError && <p>{t('Local service unavailable: {error}', { error: listError })}</p>}
-        {!listError && !researches.length && <p>{t('Your questions will')}<br />{t('find a home here.')}</p>}
+        {!listError && !researches.length && <p>{t('Your questions will find a home here.')}</p>}
         {researches.slice(0, 12).map(r => {
-          const StatusIcon = r.last_run_status ? recentStatusIcons[r.last_run_status] : FlaskConical
           const status = t(r.last_run_status ? runStatusLabels[r.last_run_status] : 'No run yet')
+          const live = r.last_run_status !== null && activeRunStatuses.has(r.last_run_status)
           const followupText = r.followup_new > 0 ? `, ${t(r.followup_new === 1 ? '{n} new follow-up record' : '{n} new follow-up records', { n: r.followup_new })}` : ''
           return <div key={r.id} className={`recent-row ${r.id === activeId ? 'is-active' : ''}`}>
             {renameId === r.id
-              ? <div className="recent-open is-renaming"><span className="recent-status" data-status={r.last_run_status ?? 'none'}><StatusIcon size={16} className={r.last_run_status && activeRunStatuses.has(r.last_run_status) ? 'recent-status-spinning' : undefined} aria-hidden="true" /></span><input
+              ? <div className="recent-open is-renaming"><RecentStatus status={r.last_run_status} /><input
                 ref={renameInput}
                 className="recent-title-input"
                 aria-label={t('Research title')}
@@ -346,30 +399,32 @@ export default function App() {
                 onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void commitRename(r) } else if (event.key === 'Escape') { event.preventDefault(); cancelRename() } }}
                 onBlur={() => void commitRename(r)}
               /></div>
-              : <button className="recent-open" onClick={event => openRecent(event, r.id)} onDoubleClick={() => beginRename(r)} title={`${r.question} · ${status}${followupText}`} aria-label={`${r.title} · ${status}${followupText}`}><span className="recent-status" data-status={r.last_run_status ?? 'none'}><StatusIcon size={16} className={r.last_run_status && activeRunStatuses.has(r.last_run_status) ? 'recent-status-spinning' : undefined} aria-hidden="true" /></span><span className="recent-title">{r.title}</span><span className="followup-sidebar-count" hidden={!r.followup_new} aria-label={followupText.slice(2)}>{r.followup_new}</span><time className="recent-time" dateTime={r.updated_at}>{sinceLabel(r.updated_at)}</time></button>}
+              : <button className="recent-open" onClick={event => openRecent(event, r.id)} onDoubleClick={() => beginRename(r)} title={`${r.question} · ${status}${followupText}`} aria-label={`${r.title} · ${status}${followupText}`}><RecentStatus status={r.last_run_status} /><span className="recent-title">{r.title}</span><span className="followup-sidebar-count" hidden={!r.followup_new} aria-label={followupText.slice(2)}>{r.followup_new}</span><time className="recent-time" dateTime={r.updated_at}>{shortAgo(r.updated_at, live)}</time></button>}
             <DropdownMenu><DropdownMenuTrigger className="recent-more" disabled={actionBusy === r.id} aria-label={t('Actions for {title}', { title: r.title })} title={t('More actions')}><Ellipsis size={16} /></DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-auto"><DropdownMenuItem onClick={() => beginRename(r)}><PencilLine size={15} />{t('Rename')}</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => moveToTrash(r)}><Trash2 size={15} />{t('Move to Trash')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
+              <DropdownMenuContent align="end"><DropdownMenuItem onClick={() => beginRename(r)}><PencilLine size={15} />{t('Rename')}</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => moveToTrash(r)}><Trash2 size={15} />{t('Move to Trash')}</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
         })}
       </div>
       {actionMessage && route.view !== 'trash' && <p className="sidebar-action-message" role="status">{actionMessage}</p>}
       <div className="sidebar-foot">
-        <BackgroundJobs researches={researches} collapsed={collapsed} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />
-        <div className="access-status" data-status={institutionalStatus} title={t(institutionalStatus === 'institutional' ? 'Scopus recognizes this network as institutional (campus network or university VPN). Updates when the network changes.' : institutionalStatus === 'none' ? 'University VPN or campus network is not detected. Turn it on to access institutional Scopus coverage.' : 'Institutional access status is not available yet. DEIXIS will check again when the network changes.')}>
-          <span className={`access-chip ${institutionalStatus === 'institutional' ? '' : institutionalStatus === 'none' ? 'is-unavailable' : 'is-uncertain'}`}>
-            <i className="access-dot" aria-hidden="true" />
-            <span className="sidebar-label">{t(institutionalStatus === 'institutional' ? 'Institutional access' : institutionalStatus === 'none' ? 'VPN required' : institutionalStatus === 'unknown' ? 'Access uncertain' : 'Checking access…')}</span>
-          </span>
-          {!collapsed && <span className="access-chip-note">{t(institutionalStatus === 'institutional' ? 'Campus network or university VPN detected.' : institutionalStatus === 'none' ? 'Turn on the university VPN for institutional Scopus access.' : institutionalStatus === 'unknown' ? 'Institutional access could not be verified.' : 'Checking the current network access.')}</span>}
+        {!collapsed && <BackgroundJobs researches={researches} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />}
+        {/* The foot keeps one DOM shape while its reads arrive (profile, proxy, Scopus): only text, inline style and data attributes change. */}
+        <button type="button" className="access" onClick={() => go({ view: 'settings', tab: 'connections' })} aria-label={accessName} title={t('Institutional access settings')}>
+          <span className="access-label" style={proxy?.address ? undefined : { display: 'none' }}>{proxy?.address ? t('Institutional access · {label}', { label: proxyLabel }) : ''}</span>
+          <span className="access-line"><i className="access-dot" data-tone={proxyState.tone} aria-hidden="true" /><span>{proxyState.text}</span></span>
+          <span className="access-line" style={scopusState ? undefined : { display: 'none' }}><i className="access-dot" data-tone={scopusState?.tone ?? 'unc'} aria-hidden="true" /><span>{scopusState?.text ?? ''}</span></span>
+        </button>
+        <div className="user">
+          <span className="avatar" aria-hidden="true" style={profile ? undefined : { visibility: 'hidden' }}>{profile?.initials ?? ''}</span>
+          <span className="user-name" title={profile?.full_name}>{profile?.full_name ?? ''}</span>
+          <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={themeName} title={t(dark ? 'Light mode' : 'Dark mode')}>{dark ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}</button>
         </div>
-        {shellPrefs}
       </div>
       {!collapsed && <div className="sidebar-resizer" role="separator" aria-orientation="vertical" tabIndex={0} aria-label={t('Resize sidebar')} title={t('Drag to resize · double-click to reset')} aria-valuemin={SIDEBAR_MIN} aria-valuemax={SIDEBAR_MAX} aria-valuenow={sidebarWidth ?? asideWidth} onPointerDown={startResize} onKeyDown={resizeByKey} onDoubleClick={() => setSidebarWidth(null)} />}
     </aside>
     <div className="main-shell">
       <div className="mobilebar">
-        <Button variant="ghost" size="icon" className="mobile-menu" aria-label={t('Open navigation')} onClick={() => setSidebar(true)}><Menu size={18} /></Button>
-        <span className="mobilebar-brand" aria-hidden="true">{brandLogo}DEIXIS</span>
-        {shellPrefs}
+        <button type="button" className="mobile-menu" aria-label={t('Open navigation')} onClick={() => setSidebar(true)}><Menu size={16} aria-hidden="true" /></button>
+        <b className="mobilebar-brand" aria-hidden="true">DEIXIS</b>
       </div>
       <main>
         {route.view === 'home' && <Home onCreated={id => { refreshList(); go({ view: 'research', id }) }} />}
@@ -378,7 +433,7 @@ export default function App() {
         {route.view === 'settings' && <SettingsPage key={route.tab ?? 'defaults'} dark={dark} tab={route.tab ?? 'defaults'} onTab={tab => go({ view: 'settings', tab: tab === 'connections' ? 'connections' : undefined })} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>
-      <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} />
+      <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} language={language} onLanguage={chooseLanguage} />
     </div>
   </div>
 }

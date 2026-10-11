@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { LineageBaseline, LineageLink, LineagePlan, LineageReason, LineageStepOutcome, LineageView, ResearchView, TableView } from '../src/api'
 import { nextPort } from './ports'
+import { chooseLanguage } from './language'
+import { switchTheme } from './theme'
 
 // Synthetic application behavior only. Port from nextPort().
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -98,7 +100,7 @@ async function capture(page: Page, state: string, prepare?: () => Promise<void>,
     await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 })
     for (const theme of ['light', 'dark']) {
       const dark = await page.locator('html').evaluate(el => el.classList.contains('dark'))
-      if (dark !== (theme === 'dark')) await page.getByRole('button', { name: dark ? 'Use light theme' : 'Use dark theme' }).click()
+      if (dark !== (theme === 'dark')) await switchTheme(page, dark ? 'Switch to light mode' : 'Switch to dark mode')
       if (prepare) await prepare()
       if (focus) await focus.scrollIntoViewIfNeeded()
       if (width === 390) await expect.poll(() => page.locator('.lineage-view').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
@@ -107,7 +109,7 @@ async function capture(page: Page, state: string, prepare?: () => Promise<void>,
     }
   }
   await page.setViewportSize({ width: 1440, height: 1000 })
-  if (await page.locator('html').evaluate(el => el.classList.contains('dark'))) await page.getByRole('button', { name: 'Use light theme' }).click()
+  if (await page.locator('html').evaluate(el => el.classList.contains('dark'))) await switchTheme(page, 'Switch to light mode')
 }
 async function runLinks(page: Page, f: Fixture) {
   await page.getByRole('button', { name: 'Find development links' }).click()
@@ -312,7 +314,7 @@ test.describe('recorded development lines', () => {
     await action.focus(); await page.keyboard.press('Enter')
     await expect(page.getByRole('dialog', { name: 'Add development link' })).toBeVisible()
     await page.keyboard.press('Escape'); await expect(action).toBeFocused()
-    await page.getByRole('button', { name: 'Türkçe', exact: true }).click()
+    await chooseLanguage(page, 'tr')
     await expect(page.getByRole('tab', { name: 'Gelişim çizgileri' })).toBeVisible()
     await expect(page.locator('.lineage-status')).toContainText('Gelişim durum')
     await expect(page.getByRole('button', { name: 'Gelişim bağlarını bul' })).toBeVisible()
@@ -401,7 +403,7 @@ test.describe('recorded development lines', () => {
     for (const theme of ['light', 'dark']) {
       await page.setViewportSize({ width: 390, height: 844 })
       const dark = await page.locator('html').evaluate(el => el.classList.contains('dark'))
-      if (dark !== (theme === 'dark')) await page.getByRole('button', { name: dark ? 'Use light theme' : 'Use dark theme' }).click()
+      if (dark !== (theme === 'dark')) await switchTheme(page, dark ? 'Switch to light mode' : 'Switch to dark mode')
       await expect.poll(() => page.locator('.lineage-view').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
       await page.screenshot({ path: path.join(OUT, `l7-mocked-390-${theme}.png`), fullPage: true, animations: 'disabled' })
     }

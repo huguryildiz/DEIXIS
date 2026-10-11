@@ -8,6 +8,7 @@ import { reasonLabels, relationLabels, alignmentLabels, statusLabels, assessment
 import { setUiLanguage } from '../src/i18n'
 import { stepLabel } from '../src/labels'
 import { nextPort } from './ports'
+import { switchTheme } from './theme'
 
 // Port from nextPort().
 // This suite exercises synthetic application behavior only; it makes no real model/provider request.
@@ -128,9 +129,7 @@ async function capture(page: Page, name: string, root: Locator, prepare?: () => 
     const focused = await page.evaluateHandle(() => document.activeElement)
     try {
       await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }))
-      const button = page.getByRole('button', { name: dark ? 'Use light theme' : 'Use dark theme' })
-      await button.scrollIntoViewIfNeeded()
-      await button.click()
+      await switchTheme(page, dark ? 'Switch to light mode' : 'Switch to dark mode')
       // Theme navigation must not replace the opener focus being asserted by the caller.
       await focused.evaluate(el => { if (el instanceof HTMLElement && el.isConnected) el.focus({ preventScroll: true }) })
     } finally { await focused.dispose() }

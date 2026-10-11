@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { CircleCheck, CircleX, TriangleAlert, X } from 'lucide-react'
+import { CircleX, TriangleAlert, X } from 'lucide-react'
 import { t } from './i18n'
 
 export type ToastTone = 'success' | 'warning' | 'error'
@@ -8,12 +8,13 @@ export type ToastTone = 'success' | 'warning' | 'error'
 export type ToastAction = { label: string; run: () => void }
 type Toast = { tone: ToastTone; text: string; action?: ToastAction; id: number }
 
-const icons = { success: CircleCheck, warning: TriangleAlert, error: CircleX }
+// Every tone sits on the same ink ground (mockup); a warning or an error also carries its icon, and an error is an alert.
+const icons = { success: null, warning: TriangleAlert, error: CircleX }
 const ToastContext = createContext<(tone: ToastTone, text: string, action?: ToastAction) => void>(() => {})
 
 export const useToast = () => useContext(ToastContext)
 
-// One toast at a time, portaled above sheets. Errors stay until dismissed so they are not missed; a toast with an action
+// One toast at a time, bottom-centre, portaled above sheets. Errors stay until dismissed so they are not missed; a toast with an action
 // stays longer and waits while the pointer or keyboard focus is on it.
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<Toast | null>(null)
@@ -39,15 +40,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const Icon = toast ? icons[toast.tone] : null
   return <ToastContext.Provider value={show}>
     {children}
-    {toast && Icon && createPortal(<div key={toast.id} role={toast.tone === 'error' ? 'alert' : 'status'} className={`toast is-${toast.tone}`}
+    {toast && createPortal(<div key={toast.id} role={toast.tone === 'error' ? 'alert' : 'status'} className={`toast is-${toast.tone}`}
       onMouseEnter={() => setHeld(true)} onMouseLeave={() => setHeld(false)}
       onFocus={e => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) returnFocus.current = e.relatedTarget instanceof HTMLElement ? e.relatedTarget : null
         setHeld(true)
       }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHeld(false) }}>
-      <Icon size={16} aria-hidden /><span>{toast.text}</span>
+      {Icon && <Icon size={15} className="toast-icon" aria-hidden />}<span className="toast-text">{toast.text}</span>
       {toast.action && <button type="button" className="toast-action" onClick={() => { const { run } = toast.action!; close(); run() }}>{toast.action.label}</button>}
-      <button type="button" aria-label={t('Dismiss notification')} onClick={close}><X size={16} /></button>
+      <button type="button" className="toast-close" aria-label={t('Dismiss notification')} onClick={close}><X size={14} /></button>
     </div>, document.body)}
   </ToastContext.Provider>
 }

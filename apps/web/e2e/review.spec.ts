@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Connections, ReportDetail, ResearchView, ReviewCard, ReviewDetail, ReviewPreview, ReviewRequest } from '../src/api'
 import { nextPort } from './ports'
+import { chooseLanguage } from './language'
 
 // SYNTHETIC records and the scripted model only. No live providers, models or library; own process.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -366,7 +367,7 @@ test('5 active-run and nothing-reviewable refusals retain their codes and rows i
   await expect.poll(async () => (await readReview(page, f, first.id)).state, { timeout: 60_000 }).toMatch(/^(completed|partial)$/)
   for (const language of ['en', 'tr'] as const) {
     await page.keyboard.press('Escape')
-    if (language === 'tr') await page.getByRole('button', { name: 'Türkçe' }).click()
+    if (language === 'tr') await chooseLanguage(page, 'tr')
     await page.getByRole('button', { name: language === 'en' ? 'Open evidence report' : 'Kanıt raporunu aç' }).click()
     await sheet(page).getByRole('button', { name: language === 'en' ? /^Reviews/ : /^İncelemeler/ }).click()
     await button(pane(page), language === 'en' ? 'Review with another model' : 'Başka bir modelle incele').click()
@@ -391,7 +392,7 @@ test('5 active-run and nothing-reviewable refusals retain their codes and rows i
     await page.keyboard.press('Escape')
     await page.reload()
     // beforeEach's init script is intentionally English; restore the actual UI preference for the next round.
-    if (language === 'tr') await page.getByRole('button', { name: 'Türkçe' }).click()
+    if (language === 'tr') await chooseLanguage(page, 'tr')
     await page.getByRole('button', { name: language === 'en' ? 'Open evidence report' : 'Kanıt raporunu aç' }).click()
   }
 })
@@ -532,7 +533,7 @@ test('8 report eligibility and missing failure reasons are visible in both langu
     await route.fulfill({ response, json: { ...detail, state: 'failed', failure_reason: null } })
   })
   for (const language of ['en', 'tr'] as const) {
-    if (language === 'tr') await page.getByRole('button', { name: 'Türkçe' }).click()
+    if (language === 'tr') await chooseLanguage(page, 'tr')
     const entryName = language === 'en' ? 'Review with another model' : 'Başka bir modelle incele'
     const previewName = language === 'en' ? 'Preview' : 'Önizleme'
     const reason = language === 'en' ? 'A report can be reviewed once its run has finished.' : 'Bir rapor, yazım işlemi bittikten sonra incelenebilir.'

@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { CandidateCard, CandidateEdit, CandidateListItem, CandidatePlan, Connections, ResearchView, ReviewCard, ReviewDetail, ReviewPreview, ReviewRequest, Run } from '../src/api'
 import { nextPort } from './ports'
+import { chooseLanguage } from './language'
+import { switchTheme } from './theme'
 
 // SYNTHETIC records and the scripted model only; a separate process, port and data directory.
 // These cases check workflow behavior, not scientific review quality. Browser execution is external to the sandbox.
@@ -259,7 +261,7 @@ test('held review disables a second prepared request; Turkish title and active-r
   await expect(form(page)).toContainText('Another run is active in this research.')
   await expect(button(form(page), 'Start review')).toBeDisabled()
   await close(page)
-  await page.getByRole('button', { name: 'Türkçe' }).click()
+  await chooseLanguage(page, 'tr')
   await candidates(page).getByRole('button', { name: /^Başka bir model tarafından incelendi:/ }).click()
   await expect(page.getByRole('dialog', { name: 'Başka bir modelin incelemesi' })).toBeVisible()
   await expect(page.getByRole('dialog', { name: 'Başka bir modelin incelemesi' })).toContainText('Bu araştırmada başka bir işlem sürüyor.')
@@ -277,7 +279,7 @@ test('request and detail: keyboard, axe, reduced motion, themes and narrow scree
     for (const theme of ['light', 'dark'] as const) for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: width === 1280 ? 900 : 844 })
       const dark = await page.locator('html').evaluate(el => el.classList.contains('dark'))
-      if (dark !== (theme === 'dark')) await page.getByRole('button', { name: dark ? 'Use light theme' : 'Use dark theme' }).click()
+      if (dark !== (theme === 'dark')) await switchTheme(page, dark ? 'Switch to light mode' : 'Switch to dark mode')
       if (screen === 'request') { await openRequest(page); await preview(page) }
       else await candidates(page).getByRole('button', { name: /^Reviewed by another model:/ }).click()
       await expect(sheet(page)).toBeVisible()

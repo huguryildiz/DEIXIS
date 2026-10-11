@@ -1,22 +1,27 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
-import { FileText, FlaskConical, Plus, Search, Settings2 } from 'lucide-react'
+import { Check, FileText, FlaskConical, Languages, Plus, Search, Settings2 } from 'lucide-react'
 import { api, type QuickFindResult, type ResearchSummary } from './api'
 import { versionText } from './labels'
-import { t } from './i18n'
+import { t, type UiLanguage } from './i18n'
 
-type Item = { key: string; group: 'Pages' | 'Research' | 'Sources'; label: string; detail?: string; hash: string }
+type Item = { key: string; group: 'Pages' | 'Research' | 'Sources' | 'Language'; label: string; detail?: string; hash: string; lang?: UiLanguage }
 
 // Built on each render so page names follow the interface language.
 const pages = (): Item[] => [
   { key: 'page-new', group: 'Pages', label: t('New research'), hash: '/' },
   { key: 'page-connections', group: 'Pages', label: t('Connections'), detail: t('Model and academic source connections'), hash: '/connections' },
 ]
-const ICONS = { Pages: Settings2, Research: FlaskConical, Sources: FileText }
-const GROUP_HEADINGS = { Pages: 'PAGES', Research: 'RESEARCH', Sources: 'SOURCES' }
+const ICONS = { Pages: Settings2, Research: FlaskConical, Sources: FileText, Language: Languages }
+const GROUP_HEADINGS = { Pages: 'PAGES', Research: 'RESEARCH', Sources: 'SOURCES', Language: 'Language' }
+// The interface language is a command that appears only when the query asks for it, so the default view stays as drawn
+// (plan §2.4). The names stay in their own language.
+const LANGUAGE_WORDS = ['language', 'dil', 'türkçe', 'turkce', 'turkish', 'english', 'ingilizce']
+const LANGUAGES: { lang: UiLanguage; label: string }[] = [{ lang: 'tr', label: 'Türkçe' }, { lang: 'en', label: 'English' }]
 
-export function QuickFind({ open, onOpenChange, recent, dark, returnFocus }: {
+export function QuickFind({ open, onOpenChange, recent, dark, returnFocus, language, onLanguage }: {
   open: boolean; onOpenChange: (open: boolean) => void; recent: ResearchSummary[]; dark: boolean; returnFocus: RefObject<HTMLElement | null>
+  language: UiLanguage; onLanguage: (language: UiLanguage) => void
 }) {
   const [query, setQuery] = useState('')
   const [found, setFound] = useState<{ text: string; result: QuickFindResult } | null>(null)
@@ -39,7 +44,9 @@ export function QuickFind({ open, onOpenChange, recent, dark, returnFocus }: {
 
   const result = found && found.text === text ? found.result : null
   const lower = text.toLowerCase()
+  const askedLanguage = lower.length >= 3 && LANGUAGE_WORDS.some(word => word.startsWith(lower) || lower.includes(word))
   const items: Item[] = [
+    ...(askedLanguage ? LANGUAGES.map(l => ({ key: `language-${l.lang}`, group: 'Language' as const, label: l.label, hash: '', lang: l.lang })) : []),
     ...pages().filter(p => !lower || p.label.toLowerCase().includes(lower)),
     ...(text ? result?.researches ?? [] : recent.slice(0, 6)).map(r => ({
       key: `research-${r.id}`, group: 'Research' as const, label: r.title, detail: r.question !== r.title ? r.question : undefined, hash: `/research/${r.id}`,
@@ -58,6 +65,7 @@ export function QuickFind({ open, onOpenChange, recent, dark, returnFocus }: {
   }
   function choose(item: Item | undefined) {
     if (!item) return
+    if (item.lang) { onLanguage(item.lang); close(false); return }
     // A new route hands focus to its page's heading (App); choosing the route that is already open changes nothing there, so the opener gets focus back.
     chose.current = `#${item.hash}` !== window.location.hash
     window.location.hash = item.hash
@@ -75,7 +83,7 @@ export function QuickFind({ open, onOpenChange, recent, dark, returnFocus }: {
     <Dialog.Portal>
       <Dialog.Backdrop className="quick-find-backdrop" />
       <Dialog.Popup className={`quick-find ${dark ? 'dark' : ''}`} finalFocus={() => chose.current ? false : returnFocus.current?.isConnected ? returnFocus.current : null}>
-        <Dialog.Title className="sr-only">{t('Quick find')}</Dialog.Title>
+        <Dialog.Title className="sr-only">{t('Search')}</Dialog.Title>
         <div className="quick-find-field">
           <Search size={16} aria-hidden="true" />
           <input autoFocus role="combobox" aria-expanded="true" aria-controls="quick-find-list" aria-autocomplete="list"
@@ -85,7 +93,7 @@ export function QuickFind({ open, onOpenChange, recent, dark, returnFocus }: {
           <kbd>Esc</kbd>
         </div>
         <div id="quick-find-list" role="listbox" aria-label={t('Results')} className="quick-find-list">
-          {(['Pages', 'Research', 'Sources'] as const).map(group => {
+          {(['Language', 'Pages', 'Research', 'Sources'] as const).map(group => {
             const entries = items.map((item, index) => ({ item, index })).filter(e => e.item.group === group)
             if (!entries.length) return null
             const Icon = ICONS[group]
@@ -94,11 +102,12 @@ export function QuickFind({ open, onOpenChange, recent, dark, returnFocus }: {
               {entries.map(({ item, index }) => <div key={item.key} id={`qf-${item.key}`} role="option" aria-selected={index === current}
                 className="quick-find-option" onMouseMove={() => setActive(index)} onClick={() => choose(item)}>
                 {item.key === 'page-new' ? <Plus size={15} aria-hidden="true" /> : <Icon size={15} aria-hidden="true" />}
-                <span><strong>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</span>
+                <span><strong lang={item.lang}>{item.label}</strong>{item.detail && <small>{item.detail}</small>}</span>
+                {item.lang === language && <Check size={15} className="quick-find-current" aria-hidden="true" />}
               </div>)}
             </div>
           })}
-          {text && !searching && (error || (result && !result.researches.length && !result.sources.length)) &&
+          {text && !searching && (error || (result && !result.researches.length && !result.sources.length && !askedLanguage)) &&
             <p className="quick-find-empty">{error || t('No research question or source title matches.')}</p>}
         </div>
         <p className="quick-find-note">{t('Matches research titles, questions and source titles in this workspace. Passage text is not searched.')}</p>

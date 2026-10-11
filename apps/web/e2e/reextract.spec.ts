@@ -7,6 +7,8 @@ import path from 'node:path'
 import type { ActivityEvent, Asset, AssetText, Passage, RecoveryHistory, ReportDetail, ResearchSummary, ResearchView, Source, TableSummary, TableView, TextRetryOperation } from '../src/api'
 import { setUiLanguage, t } from '../src/i18n'
 import { nextPort } from './ports'
+import { chooseLanguage } from './language'
+import { switchTheme } from './theme'
 
 // SYNTHETIC stored inputs and scripted model output. Mocked failures/races do not create backend evidence.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -191,7 +193,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
       for (const language of ['en', 'tr'] as const) {
         step(`12a: simulated ${failure.code ?? 'file_missing'} / ${language}`)
         setUiLanguage(language)
-        await ui.getByRole('button', { name: language === 'tr' ? 'Türkçe' : 'English', exact: true }).click()
+        await chooseLanguage(ui, language)
         await ui.route(`**${retryPath}`, async route => {
           const body = route.request().postDataJSON() as { mode: string; expected_current_extraction_id: string; idempotency_key: string }
           expect(body.mode).toBe('retry_failed_or_partial'); expect(body.expected_current_extraction_id).toBe(oldId)
@@ -212,7 +214,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
       }
     }
     step('12b: simulated running receipt, then reload real state')
-    setUiLanguage('en'); await ui.getByRole('button', { name: 'English', exact: true }).click()
+    setUiLanguage('en'); await chooseLanguage(ui, 'en')
     const real = await view()
     const running: TextRetryOperation = {
       operation_id: 'simulated_r4_running', asset_id: a2.id, lifecycle: 'running', outcome: null, reason: null, decision_code: null,
@@ -398,7 +400,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
       step(`14: results and history ${width}px / ${theme}`)
       await ui.setViewportSize({ width, height: 900 })
       const dark = await ui.locator('html').evaluate(el => el.classList.contains('dark'))
-      if (dark !== (theme === 'dark')) await ui.getByRole('button', { name: theme === 'dark' ? 'Use dark theme' : 'Use light theme', exact: true }).click()
+      if (dark !== (theme === 'dark')) await switchTheme(ui, theme === 'dark' ? 'Switch to dark mode' : 'Switch to light mode')
       await quiet(ui); await sourcesTab(ui)
       await expect(ui.locator('html')).toHaveClass(theme === 'dark' ? /dark/ : /^(?!.*\bdark\b).*$/)
       await shot(ui, `reextract-results-${width}-${theme}`, await view())
@@ -436,7 +438,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     expect((await passage(answerPassageId)).evidence_status).toBe('text_superseded')
     await closeAnswerCitation()
     step('13: Turkish results, history and occurrence notice')
-    await ui.getByRole('button', { name: 'Türkçe', exact: true }).click()
+    await chooseLanguage(ui, 'tr')
     await ui.getByRole('tab', { name: /^Kaynaklar/ }).click()
     await expect(row(ui, titles[0])).toContainText('Metin yeniden çıkarıldı.')
     await expect(row(ui, titles[2])).toContainText('Bu PDF parola gerektiriyor.')

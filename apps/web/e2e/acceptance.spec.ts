@@ -3,6 +3,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
 import { nextPort } from './ports'
+import { switchTheme } from './theme'
 
 // A–G acceptance cases (the first web slice) in a real browser against the fixture server.
 // Records are SYNTHETIC and the model is scripted: this checks application behavior, not model quality.
@@ -223,7 +224,7 @@ test('recent research moves to Trash, restores, then can be permanently deleted'
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.getByRole('button', { name: 'Restore' }).click()
     await expect(page.locator('.trash-row', { hasText: title })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Research', exact: true }).click()
+    await page.getByRole('button', { name: 'New research', exact: true }).click()
     await page.getByRole('button', { name: `Actions for ${title}` }).click()
     await page.getByRole('menuitem', { name: 'Move to Trash' }).click()
     await page.getByRole('button', { name: 'Trash', exact: true }).click()
@@ -401,10 +402,10 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await expect(page.locator('.research-seed')).toBeVisible()
     await page.locator('.research-seed').scrollIntoViewIfNeeded()
     await shot(page, '00-seed-mobile-light')
-    await page.getByRole('button', { name: 'Use dark theme' }).click()
+    await switchTheme(page, 'Switch to dark mode')
     await page.locator('.research-seed').scrollIntoViewIfNeeded()
     await shot(page, '00-seed-mobile-dark')
-    await page.getByRole('button', { name: 'Use light theme' }).click()
+    await switchTheme(page, 'Switch to light mode')
     await page.setViewportSize({ width: 1280, height: 900 })
   })
 
@@ -516,7 +517,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await page.keyboard.press('Escape')
     if (await dismiss.isVisible()) await dismiss.click()
     await report.getByRole('button', { name: 'Close' }).click()
-    await page.getByRole('button', { name: 'Use dark theme' }).click()
+    await switchTheme(page, 'Switch to dark mode')
     await artifact.click()
     await expect(report).toBeVisible()
     await shot(page, 'answer-report-drawer-dark')
@@ -526,7 +527,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await shot(page, 'A-citation-highlight-dark')
     await page.keyboard.press('Escape')
     await report.getByRole('button', { name: 'Close' }).click()
-    await page.getByRole('button', { name: 'Use light theme' }).click()
+    await switchTheme(page, 'Switch to light mode')
     await artifact.click()
   })
 
@@ -828,7 +829,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await page.keyboard.press('Escape')
     await page.setViewportSize({ width: 1280, height: 900 })
     await expect(page.getByRole('button', { name: 'No empty cells to fill' })).toBeDisabled()
-    await page.getByRole('button', { name: 'Use dark theme' }).click()
+    await switchTheme(page, 'Switch to dark mode')
     await wrap.scrollIntoViewIfNeeded()
     await shot(page, 'evidence-table-dark')
     await page.locator('[data-cell="0:0"]').click()
@@ -838,7 +839,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await shot(page, 'evidence-table-mobile-dark')
     await page.setViewportSize({ width: 1280, height: 900 })
-    await page.getByRole('button', { name: 'Use light theme' }).click()
+    await switchTheme(page, 'Switch to light mode')
   })
 })
 
@@ -1087,9 +1088,9 @@ test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)'
     await page.setViewportSize({ width: 390, height: 844 })
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)  // after the sidebar's width transition
     await shot(page, 'D50-trash-grouped-mobile')
-    await page.getByRole('button', { name: 'Use dark theme' }).click()
+    await switchTheme(page, 'Switch to dark mode')
     await shot(page, 'D50-trash-grouped-mobile-dark')
-    await page.getByRole('button', { name: 'Use light theme' }).click()
+    await switchTheme(page, 'Switch to light mode')
     await page.setViewportSize({ width: 1280, height: 900 })
     await removed.locator('.trash-row', { hasText: relay }).getByRole('button', { name: 'Restore' }).click()
     await expect(page.getByText('Trash is empty.')).toBeVisible()

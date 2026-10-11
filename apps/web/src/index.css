@@ -257,6 +257,7 @@ html {
     }
   body {
     @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;  /* mockup v24 l.32: text renders as thin as in the mockup (parity S1) */
     }
   html {
     @apply font-sans;

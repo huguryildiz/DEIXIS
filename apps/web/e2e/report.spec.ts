@@ -6,6 +6,7 @@ import path from 'node:path'
 import { failedSectionReasonText, reportAssemblyDraftText } from '../src/labels'
 import { setUiLanguage } from '../src/i18n'
 import { nextPort } from './ports'
+import { switchTheme } from './theme'
 
 // SYNTHETIC records and a scripted report model exercise the UI, not the quality of a research report.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -219,13 +220,13 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await shot(page, 'report-view-table-desktop')
     // The sheet is modal, so the header's theme switch is reached with the sheet closed.
     await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: 'Use dark theme' }).click()
+    await switchTheme(page, 'Switch to dark mode')
     await page.getByRole('button', { name: 'Open evidence report' }).click()
     await expect(reportSheet(page).getByRole('heading', { name: 'II. Review Methodology' })).toBeVisible()
     await toastsOff(page)
     await shot(page, 'report-view-dark-desktop')
     await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: 'Use light theme' }).click()
+    await switchTheme(page, 'Switch to light mode')
     await page.getByRole('button', { name: 'Open evidence report' }).click()
 
     await sheet.getByRole('button', { name: 'Evidence view' }).click()
@@ -383,7 +384,7 @@ test('a banned word in a section pauses the report with the section failed and n
     await header.scrollIntoViewIfNeeded()
     await shot(page, 'report-banned-word-paused-desktop')
     await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: 'Use dark theme' }).click()
+    await switchTheme(page, 'Switch to dark mode')
     await entry.click()
     await header.scrollIntoViewIfNeeded()
     await shot(page, 'report-banned-word-paused-dark-desktop')
@@ -391,7 +392,7 @@ test('a banned word in a section pauses the report with the section failed and n
     await header.scrollIntoViewIfNeeded()
     await shot(page, 'report-banned-word-paused-dark-390')
     await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: 'Use light theme' }).click()
+    await switchTheme(page, 'Switch to light mode')
     await entry.click()
     await header.scrollIntoViewIfNeeded()
     await shot(page, 'report-banned-word-paused-390')
@@ -535,7 +536,7 @@ test('a bad cell anchor fails after one repair and displays only the stored reas
     await page.route(`**${reportPath}`, route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(report) }))
     const entry = page.getByRole('button', { name: 'Open evidence report' })
     for (const dark of [false, true]) {
-      if (dark) await page.getByRole('button', { name: 'Use dark theme' }).click()
+      if (dark) await switchTheme(page, 'Switch to dark mode')
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
         await timeline.scrollIntoViewIfNeeded()

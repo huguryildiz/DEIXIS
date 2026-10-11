@@ -1,42 +1,43 @@
-/* Home: one centred 700px column about 11vh below the top. The composer is a floating box: a band in --accent-band carries
-   the source scope, then the question, then attachments and a control row on the sidebar surface (+, depth, models, send).
-   Notes and the shortcut sit quietly under it. The DOM is the original intake tree: the band is the box's 42px top border
-   (a border, not a pseudo-element or gradient, so contrast checks still resolve every background) and the scope trigger
-   (still inside .composer-options, so Tab order is unchanged) is placed on it absolutely. */
-.welcome.home{display:grid;gap:14px;width:100%;max-width:748px;margin:0 auto 48px;padding:max(0px,calc(11vh - 32px)) 24px 0}
-.app .composer{position:relative;background:var(--raised-surface);border:1px solid var(--accent-band);border-top-width:42px;border-radius:12px;box-shadow:var(--shadow-float);transition:border-color .15s ease,box-shadow .15s ease}
-.app .composer:focus-within{border-color:var(--accent);border-top-color:var(--accent-band);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent),transparent 78%),var(--shadow-float)}
+/* Home (mockup v24): one centred 700px column about 11vh below the top. The composer is a floating box: a band in
+   --accent-band carries the source scope, then the question, then one control row on the sidebar surface
+   (+, file chips, Models, depth, send). The hint lines sit quietly under it. */
+.welcome.home{display:grid;gap:22px;width:100%;max-width:748px;margin:0 auto 48px;padding:max(0px,calc(11vh - 24px)) 24px 0;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.app .composer{position:relative;overflow:hidden;background:var(--raised-surface);border:1px solid var(--accent-band);border-radius:12px;box-shadow:var(--shadow-float);transition:border-color .15s ease,box-shadow .15s ease}
+.app .composer:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent),transparent 78%),var(--shadow-float)}
+.composer-band{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 8px;background:var(--accent-band)}
 /* White on the band: --accent-band is #2e4877 / #2b3b5c, so white text stays above 4.5:1 even on the hover tint.
-   The trigger's own background is opaque (the band mixed with white) so its text contrast does not depend on ::before. */
-.app .composer .composer-options [data-slot=select-trigger].composer-scope{position:absolute;top:-35px;left:7px;max-width:calc(100% - 14px);height:28px;gap:7px;padding:0 8px 0 9px;border:1px solid rgb(255 255 255/.24);border-radius:6px;background:color-mix(in srgb,var(--accent-band),#fff 10%);box-shadow:none;color:#fff;font-size:12.5px;font-weight:500}
-.app .composer .composer-options [data-slot=select-trigger].composer-scope:hover,.app .composer .composer-options [data-slot=select-trigger].composer-scope[aria-expanded=true]{background:color-mix(in srgb,var(--accent-band),#fff 16%)}
-.app .composer .composer-options .composer-scope svg,.app .composer .composer-options .composer-scope [data-slot=select-value] svg{color:#fff}
-.app .composer .composer-options .composer-scope:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:none}
+   The trigger's own background is opaque (the band mixed with white) so its text contrast is checked against a solid colour. */
+.app .composer-band [data-slot=select-trigger].composer-scope{display:flex;align-items:center;gap:7px;width:auto;max-width:100%;height:auto;min-height:0;padding:4px 9px;line-height:1.5;border:1px solid rgb(255 255 255/.24);border-radius:6px;background:color-mix(in srgb,var(--accent-band),#fff 10%);box-shadow:none;color:#fff;font-size:12.5px;font-weight:500;white-space:nowrap}
+.app .composer-band [data-slot=select-trigger].composer-scope:hover,.app .composer-band [data-slot=select-trigger].composer-scope[aria-expanded=true]{background:color-mix(in srgb,var(--accent-band),#fff 16%)}
+.app .composer-band .composer-scope svg,.app .composer-band .composer-scope [data-slot=select-value] svg{color:#fff}
+.app .composer-band .composer-scope [data-slot=select-value]{flex:none;align-items:center;gap:7px;font-weight:500}
+.app .composer-band .composer-scope:focus-visible{outline:2px solid #fff;outline-offset:2px;box-shadow:none}
 .app .composer textarea{display:block;width:100%;min-height:112px;padding:14px 16px;border:0;border-radius:0;background:transparent;box-shadow:none;color:var(--ink);font-size:15px;line-height:1.55;resize:none;outline:none}
 .app .composer textarea:focus-visible{border:0;box-shadow:none}
 .app .composer textarea::placeholder{color:var(--muted)}
 .app .composer .zotero-panel{margin:0 12px 12px}
-.composer-hint{margin:0;padding:6px 16px 0;background:var(--sidebar-surface);color:var(--muted);font-size:12px}
-.composer-controls{display:flex;align-items:flex-end;gap:8px;padding:8px 10px;border-top:1px solid var(--line);border-radius:0 0 11px 11px;background:var(--sidebar-surface)}
-.app .composer-controls .composer-options{flex:1;gap:8px}
-.app .composer-models{padding:10px;border-top:1px solid var(--line);background:var(--sidebar-surface);border-radius:0 0 11px 11px}
-.app .composer:has(.composer-models) .composer-controls{border-radius:0}
-/* Attachments (and the Zotero note) open the row area; the controls then continue it without a second hairline. */
-.app .composer :is(.attachments,.composer-hint)~.composer-controls{border-top:0}
-/* Row controls share one quiet look: 30px, hairline border, page surface. */
-.composer-add,.composer-model{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:30px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);padding:0 10px;font-size:13px;white-space:nowrap}
-.app .composer-add{width:30px;padding:0}
-.app .composer-add:hover,.app .composer-add[aria-expanded=true]{background:var(--hover-surface);color:var(--ink)}
-.composer-model{color:var(--muted);font-size:12.5px}
-.app .composer-controls .models-summary{flex:0 1 auto;min-width:0;min-height:30px;padding:0 9px 0 10px;background:var(--paper);color:var(--ink-2)}
-.app .composer-controls .models-summary:hover,.app .composer-controls .models-summary[aria-expanded=true]{background:var(--hover-surface);color:var(--ink)}
-.app .composer-controls .composer-options [data-slot=select-trigger]{height:30px;gap:6px;padding:0 8px 0 10px;background:var(--paper);color:var(--ink-2);font-size:13px}
-.app .composer-controls .composer-options [data-slot=select-trigger]:hover{background:var(--hover-surface);color:var(--ink)}
+.composer-hint{margin:0;padding:6px 16px 8px;color:var(--muted);font-size:12px}
+.composer-controls{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:var(--sidebar-surface)}
+.app .composer-models{position:relative;padding:10px 40px 10px 10px;border-top:1px solid var(--line);background:var(--sidebar-surface)}
+.models-picker-close{position:absolute;top:10px;right:10px;display:grid;place-items:center;width:24px;height:24px;border-radius:5px;color:var(--muted)}
+.models-picker-close:hover{background:var(--hover-surface);color:var(--ink)}
+/* Row buttons share one quiet look: 30px, hairline border, page surface. */
+.app .composer-controls :is(.composer-add,.models-summary,[data-slot=select-trigger]){display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:0;height:auto;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);box-shadow:none;color:var(--ink-2);padding:5px 10px;font-size:13px;line-height:1.5;white-space:nowrap}
+.app .composer-controls .composer-add{width:30px;height:30px;padding:5px;flex:none}
+.app .composer-controls .models-summary{flex:none;max-width:none;overflow:visible}
+.app .composer-controls .models-summary-label{margin-right:1px}
+.app .composer-controls .models-summary>svg{display:inline-block;flex:none;color:var(--muted)}
+.app .composer-controls .models-summary:disabled{opacity:.5}
+.app .composer-controls .composer-depth{flex:none;width:auto}
+.app .composer-controls .composer-depth>svg{display:none}
+.app .composer-controls .composer-depth [data-slot=select-value]{flex:none;align-items:center;gap:6px}
+.app .composer-controls .composer-depth [data-slot=select-value] svg{color:var(--muted)}
+.app .composer-controls :is(.composer-add,.models-summary,[data-slot=select-trigger]):hover:not(:disabled),.app .composer-controls :is(.composer-add,.models-summary,[data-slot=select-trigger])[aria-expanded=true]{background:var(--hover-surface);color:var(--ink)}
 .app .composer .send-button{width:32px;height:32px;flex:none;border-radius:7px;background:var(--accent);color:var(--paper)}
 .app .composer .send-button:hover:not(:disabled){background:color-mix(in srgb,var(--accent),var(--ink) 14%)}
 .app .composer .send-button:disabled{opacity:.45}
-/* Attachments sit above the controls on the row surface as small file chips; several PDFs wrap. */
-.attachments{display:flex;flex-wrap:wrap;gap:6px;min-width:0;padding:8px 10px 0;border-top:1px solid var(--line);background:var(--sidebar-surface)}
+/* File chips fill the row between + and Models; several PDFs wrap. On a phone they take their own first row. */
+.attachments{display:flex;flex-wrap:wrap;flex:1;gap:6px;min-width:0}
 .attachment-chip{display:flex;align-items:center;gap:2px;min-width:0;max-width:100%;height:28px;padding:0 2px 0 8px;border:1px solid var(--strong-line);border-radius:6px;background:var(--paper)}
 .attachment-chip-main{display:inline-flex;align-items:center;gap:6px;min-width:0;color:var(--ink);font-size:12px}
 .attachment-icon{display:grid;place-items:center;flex:none;color:var(--muted)}
@@ -46,14 +47,29 @@
 .attachment-remove{display:grid;place-items:center;flex:none;width:24px;height:24px;border-radius:5px;color:var(--muted)}
 .attachment-remove:hover{background:var(--hover-surface);color:var(--ink)}
 .app .attachment-remove:focus-visible{outline-offset:0}
-.composer-caption{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 14px;margin:0;color:var(--muted);font-size:12px;line-height:1.5;text-align:center}
+.welcome.home .hint{margin:0;color:var(--muted);font-size:12px;line-height:1.5;text-align:center}
+
+/* The Home menus (scope, +, Models, depth): mockup .menu. They render in a portal, so the class sits on the popup itself. */
+[data-slot=select-content].home-menu,[data-slot=dropdown-menu-content].home-menu{display:grid;gap:1px;align-content:start;width:max-content;min-width:250px;max-width:min(340px,calc(100vw - 16px));padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow-float);-webkit-font-smoothing:antialiased}
+.home-menu-heading{margin:4px 8px;color:var(--muted);font-size:10.5px;font-weight:500;letter-spacing:.7px;text-transform:uppercase}
+.home-menu [data-slot=dropdown-menu-label].home-menu-heading{padding:0}
+.home-menu .home-menu-item{display:flex;align-items:flex-start;gap:9px;min-height:0;padding:7px 8px;border-radius:6px;color:var(--ink);font-size:13px;text-align:left}
+.home-menu .home-menu-item[data-highlighted]{background:var(--hover-surface);color:var(--ink)}
+.home-menu .home-menu-item[data-disabled]{opacity:1;color:var(--muted);background:none}
+.home-menu [data-slot=select-item].home-menu-item{padding-right:28px}
+.home-menu [data-slot=select-item]>span:first-child{flex:1;min-width:0}
+.home-menu-row{display:flex;align-items:flex-start;gap:9px;width:100%;min-width:0;white-space:normal}
+.home-menu-row>svg{flex:none;width:16px;height:16px;margin-top:2px;color:var(--muted)}
+.home-menu-row .connection-icon{flex:none;width:16px;height:16px;margin-top:2px;color:var(--muted)}
+.home-menu-text{flex:1;min-width:0;line-height:1.4}
+.home-menu-text small{display:block;margin-top:1px;color:var(--muted);font-size:11.5px;line-height:1.4}
+.home-menu-badge{flex:none;margin-left:auto;padding:0 5px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-size:10px;letter-spacing:.3px;text-transform:uppercase}
+
 @media(max-width:760px){
-  .welcome.home{padding:max(0px,calc(11vh - 20px)) 16px 0}
-  .app .composer textarea{min-height:104px;padding:12px 14px;font-size:16px}
+  /* The mockup puts the composer 5vh under the top bar. Here it sits 12px lower: with the scope button on axe's first modal-test point (x 12.5%, y 12.5% of an 844 px viewport) the open scope list stops counting as a modal and the focus guards become a serious finding. */
+  .welcome.home{padding:max(0px,calc(5vh - 8px)) 24px 0}
   .attachment-name{max-width:150px}
-  .composer-controls{gap:6px;padding:8px}
-  .app .composer-controls .composer-options{gap:6px}
-  .app .composer-controls .models-summary{gap:4px;padding:0 7px 0 8px}
-  .attachments{padding:8px 8px 0}
-  .app .composer-controls .composer-options [data-slot=select-trigger]{gap:5px;padding:0 6px 0 8px}
+  .composer-controls{flex-wrap:wrap}
+  .attachments{order:-1;flex-basis:100%}
+  .attachments:empty{display:none}
 }

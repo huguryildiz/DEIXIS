@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Circle, CirclePause, Clock, Pause, Play, TriangleAlert } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, type EquationReader, type ResearchSummary, type ResearchView, type Run, type RunStatus, type Source } from './api'
@@ -52,6 +52,7 @@ export function BackgroundJobs({ researches, dark, onOpenResearch }: {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [seen, setSeen] = useState<Record<string, Job>>({})
+  const card = useRef<HTMLButtonElement>(null)
   const toast = useToast()
   const candidates = researches.filter(r => r.last_run_kind && JOB_KINDS.has(r.last_run_kind) && r.last_run_status && LIVE.has(r.last_run_status))
 
@@ -106,7 +107,9 @@ export function BackgroundJobs({ researches, dark, onOpenResearch }: {
   const unconfirmed = ended.filter(item => item.outcome !== 'completed')
   const outcomeText = (outcome: Outcome) => outcome === 'failed' ? t('Failed') : outcome === 'cancelled' ? t('Cancelled') : t('Status unknown')
 
-  if (!jobs.length) return null
+  // The card shows while something runs; an open sheet stays until the person closes it, so the result of the last job
+  // (finished, failed, unknown) is shown there even after the card has gone.
+  if (!jobs.length && !open) return null
 
   const act = async (action: () => Promise<unknown>) => {
     setBusy(true)
@@ -115,14 +118,16 @@ export function BackgroundJobs({ researches, dark, onOpenResearch }: {
   const title = t('In the background · {n}', { n: jobs.length })
 
   return <>
-    <button type="button" className="bgcard" onClick={() => setOpen(true)}>
+    {jobs.length > 0 && <button type="button" ref={card} className="bgcard" onClick={() => setOpen(true)}>
       <b><span className="spin" aria-hidden="true" />{title}</b>
       <small>{jobs.map(job => `${job.label} ${job.done}/${job.total}`).join(' · ')}</small>
-    </button>
+    </button>}
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetContent className={`detail-sheet jobs-sheet ${dark ? 'dark' : ''}`}>
+      <SheetContent className={`detail-sheet jobs-sheet ${dark ? 'dark' : ''}`}
+        finalFocus={() => card.current?.isConnected ? card.current : document.querySelector<HTMLElement>('.sidebar-find')}>
         <SheetHeader><SheetTitle><Clock size={16} aria-hidden="true" /><span>{title}</span></SheetTitle></SheetHeader>
         <div className="jobs-body">
+          {!jobs.length && <p className="jobs-none">{t('Nothing is running.')}</p>}
           {jobs.map(job => <div key={job.key} className="job">
             <b>{job.paused ? <CirclePause size={14} className="jobs-paused" aria-hidden="true" /> : <span className="spin" aria-hidden="true" />}<span className="job-name">{job.label}</span>
               <span className="job-count">{progress(job)}</span>

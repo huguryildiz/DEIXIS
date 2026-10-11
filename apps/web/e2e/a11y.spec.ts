@@ -1951,7 +1951,7 @@ test.describe.serial('X06: reduced motion and the 200% layout', () => {
     const is = () => target.evaluate(el => el === document.activeElement).catch(() => false)
     if (await is()) return 'already focused'
     const before = await target.evaluate(el => document.activeElement !== document.body && !!(el.compareDocumentPosition(document.activeElement!) & Node.DOCUMENT_POSITION_FOLLOWING)).catch(() => false)
-    const stop = await target.evaluate(el => (el as HTMLElement).tabIndex >= 0 && !el.closest('[inert]')).catch(() => false)
+    const stop = await target.evaluate(el => (el as HTMLElement).tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[inert]')).catch(() => false)  // a disabled control is never a Tab stop
     if (stop) for (let i = 0; i < 120; i++) {
       await page.keyboard.press(before ? 'Shift+Tab' : 'Tab')
       if (await is()) return `${before ? 'Shift+Tab' : 'Tab'} x${i + 1}`

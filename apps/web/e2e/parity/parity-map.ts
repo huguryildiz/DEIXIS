@@ -77,6 +77,13 @@ const DESK = [1280]
 const PHONE = [390]
 
 const HOME = "setScenario('ok'); go('home')"
+// The sidebar's controls are in the drawer on a phone: both sides open it there first (no effect above 820px).
+const NAV_OPEN = "document.getElementById('app').classList.add('nav-open'); "
+async function drawerIfPhone(page: Page) {
+  if (!await page.locator('.mobile-menu').isVisible()) return
+  await page.locator('.mobile-menu').click()
+  await page.locator('aside.sidebar.is-open').waitFor()
+}
 export const SURFACES: Surface[] = [
   { id: 'home', mock: HOME, app: '#/', ready: '#research-question' },
   { id: 'research', mock: "setScenario('ok')", app: '#/research/{research}', ready: '.research-topbar' },
@@ -93,10 +100,11 @@ export const SURFACES: Surface[] = [
     appAct: page => page.locator('.sidebar-toggle').click() },
   { id: 'drawer', mock: HOME, mockAct: "document.getElementById('app').classList.add('nav-open')", app: '#/', ready: '#research-question', widths: PHONE,
     appAct: async page => { await page.locator('.mobile-menu').click(); await page.locator('aside.sidebar.is-open').waitFor() } },
-  { id: 'jobs-sheet', mock: HOME, mockAct: 'st.jobsOpen = true; render()', app: '#/', ready: '#research-question', widths: DESK,
-    appAct: async page => { await page.locator('.sidebar-foot .bgcard').click(); await page.locator('.jobs-sheet').waitFor() } },
-  { id: 'toast', mock: HOME, mockAct: "toast('Moved to Trash.', () => {}); clearTimeout(tt); document.querySelector('.toast').dataset.parity = ''", app: '#/', ready: '#research-question', widths: DESK,
+  { id: 'jobs-sheet', mock: HOME, mockAct: NAV_OPEN + 'st.jobsOpen = true; render()', app: '#/', ready: '#research-question',
+    appAct: async page => { await drawerIfPhone(page); await page.locator('.sidebar-foot .bgcard').click(); await page.locator('.jobs-sheet').waitFor() } },
+  { id: 'toast', mock: HOME, mockAct: NAV_OPEN + "toast('Moved to Trash.', () => {}); clearTimeout(tt); document.querySelector('.toast').dataset.parity = ''", app: '#/', ready: '#research-question',
     appAct: async page => {
+      await drawerIfPhone(page)
       await page.locator('.recent-list .recent-row').first().hover()
       await page.locator('.recent-list .recent-more').first().click()
       await page.getByRole('menuitem', { name: 'Move to Trash' }).click()
@@ -106,8 +114,9 @@ export const SURFACES: Surface[] = [
       if (await page.locator('.toast .toast-action').isVisible()) await page.locator('.toast .toast-action').click()
       await page.locator('.recent-list .recent-row').first().waitFor()
     } },
-  { id: 'menu', mock: HOME, mockAct: "st.menuArg = 0; document.querySelector('.rrow').classList.add('on'); menu('rmenu', document.querySelector('.rrow .rmore'))", app: '#/', ready: '#research-question', widths: DESK,
+  { id: 'menu', mock: HOME, mockAct: NAV_OPEN + "st.menuArg = 0; document.querySelector('.rrow').classList.add('on'); menu('rmenu', document.querySelector('.rrow .rmore'))", app: '#/', ready: '#research-question',
     appAct: async page => {
+      await drawerIfPhone(page)
       await page.locator('.recent-list .recent-row').first().hover()
       await page.locator('.recent-list .recent-more').first().click()
       await page.locator('[data-slot=dropdown-menu-content]').waitFor()

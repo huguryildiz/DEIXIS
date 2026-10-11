@@ -3688,4 +3688,7 @@ const tr: Record<string, string> = {
   'Status unknown': 'Durum bilinmiyor',
   '{read} read · {none} without equations · {failed} failed': '{read} okundu · {none} denklemsiz · {failed} başarısız',
   'Language': 'Dil',
+  'Nothing is running.': 'Çalışan bir iş yok.',
+  'Access check could not run': 'Erişim denetimi yapılamadı',
+  'Proxy check could not run': 'Proxy denetimi yapılamadı',
 }

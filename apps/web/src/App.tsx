@@ -255,25 +255,36 @@ export default function App() {
   const [institutionalStatus, setInstitutionalStatus] = useState<InstitutionalAccess['status'] | null>(null)
   const [proxy, setProxy] = useState<ProxySettings | null>(null)
   const proxyTesting = useRef(false)
-  const proxyFailedFor = useRef<string | null>(null)  // an address whose test request itself failed is not retried every poll
+  // A failed read of the settings, or a test request that itself failed, is shown as "could not run" with Check again;
+  // a failed test is retried on its own after a minute, not on every poll.
+  const proxyFailedAt = useRef<{ address: string; at: number } | null>(null)
+  const [proxyFailed, setProxyFailed] = useState<string | null>(null)
+  const [proxyReadFailed, setProxyReadFailed] = useState(false)
   const [proxyBusy, setProxyBusy] = useState(false)
+  const checkAccess = useCallback(() => {
+    api.institutionalAccess().then(result => setInstitutionalStatus(result.status)).catch(() => setInstitutionalStatus('unknown'))
+    shellApi.proxySettings().then(settings => {
+      setProxy(settings)
+      setProxyReadFailed(false)
+      const failed = proxyFailedAt.current
+      if (!settings.address || (settings.test && settings.test_is_current) || proxyTesting.current) return
+      if (failed && failed.address === settings.address && Date.now() - failed.at < 60_000) return
+      proxyTesting.current = true
+      setProxyBusy(true)
+      const address = settings.address
+      shellApi.testProxy().then(result => { proxyFailedAt.current = null; setProxyFailed(null); setProxy(result) },
+        () => { proxyFailedAt.current = { address, at: Date.now() }; setProxyFailed(address) })
+        .finally(() => { proxyTesting.current = false; setProxyBusy(false) })
+    }, () => setProxyReadFailed(true))
+  }, [])
+  const retryAccess = () => { proxyFailedAt.current = null; setProxyFailed(null); setProxyReadFailed(false); checkAccess() }
   useEffect(() => {
-    const check = () => {
-      api.institutionalAccess().then(result => setInstitutionalStatus(result.status)).catch(() => setInstitutionalStatus('unknown'))
-      shellApi.proxySettings().then(settings => {
-        setProxy(settings)
-        if (!settings.address || (settings.test && settings.test_is_current) || proxyTesting.current || proxyFailedFor.current === settings.address) return
-        proxyTesting.current = true
-        setProxyBusy(true)
-        const address = settings.address
-        shellApi.testProxy().then(setProxy, () => { proxyFailedFor.current = address }).finally(() => { proxyTesting.current = false; setProxyBusy(false) })
-      }, () => setProxy(null))
-    }
+    const check = checkAccess
     check()
     const timer = window.setInterval(check, 5_000)
     window.addEventListener('focus', check)
     return () => { window.clearInterval(timer); window.removeEventListener('focus', check) }
-  }, [])
+  }, [checkAccess])
 
   function toggleTheme() {
     const next = dark ? 'light' : 'dark'
@@ -373,9 +384,13 @@ export default function App() {
 
   // The proxy line states only that the host answered; the Scopus line is the separate full-view check (plan §2.3).
   const proxyLabel = proxy?.label ?? proxy?.label_default ?? ''
+  const proxyCurrent = !!proxy?.test && proxy.test_is_current
+  const accessFailed = proxyReadFailed || (!proxyBusy && !proxyCurrent && !!proxy?.address && proxyFailed === proxy.address)
   const proxyState: { tone: 'ok' | 'warn' | 'unc' | 'checking'; text: string } =
-    !proxy ? { tone: 'checking', text: t('Checking access…') }
+    proxyReadFailed ? { tone: 'unc', text: t('Access check could not run') }
+    : !proxy ? { tone: 'checking', text: t('Checking access…') }
     : !proxy.address ? { tone: 'unc', text: t('No institutional access set up') }
+    : accessFailed ? { tone: 'unc', text: t('Proxy check could not run') }
     : proxyBusy || !proxy.test || !proxy.test_is_current ? { tone: 'checking', text: t('Checking access…') }
     : proxy.test.proxy_reachable ? { tone: 'ok', text: t('Proxy reachable · article access not checked') }
     : { tone: 'warn', text: t('Proxy did not answer') }
@@ -437,6 +452,7 @@ export default function App() {
           <span className="access-line"><i className="access-dot" data-tone={proxyState.tone} aria-hidden="true" /><span>{proxyState.text}</span></span>
           <span className="access-line" style={scopusState ? undefined : { display: 'none' }}><i className="access-dot" data-tone={scopusState?.tone ?? 'unc'} aria-hidden="true" /><span>{scopusState?.text ?? ''}</span></span>
         </button>
+        <button type="button" className="access-retry" onClick={retryAccess} style={accessFailed ? undefined : { display: 'none' }}>{t('Check again')}</button>
         <div className="user">
           <span className="avatar" aria-hidden="true" style={profile ? undefined : { visibility: 'hidden' }}>{profile?.initials ?? ''}</span>
           <span className="user-name" title={profile?.full_name}>{profile?.full_name ?? ''}</span>

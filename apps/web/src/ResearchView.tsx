@@ -1109,12 +1109,13 @@ function SourceList({ sources, busy, filter, onFilter, focus, onFocus, picked, o
   if (!sources.length) return <p className="empty-inline">{t('No sources yet.')}</p>
   return <>
     {families.length > 1 && <div className="source-toolbar">
-      <label className="source-pick-all"><input type="checkbox" checked={allShownPicked} disabled={!shownIds.length}
-        ref={node => { if (node) node.indeterminate = !allShownPicked && shownIds.some(sid => picked.includes(sid)) }}
-        onChange={e => onPick(e.target.checked ? [...new Set([...picked, ...shownIds])] : picked.filter(sid => !shownIds.includes(sid)))} /><span>{t('Select shown')}</span></label>
+      {/* The state filters run as the strip above the toolbar row (mockup .tabs over .toolbar). */}
       <div className="source-filters" role="group" aria-label={t('Show sources')}>
         {stateFilters.map(([key, label]) => <button key={key} aria-pressed={!focused && filter === key} onClick={() => { onFocus(null); onFilter(key) }}>{t(label)}<span>{counts[key]}</span></button>)}
       </div>
+      <label className="source-pick-all"><input type="checkbox" checked={allShownPicked} disabled={!shownIds.length}
+        ref={node => { if (node) node.indeterminate = !allShownPicked && shownIds.some(sid => picked.includes(sid)) }}
+        onChange={e => onPick(e.target.checked ? [...new Set([...picked, ...shownIds])] : picked.filter(sid => !shownIds.includes(sid)))} /><span>{t('Select shown')}</span></label>
       <label className="source-search"><Search size={14} aria-hidden /><input type="search" aria-label={t('Filter sources')} placeholder={t('Title, author, venue or DOI')} value={query} onChange={e => { onFocus(null); setQuery(e.target.value) }} /></label>
       <Select value={pdfFilter} onValueChange={value => { if (value) { onFocus(null); setPdfFilter(value as PdfFilter) } }}>
         <SelectTrigger className="source-pdf-filter" aria-label={t('Filter sources by PDF availability')}><SelectValue>{(value: string) => <><Filter size={14} />{t(pdfFilterLabels[value as PdfFilter])}</>}</SelectValue></SelectTrigger>

@@ -455,39 +455,55 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .search-summary-list>div{display:grid;grid-template-columns:minmax(180px,1fr) minmax(250px,1.15fr);gap:14px;padding:7px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 38%);font-size:11.5px;line-height:1.5}
 .search-summary-list span{min-width:0;overflow:hidden;color:var(--ink);text-overflow:ellipsis;white-space:nowrap}
 .search-summary-list small{color:var(--muted);font-size:11px}
-.source-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:2px 0 12px;border-bottom:1px solid var(--line)}
-.source-filters{display:inline-flex;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden}
-.source-filters button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;padding:0 11px;font-size:12px;color:var(--muted);background:var(--field-surface,transparent);white-space:nowrap}
-.source-filters button+button{border-left:1px solid var(--strong-line)}
-.source-filters button span{font-size:11px;font-variant-numeric:tabular-nums}
-.source-filters button[aria-pressed=true]{background:var(--selected-surface,var(--accent));color:var(--ink);font-weight:600}
-.source-search{flex:1;min-width:200px;display:flex;align-items:center;gap:7px;height:32px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,transparent);color:var(--muted)}
+/* Sources (mockup .tabs over .toolbar): the state filters as an underline strip with counts, then one row of search, pick-all and filters. */
+.source-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 6px;padding:0 0 10px;border-bottom:1px solid var(--line)}
+.source-filters{display:flex;flex:1 1 100%;gap:2px;margin-bottom:2px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.source-filters::-webkit-scrollbar{display:none}
+.source-filters button{display:inline-flex;flex:none;align-items:baseline;gap:4px;padding:7px 10px;border-bottom:2px solid transparent;background:none;color:var(--muted);font-size:12.5px;font-weight:500;white-space:nowrap;transition:color .16s ease,border-color .16s ease}
+.source-filters button:hover{color:var(--ink)}
+.source-filters button span{color:var(--muted);font-size:12px;font-weight:450;font-variant-numeric:tabular-nums}
+.source-filters button[aria-pressed=true]{border-bottom-color:var(--accent);color:var(--ink)}
+.app .source-filters button:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;border-radius:5px}
+@media (prefers-reduced-motion:reduce){.source-filters button{transition:none}}
+.source-search{flex:0 1 260px;min-width:170px;display:flex;align-items:center;gap:6px;height:30px;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--muted)}
 .source-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .app .source-search input:focus-visible{outline:none}
-.source-search input{flex:1;min-width:0;height:100%;background:transparent;border:0;outline:none;font-size:12px;color:var(--ink)}
-.app .source-toolbar [data-slot=select-trigger]{height:32px;gap:7px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,transparent);box-shadow:none;color:var(--ink);font-size:12px}
+.source-search input{flex:1;min-width:0;height:100%;background:transparent;border:0;outline:none;font-size:13px;color:var(--ink)}
+.app .source-toolbar [data-slot=select-trigger]{height:30px;gap:6px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);box-shadow:none;color:var(--ink-2);font-size:13px}
+.app .source-toolbar [data-slot=select-trigger]:hover{background:var(--hover-surface);color:var(--ink)}
 .app .source-toolbar .source-pdf-filter{min-width:132px}
 .source-filter-option{display:flex;align-items:center;justify-content:space-between;gap:22px;width:100%}
 .source-filter-option small{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
 .sort-option small{display:block;margin-top:2px;font-size:11px;line-height:1.35;color:var(--muted-foreground)}
 .source-empty button{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
 .source-list{border-top:0}
-.source-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:22px;align-items:start;padding:19px 2px;border-bottom:1px solid var(--line)}
+.source-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:start;padding:14px 4px;border-bottom:1px solid var(--line)}
+/* A picked row takes the accent tint (mockup tr.sel); the checkbox sits on the title line. */
+.app .sources-panel .source-row.has-pick{padding-left:34px}
+.app .sources-panel .source-row.is-other-version.has-pick{padding-left:46px}
+.app .sources-panel .source-pick{top:17px;left:10px}
+.app .sources-panel .source-row.is-other-version .source-pick{left:22px}
+.app .sources-panel .source-row.is-picked{background:var(--accent-tint)}
 .source-row.is-excluded .source-main>strong{color:var(--muted)}
 .source-row.is-other-version{margin-left:18px;padding-left:14px;border-left:2px solid var(--line)}
 .source-row.is-other-version .source-main>strong{font-weight:500}
-.reason-form{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.reason-form input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:6px;background:transparent;padding:6px 9px;font-size:12px;color:var(--ink)}
+/* The exclusion reason (mockup .why-bar): a quiet band on the side surface with one field and its button. */
+.reason-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--sidebar-surface)}
+.reason-form input{flex:1;min-width:180px;height:30px;padding:0 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);font-size:13px;color:var(--ink)}
+.reason-form input:focus{border-color:var(--accent)}
+.reason-form input::placeholder{color:var(--muted)}
 .version-note{display:block;margin:0 0 4px;color:var(--muted);font-size:11px;line-height:1.5}
 .source-main>strong,.source-main small{display:block}
-.source-main .source-title{font-family:var(--font-sans);font-size:17px;line-height:1.3;font-weight:500;letter-spacing:-.01em;text-wrap:balance}
+.source-main .source-title{color:var(--ink);font-family:var(--font-sans);font-size:15px;line-height:1.35;font-weight:500;letter-spacing:-.005em;text-wrap:balance}
 .source-main small{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5}
-/* Citation-style byline: authors · year, then venue in italics with volume, pages and the OpenAlex count. */
-.source-byline{display:grid;gap:1px;margin-top:4px;font-size:12.5px;line-height:1.5;color:var(--muted)}
-.source-byline em{font-style:italic;color:color-mix(in srgb,var(--ink),var(--muted) 30%)}
-/* Version, access, similarity and provenance as one line of dotted facts; tone is repeated in the text itself. */
-.source-status{display:flex;flex-wrap:wrap;align-items:center;gap:3px 16px;margin-top:9px;font-size:12px;line-height:1.5;color:var(--muted)}
+/* Citation-style byline (mockup .src-m): authors · year, then venue in italics with volume, pages and the OpenAlex count. */
+.source-main .source-byline,.pdf-ready-head .source-byline{display:grid;gap:0;margin-top:3px;font-size:12px;line-height:1.45;color:var(--muted)}
+.source-main .source-byline em,.pdf-ready-head .source-byline em{font-style:italic;color:var(--ink-2)}
+/* Version, access, similarity and provenance as neutral pills (mockup .pill) with a dot in the attribute's tone; the text names it. */
+.source-status{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px;font-size:11.5px;line-height:1.5;color:var(--muted)}
 .source-fact{--fact:var(--muted);display:inline-flex;align-items:center;gap:6px;color:color-mix(in srgb,var(--fact),var(--ink) 22%)}
+.source-status .source-fact{gap:5px;min-height:21px;padding:0 7px;border:1px solid var(--line);border-radius:5px;color:var(--muted);line-height:1.4}
+.source-status .source-fact.is-cited{color:var(--accent)}
 .source-fact:not(.is-plain)::before{content:'';flex:none;width:6px;height:6px;border-radius:50%;background:var(--fact)}
 .source-fact.is-plain{color:var(--muted)}
 .source-fact.is-published{--fact:var(--tone-include)}
@@ -501,10 +517,10 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .source-fact.is-similarity{--fact:var(--attr-similarity);font-variant-numeric:tabular-nums;cursor:help}
 .source-main .proposal>svg{display:inline;vertical-align:-2px;margin-right:5px;color:var(--muted)}
 .legacy-research .proposal{font-size:12px!important;margin:8px 0 0!important;line-height:1.55}
-.legacy-research .proposal.is-model{display:flex;gap:10px;margin-top:11px!important;padding:8px 11px;border-radius:8px;background:var(--hover-surface,color-mix(in srgb,var(--ink),transparent 96%));color:var(--muted)}
-.proposal .proposal-tag{flex:none;padding-top:1px;font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap}
+.legacy-research .proposal.is-model{display:flex;gap:8px;margin-top:9px!important;padding:0;border-radius:0;background:none;color:var(--ink-2);font-size:12.5px!important;line-height:1.5}
+.proposal .proposal-tag{flex:none;font-size:12px;font-weight:500;color:var(--muted);white-space:nowrap}
 .proposal em{font-style:normal;color:var(--ink);font-weight:600}
-.proposal .verdict{--pill:var(--muted);padding:1px 7px;border-radius:5px;background:color-mix(in srgb,var(--pill),transparent 86%);color:color-mix(in srgb,var(--pill),var(--ink) 32%)}
+.proposal .verdict{--pill:var(--muted);color:var(--pill);font-weight:600}
 .verdict.is-include{--pill:var(--tone-include)}
 .verdict.is-exclude{--pill:var(--tone-exclude)}
 .verdict.is-uncertain{--pill:var(--tone-uncertain)}
@@ -516,15 +532,15 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .pdf-ready-head .ocr-note{margin-top:6px!important}
 .pdf-text-page h4 .ref-pill{margin-left:8px;vertical-align:1px}
 /* Footer: the PDF lookup summary, then the actions. */
-.source-foot{display:grid;justify-items:start;gap:4px;margin-top:10px}
-.source-links{display:flex;flex-wrap:wrap;gap:2px;font-size:12px}
-.source-links :is(a,button){display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border:1px solid transparent;border-radius:7px;color:var(--ink)}
-.source-links :is(a,button):hover{background:var(--hover-surface,color-mix(in srgb,var(--ink),transparent 95%))}
-.source-links :is(a,button)>svg{color:var(--muted)}
-.source-links .is-primary{border-color:var(--strong-line);background:var(--field-surface,transparent)}
-.source-links .connection-icon{width:14px;height:14px}
+.source-foot{display:grid;justify-items:start;gap:2px;margin-top:8px}
+/* Row actions (mockup .rowacts): accent text actions with small icons; Remove PDF keeps the destructive tone. */
+.source-links{display:flex;flex-wrap:wrap;gap:0 2px;margin-left:-6px;font-size:12px}
+.source-links :is(a,button){display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 6px;border:0;border-radius:6px;color:var(--accent);font-weight:500;text-decoration:none}
+.source-links :is(a,button):hover:not(:disabled){background:var(--hover-surface);text-decoration:underline;text-underline-offset:2px}
+.source-links :is(a,button)>svg{width:13px;height:13px;color:currentColor}
+.source-links .connection-icon{width:13px;height:13px}
 .source-links button:disabled{color:var(--muted);cursor:wait}
-.source-links .source-asset-actions{display:inline-flex;gap:2px}
+.source-links .source-asset-actions{display:inline-flex;flex-wrap:wrap;gap:0 2px}
 .source-links .is-destructive,.source-links .is-destructive>svg{color:var(--destructive)}
 .pdf-search-status{width:fit-content;max-width:100%;margin-top:10px;padding:6px 12px 6px 10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--raised-surface);display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;color:var(--ink);font-size:12.5px;line-height:1.55}
 .pdf-search-status strong{font-weight:600}
@@ -596,12 +612,20 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .zotero-empty .zotero-empty-icon{display:grid;place-items:center;flex:none;width:34px;height:34px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
 .zotero-empty .connection-icon{width:16px;height:16px}
 .app .zotero-panel [data-slot=select-trigger]{min-width:min(280px,100%);height:32px;color:var(--ink);border-color:var(--line)}
-.selection-toggle{display:inline-flex;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden}
-.selection-toggle button{padding:7px 11px;font-size:12px;color:var(--muted);background:var(--field-surface,transparent)}
+/* The decision control (mockup .seg): a quiet segmented control; the chosen state takes its tone's notice surface and ink. */
+.selection-toggle{display:inline-flex;flex:none;justify-self:start;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden;background:var(--paper)}
+.selection-toggle button{min-height:26px;padding:3px 9px;font-size:12px;font-weight:500;color:var(--muted);background:transparent}
 .selection-toggle button+button{border-left:1px solid var(--strong-line)}
-.selection-toggle button[aria-pressed=true]{background:var(--selected-surface,var(--accent));color:var(--selected-ink,var(--paper));font-weight:600}
-.selection-toggle button.is-included[aria-pressed=true]{background:color-mix(in srgb,var(--tone-include),var(--paper) 84%);color:color-mix(in srgb,var(--tone-include),var(--ink) 30%)}
-.selection-toggle button.is-excluded[aria-pressed=true]{background:color-mix(in srgb,var(--tone-exclude),var(--paper) 86%);color:color-mix(in srgb,var(--tone-exclude),var(--ink) 25%)}
+.selection-toggle button:not(:disabled):hover{background:var(--hover-surface);color:var(--ink)}
+.app .selection-toggle button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.selection-toggle button[aria-pressed=true]{background:var(--selected-surface);color:var(--ink)}
+.selection-toggle button.is-included[aria-pressed=true]{background:var(--ok-surface);color:var(--ok-ink)}
+.selection-toggle button.is-pending[aria-pressed=true]{background:var(--warn-surface);color:var(--warn-ink)}
+.selection-toggle button.is-excluded[aria-pressed=true]{background:var(--error-surface);color:var(--error-ink)}
+/* The selection bar of the Sources tab (mockup .selbar): the side surface and 13px type; it stays pinned above the list. */
+.app .sources-panel .selection-bar{padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface);box-shadow:var(--shadow-float);font-size:13px}
+.app .sources-panel .selection-bar>strong{font-weight:500}
+.app .sources-panel .selection-bar-actions [data-slot=button]{height:30px;border-radius:7px;font-size:13px}
 .activity-panel .workspace-pane-head{margin-bottom:22px}
 .activity-day{display:grid;grid-template-columns:138px minmax(0,1fr);gap:24px;padding:0 0 26px}
 .activity-day+.activity-day{padding-top:4px;border-top:1px solid var(--line)}
@@ -788,8 +812,7 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
   .research-facts{gap:6px 16px}
   .research-tabs [data-slot=tabs-list]{gap:0}
   .source-row{grid-template-columns:1fr}
-  .source-filters{width:100%}
-  .source-filters button{flex:1;padding:0 6px}
+  .source-search{flex:1 1 100%}
   .workspace-pane-head{align-items:flex-start;flex-direction:column}
   .search-summary-list>div{grid-template-columns:1fr;gap:2px}
   .activity-day{grid-template-columns:1fr;gap:8px}
@@ -934,16 +957,15 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .research-topbar .research-title-suggest{color:var(--ink-2)}
 /* PDF readiness between screening and the answer (D49): a quiet document block, not a card. */
 .pdf-ready{display:grid;gap:14px;max-width:1040px;margin:30px 0 8px;color:var(--ink)}
-.legacy-research .pdf-ready h2{margin:0;font-family:var(--font-sans);font-size:22px;font-weight:500;line-height:1.3;letter-spacing:-.005em;text-wrap:balance}
+.legacy-research .pdf-ready h2{margin:0;font-family:var(--font-sans);font-size:16px;font-weight:600;line-height:1.35;letter-spacing:-.005em;text-wrap:balance}
 .legacy-research .pdf-ready p{margin:0}
 .pdf-ready-lede{max-width:78ch;color:var(--muted);font-size:14px}
 .pdf-ready-lede a{color:var(--accent);text-underline-offset:3px}
-/* As many equal columns as cells: three, or four with the person's unread PDFs (slice 18b). */
-.pdf-ready-depth{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);border-block:1px solid var(--line)}
-.pdf-ready-depth div{padding:12px 14px}
-.pdf-ready-depth div+div{border-left:1px solid var(--line)}
-.pdf-ready-depth strong{display:block;font-family:var(--font-sans);font-size:26px;font-weight:500;line-height:1.1;font-variant-numeric:tabular-nums}
-.pdf-ready-depth span{display:block;margin-top:4px;color:var(--muted);font-size:12px}
+/* As many equal columns as cells: three, or four with the person's unread PDFs (slice 18b). Cells on hairline gaps (mockup .depth). */
+.pdf-ready-depth{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:1px;border:1px solid var(--line);border-radius:10px;background:var(--line);overflow:hidden}
+.pdf-ready-depth div{padding:9px 12px;background:var(--paper)}
+.pdf-ready-depth strong{display:block;font-family:var(--font-sans);font-size:18px;font-weight:500;line-height:1.3;font-variant-numeric:tabular-nums}
+.pdf-ready-depth span{display:block;margin-top:1px;color:var(--muted);font-size:11.5px}
 .pdf-ready-bar{display:flex;height:6px;overflow:hidden;border-radius:3px;background:color-mix(in srgb,var(--line),transparent 30%)}
 .pdf-ready-bar i{display:block;height:100%;transition:width .3s ease}
 .pdf-ready-bar .is-pdf{background:var(--tone-include)}
@@ -956,34 +978,38 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .pdf-ready-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .pdf-ready-hint{color:var(--muted);font-size:12.5px}
 .pdf-ready-hint.is-warn{color:var(--tone-uncertain)}
-.pdf-ready-rows{margin:0;padding:0;list-style:none;border-top:1px solid var(--line)}
-.pdf-ready-rows li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 16px;align-items:center;padding:15px 2px;border-bottom:1px solid var(--line)}
+/* A list of works (mockup .plist / .prow): one bordered box, rows on hairlines. */
+.pdf-ready-rows{margin:0;padding:0;list-style:none;border:1px solid var(--line);border-radius:10px}
+.pdf-ready-rows li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;align-items:center;padding:10px 12px;border-top:1px solid var(--line)}
+.pdf-ready-rows li:first-child{border-top:0}
 .pdf-ready-head{display:grid;min-width:0}
-.pdf-ready-title{font-family:var(--font-sans);font-size:17px;line-height:1.3;font-weight:500;letter-spacing:-.01em;text-wrap:balance}
-.pdf-ready-head .source-byline{font-size:12.5px}
+.pdf-ready-title{font-family:var(--font-sans);font-size:14px;line-height:1.35;font-weight:500;text-wrap:balance}
 .pdf-ready-head .source-status{margin-top:6px}
 .pdf-ready-side{grid-column:2;display:flex;align-items:center;gap:8px}
-.pdf-pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--line),transparent 40%);color:var(--muted);font-size:11.5px;line-height:1.5;white-space:nowrap}
-.pdf-pill.is-ok{background:color-mix(in srgb,var(--tone-include),transparent 88%);color:var(--tone-include)}
-.pdf-pill.is-warn{background:color-mix(in srgb,var(--tone-uncertain),transparent 88%);color:var(--tone-uncertain)}
-.pdf-pill.is-run{background:color-mix(in srgb,var(--accent),transparent 90%);color:var(--accent)}
+/* A row's PDF state (mockup .pill): a hairline pill, its tone in the text. */
+.pdf-pill{display:inline-flex;align-items:center;gap:5px;padding:0 7px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:11.5px;line-height:19px;white-space:nowrap}
+.pdf-pill.is-ok{color:var(--tone-include)}
+.pdf-pill.is-warn{color:var(--tone-uncertain)}
+.pdf-pill.is-run{color:var(--accent)}
 .pdf-spin{width:11px;height:11px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:pdf-spin .9s linear infinite}
 @keyframes pdf-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.pdf-spin{animation:none}.pdf-ready-bar i{transition:none}}
-.pdf-ready-group{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0 -6px}
-.legacy-research .pdf-ready-group h3{margin:0;font-size:13px;font-weight:650}
+.pdf-ready-group{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0 -6px;padding:0 2px}
+.legacy-research .pdf-ready-group h3{margin:0;font-size:12.5px;font-weight:600}
 .pdf-ready-group small{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
 .pdf-ready-full{display:grid;gap:14px}
 .pdf-ready-full summary{list-style:none;cursor:pointer;margin:6px 0 0}
 .pdf-ready-full summary::-webkit-details-marker{display:none}
 .pdf-ready-full[open] summary{margin-bottom:8px}
-.pdf-ready-drop{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:12px 14px;border:1px dashed var(--strong-line);border-radius:9px;color:var(--muted);font-size:13px}
-.pdf-ready-drop.is-over{border-color:var(--accent);background:color-mix(in srgb,var(--accent),transparent 95%)}
+/* The drop zone (mockup .drop): a dashed box, its sentence and buttons centred; accent while a file is over it. */
+.pdf-ready-drop{display:grid;justify-items:center;gap:10px;padding:18px;border:1.5px dashed var(--strong-line);border-radius:10px;color:var(--muted);font-size:13px;line-height:1.5;text-align:center}
+.pdf-ready-drop.is-over{border-color:var(--accent);background:var(--accent-tint)}
 .pdf-ready-drop-actions,.pdf-ready-zotero{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.pdf-ready-drop-actions{justify-content:center}
 .pdf-ready-zotero .connection-icon{display:inline-flex}
 .pdf-ready-zotero .connection-icon svg{width:13px;height:13px}
 .pdf-ready select{height:30px;max-width:100%;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,var(--paper));color:var(--ink);font:inherit;font-size:12.5px}
-.pdf-ready-matches{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:9px}
+.pdf-ready-matches{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px}
 .pdf-ready-matches p{color:var(--muted);font-size:13px}
 .pdf-ready-matches ul{display:grid;gap:8px;margin:0;padding:0;list-style:none}
 .pdf-ready-matches li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:6px 14px;align-items:center}
@@ -991,7 +1017,7 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .pdf-ready-file small{color:var(--muted);font-size:11.5px}
 /* The works of an sw research waiting for the person's PDF (slice 18a): the PDF panel's rows with their place in the reading order */
 .waiting-pdf{margin-top:18px}
-.waiting-pdf h2{margin:0;font-size:22px;font-weight:500;text-wrap:balance}
+.legacy-research .waiting-pdf h2{margin:0;font-size:16px;font-weight:600;text-wrap:balance}
 .waiting-pdf .pdf-ready-hint a{color:var(--accent);text-underline-offset:3px}
 .waiting-pdf .waiting-rows{padding:0;list-style:none;color:inherit}
 .waiting-rows li{grid-template-columns:28px minmax(0,1fr) auto}
@@ -1000,12 +1026,12 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .waiting-doi{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;overflow-wrap:anywhere}
 .waiting-actions{flex-wrap:wrap;justify-content:flex-end}
 .waiting-link{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-.waiting-match{display:grid;gap:10px;padding:14px 16px;border:1px solid var(--line);border-radius:9px;background:var(--raised-surface)}
+.waiting-match{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--raised-surface)}
 .waiting-match p{margin:0}
 .waiting-file{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:13px;overflow-wrap:anywhere}
 .waiting-file small{color:var(--muted);font-size:12px}
 .waiting-basis{color:var(--muted);font-size:13px}
-.waiting-work{font-family:var(--font-sans);font-size:17px;font-weight:500;line-height:1.3;text-wrap:balance}
+.waiting-work{font-family:var(--font-sans);font-size:14px;font-weight:500;line-height:1.35;text-wrap:balance}
 .waiting-versions{display:grid;gap:4px;margin:0;padding:0;border:0}
 .waiting-versions legend{margin-bottom:6px;padding:0;font-size:13px;font-weight:600}
 .waiting-versions label{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:7px 8px;border-radius:7px;font-size:13px;cursor:pointer}
@@ -1018,12 +1044,13 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .waiting-version-note{color:var(--muted);font-size:11.5px;font-style:italic}
 /* The files the person added and what became of each (slice 18b): a record per file, its state as icon plus text */
 .person-files{display:grid;gap:10px;margin-top:10px;padding-top:22px;border-top:1px solid var(--line)}
-.person-files h3{margin:0;font-size:17px;font-weight:600;letter-spacing:-.005em}
+.legacy-research .person-files h3{margin:0;font-size:14px;font-weight:600;letter-spacing:0}
 .person-files .notice{margin:0}
 .person-files .notice p{margin:0 0 8px}
 .person-files-actions{display:flex;flex-wrap:wrap;gap:8px}
-.person-files-rows{margin:0;padding:0;list-style:none;border-top:1px solid var(--line)}
-.person-files-rows>li{display:grid;gap:6px;padding:14px 2px;border-bottom:1px solid var(--line)}
+.person-files-rows{margin:0;padding:0;list-style:none;border:1px solid var(--line);border-radius:10px}
+.person-files-rows>li{display:grid;gap:6px;padding:10px 12px;border-top:1px solid var(--line)}
+.person-files-rows>li:first-child{border-top:0}
 .person-file-facts{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12.5px;color:var(--muted)}
 .person-file-name{overflow-wrap:anywhere}
 .person-file-state{display:flex;align-items:flex-start;gap:7px;margin:0;font-size:13px;line-height:1.5;color:var(--ink)}
@@ -1043,7 +1070,7 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .proxy-form input{height:36px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--ink);font:inherit;font-size:13.5px}
 .proxy-form small{color:var(--muted);font-size:12px}
 .proxy-actions{display:flex;align-items:center;gap:14px;margin-top:4px}
-@media (max-width:650px){.pdf-ready-depth{grid-auto-flow:row;grid-template-columns:1fr}.pdf-ready-depth div+div{border-left:0;border-top:1px solid var(--line)}.pdf-ready-rows li,.pdf-ready-matches li{grid-template-columns:1fr}.pdf-ready-side{grid-row:auto;grid-column:1}}
+@media (max-width:650px){.pdf-ready-depth{grid-auto-flow:row;grid-template-columns:1fr}.pdf-ready-rows li,.pdf-ready-matches li{grid-template-columns:1fr}.pdf-ready-side{grid-row:auto;grid-column:1}}
 @media (max-width:650px){.waiting-rows li{grid-template-columns:24px minmax(0,1fr)}.waiting-rows .pdf-ready-side{grid-column:2;justify-content:flex-start}}
 /* Sidebar search and the background PDF work card */
 .app .sidebar-find{display:flex;align-items:center;gap:10px;width:calc(100% - 12px);margin:4px 6px 1px;padding:7px 10px;border-radius:7px;background:transparent;color:var(--ink-2);font:inherit;font-size:13.5px;line-height:1.45;text-align:left;cursor:pointer}
@@ -1103,10 +1130,12 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .queue-panel .queue-list-pane{position:sticky;top:0;display:flex;flex-direction:column;gap:10px;max-height:100vh;min-width:0;padding-right:22px}
 .queue-panel .queue-filters{display:grid;gap:8px}
 .queue-panel .queue-chips{display:flex;flex-wrap:wrap;gap:6px}
-.queue-panel .queue-chips button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--field-surface);color:var(--muted);font-size:12px;white-space:nowrap;cursor:pointer}
-.queue-panel .queue-chips button span{font-size:11px;font-variant-numeric:tabular-nums}
-.queue-panel .queue-chips button[aria-pressed=true]{background:var(--selected-surface);color:var(--ink);font-weight:600}
-.queue-panel .queue-chips button:hover{color:var(--ink)}
+.queue-panel .queue-chips button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12.5px;white-space:nowrap;cursor:pointer}
+.queue-panel .queue-chips button span{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.queue-panel .queue-chips button:hover{background:var(--hover-surface);color:var(--ink)}
+/* The chosen filter (mockup .ghost.tint): accent tint, accent line and accent text. */
+.queue-panel .queue-chips button[aria-pressed=true]{border-color:var(--accent-line);background:var(--accent-tint);color:var(--accent);font-weight:500}
+.queue-panel .queue-chips button[aria-pressed=true] span{color:var(--accent)}
 .queue-panel .queue-reason-filter{max-width:100%}
 .queue-panel .queue-list{min-height:0;overflow:auto;border-top:1px solid var(--line);outline:none}
 .queue-panel .queue-list:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
@@ -1118,19 +1147,21 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .queue-panel .queue-list:focus-visible .queue-row.is-selected{outline:2px solid var(--accent);outline-offset:-2px}
 .queue-panel .queue-row-place{padding-top:2px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
 .queue-panel .queue-row-main{display:grid;gap:5px;min-width:0}
-.queue-panel .queue-row-title{display:-webkit-box;overflow:hidden;color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:500;line-height:1.3;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+.queue-panel .queue-row-title{display:-webkit-box;overflow:hidden;color:var(--ink);font-family:var(--font-sans);font-size:13.5px;font-weight:500;line-height:1.35;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 .queue-panel .queue-row-facts{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;color:var(--muted);font-size:11.5px}
 .queue-panel .queue-row-chain{font-style:italic}
 .queue-panel .queue-group-head{margin:14px 0 0;padding:0 8px 6px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:600}
 .queue-panel .queue-filter-empty{padding:14px 8px}
 .queue-panel .queue-keys{margin:0;color:var(--muted);font-size:11px}
 @media (hover:none){.queue-panel .queue-keys{display:none}}
-.queue-panel .queue-detail{min-width:0;padding-left:28px;border-left:1px solid var(--line)}
-.queue-panel .queue-detail>.notice{margin-top:0}
-.queue-panel .queue-detail-head{display:grid;gap:8px;justify-items:start;padding-bottom:16px;border-bottom:1px solid var(--line)}
-.queue-panel .queue-detail-meta{margin:0;color:var(--muted);font-size:12px}
+/* The open row as a card (mockup .qcard): its meta line is the header band on the side surface; the answers sit in the card foot. */
+.queue-panel .queue-detail{min-width:0;padding:0 18px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.queue-panel .queue-detail>.notice{margin-top:14px}
+.queue-panel .queue-detail-head{display:grid;gap:8px;justify-items:start;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.queue-panel .queue-detail-meta{justify-self:stretch;margin:0 -18px 4px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--muted);font-size:12px}
+.queue-panel .queue-detail>.queue-detail-head:first-child .queue-detail-meta{border-radius:11px 11px 0 0}
 .queue-panel .queue-detail-title{margin:0;outline:none}
-.queue-panel .queue-detail-title button{color:var(--ink);font-family:var(--font-sans);font-size:22px;font-weight:500;line-height:1.28;letter-spacing:-.01em;text-align:left;text-wrap:balance;cursor:pointer}
+.queue-panel .queue-detail-title button{color:var(--ink);font-family:var(--font-sans);font-size:17px;font-weight:500;line-height:1.35;letter-spacing:-.01em;text-align:left;text-wrap:balance;cursor:pointer}
 .queue-panel .queue-detail-title button:hover{text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent),transparent 50%);text-underline-offset:3px}
 .queue-panel .queue-detail-title:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:3px}
 .queue-panel .queue-detail-head .source-chips{margin-top:0}
@@ -1143,8 +1174,9 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .queue-panel .queue-why{color:var(--muted);font-size:12.5px;line-height:1.55}
 .queue-panel .queue-why span{color:var(--ink);font-weight:550}
 .queue-panel .queue-why code{margin-left:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--muted)}
-.queue-panel .queue-runs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 28px;padding:6px 0 10px;border-bottom:1px solid var(--line)}
-.queue-panel .queue-run{min-width:0}
+/* The two reads side by side (mockup .reads): one bordered box each. */
+.queue-panel .queue-runs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:14px 0;border-bottom:1px solid var(--line)}
+.queue-panel .queue-run{min-width:0;padding:0 12px 4px;border:1px solid var(--line);border-radius:8px}
 .queue-panel .queue-run>h4{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:12px 0 0;color:var(--ink);font-size:13px;font-weight:600}
 .queue-panel .queue-run-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:12px 0 4px;color:var(--ink);font-size:13px;font-weight:600}
 .queue-panel .queue-run-head small{color:var(--muted);font-size:11.5px;font-weight:400}
@@ -1172,9 +1204,12 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .queue-panel .queue-kept-note{margin-top:6px;overflow-wrap:anywhere}
 .queue-panel .queue-kept-note q{font-style:italic}
 .queue-panel .queue-link{color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
-.queue-panel .queue-foot{position:sticky;bottom:0;z-index:3;display:grid;justify-content:stretch;gap:10px;margin-top:8px;padding:14px 0 16px;border-top:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:13px}
+.queue-panel .queue-foot{position:sticky;bottom:0;z-index:3;display:grid;justify-content:stretch;gap:10px;margin:8px -18px 0;padding:12px 18px 14px;border-top:1px solid var(--line);border-radius:0 0 11px 11px;background:var(--paper);color:var(--ink);font-size:13px}
 .queue-panel .queue-foot .notice{margin:0}
-.queue-panel .queue-answers{display:flex;flex-wrap:wrap;gap:8px}
+/* The answers (mockup .qopts): bordered choices; the one filled button stays the PDF confirmation. */
+.queue-panel .queue-answers{display:flex;flex-wrap:wrap;gap:6px}
+.queue-panel .queue-answers [data-slot=button]{height:auto;min-height:32px;padding:6px 12px;border-radius:8px;font-size:13px}
+.queue-panel .queue-answers [data-slot=button]:not(.bg-primary):hover:not(:disabled){border-color:var(--accent-line)}
 .queue-panel .queue-note{display:grid;gap:4px;color:var(--ink);font-size:12.5px;font-weight:550}
 .queue-panel .queue-note>span{display:flex;justify-content:space-between;gap:10px}
 .queue-panel .queue-note small{color:var(--muted);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums}
@@ -1183,7 +1218,7 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 .queue-panel .queue-note-toggle{display:inline-flex;align-items:center;gap:6px;justify-self:start;color:var(--muted);font-size:12.5px;cursor:pointer}
 .queue-panel .queue-note-toggle:hover{color:var(--ink)}
 .queue-panel .queue-foot-note{margin:0;color:var(--muted);font-size:11px;line-height:1.5}
-.queue-panel .queue-back{display:inline-flex;align-items:center;gap:6px;margin:0 0 12px;color:var(--accent);font-size:13px;font-weight:500;cursor:pointer}
+.queue-panel .queue-back{display:inline-flex;align-items:center;gap:6px;margin:12px 0;color:var(--accent);font-size:13px;font-weight:500;cursor:pointer}
 .queue-panel .queue-decided{margin-top:28px;border-top:1px solid var(--line)}
 .queue-panel .queue-decided summary{display:flex;align-items:center;gap:6px;padding:14px 0 10px;color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;list-style:none}
 .queue-panel .queue-decided summary::-webkit-details-marker{display:none}
@@ -1205,8 +1240,10 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
   .queue-panel .queue-layout.is-detail .queue-list-pane,.queue-panel .queue-layout:not(.is-detail) .queue-detail{display:none}
   .queue-panel .queue-list-pane{position:static;max-height:none;padding-right:0}
   .queue-panel .queue-list{overflow:visible}
-  .queue-panel .queue-detail{padding-left:0;border-left:0}
-  .queue-panel .queue-detail-title button{font-size:20px}
+  .queue-panel .queue-detail{padding:0 14px}
+  .queue-panel .queue-detail-meta{margin-inline:-14px;padding-inline:14px}
+  .queue-panel .queue-foot{margin-inline:-14px;padding-inline:14px}
+  .queue-panel .queue-detail-title button{font-size:16px}
   .queue-panel .queue-answers{flex-direction:column}
   .queue-panel .queue-answers>button{width:100%}
 }
@@ -1216,13 +1253,19 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 /* The flow of an sw research (slice 20): the Sources tab's flow block, the line under an answer, the override count and
    the audit sample. Counts only, set as quiet interface text; nothing here is styled as success. */
 .flow-block summary small{flex:1;min-width:0;text-align:right;line-height:1.45}
-.flow-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px 32px;padding:4px 0 14px 24px}
+.flow-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start;gap:10px 14px;padding:4px 0 14px 24px}
+/* Each count list is a box (mockup .plist): a head band on the side surface, then rows on hairlines. */
+.flow-detail>div{min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .flow-block:not([open]) .flow-detail{display:none}
 .flow-head{margin:6px 0 4px;color:var(--ink);font-size:12px;font-weight:600}
+.flow-detail .flow-head{margin:0;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink);font-size:12.5px;font-weight:600;line-height:1.45}
 .flow-list{margin:0;padding:0;list-style:none}
 .flow-list li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 38%);color:var(--ink);font-size:12px;line-height:1.45}
+.flow-detail .flow-list li{padding:7px 12px;border-top:1px solid var(--line);font-size:12.5px}
+.flow-detail .flow-list li:first-child{border-top:0}
 .flow-list strong{font-weight:600;font-variant-numeric:tabular-nums}
 .flow-note{margin:6px 0 0;color:var(--muted);font-size:11.5px;line-height:1.5}
+.flow-detail .flow-note{margin:0;padding:7px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.5}
 .flow-detail .flow-report{grid-column:1/-1;justify-self:start}
 .answer-flow{display:grid;gap:3px;max-width:760px;margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.55}
 .answer-flow p{margin:0}

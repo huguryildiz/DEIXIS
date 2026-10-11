@@ -502,7 +502,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, mod
                 </th>
                 {columns.map((col, c) => {
                   const id = `${col.id}:${row.source_version_id}`
-                  return <td key={col.id} role="gridcell">
+                  return <td key={col.id} role="gridcell" className={cellTarget?.columnId === col.id && cellTarget.sourceId === row.source_version_id ? 'is-open' : undefined}>
                     <CellButton column={col} row={row} summary={cells.get(id)} live={rechecking === id ? 'recheck' : filling.has(id) && !cells.get(id)?.current ? 'fill' : null}
                       position={`${r}:${c}`} focusable={r === fr && c === fc} onFocus={() => { setFocus([r, c]); setHint(col.id) }}
                       onOpen={() => setCellTarget({ columnId: col.id, sourceId: row.source_version_id })} />

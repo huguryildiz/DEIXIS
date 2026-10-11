@@ -2219,8 +2219,10 @@ class ResearchFlow:
                     connection, requested, effort = self._run_model(
                         run, scope, "grounded_answer", (frozen["model"]["connection"], frozen["model"]["requested_model"], effort))
 
-                def same_input(step_id: str, frozen=frozen) -> dict[str, Any]:
-                    return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now()}
+                def same_input(step_id: str, frozen=frozen, sent=(connection, requested)) -> dict[str, Any]:
+                    # The draft's passages, allowlist and handles; the model is the one this call goes to (S17).
+                    return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now(),
+                                                    "model": frozen["model"] | {"connection": sent[0], "requested_model": sent[1]}}
                 second = await self._model_step(run, scope, RESPLIT_KEY, "grounded_answer", step_input_builder=same_input,
                                                 model=(connection, requested, effort),
                                                 selection_revision=self.store.step_input_selection_revision(output["step_input_id"]),
@@ -4901,8 +4903,10 @@ class ResearchFlow:
             connection, requested, effort = self._run_model(
                 run, scope, "grounded_answer", (frozen["model"]["connection"], frozen["model"]["requested_model"], effort))
 
-        def same_input(step_id: str, frozen=frozen) -> dict[str, Any]:
-            return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now()}
+        def same_input(step_id: str, frozen=frozen, sent=(connection, requested)) -> dict[str, Any]:
+            # The answer's passages, allowlist and handles; the model is the one this call goes to (S17).
+            return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now(),
+                                            "model": frozen["model"] | {"connection": sent[0], "requested_model": sent[1]}}
         try:
             # Optional: a connection or call failure keeps the valid answer instead of pausing the run; a stop or a
             # newer scope revision still stops it.

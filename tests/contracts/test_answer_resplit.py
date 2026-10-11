@@ -453,3 +453,33 @@ def test_relabel_edges_malformed_values_and_the_last_free_number():
                 {"claims": [claim("c2", "p1"), claim("c2", "p2")], "citation_anchors": [{"claim_label": "c2", "passage_id": {"x": 1}}]},
                 {"claims": [claim("c2", "p1"), claim("c2", "p2")], "citation_anchors": [{"passage_id": "p1"}]}):
         assert contracts.relabel_split_claims(bad, ["c2"]) == (bad, {})
+
+
+def call_models(store, key):
+    """For each call of the step under `key`: the StepInput's model, and the session's requested and resolved model."""
+    return [(json.loads(r[0])["model"], r[1], r[2]) for r in store.conn.execute(
+        "SELECT i.payload_json, m.requested_model, m.resolved_model FROM step_inputs i JOIN model_sessions m"
+        " ON m.step_input_id = i.id JOIN run_steps s ON s.id = i.step_id WHERE s.operation_key = ? ORDER BY m.rowid", (key,))]
+
+
+def test_an_extra_repair_resumed_after_a_model_change_records_the_model_it_is_sent_to(tmp_path):
+    """S17: a paused answer whose research moved to another model sends the extra repair there, and its StepInput says so;
+    the draft's passages and allowlist stay those of the attempt it repairs."""
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, ["several", "several", "split"])
+    try:
+        crash_once(flow, "before_dispatch")
+        with pytest.raises(RuntimeError):
+            answer_of(store, rid, flow, run_id)
+        store.update_run(run_id, status="paused")
+        store.change_role_model(rid, "answer", "fake", "fake-model-2", None, store.research(rid)["version"])
+        store.update_run(run_id, status="running")
+        answer = answer_of(store, rid, flow, run_id)
+        assert answer["status"] == "structurally_valid" and adapter.sent[-1][:2] == ("grounded_answer", "fake-model-2")
+        assert call_models(store, RESPLIT_KEY) == [({"connection": "fake", "requested_model": "fake-model-2"}, "fake-model-2", "fake-model-2")]
+        first = call_models(store, "grounded_answer")
+        assert {m["requested_model"] for m, _, _ in first} == {"fake-model"}  # the attempts it repairs keep theirs
+        payloads = [json.loads(r[0]) for r in store.conn.execute(
+            "SELECT payload_json FROM step_inputs WHERE task_type = 'grounded_answer' ORDER BY rowid")]
+        assert payloads[2]["passages"] == payloads[1]["passages"] and payloads[2]["allowlist"] == payloads[1]["allowlist"]
+    finally:
+        store.conn.close()

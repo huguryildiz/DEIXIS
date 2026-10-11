@@ -160,3 +160,26 @@ def test_model_change_api(tmp_path):
                                          "reasoning_effort": None, "expected_version": shown["research"]["version"]}).json()
         assert reviewer["reviewer"] == {"mode": "custom", "connection": "fake", "model": "fake-model", "reasoning_effort": None}
         assert [c["role"] for c in reviewer["model_changes"]] == ["answer", "reviewer"]
+
+
+def test_the_model_change_history_survives_backup_and_restore(tmp_path):
+    from deixis.config import Settings
+    from deixis.storage.backup import create_backup, restore_backup
+
+    adapter = FakeAdapter(models=["fake-model", "fake-model-2"])
+    with TestClient(app_for(tmp_path, adapter)) as raw:
+        client = session(raw)
+        rid = create(client, source_scope="attached")
+        version = client.get(f"/api/researches/{rid}").json()["research"]["version"]
+        changed = client.put(f"/api/researches/{rid}/models", json={
+            "role": "answer", "connection": "fake", "model": "fake-model-2", "reasoning_effort": None,
+            "reason": "model_connection_not_ready", "expected_version": version})
+        assert changed.status_code == 200, changed.text
+        before = client.get(f"/api/researches/{rid}").json()
+        backup = create_backup(Settings(data_dir=tmp_path / "data", port=8765), tmp_path / "backups")
+    restored = tmp_path / "restored"
+    restore_backup(backup, Settings(data_dir=restored / "data", port=8765))
+    with TestClient(app_for(restored, FakeAdapter(models=["fake-model", "fake-model-2"]))) as client:
+        after = client.get(f"/api/researches/{rid}").json()
+    assert after["model_changes"] == before["model_changes"] and len(after["model_changes"]) == 1
+    assert after["scope"]["requested_model"] == "fake-model-2"  # the restored research runs on the chosen model

@@ -253,3 +253,36 @@ def test_a_question_revised_while_the_rewrite_fails_stops_the_run_instead_of_pub
         assert store.conn.execute("SELECT count(*) FROM answers WHERE run_id = ?", (run_id,)).fetchone()[0] == 0
     finally:
         store.conn.close()
+
+
+def test_a_rewrite_resumed_after_a_model_change_records_the_model_it_is_sent_to(tmp_path):
+    """S17: the rewrite resent after a pause and a model change goes to the new model, and its StepInput says so; the
+    answer's passages and allowlist stay those the first answer was written against."""
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, ["inference", "rewritten"])
+    try:
+        stopped = []
+
+        def stop(si):
+            if si["task_type"] == "grounded_answer" and len(adapter.calls) == 2 and not stopped:
+                stopped.append(1)
+                raise RuntimeError("stopped while the rewrite was out")
+        adapter.before = stop
+        with pytest.raises(Exception):
+            answer_of(store, rid, flow, run_id)
+        store.update_run(run_id, status="paused")
+        store.change_role_model(rid, "answer", "fake", "fake-model-2", None, store.research(rid)["version"])
+        store.update_run(run_id, status="running")
+        answer = answer_of(store, rid, flow, run_id)
+        assert answer["status"] == "structurally_valid" and adapter.sent[-1][:2] == ("grounded_answer", "fake-model-2")
+        rows = [(json.loads(r[0]), r[1], r[2]) for r in store.conn.execute(
+            "SELECT i.payload_json, m.requested_model, m.resolved_model FROM step_inputs i JOIN model_sessions m"
+            " ON m.step_input_id = i.id JOIN run_steps s ON s.id = i.step_id WHERE s.operation_key = ? ORDER BY m.rowid",
+            (INFERENCE_CAP_KEY,))]
+        payload, requested, resolved = rows[-1]
+        assert payload["model"] == {"connection": "fake", "requested_model": "fake-model-2"} and requested == resolved == "fake-model-2"
+        first = json.loads(store.conn.execute(
+            "SELECT payload_json FROM step_inputs WHERE task_type = 'grounded_answer' ORDER BY rowid").fetchone()[0])
+        assert first["model"]["requested_model"] == "fake-model"  # the answer it rewrites keeps its own
+        assert payload["passages"] == first["passages"] and payload["allowlist"] == first["allowlist"]
+    finally:
+        store.conn.close()

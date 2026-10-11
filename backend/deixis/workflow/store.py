@@ -327,7 +327,8 @@ class Store:
             " EXISTS (SELECT 1 FROM evidence_links WHERE source_version_id = m.source_version_id"
             "  UNION SELECT 1 FROM table_rows WHERE source_version_id = m.source_version_id"
             "  UNION SELECT 1 FROM evidence_cells WHERE source_version_id = m.source_version_id"
-            "  UNION SELECT 1 FROM report_citation_links WHERE source_version_id = m.source_version_id) AS cited"
+            "  UNION SELECT 1 FROM report_citation_links WHERE source_version_id = m.source_version_id"
+            "  UNION SELECT 1 FROM followup_turn_links WHERE source_version_id = m.source_version_id) AS cited"
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id JOIN researches r ON r.id = m.research_id"
             " WHERE m.removed_at IS NOT NULL AND r.trashed_at IS NULL ORDER BY m.removed_at DESC, v.title"
         )]
@@ -2230,7 +2231,8 @@ class Store:
         return found
 
     def research_cites_asset(self, research_id: str, asset_id: str) -> bool:
-        """Whether recorded evidence of this research cites a passage of the file, including restorable report links."""
+        """Whether recorded evidence of this research cites a passage of the file, including restorable report links
+        and follow-up answers (S22a)."""
         return self.conn.execute(
             "SELECT 1 FROM evidence_links l JOIN claims c ON c.id = l.claim_id JOIN answers an ON an.id = c.answer_id"
             " JOIN passages p ON p.id = l.passage_id WHERE an.research_id = ? AND p.asset_id = ?"
@@ -2246,9 +2248,11 @@ class Store:
             " WHERE c.research_id = ? AND p.asset_id = ? AND e.evidence_kind = 'passage'"
             " UNION ALL SELECT 1 FROM report_citation_links l JOIN report_claims c ON c.id = l.claim_id"
             " JOIN report_sections s ON s.id = c.report_section_id JOIN reports r ON r.id = s.report_id"
-            " JOIN passages p ON p.id = l.passage_id WHERE r.research_id = ? AND p.asset_id = ? LIMIT 1",
+            " JOIN passages p ON p.id = l.passage_id WHERE r.research_id = ? AND p.asset_id = ?"
+            " UNION ALL SELECT 1 FROM followup_turn_links l JOIN followup_turns t ON t.id = l.turn_id"
+            " JOIN passages p ON p.id = l.passage_id WHERE t.research_id = ? AND p.asset_id = ? LIMIT 1",
             (research_id, asset_id, research_id, asset_id, research_id, asset_id, research_id, asset_id,
-             research_id, asset_id),
+             research_id, asset_id, research_id, asset_id),
         ).fetchone() is not None
 
     def asset_impact(self, asset_id: str) -> dict[str, Any]:
@@ -2278,8 +2282,13 @@ class Store:
             "SELECT COUNT(*) FROM report_citation_links l JOIN passages p ON p.id = l.passage_id"
             " WHERE p.asset_id = ?", (asset_id,),
         ).fetchone()[0]
+        followup_quotes = self.conn.execute(
+            "SELECT COUNT(*) FROM followup_turn_links l JOIN passages p ON p.id = l.passage_id WHERE p.asset_id = ?",
+            (asset_id,),
+        ).fetchone()[0]
         return {"asset_id": asset_id, "researches": researches, "cells": cells, "quotes": quotes,
-                "lineage_links": lineage_links, "candidate_quotes": candidate_quotes, "report_citations": report_citations}
+                "lineage_links": lineage_links, "candidate_quotes": candidate_quotes, "report_citations": report_citations,
+                "followup_quotes": followup_quotes}
 
     def remove_asset(self, research_id: str, svid: str, asset_id: str) -> None:
         """Withdraw an attachment from future use while retaining its immutable audit evidence."""

@@ -45,6 +45,8 @@ BEGIN SELECT RAISE(ABORT,'watch check requires its research watch and run'); END
 -- `no_passages` means this research held no passage to give and no model was asked; `unverified_draft` is an output
 -- that stayed invalid after its one repair and is never shown as a cited answer. `passages_considered` is how many
 -- stored passages of this research the selection ranked, `passages_given` how many it sent (the StepInput's allowlist).
+-- `selection_revision` and `user_signature` are the research's selection state the answer's passages were frozen under;
+-- a later change of either marks the published turn as made under an older selection.
 -- No trigger here reads `runs`, so a later rebuild of `runs` has no new trigger to drop and recreate; the code that
 -- writes a turn writes its `followup_answer` run in the same transaction.
 CREATE TABLE followup_turns (
@@ -61,9 +63,12 @@ CREATE TABLE followup_turns (
   validation_json TEXT,
   passages_considered INTEGER,
   passages_given INTEGER,
+  selection_revision INTEGER,
+  user_signature TEXT,
   created_at TEXT NOT NULL,
   published_at TEXT,
   CHECK ((status = 'pending') = (published_at IS NULL)),
+  CHECK (status = 'pending' OR (selection_revision IS NOT NULL AND user_signature IS NOT NULL)),
   CHECK (status IN ('pending', 'no_passages') OR step_input_id IS NOT NULL)
 );
 CREATE INDEX followup_turns_research ON followup_turns(research_id, created_at);

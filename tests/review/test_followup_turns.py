@@ -378,3 +378,198 @@ def test_semantic_ranking_over_the_pool_is_fused_with_the_lexical_one(tmp_path, 
         pool = {p["text"] for p in app.state.store.passages_for(svid)}
         assert {text for kind, text in embedded if kind == "RETRIEVAL_DOCUMENT"} <= pool
         assert ("RETRIEVAL_QUERY", "Semboller arası girişim nasıl sınırlanıyor?") in embedded
+
+
+def exclude(store, rid, svid, state="excluded"):
+    version = store.conn.execute("SELECT version FROM selections WHERE research_id = ? AND source_version_id = ?",
+                                 (rid, svid)).fetchone()[0]
+    store.set_user_selection(rid, svid, state, version, "SYNTHETIC person choice")
+
+
+def asset_of(store, svid):
+    return store.conn.execute("SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL",
+                              (svid,)).fetchone()[0]
+
+
+def during_call(change):
+    """A responder that lets `change(store, si)` happen while the follow-up call is out, then answers validly."""
+    holder = {}
+
+    def respond(si):
+        if si["task_type"] == "followup_answer" and not holder.get("done"):
+            holder["done"] = True
+            change(holder["app"].state.store, si)
+        return valid_response(si)
+    return holder, respond
+
+
+def test_a_selection_change_during_the_call_stops_publication(tmp_path):
+    def change(store, si):
+        svid = store.conn.execute("SELECT source_version_id FROM corpus_memberships WHERE research_id = ?",
+                                  (si["research_id"],)).fetchone()[0]
+        exclude(store, si["research_id"], svid)
+
+    holder, respond = during_call(change)
+    holder["app"] = app = app_for(tmp_path, FakeAdapter(respond))
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        turn = answered(client, rid)
+        assert (turn["run"]["status"], turn["run"]["pause_reason"]) == ("failed", followup.SELECTION_CHANGED)
+        assert turn["status"] == "pending" and turn["answer"] is None
+        store = app.state.store
+        assert store.conn.execute("SELECT COUNT(*) FROM followup_turn_links").fetchone()[0] == 0
+        assert not store.conn.execute("SELECT 1 FROM events WHERE type = 'followup_answered'").fetchone()
+
+
+def test_a_pdf_removed_during_the_call_stops_publication(tmp_path):
+    def remove(store, si):
+        svid = store.conn.execute("SELECT source_version_id FROM corpus_memberships WHERE research_id = ?",
+                                  (si["research_id"],)).fetchone()[0]
+        store.remove_asset(si["research_id"], svid, asset_of(store, svid))
+
+    holder, respond = during_call(remove)
+    holder["app"] = app = app_for(tmp_path, FakeAdapter(respond))
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        turn = answered(client, rid)
+        assert turn["run"]["status"] == "failed"
+        assert turn["run"]["pause_reason"] in (followup.SOURCES_CHANGED, followup.SELECTION_CHANGED)
+        assert turn["status"] == "pending"
+
+
+def test_a_change_while_paused_stops_the_resumed_turn_unpublished(tmp_path):
+    holder = {}
+
+    def pause_first(si):
+        if si["task_type"] == "followup_answer" and not holder.get("paused"):
+            holder["paused"] = True
+            holder["app"].state.store.update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
+                                                 pause_reason="user_requested")
+        return valid_response(si)
+
+    adapter = FakeAdapter(pause_first)
+    holder["app"] = app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid, (svid,) = research(client)
+        turn = ask(client, rid).json()
+        _, run = wait_run(client, rid, turn["run"]["id"])
+        assert run["status"] == "paused" and len(adapter.calls) == 1
+        exclude(app.state.store, rid, svid)
+        client.post(f"/api/runs/{run['id']}/resume")
+        _, run = wait_run(client, rid, run["id"])
+        # The stored valid output is not published: the resumed run finds the selection changed first.
+        assert (run["status"], run["pause_reason"]) == ("failed", followup.SELECTION_CHANGED) and len(adapter.calls) == 1
+        assert client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()["status"] == "pending"
+
+
+def test_a_change_before_the_repair_is_sent_stops_it_at_the_send_gate(tmp_path):
+    holder = {}
+
+    def invalid_and_change(si):
+        if si["task_type"] == "followup_answer" and not holder.get("done"):
+            holder["done"] = True
+            store = holder["app"].state.store
+            svid = store.conn.execute("SELECT source_version_id FROM corpus_memberships WHERE research_id = ?",
+                                      (si["research_id"],)).fetchone()[0]
+            exclude(store, si["research_id"], svid)
+        return json.dumps(json.loads(valid_response(si)) | {"claims": [], "citation_anchors": []})
+
+    adapter = FakeAdapter(invalid_and_change)
+    holder["app"] = app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        turn = answered(client, rid)
+        assert (turn["run"]["status"], turn["run"]["pause_reason"]) == ("failed", followup.SELECTION_CHANGED)
+        assert len(adapter.calls) == 1 and turn["status"] == "pending"
+
+
+def test_a_published_turn_shows_a_later_selection_change_apart_from_the_question(tmp_path):
+    app = app_for(tmp_path, FakeAdapter())
+    with TestClient(app) as client:
+        session(client)
+        rid, (svid,) = research(client)
+        turn = answered(client, rid)
+        assert turn["stale_selection"] is False and turn["stale_scope"] is False
+        exclude(app.state.store, rid, svid)
+        turn = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()
+        assert turn["stale_selection"] is True and turn["stale_scope"] is False and turn["status"] == "answered"
+
+
+def test_a_source_the_person_set_pending_leaves_the_pool(tmp_path):
+    from test_fast_path_answer import answer_run, cutoff, setup, user
+    lib = setup(tmp_path, n=3)
+    cutoff(lib)
+    run = answer_run(lib)
+    asyncio.run(fast_answer.answer(lib.flow, run, lib.store.scope(lib.rid)))
+    frozen = followup.pool(lib.store, lib.rid, 1)
+    assert lib.sources[1] in frozen["sources"]
+    user(lib, lib.sources[1], "pending")  # a user selection in state `pending`, after the answer froze its input
+    later = followup.pool(lib.store, lib.rid, 1)
+    assert lib.sources[1] not in later["sources"] and set(later["sources"]) < set(frozen["sources"])
+    assert followup.changed(lib.store, lib.rid, frozen) == followup.SELECTION_CHANGED
+
+
+def test_a_pause_at_the_second_invalid_output_publishes_the_draft_on_resume_without_a_call(tmp_path):
+    holder, calls = {}, []
+
+    def invalid_then_pause(si):
+        calls.append(si["task_type"])
+        if len(calls) == 2:  # the repair's output comes back invalid while a pause is requested
+            holder["app"].state.store.update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
+                                                 pause_reason="user_requested")
+        return json.dumps(json.loads(valid_response(si)) | {"claims": [], "citation_anchors": []})
+
+    adapter = FakeAdapter(invalid_then_pause)
+    holder["app"] = app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        turn = ask(client, rid).json()
+        _, run = wait_run(client, rid, turn["run"]["id"])
+        assert (run["status"], run["pause_reason"]) == ("paused", "user_requested") and len(adapter.calls) == 2
+        assert client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()["status"] == "pending"
+        client.post(f"/api/runs/{run['id']}/resume")
+        _, run = wait_run(client, rid, run["id"])
+        turn = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()
+        assert run["status"] == "completed" and turn["status"] == "unverified_draft" and turn["answer"] is None
+        assert len(adapter.calls) == 2 and app.state.store.run(run["id"])["usage"]["model_calls"] == 2
+
+
+def test_a_pdf_cited_only_by_a_follow_up_still_opens_after_its_source_is_removed(tmp_path):
+    app = app_for(tmp_path, FakeAdapter())
+    with TestClient(app) as client:
+        session(client)
+        rid, (svid,) = research(client)
+        turn = answered(client, rid)
+        assert turn["answer"]["claims"][0]["citations"][0]["reading_depth"] == "selected_sections"
+        aid = asset_of(app.state.store, svid)
+        assert client.request("DELETE", f"/api/researches/{rid}/sources", json={"source_version_ids": [svid]}).status_code == 200
+        assert client.get(f"/api/researches/{rid}/assets/{aid}").status_code == 200
+        assert app.state.store.asset_impact(aid)["followup_quotes"] == 1
+        # Another research never reaches it through this one's follow-up.
+        other, _ = research(client, (("b.pdf", ["SYNTHETIC other study."]),))
+        assert client.get(f"/api/researches/{other}/assets/{aid}").status_code == 404
+
+
+def test_a_failed_link_insert_rolls_the_turn_and_its_event_back_together(tmp_path, monkeypatch):
+    real = contracts.derive_evidence_links
+
+    def broken(payload, result):
+        return [link | {"passage_id": "psg_missing000000000000"} for link in real(payload, result)]
+
+    monkeypatch.setattr(followup.contracts, "derive_evidence_links", broken)
+    app = app_for(tmp_path, FakeAdapter())
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        turn = answered(client, rid)
+        assert turn["run"]["status"] in ("failed", "paused") and turn["status"] == "pending"
+        store = app.state.store
+        row = store.conn.execute("SELECT * FROM followup_turns WHERE id = ?", (turn["id"],)).fetchone()
+        assert row["published_at"] is None and row["draft_json"] is None and row["step_input_id"] is None
+        assert store.conn.execute("SELECT COUNT(*) FROM followup_turn_links").fetchone()[0] == 0
+        assert not store.conn.execute("SELECT 1 FROM events WHERE type = 'followup_answered'").fetchone()

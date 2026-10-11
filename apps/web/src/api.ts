@@ -1617,6 +1617,8 @@ export type ScreenedAfterCutoff = {
 // links; the run's own status says whether it is still working, paused or stopped. Claims and citations come only with
 // a valid answer: an 'unverified_draft' carries its `issues` and no claim. `no_passages` means the research held no
 // passage to give and no model was asked. "Search for new works on this" is a new scope revision with `question`.
+// A person's selection change, or a removed or replaced file, while the turn is unpublished fails its run with
+// `followup_selection_changed` / `followup_sources_changed`; the turn stays pending and is asked again.
 export type FollowupTurnStatus = 'pending' | 'answered' | 'partly_answered' | 'not_answered' | 'no_passages' | 'unverified_draft'
 export type FollowupCitation = {
   passage_id: string; source_version_id: string; work_id: string; title: string; year: number | null
@@ -1629,6 +1631,7 @@ export type FollowupTurn = {
   id: string; research_id: string; scope_revision: number; question: string; status: FollowupTurnStatus
   created_at: string; published_at: string | null
   stale_scope: boolean  // asked under an earlier revision of the research question
+  stale_selection: boolean  // published, and the person's source selection changed since
   passages_considered: number | null  // stored passages of this research the selection ranked
   passages_given: number | null  // passages sent to the model (its allowlist)
   run: { id: string; status: RunStatus; stage: string; pause_reason: string | null; error: unknown }

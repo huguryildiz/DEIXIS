@@ -81,6 +81,9 @@ CAPABILITIES = {
     "unsupported_tasks": ["synthesis", "candidate_development", "claim_check", "experiment"],
 }
 MAX_DOWNLOADS_PER_RUN = 8
+# Steps whose repairs are counted from their stored sessions across a stop and a resume (D249), so an output already
+# judged invalid twice is recovered without a new call. The follow-up answer joined in S22a.
+STORED_REPAIR_TASKS = ("grounded_answer", "followup_answer")
 RESPLIT_KEY = "grounded_answer_resplit"  # D249: the one extra repair of an answer that fails only on D247's rule
 INFERENCE_CAP_KEY = "grounded_answer_inference_cap"  # D260: one rewrite of a valid answer that is mostly analyst inference
 # The reason an sw answer records when neither included works nor eligible abstracts are available (D234).
@@ -5026,9 +5029,9 @@ class ResearchFlow:
                 raise OptionalStepFailed(reason, detail)
             (self._fail if fail else self._pause)(run_id, reason, detail)
 
-        if task_type == "grounded_answer" and attempt_record is None:
+        if task_type in STORED_REPAIR_TASKS and attempt_record is None:
             # D249: an answer already judged invalid by its stored sessions is recovered without the connection; the
-            # run and revision guards still apply.
+            # run and revision guards still apply. A follow-up answer is recovered the same way (S22a).
             _, last, _, capped = self._answer_repair_state(step["id"], resplit, schema_repairs(task_type))
             if capped:
                 self._checkpoint(run_id, run["scope_revision"])
@@ -5121,7 +5124,7 @@ class ResearchFlow:
                         break
 
         used_up = False
-        if task_type == "grounded_answer" and attempt_record is None:
+        if task_type in STORED_REPAIR_TASKS and attempt_record is None:
             # D249: a resumed answer step keeps the repairs its stored sessions already used, so the cap (one repair,
             # and the one extra repair of the step after it) holds across a stop and a resume, and a failed answer is
             # recovered from its stored sessions instead of being asked for again.

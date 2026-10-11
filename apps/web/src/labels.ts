@@ -206,6 +206,8 @@ export const reportChangeViaLabels: Record<string, string> = { body_ref: '(throu
 const pauseReasons: Record<string, string> = {
   answer_cutoff_missing: 'The frozen read cutoff is missing. Start a new search before answering.',
   answer_unavailable: 'The stored answer is unavailable for review.',
+  followup_selection_changed: 'Your source selection changed while this follow-up was being answered. Ask it again.',
+  followup_sources_changed: 'A source or its PDF changed while this follow-up was being answered. Ask it again.',
   no_provider_read: 'No provider read succeeded.',
   watch_disabled: 'The follow-up was turned off.',
   watch_state_changed: 'The follow-up changed while this check was working.',

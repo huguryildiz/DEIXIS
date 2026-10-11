@@ -26,7 +26,7 @@ from typing import Any
 from deixis.domain import contracts
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
-from deixis.workflow import fast_answer
+from deixis.workflow import fast_answer, small_batch
 from deixis.workflow.late_revision import REVISION_INPUT
 
 TASK = "followup_answer"
@@ -37,6 +37,9 @@ CALLS = 2  # the call and its one schema repair; the turn's own budget, apart fr
 MAX_QUESTION_CHARS = 2000
 PUBLISHED = ("answered", "partly_answered", "not_answered")
 MAX_TERMS = 40
+# Why a follow-up stops unpublished when what its pool was frozen from changed (the run fails; the person asks again).
+SELECTION_CHANGED = "followup_selection_changed"
+SOURCES_CHANGED = "followup_sources_changed"
 
 
 class FollowupRefused(Exception):
@@ -101,17 +104,34 @@ def _answer_input(store: Any, research_id: str, scope_revision: int) -> dict[str
     return {"run_id": row["run_id"], "plan": json.loads(row["output_json"])} if row else None
 
 
+def _person_states(store: Any, research_id: str) -> tuple[dict[str, str], dict[str, str]]:
+    """Every choice the person made: their selection of a version in any state, `pending` included, and the state
+    their latest queue decision on a work stands for (`fast_answer.human_choice`)."""
+    selections = {r["source_version_id"]: r["state"] for r in store.conn.execute(
+        "SELECT source_version_id, state FROM selections WHERE research_id = ? AND origin = 'user'", (research_id,))}
+    _, humans = fast_answer.user_choices(store, research_id)
+    return selections, {work_id: choice["state"] for work_id, choice in humans.items()}
+
+
+def _current(store: Any, research_id: str) -> dict[str, list[str]]:
+    """Passage ids a model step may read now, by active source: the abstract, and pages of the file in use from its
+    current extraction (`fast_answer.current_pools`)."""
+    return {svid: [p["id"] for p in rows] for svid, rows in fast_answer.current_pools(store, research_id).items()}
+
+
 def pool(store: Any, research_id: str, scope_revision: int) -> dict[str, Any]:
-    """The passages this research holds for a follow-up, by source in order (see the module text)."""
-    current = {svid: [p["id"] for p in rows] for svid, rows in fast_answer.current_pools(store, research_id).items()}
+    """The passages this research holds for a follow-up, by source in order (see the module text), frozen with the
+    selection state it was read under: what `changed` compares at the send, at a resume and at publication."""
+    current = _current(store, research_id)
     sources: dict[str, list[str]] = {}
+    base = {"selection_revision": store.selection_revision(research_id),
+            "user_signature": small_batch.user_signature(store, research_id)}
     frozen = _answer_input(store, research_id, scope_revision)
     if frozen is not None:
-        selections, humans = fast_answer.user_choices(store, research_id)
+        selections, humans = _person_states(store, research_id)
         for item in frozen["plan"]["items"]:
             svid = item["source_version_id"]
-            user = selections.get(item.get("head")) or humans.get(item["work_id"])
-            state = user["state"] if user else None
+            state = selections.get(item.get("head")) or humans.get(item["work_id"])
             if state in ("excluded", "pending"):
                 continue
             ids = list(item["abstract_ids"])
@@ -121,12 +141,31 @@ def pool(store: Any, research_id: str, scope_revision: int) -> dict[str, Any]:
             kept = [pid for pid in dict.fromkeys(ids) if pid in have and pid not in sources.get(svid, [])]
             if kept:
                 sources.setdefault(svid, []).extend(kept)
-        return {"basis": "answer_input", "answer_run_id": frozen["run_id"], "sources": sources}
+        return base | {"basis": "answer_input", "answer_run_id": frozen["run_id"], "sources": sources}
     for head in store.included_works(research_id):
         svid = store.answer_version(research_id, head)
         if svid is not None and current.get(svid):
             sources[svid] = list(current[svid])
-    return {"basis": "included_works", "answer_run_id": None, "sources": sources}
+    return base | {"basis": "included_works", "answer_run_id": None, "sources": sources}
+
+
+def changed(store: Any, research_id: str, frozen_pool: dict[str, Any]) -> str | None:
+    """Why the frozen pool no longer describes the research, or None. A person's selection or queue decision changed
+    since (any state, `pending` included), or a pooled passage is no longer current: its source left the research,
+    or its file was removed, replaced or extracted again."""
+    if (store.selection_revision(research_id) != frozen_pool["selection_revision"]
+            or small_batch.user_signature(store, research_id) != frozen_pool["user_signature"]):
+        return SELECTION_CHANGED
+    current = _current(store, research_id)
+    for svid, ids in frozen_pool["sources"].items():
+        if not set(ids) <= set(current.get(svid, [])):
+            return SOURCES_CHANGED
+    return None
+
+
+def _guard(flow: Any, run: dict[str, Any], frozen_pool: dict[str, Any]) -> None:
+    if reason := changed(flow.store, run["research_id"], frozen_pool):
+        flow._fail(run["id"], reason, {"note": "Ask the follow-up again to answer it from the research as it is now."})
 
 
 def _code_step(flow: Any, run: dict[str, Any], key: str, kind: str, build: Any) -> dict[str, Any]:
@@ -201,10 +240,11 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     store.update_run(run_id, stage="answer")
     frozen_pool = _code_step(flow, run, POOL_KEY, "code:followup_pool",
                              lambda: pool(store, run["research_id"], turn["scope_revision"]))
+    _guard(flow, run, frozen_pool)  # a resumed run: the person's choices or the files may have changed meanwhile
     considered = sum(len(v) for v in frozen_pool["sources"].values())
     if not considered:
         flow._checkpoint(run_id, run["scope_revision"])
-        publish(store, run, turn, "no_passages", considered=0, given=0,
+        publish(flow, run, turn, frozen_pool, "no_passages", considered=0, given=0,
                 validation={"ok": True, "issues": [], "reason": "no_stored_passages",
                             "note": "This research held no passage to give; no model was asked and no search was run."})
         return
@@ -212,8 +252,11 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     flow._checkpoint(run_id, run["scope_revision"])
     passages = [store.passage(pid) for pid in selected["passage_ids"]]
     source_ids = list(dict.fromkeys(p["source_version_id"] for p in passages))
-    output = await flow._model_step(run, scope, TASK, TASK, source_ids=source_ids, passage_rows=passages)
-    # No await from this check to the publication: a pause, cancel or newer question revision stops it unpublished.
+    # The send gate runs right before each call is built and sent, the repair's included.
+    output = await flow._model_step(run, scope, TASK, TASK, source_ids=source_ids, passage_rows=passages,
+                                    send_gate=lambda: _guard(flow, run, frozen_pool))
+    # No await from this check to the publication: a pause, cancel or newer question revision stops it unpublished,
+    # and `publish` checks the frozen pool again inside its transaction.
     flow._checkpoint(run_id, run["scope_revision"])
     step = store.existing_step(run_id, TASK)
     if output.get("invalid"):
@@ -222,7 +265,7 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
             draft = draft if isinstance(draft, dict) else None
         except json.JSONDecodeError:
             draft = None
-        publish(store, run, turn, "unverified_draft", considered=considered, given=len(passages), step_id=step["id"],
+        publish(flow, run, turn, frozen_pool, "unverified_draft", considered=considered, given=len(passages), step_id=step["id"],
                 step_input_id=output["step_input_id"], draft=draft, validation={"ok": False, "issues": output["issues"]})
         return
     payload = store.step_input_payload(output["step_input_id"])
@@ -230,46 +273,60 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     links = contracts.derive_evidence_links(payload, result)
     if any(link["anchor_text"] is None for link in links):
         # Validation locates every anchor; one that does not locate now is never published as a citation.
-        publish(store, run, turn, "unverified_draft", considered=considered, given=len(passages), step_id=step["id"],
+        publish(flow, run, turn, frozen_pool, "unverified_draft", considered=considered, given=len(passages), step_id=step["id"],
                 step_input_id=output["step_input_id"], draft=result,
                 validation={"ok": False, "issues": [{"code": "anchor_not_in_passage", "path": "/citation_anchors",
                                                      "message": "an anchor no longer locates in its passage"}]})
         return
-    publish(store, run, turn, result["outcome"], considered=considered, given=len(passages), step_id=step["id"],
+    publish(flow, run, turn, frozen_pool, result["outcome"], considered=considered, given=len(passages), step_id=step["id"],
             step_input_id=output["step_input_id"], draft=result,
             validation={"ok": True, "issues": [], "warnings": output.get("warnings", [])}, links=links)
 
 
-def publish(store: Any, run: dict[str, Any], turn: dict[str, Any], status: str, *, considered: int, given: int,
-            validation: dict[str, Any], step_id: str | None = None, step_input_id: str | None = None,
-            draft: dict[str, Any] | None = None, links: list[dict[str, Any]] | None = None) -> None:
-    """The turn's answer and its evidence links in one transaction; a turn already published is left as it is."""
+def publish(flow: Any, run: dict[str, Any], turn: dict[str, Any], frozen_pool: dict[str, Any], status: str, *,
+            considered: int, given: int, validation: dict[str, Any], step_id: str | None = None,
+            step_input_id: str | None = None, draft: dict[str, Any] | None = None,
+            links: list[dict[str, Any]] | None = None) -> None:
+    """The turn's answer and its evidence links in one transaction; a turn already published is left as it is.
+
+    The frozen pool is checked inside the same transaction, so nothing a person changed can slip in between the check
+    and the write; a change fails the run (outside the transaction, which then writes nothing)."""
+    store = flow.store
     with transaction(store.conn):
-        updated = store.conn.execute(
+        reason = changed(store, run["research_id"], frozen_pool)
+        updated = 0 if reason else store.conn.execute(
             "UPDATE followup_turns SET status = ?, step_id = ?, step_input_id = ?, answer_language = ?, draft_json = ?,"
-            " validation_json = ?, passages_considered = ?, passages_given = ?, published_at = ?"
-            " WHERE id = ? AND status = 'pending'",
+            " validation_json = ?, passages_considered = ?, passages_given = ?, selection_revision = ?,"
+            " user_signature = ?, published_at = ? WHERE id = ? AND status = 'pending'",
             (status, step_id, step_input_id, (draft or {}).get("answer_language"),
-             dumps(draft) if draft is not None else None, dumps(validation), considered, given, now(), turn["id"]),
+             dumps(draft) if draft is not None else None, dumps(validation), considered, given,
+             frozen_pool["selection_revision"], frozen_pool["user_signature"], now(), turn["id"]),
         ).rowcount
-        if not updated:
-            return
-        for link in links or []:
-            store.conn.execute(
-                "INSERT INTO followup_turn_links (id, turn_id, claim_label, passage_id, source_version_id, step_input_id,"
-                " support_type, anchor_text, anchor_match) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (new_id("ful"), turn["id"], link["claim_label"], link["passage_id"], link["source_id"], step_input_id,
-                 link["support_type"], link["anchor_text"], link["anchor_match"]))
-        store.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), run["research_id"]))
-        store._event(run["research_id"], "followup_answered", {"turn_id": turn["id"], "status": status}, run["id"])
+        if updated:
+            for link in links or []:
+                store.conn.execute(
+                    "INSERT INTO followup_turn_links (id, turn_id, claim_label, passage_id, source_version_id,"
+                    " step_input_id, support_type, anchor_text, anchor_match) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (new_id("ful"), turn["id"], link["claim_label"], link["passage_id"], link["source_id"],
+                     step_input_id, link["support_type"], link["anchor_text"], link["anchor_match"]))
+            store.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), run["research_id"]))
+            store._event(run["research_id"], "followup_answered", {"turn_id": turn["id"], "status": status}, run["id"])
+    if reason:
+        flow._fail(run["id"], reason, {"note": "Ask the follow-up again to answer it from the research as it is now."})
 
 
 def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
     """One turn as the UI reads it. Claims and citations are shown only for a valid published answer; an unverified
     draft shows its issues and no claim (fail-closed). `question` is what "Search for new works on this" revises to."""
     run = store.run(row["run_id"])
-    current = store.conn.execute("SELECT current_scope_revision FROM researches WHERE id = ?",
-                                 (row["research_id"],)).fetchone()[0]
+    research = store.conn.execute("SELECT current_scope_revision, selection_revision FROM researches WHERE id = ?",
+                                  (row["research_id"],)).fetchone()
+    current = research["current_scope_revision"]
+    # Published under an older source selection: the person included, excluded or set a source pending since. Apart
+    # from `stale_scope`, which is about the question.
+    stale_selection = row["status"] != "pending" and (
+        row["selection_revision"] != research["selection_revision"]
+        or row["user_signature"] != small_batch.user_signature(store, row["research_id"]))
     answer = None
     if row["status"] in PUBLISHED:
         draft = json.loads(row["draft_json"])
@@ -296,6 +353,7 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
         "id": row["id"], "research_id": row["research_id"], "scope_revision": row["scope_revision"],
         "question": row["question"], "status": row["status"], "created_at": row["created_at"],
         "published_at": row["published_at"], "stale_scope": row["scope_revision"] != current,
+        "stale_selection": stale_selection,
         "passages_considered": row["passages_considered"], "passages_given": row["passages_given"],
         "run": {"id": run["id"], "status": run["status"], "stage": run["stage"], "pause_reason": run["pause_reason"],
                 "error": run["error"]},

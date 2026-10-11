@@ -3654,4 +3654,6 @@ const tr: Record<string, string> = {
   'Counts are Zotero’s own; standalone notes and non-PDF attachments are skipped, so fewer items may be added.': 'Sayılar Zotero’nun kendi sayılarıdır; tek başına notlar ve PDF olmayan ekler atlanır, bu yüzden daha az öğe eklenebilir.',
   // UI parity S22a: the follow-up answer run.
   'Follow-up answer': 'Takip sorusu yanıtı',
+  'Your source selection changed while this follow-up was being answered. Ask it again.': 'Bu takip sorusu yanıtlanırken kaynak seçiminiz değişti. Soruyu yeniden sorun.',
+  'A source or its PDF changed while this follow-up was being answered. Ask it again.': 'Bu takip sorusu yanıtlanırken bir kaynak ya da PDF’si değişti. Soruyu yeniden sorun.',
 }

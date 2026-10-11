@@ -220,7 +220,7 @@ def test_semantic_adapter_abstract_headers_and_legacy_revision(monkeypatch):
     assert result.outcome.records[0].abstract == 'SYNTHETIC abstract'
     assert result.outcome.next_cursor is None and result.connector['adapter_revision'] == 3
     assert requests[0].url.params['per_page'] == '50'
-    assert len(requests[0].url.params['search.semantic']) == 2000
+    assert len(requests[0].url.params['search.semantic']) == 1500  # OpenAlex's limit (D3)
     assert 'cursor' not in requests[0].url.params and 'search.title_and_abstract' not in requests[0].url.params
     assert result.outcome.rate_limit['x-ratelimit-credits-used'] == '10'
     assert 'SYNTHETIC KEY' not in json.dumps(result.outcome.raw_payload)

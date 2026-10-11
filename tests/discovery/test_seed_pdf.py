@@ -101,7 +101,7 @@ def test_matched_seed_guides_query_chain_ranking_and_protocol(tmp_path, monkeypa
         assert body["seed_match"] == match
         plan = body["fast_path_search"]["semantic"]
         assert plan["query_text"].startswith(QUESTION) and SEED_TITLE in plan["query_text"]
-        assert plan["seed_text"] == "match_abstract" and len(plan["query_text"]) <= 2000
+        assert plan["seed_text"] == "match_abstract" and len(plan["query_text"]) <= 1500
         seeds = output(store, run_id, "fast_chain:seeds")["seeds"]
         assert seeds[0]["origin"] == "seed_pdf" and seeds[0]["openalex_id"] == "W900" and seeds[0]["rank"] == 0
         assert len({s["openalex_id"] for s in seeds}) == len(seeds)
@@ -393,7 +393,7 @@ def test_3_three_seeds_send_one_doi_request_and_two_meaning_searches(tmp_path, m
         assert body["seed_match"] == match
         plan = body["fast_path_search"]["semantic"]
         assert plan["seed_text"] == ["match_abstract", "match_abstract", "pdf_excerpt"]
-        assert [p["source_version_id"] for p in plan["seed_parts"]] == [a, b, c] and len(plan["query_text"]) <= 2000
+        assert [p["source_version_id"] for p in plan["seed_parts"]] == [a, b, c] and len(plan["query_text"]) <= 1500
         seeds = output(store, run_id, "fast_chain:seeds")["seeds"]
         assert [(s["rank"], s["openalex_id"], s["origin"]) for s in seeds[:2]] == [(0, "W900", "seed_pdf"), (1, "W910", "seed_pdf")]
         assert all(s["origin"] != "seed_pdf" for s in seeds[2:])
@@ -494,16 +494,19 @@ def test_7_semantic_query_keeps_the_whole_question():
                           for i in range(n)]}
     question = "q" * 100
     query, origin, parts = fast_search.seed_query(question, envelope(1))
-    assert query == (question + " " + "0" * 3000)[:2000] and origin == "pdf_excerpt"
-    assert parts == [{"source_version_id": "s0", "origin": "pdf_excerpt", "chars": 1899}]
+    # OpenAlex refuses a semantic query over 1,500 characters (HTTP 400), so that is the budget (D3).
+    assert query == (question + " " + "0" * 3000)[:1500] and origin == "pdf_excerpt"
+    assert parts == [{"source_version_id": "s0", "origin": "pdf_excerpt", "chars": 1399}]
     query, origin, parts = fast_search.seed_query(question, envelope(3))
-    assert query.startswith(question + " ") and len(query) <= 2000 and origin == ["pdf_excerpt"] * 3
-    assert [p["chars"] for p in parts] == [632] * 3
-    for length in (1999, 2000):
+    assert query.startswith(question + " ") and len(query) <= 1500 and origin == ["pdf_excerpt"] * 3
+    assert [p["chars"] for p in parts] == [465] * 3
+    for length in (1499, 1500):
         query, _, parts = fast_search.seed_query("q" * length, envelope(3))
         assert query == "q" * length and parts == []
+    query, _, parts = fast_search.seed_query("q" * 1500, envelope(1))
+    assert query == "q" * 1500 and parts == []
     query, _, parts = fast_search.seed_query("q" * 2000, envelope(1))
-    assert query == "q" * 2000 and parts == []
+    assert query == "q" * 1500 and parts == []
 
 
 def test_8_canonical_order_decides_and_duplicates_count_once(tmp_path, monkeypatch):
@@ -615,16 +618,17 @@ def test_10_runs_that_began_under_d2_finish_under_d2(tmp_path, monkeypatch):
             assert view["scope"]["seeds"][0]["use"]["state"] == "used"
             assert view["scope"]["seeds"][0]["use"]["match"]["basis"] == "doi_title"
             assert view["scope"]["seeds"][0]["use"]["semantic"] is True
-            # A plan D2 froze has no seed_parts: with a 2,000-character question the PDF's text took no room in the
-            # query, though `seed_text` names it; only a query longer than the question and its separator counts.
+            # A plan D2 froze has no seed_parts: when the question fills the 1,500 characters OpenAlex takes, the PDF's
+            # text took no room in the query sent, though `seed_text` names it; only a sent query longer than the
+            # question and its separator counts. A D2 plan's 2,000-character query is cut to 1,500 when sent.
             frozen = store.current_protocol(rid, store.scope(rid)["revision"])
             semantic = frozen["body"]["fast_path_search"]["semantic"]
             semantic.pop("seed_parts")
             assert semantic["seed_text"] == "match_abstract"
             with monkeypatch.context() as patch:
                 patch.setattr(store, "current_protocol", lambda research_id, revision: frozen)
-                for length, query, used in ((2000, "q" * 2000, False), (1999, "q" * 1999 + " ", False),
-                                            (1998, "q" * 1998 + " x", True)):
+                for length, query, used in ((1500, "q" * 1500, False), (1499, "q" * 1499 + " ", False),
+                                            (1498, "q" * 1498 + " x", True), (1998, "q" * 1998 + " x", False)):
                     patch.setattr(views.english_question_rules, "embedding_query",
                                   lambda store, scope, length=length: ("q" * length, "question"))
                     semantic["query_text"] = query
@@ -790,3 +794,55 @@ def test_10c_a_paused_run_that_froze_under_d2_resumes_through_the_worker_without
         assert output(store, run_id, "seed_match:v2:doi") is None
         seeds = output(store, run_id, "fast_chain:seeds")["seeds"]
         assert (seeds[0]["openalex_id"], seeds[0]["origin"]) == ("W900", "seed_pdf")
+
+
+def test_the_semantic_request_never_sends_more_than_openalex_accepts():
+    """OpenAlex answers HTTP 400 "Search query too long" past 1,500 characters (measured live, 11 Oct 2026)."""
+    from deixis.providers import openalex
+    sent = []
+    def handler(request):
+        sent.append(request.url.params["search.semantic"])
+        return httpx.Response(200, json={"meta": {"count": 0}, "results": []})
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await openalex.search_semantic(client, "x" * 3000, 10)
+    outcome = asyncio.run(go())
+    assert sent == ["x" * openalex.SEMANTIC_MAX_CHARS] and openalex.SEMANTIC_MAX_CHARS == 1500
+    assert "x" * 1501 not in outcome.request_description
+
+
+def test_a_failed_lookup_is_asked_again_by_the_next_run(tmp_path, monkeypatch):
+    """A run whose seed lookup failed (an OpenAlex 400 before the 1,500-character limit, an incomplete DOI reply) does
+    not hand that failure to the next run of the revision; the next run asks again (D3)."""
+    transport = SeedTransport(records(), by_doi=[seed_work()], hidden=1)
+    app, _ = app_for(tmp_path, monkeypatch, transport=transport)
+    with client_of(app) as client:
+        rid, _ = seeded(client, SEED_PDF)
+        first, _ = discovery(client, rid)
+        store = app.state.store
+        assert output(store, first, "seed_match")["seeds"][0]["status"] == "lookup_failed"
+        transport.hidden = 0
+        second, view = discovery(client, rid)
+        match = output(store, second, "seed_match")
+        assert "reused_from_run" not in match and match["seeds"][0]["status"] == "matched"
+        assert len(transport.doi_requests) == 2
+
+
+def test_a_seed_part_cut_off_on_sending_did_not_guide_the_semantic_search(tmp_path, monkeypatch):
+    """A plan frozen before the 1,500-character limit may name seed parts that sending cut off; only parts that reached
+    OpenAlex count as use (D3)."""
+    app, _ = app_for(tmp_path, monkeypatch, transport=SeedTransport(records(), by_doi=[seed_work()]))
+    with client_of(app) as client:
+        rid, svid = seeded(client, SEED_PDF)
+        discovery(client, rid)
+        store = app.state.store
+        frozen = store.current_protocol(rid, store.scope(rid)["revision"])
+        frozen["body"]["fast_path_search"]["semantic"]["seed_parts"] = [
+            {"source_version_id": svid, "origin": "match_abstract", "chars": 400}]
+        with monkeypatch.context() as patch:
+            patch.setattr(store, "current_protocol", lambda research_id, revision: frozen)
+            for length, used in ((1600, False), (1499, False), (1498, True), (100, True)):
+                patch.setattr(views.english_question_rules, "embedding_query",
+                              lambda store, scope, length=length: ("q" * length, "question"))
+                use = client.get(f"/api/researches/{rid}").json()["scope"]["seeds"][0]["use"]
+                assert use["semantic"] is used, length

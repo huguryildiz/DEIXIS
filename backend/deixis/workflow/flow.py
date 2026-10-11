@@ -985,7 +985,8 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         earlier = self.store.search_query_of(rid, revision, run_id, "seed_match")
         if (earlier is not None and earlier["output"].get("rule") == seed_match_rules.RULE
-                and earlier["output"]["seed_key"] == scope["seed_key"]):
+                and earlier["output"]["seed_key"] == scope["seed_key"]
+                and not any(c["status"] == "lookup_failed" for c in earlier["output"]["seeds"])):
             output = earlier["output"] | {"reused_from_run": earlier["output"].get("reused_from_run", earlier["run_id"])}
             self.store.finish_step(step["id"], "succeeded", output=output)
             return output
@@ -1057,7 +1058,7 @@ class ResearchFlow:
         for i in open_seeds:
             head, title_region, _ = texts[i]
             found = await self._seed_lookup(run, f"seed_match:v2:semantic:{i}", lambda head=head: openalex.search_semantic(
-                self.deps.http, head[:seed_match_rules.SEMANTIC_QUERY_CHARS], seed_match_rules.SEMANTIC_PER_PAGE,
+                self.deps.http, head[:openalex.SEMANTIC_MAX_CHARS], seed_match_rules.SEMANTIC_PER_PAGE,
                 api_key, mailto, references=True))
             contexts[i]["lookups"].append(found["summary"])
             if found["failed"]:
@@ -1075,7 +1076,8 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         earlier = self.store.search_query_of(rid, revision, run_id, "seed_match")
         if (earlier is not None and earlier["output"].get("rule") == seed_match_rules.RULE_V1
-                and earlier["output"]["asset_sha256"] == snapshot["asset_sha256"]):
+                and earlier["output"]["asset_sha256"] == snapshot["asset_sha256"]
+                and earlier["output"]["status"] != "lookup_failed"):
             output = earlier["output"] | {"reused_from_run": earlier["output"].get("reused_from_run", earlier["run_id"])}
             self.store.finish_step(step["id"], "succeeded", output=output)
             return output
@@ -1115,7 +1117,7 @@ class ResearchFlow:
             if hits > 1:
                 return {"status": "no_match", "ambiguous": True, "lookups": lookups}
         found = await self._seed_lookup(run, "seed_match:semantic", lambda: openalex.search_semantic(
-            self.deps.http, head[:seed_match_rules.SEMANTIC_QUERY_CHARS], seed_match_rules.SEMANTIC_PER_PAGE,
+            self.deps.http, head[:openalex.SEMANTIC_MAX_CHARS], seed_match_rules.SEMANTIC_PER_PAGE,
             api_key, mailto, references=True))
         lookups.append(found["summary"])
         if found["failed"]:

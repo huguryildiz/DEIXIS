@@ -20,6 +20,7 @@ from deixis.workflow.equations import chunk_numbers, equation_state, equations_t
 from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts, inspection_progress
 from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
 from deixis.workflow import waiting as waiting_rules
+from deixis.providers import openalex
 from deixis.providers.registry import search_providers
 from deixis.workflow.store import ENDED_RUN_STATUSES, EVIDENCE_STATUS_SQL, NotFound, Store
 from deixis.workflow import chaining as chaining_rules
@@ -400,10 +401,11 @@ def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[di
             {"skipped": out.get("reason"), "code_only": "code_only"}.get(out.get("status"), "written_without_seed")
     semantic_plan = (frozen["body"].get("fast_path_search") or {}).get("semantic") or {}
     # A plan frozen before seed_parts (D2) names its one seed's text by `seed_text`; the seed's text went in only when
-    # the frozen query is longer than the question part and its separator, `(q[:2000] + " " + text)[:2000]`.
+    # the query sent (cut to OpenAlex's limit) is longer than the question part and its separator.
     sentence = english_question_rules.embedding_query(store, scope)
+    limit = openalex.SEMANTIC_MAX_CHARS
     v1_part = bool(semantic_plan.get("seed_text") and sentence and semantic_plan.get("query_text")
-                   and len(semantic_plan["query_text"]) > len(sentence[0][:2000]) + 1)
+                   and len(semantic_plan["query_text"][:limit]) > len(sentence[0][:limit]) + 1)
     semantic_step = settled(step("search:fast:semantic"))
     seeds_step = step("fast_chain:seeds")
     chained = ({s["source_version_id"] for s in seeds_step["output"]["seeds"] if s["origin"] == "seed_pdf"}
@@ -411,6 +413,13 @@ def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[di
     plans = [found for key in ("fast_chain:plan", "fast_chain:plan_fallback")
              if (found := step(key)) is not None and found["status"] == "succeeded"]
     by_source = {context["source_version_id"]: context for context in envelope["seeds"]}
+    # A seed part counts only when some of it was in the query sent: a plan frozen before the 1,500-character limit may
+    # name parts that were cut off on sending (question, then each part behind one separator).
+    sent_parts, at = set(), len(sentence[0][:limit]) if sentence else 0
+    for part in semantic_plan.get("seed_parts") or []:
+        if at + 1 < limit and part["chars"]:
+            sent_parts.add(part["source_version_id"])
+        at += 1 + part["chars"]
     uses = []
     for seed in seeds:
         svid = seed["source_version_id"]
@@ -419,8 +428,7 @@ def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[di
             uses.append({"state": "not_used"})
             continue
         parts = semantic_plan.get("seed_parts")
-        has_part = (any(part["source_version_id"] == svid for part in parts) if parts is not None
-                    else v1_part)
+        has_part = svid in sent_parts if parts is not None else v1_part
         requests = None
         if plans:
             requests = {"planned": 0, "sent": 0, "unsent": 0, "unknown": 0}

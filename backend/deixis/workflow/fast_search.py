@@ -11,6 +11,7 @@ from deixis.providers import facade
 from deixis.providers.common import FIRST_PAGE, SearchOutcome
 from deixis.providers.registry import CONNECTORS, reading
 from deixis.storage.db import now, transaction
+from deixis.providers import openalex
 from deixis.workflow import english_question, fast_path, seed_match
 
 
@@ -19,17 +20,18 @@ def seed_query(question, envelope):
     in (D2, D3). One seed: D2's string. Several: the room the question leaves, less one separator per seed, shared
     equally; a seed whose share is empty adds nothing. Returns (query, seed_text, seed_parts)."""
     texts = [(c["source_version_id"], *seed_match.seed_text(c)) for c in envelope["seeds"]]
-    q = question[:2000]
+    limit = openalex.SEMANTIC_MAX_CHARS
+    q = question[:limit]
     if len(texts) == 1:
         svid, text, origin = texts[0]
         if not text.strip():
             return question, None, []
-        chars = max(0, min(len(text), 2000 - len(q) - 1))
-        return (q + " " + text)[:2000], origin, [{"source_version_id": svid, "origin": origin, "chars": chars}] if chars else []
-    share = max(0, 2000 - len(q) - len(texts)) // len(texts)
+        chars = max(0, min(len(text), limit - len(q) - 1))
+        return (q + " " + text)[:limit], origin, [{"source_version_id": svid, "origin": origin, "chars": chars}] if chars else []
+    share = max(0, limit - len(q) - len(texts)) // len(texts)
     parts = [(svid, origin, text[:share]) for svid, text, origin in texts if text[:share].strip()]
     origins = [origin for _, text, origin in texts if text.strip()]
-    query = (q + " " + " ".join(part for _, _, part in parts))[:2000] if parts else q
+    query = (q + " " + " ".join(part for _, _, part in parts))[:limit] if parts else q
     return query, origins or None, [{"source_version_id": svid, "origin": origin, "chars": len(part)}
                                     for svid, origin, part in parts]
 
@@ -48,7 +50,7 @@ def build_plan(store, run, scope, queries, seed_context=None):
                      if deep and q["provider_id"] == "semantic_scholar" and q.get("endpoint") == "bulk"), None)
     s2 = queries[s2_index] if s2_index is not None else None
     return {"version": 1, "semantic": {"provider_id": "openalex", "endpoint": "semantic",
-            "query_text": sentence[0][:2000] if sentence else None, "limit": policy["semantic_top"],
+            "query_text": sentence[0][:openalex.SEMANTIC_MAX_CHARS] if sentence else None, "limit": policy["semantic_top"],
             "query_origin": sentence[1] if sentence else english_question.MISSING,
             **({"seed_text": seed} if seed else {}), **({"seed_parts": parts} if seed_context else {})},
             "keywords": keyword, "keyword_cap": policy["keyword_record_cap"] - (500 if deep else 0),

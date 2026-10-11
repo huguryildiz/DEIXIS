@@ -22,7 +22,7 @@ RULE_V1 = "seed_pdf_v1"
 RULE = "seed_pdf_v2"
 MAX_DOIS = 5
 SEMANTIC_PER_PAGE = 10
-SEMANTIC_QUERY_CHARS = 2000
+FIRST_PAGE_CHARS = 2000
 TITLE_REGION_CHARS = 1500  # the head of page 1 where a paper names itself; a reference list on page 2 never counts
 
 
@@ -34,7 +34,7 @@ def short_id(value: Any) -> str | None:
 
 def first_pages(store: Any, snapshot: dict[str, Any]) -> tuple[str, str, str]:
     """The text of the seed asset's physical pages 1 and 2 (for DOIs), the head of page 1 (for the title) and the
-    first SEMANTIC_QUERY_CHARS of page 1 (what the context keeps of the PDF's own text).
+    first FIRST_PAGE_CHARS of page 1 (what the context keeps of the PDF's own text).
 
     All empty when page 1 holds no text: a later page may quote any number of other papers, so it never stands in."""
     rows = store.conn.execute(
@@ -45,7 +45,7 @@ def first_pages(store: Any, snapshot: dict[str, Any]) -> tuple[str, str, str]:
     if not first.strip():
         return "", "", ""
     return ("\n".join(row["text"] for row in rows)[:identity.MATCH_TEXT_CHARS], first[:TITLE_REGION_CHARS],
-            first[:SEMANTIC_QUERY_CHARS])
+            first[:FIRST_PAGE_CHARS])
 
 
 def dois_in(head: str) -> list[str]:

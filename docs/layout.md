@@ -7,6 +7,7 @@ DEIXIS/
 ├── docs/
 │   ├── layout.md          this file
 │   ├── decisions.md       durable decisions (DNN; restarted at D1, 10 Oct 2026)
+│   ├── search-architecture.md  Mermaid map of the search pipeline (fast_path_v1)
 │   └── product/           only files that code, tests or scripts read
 ├── backend/deixis/        local API, worker, persistence, providers, model adapters
 ├── apps/web/              React UI served by the backend

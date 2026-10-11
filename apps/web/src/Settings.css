@@ -11,10 +11,9 @@
 .app .settings-page>p{max-width:72ch;margin:6px 0 0;color:var(--muted);font-size:13px;line-height:1.55}
 .app .settings-page .settings-tabs{margin:18px 0 22px}
 .app .settings-page h2,.app .settings-page .connections-group h2{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:14px;font-weight:600;letter-spacing:0;line-height:1.4}
-.app .settings-page h2.with-icon>svg{width:16px;height:16px}
+.app .settings-page h2.with-icon>svg,.app .settings-page .connections-subhead.with-icon>svg{display:none}
 .app .settings-page .connections-tab{gap:28px}
 .app .settings-page .connections-subhead{margin:14px 0 8px;color:var(--ink-2);font-size:12.5px;font-weight:600}
-.app .settings-page .connections-subhead.with-icon>svg{width:14px;height:14px}
 .app .settings-page .legacy-mini-note{margin:0 0 10px;max-width:76ch;font-size:12.5px!important;line-height:1.55}
 .app .settings-page .connection-grid+.legacy-mini-note{margin-top:8px}
 .app .settings-page .local-tool-machine{margin:0 0 10px;font-size:12.5px}
@@ -45,8 +44,10 @@
 .app .settings-page .connection-card{gap:10px;min-height:0;padding:12px;border-color:var(--line);border-radius:10px;background:var(--paper);transition:box-shadow .15s ease,border-color .15s ease,background-color .15s ease}
 .app .settings-page .connection-card:hover{background:var(--paper);box-shadow:var(--shadow-float)}
 .app .settings-page .connection-card.active{border-color:var(--accent-line);background:var(--accent-tint)}
-.app .settings-page .connection-card-icon{width:32px;height:32px;border-color:var(--line);border-radius:8px}
-.app .settings-page .connection-card-text{gap:4px}
+.app .settings-page .connection-card-icon{display:none}
+.app .settings-page .connection-card-text{flex:1;flex-direction:row;align-items:flex-start;justify-content:space-between;gap:4px 10px}
+.app .settings-page .connection-card-text strong{flex:1 1 auto;min-width:0;line-height:21px;white-space:normal;overflow-wrap:anywhere}
+.app .settings-page .connection-card-status{flex:none;max-width:60%;text-align:right}
 .app .settings-page .connection-card-text strong{font-size:13.5px;font-weight:500}
 .app .settings-page .connection-card-status{padding:1px 7px;border-radius:5px;font-size:11px;font-weight:500;line-height:1.5;white-space:normal;overflow:visible;overflow-wrap:anywhere}
 .app .settings-page .connection-card-status::before{display:none}

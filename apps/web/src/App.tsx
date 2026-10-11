@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Ban, CircleCheck, CirclePause, CircleX, ChevronDown, Ellipsis, FlaskConical, Library, LoaderCircle, Menu, Moon, PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings2, Sun, Trash2, type LucideIcon } from 'lucide-react'
+import { Ban, Check, CirclePause, CircleX, ChevronDown, Ellipsis, FlaskConical, Library, LoaderCircle, Menu, Moon, PanelLeftClose, PanelLeftOpen, PencilLine, Search, Settings2, Sun, Trash2, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, type InstitutionalAccess, type ResearchSummary, type RunStatus } from './api'
@@ -25,7 +25,7 @@ type ThemeChoice = 'system' | 'light' | 'dark'
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent)
 const recentStatusIcons: Record<RunStatus, LucideIcon> = {
   queued: LoaderCircle, running: LoaderCircle, pause_requested: LoaderCircle,
-  paused: CirclePause, completed: CircleCheck, failed: CircleX, cancelled: Ban,
+  paused: CirclePause, completed: Check, failed: CircleX, cancelled: Ban,
 }
 const activeRunStatuses = new Set<RunStatus>(['queued', 'running', 'pause_requested'])
 const SIDEBAR_MIN = 200

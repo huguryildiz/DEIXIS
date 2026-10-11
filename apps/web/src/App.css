@@ -139,12 +139,12 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .models-summary-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .models-summary-name .connection-icon{width:13px;height:13px;margin-right:5px;vertical-align:-2px;color:var(--ink)}
 .models-summary-name+svg{margin-left:6px}
-/* The label is read by screen readers on wide screens; on phones it replaces the model names, which do not fit. */
-.models-summary-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+/* One compact "Models" button (mockup): the label and the chevron show; the model names stay as its accessible text and
+   in the popover. */
+.models-summary-label{margin-right:2px}
+.models-summary-name{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.models-summary>svg:not(.models-summary-chevron){display:none}
 @media(max-width:520px){
-  .models-summary-label{position:static;width:auto;height:auto;clip-path:none;margin-right:4px}
-  .models-summary-name{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
-  .models-summary-name+svg{margin-left:0}
   .model-palette-backdrop{display:block;position:fixed;z-index:59;inset:0;background:#0006}
   .model-palette-positioner{position:fixed!important;inset:auto 10px 10px!important;width:auto!important;transform:none!important}
   .model-palette{width:100%;max-height:min(620px,82svh);border-radius:14px}
@@ -160,6 +160,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .settings-role-text strong,.settings-role-text small{display:block}
 .settings-role-text strong{font-size:14px;font-weight:600}
 .settings-role-text small{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.5}
+@media(min-width:761px){.app .settings-page .settings-role-text{display:grid;grid-template-columns:150px minmax(0,1fr);gap:2px 16px;align-items:baseline}.app .settings-page .settings-role-text small{margin-top:0}.app .settings-page .settings-role{padding:10px 14px}}
 @media(max-width:760px){.settings-role{grid-template-columns:1fr}}
 .app .composer-options [data-slot=select-trigger]{height:38px;gap:9px;padding:0 12px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);box-shadow:none;color:var(--ink);font-size:12px}
 .intake-menu{width:min(320px,calc(100vw - 28px));padding:6px;border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 32px #0002}

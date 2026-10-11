@@ -72,7 +72,7 @@ test.describe.serial('S4: Home layout', () => {
     const options = page.getByRole('option')
     await expect(options).toHaveCount(4)
     await expect(options.nth(0)).toContainText('Academic search')
-    await expect(options.nth(0)).toContainText('Searches the connected scholarly sources')
+    await expect(options.nth(0)).toContainText('Searches scholarly sources to answer your question.')
     await expect(options.nth(1)).toContainText('Attached files')
     await expect(options.nth(1)).toContainText('Only the PDFs you add; no search runs')
     await expect(options.nth(2)).toContainText('Files + academic search')

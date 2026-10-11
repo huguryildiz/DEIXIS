@@ -3626,7 +3626,7 @@ const tr: Record<string, string> = {
   'Protocol, two reviewers, PRISMA flow': 'Protokol, iki değerlendirici, PRISMA akışı',
   'Depth': 'Derinlik',
   'Connect a model to start': 'Başlamak için bir model bağlayın',
-  'Searches the connected scholarly sources; the literature model chooses which of them to query': 'Bağlı akademik kaynaklarda arar; hangilerini sorgulayacağını literatür modeli seçer',
+  'Searches scholarly sources to answer your question.': 'Sorunuzu yanıtlamak için akademik kaynaklarda arar.',
   'Searches using your PDFs and your question. Only included sources are used in the answer.': 'PDF’leriniz ve sorunuzla arar. Yanıtta yalnızca dahil edilen kaynaklar kullanılır.',
   'Ask a research question. DEIXIS searches, screens, reads and links every claim to a passage.': 'Bir araştırma sorusu sorun. DEIXIS arar, eler, okur ve her iddiayı bir pasaja bağlar.',
   '⌘ / Ctrl + Enter starts the research · ? shows shortcuts · Nothing is downloaded from paywalled sites': '⌘ / Ctrl + Enter araştırmayı başlatır · ? kısayolları gösterir · Ücretli sitelerden hiçbir şey indirilmez',

@@ -1,7 +1,7 @@
 /* Home (mockup v24): one centred 700px column about 11vh below the top. The composer is a floating box: a band in
    --accent-band carries the source scope, then the question, then one control row on the sidebar surface
    (+, file chips, Models, depth, send). The hint lines sit quietly under it. */
-.welcome.home{display:grid;gap:22px;width:100%;max-width:748px;margin:0 auto 48px;padding:max(0px,calc(11vh - 24px)) 24px 0;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.welcome.home{display:grid;gap:22px;width:100%;max-width:748px;margin:0 auto 48px;padding:max(0px,calc(11vh - 32px)) 24px 0;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
 .app .composer{position:relative;overflow:hidden;background:var(--raised-surface);border:1px solid var(--accent-band);border-radius:12px;box-shadow:var(--shadow-float);transition:border-color .15s ease,box-shadow .15s ease}
 .app .composer:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent),transparent 78%),var(--shadow-float)}
 .composer-band{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 8px;background:var(--accent-band)}
@@ -33,7 +33,7 @@
 .app .composer-controls .composer-depth [data-slot=select-value]{flex:none;align-items:center;gap:6px}
 .app .composer-controls .composer-depth [data-slot=select-value] svg{color:var(--muted)}
 .app .composer-controls :is(.composer-add,.models-summary,[data-slot=select-trigger]):hover:not(:disabled),.app .composer-controls :is(.composer-add,.models-summary,[data-slot=select-trigger])[aria-expanded=true]{background:var(--hover-surface);color:var(--ink)}
-.app .composer .send-button{width:32px;height:32px;flex:none;border-radius:7px;background:var(--accent);color:var(--paper)}
+.app .composer .send-button{width:32px;height:32px;flex:none;border:0;border-radius:7px;background:var(--accent);color:var(--paper)}
 .app .composer .send-button:hover:not(:disabled){background:color-mix(in srgb,var(--accent),var(--ink) 14%)}
 .app .composer .send-button:disabled{opacity:.45}
 /* File chips fill the row between + and Models; several PDFs wrap. On a phone they take their own first row. */
@@ -66,8 +66,7 @@
 .home-menu-badge{flex:none;margin-left:auto;padding:0 5px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-size:10px;letter-spacing:.3px;text-transform:uppercase}
 
 @media(max-width:760px){
-  /* The mockup puts the composer 5vh under the top bar. Here it sits 12px lower: with the scope button on axe's first modal-test point (x 12.5%, y 12.5% of an 844 px viewport) the open scope list stops counting as a modal and the focus guards become a serious finding. */
-  .welcome.home{padding:max(0px,calc(5vh - 8px)) 24px 0}
+  .welcome.home{padding:max(0px,calc(5vh - 20px)) 24px 0}
   .attachment-name{max-width:150px}
   .composer-controls{flex-wrap:wrap}
   .attachments{order:-1;flex-basis:100%}

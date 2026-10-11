@@ -19,7 +19,7 @@ export const effortLabels: Record<Effort, string> = { quick: 'Quick', standard: 
 
 // Limits mirror TEST_EFFORT_BUDGETS in backend/deixis/domain/rules.py.
 export const scopeOptions: Record<SourceScope, { icon: LucideIcon; detail: string }> = {
-  academic: { icon: Search, detail: 'Searches the connected scholarly sources; the literature model chooses which of them to query' },
+  academic: { icon: Search, detail: 'Searches scholarly sources to answer your question.' },
   attached: { icon: Paperclip, detail: 'Only the PDFs you add; no search runs' },
   attached_and_academic: { icon: FileText, detail: 'Searches using your PDFs and your question. Only included sources are used in the answer.' },
 }
@@ -198,6 +198,8 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const [defaults, setDefaults] = useState<Record<ModelRole, RoleModelSetting> | null>(null)
   // The role whose picker is open under the controls (chosen in the Models menu).
   const [pickerRole, setPickerRole] = useState<ModelRole | null>(null)
+  // Each choice in the menu remounts the picker, so choosing the same role again opens its list again.
+  const [pickerNonce, setPickerNonce] = useState(0)
   const [files, setFiles] = useState<File[]>([])
   // A Zotero collection chosen before the research exists; it is imported right after the research is created.
   const [zotero, setZotero] = useState<{ source: ZoteroSource; key: string; name: string } | null>(null)
@@ -348,7 +350,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const roleRows: { role: ModelRole; summary: string }[] = [
     { role: 'literature', summary: withEffort(modelName(literature), listedEffort(models, literature, literatureReasoning)) },
     { role: 'answer', summary: withEffort(modelName(model), efforts.some(e => e.id === reasoning) ? reasoning : null) },
-    { role: 'reviewer', summary: reviewer === NO_REVIEW || reviewerSummary === t('no reviewer') ? reviewerSummary : withEffort(reviewerSummary, reviewer === DEFAULT_REVIEWER ? null : listedEffort(models, reviewer, reviewerReasoning)) },
+    { role: 'reviewer', summary: reviewer === NO_REVIEW || reviewerSummary === t('no reviewer') ? reviewerSummary : withEffort(reviewerSummary, reviewer === DEFAULT_REVIEWER ? listedEffort(models, modelKey(defaults!.reviewer.model_connection, defaults!.reviewer.model!), defaults!.reviewer.reasoning_effort ?? null) : listedEffort(models, reviewer, reviewerReasoning)) },
   ]
   const noModel = Boolean(connections) && !models.length
 
@@ -394,7 +396,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
               <DropdownMenuContent className="home-menu" align="end" sideOffset={6}>
                 <DropdownMenuGroup>
                   <DropdownMenuLabel className="home-menu-heading">{t('Models')}</DropdownMenuLabel>
-                  {roleRows.map(row => <DropdownMenuItem key={row.role} className="home-menu-item" onClick={() => setPickerRole(row.role)}><MenuRow icon={Cpu} title={t(modelRoles[row.role].label)} detail={row.summary} /></DropdownMenuItem>)}
+                  {roleRows.map(row => <DropdownMenuItem key={row.role} className="home-menu-item" onClick={() => { setPickerRole(row.role); setPickerNonce(n => n + 1) }}><MenuRow icon={Cpu} title={t(modelRoles[row.role].label)} detail={row.summary} /></DropdownMenuItem>)}
                   <DropdownMenuItem className="home-menu-item" onClick={() => { window.location.hash = '#/settings' }}><MenuRow icon={SlidersHorizontal} title={t('Change the defaults in Settings')} /></DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>
@@ -410,11 +412,11 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
         <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero)} aria-label={t('Start research')} title={noModel ? t('Connect a model to start') : undefined}><ArrowUp size={17} /></Button>
       </div>
       {pickerRole && models.length > 0 && <div className="composer-options composer-models">
-        {pickerRole === 'answer' && <ModelPicker defaultOpen role={t(modelRoles.answer.label)} icon={modelRoles.answer.icon} hint={t(modelRoles.answer.hint)} models={models} value={model}
+        {pickerRole === 'answer' && <ModelPicker key={pickerNonce} defaultOpen role={t(modelRoles.answer.label)} icon={modelRoles.answer.icon} hint={t(modelRoles.answer.hint)} models={models} value={model}
           onChange={id => chooseModel(id)} effort={reasoning} onEffort={setReasoning} />}
-        {pickerRole === 'literature' && <ModelPicker defaultOpen role={t(modelRoles.literature.label)} icon={modelRoles.literature.icon} hint={t(modelRoles.literature.hint)} models={models} value={literature}
+        {pickerRole === 'literature' && <ModelPicker key={pickerNonce} defaultOpen role={t(modelRoles.literature.label)} icon={modelRoles.literature.icon} hint={t(modelRoles.literature.hint)} models={models} value={literature}
           onChange={id => { setLiterature(id); setLiteratureReasoning(defaultEffort(models, id)) }} effort={literatureReasoning} onEffort={setLiteratureReasoning} />}
-        {pickerRole === 'reviewer' && <ModelPicker defaultOpen role={t(modelRoles.reviewer.label)} icon={modelRoles.reviewer.icon} hint={t(modelRoles.reviewer.hint)}
+        {pickerRole === 'reviewer' && <ModelPicker key={pickerNonce} defaultOpen role={t(modelRoles.reviewer.label)} icon={modelRoles.reviewer.icon} hint={t(modelRoles.reviewer.hint)}
           models={models} value={reviewer} onChange={id => { setReviewer(id); setReviewerReasoning(defaultEffort(models, id)) }}
           effort={reviewerReasoning} onEffort={setReviewerReasoning} choices={reviewerChoices} />}
         <button type="button" className="models-picker-close" aria-label={t('Close')} onClick={() => setPickerRole(null)}><X size={14} /></button>
@@ -425,6 +427,6 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
     {connections && !models.length && <Notice tone="attention">{t('No model connection is ready: {reason}. A research needs a model that a connection lists; model steps pause until the chosen connection is ready, and no other model is used instead.', { reason: notReadyReasons(connections) })}</Notice>}
     <SemanticSetupNote />
     {error && <Notice tone="error">{error}</Notice>}
-    <p className="hint">{busy ? t('Saving research…') : t('⌘ / Ctrl + Enter starts the research · ? shows shortcuts · Nothing is downloaded from paywalled sites')}</p>
+    <p className="hint home-hint">{busy ? t('Saving research…') : t('⌘ / Ctrl + Enter starts the research · ? shows shortcuts · Nothing is downloaded from paywalled sites')}</p>
   </section>
 }

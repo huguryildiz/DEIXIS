@@ -339,7 +339,14 @@ async function scan(page: Page, screen: string, ensure?: () => Promise<void>) {
     const before = await domState(page)
     const result = await new AxeBuilder({ page }).withTags(TAGS).analyze()
     const counts = { critical: 0, serious: 0, moderate: 0, minor: 0 }
-    const violations: Violation[] = result.violations.map(v => {
+    // base-ui's focus guards (the sentinels around an open popup) are focusable and aria-hidden by design: each forwards focus the moment it
+    // receives it (W3C ACT 6cfa84, passed example 4). axe cannot tell and reports aria-hidden-focus on them when it does not see a modal open, which
+    // depends on where the page puts its controls. Only those nodes are set aside, as an incomplete result; "base-ui focus guards forward focus"
+    // below proves the forwarding. Every other node of the rule, and every other rule, is untouched.
+    const isGuard = (node: { target?: unknown }) => String(Array.isArray(node.target) ? node.target[node.target.length - 1] : node.target).includes('data-base-ui-focus-guard')
+    const guardNodes = result.violations.filter(v => v.id === 'aria-hidden-focus').flatMap(v => v.nodes.filter(isGuard))
+    const kept = result.violations.map(v => (v.id === 'aria-hidden-focus' ? { ...v, nodes: v.nodes.filter(node => !isGuard(node)) } : v)).filter(v => v.nodes.length > 0)
+    const violations: Violation[] = kept.map(v => {
       const impact = v.impact ?? 'minor'
       if (impact in counts) counts[impact as keyof typeof counts] += 1
       const data = v.nodes[0]?.any?.[0]?.data as Record<string, unknown> | undefined
@@ -353,6 +360,7 @@ async function scan(page: Page, screen: string, ensure?: () => Promise<void>) {
       return { rule: v.id, impact, help: v.help, nodes: v.nodes.length, selector: String(v.nodes[0]?.target?.[0] ?? ''), detail, nodeList }
     })
     const incomplete: Incomplete[] = []
+    if (guardNodes.length) incomplete.push({ rule: 'aria-hidden-focus', nodes: guardNodes.length, selector: String(guardNodes[0].target?.[0] ?? '') })
     for (const item of result.incomplete) {
       const entry: Incomplete = { rule: item.id, nodes: item.nodes.length, selector: String(item.nodes[0]?.target?.[0] ?? '') }
       if (item.id === 'color-contrast') {
@@ -1492,6 +1500,43 @@ type AnswerFocusWindow = typeof window & { __x05AnswerFocus?: AnswerFocusTrace }
 test.describe('X05 regressions: asynchronous focus ownership', () => {
   test.beforeAll(async () => { await keys.ensure() })
   test.afterAll(() => { writeFocusLog() })
+
+  // The scan sets base-ui's focus guards aside (see scan()). They are valid only if each one forwards focus the moment it gets it (W3C ACT
+  // 6cfa84, passed example 4), so this focuses every guard of the open source-scope list, by script and by Tab / Shift+Tab, and reads where focus lands.
+  test('base-ui focus guards forward focus at once (the scan treats them as incomplete, not as a violation)', async ({ page }) => {
+    await page.goto(keys.url())
+    await expect(page.getByLabel('Research question')).toBeVisible()
+    const scope = page.getByLabel('Source scope')
+    const open = async () => {
+      if (!(await page.getByRole('option').first().isVisible().catch(() => false))) await scope.click()
+      await expect(page.getByRole('option').first()).toBeVisible()
+    }
+    const landing = () => page.evaluate(() => {
+      const a = document.activeElement
+      const box = a?.getBoundingClientRect()
+      return { guard: !!a?.hasAttribute('data-base-ui-focus-guard'), body: a === document.body || a === document.documentElement, tag: a?.tagName ?? '', label: (a?.getAttribute('aria-label') ?? a?.textContent ?? '').trim().slice(0, 40), visible: !!box && box.width > 1 && box.height > 1 }
+    })
+    await open()
+    expect(await page.locator('[data-base-ui-focus-guard]').count(), 'an open Select has focus guards').toBeGreaterThanOrEqual(4)
+    for (const [type, index] of [['inside', 0], ['inside', 1], ['outside', 0], ['outside', 1]] as const) {
+      await open()
+      const guard = page.locator(`[data-base-ui-focus-guard][data-type="${type}"]`).nth(index)
+      await guard.evaluate(el => (el as HTMLElement).focus())
+      await expect.poll(async () => (await landing()).guard, { message: `${type} guard ${index}: focus stayed on the guard`, timeout: 2000 }).toBe(false)
+      const where = await landing()
+      expect(where.guard, `${type} guard ${index}: focus stayed on the guard`).toBe(false)
+      expect(where.body, `${type} guard ${index}: focus was lost to the page`).toBe(false)
+      expect(where.visible, `${type} guard ${index}: focus went to ${where.tag} "${where.label}", which is not visible`).toBe(true)
+    }
+    for (const key of ['Tab', 'Shift+Tab']) {
+      await open()
+      await page.getByRole('option').first().focus()
+      await page.keyboard.press(key)
+      // The guard hands focus on within a frame or two of receiving it; a guard that kept focus would still hold it here.
+      await expect.poll(async () => (await landing()).guard, { message: `${key} from the list ended on a guard`, timeout: 2000 }).toBe(false)
+      expect((await landing()).body, `${key} from the list lost focus to the page`).toBe(false)
+    }
+  })
 
   test('answer handoff uses the run heading before passive effects and keeps it after completion', async ({ page }) => {
     const releaseFile = path.join(keys.dataDir, 'answer-release')

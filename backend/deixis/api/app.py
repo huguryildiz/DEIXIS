@@ -1009,12 +1009,14 @@ def create_app(
         if removed := [v["source_version_id"] for v in work["versions"] if store.was_member(research_id, v["source_version_id"])]:
             # Adding one work on purpose undoes its removal; the versions come back as they were (D50).
             store.restore_sources(research_id, removed)
+            intent.attached_ingested(store, research_id)
             svid = store.work_heads(research_id)[body.work_id]
             level = next(v["access_level"] for v in work["versions"] if v["source_version_id"] == svid)
             return {"work_id": body.work_id, "research_id": research_id, "source_version_id": svid, "access_level": level,
                     "restored": True, "library": library_view(store)}
         version = library_version_to_add(work)
         store.add_to_corpus(research_id, version["source_version_id"], "library", selection_state="included", selection_origin="user")
+        intent.attached_ingested(store, research_id)
         return {"work_id": body.work_id, "research_id": research_id, "source_version_id": version["source_version_id"],
                 "access_level": version["access_level"], "restored": False, "library": library_view(store)}
 
@@ -1103,8 +1105,7 @@ def create_app(
                                     body.review_mode, body.review_model, body.review_reasoning_effort,
                                     literature_connection=literature_connection, review_connection=review_connection,
                                     seed_mode=body.seed_mode,
-                                    key_terms=body.key_terms, intent=body.intent,
-                                    comparison_frame=intent.comparison_frame(body.question) if body.intent == "compare" else None)
+                                    key_terms=body.key_terms, intent=body.intent)
         return research_view(store, rid)
 
     @app.get("/api/settings")
@@ -1578,6 +1579,7 @@ def create_app(
     async def restore_sources(research_id: str, body: SourceRestore, request: Request) -> dict[str, Any]:
         store = store_of(request)
         restored = store.restore_sources(research_id, body.source_version_ids)
+        intent.attached_ingested(store, research_id)
         return {**research_view(store, research_id), "changed_source_version_ids": restored}
 
     @app.post("/api/researches/{research_id}/sources/purge")

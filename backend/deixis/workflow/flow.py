@@ -3984,6 +3984,10 @@ class ResearchFlow:
         rows = tables.active_rows(table_id)[:MAX_FILL_SOURCES]
         abstracts = [p for svid in rows for p in self.store.passages_for(svid) if p["kind"] == "abstract"]
         target = {"table_id": table_id, "source_id": None, "columns": [extraction_column(c) for c in columns], "passage_scope": None}
+        from deixis.workflow import intent
+        # A `compare` research frames the suggestions with the question of the revision this run runs under (S5a).
+        if frame := intent.frame_for(self.store.research(run["research_id"]), scope):
+            target["comparison_frame"] = frame
         self._checkpoint(run_id)
         output = await self._model_step(run, scope, "table_columns", "table_columns", source_ids=rows, passage_rows=abstracts,
                                         extraction_target=target)

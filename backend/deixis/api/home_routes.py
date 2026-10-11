@@ -12,15 +12,18 @@ from typing import Any
 from fastapi import Request
 
 from deixis.workflow.store import Store
+from deixis.workflow.views import answer_is_current
 
 MAX_SUGGESTIONS = 2
 
 
 def suggestions(store: Store, limit: int = MAX_SUGGESTIONS) -> list[dict[str, Any]]:
-    """Newest first, at most `limit`: each research's latest structurally valid answer, kept only while it was made for
-    the research's current question (an answer to an earlier revision is stale and gives nothing)."""
+    """Newest first, at most `limit`: each research's latest structurally valid answer, kept only while it is current
+    for every reason the answer view checks (question, source selection, late full text, replaced source text); an
+    out-of-date answer gives nothing."""
     rows = store.conn.execute(
-        "SELECT a.id, a.research_id, a.draft_json, a.created_at, r.title FROM answers a"
+        "SELECT a.id, a.research_id, a.draft_json, a.created_at, a.scope_revision, a.selection_revision, a.step_input_id,"
+        " r.title, r.current_scope_revision, r.selection_revision AS research_selection_revision FROM answers a"
         " JOIN researches r ON r.id = a.research_id"
         " WHERE r.trashed_at IS NULL AND a.status = 'structurally_valid' AND a.scope_revision = r.current_scope_revision"
         " AND a.rowid = (SELECT b.rowid FROM answers b WHERE b.research_id = a.research_id"
@@ -28,6 +31,10 @@ def suggestions(store: Store, limit: int = MAX_SUGGESTIONS) -> list[dict[str, An
         " ORDER BY a.created_at DESC, a.rowid DESC").fetchall()
     found: list[dict[str, Any]] = []
     for row in rows:
+        research = {"current_scope_revision": row["current_scope_revision"],
+                    "selection_revision": row["research_selection_revision"]}
+        if not answer_is_current(store, research, dict(row)):
+            continue
         draft = json.loads(row["draft_json"]) if row["draft_json"] else {}
         for text in draft.get("unanswered_aspects") or []:
             if isinstance(text, str) and text.strip():

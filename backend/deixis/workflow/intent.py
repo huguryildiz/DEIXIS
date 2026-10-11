@@ -4,9 +4,10 @@
 `auto_answer: false`, so no answer is queued. `table` and `compare` build the study table instead of the answer: after
 discovery through the study-table chain (`report_pipeline.start`; its rows are the sources included at that moment);
 in an `attached` research, which runs no discovery, as a table of the attached sources once a file is ingested, with
-no columns, so column suggestion and fill start as for a table made by hand. `compare` also stores a comparison
-question frame on the research (the table has no field for it). Nothing here broadens the task: the intent is the
-person's explicit choice, stored with the research and shown with it.
+no columns, so column suggestion and fill start as for a table made by hand. In a `compare` research every column
+suggestion step is given a comparison frame written by code from the question of the scope revision it runs under
+(`extraction_target.comparison_frame`); the method file says how to use it. Nothing here broadens the task: the intent
+is the person's explicit choice, stored with the research and shown with it.
 """
 
 from __future__ import annotations
@@ -23,9 +24,14 @@ TABLE_TITLE = "Study table"
 
 
 def comparison_frame(question: str) -> str:
-    """The frame a `compare` research keeps for its study table's columns: the question, framed as a comparison of
-    methods. Written by code from the question as typed; no model is asked."""
+    """The frame a `compare` research gives its study table's column suggestions: the question, framed as a
+    comparison of methods. Written by code from the question as typed; no model is asked."""
     return f"Compare the methods the sources use for this question: {' '.join(question.split())}"
+
+
+def frame_for(research: dict[str, Any], scope: dict[str, Any]) -> str | None:
+    """The comparison frame of `research` under `scope` (one of its revisions), or None when it is not a `compare`."""
+    return comparison_frame(scope["question"]) if research["intent"] == "compare" else None
 
 
 def after_discovery(store: Store, run: dict[str, Any]) -> None:
@@ -62,7 +68,7 @@ def after_discovery(store: Store, run: dict[str, Any]) -> None:
 def attached_ingested(store: Store, research_id: str) -> str | None:
     """Keep the study table of an `attached` `table`/`compare` research holding its attached sources.
 
-    Called once a file or item has been ingested. The first call creates the table with explicit rows (the
+    Called once a file, a Zotero item or a Library work has been added, or removed sources restored. The first call creates the table with explicit rows (the
     research's included sources, which in an `attached` research are the attached ones); a later call adds the
     sources that were never rows of it. A row the person removed stays removed, and a trashed table is left alone.
     One table per research: the idempotency key is the research's, so a repeated or retried call returns it.

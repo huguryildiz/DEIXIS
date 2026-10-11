@@ -605,7 +605,9 @@ export type QueueAnswerResult = {
 }
 export type ResearchView = {
   research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string
-    intent: ResearchIntent; comparison_frame: string | null }
+    intent: ResearchIntent; comparison_frame: string | null }  // the frame follows the current question (compare only)
+  // A table/compare discovery of the current question that wrote no table, and why; null otherwise (S5a).
+  intent_outcome: IntentOutcome | null
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
   reportRuns: ReportSummary[]
   // The probe set's columns and the probes no arm found (slice 19).
@@ -1433,9 +1435,11 @@ export const usageApi = {
 }
 
 // Home endpoints (api/home_routes.py, S5a). A research's intent is what it produces: a drafted report, the papers only,
-// or a study table (`compare` also stores a comparison question frame). Suggestions are the stored unanswered aspects of
-// the latest current, valid answers: the answer model's notes, labelled only as suggestions, never as proven gaps.
+// or a study table (`compare` column suggestions also get a comparison frame). Suggestions are the stored unanswered
+// aspects of each research's latest valid answer while it is current for every reason: the answer model's notes,
+// labelled only as suggestions, never as proven gaps.
 export type ResearchIntent = 'report' | 'papers' | 'table' | 'compare'
+export type IntentOutcome = { kind: 'table_skipped'; reason: 'no_included_source' | 'scope_revised' | 'run_active'; run_id: string }
 export type Suggestion = { text: string; research_id: string; research_title: string; answer_id: string; created_at: string }
 
 export const homeApi = {

@@ -508,6 +508,10 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
                 issues.append(Issue("passage_outside_extraction_source", f"/passages/{p['passage_id']}", p["source_id"]))
         if not 1 <= len(target["columns"]) <= MAX_COLUMNS_PER_CALL:
             issues.append(Issue("extraction_column_count", "/extraction_target/columns", str(len(target["columns"]))))
+    if target is not None and "comparison_frame" in target and step_input["task_type"] != "table_columns":
+        # The compare intent frames column suggestions only; a cell is read against its column, never a frame.
+        issues.append(Issue("comparison_frame_outside_column_suggestions", "/extraction_target/comparison_frame",
+                            step_input["task_type"]))
     vocabulary_target = step_input.get("vocabulary_target")
     if (vocabulary_target is not None) != (step_input["task_type"] in VOCABULARY_TASKS):
         issues.append(Issue("vocabulary_target_mismatch", "/vocabulary_target", step_input["task_type"]))

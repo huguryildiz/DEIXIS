@@ -1349,6 +1349,12 @@
             }
           }
         },
+        "comparison_frame": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4200,
+          "description": "table_columns steps of a research the person asked to compare methods only: a frame written by code from the question of the scope revision the step runs under. Absent everywhere else."
+        },
         "passage_scope": {
           "description": "How much of the source's stored text the step was given. all_pages_given: every extracted PDF passage was given, which is still not a reading of the whole publication.",
           "anyOf": [

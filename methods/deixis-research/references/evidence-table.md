@@ -87,6 +87,12 @@ person reviewing them.
 - Suggest fields the question needs compared across sources, such as the
   method, the setting, a key parameter or the main result. Do not repeat a
   current column, and do not give two columns the same name.
+- When `extraction_target.comparison_frame` is present, the person asked to
+  compare methods. Read the frame as the question the table serves: suggest
+  columns that set the sources' methods side by side (which method, under what
+  setting or data, compared against what, measured by what, with what result),
+  each still answerable from one source alone. The frame is written by the
+  application from the question; it is not a source and not evidence.
 - Write `instruction` as for a human annotator reading one source: what to look
   for, which answer to take when a source gives several, and when the column
   does not apply.

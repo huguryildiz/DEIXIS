@@ -459,10 +459,50 @@ def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[di
     return uses
 
 
+def source_text_changed(store: Store, given: dict[str, Any] | None) -> bool:
+    """Whether a file or text extraction an answer was given is no longer in use (D45)."""
+    return bool(given) and any(
+        status != "current" for status in store.evidence_statuses([p["passage_id"] for p in given["passages"]]).values())
+
+
+def late_applicability(late: dict[str, Any], applicability: str) -> str:
+    """Pending abstract candidates can be excluded without bumping the included-source revision; an answer whose late
+    full text excluded a work is then out of date for its selection."""
+    if late.get("late_revision_status", {}).get("late_excluded") and applicability == "current":
+        return "stale_selection"
+    return applicability
+
+
+def answer_is_current(store: Store, research: dict[str, Any], answer: dict[str, Any]) -> bool:
+    """An answer row that is current for every reason the answer view checks: the question and the selection it was
+    made for are today's, no late full text excluded a work it read, and no text it was given has been replaced."""
+    from deixis.workflow import late_revision
+    applicability = late_applicability(late_revision.answer_view(store, answer["id"]), result_applicability(
+        answer["scope_revision"], research["current_scope_revision"], answer["selection_revision"], research["selection_revision"]))
+    given = store.step_input_payload(answer["step_input_id"]) if answer["step_input_id"] else None
+    return applicability == "current" and not source_text_changed(store, given)
+
+
+def intent_outcome(store: Store, research: dict[str, Any]) -> dict[str, Any] | None:
+    """What a `table`/`compare` discovery of the current question did instead of the answer, when it wrote no table:
+    the latest `study_table_skipped` of a run of this revision (UI parity S5a). None otherwise."""
+    row = store.conn.execute(
+        "SELECT e.payload_json, e.run_id FROM events e JOIN runs r ON r.id = e.run_id WHERE e.research_id = ?"
+        " AND e.type = 'study_table_skipped' AND r.scope_revision = ? ORDER BY e.id DESC LIMIT 1",
+        (research["id"], research["current_scope_revision"])).fetchone()
+    if row is None:
+        return None
+    return {"kind": "table_skipped", "reason": json.loads(row["payload_json"])["reason"], "run_id": row["run_id"]}
+
+
 def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     conn = store.conn
     research = store.research(research_id)
     scope = store.scope(research_id)
+    from deixis.workflow import intent as intent_rules
+    # The frame of a `compare` research follows its current question; its column suggestions get the frame of the
+    # revision they run under (UI parity S5a).
+    research["comparison_frame"] = intent_rules.frame_for(research, scope)
     # One queue context: the facts and every work's outcome, read once for all four (slice 19).
     ctx = queue_context(store, research_id)
     probe = probe_rules.probe_set(ctx)
@@ -598,8 +638,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "model": {"connection": session["connection"], "requested_model": session["requested_model"],
                       "resolved_model": session["resolved_model"], "token_usage": _json(session["token_usage_json"])} if session else None,
             # A file or text extraction this answer read is no longer in use; its quotes still open what was read (D45).
-            "source_text_changed": bool(given) and any(
-                status != "current" for status in store.evidence_statuses([p["passage_id"] for p in given["passages"]]).values()),
+            "source_text_changed": source_text_changed(store, given),
             "inputs_given": {"sources": len(given["sources"]), "passages": len(given["passages"]),
                              "source_ids": [s["source_id"] for s in given["sources"]]} if given else None,
             # Where the flow stood when this answer's run started (slice 20); null for an answer whose run kept none,
@@ -610,10 +649,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                 if e["kind"] == "abstract"} - {e["source_version_id"] for c in claims for e in c["evidence"]
                 if e["kind"] != "abstract"})} if fast_answer else {}),
         })
-        if (answers[-1].get("late_revision_status", {}).get("late_excluded")
-                and answers[-1]["applicability"] == "current"):
-            # Pending abstract candidates can be excluded without bumping the included-source revision.
-            answers[-1]["applicability"] = "stale_selection"
+        answers[-1]["applicability"] = late_applicability(answers[-1], answers[-1]["applicability"])
     # Similarity from the chosen semantic search model only; with semantic search off, no source has one (D30).
     provider, model = embeddings.chosen(store.setting("semantic_search"))
     similarity_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None
@@ -779,7 +815,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         "SELECT id, status, report_version, created_at FROM reports"
         " WHERE research_id = ? ORDER BY created_at DESC, rowid DESC", (research_id,),
     )]
-    return {"research": research, "scope": scope_view, "runs": runs, "search_runs": search_runs, "sources": sources,
+    return {"research": research, "intent_outcome": intent_outcome(store, research), "scope": scope_view, "runs": runs, "search_runs": search_runs, "sources": sources,
             "answers": answers, "reportRuns": report_runs, "counts": counts, "last_event_id": last_event,
             # The semantic search arm for this research's current revision (slice 21); no count of what will be sent.
             "semantic": semantic_view(store, research_id, scope),

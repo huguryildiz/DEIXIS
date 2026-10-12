@@ -463,10 +463,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     void act(() => api.controlRun(target.id, action)).then(ok => { if (ok && action === 'resume') toRunStatus(target.id, origin) })
   }
   // The too-broad notice's Search again (R21): the rewritten question becomes the next revision, which then searches.
-  const rewriteAndSearch = async (question: string) => {
+  const rewriteAndSearch = async (question: string, keyTerms: string | null) => {
     if (!seedSearchReady) { toast('error', t('Choose a readable PDF to guide the search.')); return }
     await act(async () => {
-      await api.reviseScope(id, question, view.research.version, view.scope.key_terms ?? null)
+      await api.reviseScope(id, question, view.research.version, keyTerms)
       await api.startRun(id, 'discovery', crypto.randomUUID())
     }, t('Question revised. The new revision searches.'))
   }
@@ -519,7 +519,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) && panel !== 'table' && <button type="button" className="run-chip" title={t('Open the Evidence table panel to control this run')} onClick={() => openPanel('table')}>
             <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
           </button>}
-          {mainRun && <RunChip run={mainRun} hasAnswer={hasAnswer} busy={busy} onControl={action => controlRun(mainRun, action)} />}
+          {mainRun && <RunChip run={mainRun} hasAnswer={hasAnswer} busy={busy} inThread={TRANSCRIPT_KINDS.has(mainRun.kind)} onControl={action => controlRun(mainRun, action)} />}
           {queueCount > 0 && <button type="button" className="wait-chip" onClick={showQueue}><Inbox size={16} aria-hidden />{t('{n} waiting for you', { n: queueCount })}</button>}
         </>}
       <Button ref={reviseButton} variant="ghost" size="sm" className="research-topbar-action research-revise" title={t('Revise question')} disabled={active} aria-expanded={Boolean(revising)}

@@ -121,7 +121,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
   onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
   // The too-broad notice (R21): the rewritten question is saved as a new revision, which then searches.
-  onRewrite?: (question: string) => Promise<void>
+  onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
   // The reading step's "Get more full text" link opens the PDFs panel.
   onOpenPdfs?: () => void
   busy?: boolean
@@ -179,7 +179,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   onGiveKeyTerms?: () => void
   onChooseCodeQuery?: (run: Run) => Promise<void>
   onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
-  onRewrite?: (question: string) => Promise<void>
+  onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
   onOpenPdfs?: () => void
   busy: boolean
   queueLine?: { count: number; open: () => void } | null; children: ReactNode
@@ -340,15 +340,20 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     return { outcomes, works, ok }
   }
   // The full-text reading counts works, not model calls: each work is read twice, under keys naming the work and the pass.
+  // A work counts as read only when both passes stored a result; a pass that failed, has an unknown outcome or was cut
+  // off by the read cutoff leaves the work not read (the backend's adjudication does the same), and those works are
+  // counted apart. Every line and detail of the reading uses these counts.
   const readingWorks = (group: Step[]) => {
     const passes = new Map<string, Step[]>()
     group.filter(s => s.kind === 'model:fulltext_adjudication').forEach(s => {
       const work = s.operation_key.replace(/^fulltext_adjudication:/, '').replace(/:[^:]*$/, '')
       passes.set(work, [...(passes.get(work) ?? []), s])
     })
-    const settled = [...passes.values()].filter(steps => steps.filter(s => s.status === 'succeeded' || troubled(s)).length >= 2).length
+    const read = [...passes.values()].filter(steps => steps.filter(s => s.status === 'succeeded').length >= 2).length
+    const notRead = [...passes.values()].filter(steps => steps.filter(s => s.status === 'succeeded').length < 2
+      && steps.some(s => troubled(s) || s.status === 'cancelled') && !steps.some(s => s.status === 'pending' || s.status === 'running')).length
     const planned = group.find(s => s.kind === 'code:adjudication_plan')?.output?.works?.length ?? 0
-    return { done: settled, total: Math.max(planned, passes.size) }
+    return { done: read, notRead, total: Math.max(planned, passes.size) }
   }
   const equationPdfs = (group: Step[]) => new Set(group.filter(s => s.kind === 'read_equations').map(s => s.operation_key)).size
 
@@ -739,20 +744,30 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   // One detail row: a label and its value, as the mockup's `.step-detail .row`.
   const row = (label: ReactNode, value: ReactNode, key?: string) => <div className="step-row" key={key}><span>{label}</span><span className="step-row-value">{value}</span></div>
   const searchRows = () => {
-    // A query read page by page has one search row per page; the row shows it once, with its pages summed. The semantic
-    // search sends the question itself; the keyword queries are numbered as the plan lists them.
-    const keywordTexts = [...new Set([...(run.approval?.approved.queries ?? []).map(q => q.query_text), ...searches.map(s => s.query_text)])]
-      .filter(text => text !== view.scope.question && text !== view.semantic?.english_question?.text)
+    // A query read page by page has one search row per page; the row shows it once, with its pages summed. The kind
+    // comes from the operation key of the step that sent it (fast_search.py): the semantic request, one per seed, the
+    // keyword query numbered as the plan lists it, or the Semantic Scholar bulk query; the text sent is in the plan's rows.
+    const planQueries = run.approval?.approved.queries ?? []
+    const queryKind = (s: SearchRun) => {
+      const key = steps.find(step => step.id === s.step_id)?.operation_key ?? ''
+      const seed = /^search:fast:semantic:seed:(\d+)/.exec(key)
+      if (seed) return t('semantic, seed {n}', { n: Number(seed[1]) + 1 })
+      if (key.startsWith('search:fast:semantic')) return t('semantic')
+      const keyword = /^search:(\d+)(?::page:\d+)?$/.exec(key)
+      const index = keyword ? Number(keyword[1]) : key.startsWith('search:fast:s2_bulk') ? planQueries.findIndex(q => q.provider_id === 'semantic_scholar') : -1
+      return index >= 0 ? t('keyword, query {n}', { n: index + 1 }) : t('keyword')
+    }
     return [...searches.reduce((byQuery, s) => byQuery.set(`${s.provider}\n${s.query_text}`, [...(byQuery.get(`${s.provider}\n${s.query_text}`) ?? []), s]), new Map<string, SearchRun[]>()).values()].map(pages => {
       const s = pages[0]
       const failed = pages.find(p => p.status !== 'completed' && p.status !== 'zero_results')
       const count = pages.reduce((sum, p) => sum + p.result_count, 0)
       const total = pages.find(p => p.provider_total !== null)?.provider_total ?? null
       const retryCount = pages.reduce((sum, page) => sum + (page.error?.retries ?? 0), 0)
-      const kind = keywordTexts.includes(s.query_text) ? t('keyword, query {n}', { n: keywordTexts.indexOf(s.query_text) + 1 }) : t('semantic')
+      const kind = queryKind(s)
       return <div key={s.id} className={`step-row${failed ? ' is-attention' : ''}`}>
         <span><ConnectionIcon id={s.provider} />{providerName(s.provider)} · {kind}</span>
         <span className="step-row-value">{failed && count === 0 ? t(failed.status.replace('_', ' ')) : total === null ? t('{n} taken', { n: count.toLocaleString(uiLocale()) }) : t('{count} of {total} taken', { count: count.toLocaleString(uiLocale()), total: total.toLocaleString(uiLocale()) })}{pages.length > 1 && <> · {plural(pages.length, '{n} page', '{n} pages')}</>}{failed && count > 0 && <> · {t(failed.status.replace('_', ' '))}</>}{retryCount > 0 && <> · {providerRetryText(retryCount)}</>}</span>
+        <code className="step-row-query" title={s.query_text}>{s.query_text}</code>
       </div>
     })
   }
@@ -794,6 +809,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       if (run.source_counts?.counted && run.source_counts.chain) parts.push(row(t('Works the chain brought'), t('{works} works, {only} not found by any search', { works: run.source_counts.chain.works, only: run.source_counts.chain.only }), 'brought'))
       if (chainDone) parts.push(<div key="requests">{chainLine}</div>)
       const limits = run.approval?.chaining
+      // How the chain picks its seeds and which works it keeps, with the arrival cutoff (fast_chain_v1), as the approval
+      // record said it before S9.
+      if (limits) parts.push(<div key="rule">{t('OpenAlex only. While the search runs, OpenAlex is asked for the works that the first {seeds} works of its semantic search cite, and for the works that cite them; when that search gives fewer works, the ranking fills the list. Works you verified are not used as seeds. A new work is kept when a setting or task term stands in its title or abstract and its reply arrives a few seconds before the ranking stage ends; the run says how many seeds it used once the search is done.', { seeds: limits.seeds })}</div>)
       if (limits) parts.push(<div key="limits">{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: limits.backward_requests, forward: limits.forward_requests, cap: limits.citing_cap, attempts: limits.attempt_limit })}</div>)
     }
     if (key === 'screen' && run.kind === 'discovery') {
@@ -807,9 +825,13 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     // The works awaiting a person, named once on the run that read them: under its screening, or under its reading when
     // the run reads only.
     if (queueLine && key === (order.includes('screen') ? 'screen' : 'pdf')) parts.push(row(t('Waiting for your decision'), <>{queueLine.count} · <button type="button" className="step-link" onClick={queueLine.open}>{t('Open')}</button></>, 'queue'))
+    if (key === 'pdf' && run.kind === 'discovery' && fetchSummary) parts.push(row(t('Full text retrieved'), fetchSummary.fetched ?? 0, 'fetched'))
+    if (key === 'pdf' && group.some(s => s.kind === 'model:fulltext_adjudication' || s.kind === 'code:adjudication_plan')) {
+      const { done, notRead } = readingWorks(group)
+      parts.push(row(t('Full text read (selected pages)'), done, 'read'))
+      if (notRead) parts.push(row(t('Not read: a call failed or its outcome is unknown'), notRead, 'not-read'))
+    }
     if (key === 'pdf' && run.kind === 'discovery') {
-      if (fetchSummary) parts.push(row(t('Full text retrieved'), fetchSummary.fetched ?? 0, 'fetched'))
-      if (group.some(s => s.kind === 'model:fulltext_adjudication' || s.kind === 'code:adjudication_plan')) parts.push(row(t('Full text read (selected pages)'), readingWorks(group).done, 'read'))
       if (fiveCounts) parts.push(row(t('Passed the abstract stage, full text not tried'), <>{fiveCounts.not_read_not_tried}{onOpenPdfs && fiveCounts.not_read_not_tried > 0 && <> · <button type="button" className="step-link" onClick={onOpenPdfs}>{t('Get more full text')}</button></>}</>, 'not-tried'))
       if (fastPath?.K) parts.push(row(t('Full-text limit at {depth} depth', { depth: t(effortLabels[fastPath.mode as keyof typeof effortLabels] ?? fastPath.mode ?? '') }), fastPath.K, 'limit'))
     }
@@ -933,7 +955,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       <div className="notice-body">
         <p>{vocabularyEnd ? pauseReasonText(run.pause_reason, run.error) : <b>{pauseReasonText(run.pause_reason, run.error)}</b>}</p>
         {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
-        {vocabularyEnd && !olderRevision && onRewrite && <RewriteField question={view.scope.question} busy={busy} onRewrite={onRewrite} />}
+        {vocabularyEnd && !olderRevision && onRewrite && <RewriteField question={view.scope.question} keyTerms={view.scope.key_terms ?? null} busy={busy} onRewrite={onRewrite} />}
       </div>
     </div>}
     {children}
@@ -944,12 +966,22 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
 // The way on from a question whose words cannot be searched (R21): a field holding the question to rewrite, and Search
 // again, which saves the rewritten question as a new revision and searches it. Editing the plan itself waits for the
 // Search plan panel (S23b).
-function RewriteField({ question, busy, onRewrite }: { question: string; busy: boolean; onRewrite: (question: string) => Promise<void> }) {
+function RewriteField({ question, keyTerms, busy, onRewrite }: {
+  question: string; keyTerms: string | null; busy: boolean; onRewrite: (question: string, keyTerms: string | null) => Promise<void>
+}) {
   const [draft, setDraft] = useState(question)
+  const [terms, setTerms] = useState(keyTerms ?? '')
+  // Stored key terms go into the search ahead of the question, so they are shown here to change, never sent unseen. An
+  // emptied field is sent as '' (null would carry the old terms over to the new revision).
+  const changed = draft.trim() !== question.trim() || terms.trim() !== (keyTerms ?? '').trim()
   return <>
     <textarea className="notice-field" rows={3} aria-label={t('Rewrite the question')} value={draft} onChange={e => setDraft(e.target.value)} />
+    {keyTerms && <label className="notice-label">{t('English key terms (optional)')}
+      <input className="notice-field" value={terms} maxLength={500} dir="auto" onChange={e => setTerms(e.target.value)} aria-describedby="rewrite-key-terms-hint" />
+      <span id="rewrite-key-terms-hint" className="notice-hint">{t('The search uses these terms ahead of the question.')}</span>
+    </label>}
     <div className="notice-actions">
-      <Button size="sm" disabled={busy || !draft.trim() || draft.trim() === question.trim()} onClick={() => void onRewrite(draft.trim())}><Search size={14} aria-hidden />{t('Search again')}</Button>
+      <Button size="sm" disabled={busy || !draft.trim() || !changed} onClick={() => void onRewrite(draft.trim(), keyTerms ? terms.trim() : null)}><Search size={14} aria-hidden />{t('Search again')}</Button>
     </div>
   </>
 }

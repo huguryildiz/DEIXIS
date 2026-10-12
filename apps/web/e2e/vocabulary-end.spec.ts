@@ -136,3 +136,36 @@ for (const width of [1440, 390]) {
     })
   }
 }
+
+// Stored key terms go into the search ahead of the question, so the rewrite shows them to change: a narrower question
+// with the old terms hidden would search the same broad terms again (Sol S9 r1). The fixture cannot end a run on terms a
+// person gave (they are searched as given), so the view of the ended revision is shown with stored terms added; what
+// Search again sends is the backend's real revision.
+test('T: the rewrite shows the stored key terms and searches with the edited ones', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const created = await page.request.post(`${server.url}/api/researches`, { headers: await headers(page), data: {
+    question: CASES[1].question, model_connection: 'codex', requested_model: 'fixture-model', effort: 'quick' } })
+  expect(created.status()).toBe(201)
+  const rid = (await created.json()).research.id as string
+  await page.route(url => url.pathname === `/api/researches/${rid}`, async route => {
+    const response = await route.fetch()
+    const body = await response.json()
+    if (body.scope.revision === 1) body.scope.key_terms = 'relay networks'
+    await route.fulfill({ response, json: body })
+  })
+  expect((await page.request.post(`${server.url}/api/researches/${rid}/runs`, { headers: await headers(page), data: { kind: 'discovery' } })).ok()).toBe(true)
+  await page.goto(`${server.url}/#/research/${rid}`)
+  const note = page.locator('.chat-note.notice.is-warning')
+  await expect(note).toContainText(CASES[1].text, { timeout: 60_000 })
+  const terms = note.getByRole('textbox', { name: 'English key terms (optional)' })
+  await expect(terms).toHaveValue('relay networks')
+  await expect(note).toContainText('The search uses these terms ahead of the question.')
+  await note.getByRole('textbox', { name: 'Rewrite the question' }).fill(QUESTION)
+  await terms.fill('molecule release scheduling')
+  await note.getByRole('button', { name: 'Search again' }).click()
+  await expect.poll(async () => {
+    const current = await (await page.request.get(`${server.url}/api/researches/${rid}`)).json() as { scope: { revision: number; key_terms: string | null } }
+    return [current.scope.revision, current.scope.key_terms]
+  }, { timeout: 30_000 }).toEqual([2, 'molecule release scheduling'])
+  await page.unrouteAll({ behavior: 'wait' })
+})

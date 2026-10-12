@@ -393,6 +393,37 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await expect(chip(page)).toHaveCount(0, { timeout: 30_000 })
   })
 
+  test('a paused run the thread does not show (a title suggestion) keeps Resume and Cancel in the topbar', async () => {
+    test.setTimeout(150_000)
+    const rid = await create(api, 'How is SYNTHETIC molecule release scheduling optimized?')
+    await settled(api, rid)
+    // The view as it would be with a paused title suggestion as the latest run: it has no turn and so no notice.
+    const title = { id: 'run_SYNTHETIC_title', research_id: rid, scope_revision: 1, kind: 'research_title', status: 'paused',
+      stage: null, pause_reason: 'user_requested', budget: {}, usage: {}, error: null, target: null, steps: [],
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    const isView = (url: URL) => url.pathname === `/api/researches/${rid}`
+    await page.route(isView, async route => {
+      const response = await route.fetch()
+      const body = await response.json()
+      body.runs = [title, ...body.runs]
+      await route.fulfill({ response, json: body })
+    })
+    const posted: string[] = []
+    await page.route(url => url.pathname.startsWith('/api/runs/run_SYNTHETIC_title/'), async route => {
+      posted.push(new URL(route.request().url()).pathname)
+      await route.fulfill({ json: { ...title, status: 'queued' } })
+    })
+    try {
+      await page.goto(`${server.url()}/#/research/${rid}`)
+      await expect(chip(page)).toHaveText(/· Paused$/)
+      await expect(page.locator('.chat-note.notice')).toHaveCount(0)
+      await expect(topbar(page).getByRole('button', { name: 'Resume', exact: true })).toBeVisible()
+      await expect(topbar(page).getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+      await topbar(page).getByRole('button', { name: 'Resume', exact: true }).click()
+      await expect.poll(() => posted).toEqual(['/api/runs/run_SYNTHETIC_title/resume'])
+    } finally { await page.unrouteAll({ behavior: 'wait' }) }
+  })
+
   test('Move to Trash leaves the research; Undo restores it', async () => {
     const trashed = await create(api, 'SYNTHETIC research for the trash row', false)
     await page.goto(`${server.url()}/#/research/${trashed}`)

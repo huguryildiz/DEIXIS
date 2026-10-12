@@ -313,6 +313,8 @@ export type CitationChaining = {
 }
 export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string
+  // The run step that sent the request; its operation key names the query kind (semantic, seed, keyword n).
+  step_id: string
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null; service_kind?: string; error_kind?: string; reset_at?: string | null; retries?: number } | null
 }
 export type Asset = {

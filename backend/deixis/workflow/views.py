@@ -563,7 +563,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         runs.append(run)
 
     search_runs = [
-        {**{k: r[k] for k in ("id", "run_id", "scope_revision", "provider", "query_text", "access_mode", "status", "result_count", "provider_total", "page_limit", "retrieved_at",
+        {**{k: r[k] for k in ("id", "run_id", "step_id", "scope_revision", "provider", "query_text", "access_mode", "status", "result_count", "provider_total", "page_limit", "retrieved_at",
                               "page_number", "read_limit", "read_total", "stop_reason", "unread_count")},
          "error": _json(r["error_json"])}
         for r in conn.execute("SELECT * FROM search_runs WHERE research_id = ? ORDER BY retrieved_at", (research_id,))

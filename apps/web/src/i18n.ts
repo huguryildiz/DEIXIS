@@ -3876,4 +3876,9 @@ const tr: Record<string, string> = {
   'Resume run': 'İşleme devam et',
   'Rewrite the question': 'Soruyu yeniden yazın',
   'Question revised. The new revision searches.': 'Soru revize edildi. Yeni revizyon arama yapıyor.',
+  // UI parity S9, Sol round 1
+  'Not read: a call failed or its outcome is unknown': 'Okunmadı: bir çağrı başarısız oldu ya da sonucu bilinmiyor',
+  'semantic, seed {n}': 'anlamsal, tohum {n}',
+  'keyword': 'anahtar sözcük',
+  'The search uses these terms ahead of the question.': 'Arama bu terimleri sorudan önce kullanır.',
 }

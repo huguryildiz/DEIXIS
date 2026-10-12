@@ -52,7 +52,7 @@ class StepsServer {
 type Api = { context: APIRequestContext; token: string }
 type Funnel = { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number }
 type View = {
-  runs: Array<{ id: string; kind: string; status: string; budget: { fast_path?: { K?: number } } }>
+  runs: Array<{ id: string; kind: string; status: string; budget: { fast_path?: { K?: number } }; steps?: Array<{ kind: string; status: string; operation_key: string }> }>
   counts: { queue: number; funnel?: Funnel | null; flow?: { five: { not_read_not_tried: number }; buckets: { not_screened: number; out_of_scope_model: number; out_of_scope_code: number } } | null }
   answers: Array<{ run_id: string; claims: Array<{ evidence: Array<{ passage_id: string; source_version_id: string }> }>; inputs_given: { sources: number; passages: number } | null }>
 }
@@ -155,12 +155,18 @@ test.describe.serial('S9: the steps list', () => {
     const search = await open('Searched')
     await expect(search.locator('.step-row', { hasText: 'OpenAlex · semantic' })).toContainText(/\d+ of \d+ taken/)
     await expect(search.locator('.step-row', { hasText: 'OpenAlex · keyword, query 1' })).toContainText(/\d+ of \d+ taken/)
+    // The kind comes from the step's operation key, and the text each request sent is shown under its row.
+    await expect(search.locator('.step-row', { hasText: 'OpenAlex · keyword, query 1' }).locator('.step-row-query')).not.toBeEmpty()
+    await expect(search.locator('.step-row', { hasText: 'OpenAlex · semantic' }).locator('.step-row-query')).not.toBeEmpty()
     await expect(search.locator('.step-row', { hasText: 'Records merged by DOI' })).toContainText(`${funnel.retrieved} → ${funnel.unique}`)
     // Chaining: the seeds' reference lists and citing works, as records returned, and the requests the chain sent.
     const chain = await open('Followed')
     await expect(chain.locator('.step-row', { hasText: /Reference lists of \d+ seed works/ })).toContainText(/records? returned/)
     await expect(chain.locator('.step-row', { hasText: 'Works citing the seeds' })).toContainText(/records? returned/)
     await expect(chain).toContainText(/\d+ requests? sent/)
+    // How the seeds are chosen and which works are kept before the cutoff, as the approval record said it before S9.
+    await expect(chain).toContainText('Works you verified are not used as seeds.')
+    await expect(chain).toContainText('its reply arrives a few seconds before the ranking stage ends')
     // Screening: read twice, how many were read and not, how many passed, and the queue, which opens its panel.
     const screen = await open('Screened')
     await expect(screen).toContainText('Each batch is read twice by the literature model. An abstract alone never includes a work.')
@@ -192,6 +198,38 @@ test.describe.serial('S9: the steps list', () => {
     // Closing a phase folds its details again.
     await line(page, 'Checked').click()
     await expect(detail('Checked')).toHaveCount(0)
+  })
+
+  test('a full-text pass that failed or has an unknown outcome leaves its work out of the read count', async () => {
+    const rid = page.url().split('#/research/')[1].split('/')[0]
+    const view = await viewOf(api, rid)
+    const discovery = view.runs.find(r => r.kind === 'discovery')!
+    const workOf = (key: string) => key.replace(/^fulltext_adjudication:/, '').replace(/:[^:]*$/, '')
+    const passes = (discovery.steps ?? []).filter(s => s.kind === 'model:fulltext_adjudication' && s.status === 'succeeded')
+    const read = [...new Set(passes.map(s => workOf(s.operation_key)))].filter(w => passes.filter(s => workOf(s.operation_key) === w).length >= 2)
+    expect(read.length).toBeGreaterThanOrEqual(2)
+    await expect(line(page, /^Read \d+ works/)).toContainText(`Read ${read.length} works`)
+    // The view as it would be if one pass of one work had failed and one pass of another had no known outcome.
+    const changed = new Map([[read[0], 'failed'], [read[1], 'outcome_unknown']])
+    await page.route(url => url.pathname === `/api/researches/${rid}`, async route => {
+      const response = await route.fetch()
+      const body = await response.json()
+      const run = body.runs.find((r: { id: string }) => r.id === discovery.id)
+      const done = new Set<string>()
+      for (const s of run.steps) {
+        const work = workOf(s.operation_key)
+        if (s.kind === 'model:fulltext_adjudication' && changed.has(work) && !done.has(work)) { s.status = changed.get(work); done.add(work) }
+      }
+      await route.fulfill({ response, json: body })
+    })
+    await page.reload()
+    const reading = line(page, /^Read \d+ works?/)
+    await expect(reading).toContainText(`Read ${read.length - 2} work`)
+    await reading.click()
+    const detail = step(page, /^Read \d+ works?/).locator('.chat-step-detail')
+    await expect(detail.locator('.step-row', { hasText: 'Full text read (selected pages)' })).toContainText(String(read.length - 2))
+    await expect(detail.locator('.step-row', { hasText: 'Not read: a call failed or its outcome is unknown' })).toContainText('2')
+    await page.unrouteAll({ behavior: 'wait' })
   })
 
   test('a live phase spins and shimmers, does not open, and the Next line names what follows', async () => {

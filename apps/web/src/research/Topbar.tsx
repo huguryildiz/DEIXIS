@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Lightbulb, LoaderCircle, Pause, PencilLine, TriangleAlert, X } from 'lucide-react'
+import { Lightbulb, LoaderCircle, Pause, PencilLine, Play, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { type Run } from '../api'
-import { runKindLabels, runStatusLabels } from '../labels'
+import { runKindLabels, runStatusLabels, searchQueryTriesLeft } from '../labels'
 import { t } from '../i18n'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
@@ -77,10 +77,11 @@ function chipText(run: Run, hasAnswer: boolean) {
 }
 
 // The chip of the research's latest run and its controls. Pause sits beside a live chip as drawn; Cancel of a live run
-// stays beside it (the mockup has no other way to stop a live run; §0 rule 5). A paused or stopped run is resumed or
-// cancelled from the notice under its steps (R18, S9).
-export function RunChip({ run, hasAnswer, busy, onControl }: {
-  run: Run; hasAnswer: boolean; busy: boolean; onControl: (action: 'pause' | 'cancel') => void
+// stays beside it (the mockup has no other way to stop a live run; §0 rule 5). A paused or stopped run of the thread is
+// resumed or cancelled from the notice under its steps (R18, S9); a run the thread does not show (a title suggestion)
+// has no such notice, so its Resume and Cancel stay here.
+export function RunChip({ run, hasAnswer, busy, inThread, onControl }: {
+  run: Run; hasAnswer: boolean; busy: boolean; inThread: boolean; onControl: (action: 'pause' | 'resume' | 'cancel') => void
 }) {
   const active = ACTIVE.has(run.status)
   const text = chipText(run, hasAnswer)
@@ -92,6 +93,8 @@ export function RunChip({ run, hasAnswer, busy, onControl }: {
       <span className="runchip-text">{text}</span>
     </span>
     {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" className="research-topbar-action run-strip-pause" disabled={busy} onClick={() => onControl('pause')}><Pause size={14} aria-hidden />{t('Pause')}</Button>}
-    {active && <Button variant="destructive" size="sm" disabled={busy} onClick={() => onControl('cancel')}><X size={14} aria-hidden />{t('Cancel')}</Button>}
+    {!active && !inThread && run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)
+      && <Button variant="default" size="sm" disabled={busy} onClick={() => onControl('resume')}><Play size={14} aria-hidden />{t('Resume')}</Button>}
+    {(active || !inThread) && <Button variant="destructive" size="sm" disabled={busy} onClick={() => onControl('cancel')}><X size={14} aria-hidden />{t('Cancel')}</Button>}
   </div>
 }

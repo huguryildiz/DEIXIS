@@ -192,6 +192,7 @@
 .step-row>.step-row-value{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
 .step-row>.step-row-text{color:var(--ink-2)}
 .step-row.is-attention>.step-row-value{color:var(--tone-uncertain)}
+.step-row>.step-row-query{flex-basis:100%;min-width:0;color:var(--muted);overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .step-row .connection-icon{display:inline-flex}
 .step-row .connection-icon svg{width:13px;height:13px}
 .step-seeds{display:grid;gap:4px}
@@ -266,6 +267,8 @@
 .notice-actions [data-slot=button][data-variant=outline]{padding-inline:10px;border-color:var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-weight:400}
 .notice-field{width:100%;padding:8px 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--paper);color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.5;resize:vertical}
 .notice-field:focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:1px}
+.notice-label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.notice-hint{font-size:12px;color:var(--muted)}
 .pdf-suggest{margin:26px 0 0;border:1px solid var(--strong-line);border-radius:12px;background:var(--raised-surface);overflow:hidden}
 .pdf-suggest-head{display:flex;align-items:flex-start;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line)}
 .pdf-suggest-head>svg{flex:none;margin-top:3px;color:var(--muted)}

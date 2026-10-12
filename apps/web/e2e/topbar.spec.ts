@@ -49,7 +49,7 @@ class TopbarServer {
 }
 
 type Api = { context: APIRequestContext; token: string }
-type View = { research: { title: string; version: number; current_scope_revision: number }; runs: Array<{ kind: string; status: string }>
+type View = { research: { title: string; version: number; current_scope_revision: number }; scope: { key_terms: string | null }; runs: Array<{ kind: string; status: string }>
   sources: Array<{ source_version_id: string; version_role: string; selection: { state: string } }>; counts: { cited: number; included: number } }
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const post = (api: Api, url: string, data: unknown) => api.context.post(url, { data, headers: { 'x-deixis-csrf': api.token } })
@@ -257,6 +257,22 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await shot(page, 's8-earlier-revision')
     await line.getByRole('button', { name: 'Hide' }).click()
     await expect(earlier).toHaveCount(0)
+ 
+    // Key terms saved with one revision and cleared in the next are cleared, not carried over (null would keep them).
+    await revise.click()
+    await form.getByLabel('English key terms (optional)').fill('molecule release scheduling')
+    await form.getByRole('button', { name: 'Save revision 3' }).click()
+    await expect(form).toHaveCount(0)
+    await expect.poll(async () => (await viewOf(api, rid)).scope.key_terms).toBe('molecule release scheduling')
+    await revise.click()
+    await expect(form.getByLabel('English key terms (optional)')).toHaveValue('molecule release scheduling')
+    await form.getByLabel('English key terms (optional)').fill('')
+    await form.getByRole('button', { name: 'Save revision 4' }).click()
+    await expect(form).toHaveCount(0)
+    await expect.poll(async () => {
+      const current = await viewOf(api, rid)
+      return [current.research.current_scope_revision, current.scope.key_terms || null]
+    }).toEqual([4, null])
   })
 
   test('a revision saved in another window while the form is open keeps the draft and blocks Save until the draft is based on it', async () => {

@@ -16,8 +16,9 @@ export function RevisionForm({ question, keyTerms, nextRevision, focus, focusReq
   const termsField = useRef<HTMLInputElement>(null)
   useEffect(() => { (focus === 'terms' ? termsField : questionField).current?.focus() }, [focus, focusRequest])
   const changed = (text.trim() && text.trim() !== question) || terms.trim() !== keyTerms.trim()
+  // A cleared field that had stored terms is sent as '': null would carry the old terms over to the new revision.
   return <form className="chat-question is-editing" aria-label={t('Revise question')}
-    onSubmit={e => { e.preventDefault(); if (!conflict && changed && text.trim()) onSubmit(text.trim(), terms.trim() || null) }}
+    onSubmit={e => { e.preventDefault(); if (!conflict && changed && text.trim()) onSubmit(text.trim(), keyTerms.trim() ? terms.trim() : terms.trim() || null) }}
     onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel() } }}>
     {conflict !== null && <div className="revise-conflict" role="alert">
       <p>{t('Revision {n} of this question was saved in another window while you edited. Your draft is kept below.', { n: conflict })}</p>

@@ -34,9 +34,9 @@ const FAINT_TEXT = ['.side h6', '.recents p', '.rrow em', '.composer textarea::p
 const FAINT_ICON = ['.recents svg.i', '.th-b svg.i', '.search', '.pal-in', '.refs li::before', '.dmeta>span+span::before']
 // `--warn` text on the `--warn-bg` tint in the mockup: below 4.5:1, so text on a tint uses `--warn-ink` (D5).
 const WARN_ON_TINT = ['.cnt', '.status.warn', '.runchip.warn', '.waitchip', '.v-part', '.seg button.on.unc', '.lockb',
-  '.cst.narrowed', '.rel.partly', '.edited']
+  '.cst.narrowed', '.rel.partly', '.edited', '.box.warnbox h5']
 // `--warn` as a tone on the page (icons, short labels): the app keeps D5's darker `--tone-uncertain`.
-const WARN_TONE = ['.recents svg.i.wn', '.step.att>button', '.notice.warn>svg.i', '.box.warnbox h5', '.pill.warn', '.unc',
+const WARN_TONE = ['.recents svg.i.wn', '.step.att>button', '.notice.warn>svg.i', '.pill.warn', '.unc',
   '.warn-t', '.qcard header b', '.stage .lost b']
 
 export const COLOUR_EXCEPTIONS: ColourException[] = [
@@ -131,6 +131,7 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'setup-leaves', rule: '§2.3 (Q2)', mock: 'Nothing leaves this computer except the searches.', app: 'Nothing leaves this computer except the searches and the model calls you set up.' },
   { id: 'rail-table-draft', rule: '§2.3 (Q2: a label names only what the records hold)', mock: 'Evidence table · N sources · M columns   draft', app: 'Evidence table · N sources · M columns (no "draft" label: a table has no draft state in the records)' },
   { id: 'read-in-full', rule: '§2.3 (Q2)', mock: 'Read in full', app: 'Full text read' },
+  { id: 'rail-found-unique', rule: '§2.3 (Q2: the bar counts unique works, duplicates merged, not the rows the searches found)', mock: 'Found', app: 'Unique works' },
   { id: 'read-more-in-full', rule: '§2.3 (Q2)', mock: 'Read more in full', app: 'Get more full text' },
   { id: 'proxy-working', rule: '§2.3 (Q2)', mock: 'Working / VPN required / Access uncertain', app: 'Proxy reachable · article access not checked / Proxy did not answer' },
   { id: 'scopus-check', rule: '§2.3 (Q2)', mock: '(none)', app: 'Scopus full view confirmed / Scopus full view not confirmed / Scopus check could not run' },
@@ -195,8 +196,10 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
   { id: 's8-revise-buttons-y', rule: 'PLACEMENTS key-terms-syntax', pairs: ['revise.buttons'], axes: ['y'],
     note: 'Cancel and Save revision sit below the key-terms syntax line; x, width and height are compared.' },
   { id: 'rail-rows-y', rule: '§0 rule 1 (a list has as many rows as the data has)',
-    pairs: ['research.rail-funnel'], axes: ['y'],
+    pairs: ['research.rail-funnel', 'research.rail-boxes'], axes: ['y'],
     note: 'The Artifacts box lists every report version and table the research has (the fixture has V1, V2 and one table, the mockup one report row and one table), so the boxes below it sit lower; x, width and height are compared.' },
+  { id: 'rail-artifacts-height', rule: '§0 rule 1 (a list has as many rows as the data has)', pairs: ['research.rail-artifacts'], axes: ['height'],
+    note: 'The Artifacts box has one row per report version, table and evidence report the research has; x, y and width are compared.' },
   { id: 'zotero-foot-buttons-y', rule: '§2.2 (placement zotero-library-source) and §2.3 (copy changes zotero-lead, zotero-account, zotero-count)',
     pairs: ['zotero.foot-buttons'], axes: ['y'],
     note: 'The footer sits below the library switch row and the replaced notes, whose wrapped height differs from the mockup; x, width and height are compared.' },

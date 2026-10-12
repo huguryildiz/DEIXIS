@@ -50,10 +50,11 @@ type Api = { context: APIRequestContext; token: string }
 type Step = { kind: string; status: string; operation_key: string }
 type View = {
   research: { current_scope_revision: number }
+  run_total?: number
   runs: Array<{ id: string; kind: string; status: string; scope_revision: number; steps?: Step[] }>
-  counts: { queue?: number; look_again?: number; waiting_for_pdf?: number; cited: number; funnel?: { unique: number; abstracts_read: number; candidates: number } | null }
-  answers: Array<{ id: string; status: string }>
-  sources: Array<{ version_role: string; selection: { state: string }; has_pdf_text: boolean; answer_reads_version_id: string | null; source_version_id: string; access: { abstract_passage_id: string | null } }>
+  counts: { queue?: number; look_again?: number; waiting_for_pdf?: number; cited: number; fulltext_read_works?: number; funnel?: { unique: number; abstracts_read: number; candidates: number } | null }
+  answers: Array<{ id: string; status: string; inputs_given: { depth?: { pdf: number; abstract: number; metadata: number } } | null }>
+  sources: Array<{ version_role: string; selection: { state: string; version: number }; source_version_id: string }>
 }
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const post = (api: Api, url: string, data: unknown, headers: Record<string, string> = {}) => api.context.post(url, { data, headers: { 'x-deixis-csrf': api.token, ...headers } })
@@ -62,19 +63,24 @@ const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT
 const rail = (page: Page) => page.getByRole('complementary', { name: /^Artifacts/ })
 const box = (page: Page, title: string) => page.locator('.rail .box').filter({ has: page.locator('h5', { hasText: title }) })
 
-// The same rule the rail uses for "Full text read": a work counts once both its full-text passes stored a result.
-function fullTextRead(view: View) {
-  const passes = new Map<string, number>()
+// The reading step's rule (Transcript.tsx `readingWorks`), run by run: a work is read in a run when both its full-text
+// passes stored a result there. The rail's count is the backend's, over every run of the question, each work once; with
+// every reading run among the listed ones the two must agree.
+function readInRuns(view: View) {
+  const read = new Set<string>()
   for (const run of view.runs) {
     if (run.scope_revision !== view.research.current_scope_revision) continue
+    const passes = new Map<string, number>()
     for (const step of run.steps ?? []) {
       if (step.kind !== 'model:fulltext_adjudication') continue
       const work = step.operation_key.replace(/^fulltext_adjudication:/, '').replace(/:[^:]*$/, '')
       passes.set(work, (passes.get(work) ?? 0) + (step.status === 'succeeded' ? 1 : 0))
     }
+    for (const [work, n] of passes) if (n >= 2) read.add(work)
   }
-  return [...passes.values()].filter(n => n >= 2).length
+  return read.size
 }
+const newestReport = (view: View) => view.answers.find(a => a.status === 'structurally_valid')!
 
 test.describe.serial('S11: the artifacts rail', () => {
   test.setTimeout(240_000)
@@ -130,23 +136,25 @@ test.describe.serial('S11: the artifacts rail', () => {
     await expect(amber).toHaveClass(/warnbox/)
     await expect(amber.locator('button.li')).toHaveCount(Math.min(waiting, 8))
     await expect(amber.locator('button.li em').first()).toHaveText(/\S/)
-    // The funnel: the mockup's five bars, "Read in full" under its §2.3 name, every number a stored count.
+    // The funnel: the mockup's five bars, "Found" named for what it counts (unique works) and "Read in full" under its
+    // §2.3 name, every number a stored count. Full text read is the backend's count, the reading step's rule over runs.
     const funnel = view.counts.funnel!
-    await expect(box(page, 'From search to answer').locator('.fun button span:first-child')).toHaveText(['Found', 'Abstract read', 'Passed the abstract stage', 'Full text read', 'Cited'])
-    await expect(box(page, 'From search to answer').locator('.fun button b')).toHaveText([funnel.unique, funnel.abstracts_read, funnel.candidates, fullTextRead(view), view.counts.cited].map(n => n.toLocaleString()))
-    // Depth: PDF text and abstract only, over the included sources an answer reads.
-    let pdf = 0
-    let abstract = 0
-    for (const s of view.sources.filter(s => s.version_role === 'record' && s.selection.state === 'included')) {
-      const read = s.answer_reads_version_id ? view.sources.find(o => o.source_version_id === s.answer_reads_version_id) ?? s : s
-      if (read.has_pdf_text) pdf++
-      else if (read.access.abstract_passage_id) abstract++
-    }
+    const bars = box(page, 'From search to answer').locator('.fun button')
+    await expect(bars.locator('span:first-child')).toHaveText(['Unique works', 'Abstract read', 'Passed the abstract stage', 'Full text read', 'Cited'])
+    expect(view.counts.fulltext_read_works).toBeGreaterThan(0)
+    expect(view.counts.fulltext_read_works).toBe(readInRuns(view))
+    await expect(bars.locator('b')).toHaveText([funnel.unique, funnel.abstracts_read, funnel.candidates, view.counts.fulltext_read_works!, view.counts.cited].map(n => n.toLocaleString()))
+    await expect(bars.nth(3)).toHaveAttribute('title', /over every run of this question/)
+    // Depth: what the newest report's answer was given (its stored input), in works.
+    const given = newestReport(view).inputs_given!.depth!
+    expect(given.pdf + given.abstract + given.metadata).toBeGreaterThan(0)
     const depth = box(page, 'How deeply sources were read')
-    await expect(depth.locator('.legend')).toContainText(`PDF text ${pdf}`)
-    await expect(depth.locator('.legend')).toContainText(`Abstract only ${abstract}`)
-    // Run: Activity with its run count, Candidates, Follow-up. Usage is not here (RL8 is S27's).
-    await expect(box(page, 'Run').locator('button.li').first()).toContainText(`${view.runs.length} runs`)
+    await expect(depth.locator('.legend')).toContainText(`PDF text ${given.pdf}`)
+    await expect(depth.locator('.legend')).toContainText(`Abstract only ${given.abstract}`)
+    // Run: Activity with the research's run count (all of them, not the ten the view lists), Candidates, Follow-up.
+    // Usage is not here (RL8 is S27's).
+    expect(view.run_total).toBeGreaterThanOrEqual(view.runs.length)
+    await expect(box(page, 'Run').locator('button.li').first()).toContainText(`${view.run_total} runs`)
     await expect(box(page, 'Run').locator('button.li span')).toHaveText(['Activity', 'Candidates', 'Follow-up'])
     await expect(page.locator('.rail .box h5')).toHaveText([`Artifacts (${reports + 1})`, 'Waiting for your decisionOpen', 'From search to answerOpen', 'How deeply sources were readOpen', 'Run'])
     await shot(page, 's11-rail')
@@ -207,6 +215,45 @@ test.describe.serial('S11: the artifacts rail', () => {
     await expect(reportPanel(page)).toBeVisible()
     await page.keyboard.press('Escape')
     await shot(page, 's11-narrow')
+  })
+
+  test('a list edit after the answer leaves its reading depth; an emptied queue leaves no rows in the amber box', async () => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    const before = await viewOf(api, rid)
+    const given = newestReport(before).inputs_given!.depth!
+    // Excluding an included source after the answer does not rewrite what the answer was given.
+    const included = before.sources.find(s => s.version_role === 'record' && s.selection.state === 'included')!
+    const patched = await api.context.patch(`/api/researches/${rid}/selections/${included.source_version_id}`,
+      { data: { state: 'excluded', expected_version: included.selection.version, reason: 'SYNTHETIC list edit' }, headers: { 'x-deixis-csrf': api.token } })
+    expect(patched.ok()).toBe(true)
+    const after = await viewOf(api, rid)
+    expect(newestReport(after).inputs_given!.depth).toEqual(given)
+    // The fixture has no work waiting for a PDF once its queue is answered (its works all have open PDFs), so the
+    // waiting count alone is set to one in the view the page receives; the queue and its rows are the server's.
+    await page.route(`**/api/researches/${rid}`, async route => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      const response = await route.fetch()
+      const body = await response.json() as View
+      body.counts.waiting_for_pdf = 1
+      await route.fulfill({ response, json: body })
+    })
+    await page.goto(research())
+    const depth = box(page, 'How deeply sources were read')
+    await expect(depth.locator('.legend')).toContainText(`PDF text ${given.pdf}`)
+    await expect(depth.locator('.legend')).toContainText(`Abstract only ${given.abstract}`)
+    const amber = box(page, 'Waiting for your decision')
+    const queueRows = amber.locator('button.li').filter({ hasNotText: /waiting for a PDF/ })
+    await expect(queueRows.first()).toBeVisible()
+    // Every queue row answered while the page is open: the box stays for the PDF and lists no decided row.
+    const rows = (await (await api.context.get(`/api/researches/${rid}/queue`)).json()).rows as Array<{ source_version_id: string; row_token: string }>
+    for (const row of rows) {
+      const answered = await post(api, `/api/researches/${rid}/queue/${row.source_version_id}/decision`, { decision: 'include', note: null, row_token: row.row_token })
+      expect(answered.ok()).toBe(true)
+    }
+    await expect.poll(async () => (await viewOf(api, rid)).counts.queue ?? 0).toBe(0)
+    await expect(queueRows).toHaveCount(0)
+    await expect(amber.locator('button.li')).toHaveText([/1 waiting for a PDF/])
+    await page.unroute(`**/api/researches/${rid}`)
   })
 
   test('at phone width the same rows open the panels as dialogs', async () => {

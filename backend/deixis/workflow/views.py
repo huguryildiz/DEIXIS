@@ -8,7 +8,7 @@ from typing import Any
 from deixis.documents import embeddings, local_embedding, pdf
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.contracts import locate_anchor
-from deixis.domain.rules import effective_reviewer, result_applicability
+from deixis.domain.rules import FULLTEXT_RUNS, effective_reviewer, result_applicability
 from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import flow_counts as flow_rules
@@ -650,7 +650,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             # A file or text extraction this answer read is no longer in use; its quotes still open what was read (D45).
             "source_text_changed": source_text_changed(store, given),
             "inputs_given": {"sources": len(given["sources"]), "passages": len(given["passages"]),
-                             "source_ids": [s["source_id"] for s in given["sources"]]} if given else None,
+                             "source_ids": [s["source_id"] for s in given["sources"]],
+                             "depth": _given_depth(given)} if given else None,
             # Where the flow stood when this answer's run started (slice 20); null for an answer whose run kept none,
             # never today's counts in its place. Beside `inputs_given`, not instead of it.
             "start_snapshot": _start_snapshot(store, a),
@@ -807,6 +808,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
             " WHERE m.research_id = ? AND m.removed_at IS NOT NULL", (research_id,)).fetchone())),
     }
+    counts["fulltext_read_works"] = _fulltext_read_works(store, research_id, research["current_scope_revision"])
     # The human queue's open rows and the decisions to look at again (slice 16).
     counts |= queue_counts(store, research_id, ctx)
     # The works waiting for the person's PDF (slice 18a).
@@ -825,7 +827,11 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         "SELECT id, status, report_version, created_at FROM reports"
         " WHERE research_id = ? ORDER BY created_at DESC, rowid DESC", (research_id,),
     )]
-    return {"research": research, "intent_outcome": intent_outcome(store, research), "scope": scope_view, "runs": runs, "search_runs": search_runs, "sources": sources,
+    # Every run of the research, not only the ten listed in `runs` (UI parity S11, the rail's Activity row). Beside
+    # `runs`, not in `counts`: it is not an evidence count, and a watch check, which is a run, changes no count.
+    run_total = conn.execute("SELECT COUNT(*) FROM runs WHERE research_id = ?", (research_id,)).fetchone()[0]
+    return {"research": research, "intent_outcome": intent_outcome(store, research), "scope": scope_view, "runs": runs,
+            "run_total": run_total, "search_runs": search_runs, "sources": sources,
             "answers": answers, "reportRuns": report_runs, "counts": counts, "last_event_id": last_event,
             # The semantic search arm for this research's current revision (slice 21); no count of what will be sent.
             "semantic": semantic_view(store, research_id, scope),
@@ -860,6 +866,42 @@ def semantic_view(store: Store, research_id: str, scope: dict[str, Any]) -> dict
     return {"provider": provider, "stored_model": stored_model, "arm": arm,
             "english_question": {"text": row["text"], "origin": row["origin"]} if row else None,
             "needs_english_question": needs}
+
+
+def _given_depth(given: dict[str, Any]) -> dict[str, int]:
+    """How deeply an answer was given each work it read, in works, from its stored StepInput (UI parity S11): `pdf`
+    when at least one PDF page of the work was given, `abstract` when only its abstract was, `metadata` when the work
+    was given with no passage. A PDF or a selection that changed after the answer does not change it."""
+    work_of = {s["source_id"]: s.get("work_id") or s["source_id"] for s in given["sources"]}
+    kinds: dict[str, set[str]] = {work: set() for work in work_of.values()}
+    for passage in given["passages"]:
+        if not isinstance(passage, dict) or not passage.get("source_id"):
+            continue  # a stored input without the passage's source names no work to count it under
+        work = work_of.get(passage["source_id"], passage["source_id"])
+        kinds.setdefault(work, set()).add("abstract" if (passage.get("locator") or {}).get("kind") == "abstract" else "pdf")
+    return {"pdf": sum("pdf" in k for k in kinds.values()), "abstract": sum(k == {"abstract"} for k in kinds.values()),
+            "metadata": sum(not k for k in kinds.values())}
+
+
+def _fulltext_read_works(store: Store, research_id: str, revision: int) -> int:
+    """Works of this question revision whose full text was read (UI parity S11): both passes of the reading stored a
+    result in the same run on the same version, as the reading step's line counts one run; here over every run of the
+    revision, each work once. The version and the pass are the ones the stored StepInput was given."""
+    passes: dict[tuple[str, str], set[int]] = {}
+    for row in store.conn.execute(
+            "SELECT DISTINCT i.run_id, json_extract(i.payload_json, '$.adjudication_target.source_id') AS source,"
+            " json_extract(i.payload_json, '$.adjudication_target.run') AS pass FROM step_inputs i"
+            " JOIN run_steps s ON s.id = i.step_id JOIN runs r ON r.id = i.run_id"
+            " WHERE i.research_id = ? AND i.task_type = 'fulltext_adjudication' AND r.scope_revision = ?"
+            " AND s.kind = 'model:fulltext_adjudication' AND s.status = 'succeeded'", (research_id, revision)):
+        if row["source"] and row["pass"] is not None:
+            passes.setdefault((row["run_id"], row["source"]), set()).add(row["pass"])
+    read = sorted({source for (_, source), done in passes.items() if set(range(1, FULLTEXT_RUNS + 1)) <= done})
+    if not read:
+        return 0
+    return store.conn.execute(
+        f"SELECT COUNT(DISTINCT work_id) FROM source_versions WHERE id IN ({','.join('?' * len(read))})", read
+    ).fetchone()[0]
 
 
 def _start_snapshot(store: Store, answer: Any) -> dict[str, Any] | None:

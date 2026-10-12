@@ -490,7 +490,8 @@ export type Answer = {
   unverified_draft: { claims?: { claim_label: string; text: string }[] } | null
   validation: { ok?: boolean; issues?: ValidationIssue[]; warnings?: ValidationIssue[]; note?: string; reason?: 'no_includable_source' | 'no_evidence_at_cutoff' }
   model: { connection: string; requested_model: string | null; resolved_model: string | null; token_usage: unknown } | null
-  inputs_given: { sources: number; passages: number; source_ids: string[] } | null
+  // What the answer was given, from its stored input; `depth` counts works given PDF pages, only an abstract, or no passage.
+  inputs_given: { sources: number; passages: number; source_ids: string[]; depth?: { pdf: number; abstract: number; metadata: number } } | null
   source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D45)
   // Where the flow stood when this answer's run started (slice 20); null when that run kept none.
   start_snapshot: AnswerStartSnapshot | null
@@ -527,6 +528,9 @@ export type Counts = {
   queue?: number; look_again?: number
   // The works waiting for the person's PDF (slice 18a).
   waiting_for_pdf?: number
+  // UI parity S11: the works of this question whose two full-text passes both stored a result in one run on one
+  // version, over every run of the question.
+  fulltext_read_works?: number
   // Slice 20: the flow buckets, the PRISMA 2020-style boxes and the override count.
   flow?: FlowCounts | null; flow_boxes?: FlowBoxes | null; overrides?: Overrides | null
   // The search step's funnel for the current revision (D233). A candidate passed the abstract stage; nothing here is "relevant".
@@ -613,6 +617,8 @@ export type ResearchView = {
   // A table/compare discovery of the current question that wrote no table, and why; null otherwise (S5a).
   intent_outcome: IntentOutcome | null
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
+  // Every run of the research; `runs` lists the newest ten (UI parity S11).
+  run_total?: number
   reportRuns: ReportSummary[]
   // The probe set's columns and the probes no arm found (slice 19).
   probes?: Probes | null

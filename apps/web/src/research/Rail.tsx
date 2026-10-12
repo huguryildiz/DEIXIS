@@ -4,7 +4,7 @@ import { api, type Answer, type QueueRow, type ResearchView, type Run, type Tabl
 import { collectionProgress } from '../BackgroundJobs'
 import { queueKindLabels } from '../labels'
 import { t } from '../i18n'
-import { depthOfIncluded, fullTextRead, useRailWide } from './railData'
+import { useRailWide } from './railData'
 
 // The artifacts rail (mockup `rail()`, RL1-RL7): 300px beside the thread from 1100px, gone while a panel is open (the
 // page hides it, it stays mounted so the button that opened a panel takes focus back). Every number comes from the view
@@ -54,18 +54,25 @@ export function Rail({ view, researchId, reports, tables, hidden, candidateCount
     api.queue(researchId).then(next => { if (live) setQueue({ research: researchId, rows: next.rows }) }, () => { /* the box keeps its last rows */ })
     return () => { live = false }
   }, [researchId, off, queueCount, view.last_event_id])
-  const queueRows = queue?.research === researchId ? queue.rows : []
+  // An emptied queue shows none of the rows read before it emptied, also while works wait for a PDF.
+  const queueRows = queueCount > 0 && queue?.research === researchId ? queue.rows : []
 
   const artifactCount = reports.length + view.reportRuns.length + (tables?.length ?? 0)
   const funnel = counts.funnel
-  const depth = depthOfIncluded(view)
+  // Reading depth is what the newest report's answer was given (its stored input), in works: a PDF or a list edit after
+  // it does not rewrite it, and a file not read yet was not given.
+  const depth = reports[0]?.answer.inputs_given?.depth ?? { pdf: 0, abstract: 0, metadata: 0 }
   const depthTotal = depth.pdf + depth.abstract + depth.metadata
+  const runCount = view.run_total ?? view.runs.length
   const collecting = view.runs.find((r: Run) => r.kind === 'pdf_collection' && ['queued', 'running', 'pause_requested', 'paused'].includes(r.status))
   const collection = collecting ? collectionProgress(view, collecting.steps ?? []) : null
 
-  const bars: [string, number][] = funnel ? [
-    ['Found', funnel.unique], ['Abstract read', funnel.abstracts_read], ['Passed the abstract stage', funnel.candidates],
-    ['Full text read', fullTextRead(view)], ['Cited', counts.cited],
+  // The mockup's "Found" bar shows unique works (duplicates merged), so it is named so; rows found stay in the Funnel
+  // panel. "Full text read" counts each work once over every run of this question; the reading step counts one run.
+  const bars: [string, number, string?][] = funnel ? [
+    ['Unique works', funnel.unique], ['Abstract read', funnel.abstracts_read], ['Passed the abstract stage', funnel.candidates],
+    ['Full text read', counts.fulltext_read_works ?? 0, 'Works whose two full-text passes both stored a result in one run, over every run of this question'],
+    ['Cited', counts.cited],
   ] : []
   const widest = Math.max(1, ...bars.map(([, n]) => n))
 
@@ -95,7 +102,7 @@ export function Rail({ view, researchId, reports, tables, hidden, candidateCount
     </Box>}
 
     {funnel && <Box title={t('From search to answer')} action={{ label: t('Open'), name: t('From search to answer'), onClick: open(FUNNEL_PANEL) }}>
-      <div className="fun">{bars.map(([label, n]) => <button key={label} type="button" onClick={e => openPanel(FUNNEL_PANEL, { opener: e.currentTarget })}>
+      <div className="fun">{bars.map(([label, n, hint]) => <button key={label} type="button" title={hint && t(hint)} onClick={e => openPanel(FUNNEL_PANEL, { opener: e.currentTarget })}>
         <span>{t(label)}</span><i style={{ width: `${Math.max(2, Math.round(Math.sqrt(n / widest) * 100))}%` }} aria-hidden /><b className="tnum rail-data">{number(n)}</b>
       </button>)}</div>
     </Box>}
@@ -119,7 +126,7 @@ export function Rail({ view, researchId, reports, tables, hidden, candidateCount
     </Box>}
 
     <Box title={t('Run')}>
-      <Row icon={Clock} label={t('Activity')} aside={t(view.runs.length === 1 ? '{n} run' : '{n} runs', { n: view.runs.length })} onClick={open('activity')} />
+      <Row icon={Clock} label={t('Activity')} aside={t(runCount === 1 ? '{n} run' : '{n} runs', { n: runCount })} onClick={open('activity')} />
       <Row icon={Lightbulb} label={t('Candidates')} aside={candidateCount === null ? undefined : String(candidateCount)} onClick={open('cands')} />
       <Row icon={Clock} label={t('Follow-up')} aside={followupCount === null ? undefined : t('{n} new', { n: followupCount })} onClick={open('watch')} />
     </Box>

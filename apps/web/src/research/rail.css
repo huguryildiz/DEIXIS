@@ -13,7 +13,7 @@
 .rail .box>button.li em{flex:none;margin-left:auto;color:var(--muted);font-size:12px;font-style:normal}
 .rail .rail-empty{color:var(--muted);font-size:12.5px}
 .rail .box.warnbox{border-color:transparent;background:var(--warn-surface)}
-.rail .box.warnbox h5{color:var(--tone-uncertain)}
+.rail .box.warnbox h5{color:var(--warn-ink)}
 .rail .box.warnbox>button.li:hover{background:color-mix(in srgb,var(--ink),transparent 96%)}
 .rail button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .rail .fun{display:grid;gap:5px}

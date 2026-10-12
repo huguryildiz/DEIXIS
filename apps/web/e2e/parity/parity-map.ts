@@ -429,12 +429,14 @@ export const PAIRS: Pair[] = [
   // S11 (RL1-RL7): the artifacts rail. RL8's Usage box is S27's, so the box list is compared up to it (DEFERRED_TARGETS).
   { id: 'research.rail', surface: 'research', mock: '.rail', app: '.rail', checks: ['chrome'], widths: DESK, breakpoint: true, status: 'active' },
   // The boxes' h5 carries a count inside plain text (`Artifacts (2)`), so fixed text is not compared for the box frames;
-  // the funnel's labels and the Run box rows are (fixed text, data left out).
-  { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box', app: '.rail .box', checks: ['content'], list: 'fixed', text: false, widths: DESK, status: 'active' },
+  // the funnel's labels and the Run box rows are (fixed text, data left out). The frames are chrome (§4.1): the
+  // Artifacts box has a row per report version and table (its height is data), the boxes below it sit lower by as much.
+  { id: 'research.rail-artifacts', surface: 'research', mock: '.rail .box:first-child', app: '.rail .box:first-child', checks: ['chrome', 'content'], text: false, widths: DESK, status: 'active' },
+  { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box:not(:first-child)', app: '.rail .box:not(:first-child)', checks: ['chrome', 'content'], list: 'fixed', text: false, widths: DESK, status: 'active' },
   { id: 'research.rail-heads', surface: 'research', mock: '.rail .box:not(.warnbox) h5', app: '.rail .box:not(.warnbox) h5', checks: ['type', 'colour'], list: 'fixed', text: false, widths: DESK,
     states: [], status: 'active' },
-  // The amber box's heading is a short tone label: the app's darker tone (warn-tone), checked at 3:1.
-  { id: 'research.rail-warn-head', surface: 'research', mock: '.rail .box.warnbox h5', app: '.rail .box.warnbox h5', checks: ['type', 'colour'], use: 'icon', text: false, widths: DESK,
+  // The amber box's heading is text on the amber tint: --warn-ink (exception warn-text-on-tint), checked at 4.5:1.
+  { id: 'research.rail-warn-head', surface: 'research', mock: '.rail .box.warnbox h5', app: '.rail .box.warnbox h5', checks: ['type', 'colour'], text: false, widths: DESK,
     states: [], status: 'active' },
   { id: 'research.rail-funnel', surface: 'research', mock: '.rail .fun button', app: '.rail .fun button', checks: ['chrome', 'type', 'colour'], list: 'fixed', widths: DESK,
     dataText: { mock: ['.tnum'], app: ['.rail-data'] }, states: ['hover'], status: 'active' },

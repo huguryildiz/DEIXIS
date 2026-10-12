@@ -3890,11 +3890,12 @@ const tr: Record<string, string> = {
   'being written': 'yazılıyor',
   'Look again': 'Yeniden bakın',
   'From search to answer': 'Aramadan cevaba',
-  'Found': 'Bulunan',
   'Abstract read': 'Özeti okunan',
   'How deeply sources were read': 'Kaynaklar ne kadar derin okundu',
   'In the background': 'Arka planda',
   '{n} run': '{n} işlem',
   '{n} runs': '{n} işlem',
   '{n} waiting for a PDF': 'PDF bekleyen {n}',
+  // UI parity S11, Sol round 1
+  'Works whose two full-text passes both stored a result in one run, over every run of this question': 'İki tam metin geçişinin de aynı işlemde sonuç kaydettiği eserler; bu sorunun tüm işlemleri üzerinden',
 }

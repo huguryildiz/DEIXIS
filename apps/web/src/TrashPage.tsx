@@ -73,21 +73,46 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
   // A source an answer quote, a table or a report still cites is not offered for deletion: that evidence must keep opening (D65).
   const deletable = (versions: RemovedSource[]) => versions.every(v => !v.cited)
 
-  function purgeMany(key: string, targets: SourceTarget[]) {
-    void run(key, async () => {
-      let deleted = 0
-      let files = 0
-      for (const one of targets) {
-        const result = await api.purgeSources(one.researchId, one.versions.map(v => v.source_version_id))
-        deleted += result.deleted.length
-        files += result.files_not_removed.length
-      }
-      setPicked(new Set())
-      return files
-        ? t('{n} source(s) deleted, but {files} file(s) could not be removed from disk.', { n: deleted, files })
-        : t(deleted === 1 ? 'Source permanently deleted.' : '{n} sources permanently deleted.', { n: deleted })
-    }, 'Could not delete the sources: {message}')
+  const worksOf = (target: SourceTarget) => new Set(target.versions.map(v => v.work_id)).size
+  // One call per research. A call that fails stops the rest; what finished stays finished and is said so, with the disk
+  // warnings of the calls that did finish, and the page always refreshes.
+  async function bulk(key: string, targets: SourceTarget[], verb: 'restore' | 'purge') {
+    setBusy(key)
+    setMessage('')
+    let done = 0
+    let files = 0
+    const finished = new Set<string>()
+    let failure: { target: SourceTarget; message: string } | null = null
+    let attempted = 0
+    for (const one of targets) {
+      attempted += 1
+      try {
+        const ids = one.versions.map(v => v.source_version_id)
+        if (verb === 'purge') files += (await api.purgeSources(one.researchId, ids)).files_not_removed.length
+        else await api.restoreSources(one.researchId, ids)
+        done += worksOf(one)
+        for (const v of one.versions) finished.add(`${one.researchId}:${v.work_id}`)
+      } catch (e) { failure = { target: one, message: errorText(e) }; break }
+    }
+    const total = targets.reduce((n, one) => n + worksOf(one), 0)
+    const diskNote = files ? t('{files} file(s) could not be removed from disk.', { files }) : ''
+    if (!failure) {
+      setMessage(verb === 'purge'
+        ? (files ? t('{n} source(s) deleted, but {files} file(s) could not be removed from disk.', { n: done, files })
+          : t(done === 1 ? 'Source permanently deleted.' : '{n} sources permanently deleted.', { n: done }))
+        : t(done === 1 ? 'Source restored.' : '{n} sources restored.', { n: done }))
+    } else {
+      const skipped = targets.slice(attempted).reduce((n, one) => n + worksOf(one), 0)
+      setMessage([verb === 'purge' ? t('Deleted {done} of {total} sources.', { done, total }) : t('Restored {done} of {total} sources.', { done, total }),
+        t('{n} in “{research}” failed: {message}', { n: worksOf(failure.target), research: failure.target.versions[0].research_title, message: failure.message }),
+        skipped > 0 && t('{n} not attempted.', { n: skipped }), diskNote].filter(Boolean).join(' '))
+    }
+    if (done > 0 || failure) onChanged()
+    setPicked(prev => { const next = new Set(prev); for (const k of finished) next.delete(k); return next })
+    setBusy(null)
+    await refresh()
   }
+  const purgeMany = (key: string, targets: SourceTarget[]) => void bulk(key, targets, 'purge')
   // restoreSources and purgeSources each take one research, so a choice across researches is one call per research.
   const perResearch = (picks: SourceTarget[]): SourceTarget[] => {
     const by = new Map<string, RemovedSource[]>()
@@ -172,7 +197,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
           } : null,
           more: {
             open: openable ? () => setOpenSource({ key, researchId: group.id, researchTitle: group.title, passageId: openable.abstract_passage_id as string }) : null,
-            restoreAll: group.works.length > 1 ? () => void run(`${group.id}:all`, async () => { await api.restoreSources(group.id, group.works.flat().map(s => s.source_version_id)); return t('{n} sources restored to {research}.', { n: group.works.length, research: group.title }) }, 'Could not restore the sources: {message}') : null,
+            restoreAll: group.works.length > 1 ? () => void bulk(`${group.id}:all`, [{ researchId: group.id, versions: group.works.flat() }], 'restore') : null,
             deleteAll: deletableWorks.length > 1 ? {
               key, question: t('Delete {n} sources removed from “{title}” permanently?', { n: deletableWorks.length, title: group.title }), detail: sourceDetail(deletableWorks.length),
               confirm: () => purgeMany(`${group.id}:all`, [{ researchId: group.id, versions: deletableWorks.flat() }]), from: 'menu',
@@ -202,13 +227,17 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
   const stillCited = entries.filter(e => e.source && !e.remove).length
   const researchOptions = [...new Map(entries.filter(e => e.researchId && e.researchTitle).map(e => [e.researchId as string, e.researchTitle as string])).entries()]
 
+  // A research that has left the list cannot keep filtering it.
+  const activeResearch = onlyResearch === 'all' || researchOptions.some(([id]) => id === onlyResearch) ? onlyResearch : 'all'
   const needle = query.trim().toLocaleLowerCase(uiLocale())
   const matching = entries
-    .filter(e => (scope === 'all' || (scope === 'deletable') === (e.remove !== null)) && (onlyResearch === 'all' || e.researchId === onlyResearch)
+    .filter(e => (scope === 'all' || (scope === 'deletable') === (e.remove !== null)) && (activeResearch === 'all' || e.researchId === activeResearch)
       && (!needle || `${e.title} ${e.note}`.toLocaleLowerCase(uiLocale()).includes(needle)))
     .sort(sorters[sort])
   const shown = whole || needle ? matching : matching.slice(0, ROW_LIMIT)
   const shownSources = shown.filter(e => e.source)
+  // Rows in a folded group are not on screen, so "shown" leaves them out.
+  const visibleSources = grouped ? shownSources.filter(e => !folded.has(e.researchId as string)) : shownSources
   const pickedEntries = entries.filter(e => e.source && picked.has(e.key))
   const pickedDeletable = pickedEntries.filter(e => e.remove)
   const decide = (target: Pending) => setPending(target)
@@ -269,7 +298,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
           </div>
           {researchOptions.length > 1 && <div className="trash-select">
             <span id="trash-research-filter">{t('Research')}</span>
-            <Select value={onlyResearch} onValueChange={value => { if (value) setOnlyResearch(value as string) }}>
+            <Select value={activeResearch} onValueChange={value => { if (value) setOnlyResearch(value as string) }}>
               <SelectTrigger aria-labelledby="trash-research-filter"><SelectValue>{(value: string) =>
                 value === 'all' ? t('All {n} research', { n: researchOptions.length }) : researchOptions.find(([id]) => id === value)?.[1] ?? ''}</SelectValue></SelectTrigger>
               <SelectContent align="end">
@@ -288,9 +317,9 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
             </Select>
           </div>
           <button type="button" className="trash-ghost" aria-pressed={grouped} onClick={() => setGrouped(!grouped)}>{t('Group by research')}</button>
-          {shownSources.length > 0 && <label className="trash-pick-all"><input type="checkbox" className="trash-pick" aria-label={t('Select the {n} sources shown here', { n: shownSources.length })}
-            checked={shownSources.every(e => picked.has(e.key))}
-            onChange={event => { const next = new Set(picked); for (const e of shownSources) { if (event.target.checked) next.add(e.key); else next.delete(e.key) } setPicked(next) }} />{t('Select the sources shown')}</label>}
+          {visibleSources.length > 0 && <label className="trash-pick-all"><input type="checkbox" className="trash-pick" aria-label={t('Select the {n} sources shown here', { n: visibleSources.length })}
+            checked={visibleSources.every(e => picked.has(e.key))}
+            onChange={event => { const next = new Set(picked); for (const e of visibleSources) { if (event.target.checked) next.add(e.key); else next.delete(e.key) } setPicked(next) }} />{t('Select the sources shown')}</label>}
         </div>
         {shown.length === 0 && <p className="trash-foot">{t('No removed source matches this filter.')}</p>}
         {shown.length > 0 && <div className="trash-rows">
@@ -327,12 +356,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
           <strong>{t(pickedEntries.length === 1 ? '{n} source selected' : '{n} sources selected', { n: pickedEntries.length })}
             <span>{[t('{n} deletable', { n: pickedDeletable.length }), t('from {n} research', { n: new Set(pickedEntries.map(e => e.researchId)).size })].join(' · ')}</span></strong>
           <div className="selection-bar-actions">
-            <button type="button" className="trash-ghost" disabled={busy === 'picked'} onClick={() => void run('picked', async () => {
-              const restored = pickedEntries.length
-              for (const one of perResearch(pickedEntries.map(e => e.source as SourceTarget))) await api.restoreSources(one.researchId, one.versions.map(v => v.source_version_id))
-              setPicked(new Set())
-              return t('{n} sources restored.', { n: restored })
-            }, 'Could not restore the sources: {message}')}>{t('Restore')}</button>
+            <button type="button" className="trash-ghost" disabled={busy === 'picked'} onClick={() => void bulk('picked', perResearch(pickedEntries.map(e => e.source as SourceTarget)), 'restore')}>{t('Restore')}</button>
             <button type="button" className="trash-ghost trash-delete" disabled={busy === 'picked' || pickedDeletable.length === 0}
               title={pickedDeletable.length === 0 ? t('An answer quote, an evidence table or a report still cites this source. It is deleted with its research.') : undefined}
               onClick={() => decide({ key: 'picked', from: 'delete', question: t('Delete {n} sources permanently?', { n: pickedDeletable.length }), detail: sourceDetail(pickedDeletable.length),

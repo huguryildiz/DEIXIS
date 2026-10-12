@@ -338,6 +338,79 @@ test.describe('S26: the Trash page', () => {
     expect((await page.locator('.trash-notice').textContent()) ?? '').toContain('tutmuyorsa ve kütüphaneye kaydetmediyseniz')
   })
 
+  // The second research's call is refused; the first one finished and must stay reported.
+  async function failSecond(page: Page, seen: Seen[], tail: string) {
+    await page.route(new RegExp(`/api/researches/rB/sources/${tail}$`), route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'SYNTHETIC second call refused' }) }))
+    page.on('request', r => { if (r.method() === 'POST' && r.url().includes('/sources/')) seen.push({ method: 'POST', url: new URL(r.url()).pathname, body: r.postData() }) })
+  }
+
+  test('a bulk delete whose second call fails reports what finished, the disk warning, and what was not attempted', async ({ page }) => {
+    const seen: Seen[] = []
+    const data = twoResearches()
+    data.sources[1].cited = 0
+    data.sources.push(version(4, { title: 'Delta source', research_id: 'rC', research_title: 'SYNTHETIC research C', removed_at: '2026-09-01T10:00:00Z' }))
+    await mockTrash(page, data, [])
+    await page.route('**/api/researches/rA/sources/purge', async route => {
+      const ids = route.request().postDataJSON().source_version_ids as string[]
+      data.sources = data.sources.filter(s => !ids.includes(s.source_version_id))
+      await route.fulfill({ json: { deleted: ids, files_not_removed: ['a.pdf'] } })
+    })
+    await failSecond(page, seen, 'purge')
+    await open(page, server.url())
+    await page.getByRole('checkbox', { name: 'Select the 4 sources shown here' }).check()
+    await page.locator('.selection-bar').getByRole('button', { name: 'Delete permanently' }).click()
+    await page.locator('.trash-bar-notice').getByRole('button', { name: 'Delete permanently' }).click()
+    const message = page.locator('.trash-message')
+    await expect(message).toContainText('Deleted 2 of 4 sources.')
+    await expect(message).toContainText('1 in “SYNTHETIC research B” failed: SYNTHETIC second call refused')
+    await expect(message).toContainText('1 not attempted.')
+    await expect(message).toContainText('1 file(s) could not be removed from disk.')
+    expect(seen.map(s => s.url)).toEqual(['/api/researches/rA/sources/purge', '/api/researches/rB/sources/purge'])  // C never called
+    // The two that went are gone, the failed and the unattempted stay listed and picked.
+    expect(await titles(page)).toEqual(['Bravo source', 'Delta source'])
+    await expect(page.locator('.selection-bar')).toContainText('2 sources selected')
+  })
+
+  test('a bulk restore whose second call fails reports what finished', async ({ page }) => {
+    const seen: Seen[] = []
+    const data = twoResearches()
+    await mockTrash(page, data, [])
+    await page.route('**/api/researches/rA/sources/restore', async route => {
+      const ids = route.request().postDataJSON().source_version_ids as string[]
+      data.sources = data.sources.filter(s => !ids.includes(s.source_version_id))
+      await route.fulfill({ json: { changed_source_version_ids: ids } })
+    })
+    await failSecond(page, seen, 'restore')
+    await open(page, server.url())
+    await page.getByRole('checkbox', { name: 'Select the 3 sources shown here' }).check()
+    await page.locator('.selection-bar').getByRole('button', { name: 'Restore' }).click()
+    const message = page.locator('.trash-message')
+    await expect(message).toContainText('Restored 2 of 3 sources.')
+    await expect(message).toContainText('1 in “SYNTHETIC research B” failed: SYNTHETIC second call refused')
+    expect(await titles(page)).toEqual(['Bravo source'])
+  })
+
+  test('a research that left the list stops filtering it; select shown skips folded rows; a two-version source counts once', async ({ page }) => {
+    const seen: Seen[] = []
+    const data = twoResearches()
+    data.sources.push(version(5, { title: 'Alpha source', work_id: 'w1', source_version_id: 'sv1b', version_label: 'acceptedVersion', research_id: 'rA', research_title: 'SYNTHETIC research A' }))
+    await mockTrash(page, data, seen)
+    await open(page, server.url())
+    await page.getByRole('combobox', { name: /Research/ }).click()
+    await page.getByRole('option', { name: 'SYNTHETIC research B' }).click()
+    await rows(page).first().getByRole('button', { name: /^Restore/ }).click()
+    await expect(rows(page)).toHaveCount(2)  // B's last row left; the filter let go and A's rows show
+    await page.getByRole('button', { name: 'Group by research' }).click()
+    await page.getByRole('button', { name: 'Hide the sources removed from SYNTHETIC research A' }).click()
+    await expect(page.getByRole('checkbox', { name: /^Select the sources shown here|^Select the \d+ sources shown here/ })).toHaveCount(0)  // the only research is folded: nothing on screen to select
+    await page.getByRole('button', { name: 'Show the sources removed from SYNTHETIC research A' }).click()
+    // Alpha has two versions: deleting it counts one source.
+    await page.locator('.trash-row', { hasText: 'Alpha source' }).first().locator('.trash-delete').click()
+    await page.locator('.trash-notice').getByRole('button', { name: 'Delete permanently' }).click()
+    await expect(page.locator('.trash-message')).toHaveText('Source permanently deleted.')
+    expect(JSON.parse(seen.at(-1)!.body ?? '{}').source_version_ids).toEqual(['sv1', 'sv1b'])
+  })
+
   test('on the real server a research goes to the Trash, comes back, and is deleted after a Cancel', async ({ page }) => {
     const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
     const token = (await (await api.get('/api/session')).json()).csrf_token as string

@@ -3980,4 +3980,10 @@ const tr: Record<string, string> = {
   'Group by research': 'Araştırmaya göre grupla',
   'Select the sources shown': 'Gösterilen kaynakları seç',
   'Select the {n} sources of {research}': '{research} araştırmasının {n} kaynağını seç',
+  'Deleted {done} of {total} sources.': '{total} kaynaktan {done} tanesi silindi.',
+  'Restored {done} of {total} sources.': '{total} kaynaktan {done} tanesi geri yüklendi.',
+  'Source restored.': 'Kaynak geri yüklendi.',
+  '{files} file(s) could not be removed from disk.': '{files} dosya diskten kaldırılamadı.',
+  '{n} in “{research}” failed: {message}': '“{research}” içindeki {n} kaynak tamamlanamadı: {message}',
+  '{n} not attempted.': '{n} kaynak denenmedi.',
 }

@@ -47,11 +47,13 @@ function CitationEntry({ researchId, evidence, claim, source, onOpen }: { resear
     {error ? <p className="quote">{error}</p> : quote ? <div className="quote">
       <HighlightedPassageText passage={{ text: quote.text, kind: passage!.kind }} highlightTexts={quote.located && evidence.anchor_text ? [evidence.anchor_text] : []} scroll={false} />
     </div> : <p className="quote">{t('Loading passage…')}</p>}
+    {/* Its parts with the mockup's own "·" between them (a separate element, as in `.loc`). */}
     <div className="loc">
-      <span>{(l => l.charAt(0).toUpperCase() + l.slice(1))(locatorText(evidence))}</span>
-      <span>{versionText(evidence.version_label)}</span>
-      {quote && (quote.located ? <span className="ok-t">{t('Located in the passage')}</span> : <span className="warn-t">{t('No located anchor: the passage opens without a mark')}</span>)}
-      {claim.review && <span>{t('Reviewer: {reason}', { reason: t(verdictLabels[claim.review.verdict]) })}</span>}
+      {[<span key="at">{(l => l.charAt(0).toUpperCase() + l.slice(1))(locatorText(evidence))}</span>,
+        <span key="version">{versionText(evidence.version_label)}</span>,
+        quote && (quote.located ? <span key="anchor" className="ok-t">{t('Located in the passage')}</span> : <span key="anchor" className="warn-t">{t('No located anchor: the passage opens without a mark')}</span>),
+        claim.review && <span key="review">{t('Reviewer: {reason}', { reason: t(verdictLabels[claim.review.verdict]) })}</span>,
+      ].filter(Boolean).flatMap((part, i) => (i ? [<span key={`dot${i}`} className="loc-dot" aria-hidden="true">·</span>, part] : [part]))}
     </div>
     <div className="rowacts">
       <button type="button" onClick={() => open('text')}><AlignLeft size={14} aria-hidden />{t(abstract ? 'Open the abstract' : 'Open in the full text')}</button>

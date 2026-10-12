@@ -56,7 +56,8 @@ export function HighlightedPassageText({ passage, highlightTexts, markLabel, scr
 // (Library, Trash, the evidence table, the queue) open the panel without them and show only what needs no action.
 export type SourceActions = {
   busy: boolean
-  finding: string | null
+  // The works whose open-copy lookup is running, one entry per lookup.
+  finding: string[]
   onFind: (source: Source) => Promise<boolean>
   onAttach: (source: Source) => void
   onReplace: (source: Source, assetId: string) => void
@@ -136,7 +137,10 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const [showNotes, setShowNotes] = useState(false)
   const [tab, setTab] = useState<Tab>(initialView)
   // The open-copy lookup started here (P15): the lookups recorded before it, so its own answers are the ones after them.
-  const [find, setFind] = useState<{ before: number; hadPdf: boolean; done: boolean } | null>(null)
+  // `id` and `svid` bind a lookup's completion to the lookup and work it was started for: an earlier lookup that ends
+  // later never marks a newer one done.
+  const [find, setFind] = useState<{ id: number; svid: string; before: number; hadPdf: boolean; done: boolean } | null>(null)
+  const lookupSeq = useRef(0)
   // The target a lookup asked for on open was started for; cleared when the panel opens something else or closes.
   const askedFind = useRef<string | null>(null)
   const [proxy, setProxy] = useState<{ address: string; label: string } | null>(null)
@@ -208,8 +212,14 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   // The PDF of the opened passage or file; an abstract (or a source opened for its details) shows the source's own PDF.
   const rowAssetId = row?.access.assets[0]?.id ?? null
   const pdfAssetId = removed ? null : passage?.asset_id ?? assetText?.asset.id ?? ((abstract || detailsOnly) ? rowAssetId : null)
-  // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): every page it names says "rendered".
-  const rendition = Boolean(passage ? passage.rendition : assetText?.asset.rendition)
+  // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): every page it names says "rendered". Each view
+  // takes it from what it shows: the text view from the passage read from the PDF or the document shown, the PDF view
+  // from the opened file's stored record (an abstract passage carries none of its own).
+  const textRendition = passage && !abstract ? Boolean(passage.rendition) : Boolean((assetText ?? (extraText || null))?.asset.rendition)
+  const pdfRendition = passage && !abstract && passage.asset_id === pdfAssetId ? Boolean(passage.rendition)
+    : assetText && assetText.asset.id === pdfAssetId ? Boolean(assetText.asset.rendition)
+    : Boolean(row?.access.assets.find(a => a.id === pdfAssetId)?.rendition)
+  const rendition = tab === 'pdf' ? pdfRendition : tab === 'text' ? textRendition : false
   // The arXiv source version a 'latex_source' passage's equations came from (D104); omitted gracefully if not found.
   const sourceAsset = passage?.asset_id ? row?.access.assets.find(a => a.id === passage.asset_id) : undefined
   const arxivVersion = sourceAsset?.equations?.route === 'arxiv_source' ? sourceAsset.equations.source?.version ?? null : null
@@ -263,13 +273,14 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const fileAsset = pdfAssetId ? row?.access.assets.find(item => item.id === pdfAssetId) ?? null : null
   const loadedText = (passage && !abstract) ? true : assetText ? assetText.passages.length > 0 : extraText ? extraText.passages.length > 0 : null
   const pdfText: 'text' | 'none' | 'pending' | null = loadedText === true ? 'text' : loadedText === false ? 'none' : textState(fileAsset) ?? (hasPdf ? 'pending' : null)
-  const finding = Boolean(row && actions?.finding === row.source_version_id)
+  const finding = Boolean(row && actions?.finding.includes(row.source_version_id))
   const canFind = Boolean(row && actions && row.doi && !row.access.assets.length && row.version_role !== 'other_version')
   const startFind = async () => {
     if (!row || !actions || finding) return
-    setFind({ before: row.access.pdf_discoveries.length, hadPdf: row.access.assets.length > 0, done: false })
+    const id = ++lookupSeq.current, svid = row.source_version_id
+    setFind({ id, svid, before: row.access.pdf_discoveries.length, hadPdf: row.access.assets.length > 0, done: false })
     const ok = await actions.onFind(row)
-    setFind(current => (ok && current ? { ...current, done: true } : null))
+    setFind(current => (current && current.id === id && current.svid === svid ? (ok ? { ...current, done: true } : null) : current))
   }
   // Find PDF from the Citation panel: one lookup per opening, for the work of the passage this opening loaded.
   const findKey = findOnOpen ? `${openPassageId ?? ''}|${openAssetId ?? ''}` : null
@@ -309,7 +320,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   // recorded without asking (a key or contact setting missing, the daily budget closed), and whether a file came; what
   // the file holds (text a new answer can read, or none) comes from its stored extraction, not from its presence.
   const findBlock = (() => {
-    if (!row || (!find && !finding)) return null
+    if (!row || ((!find || find.svid !== row.source_version_id) && !finding)) return null
     if (finding || !find?.done) return <div className="notice answer-notice is-info find-block" role="status">
       <LoaderCircle size={16} className="pdf-search-spin" aria-hidden />
       <div className="notice-body"><p><b>{t('Looking for an open copy…')}</b></p></div>
@@ -357,7 +368,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
       <button type="button" className="ib" aria-label={t('Previous passage')} title={t('Previous passage')} disabled={groups < 2} onClick={() => goToGroup(groupAt - 1)}><ChevronLeft size={15} aria-hidden /></button>
       <button type="button" className="ib" aria-label={t('Next passage')} title={t('Next passage')} disabled={groups < 2} onClick={() => goToGroup(groupAt + 1)}><ChevronRight size={15} aria-hidden /></button></>}
     <span className="spacer" />
-    <span>{t(rendition ? 'Text drawn from Europe PMC · {n} pages' : 'Text from the PDF · {n} pages', { n: pages(doc) })}</span>
+    <span>{t((doc === shownDocument ? textRendition : doc.asset.rendition) ? 'Text drawn from Europe PMC · {n} pages' : 'Text from the PDF · {n} pages', { n: pages(doc) })}</span>
   </div>
   const empty = (kind: 'text' | 'pdf') => <div className="empty source-empty">
     <div>{kind === 'text' ? <AlignLeft aria-hidden /> : <FileText aria-hidden />}
@@ -372,7 +383,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     ? shownDocument !== null ? <>
       {shownDocument && docnav(shownDocument)}
       <h3 className="source-section">{t('Extracted PDF text')}{shownDocument && notesToggle(shownDocument)}</h3>
-      {shownDocument ? <PdfTextDocument researchId={researchId} assetId={shownDocument.asset.id} passages={shownDocument.passages} showNotes={showNotes} sourceTitle={shownDocument.source.title} citation={citation} comparison={comparing} suppressFigurePictures={earlier && !comparing} rendition={rendition} /> : <p>{t('Loading PDF text…')}</p>}
+      {shownDocument ? <PdfTextDocument researchId={researchId} assetId={shownDocument.asset.id} passages={shownDocument.passages} showNotes={showNotes} sourceTitle={shownDocument.source.title} citation={citation} comparison={comparing} suppressFigurePictures={earlier && !comparing} rendition={textRendition} /> : <p>{t('Loading PDF text…')}</p>}
     </> : <>
       <h3 className="source-section">{t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
       {expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{citationLabels?.unmarked ?? t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
@@ -491,7 +502,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
           {tab === 'pdf' && <div id="source-pdf-view" role="tabpanel" aria-labelledby="source-tab-pdf" className="source-pdf-view">
             {pdfAssetId ? <>
               {passage && <StoredPdfNotice occurrence={passage.occurrence} />}
-              <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? initialPage} title={source.title} rendition={rendition} />
+              <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? initialPage} title={source.title} rendition={pdfRendition} />
             </> : empty('pdf')}
           </div>}
           {/* Where the source came from (mockup `.foot-note`, P20). */}

@@ -92,7 +92,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // One work the audit sample sent the person to (slice 20): the Sources list shows that work alone, by its id.
   const [sourceFocus, setSourceFocus] = useState<string | null>(null)
   const openPanel = panels.open
-  const [pdfFinding, setPdfFinding] = useState<string | null>(null)
+  // The works whose open-copy lookup is running; each lookup removes only its own entry when it ends.
+  const [pdfFinding, setPdfFinding] = useState<string[]>([])
   const [waitingFiles, setWaitingFiles] = useState<File[] | null>(null)
   const takeWaitingFiles = useCallback(() => setWaitingFiles(null), [])
   const [attachTarget, setAttachTarget] = useState<string | null>(null)
@@ -331,10 +332,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   })
   // Whether the lookup finished (Source details then reads its recorded answers).
   const discoverPdf = async (source: Source) => {
-    setPdfFinding(source.source_version_id)
+    setPdfFinding(list => [...list, source.source_version_id])
     try { await api.discoverPdf(id, source.source_version_id); await load(); onChanged(); return true }
     catch (e) { toast('error', errorText(e)); return false }
-    finally { setPdfFinding(null) }
+    finally { setPdfFinding(list => { const at = list.indexOf(source.source_version_id); return at < 0 ? list : [...list.slice(0, at), ...list.slice(at + 1)] }) }
   }
   const chooseSourcePdf = (source: Source) => { setAttachTarget(source.source_version_id); sourceFileInput.current?.click() }
   // A failed retrieval is recorded on the candidate, so reload before act reports the error.

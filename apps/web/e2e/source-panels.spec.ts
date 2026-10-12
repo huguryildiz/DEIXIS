@@ -55,7 +55,7 @@ type Discovery = { provider: string; status: string; http_status: number | null;
 type Source = {
   source_version_id: string; work_id: string; title: string; doi: string | null; version_label: string | null; version_role: string
   selection: { state: string; origin: string }; similarity: number | null; provider_records: string[]
-  access: { abstract_passage_id: string | null; assets: { id: string; page_count: number | null }[]; pdf_discoveries: Discovery[] }
+  access: { abstract_passage_id: string | null; assets: { id: string; page_count: number | null; rendition?: boolean }[]; pdf_discoveries: Discovery[] }
 }
 type View = { runs: Array<{ kind: string; status: string }>; answers: Answer[]; sources: Source[] }
 type Api = { context: APIRequestContext; token: string }
@@ -503,6 +503,100 @@ test.describe('S12: report, Citation and Source details panels', () => {
     } finally {
       await page.unroute(`**/api/researches/${rid}`)
       await page.unroute(`**/sources/${svid}/pdf-discovery`)
+    }
+  })
+
+  test('an earlier lookup that ends first never marks a newer lookup on another work done', async () => {
+    const view = await viewOf(api, rid)
+    const chosen = view.sources.filter(s => !s.access.assets.length && s.doi && s.access.abstract_passage_id && s.version_role !== 'other_version')
+    const [a, b] = [chosen[1], chosen[2]]
+    // A's lookup is held 1.5 s, B's until A's has answered and 3 s more: A ends while B still runs.
+    let aDone!: () => void
+    const aAnswered = new Promise<void>(resolve => { aDone = resolve })
+    await page.route(`**/sources/${a.source_version_id}/pdf-discovery`, async route => {
+      await new Promise(r => setTimeout(r, 1500)); const response = await route.fetch(); await route.fulfill({ response }); aDone()
+    })
+    await page.route(`**/sources/${b.source_version_id}/pdf-discovery`, async route => {
+      await aAnswered; await new Promise(r => setTimeout(r, 3000)); await route.continue()
+    })
+    try {
+      await visit(page, research())
+      await openPanel(page, 'sources')
+      const open = async (title: string) => {
+        const entry = page.locator('.source-row:not(.is-other-version)', { has: page.getByText(title, { exact: true }) })
+        await entry.scrollIntoViewIfNeeded()
+        await entry.getByRole('button', { name: 'Read abstract' }).click()
+        await expect(sourcePanel(page).locator('.dhead h3')).toHaveText(title)
+      }
+      const head = page.locator('[data-split-panel] .split-panel-head')
+      await open(a.title)
+      await sourcePanel(page).locator('.dacts .btn-pri').click()
+      await expect(sourcePanel(page).locator('.find-block')).toContainText('Looking for an open copy…')
+      await head.getByRole('button', { name: 'Back', exact: true }).click()
+      await open(b.title)
+      const details = sourcePanel(page)
+      await details.locator('.dacts .btn-pri').click()
+      const block = details.locator('.find-block')
+      await expect(block).toContainText('Looking for an open copy…')
+      await aAnswered
+      // A answered and the page reloaded; B's panel still shows its own lookup running.
+      await expect.poll(async () => (await viewOf(api, rid)).sources.find(s => s.source_version_id === a.source_version_id)!.access.pdf_discoveries.length).toBeGreaterThan(a.access.pdf_discoveries.length)
+      await page.waitForTimeout(800)
+      await expect(block).toContainText('Looking for an open copy…')
+      await expect(block).not.toContainText('No open copy found.')
+      await expect(details.locator('.dacts .btn-pri')).toBeDisabled()
+      // Then B's own answer: the services it asked, from B's records.
+      await expect(block).not.toContainText('Looking for an open copy…', { timeout: 30_000 })
+      const after = (await viewOf(api, rid)).sources.find(s => s.source_version_id === b.source_version_id)!
+      const asked = [...new Set(after.access.pdf_discoveries.slice(b.access.pdf_discoveries.length).filter(d => !notSent(d)).map(d => d.provider))]
+      await expect(block.locator('.pill')).toHaveText(asked.map(p => PROVIDERS[p] ?? p))
+      await page.keyboard.press('Escape')
+    } finally {
+      await page.unroute(`**/sources/${a.source_version_id}/pdf-discovery`)
+      await page.unroute(`**/sources/${b.source_version_id}/pdf-discovery`)
+    }
+  })
+
+  test('a Europe PMC file opened from an abstract is labelled as drawn by DEIXIS in the text and PDF views', async () => {
+    const view = await viewOf(api, rid)
+    const latest = [...valid(view)].sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
+    const cited = latest.claims.flatMap(c => c.evidence).find(e => e.kind === 'abstract')!
+    const source = view.sources.find(s => s.source_version_id === cited.source_version_id)!
+    const file = source.access.assets[0]
+    expect(file, 'the fixture fetched this work\'s PDF').toBeTruthy()
+    // PATCHED VIEW: the work's stored file is marked as Europe PMC's text drawn by DEIXIS (rendition), in the research
+    // view and in the file's text, as the backend marks such a file (SW21). The fixture's PDFs are publisher-like.
+    await page.route(`**/api/researches/${rid}`, async route => {
+      const response = await route.fetch()
+      const body = await response.json() as View
+      for (const s of body.sources) if (s.source_version_id === source.source_version_id) s.access.assets = s.access.assets.map(x => ({ ...x, rendition: true }))
+      await route.fulfill({ response, json: body })
+    })
+    await page.route(`**/assets/${file.id}/text**`, async route => {
+      const response = await route.fetch()
+      const body = await response.json() as { asset: Record<string, unknown> }
+      await route.fulfill({ response, json: { ...body, asset: { ...body.asset, rendition: true } } })
+    })
+    try {
+      await visit(page, research())
+      await page.locator('#research-answer').click()
+      await reportPanel(page).locator('.reference-list > li').filter({ hasText: source.title }).filter({ has: page.locator('.ref-pills', { hasText: 'Abstract' }) }).first().getByRole('button').click()
+      const details = sourcePanel(page)
+      const notice = details.getByText('This PDF was drawn by DEIXIS from Europe PMC’s open-access text. Its pages are not the publisher’s pages.')
+      await expect(details.getByRole('tab', { name: 'Abstract' })).toHaveAttribute('aria-selected', 'true')
+      await expect(notice).toHaveCount(0)
+      await details.getByRole('tab', { name: 'Plain text' }).click()
+      await expect(details.locator('.docnav')).toContainText(/Text drawn from Europe PMC · \d+ pages/)
+      await expect(notice).toBeVisible()
+      await details.getByRole('tab', { name: 'PDF' }).click()
+      await expect(notice).toBeVisible()
+      await expect(details.locator('.pdf-viewer canvas')).toHaveAttribute('aria-label', /^Europe PMC text, rendered p\. \d+$/)
+      await details.getByRole('tab', { name: 'Abstract' }).click()
+      await expect(notice).toHaveCount(0)
+      await page.keyboard.press('Escape')
+    } finally {
+      await page.unroute(`**/api/researches/${rid}`)
+      await page.unroute(`**/assets/${file.id}/text**`)
     }
   })
 

@@ -442,7 +442,7 @@
 .cite-panel .au{color:var(--muted);font-size:12.5px;line-height:1.5}
 .cite-panel .quote{margin:6px 0 0;padding:2px 0 2px 12px;border-left:2px solid var(--strong-line);color:var(--ink-2);font-size:13px;line-height:1.55;overflow-wrap:anywhere}
 .cite-panel .loc{display:flex;flex-wrap:wrap;gap:0 8px;margin-top:4px;color:var(--muted);font-size:11.5px;line-height:1.5}
-.cite-panel .loc>span+span::before{content:"·";margin-right:8px;color:var(--faint)}
+.cite-panel .loc .loc-dot{color:var(--faint)}
 .cite-panel .loc .ok-t{color:var(--tone-include)}
 .cite-panel .loc .warn-t{color:var(--tone-uncertain)}
 .cite-panel .rowacts{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:12px;line-height:1.5}
@@ -457,6 +457,8 @@
 .source-detail .dhead{display:grid;gap:4px}
 .source-detail .dhead .venue{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;margin:0;color:var(--muted);font-size:12px;line-height:1.5}
 .source-detail .dhead .venue i{font-size:12px}
+/* The source key chip keeps the venue line at the mockup's 18px. */
+.source-detail .dhead .venue .source-key{line-height:16px}
 .source-sheet .source-detail h3.source-title{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:17px;font-weight:600;line-height:1.35;letter-spacing:-.1px;text-wrap:balance}
 .source-sheet .source-detail .source-byline{margin:0;font-size:12.5px;line-height:1.5}
 .source-detail .dhead .pills{margin-top:4px}

@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Request } from '@playwright/test'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
@@ -217,19 +217,32 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
     expect(body.source_version_ids).toBeUndefined()
   })
 
-  test('guide rows: a sixth PDF starts unchecked and cannot be checked while five guide the search', async ({ page }) => {
+  test('guide rows: six PDFs all stay checked, the page says the backend keeps five, and no exclusion is sent', async ({ page }) => {
     await page.goto(server.url())
+    await expect(page.locator('.models-summary')).toContainText('fixture-model')
     await page.getByLabel('Source scope').click()
     await page.getByRole('option', { name: 'Files + academic search' }).click()
-    await page.locator('input[type=file]').first().setInputFiles([1, 2, 3, 4, 5, 6].map(n => tinyPdf(`SYNTHETIC-${n}.pdf`)))
+    // Six readable SYNTHETIC PDFs: the fixture's replacement file, each copy made distinct by a trailing comment.
+    const text = readFileSync(server.pdf('replacement'))
+    await page.locator('input[type=file]').first().setInputFiles([1, 2, 3, 4, 5, 6].map(n =>
+      ({ name: `SYNTHETIC-${n}.pdf`, mimeType: 'application/pdf', buffer: Buffer.concat([text, Buffer.from(`\n% copy ${n}\n`)]) })))
     const boxes = page.locator('.composer .guide input[type=checkbox]')
     await expect(boxes).toHaveCount(6)
-    for (let n = 0; n < 5; n++) await expect(boxes.nth(n)).toBeChecked()
-    await expect(boxes.nth(5)).not.toBeChecked()
-    await expect(boxes.nth(5)).toBeDisabled()
-    await expect(boxes.nth(5)).toHaveAccessibleDescription('At most five PDFs guide one search.')
+    for (let n = 0; n < 6; n++) { await expect(boxes.nth(n)).toBeChecked(); await expect(boxes.nth(n)).toBeEnabled() }
+    const limit = 'Up to five guide the search; DEIXIS keeps the five whose first pages share the most words with your question.'
+    await expect(page.locator('.composer .guide')).toContainText(limit)
+    await expect(page.locator('.attachment-chip', { hasText: 'may guide the search' })).toHaveCount(6)
+    // The person's own uncheck brings it to five: the line goes and the chips say they guide the search.
     await boxes.nth(0).uncheck()
-    await expect(boxes.nth(5)).toBeEnabled()
+    await expect(page.locator('.composer .guide')).not.toContainText(limit)
+    await expect(page.locator('.attachment-chip', { hasText: 'guides the search' })).toHaveCount(5)
+    await boxes.nth(0).check()
+    // Nothing unchecked: every eligible PDF is sent and the backend makes the cut.
+    await page.getByLabel('Research question').fill('SYNTHETIC question with six guiding PDFs')
+    const seeds = page.waitForRequest(r => r.method() === 'POST' && /\/api\/researches\/[^/]+\/seed$/.test(new URL(r.url()).pathname))
+    await page.getByRole('button', { name: 'Start research' }).click()
+    expect((await seeds).postDataJSON()).toEqual(expect.objectContaining({ all_eligible: true }))
+    expect((await seeds).postDataJSON()).not.toHaveProperty('excluded_source_version_ids')
   })
 
   test('guide rows: an unchecked PDF stays unchecked when the other is removed, and the search cannot start unguided', async ({ page }) => {

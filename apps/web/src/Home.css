@@ -70,7 +70,6 @@
 .composer .guide label{display:flex;align-items:center;gap:8px;min-width:0;color:var(--ink);cursor:pointer}
 .composer .guide label span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .composer .guide input{flex:none;margin:0;accent-color:var(--accent)}
-.composer .guide input:disabled+span{color:var(--muted)}
 
 /* Mode chips (H13): what the research produces. Single choice; the chosen chip takes the accent tint. */
 .mode-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}

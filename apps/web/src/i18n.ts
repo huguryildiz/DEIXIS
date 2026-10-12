@@ -3717,6 +3717,7 @@ const tr: Record<string, string> = {
   'Lets you open PDFs your library pays for, through its sign-in.': 'Kütüphanenizin abone olduğu PDF’leri, kurumunuzun girişi üzerinden açmanızı sağlar.',
   'Address saved': 'Adres kaydedildi',
   'PDFs guiding the search · their titles, abstracts and references shape the query.': 'Aramaya yön veren PDF’ler · başlıkları, özetleri ve kaynakçaları sorguyu biçimlendirir.',
-  'At most five PDFs guide one search.': 'Bir aramaya en fazla beş PDF yön verir.',
+  'Up to five guide the search; DEIXIS keeps the five whose first pages share the most words with your question.': 'Aramaya en fazla beş PDF yön verir; DEIXIS ilk sayfaları sorunuzla en çok sözcük paylaşan beşini tutar.',
+  'may guide the search': 'aramaya yön verebilir',
   'Choose at least one PDF to guide the search.': 'Aramaya yön verecek en az bir PDF seçin.',
 }

@@ -1033,3 +1033,21 @@ def test_s5b_an_excluded_upload_leaves_the_choice_of_five_to_the_backend(tmp_pat
         revision = store.scope(rid)["revision"]
         select(client, rid, all_eligible=True, excluded_source_version_ids=[unchecked])
         assert store.scope(rid)["revision"] == revision
+
+
+def test_s5b_six_untouched_uploads_leave_the_cut_to_the_backend(tmp_path, monkeypatch):
+    """UI parity S5b: six uploads, none unchecked, so Home sends every eligible PDF with no exclusion. The sixth scores
+    highest and is kept among the five; the lowest goes to not selected; the event records no person's exclusion."""
+    transport = SeedTransport(records(), semantic=[])
+    app, _ = app_for(tmp_path, monkeypatch, transport=transport)
+    scores = [2, 1, 3, 0, 4, 6]
+    with client_of(app) as client:
+        rid = research(client)
+        ids = [upload(client, rid, f"u{i}.pdf", make_pdf([f"SYNTHETIC upload {i} " + " ".join(TERMS[:score]), "Body text"]))
+               for i, score in enumerate(scores)]
+        view = select(client, rid, all_eligible=True)
+        event = app.state.store.conn.execute("SELECT payload_json FROM events WHERE research_id = ? AND type = 'seed_selected'"
+                                             " ORDER BY id DESC LIMIT 1", (rid,)).fetchone()[0]
+    assert [s["source_version_id"] for s in view["scope"]["seeds"]] == [ids[i] for i in (0, 1, 2, 4, 5)]
+    assert [n["source_version_id"] for n in view["scope"]["seed_not_selected"]] == [ids[3]]
+    assert "excluded_by_user" not in json.loads(event)

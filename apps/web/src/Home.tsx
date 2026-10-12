@@ -206,14 +206,16 @@ const progressKey = (r: ResearchSummary) => `${r.id}:${r.updated_at}:${r.last_ru
 
 // The Resume card (H14): the most recently updated research, its latest report version and what waits for the person.
 function ResumeCard({ research }: { research: ResearchSummary }) {
-  const [facts, setFacts] = useState<{ version: number | null; outcome: IntentOutcome | null } | null>(null)
+  // The facts carry the id they were read for, so another research's facts never show under this title.
+  const [read, setRead] = useState<{ id: string; version: number | null; outcome: IntentOutcome | null } | null>(null)
+  const facts = read?.id === research.id ? read : null
   const key = progressKey(research)
   useEffect(() => {
     let current = true
     api.research(research.id).then(view => {
       const latest = view.answers.filter(a => a.status === 'structurally_valid').sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
-      if (current) setFacts({ version: latest?.report_version ?? null, outcome: view.intent_outcome })
-    }, () => { if (current) setFacts(null) })
+      if (current) setRead({ id: research.id, version: latest?.report_version ?? null, outcome: view.intent_outcome })
+    }, () => { if (current) setRead(null) })
     return () => { current = false }
   }, [research.id, key])
   const waiting = research.awaiting.queue + research.awaiting.pdf
@@ -329,6 +331,8 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
   const guidedFiles = files.filter(f => !unguided.has(f.name))
   const guideRows = mixed && (files.length > 1 || guidedFiles.length < files.length)
   const noGuide = mixed && files.length > 0 && !guidedFiles.length && !zotero
+  // More checked PDFs than one search takes: the backend keeps five by D3's rule and lists the rest as not selected.
+  const overLimit = guideRows && guidedFiles.length > MAX_SEED_PDFS
   const activeChip: ModeChip = scope === 'attached' && intent === 'report' ? 'ask' : intent
 
   // What guides the search: every eligible PDF, less the uploads the person unchecked. The backend picks five among
@@ -371,11 +375,9 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     }
     setAttached(old => {
       const next = [...new Map([...old.files, ...accepted].map(f => [f.name, f])).values()]
-      // At most five PDFs guide one search (D3): a file added past five starts unchecked.
-      const out = new Set([...old.unguided].filter(name => next.some(f => f.name === name)))
-      let guided = 0
-      for (const f of next) { if (out.has(f.name)) continue; if (guided < MAX_SEED_PDFS) guided++; else out.add(f.name) }
-      return { files: next, unguided: out }
+      // A new PDF starts checked. `unguided` holds only the person's own unchecks; the limit of five is the backend's
+      // choice among the checked ones (D3), never an uncheck made here.
+      return { files: next, unguided: new Set([...old.unguided].filter(name => next.some(f => f.name === name))) }
     })
     if (accepted.length && scope === 'academic') setScope('attached_and_academic')  // attachments must be part of the scope
     setError(rejected.length ? t('{files}: only PDF files can be attached.', { files: rejected.join(', ') }) : '')
@@ -467,7 +469,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
       <div key={file.name} className="attachment-chip">
         <span className="attachment-chip-main">
           <span className="attachment-icon" aria-hidden><FileText size={13} /></span>
-          <span className="attachment-name" title={file.name}>{file.name}</span><small>{guideRows && !unguided.has(file.name) ? t('guides the search') : fileSize(file.size)}</small>
+          <span className="attachment-name" title={file.name}>{file.name}</span><small>{guideRows && !unguided.has(file.name) ? t(overLimit ? 'may guide the search' : 'guides the search') : fileSize(file.size)}</small>
         </span>
         <button type="button" className="attachment-remove" aria-label={t('Remove {name}', { name: file.name })} onClick={() => setAttached(old => ({ files: old.files.filter(f => f.name !== file.name), unguided: new Set([...old.unguided].filter(name => name !== file.name)) }))}><X size={13} /></button>
       </div>)}
@@ -542,14 +544,13 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
         <span id="guide-lead">{t('PDFs guiding the search · their titles, abstracts and references shape the query.')}</span>
         {files.map(file => {
           const checked = !unguided.has(file.name)
-          const full = !checked && guidedFiles.length >= MAX_SEED_PDFS
-          return <label key={file.name} title={full ? t('At most five PDFs guide one search.') : file.name}>
-            <input type="checkbox" checked={checked} disabled={full} aria-describedby={full ? 'guide-limit' : undefined}
+          return <label key={file.name} title={file.name}>
+            <input type="checkbox" checked={checked}
               onChange={() => setAttached(old => { const next = new Set(old.unguided); if (checked) next.add(file.name); else next.delete(file.name); return { ...old, unguided: next } })} />
             <span>{file.name}</span>
           </label>
         })}
-        {guidedFiles.length >= MAX_SEED_PDFS && files.length > MAX_SEED_PDFS && <span id="guide-limit" className="sr-only">{t('At most five PDFs guide one search.')}</span>}
+        {overLimit && <span className="guide-limit">{t('Up to five guide the search; DEIXIS keeps the five whose first pages share the most words with your question.')}</span>}
         {noGuide && <span className="guide-none" role="status">{t('Choose at least one PDF to guide the search.')}</span>}
       </div>}
       {pickerRole && models.length > 0 && <div className="composer-options composer-models">
@@ -580,7 +581,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
       {modeChips.map(({ id }) => { const reason = chipDisabled(id); return reason && <span key={id} id={`chip-reason-${id}`} className="sr-only">{reason}</span> })}
     </div>
     {(latest || suggestions.length > 0) && <div className="home-cards">
-      {latest && <ResumeCard research={latest} />}
+      {latest && <ResumeCard key={latest.id} research={latest} />}
       {suggestions.map(s => <button key={`${s.answer_id}:${s.text}`} type="button" className="card" onClick={() => { setQuestion(s.text); questionInput.current?.focus() }}>
         <span className="home-card-tag"><Lightbulb aria-hidden />{t('Suggested')}</span>
         <p>{s.text}</p>

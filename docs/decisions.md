@@ -4,6 +4,16 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D11 — Follow-up questions are answered only from passages the research already holds
+Status: accepted (decided with Sol over S22a's review rounds, 12 Oct 2026) · Date: 2026-10-12 · Writer: Claude
+Context: The mockup's follow-up box (R30, R31; F17, slice S22a) asks a further question inside a research. It must not start a search or cite anything the research has not read.
+Decision:
+- Each question is one `followup_answer` run. Its passages come from the latest answer's frozen evidence for the current question revision, or from the included works when there is no answer yet. Sources the person excluded or set to pending, read on the work's current head, are left out. Passages are ranked by word match and meaning, fused by RRF, and only the passages sent in that call can be cited.
+- Every quote must be found in its passage. After one repair, an invalid answer is stored as an unverified draft with no citations; the same happens when the two-call budget runs out on invalid output. The outcome is "not answered" when the passages do not say.
+- Pause, cancel, a newer question revision, the person's source choices and the stored files are checked before each call, on resume and inside the publish transaction. A turn and its citation links are published together and never edited. A published turn shows `stale_scope` or `stale_selection` when the question or the selection changed later.
+- "Search for new works on this" saves a new question revision, which the person starts.
+Limits: Whether a question counts as answered is the model's call, and a quote found in its passage does not prove the passage supports the claim. Without semantic ranking (no embedding model, or a question not in English) only word-match ranking runs. Tested with SYNTHETIC records and the fake model only; one live gpt-5.6-luna run in its own data directory is still owed, and whether these answers help a researcher is not measured.
+
 ## D10 — OpenAlex semantic requests overlap behind a 1.5 s start gate; pages hold 100 records
 Status: accepted (owner approved both, 12 Oct 2026; code reviewed by Sol over four rounds) · Date: 2026-10-12 · Writer: Claude
 Context: D6's live check (11–12 Oct) found each seed's semantic request took 5–6 s and ran one after another, taking search time from the keyword pages. OpenAlex documents semantic search at one request per second and `per_page` at most 100 (200 is deprecated; help.openalex.org, read 12 Oct).
@@ -16,16 +26,6 @@ Limits:
 - 1.5 s comes from one live probe (12 Oct, 6 overlapping requests): 1.0 s drew one 429, 1.25 s and 1.5 s none. Not measured under other keys, load or networks.
 - If an earlier seed task raises (a code or database fault, not a provider error), or the process dies while a later reply waits for its turn, that reply is lost and the request is sent again on resume (one paid request). Writing it out of order was rejected because it changes first admission.
 - The time saved per seeded run is not measured live.
-
-## D10 — Follow-up questions are answered only from passages the research already holds
-Status: accepted (decided with Sol over S22a's review rounds, 12 Oct 2026) · Date: 2026-10-12 · Writer: Claude
-Context: The mockup's follow-up box (R30, R31; F17, slice S22a) asks a further question inside a research. It must not start a search or cite anything the research has not read.
-Decision:
-- Each question is one `followup_answer` run. Its passages come from the latest answer's frozen evidence for the current question revision, or from the included works when there is no answer yet. Sources the person excluded or set to pending, read on the work's current head, are left out. Passages are ranked by word match and meaning, fused by RRF, and only the passages sent in that call can be cited.
-- Every quote must be found in its passage. After one repair, an invalid answer is stored as an unverified draft with no citations; the same happens when the two-call budget runs out on invalid output. The outcome is "not answered" when the passages do not say.
-- Pause, cancel, a newer question revision, the person's source choices and the stored files are checked before each call, on resume and inside the publish transaction. A turn and its citation links are published together and never edited. A published turn shows `stale_scope` or `stale_selection` when the question or the selection changed later.
-- "Search for new works on this" saves a new question revision, which the person starts.
-Limits: Whether a question counts as answered is the model's call, and a quote found in its passage does not prove the passage supports the claim. Without semantic ranking (no embedding model, or a question not in English) only word-match ranking runs. Tested with SYNTHETIC records and the fake model only; one live gpt-5.6-luna run in its own data directory is still owed, and whether these answers help a researcher is not measured.
 
 ## D9 — An answer the person starts may read works screened after the cutoff
 Status: accepted (decided with Sol over S20's review rounds, 12 Oct 2026) · Date: 2026-10-12 · Writer: Claude

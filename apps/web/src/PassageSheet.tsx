@@ -246,7 +246,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     // file id, so it can never stand for the new file's text.
     let live = true
     const assetId = rowAssetId
-    api.assetText(researchId, assetId).then(value => { if (live) setExtraText({ assetId, value }) }, () => { if (live) setExtraText({ assetId, value: false }) })
+    api.assetText(researchId, assetId).then(value => { if (live) setExtraText({ assetId, value: value.asset.id === assetId ? value : false }) }, () => { if (live) setExtraText({ assetId, value: false }) })
     return () => { live = false }
   }, [needsOtherText, rowAssetId, researchId])
 
@@ -502,7 +502,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
             {pdfAssetId && <> <button type="button" className="source-notice-action" onClick={() => choose('pdf')}><FileText size={13} aria-hidden />{t('Show this page in the PDF')}</button></>}</span></p>}
           {rendition && <p className="source-notice"><Info size={15} aria-hidden />{t('This PDF was drawn by DEIXIS from Europe PMC’s open-access text. Its pages are not the publisher’s pages.')}</p>}
           {tab === 'abs' && <div id="source-abs-view" role="tabpanel" aria-labelledby="source-tab-abs">{abstractTab}</div>}
-          {tab === 'text' && <div id="source-text-view" role="tabpanel" aria-labelledby="source-tab-text" className="asset-text-view" ref={textView}>
+          {/* The full-text view's class marks a whole document shown: a cited passage whose document was not the one its
+              quote was read from (the identity check above) falls back to the stored passage alone, without it. */}
+          {tab === 'text' && <div id="source-text-view" role="tabpanel" aria-labelledby="source-tab-text" className={documentShown ? 'asset-text-view' : undefined} ref={textView}>
             {textTab}
             {passage && !abstract && pdfAssetId && passage.text_source !== 'ocr' && passage.physical_page && <button type="button" className="link source-page-link" onClick={() => choose('pdf')}><FileText size={13} aria-hidden />{t('Show this page in the PDF')}</button>}
           </div>}

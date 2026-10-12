@@ -430,7 +430,10 @@ export const PAIRS: Pair[] = [
   // the funnel's labels and the Run box rows are (fixed text, data left out). The frames are chrome (§4.1): the
   // Artifacts box has a row per report version and table (its height is data), the boxes below it sit lower by as much.
   { id: 'research.rail-artifacts', surface: 'research', mock: '.rail .box:first-child', app: '.rail .box:first-child', checks: ['chrome', 'content'], text: false, widths: DESK, status: 'active' },
-  { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box:not(:first-child)', app: '.rail .box:not(:first-child)', checks: ['chrome', 'content'], list: 'fixed', text: false, widths: DESK, status: 'active' },
+  { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box:not(:first-child):not(:has(.legend))', app: '.rail .box:not(:first-child):not(:has(.legend))', checks: ['chrome', 'content'], list: 'fixed', text: false, widths: DESK, status: 'active' },
+  // The depth box ("How deeply sources were read", the one box with a legend) is its own pair: it carries a scope line
+  // the mockup lacks (GEOMETRY_EXCEPTIONS rail-depth-scope-height), so only its height is left out.
+  { id: 'research.rail-depth', surface: 'research', mock: '.rail .box:has(.legend)', app: '.rail .box:has(.legend)', checks: ['chrome', 'content'], text: false, widths: DESK, status: 'active' },
   { id: 'research.rail-heads', surface: 'research', mock: '.rail .box:not(.warnbox) h5', app: '.rail .box:not(.warnbox) h5', checks: ['type', 'colour'], list: 'fixed', text: false, widths: DESK,
     states: [], status: 'active' },
   // The amber box's heading is text on the amber tint: --warn-ink (exception warn-text-on-tint), checked at 4.5:1.

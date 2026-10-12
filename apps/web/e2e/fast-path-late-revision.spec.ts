@@ -47,6 +47,7 @@ for (const width of [1440, 390]) {
       // follow that newest, citation-less draft.
       view.answers[0].claims = []
       for (const source of view.sources) source.cited_in_latest_answer = false
+      view.counts.cited = 0
       view.answers[1].late_revision_status.status = 'failed'
       view.answers[1].late_revision_status.skip_reason = 'revision_unverified'
       await route.fulfill({ response, json: view })
@@ -60,6 +61,9 @@ for (const width of [1440, 390]) {
     const workOf = new Map(view.sources.map(s => [s.source_version_id, s.work_id]))
     const citedWorks = new Set(v1.claims.flatMap(c => c.evidence.map(e => workOf.get(e.source_version_id))))
     expect(citedWorks.size).toBeGreaterThan(0)
+    // The facts strip's Cited number, and from 1100px the rail's Cited bar, count the same works.
+    await expect(page.locator('.research-facts button', { hasText: 'Cited' }).locator('strong')).toHaveText(String(citedWorks.size))
+    if (width >= 1100) await expect(page.locator('.rail .fun button', { hasText: 'Cited' }).locator('.rail-data')).toHaveText(String(citedWorks.size))
     await page.locator('.answer-thread .answer-acts').getByRole('button', { name: /^View \d+ cited sources?$/ }).click()
     const sources = page.locator('[data-split-panel]')
     await expect(sources.getByRole('button', { name: /^Cited in answer/ })).toHaveAttribute('aria-pressed', 'true')

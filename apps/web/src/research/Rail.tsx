@@ -34,8 +34,8 @@ function Row({ icon: Icon, label, aside, ariaLabel, onClick }: { icon: LucideIco
 
 type Reports = { answer: Answer; version: number; title: string }[]
 
-export function Rail({ view, researchId, reports, tables, hidden, candidateCount, followupCount, openPanel, onOpenReport, onOpenEvidenceReport, onOpenTable }: {
-  view: ResearchView; researchId: string; reports: Reports; tables: TableSummary[] | null; hidden: boolean
+export function Rail({ view, researchId, cited, reports, tables, hidden, candidateCount, followupCount, openPanel, onOpenReport, onOpenEvidenceReport, onOpenTable }: {
+  view: ResearchView; researchId: string; cited: number; reports: Reports; tables: TableSummary[] | null; hidden: boolean
   candidateCount: number | null; followupCount: number | null; openPanel: OpenPanel
   onOpenReport: (answerId: string) => void; onOpenEvidenceReport: (reportId: string) => void; onOpenTable: (tableId: string) => void
 }) {
@@ -69,10 +69,11 @@ export function Rail({ view, researchId, reports, tables, hidden, candidateCount
 
   // The mockup's "Found" bar shows unique works (duplicates merged), so it is named so; rows found stay in the Funnel
   // panel. "Full text read" counts each work once over every run of this question; the reading step counts one run.
+  // "Cited" counts the works the answer shown in the thread cites (`cited`), as the facts strip does.
   const bars: [string, number, string?][] = funnel ? [
     ['Unique works', funnel.unique], ['Abstract read', funnel.abstracts_read], ['Passed the abstract stage', funnel.candidates],
     ['Full text read', counts.fulltext_read_works ?? 0, 'Works whose two full-text passes both stored a result in one run, over every run of this question'],
-    ['Cited', counts.cited],
+    ['Cited', cited],
   ] : []
   const widest = Math.max(1, ...bars.map(([, n]) => n))
 

@@ -277,6 +277,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const answer = shownAnswer(view)
   // The source versions the shown answer cites (its stored claims), for the Sources panel's "Cited in answer" tab.
   const citedVersions = new Set(answer?.claims.flatMap(c => c.evidence.map(e => e.source_version_id)) ?? [])
+  // The works it cites, each once over its versions. The view's `counts.cited` follows the newest draft, which after a
+  // failed late revision cites nothing while V1 is shown; the facts strip and the rail count the shown answer's works.
+  const workOfVersion = new Map(view.sources.map(s => [s.source_version_id, s.work_id]))
+  const citedCount = new Set([...citedVersions].map(v => workOfVersion.get(v) ?? v)).size
   const hasAcademic = view.scope.source_scope !== 'attached'
   const needsSeed = view.scope.source_scope === 'attached_and_academic' && view.scope.seed_mode === 'uploaded_seed'
   const seedSearchReady = !needsSeed || view.scope.seed_status === 'ready'
@@ -614,8 +618,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <span className="research-revision">{t('Research')} · {t('revision {n}', { n: view.research.current_scope_revision })}</span>
       {/* A count is shown once it has something to say; a row of zeroes while the run works is noise, not a boundary. */}
       {([['unique', 'Unique works', 'all'], ['included', 'Included', 'included'], ['inspected', 'Given to the model', 'all'], ['cited', 'Cited', null]] as const)
-        .filter(([key]) => view.counts[key] > 0)
-        .map(([key, label, filter]) => <button key={key} type="button" onClick={() => (filter ? showSources(filter) : showAnswer())}><strong>{view.counts[key]}</strong><span>{t(label)}</span></button>)}
+        .map(([key, label, filter]) => [key, label, filter, key === 'cited' ? citedCount : view.counts[key]] as const)
+        .filter(([, , , n]) => n > 0)
+        .map(([key, label, filter, n]) => <button key={key} type="button" onClick={() => (filter ? showSources(filter) : showAnswer())}><strong>{n}</strong><span>{t(label)}</span></button>)}
       <span title={t('Where DEIXIS looks for sources')}><ScopeIcon size={13} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
       <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>
@@ -692,7 +697,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
     </div>
     {/* Hidden, not removed, while a panel is open or the window is under 1100px: a panel opened from the rail hands focus back to its button. */}
-    <Rail view={view} researchId={id} reports={reports} tables={tables} hidden={Boolean(panel)} candidateCount={candidateCount} followupCount={followupCount.count}
+    <Rail view={view} researchId={id} cited={citedCount} reports={reports} tables={tables} hidden={Boolean(panel)} candidateCount={candidateCount} followupCount={followupCount.count}
       openPanel={openPanel} onOpenReport={setOpenReportId} onOpenEvidenceReport={setOpenEvidenceReportId} onOpenTable={openTable} />
     </div>
     </div>

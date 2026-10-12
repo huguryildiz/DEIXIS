@@ -3,7 +3,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 // The research page's side panel (mockup `openPanel`, R10/P1): one panel shows at a time, opening another from an open
 // panel stacks it so Back returns, and Close or Escape ends the whole stack and hands focus back to the control that
 // opened the first panel.
-export type PanelEntry = { name: string; opener: HTMLElement | null }
+// `opener` is the control outside the panels that opened the stack; `returnTo` is the control inside the panel below that opened this
+// stacked panel (a citation chip, a row), which Back focuses again while it is still there.
+export type PanelEntry = { name: string; opener: HTMLElement | null; returnTo?: HTMLElement | null }
 export type PanelSlots = { head: HTMLElement; body: HTMLElement }
 export type PanelStack = {
   entries: PanelEntry[]
@@ -18,8 +20,8 @@ export type PanelStack = {
   remove: (name: string) => void
   setWide: (wide: boolean) => void
   setSlots: (slots: PanelSlots | null) => void
-  // True once after an open or back: the panel that shows next moves focus to its heading.
-  takeFocus: () => boolean
+  // Set once after an open or back: the panel that shows next moves focus to its heading, or after Back to the control that opened the panel above it.
+  takeFocus: () => boolean | HTMLElement
 }
 
 // The URL names a panel with the mockup's names; the research tabs' old segments stay as aliases (plan §2.1).
@@ -47,7 +49,7 @@ export function usePanelStack(initial: string | null): PanelStack {
   const [entries, setEntries] = useState<PanelEntry[]>(() => (initial ? [{ name: initial, opener: null }] : []))
   const [wide, setWide] = useState(false)
   const [slots, setSlots] = useState<PanelSlots | null>(null)
-  const pendingFocus = useRef(Boolean(initial))
+  const pendingFocus = useRef<boolean | HTMLElement>(Boolean(initial))
   const entriesRef = useRef(entries)
   const commit = useCallback((next: PanelEntry[]) => { entriesRef.current = next; setEntries(next) }, [])
 
@@ -60,11 +62,12 @@ export function usePanelStack(initial: string | null): PanelStack {
       return
     }
     pendingFocus.current = true
-    commit(!list.length || options?.fresh ? [{ name, opener: opener ?? list[0]?.opener ?? null }] : [...list, { name, opener }])
+    const inside = document.activeElement instanceof HTMLElement && document.activeElement !== document.body && document.activeElement.closest('[data-split-panel]') ? document.activeElement : null
+    commit(!list.length || options?.fresh ? [{ name, opener: opener ?? list[0]?.opener ?? null }] : [...list, { name, opener, returnTo: inside }])
   }, [commit])
   const back = useCallback(() => {
-    pendingFocus.current = true
     const list = entriesRef.current
+    pendingFocus.current = list.length > 1 && list[list.length - 1].returnTo || true
     if (list.length > 1) commit(list.slice(0, -1))
   }, [commit])
   const close = useCallback(() => {

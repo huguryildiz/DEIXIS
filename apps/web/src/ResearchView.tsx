@@ -143,6 +143,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const announcedRuns = useRef(new Set<string>())
   const titleInput = useRef<HTMLTextAreaElement>(null)
   const moreButton = useRef<HTMLButtonElement>(null)
+  // Escape on the Research actions menu gives focus back to its button; choosing a row hands it to the panel that opens.
+  const rowChosen = useRef(false)
   // An edit session ends once: Enter, Escape or the blur that follows either one must not save a second time.
   const titleEditDone = useRef(true)
   const titleEditingRef = useRef(false)
@@ -535,12 +537,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <Button variant="ghost" size="sm" className="research-topbar-action research-revise" title={t('Revise question')} onClick={reviseQuestion}><PencilLine size={14} aria-hidden /><span className="research-topbar-label">{t('Revise question')}</span></Button>
       <ExportMenu researchId={id} included={included > 0} cited={view.counts.cited > 0} prisma={Boolean(view.counts.flow)} />
       {/* Until the rail (S11) and the steps (S9) open their panels, this menu reaches every panel the tabs used to show. */}
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={open => { if (open) rowChosen.current = false }}>
         <DropdownMenuTrigger render={<Button ref={moreButton} variant="ghost" size="icon-sm" className="research-topbar-more" aria-label={t('Research actions')} title={t('Research actions')} />}><Ellipsis size={16} aria-hidden /></DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="research-export-menu w-auto" finalFocus={false}>
+        <DropdownMenuContent align="end" className="research-export-menu w-auto" finalFocus={() => (rowChosen.current ? false : moreButton.current)}>
           {([['sources', 'Sources', BookOpen, view.sources.length], ['queue', 'Awaiting your decision', Inbox, queueCount], ['pdfs', 'Get more full text', FileText, waitingCount],
             ['table', 'Evidence table', Table2, tables?.length ?? null], ['watch', 'Follow-up', Clock, followupCount.count], ['cands', 'Candidates', Lightbulb, candidateCount], ['activity', 'Activity', Clock, null]] as const)
-            .map(([name, label, Icon, count]) => <DropdownMenuItem key={name} className="research-export-item" onClick={() => openPanel(name, { opener: moreButton.current })}>
+            .map(([name, label, Icon, count]) => <DropdownMenuItem key={name} className="research-export-item" onClick={() => { rowChosen.current = true; openPanel(name, { opener: moreButton.current }) }}>
               <Icon size={15} aria-hidden /><span>{t(label)}</span>{count !== null && <span className="research-tab-count">{count}</span>}
             </DropdownMenuItem>)}
         </DropdownMenuContent>

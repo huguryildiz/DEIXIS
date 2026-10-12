@@ -100,7 +100,12 @@ export function StackPanel({ name, title, icon: Icon, actions, className, open, 
   useLayoutEffect(() => {
     if (!slots) return
     slots.body.replaceChildren(box)
-    if (takeFocus?.()) document.getElementById('split-panel-title')?.focus({ preventScroll: true })
+    const focus = takeFocus?.()
+    if (focus) {
+      // After Back, the control that opened the panel above (when it is still in the panel below), else the heading.
+      const back = focus instanceof HTMLElement && focus.isConnected && !focus.matches(':disabled') && focus.getClientRects().length > 0 ? focus : null
+      ;(back ?? document.getElementById('split-panel-title'))?.focus({ preventScroll: Boolean(!back) })
+    }
     return () => { box.remove() }
   }, [slots, box, takeFocus])
 

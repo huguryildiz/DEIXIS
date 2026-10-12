@@ -349,7 +349,7 @@
 .research-thread-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;align-items:start;min-height:100%}
 .research-split.has-panel .research-thread-grid{grid-template-columns:minmax(0,1fr)}
 .research-rail[hidden]{display:none}
-.research-rail{position:sticky;top:0;display:grid;align-content:start;gap:8px;min-width:0;padding:14px}
+.research-rail{position:sticky;top:0;display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:8px;min-width:0;padding:14px}
 .legacy-research .research-rail-title{margin:6px 0 0;color:var(--muted);font-family:var(--font-sans);font-size:12px;font-weight:500;line-height:1.5;letter-spacing:0}
 .research-rail .empty-inline{padding:4px 0;font-size:12.5px}
 @media(max-width:1099px){

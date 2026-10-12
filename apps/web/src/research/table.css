@@ -1,12 +1,12 @@
 /* Research page artifacts: table cards and the Artifacts list. Split from workspace.css (S0b). */
-.table-artifacts{display:grid;gap:10px;margin-top:10px}
+.table-artifacts{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-top:10px}
 .table-artifact-preview{display:grid;grid-template-rows:repeat(5,1fr);padding:6px}
 .table-artifact-preview::after{display:none}
 .table-artifact-preview{--rule:color-mix(in srgb,var(--page-muted),transparent 70%)}
 .table-artifact-preview i{border-bottom:1px solid var(--rule);background:linear-gradient(90deg,transparent 32%,var(--rule) 32%,var(--rule) calc(32% + 1px),transparent calc(32% + 1px),transparent 66%,var(--rule) 66%,var(--rule) calc(66% + 1px),transparent calc(66% + 1px))}
 .table-artifact-preview i:first-child{background-color:color-mix(in srgb,var(--page-ink),transparent 92%)}
 .table-artifact-preview i:last-child{border-bottom:0}
-.artifact-list{display:grid;gap:0;margin:0;padding:0;list-style:none;border-top:1px solid var(--line)}
+.artifact-list{display:grid;grid-template-columns:minmax(0,1fr);gap:0;margin:0;padding:0;list-style:none;border-top:1px solid var(--line)}
 .artifact-list button{display:flex;align-items:center;gap:12px;width:100%;padding:14px 8px;border-bottom:1px solid var(--line);text-align:left;color:var(--ink)}
 .artifact-list button:hover{background:color-mix(in srgb,var(--ink),transparent 96%)}
 .artifact-list button>svg{flex:none;color:var(--muted)}

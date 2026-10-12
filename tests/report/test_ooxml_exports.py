@@ -192,26 +192,13 @@ const options = { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022
 const compile = (source, file) => ts.transpileModule(source, { fileName: file, compilerOptions: options }).outputText;
 require.extensions['.ts'] = require.extensions['.tsx'] = (m, file) => m._compile(compile(fs.readFileSync(file, 'utf8'), file), file);
 const src = path.resolve('src');
-const slice = (file, from, to) => {
-  const text = fs.readFileSync(path.join(src, file), 'utf8'), a = text.indexOf(from), b = text.indexOf(to, a);
-  if (a < 0 || b < 0) throw new Error(`${file}: ${from} … ${to} not found`);
-  return text.slice(a, b);
-};
-// The real generators, cut from their components: AnswerBlock's markdown() and EvidenceTable's tableCsv().
+// The real generators: the report's Markdown (research/reportMarkdown.ts) and the table's CSV (tableCsv.ts).
 const probe = `
-import { t, uiLocale, setUiLanguage } from './i18n'
-import { locatorText, pageLocator, verdictLabels, versionText } from './labels'
-import { citationStyles, formatReferenceText } from './citations'
-import { OCR_LABEL } from './ocr'
-const React = null, ModelName = null
-export { setUiLanguage }
-export function answerMarkdown(answer: any, sources: any[], title: string, version: number, style: any) {
-${slice('research/AnswerBlock.tsx', 'const refs = new Map', 'const copyReport')}
-  return markdown()
-}
-${slice('research/AnswerBlock.tsx', 'function pdfSuggestion(', 'function PdfSuggestions(')}
-${slice('EvidenceTable.tsx', 'const formatLabels', 'function downloadTableCsv(')}
-export { tableCsv }
+import { setUiLanguage } from './i18n'
+import { reportMarkdown } from './research/reportMarkdown'
+import { tableCsv } from './tableCsv'
+export { setUiLanguage, tableCsv }
+export const answerMarkdown = reportMarkdown
 `;
 const file = path.join(src, '__s18_export_probe__.tsx');
 const m = new Module(file, module); m.filename = file; m.paths = Module._nodeModulePaths(src);

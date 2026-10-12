@@ -40,6 +40,11 @@ const WARN_TONE = ['.recents svg.i.wn', '.step.att>button', '.notice.warn>svg.i'
   '.warn-t', '.qcard header b', '.stage .lost b']
 
 export const COLOUR_EXCEPTIONS: ColourException[] = [
+  // Listed before muted-text, which matches every mockup element.
+  { id: 'typed-text-is-ink', rule: '§0 rule 4 (text a person writes is body text; WCAG 1.4.3)', token: '--ink',
+    property: 'color', use: 'text', selectors: ['.q.edit textarea', '.q.edit .field'], pairs: ['revise.question', 'revise.terms'],
+    mock: { light: '#6b7280', dark: '#9aa1ab' }, approved: { light: '#1f2328', dark: '#e7e9ec' },
+    states: ['default'], note: 'The mockup\'s revise fields inherit their label\'s --muted; the question and key terms a person edits are --ink, as in the title field.' },
   { id: 'muted-text', rule: '§0 rule 4 (D5: --muted stays #5b6475; mockup --muted on --chip fails 4.5:1)', token: '--muted',
     property: 'color', use: 'text', selectors: ['*'], mock: { light: '#6b7280', dark: '#9aa1ab' }, approved: { light: '#5b6475', dark: '#9aa1ab' },
     states: ['default', 'hover', 'selected'], note: 'Metadata, captions and quiet labels, including on the chip surface.' },
@@ -87,7 +92,7 @@ export const PLACEMENTS: Placement[] = [
   { id: 'answer-boundary', rule: '§2.2 (Q1)', slice: 'S9', container: 'Answering step detail and the Methods box', app: null },
   { id: 'english-question', rule: '§2.2 (Q1)', slice: 'S9', container: 'Plan step detail and the Search plan panel', app: null },
   { id: 'seed-pdfs-block', rule: '§2.2 (Q1, D3)', slice: 'S9', container: 'Plan step detail, "PDFs guiding the search"', app: null },
-  { id: 'prisma-s-export', rule: '§2.2 (Q1)', slice: 'S8', container: 'Export menu, SOURCES group', app: null },
+  { id: 'prisma-s-export', rule: '§2.2 (Q1)', slice: 'S8', container: 'Export menu, SOURCES group: rows MD and JSON "PRISMA-S search report" after BIB and RIS', app: '.export-placement' },
   { id: 'search-details', rule: '§2.2 (Q1)', slice: 'S9', container: 'Search step detail', app: null },
   { id: 'audit-sample', rule: '§2.2 (Q1)', slice: 'S14', container: 'Funnel panel, below the stages, collapsed', app: null },
   { id: 'development-lines', rule: '§2.2 (Q1)', slice: 'S15a', container: 'Evidence table ⋯ menu', app: null },
@@ -97,7 +102,7 @@ export const PLACEMENTS: Placement[] = [
   { id: 'library-pager', rule: '§2.2 (Q1)', slice: 'S25', container: 'Pager under the Library table', app: null },
   { id: 'copyright-footer', rule: '§2.2 (Q1)', slice: 'S24', container: 'Bottom of Settings, foot-note style', app: null },
   { id: 'seed-choice-stale', rule: '§2.2 (Q1)', slice: 'S23b', container: 'Search plan panel, "PDFs guiding the search"; stale-seed warn notice in the plan step', app: null },
-  { id: 'search-again-new-answer', rule: '§2.2 (Q1)', slice: 'S8', container: 'Topbar ⋯ menu rows "Search again" and "Generate a new answer"', app: null },
+  { id: 'search-again-new-answer', rule: '§2.2 (Q1)', slice: 'S8', container: 'Topbar ⋯ menu rows "Search again" and "Generate a new answer", above Move to Trash', app: '.research-menu-placement' },
   { id: 'counts-places', rule: '§2.2 (Q1)', slice: 'S11', container: 'unique and included in the Funnel panel; given and cited in the Answering step detail', app: null },
   { id: 'suggestion-research', rule: 'plan H15 / Q4 (a suggestion names the research whose answer it came from)', slice: 'S5b', container: 'Suggested card, under the suggestion, in the Resume card\'s meta-line style', app: '.home-card-source' },
   { id: 'zotero-library-source', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S6', container: 'Zotero dialog body, between the lead note and the collections: "Zotero on this computer" / "zotero.org"', app: '.zotero-source' },
@@ -105,9 +110,15 @@ export const PLACEMENTS: Placement[] = [
   { id: 'jobs-sheet-controls', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Jobs sheet job line: Pause / Resume of an OCR run or a PDF collection, and the research title as a link', app: '.job-action, .job-research' },
   { id: 'jobs-sheet-unconfirmed', rule: '§2.3 / AGENTS.md (no success beyond stored state)', slice: 'S1', container: 'Jobs sheet, under Finished: jobs whose own run failed, was cancelled, or could not be read ("Status unknown")', app: null },
   { id: 'toast-dismiss', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Toast, after the text and the Undo link: the dismiss button (errors stay until dismissed)', app: '.toast-close' },
-  // S7a: the tabs are gone before the rail (S11), the steps (S9) and the ⋯ menu (S8) open the panels.
-  { id: 'panel-menu-rows', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S8',
-    container: 'Topbar ⋯ "Research actions" lists every panel with its count (Sources, Awaiting your decision, Get more full text, Evidence table, Follow-up, Candidates, Activity) until S8 trims it to R9 and S11/S9 open the rest', app: '.research-topbar-more' },
+  // S7a/S8: until the rail (S11) and the steps (S9) open them, the ⋯ menu also reaches four panels.
+  { id: 'panel-menu-rows', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S11',
+    container: 'Topbar ⋯ "Research actions", after Follow-up: Sources, Awaiting your decision, Get more full text and Evidence table with their counts, until the rail (S11) and the steps (S9) open them; Candidates and Follow-up keep their counts (dataText)', app: '.research-menu-placement' },
+  { id: 'run-controls', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S9',
+    container: 'Topbar, beside the run chip: Resume and Cancel of a paused or stopped run, Cancel (and Pause) of a live one, until the paused notice under the steps (R18) carries them', app: null },
+  { id: 'revise-phone', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S22b',
+    container: 'Topbar at ≤820px: Revise question stays as a 30px icon button (the mockup hides it there and revises through the follow-up composer, R30)', app: null },
+  { id: 'key-terms-syntax', rule: '§0 rule 5 (the key-terms syntax is how a person writes the blocks the search reads)', slice: 'S8',
+    container: 'Revise form, under English key terms: one 11.5px muted line on the block syntax', app: '#revise-key-terms-hint' },
   { id: 'rail-under-thread', rule: '§0 rule 5 (the Artifacts list, the only way to older report versions, stays reachable)', slice: 'S11',
     container: 'Below 1100px the rail slot follows the thread in the same scroll instead of hiding; S11/S12 (report version select) restore the mockup rule', app: '.research-rail' },
 ]
@@ -135,6 +146,9 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'zotero-account', rule: '§2.3 (Q2, S6: the local app has no key; the zotero.org key is set in .env and its rights are not checked)', mock: 'Connected as the Zotero account in Settings · read-only key.', app: 'Reads Zotero on this computer through its local API · read-only. / Reads the zotero.org library set in .env · read-only.' },
   { id: 'zotero-count', rule: '§2.3 (Q2, S6: the count is Zotero’s numItems; the import skips standalone notes and non-PDF attachments)', mock: 'Import N items (no note on what N counts)', app: 'Import N items, with "Counts are Zotero’s own; standalone notes and non-PDF attachments are skipped, so fewer items may be added." in the foot note' },
   { id: 'zotero-home-join', rule: '§2.3 (Q2, S6: Home imports when the research starts, as included sources)', mock: 'Items join this research as attached sources.', app: 'Items are imported when the research starts and join it as included sources.' },
+  { id: 'answer-first-version', rule: '§2.3 (a sentence names only what exists)', mock: 'Answer · Writing a new version', app: 'Answer · Writing the first version (when no answer version exists yet)' },
+  { id: 'revline-no-answer', rule: '§2.3 (a sentence names only what exists)', mock: 'Revision N and its answer are kept', app: 'Revision N is kept (when no valid report was written for revision N)' },
+  { id: 'revise-above', rule: '§2.3 (live copy; the revise form moved into the bubble, S8)', mock: '(none)', app: 'Revise the question above … (was "below", where the old form sat)' },
   // Live copy, not mockup copy: the run chips named the tabs, which no longer exist (S7a). S8 replaces the chips (R3-R6).
   { id: 'run-chip-panel', rule: '§2.3 (a sentence names only what exists)', mock: 'Open the Candidates / Follow-up / Evidence tab to control this run (live app, no mockup element)', app: 'Open the Candidates / Follow-up / Evidence table panel to control this run' },
 ]
@@ -154,6 +168,11 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
   { id: 'palette-recent-height', rule: '§0 rule 1 (example data is not copied: the row is a research title from the records)',
     pairs: ['palette.recent-rows'], axes: ['height'],
     note: 'A recent research row wraps its title as the mockup\'s does, so its height follows the title\'s length (the fixture\'s title is longer than the mockup\'s example). x and width are compared.' },
+  { id: 's8-menu-rows-y', rule: 'PLACEMENTS panel-menu-rows and search-again-new-answer; DEFERRED_TARGETS export-pdf-row',
+    pairs: ['research-menu.trash', 'export-menu.rows'], axes: ['y'],
+    note: 'Move to Trash sits below the placement rows; the Export rows after the left-out PDF row move up. x, width and height are compared.' },
+  { id: 's8-revise-buttons-y', rule: 'PLACEMENTS key-terms-syntax', pairs: ['revise.buttons'], axes: ['y'],
+    note: 'Cancel and Save revision sit below the key-terms syntax line; x, width and height are compared.' },
   { id: 'zotero-foot-buttons-y', rule: '§2.2 (placement zotero-library-source) and §2.3 (copy changes zotero-lead, zotero-account, zotero-count)',
     pairs: ['zotero.foot-buttons'], axes: ['y'],
     note: 'The footer sits below the library switch row and the replaced notes, whose wrapped height differs from the mockup; x, width and height are compared.' },
@@ -180,6 +199,8 @@ export const APP_ADDITIONS: Array<{ id: string; rule: string; app: string; slice
 /** Styles the app draws where the mockup draws none, kept for accessibility. The listed properties of the listed pairs
  *  are not compared; every other check of those pairs still runs. */
 export const STYLE_EXCEPTIONS: Array<{ id: string; rule: string; pairs: string[]; properties: string[]; note: string }> = [
+  { id: 'menu-heading-case', rule: '.impeccable.md §2.4 (small caps labels are sentence-case text uppercased by CSS)', pairs: ['export-menu.headings'], properties: ['text-transform'],
+    note: 'The mockup writes REPORT, EVIDENCE TABLE and SOURCES in capitals; the app writes Report, Evidence table and Sources and uppercases them in CSS, so the Turkish labels case-fold correctly. The rendered text is the same.' },
   { id: 'palette-focus-line', rule: 'WCAG 2.4.7 (focus visible; a11y.spec X05 needs an indicator on every focus stop)', pairs: ['palette.field'], properties: ['box-shadow'],
     note: 'While its input has focus the palette field draws a 2px accent line along its bottom edge (inset box-shadow); the mockup\'s field has no focus indicator.' },
 ]
@@ -191,6 +212,8 @@ export const DEFERRED_TARGETS: Array<{ id: string; rule: string; selector: strin
     note: 'Palette row "Open search funnel" (F): the Funnel panel (P41) does not exist yet.' },
   { id: 'funnel-key-dialog', rule: 'S3 (no key or command without a real target)', selector: '.keys > span:nth-of-type(19), .keys > span:nth-of-type(20)', slice: 'S14',
     note: 'Keys dialog row "Search funnel · F", under ON A RESEARCH: the Funnel panel (P41) does not exist yet.' },
+  { id: 'export-pdf-row', rule: 'S8 (never a row that does nothing; print is wired in S27)', selector: '.menu button.fmt[data-msg^="Report saved as PDF"]', slice: 'S27',
+    note: 'Export menu, REPORT group: "PDF · Portable document". The print path (print.css + window.print) is not reachable from the UI yet.' },
   { id: 'followup-send-key', rule: 'S3 (no key or command without a real target)', selector: '.keys > span:nth-of-type(27), .keys > span:nth-of-type(28)', slice: 'S22b',
     note: 'Keys dialog row "Send follow-up · ⌘ ↵", under IN A TEXT BOX: the follow-up composer (R30) does not exist yet.' },
 ]

@@ -266,26 +266,24 @@ test('a research title is renamed in place and from its sidebar row', async ({ b
     await startResearch(page, server, 'SYNTHETIC [invent-locator] rename flow research')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
     await expect(page.getByText('The model output failed validation after one repair attempt')).toBeVisible()
+    // The title is one button in the h1 (UI parity S8); it opens the rename row, which holds Suggest a short title.
+    const titleButton = page.locator('h1 .research-title-button')
+    await titleButton.click()
     await page.getByRole('button', { name: 'Suggest a short title' }).click()
     const discovery = 'Synthetic short research title'
     const renamed = 'Own wording for the synthetic rename research'
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(discovery)
-    // No edit control in the header: the heading itself is the whole affordance.
-    await expect(page.getByRole('button', { name: /edit title/i })).toHaveCount(0)
 
-    await page.getByRole('heading', { level: 1 }).click()
-    await expect(page.locator('.research-title-input')).toHaveCount(0)
-    await page.getByRole('heading', { level: 1 }).dblclick()
+    await titleButton.click()
     const field = page.getByRole('textbox', { name: 'Research title' })
     await expect(field).toBeFocused()
     await field.fill(renamed)
-    await expect(page.locator('.research-title-hint')).toHaveText('Enter saves, Escape cancels')
     await shot(page, 'rename-in-place-desktop')
 
     // Escape reverts to the stored title; Enter saves.
     await field.press('Escape')
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(discovery)
-    await page.getByRole('heading', { level: 1 }).dblclick()
+    await titleButton.click()
     await page.getByRole('textbox', { name: 'Research title' }).fill(renamed)
     await page.keyboard.press('Enter')
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(renamed)
@@ -308,7 +306,7 @@ test('a research title is renamed in place and from its sidebar row', async ({ b
 
     // The field replaces the heading without clipping it on a narrow layout.
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.getByRole('heading', { level: 1 }).dblclick()
+    await titleButton.click()
     await expect(page.getByRole('textbox', { name: 'Research title' })).toBeVisible()
     await shot(page, 'rename-in-place-mobile')
     await page.getByRole('textbox', { name: 'Research title' }).press('Escape')
@@ -625,7 +623,7 @@ test.describe.serial('Failures: E and B (code check)', () => {
 
   test('E: a model failure pauses with saved work and resumes on the same model', async () => {
     await startResearch(page, server, 'SYNTHETIC [model-down] How is molecule release scheduling optimized?')
-    await expect(page.getByText('Search & screening · Paused')).toBeVisible()
+    await expect(page.getByText('Search & screening · Stopped')).toBeVisible()
     await expect(page.getByText('DEIXIS could not reach Codex.', { exact: true })).toBeVisible()
     // The connection's own words sit under the reason, so a usage limit and a rate limit read differently there.
     await expect(page.getByText('The service did not give a recovery time.', { exact: true })).toBeVisible()

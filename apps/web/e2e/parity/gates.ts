@@ -310,7 +310,9 @@ export function checkType(pair: Pair, m: Side): string[] {
   const out: string[] = []
   const fm = normaliseFamily(m.mock.style['font-family']), fa = normaliseFamily(m.app.style['font-family'])
   if (fm !== fa) out.push(`${pair.id}: font-family mockup ${fm} app ${fa}`)
+  const freeStyle = new Set(STYLE_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id))).flatMap(e => e.properties))
   for (const k of ['font-size', 'font-weight', 'line-height', 'text-transform']) {
+    if (freeStyle.has(k)) continue
     if (px(m.mock.style[k]) !== px(m.app.style[k])) out.push(`${pair.id}: ${k} mockup ${m.mock.style[k]} app ${m.app.style[k]}`)
   }
   const ls = (v: string) => (v === 'normal' ? '0px' : px(v))

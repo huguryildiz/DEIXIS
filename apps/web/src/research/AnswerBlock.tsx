@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
 import { ArrowUpRight, BadgeCheck, BookOpenText, FileText, Info, ListMinus, ScanText, Sigma, Quote, ShieldCheck, Sparkles, Upload } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { type Answer, type Evidence, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
-import { locatorText, pageLocator, pauseReasonText, verdictLabels, versionText, versionTones } from '../labels'
+import { type Answer, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
+import { locatorText, pauseReasonText, verdictLabels, versionText, versionTones } from '../labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../labels'
 import { MathText } from '../MathText'
 import { ReviewSummary } from '../review/ReviewSummary'
@@ -11,7 +11,7 @@ import { useToast } from '../Toast'
 import { ModelName } from '../ModelName'
 import { useModelText } from '../modelText'
 import { Option } from '../Home'
-import { citationStyles, formatReference, formatReferenceText, type CitationStyle } from '../citations'
+import { citationStyles, formatReference, type CitationStyle } from '../citations'
 import { OCR_LABEL } from '../ocr'
 import { t } from '../i18n'
 import { SourceKey } from '../SourceKey'
@@ -20,11 +20,7 @@ import { AnswerFlowNote } from '../FlowReport'
 import { MethodBox } from '../MethodBox'
 import { ExportLinks } from './ExportMenu'
 import { ReportSheet } from './ReportSheet'
-
-function reportFilename(title: string, version: number) {
-  const base = title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 80)
-  return `${base || 'deixis-report'}-v${version}.md`
-}
+import { downloadReportMarkdown, reportMarkdown, reportParts } from './reportMarkdown'
 
 async function writeClipboard(text: string) {
   if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text)
@@ -61,7 +57,7 @@ export function AnswerBlock({ researchId, title, version, answer, sources, busy,
   const latePending = showCard && answer.late_revision_status && ['waiting_fetch', 'reading', 'answering'].includes(answer.late_revision_status.status)
     ? <p className="legacy-mini-note" role="status">{t(LATE_REVISION_PENDING)}</p> : null
   if (answer.status === 'clarification' && answer.clarification) {
-    return <div className="legacy-answer"><div className="section-label">{t('Clarification needed')}</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">{t('Revise the question below to continue.')}</p></div>
+    return <div className="legacy-answer"><div className="section-label">{t('Clarification needed')}</div><h2>{answer.clarification.question}</h2><p>{answer.clarification.why_it_matters}</p>{answer.clarification.options.length > 0 && <ul className="plain-list">{answer.clarification.options.map(o => <li key={o}>{o}</li>)}</ul>}<p className="legacy-mini-note">{t('Revise the question above to continue.')}</p></div>
   }
   if (answer.status === 'no_evidence' && answer.validation.reason === 'no_includable_source') {
     return <><Notice tone="attention">{t('No work was included at full text when this answer started, so no answer was written and no model was asked. The line below says where the works stand.')}</Notice><AnswerFlowNote answer={answer} /></>
@@ -73,60 +69,13 @@ export function AnswerBlock({ researchId, title, version, answer, sources, busy,
     return <div className="legacy-answer"><Notice tone="error">{t('The model output failed validation after one repair attempt, so it is not shown as a cited answer.')}<ul className="plain-list">{answer.validation.issues?.map(i => <li key={`${i.code}${i.path}`}>{t('{code} at {path}', { code: i.code, path: i.path })}</li>)}</ul></Notice>
       {answer.unverified_draft?.claims?.map(c => <p className="claim is-unverified" key={c.claim_label}><MathText text={c.text} /></p>)}<AnswerFlowNote answer={answer} />{latePending}</div>
   }
-  const refs = new Map<string, { n: number; e: Answer['claims'][number]['evidence'][number] }>()
-  answer.claims.forEach(c => c.evidence.forEach(e => { if (!refs.has(e.passage_id)) refs.set(e.passage_id, { n: refs.size + 1, e }) }))
-  // A citation names its source's key (D59); a claim citing two passages of one source adds each passage's place.
-  const citeLabel = (claim: Answer['claims'][number], e: Evidence) => {
-    if (!e.source_key) return `${refs.get(e.passage_id)?.n}`
-    const repeated = claim.evidence.filter(x => x.source_version_id === e.source_version_id).length > 1
-    return repeated ? `${e.source_key}, ${e.kind === 'abstract' ? t('abstract') : e.physical_page ? pageLocator(e.physical_page, e.rendition) : t('section')}` : e.source_key
-  }
-  // Consecutive claims with the same heading form one report section; answers saved before sections have no heading.
-  const sections: { heading: string | null; claims: Answer['claims'] }[] = []
-  answer.claims.forEach(c => { const last = sections[sections.length - 1]; if (last && last.heading === c.section) last.claims.push(c); else sections.push({ heading: c.section, claims: [c] }) })
-  // An access limitation shown with the PDF suggestions is not repeated under Limits.
-  const suggestion = pdfSuggestion(answer, sources)
-  const limits = answer.limitations.filter(l => !suggestion?.notes.includes(l))
-  const markdown = () => {
-    const lines = [`# ${title}`, '', `${t('Report')} · V${version}`, '']
-    if (answer.applicability === 'stale_scope') lines.push(`> ${t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}`, '')
-    if (answer.applicability === 'stale_selection') lines.push(`> ${t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}`, '')
-    if (answer.capability_notice) lines.push(`> ${answer.capability_notice}`, '')
-    sections.forEach(({ heading, claims }) => {
-      if (heading) lines.push(`## ${heading}`, '')
-      claims.forEach(claim => {
-        const citations = claim.evidence.map(e => `[${citeLabel(claim, e)}]`).join('')
-        const inference = claim.support_type === 'analyst_inference' ? ` _(${t('interpretation')})_` : ''
-        const review = claim.review ? ` _${t('Reviewer: {reason}', { reason: `${t(verdictLabels[claim.review.verdict])} — ${claim.review.reason}` })}_` : ''
-        lines.push(`${claim.text}${citations ? ` ${citations}` : ''}${inference}${review}`, '')
-      })
-    })
-    if (!answer.claims.length) lines.push(t('No claim could be linked to the passages given to the model.'), '')
-    if (answer.unanswered_aspects.length) lines.push(`## ${t('Not answered by the inspected passages')}`, '', ...answer.unanswered_aspects.map(item => `- ${item}`), '')
-    if (limits.length) lines.push(`## ${t('Limits')}`, '', ...limits.map(limit => `- **${t(limit.kind.replace('_', ' '))}:** ${limit.text}`), '')
-    if (refs.size) {
-      lines.push(`## ${t('Cited passages')}`, '')
-      refs.forEach(({ n, e }) => {
-        const source = sources.find(s => s.source_version_id === e.source_version_id)
-        lines.push(`[${e.source_key ?? n}] ${source ? formatReferenceText(style, source) : e.title} — ${locatorText(e)}${e.text_source === 'ocr' ? ` (${t(OCR_LABEL)})` : ''}${e.text_source === 'latex_source' ? ` (${t('arXiv source')})` : ''}`)
-      })
-      lines.push('')
-    }
-    lines.push(`---`, '', t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.'))
-    return `${lines.join('\n').trim()}\n`
-  }
+  const { refs, citeLabel, sections, suggestion, limits } = reportParts(answer, sources)
+  const markdown = () => reportMarkdown(answer, sources, title, version, style)
   const copyReport = async () => {
     try { await writeClipboard(markdown()); setCopied(true); toast('success', t('Report copied to clipboard.')) }
     catch { toast('error', t('Could not copy the report.')) }
   }
-  const downloadReport = () => {
-    const url = URL.createObjectURL(new Blob([markdown()], { type: 'text/markdown;charset=utf-8' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = reportFilename(title, version)
-    link.click()
-    URL.revokeObjectURL(url)
-  }
+  const downloadReport = () => downloadReportMarkdown(answer, sources, title, version, style)
   const preview = answer.claims.slice(0, 2).map(claim => claim.text).join(' ')
   const report = <div className="legacy-answer report-content">
     <div className="section-label">{t('Source-linked answer')}{answer.applicability === 'stale_scope' ? ` · ${t('earlier question revision')}` : answer.applicability === 'stale_selection' ? ` · ${t('earlier source selection')}` : ''}</div>
@@ -208,16 +157,6 @@ export function AnswerBlock({ researchId, title, version, answer, sources, busy,
 
 // Sources the answer could read only from their abstracts and that still have no PDF. The model's access limitations name
 // them and say what their full text would settle; an answer without such a limitation lists its cited sources that lack a PDF.
-function pdfSuggestion(answer: Answer, sources: Source[]): { notes: Limitation[]; sources: Source[] } | null {
-  if (answer.status !== 'structurally_valid' || answer.applicability === 'stale_scope') return null
-  const lacking = (ids: string[]) => [...new Set(ids)]
-    .map(id => sources.find(s => s.source_version_id === id && s.origin === 'provider' && !s.access.assets.length))
-    .filter((s): s is Source => Boolean(s))
-  const notes = answer.limitations.filter(l => l.kind === 'access' && lacking(l.source_ids).length > 0)
-  const listed = lacking(notes.length ? notes.flatMap(l => l.source_ids) : answer.claims.flatMap(c => c.evidence.map(e => e.source_version_id)))
-  return listed.length ? { notes, sources: listed } : null
-}
-
 function PdfSuggestions({ notes, sources, busy, onAttachPdf }: { notes: Limitation[]; sources: Source[]; busy: boolean; onAttachPdf: (source: Source) => void }) {
   const tip = t('Sources the answer read only from their abstracts and that have no PDF yet. An attached PDF is read page by page (no OCR).')
   return <section className="pdf-suggest" aria-labelledby="pdf-suggest-title">

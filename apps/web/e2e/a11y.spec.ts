@@ -1565,7 +1565,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
   test('E: a model failure pauses and Resume is reached and pressed by keyboard', async () => {
     test.setTimeout(240_000)
     await startByKeyboard(page, keys, 'SYNTHETIC [model-down] How is molecule release scheduling optimized?')
-    await expect(page.getByText('Search & screening · Paused')).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByText('Search & screening · Stopped')).toBeVisible({ timeout: 60_000 })
     await tabTo(page, page.getByRole('button', { name: 'Resume' }), 'Resume')
     await press(page, 'Enter', 'Resume', () => expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 }))
     await keyPanel(page, 'answer', 'Answer')
@@ -1702,7 +1702,7 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
       const status = page.locator(`.run-strip-status[data-run-id="${escapedId}"]`)
       const heading = page.locator(`.chat-turn .chat-toggle[data-run-id="${escapedId}"]`)
       await expect(status).toBeVisible()
-      await expect(status).toContainText('Answer · Running')
+      await expect(status).toContainText('Answer · Writing a new version')
       await expect(heading).toBeFocused()
       const trace = await page.evaluate(() => (window as AnswerFocusWindow).__x05AnswerFocus)
       if (!trace) throw new Error('answer focus hook trace missing')

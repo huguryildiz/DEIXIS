@@ -87,7 +87,7 @@ for (const width of [1440, 390]) {
       // The timeline says why in plain words, and the run's status change is announced.
       const note = page.locator('.chat-note.is-error')
       await expect(note).toContainText(text, { timeout: 60_000 })
-      await expect(note).toContainText('Revise the question below')
+      await expect(note).toContainText('Revise the question above')
       await expect(note).not.toContainText(reason)
       await expect(page.locator('.toast.is-error')).toContainText(`Search & screening failed. ${text}`)
 
@@ -108,7 +108,8 @@ for (const width of [1440, 390]) {
 
       // The user revises the question; the new revision searches and the run goes on without asking.
       await page.getByRole('button', { name: 'Dismiss notification' }).click()
-      await page.getByLabel('Revise the question').fill(QUESTION)
+      await page.getByRole('button', { name: 'Revise question' }).click()
+      await page.getByRole('textbox', { name: 'Question', exact: true }).fill(QUESTION)
       await page.getByRole('button', { name: 'Save revision' }).click()
       await expect(page.locator('.toast')).toContainText('Question revised.')
       await page.getByRole('button', { name: 'Search providers' }).click()

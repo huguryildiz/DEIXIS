@@ -25,7 +25,7 @@ const launchArgs = ['--use-mock-keychain', '--disable-background-networking', '-
 const out = {
   ok: false, steps: {}, external_requests_blocked: 0, blocked_origins: [], console_errors: 0,
   launch_args: launchArgs, chrome_version: null, selectors: {
-    k01_title: 'h1.research-title-text[aria-label=<label>] (visible)',
+    k01_title: 'h1.research-title .research-title-button[aria-label=<label>] (visible)',
     k01_count: '[data-slot=tabs-trigger] starting "Sources" > .research-tab-count == sources.length of the API response',
     k04b_row: '.source-row (visible)',
     k04a_option: '[role=group][aria-labelledby=qf-group-Sources] [role=option] (visible)',
@@ -100,7 +100,7 @@ async function until(page, source, arg, polling, limit) {
 // screenState: the two K01-ui conditions, evaluated separately (the poll uses both; a timeout reports each one).
 const screenState = `({ label, count }) => {
   const visible = ${visible}
-  const h = document.querySelector('h1.research-title-text')
+  const h = document.querySelector('h1.research-title .research-title-button')
   const trigger = [...document.querySelectorAll('[data-slot=tabs-trigger]')].find((el) => el.textContent.trim().startsWith('Sources'))
   const c = trigger && trigger.querySelector('.research-tab-count')
   return {

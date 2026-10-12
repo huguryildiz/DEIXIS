@@ -10,7 +10,7 @@ import { ModelName } from './ModelName'
 import { useModelText, type ModelText } from './modelText'
 import { locatorText, runStatusLabels, versionText, versionTones } from './labels'
 import { OCR_LABEL } from './ocr'
-import { citationStyles, formatReference, formatReferenceText, type CitationStyle } from './citations'
+import { formatReference } from './citations'
 import { useToast, type ToastAction } from './Toast'
 import { t, uiLocale } from './i18n'
 import { SourceKey } from './SourceKey'
@@ -21,6 +21,7 @@ import './lineage/lineage.css'
 import { Notice } from './Notice'
 import { focusWhenLost } from './focus'
 import { UploadedTextNote } from './SemanticNotes'
+import { accessLabels, downloadTableCsv, hasValue, revisionText, savedStyle, stateLabels } from './tableCsv'
 
 // The Evidence tab (P5 slice 1, D37/D38): a table whose rows are source versions and whose cells are append-only
 // revisions. The screen renders the recorded cell state; only the user's edit or decision changes a cell's value.
@@ -36,11 +37,6 @@ const newKey = () => crypto.randomUUID()
 const conflict = (e: unknown) => e instanceof ApiError && e.status === 409
 
 const formatLabels: Record<AnswerFormat, string> = { choice: 'Options', number_unit: 'Number and unit', yes_no: 'Yes–No', text: 'Short text' }
-// Empty states read as words, never as colour alone.
-const stateLabels: Record<CellState, string> = {
-  value: 'Value', not_verified: 'Value without linked evidence', unknown: 'Unclear in the source', not_reported: 'Not reported',
-  not_applicable: 'Not applicable', inaccessible: 'No text', not_found_in_inspected_scope: 'Not found in the text read',
-}
 const editableStates: Exclude<CellState, 'not_verified'>[] = ['value', 'unknown', 'not_reported', 'not_applicable', 'not_found_in_inspected_scope', 'inaccessible']
 const authorLabels: Record<CellRevision['author'], string> = { model: 'Model', human: 'You', system: 'System' }
 const depthLabels: Record<NonNullable<CellRevision['reading_depth']>, string> = { metadata: 'Metadata', abstract: 'Abstract', selected_sections: 'Selected pages', full_text: 'Full text' }
@@ -49,7 +45,6 @@ const kindLabels: Record<CellRevision['kind'], string> = {
   human_edit: 'Your edit', accept_proposal: 'You used a proposal', dismiss_proposal: 'You kept the current value',
 }
 const decisionLabels: Record<NonNullable<CellRevision['decision']>, string> = { accepted: 'used', dismissed: 'not used', pending: 'waiting for your decision', superseded: 'replaced by a newer proposal' }
-const accessLabels: Record<TableRow['access_level'], string> = { pdf_available: 'PDF text', abstract: 'Abstract only', metadata: 'Metadata only' }
 const selectionLabels: Record<string, string> = { included: 'Included in Sources', pending: 'Undecided in Sources', excluded: 'Excluded in Sources' }
 const selectionOrder: Record<string, number> = { included: 0, pending: 1, excluded: 2 }
 
@@ -60,20 +55,6 @@ function formatText(column: Pick<ColumnSpec, 'answer_format' | 'unit_hint' | 'al
   return parts.join(' · ')
 }
 
-// A value keeps the shape of the column revision it was made under, so it is read from its own keys.
-function valueText(column: TableColumn, value: CellValue | null) {
-  if (!value) return ''
-  if (value.option_ids) return value.option_ids.map(id => column.options?.find(o => o.id === id)?.label ?? id).join(', ')
-  if (typeof value.number === 'number') return [value.number.toLocaleString(uiLocale(), { maximumFractionDigits: 12 }), value.unit].filter(Boolean).join(' ')
-  if (value.answer) return t(value.answer === 'yes' ? 'Yes' : 'No')
-  return value.text ?? ''
-}
-// The row head writes the source's full reference in the citation style chosen on the report.
-function savedStyle(): CitationStyle {
-  try { const saved = localStorage.getItem('deixis-citation-style'); return saved && saved in citationStyles ? saved as CitationStyle : 'apa' } catch { return 'apa' }
-}
-const hasValue = (rev: CellRevision) => rev.state === 'value' || rev.state === 'not_verified'
-const revisionText = (column: TableColumn, rev: CellRevision) => (hasValue(rev) ? valueText(column, rev.value) : rev.state ? t(stateLabels[rev.state]) : '')
 const dateText = (value: string) => new Date(value).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' })
 
 // Who wrote a revision, with which model, and when: the first reading line under a value.
@@ -87,35 +68,7 @@ function revisionMeta(rev: CellRevision, modelText: ModelText) {
   return <>{t(authorLabels[rev.author])}{rev.model?.connection && rev.model.resolved_model && <> · <ModelName connection={rev.model.connection} text={modelText(rev.model.resolved_model)} /></>} · {rest}</>
 }
 
-// The table as CSV: one value column and one evidence column (quote and locator) per table column. Current values only;
-// proposals waiting for a decision are left out. The BOM lets spreadsheet apps read the file as UTF-8.
-function tableCsv(table: TableView, sources: Source[]) {
-  const byId = new Map(sources.map(s => [s.source_version_id, s]))
-  const style = savedStyle()
-  const cells = new Map(table.cells.map(c => [`${c.column_id}:${c.source_version_id}`, c]))
-  const quote = (v: string | number | null | undefined) => {
-    const text = v == null ? '' : String(v)
-    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-  }
-  const head = [t('Key'), t('Reference'), t('Title'), t('Authors'), t('Year'), t('Version'), t('Access'), ...table.columns.flatMap(c => [c.name, t('{name} — evidence', { name: c.name })])]
-  const lines = table.rows.map(row => { const source = byId.get(row.source_version_id); return [row.source_key ?? '', source ? formatReferenceText(style, source) : '', row.title, row.authors.join('; '), row.year, versionText(row.version_label), t(accessLabels[row.access_level]),
-    ...table.columns.flatMap(col => {
-      const current = cells.get(`${col.id}:${row.source_version_id}`)?.current
-      if (!current) return ['', '']
-      return [revisionText(col, current), current.evidence.map(e => [e.anchor_text && `“${e.anchor_text}”`, locatorText(e)].filter(Boolean).join(' — ')).join(' | ')]
-    })] })
-  return `\uFEFF${[head, ...lines].map(line => line.map(quote).join(',')).join('\r\n')}\r\n`
-}
 
-function downloadTableCsv(table: TableView, sources: Source[]) {
-  const base = table.table.title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 80)
-  const url = URL.createObjectURL(new Blob([tableCsv(table, sources)], { type: 'text/csv;charset=utf-8' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${base || 'evidence-table'}-v${table.table.version}.csv`
-  link.click()
-  URL.revokeObjectURL(url)
-}
 
 type EditorTarget = { mode: 'add' } | { mode: 'edit'; column: TableColumn } | { mode: 'suggestion'; suggestion: ColumnSuggestion; stepId: string }
 

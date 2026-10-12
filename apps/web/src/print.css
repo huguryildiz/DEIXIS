@@ -41,7 +41,7 @@
      links, citation style picker, review requests, aspects to investigate). The PDF upload suggestions keep their text,
      which carries the access limitations, and lose only their Get PDF and Attach PDF controls. */
   .sidebar, .sidebar-resizer, .mobilebar, .mobile-scrim, .toast, .research-topbar, .research-facts, .research-tabs-bar,
-  .run-strip, .legacy-followup, .report-toolbar-actions, .reference-tools, .pdf-suggest-actions, .pdf-suggest-info,
+  .run-strip, .chat-question.is-editing, .revline, .report-toolbar-actions, .reference-tools, .pdf-suggest-actions, .pdf-suggest-info,
   .review-entry, .candidate-aspects,
   .evidence-table-head-actions, .evidence-toolbar, .evidence-toolbar-note, .evidence-run, .evidence-add-rows, .evidence-hint,
   .lineage-switch, .evidence-row-menu, [data-slot="sheet-overlay"], [data-slot="sheet-close"] { display: none !important; }

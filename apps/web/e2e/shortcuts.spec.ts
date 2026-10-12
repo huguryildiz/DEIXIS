@@ -123,7 +123,8 @@ test.describe.serial('S3: shortcuts, keys dialog, palette', () => {
     // Escape from the thread (outside the panel) closes it, as Escape inside the panel already did.
     await page.keyboard.press('s')
     await expect(panel(page, 'Sources')).toBeVisible()
-    await page.getByRole('heading', { level: 1 }).click()
+    // The question bubble: the title is a rename button now (S8), whose Escape cancels its own edit.
+    await page.locator('.chat-question').first().click()
     await page.keyboard.press('Escape')
     await expect(page.locator('[data-split-panel]')).toHaveCount(0)
   })

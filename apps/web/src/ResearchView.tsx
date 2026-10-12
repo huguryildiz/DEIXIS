@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Inbox, Lightbulb, ListMinus, LoaderCircle, Pause, PencilLine, Play, Search, Sparkles, Table2, X } from 'lucide-react'
+import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Inbox, Lightbulb, ListMinus, PencilLine, Search, Sparkles, Table2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
-import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, searchQueryTriesLeft, seedSkipText, seedUseText } from './labels'
+import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, seedSkipText, seedUseText } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { TextRecoveryContext } from './TextRecoveryContext'
 import { EvidenceTab, TABLE_RUN_KINDS } from './EvidenceTable'
@@ -33,6 +33,8 @@ import { ActivityLog } from './research/ActivityLog'
 import { ArtifactsTab, TableCard } from './research/ArtifactsTab'
 import { ExportLinks, ExportMenu } from './research/ExportMenu'
 import { RevisionForm } from './research/RevisionForm'
+import { EarlierRevision, QuestionBubble } from './research/QuestionBubble'
+import { RunChip, TitleButton, TitleEditRow } from './research/Topbar'
 import { SelectionBar } from './research/SelectionBar'
 import { SourceList, type StateFilter } from './research/SourceList'
 import { SplitPanel, StackPanel } from './research/SplitPanel'
@@ -43,60 +45,13 @@ const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const TRANSCRIPT_KINDS = new Set<RunKind>(['discovery', 'pdf_collection', 'fulltext_fetch', 'fulltext_adjudication', 'pdf_ocr', 'answer', 'report', 'review'])
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-// A research title wraps across the whole column, so the rename field grows with its text instead of scrolling sideways.
-function sizeTitleField(el: HTMLTextAreaElement | null) {
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = `${el.scrollHeight}px`
-}
-
-function TypewriterTitle({ text, onStartEdit }: { text: string; onStartEdit: () => void }) {
-  const [shown, setShown] = useState(text)
-  const previous = useRef(text)
-
-  useEffect(() => {
-    if (previous.current === text) return
-    previous.current = text
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const frame = requestAnimationFrame(() => setShown(text))
-      return () => cancelAnimationFrame(frame)
-    }
-    const started = performance.now()
-    // Slow enough to read as typing: about 28 ms a character, within 0.6–2.6 s.
-    const duration = Math.min(2600, Math.max(600, text.length * 28))
-    let frame = 0
-    const write = (now: number) => {
-      const count = Math.ceil(Math.min(1, (now - started) / duration) * text.length)
-      setShown(text.slice(0, count))
-      if (count < text.length) frame = requestAnimationFrame(write)
-    }
-    frame = requestAnimationFrame(write)
-    return () => cancelAnimationFrame(frame)
-  }, [text])
-
-  const writing = shown.length < text.length
-  // The title is renamed in place: double-click, or Enter/F2 once the title has focus. The heading stays a heading, so the
-  // full text keeps its aria-label; the sidebar's action menu is the labeled path for assistive technology.
-  return <h1
-    className={`research-title-text${writing ? ' is-typing' : ''}`}
-    aria-label={text}
-    tabIndex={0}
-    title={t('Double-click to rename')}
-    onDoubleClick={onStartEdit}
-    onKeyDown={event => {
-      if (event.key !== 'Enter' && event.key !== 'F2') return
-      event.preventDefault()
-      onStartEdit()
-    }}
-  ><span aria-hidden>{shown}</span></h1>
-}
-
 const shownAnswer = (view: ResearchView) => (view.answers.find(a => !(a.late_revision && a.status !== 'structurally_valid')) ?? view.answers[0]) as Answer | undefined
 
 export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; initialTab?: string; dark: boolean; onChanged: () => void }) {
   const [view, setView] = useState<ResearchView | null>(null)
   const [titleEditing, setTitleEditing] = useState(false)
-  const [titleDraft, setTitleDraft] = useState('')
+  // The question bubble turns into the revise form (R7); 'terms' opens it on the key-terms field.
+  const [revising, setRevising] = useState<false | 'question' | 'terms'>(false)
   const [error, setError] = useState('')
   const toast = useToast()
   // The tabs became a side panel beside the thread (R10): the URL's last segment names the open panel, old tab names included.
@@ -139,39 +94,23 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const sourceFileInput = useRef<HTMLInputElement>(null)
   const replaceFileInput = useRef<HTMLInputElement>(null)
   const firstEvent = useRef<number | null>(null)
-  // A run stopped for key terms sends the user here, to the one field that answers it.
-  const keyTerms = useRef<HTMLInputElement>(null)
   const lastRun = useRef<{ id: string; status: RunStatus } | null>(null)
   // Runs another toast already announced when they were opened (a person's file whose attach opened its reading, 18b).
   const announcedRuns = useRef(new Set<string>())
-  const titleInput = useRef<HTMLTextAreaElement>(null)
   const moreButton = useRef<HTMLButtonElement>(null)
+  const reviseButton = useRef<HTMLButtonElement>(null)
   // Escape on the Research actions menu gives focus back to its button; choosing a row hands it to the panel that opens.
   const rowChosen = useRef(false)
-  // An edit session ends once: Enter, Escape or the blur that follows either one must not save a second time.
-  const titleEditDone = useRef(true)
-  const titleEditingRef = useRef(false)
 
   const load = useCallback(async () => {
     try {
       const next = await api.research(id)
       setView(next)
-      // A reload arrives on every recorded event; it must not overwrite what is being typed into the open field.
-      if (!titleEditingRef.current) setTitleDraft(next.research.title)
       setError('')
       if (firstEvent.current === null) firstEvent.current = next.last_event_id
     } catch (e) { setError(errorText(e)) }
   }, [id])
   useEffect(() => { void load() }, [load])
-  // The field exists only while editing, so this is also where it takes focus, selects the current title for replacing, and
-  // grows to the height the title needs at this width.
-  useEffect(() => {
-    titleEditingRef.current = titleEditing
-    if (!titleEditing) return
-    titleInput.current?.focus()
-    titleInput.current?.select()
-    sizeTitleField(titleInput.current)
-  }, [titleEditing])
   // Tables of this research, for the Evidence count and the table cards; refreshed on every recorded event (a table created, edited, trashed or restored).
   const [tables, setTables] = useState<TableSummary[] | null>(null)
   const lastEventId = view?.last_event_id
@@ -462,16 +401,16 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
   const ScopeIcon = scopeOptions[view.scope.source_scope].icon
   const EffortIcon = effortOptions[view.scope.effort].icon
-  const beginTitleEdit = () => { setTitleDraft(view.research.title); titleEditDone.current = false; setTitleEditing(true) }
-  const cancelTitle = () => { titleEditDone.current = true; setTitleDraft(view.research.title); setTitleEditing(false) }
-  const commitTitle = () => {
-    if (titleEditDone.current) return
-    titleEditDone.current = true
-    const next = titleDraft.trim()
-    setTitleEditing(false)
-    if (!next || next === view.research.title) { setTitleDraft(view.research.title); return }
+  const titleButton = () => document.querySelector<HTMLElement>('.research-title-button')
+  const beginTitleEdit = () => { setRevising(false); setTitleEditing(true) }
+  const endTitleEdit = () => { setTitleEditing(false); focusWhenLost(titleButton) }
+  const saveTitle = (next: string) => {
+    endTitleEdit()
+    if (!next || next === view.research.title) return
     void act(() => api.renameResearch(id, next, view.research.version), t('Research title saved.'), undefined)
   }
+  // The model names the research (at most 15 words); the new title arrives with the typewriter transition.
+  const suggestTitle = () => { endTitleEdit(); void startTitle() }
   // The stored title is the question cut to 160 characters until a valid answer names the research (D36); until then show it whole.
   const heading = view.scope.question.startsWith(view.research.title) ? view.scope.question : view.research.title
   // Each count is the way into the evidence it describes; the selection filter lives here so a count can set it.
@@ -496,74 +435,92 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // Files dropped on the PDF panel of an sw research go to the waiting view's version-checked match (slice 18a).
   const waitingCount = view.counts.waiting_for_pdf ?? 0
   const dropForWaiting = (files: File[]) => { setWaitingFiles(files); openPanel('pdfs') }
-  // The revision form stays at the end of the page; the top row only takes the person there.
-  const reviseQuestion = () => {
-    const field = document.getElementById('revise-question')
-    field?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })
-    field?.focus({ preventScroll: true })
+  // Revise question turns the question bubble into the revise form (R7); Cancel and Save give focus back to the button.
+  const reviseQuestion = (focus: 'question' | 'terms' = 'question') => { setTitleEditing(false); setRevising(focus) }
+  const endRevise = () => { setRevising(false); focusWhenLost(() => reviseButton.current) }
+  const saveRevision = async (text: string, terms: string | null) => {
+    if (await act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))) endRevise()
   }
+  const controlRun = (target: Run, action: 'pause' | 'resume' | 'cancel') => {
+    const origin = document.activeElement
+    void act(() => api.controlRun(target.id, action)).then(ok => { if (ok && action === 'resume') toRunStatus(target.id, origin) })
+  }
+  // Move to Trash (R9) leaves the page; Undo restores the research from the Trash (D50) and opens it again.
+  const moveToTrash = async () => {
+    setBusy(true)
+    try {
+      await api.moveToTrash(id)
+      onChanged()
+      window.location.hash = '/'
+      toast('success', t('Moved to Trash.'), { label: t('Undo'), run: () => {
+        api.restore(id).then(() => { onChanged(); window.location.hash = `/research/${id}`; toast('success', t('Research restored.')) },
+          (e: Error) => toast('error', t('Could not restore research: {message}', { message: e.message })))
+      } })
+    } catch (e) { toast('error', t('Could not move to Trash: {message}', { message: errorText(e) })) }
+    finally { setBusy(false) }
+  }
+  // The research's latest run in the topbar chip; table, candidate and follow-up runs keep their own chips, which open the
+  // panel that controls them.
+  const mainRun = run && run.kind !== 'watch_check' && !CANDIDATE_KINDS.has(run.kind) && !TABLE_RUN_KINDS.has(run.kind)
+    && (active || run.status === 'paused' || (run.status === 'failed' && TRANSCRIPT_KINDS.has(run.kind))) ? run : null
+  const hasAnswer = view.answers.some(a => a.run_id !== run?.id)
+  // The earlier question revision and the report written for it (R12).
+  const earlierRevision = view.research.current_scope_revision - 1
+  const earlierReport = reports.find(r => r.answer.scope_revision === earlierRevision) ?? null
+  // The ⋯ menu (R9): Rename, Activity, Candidates and Follow-up as drawn; until the rail (S11) and the steps (S9) open
+  // them, it also reaches the Sources, queue, PDF and table panels; Search again and Generate a new answer (§2.2); then
+  // Move to Trash.
+  // A row with no mockup counterpart carries `research-menu-placement` (§2.2 and §0 rule 5).
+  const panelRow = (name: string, label: string, Icon: typeof BookOpen, count: number | null, detail?: string) =>
+    <DropdownMenuItem key={name} className={detail ? undefined : 'research-menu-placement'} onClick={() => { rowChosen.current = true; openPanel(name, { opener: moreButton.current }) }}>
+      <Icon size={15} aria-hidden /><span>{t(label)}{count !== null && <> <span className="research-tab-count">{count}</span></>}{detail && <small>{t(detail)}</small>}</span>
+    </DropdownMenuItem>
   return <PanelStackContext.Provider value={panels}><section className="research-view legacy-research">
-    {/* One 46px row carries the title, the live run and its controls, and the research-level actions, so they reach every tab.
-        A table run is controlled on the Evidence tab above its table; here its chip only links there. */}
+    {/* The 46px topbar (mockup `.topbar`, R1–R9): the title, the chip of the latest run, "N waiting for you", Revise
+        question, Export and the ⋯ menu. While the title is renamed its row takes the place of the title and the chips. */}
     <div className={`research-topbar${titleEditing ? ' is-editing' : ''}`} inert={Boolean(phone && panel)}>
-      <div className="research-topbar-title">
-        {titleEditing
-          /* While the title is being edited the heading gives way to the field: a heading whose whole content is a field has no
-             name to announce. The field restates the heading's type recipe (see .research-title-input) so nothing moves. */
-          ? <textarea
-            ref={titleInput}
-            className="research-title-input"
-            aria-label={t('Research title')}
-            aria-describedby="research-title-hint"
-            value={titleDraft}
-            rows={1}
-            maxLength={160}
-            spellCheck={false}
-            onChange={e => { setTitleDraft(e.target.value); sizeTitleField(e.target) }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') { e.preventDefault(); commitTitle() }
-              else if (e.key === 'Escape') { e.preventDefault(); cancelTitle() }
-            }}
-            onBlur={commitTitle}
-          />
-          : <TypewriterTitle text={heading} onStartEdit={beginTitleEdit} />}
-      </div>
-      {titleEditing && <span className="research-title-hint" id="research-title-hint">
-        {titleDraft.length > 120
-          ? `${t('Enter saves, Escape cancels')} · ${t('{count} of 160 characters', { count: String(titleDraft.length) })}`
-          : t('Enter saves, Escape cancels')}
-      </span>}
-      {candidateRun && panel !== 'cands' && <button type="button" className="run-chip" aria-label={t('Open the Candidates panel to control this run')} onClick={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); openPanel('cands') }}>
-        <span className={`run-chip-dot${ACTIVE.has(candidateRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[candidateRun.kind])} · {t(runStatusLabels[candidateRun.status])}<ChevronRight size={13} aria-hidden />
-      </button>}
-      {watchRun && panel !== 'watch' && <button type="button" className="run-chip" aria-label={t('Open the Follow-up panel to control this run')} onClick={() => openPanel('watch')}>
-        <span className={`run-chip-dot${ACTIVE.has(watchRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels.watch_check)} · {t(runStatusLabels[watchRun.status])}<ChevronRight size={13} aria-hidden />
-      </button>}
-      {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? panel !== 'table' && <button type="button" className="run-chip" title={t('Open the Evidence table panel to control this run')} onClick={() => openPanel('table')}>
-        <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
-      </button>
-      : run && run.kind !== 'watch_check' && !CANDIDATE_KINDS.has(run.kind) && (active || run.status === 'paused') && <div className="run-strip">
-        <span className={`run-strip-status${active ? ' is-live' : ' is-paused'}`} data-run-id={run.id} tabIndex={-1}>{active ? <LoaderCircle size={13} className="chat-spin" aria-hidden /> : <Pause size={12} aria-hidden />}{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}</span>
-        {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" className="run-strip-pause" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'pause'))}><Pause size={14} />{t('Pause')}</Button>}
-        {run.status === 'paused'
-          && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0) && <Button variant="default" size="sm" disabled={busy} onClick={() => { const origin = document.activeElement; void act(() => api.controlRun(run.id, 'resume')).then(ok => { if (ok) toRunStatus(run.id, origin) }) }}><Play size={14} />{t('Resume')}</Button>}
-        <Button variant="destructive" size="sm" disabled={busy} onClick={() => act(() => api.controlRun(run.id, 'cancel'))}><X size={14} />{t('Cancel')}</Button>
-      </div>}
-      {!titleEditing && heading === view.scope.question && !active && run?.status !== 'paused' && <Button variant="ghost" size="sm" className="research-title-suggest research-topbar-action" disabled={busy} onClick={startTitle}
-        title={t('The model names the research from its question and included sources, in at most 15 words.')}><Sparkles size={14} aria-hidden /><span className="research-topbar-label">{t('Suggest a short title')}</span></Button>}
-      <Button variant="ghost" size="sm" className="research-topbar-action research-revise" title={t('Revise question')} onClick={reviseQuestion}><PencilLine size={14} aria-hidden /><span className="research-topbar-label">{t('Revise question')}</span></Button>
-      <ExportMenu researchId={id} included={included > 0} cited={view.counts.cited > 0} prisma={Boolean(view.counts.flow)} />
-      {/* Until the rail (S11) and the steps (S9) open their panels, this menu reaches every panel the tabs used to show. */}
-      <DropdownMenu onOpenChange={open => { if (open) rowChosen.current = false }}>
-        <DropdownMenuTrigger render={<Button ref={moreButton} variant="ghost" size="icon-sm" className="research-topbar-more" aria-label={t('Research actions')} title={t('Research actions')} />}><Ellipsis size={16} aria-hidden /></DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="research-export-menu w-auto" finalFocus={() => (rowChosen.current ? false : moreButton.current)}>
-          {([['sources', 'Sources', BookOpen, view.sources.length], ['queue', 'Awaiting your decision', Inbox, queueCount], ['pdfs', 'Get more full text', FileText, waitingCount],
-            ['table', 'Evidence table', Table2, tables?.length ?? null], ['watch', 'Follow-up', Clock, followupCount.count], ['cands', 'Candidates', Lightbulb, candidateCount], ['activity', 'Activity', Clock, null]] as const)
-            .map(([name, label, Icon, count]) => <DropdownMenuItem key={name} className="research-export-item" onClick={() => { rowChosen.current = true; openPanel(name, { opener: moreButton.current }) }}>
-              <Icon size={15} aria-hidden /><span>{t(label)}</span>{count !== null && <span className="research-tab-count">{count}</span>}
-            </DropdownMenuItem>)}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {titleEditing
+        ? <TitleEditRow title={view.research.title} busy={busy} canSuggest={!active} onSave={saveTitle} onCancel={endTitleEdit} onSuggest={suggestTitle} />
+        : <>
+          <TitleButton text={heading} onStartEdit={beginTitleEdit} />
+          {candidateRun && panel !== 'cands' && <button type="button" className="run-chip" aria-label={t('Open the Candidates panel to control this run')} onClick={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); openPanel('cands') }}>
+            <span className={`run-chip-dot${ACTIVE.has(candidateRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[candidateRun.kind])} · {t(runStatusLabels[candidateRun.status])}<ChevronRight size={13} aria-hidden />
+          </button>}
+          {watchRun && panel !== 'watch' && <button type="button" className="run-chip" aria-label={t('Open the Follow-up panel to control this run')} onClick={() => openPanel('watch')}>
+            <span className={`run-chip-dot${ACTIVE.has(watchRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels.watch_check)} · {t(runStatusLabels[watchRun.status])}<ChevronRight size={13} aria-hidden />
+          </button>}
+          {/* A table run is controlled in the Evidence table panel above its table; here its chip only opens that panel. */}
+          {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) && panel !== 'table' && <button type="button" className="run-chip" title={t('Open the Evidence table panel to control this run')} onClick={() => openPanel('table')}>
+            <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
+          </button>}
+          {mainRun && <RunChip run={mainRun} hasAnswer={hasAnswer} busy={busy} onControl={action => controlRun(mainRun, action)} />}
+          {queueCount > 0 && <button type="button" className="wait-chip" onClick={showQueue}><Inbox size={16} aria-hidden />{t('{n} waiting for you', { n: queueCount })}</button>}
+        </>}
+      <Button ref={reviseButton} variant="ghost" size="sm" className="research-topbar-action research-revise" title={t('Revise question')} disabled={active} aria-expanded={Boolean(revising)}
+        onClick={() => reviseQuestion()}><PencilLine size={16} className="size-4" aria-hidden /><span className="research-topbar-label">{t('Revise question')}</span></Button>
+      {!titleEditing && <>
+        <ExportMenu researchId={id} report={answer?.status === 'structurally_valid' ? { answer, title: answer.report_title ?? heading, version: answer.report_version ?? 0 } : null}
+          sources={view.sources} tables={tables} included={included} cited={view.counts.cited} prisma={Boolean(view.counts.flow)} />
+        <DropdownMenu onOpenChange={open => { if (open) rowChosen.current = false }}>
+          <DropdownMenuTrigger render={<Button ref={moreButton} variant="ghost" size="icon-sm" className="research-more" aria-label={t('Research actions')} title={t('Research actions')} />}><Ellipsis size={16} aria-hidden /></DropdownMenuTrigger>
+          <DropdownMenuContent align="start" sideOffset={6} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }} className="research-actions-menu" finalFocus={() => (rowChosen.current ? false : moreButton.current)}>
+            <DropdownMenuItem onClick={() => { rowChosen.current = true; beginTitleEdit() }}><PencilLine size={15} aria-hidden />{t('Rename')}</DropdownMenuItem>
+            {panelRow('activity', 'Activity', Clock, null, 'Runs, status, time and model calls')}
+            {panelRow('cands', 'Candidates', Lightbulb, candidateCount, 'Claims you test against the literature')}
+            {panelRow('watch', 'Follow-up', Clock, followupCount.count, 'New works after this research ran')}
+            <DropdownMenuSeparator />
+            {panelRow('sources', 'Sources', BookOpen, view.sources.length)}
+            {panelRow('queue', 'Awaiting your decision', Inbox, queueCount)}
+            {panelRow('pdfs', 'Get more full text', FileText, waitingCount)}
+            {panelRow('table', 'Evidence table', Table2, tables?.length ?? null)}
+            {(hasAcademic && view.search_runs.length > 0) || answer ? <DropdownMenuSeparator /> : null}
+            {hasAcademic && view.search_runs.length > 0 && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !seedSearchReady} onClick={() => { void startDiscovery() }}><Search size={15} aria-hidden /><span>{t('Search again')}</span></DropdownMenuItem>}
+            {answer && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !(included || answersWithoutInclude)} onClick={() => { void startAnswer() }}><Sparkles size={15} aria-hidden /><span>{t('Generate a new answer')}</span></DropdownMenuItem>}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" disabled={busy || active} onClick={() => { void moveToTrash() }}><Trash2 size={15} aria-hidden />{t('Move to Trash')}</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </>}
     </div>
 
     <div className={`research-split${panel ? ' has-panel' : ''}${panel && panels.wide ? ' is-wide' : ''}`}>
@@ -571,6 +528,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <div className="research-thread-col" inert={Boolean(phone && panel)}>
     <div className="research-thread-grid">
     <div className="research-body thread-inner">
+    {earlierRevision > 0 && <EarlierRevision key={earlierRevision} researchId={id} revision={earlierRevision} intent={view.research.intent} answer={earlierReport} onOpenReport={setOpenReportId} />}
+    {revising
+      ? <RevisionForm question={view.scope.question} keyTerms={view.scope.key_terms ?? ''} nextRevision={view.research.current_scope_revision + 1} focus={revising}
+        disabled={busy || active} onSubmit={(text, terms) => { void saveRevision(text, terms) }} onCancel={endRevise} />
+      : <QuestionBubble question={view.scope.question} sourceScope={view.scope.source_scope} intent={view.research.intent} createdAt={view.scope.created_at} revision={view.research.current_scope_revision} />}
     {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the panel that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
       <span className="research-revision">{t('Research')} · {t('revision {n}', { n: view.research.current_scope_revision })}</span>
@@ -587,7 +549,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <Transcript view={{ ...view, runs: view.runs.filter(r => TRANSCRIPT_KINDS.has(r.kind)) }} modelText={modelText}
         onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
         onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
-        onGiveKeyTerms={() => { keyTerms.current?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' }); keyTerms.current?.focus({ preventScroll: true }) }}
+        onGiveKeyTerms={() => reviseQuestion('terms')}
         queueCount={queueCount} onOpenQueue={showQueue}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
         latestAnswer={answer ? <><AnswerBlock eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
@@ -651,9 +613,6 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <input ref={sourceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void uploadToSource(e.target.files); e.target.value = '' }} />
     <input ref={replaceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void reviewReplacement(e.target.files); e.target.value = '' }} />
 
-    <RevisionForm key={view.research.version} question={view.scope.question} disabled={busy || active}
-      keyTerms={view.scope.key_terms ?? ''} keyTermsRef={keyTerms}
-      onSubmit={(text, terms) => act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))} />
     </div>
     {/* Hidden, not removed, while a panel is open: a panel opened from the rail hands focus back to its button. */}
     <aside className="research-rail" aria-labelledby="research-rail-title" hidden={Boolean(panel)}>

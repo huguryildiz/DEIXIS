@@ -1701,3 +1701,8 @@ export const searchPlanApi = {
     request<SearchPlanView>(`/api/researches/${encodeURIComponent(researchId)}/search-plan`,
       json('POST', { expected_version: expectedVersion, plan })),
 }
+
+// An earlier question revision as it was saved (UI parity S8, R12; api/scope_routes.py). Read only.
+export type ScopeRevision = { revision: number; question: string; source_scope: SourceScope; key_terms: string | null; created_at: string }
+export const scopeRevision = (researchId: string, revision: number) =>
+  request<ScopeRevision>(`/api/researches/${encodeURIComponent(researchId)}/scope-revisions/${revision}`)

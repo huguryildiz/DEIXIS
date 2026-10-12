@@ -1,9 +1,12 @@
-import { ChevronDown, Download } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
-import { bibliographyUrl, prismaSUrl } from '../api'
-import { t } from '../i18n'
+import { answerDocxUrl, api, bibliographyUrl, prismaSUrl, tableExportUrl, type Answer, type Source, type TableSummary } from '../api'
+import { downloadTableCsv, savedStyle } from '../tableCsv'
+import { useToast } from '../Toast'
+import { t, uiLanguage } from '../i18n'
+import { downloadReportMarkdown } from './reportMarkdown'
 
 // Bibliography files for reference managers, downloaded from the local API.
 export function ExportLinks({ researchId, sources }: { researchId: string; sources: 'included' | 'cited' }) {
@@ -17,30 +20,53 @@ export function ExportLinks({ researchId, sources }: { researchId: string; sourc
   </span>
 }
 
-// The research-level downloads that already exist, in one menu: bibliography files for reference managers and the
-// PRISMA-S search report. A group shows only when its file has something in it.
-export function ExportMenu({ researchId, included, cited, prisma }: { researchId: string; included: boolean; cited: boolean; prisma: boolean }) {
-  if (!included && !cited && !prisma) return null
-  const link = (href: string, format: string, title: string) => <MenuPrimitive.LinkItem key={href} href={href} download title={title} closeOnClick className="research-export-item">
-    <Download size={15} aria-hidden /><span>{format}</span>
+export type ExportReport = { answer: Answer; title: string; version: number }
+
+// The topbar's Export menu (mockup `menu('export')`, R8): Report, Evidence table and Sources groups of file rows. A row
+// is shown only when its file can be made now: the report's Markdown (written here, as the report panel's Download
+// writes it) and Word file, the table's CSV (written here) and its Excel and Word files, the bibliographies and the
+// PRISMA-S search report (§2.2). The PDF rows (print) are wired in S27.
+// Like the mockup's menu(), the list opens under the trigger at its left edge and slides back inside the window.
+export function ExportMenu({ researchId, report, sources, tables, included, cited, prisma }: {
+  researchId: string; report: ExportReport | null; sources: Source[]; tables: TableSummary[] | null
+  included: number; cited: number; prisma: boolean
+}) {
+  const toast = useToast()
+  // A table exports once it has columns and rows; with several, the one changed last (its title names it).
+  const exportable = (tables ?? []).filter(table => table.rows > 0 && table.columns > 0)
+  const table = exportable.reduce<TableSummary | null>((latest, item) => (!latest || item.updated_at > latest.updated_at ? item : latest), null)
+  if (!report && !table && !included && !cited && !prisma) return null
+  const style = savedStyle()
+  const lang = uiLanguage() === 'tr' ? 'tr' : 'en'
+  const row = (format: string, detail: string) => <><FileTypeIcon format={format} /><b>{format}</b><span>{detail}</span></>
+  // A row with no mockup counterpart (the PRISMA-S search report, §2.2) carries `export-placement`.
+  const link = (href: string, format: string, detail: string, extra = '') => <MenuPrimitive.LinkItem key={href} href={href} download closeOnClick data-slot="dropdown-menu-item" className={`research-export-item menu-fmt ${extra}`.trim()}>
+    {row(format, detail)}
   </MenuPrimitive.LinkItem>
-  const bibliography = (sources: 'included' | 'cited') => {
-    const label = t(sources === 'included' ? 'included sources' : 'cited sources')
-    return <DropdownMenuGroup>
-      <DropdownMenuLabel className="research-export-label">{t(sources === 'included' ? 'Export included' : 'Export cited')}</DropdownMenuLabel>
-      {link(bibliographyUrl(researchId, 'bibtex', sources), 'BibTeX (.bib)', t('BibTeX file of the {label} (LaTeX, Zotero, JabRef)', { label }))}
-      {link(bibliographyUrl(researchId, 'ris', sources), 'RIS (.ris)', t('RIS file of the {label} (Zotero, EndNote, Mendeley)', { label }))}
-    </DropdownMenuGroup>
+  const tableCsv = async (item: TableSummary) => {
+    try { downloadTableCsv(await api.table(researchId, item.id), sources) }
+    catch (e) { toast('error', e instanceof Error ? e.message : String(e)) }
   }
   return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button variant="default" size="sm" className="research-export" />}><Download size={14} aria-hidden />{t('Export')}<ChevronDown size={13} aria-hidden /></DropdownMenuTrigger>
-    <DropdownMenuContent align="end" className="research-export-menu w-auto">
-      {included && bibliography('included')}
-      {cited && bibliography('cited')}
-      {prisma && <DropdownMenuGroup>
-        <DropdownMenuLabel className="research-export-label">{t('Search report (PRISMA-S)')}</DropdownMenuLabel>
-        {link(prismaSUrl(researchId, 'md'), 'Markdown (.md)', t('The search reported against the 16 PRISMA-S items, as Markdown'))}
-        {link(prismaSUrl(researchId, 'json'), 'JSON (.json)', t('The search reported against the 16 PRISMA-S items, as JSON'))}
+    <DropdownMenuTrigger render={<Button variant="default" size="sm" className="research-export" />}><Download size={16} className="size-4" aria-hidden />{t('Export')}</DropdownMenuTrigger>
+    <DropdownMenuContent align="start" sideOffset={6} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }} className="research-export-menu">
+      {report && <DropdownMenuGroup>
+        <DropdownMenuLabel>{t('Report')}</DropdownMenuLabel>
+        <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => downloadReportMarkdown(report.answer, sources, report.title, report.version, style)}>{row('MD', t('Markdown'))}</DropdownMenuItem>
+        {link(answerDocxUrl(researchId, report.answer.id, lang, style), 'DOCX', t('Word document'))}
+      </DropdownMenuGroup>}
+      {table && <DropdownMenuGroup>
+        <DropdownMenuLabel>{exportable.length > 1 ? `${t('Evidence table')} · ${table.title}` : t('Evidence table')}</DropdownMenuLabel>
+        <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => { void tableCsv(table) }}>{row('CSV', t('Comma-separated values'))}</DropdownMenuItem>
+        {link(tableExportUrl(researchId, table.id, 'xlsx', lang, style), 'XLSX', t('Excel workbook'))}
+        {link(tableExportUrl(researchId, table.id, 'docx', lang, style), 'DOCX', t('Word table'))}
+      </DropdownMenuGroup>}
+      {(cited > 0 || included > 0 || prisma) && <DropdownMenuGroup>
+        <DropdownMenuLabel>{t('Sources')}</DropdownMenuLabel>
+        {cited > 0 && link(bibliographyUrl(researchId, 'bibtex', 'cited'), 'BIB', t(cited === 1 ? 'BibTeX · {n} cited source' : 'BibTeX · {n} cited sources', { n: cited }))}
+        {included > 0 && link(bibliographyUrl(researchId, 'ris', 'included'), 'RIS', t(included === 1 ? 'RIS · {n} included source' : 'RIS · {n} included sources', { n: included }))}
+        {prisma && link(prismaSUrl(researchId, 'md'), 'MD', t('PRISMA-S search report'), 'export-placement')}
+        {prisma && link(prismaSUrl(researchId, 'json'), 'JSON', t('PRISMA-S search report'), 'export-placement')}
       </DropdownMenuGroup>}
     </DropdownMenuContent>
   </DropdownMenu>

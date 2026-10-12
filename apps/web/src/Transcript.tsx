@@ -105,7 +105,7 @@ const tally = (values: string[]) => { const counts = new Map<string, number>(); 
 export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
-  // The way out of a `key_terms_needed` stop: the revision form below, on its key-terms field.
+  // The way out of a `key_terms_needed` stop: the revision form in the question bubble, on its key-terms field.
   onGiveKeyTerms?: () => void
   // The way on after the model could not write the query: search with the code's query alone (D92).
   onChooseCodeQuery?: (run: Run) => Promise<void>
@@ -133,9 +133,8 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [active])
-  // The current question opens the timeline as the user's turn.
+  // The current question opens the thread as the user's turn (ResearchView's question bubble, S8).
   return <>
-  <div className="chat-question"><p dir="auto">{view.scope.question}</p></div>
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
     {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
       queueLine={run.id === lastReading && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>

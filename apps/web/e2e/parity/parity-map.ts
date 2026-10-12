@@ -10,6 +10,7 @@ import type { FixtureContext } from './gates'
 export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
 export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog' | 'research-panel' | 'palette' | 'keys'
+  | 'research-menu' | 'export-menu' | 'title-edit' | 'revise'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -150,6 +151,16 @@ export const SURFACES: Surface[] = [
     appAct: async page => { await page.keyboard.press('ControlOrMeta+k'); await page.locator('.quick-find .quick-find-foot').waitFor() } },
   { id: 'keys', mock: "setScenario('ok')", mockAct: 'keysDlg()', app: '#/research/{research}', ready: '.research-topbar',
     appAct: async page => { await page.keyboard.press('?'); await page.locator('.keys-dialog .keys').waitFor() } },
+  // S8 (R2, R7–R9): the topbar's ⋯ and Export menus, the rename row and the revise form, over the research page.
+  { id: 'research-menu', mock: "setScenario('ok')", mockAct: "menu('research', document.querySelector('.topbar [data-menu=\"research\"]'))", app: '#/research/{research}', ready: '.research-topbar',
+    appAct: async page => { await page.locator('.research-topbar .research-more').click(); await page.locator('[data-slot=dropdown-menu-content]').waitFor() } },
+  { id: 'export-menu', mock: "setScenario('ok')", mockAct: "menu('export', document.querySelector('.topbar [data-menu=\"export\"]'))", app: '#/research/{research}', ready: '.research-topbar',
+    appAct: async page => { await page.locator('.research-topbar .research-export').click(); await page.locator('[data-slot=dropdown-menu-content]').waitFor() } },
+  { id: 'title-edit', mock: "setScenario('ok')", mockAct: 'st.renTitle = true; render()', app: '#/research/{research}', ready: '.research-topbar',
+    // The app focuses the field it opens; the mockup's render leaves it unfocused, so the field is compared at rest.
+    appAct: async page => { await page.locator('.research-topbar .research-title-button').click(); await page.locator('.research-title-input').blur() } },
+  { id: 'revise', mock: "setScenario('ok')", mockAct: 'st.editQ = true; render()', app: '#/research/{research}', ready: '.research-topbar', widths: DESK,
+    appAct: async page => { await page.locator('.research-topbar .research-revise').click(); await page.locator('#revise-question').blur() } },
   { id: 'dialog', mock: HOME, mockAct: "zoteroDlg('home')", app: '#/settings/connections', ready: '.connection-grid', reader: 'not-installed',
     appAct: async page => {
       await page.getByRole('button', { name: /^Marker/ }).click()
@@ -271,7 +282,49 @@ const keysDialog: Pair[] = [
   { id: 'keys.kbd', surface: 'keys', mock: '.keys kbd', app: '.keys-dialog .keys kbd', checks: ['chrome', 'type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
 ]
 
+// S8 (R9): the ⋯ menu. Its rows with a mockup counterpart are compared; the placement rows (panels the rail and the steps
+// will open, Search again and Generate a new answer) are PLACEMENTS and left out, so Move to Trash sits lower.
+const MENU = '[data-slot=dropdown-menu-content]'
+const MENU_ROWS = `${MENU} [data-slot=dropdown-menu-item]:not(.research-menu-placement)`
+const researchMenu: Pair[] = [
+  { id: 'research-menu.menu', surface: 'research-menu', mock: '.menu', app: MENU, checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'research-menu.rows', surface: 'research-menu', mock: '.menu button:not(.danger)', app: `${MENU_ROWS}:not([data-variant=destructive])`, checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed',
+    dataText: { app: ['.research-tab-count'] }, icon: [{ mock: 'pen', app: 'pencil-line' }, { mock: 'clock', app: 'clock' }, { mock: 'bulb', app: 'lightbulb' }, { mock: 'clock', app: 'clock' }],
+    states: ['hover'], unordered: true, status: 'active' },
+  { id: 'research-menu.trash', surface: 'research-menu', mock: '.menu button.danger', app: `${MENU} [data-variant=destructive]`, checks: ['chrome', 'type', 'colour', 'icon'], text: true,
+    icon: { mock: 'trash', app: 'trash' }, unordered: true, status: 'active' },
+]
+// S8 (R8): the Export menu. The PDF row is DEFERRED_TARGETS (S27 wires print); the PRISMA-S rows are a PLACEMENT. The
+// counts in the sources rows are data, so the rows' text is compared through their format labels.
+const exportMenu: Pair[] = [
+  { id: 'export-menu.menu', surface: 'export-menu', mock: '.menu', app: MENU, checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'export-menu.headings', surface: 'export-menu', mock: '.menu h6', app: `${MENU} [data-slot=dropdown-menu-label]`, checks: ['type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
+  { id: 'export-menu.rows', surface: 'export-menu', mock: '.menu button.fmt', app: `${MENU} .menu-fmt`, checks: ['chrome', 'type', 'colour'], list: 'fixed', text: false, states: ['hover'], unordered: true, status: 'active' },
+  { id: 'export-menu.formats', surface: 'export-menu', mock: '.menu button.fmt b', app: `${MENU} .menu-fmt b`, checks: ['type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
+  { id: 'export-menu.details', surface: 'export-menu', mock: '.menu button.fmt span', app: `${MENU} .menu-fmt b + span`, checks: ['type', 'colour'], list: 'fixed', text: false, unordered: true, states: [], status: 'active' },
+]
+// S8 (R2): the rename row in the topbar; (R7): the revise form in the bubble.
+const titleEdit: Pair[] = [
+  { id: 'title-edit.row', surface: 'title-edit', mock: '.topbar .ttl-edit', app: '.research-title-edit', checks: ['chrome'], status: 'active' },
+  { id: 'title-edit.field', surface: 'title-edit', mock: '#ttlIn', app: '.research-title-input', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'title-edit.suggest', surface: 'title-edit', mock: '.ttl-edit [data-act="suggesttitle"]', app: '.research-title-suggest', checks: ['chrome', 'type', 'colour', 'icon'], widths: DESK, text: true,
+    icon: { mock: 'bulb', app: 'lightbulb' }, status: 'active' },
+  { id: 'title-edit.save', surface: 'title-edit', mock: '.ttl-edit [data-act="savetitle"]', app: '.research-title-save', checks: ['chrome', 'type', 'colour'], text: true, status: 'active' },
+  { id: 'title-edit.cancel', surface: 'title-edit', mock: '.ttl-edit [data-act="canceltitle"]', app: '.research-title-cancel', checks: ['chrome', 'icon'], icon: { mock: 'x', app: 'x' }, status: 'active' },
+]
+const revise: Pair[] = [
+  { id: 'revise.form', surface: 'revise', mock: '.thread .q.edit', app: '.chat-question.is-editing', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'revise.labels', surface: 'revise', mock: '.q.edit label', app: '.chat-question.is-editing label', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'revise.question', surface: 'revise', mock: '#editq', app: '#revise-question', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'revise.terms', surface: 'revise', mock: '#editkw', app: '#revise-key-terms', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'revise.buttons', surface: 'revise', mock: '.q.edit .rowbtns button', app: '.chat-question-buttons button', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: false, status: 'active' },
+]
+
 export const PAIRS: Pair[] = [
+  ...researchMenu,
+  ...exportMenu,
+  ...titleEdit,
+  ...revise,
   ...shell('home'),
   ...states,
   ...palette,
@@ -332,20 +385,25 @@ export const PAIRS: Pair[] = [
 
   ...shell('research'),
   { id: 'research.topbar', surface: 'research', mock: '.topbar', app: '.research-topbar', checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },
-  { id: 'research.title', surface: 'research', mock: '.topbar h1', app: '.research-topbar h1', checks: ['type'], widths: DESK,
-    status: 'pending:S8', why: 'S8: title button with pencil on hover' },
-  { id: 'research.wait-chip', surface: 'research', mock: '.topbar .waitchip', app: '.research-topbar .wait-chip', checks: ['chrome', 'type', 'colour'], widths: DESK,
-    status: 'pending:S8', why: 'S8: "N waiting for you" chip' },
-  { id: 'research.revise', surface: 'research', mock: '.topbar [data-act="editq"]', app: '.research-revise', checks: ['chrome', 'type', 'colour'], widths: DESK,
-    status: 'pending:S8', why: 'S8: topbar order and size of Revise question' },
-  { id: 'research.export', surface: 'research', mock: '.topbar [data-menu="export"]', app: '.research-topbar .research-export', checks: ['chrome', 'type', 'colour'], widths: DESK,
-    status: 'pending:S8', why: 'S8: Export button and menu groups' },
-  { id: 'research.more', surface: 'research', mock: '.topbar [data-menu="research"]', app: '.research-topbar .research-more', checks: ['chrome', 'icon'], widths: DESK,
-    icon: { mock: 'more', app: 'ellipsis' }, status: 'pending:S8', why: 'S8: ⋯ research menu' },
+  // S8 (R1–R9): the title button, the waiting chip, Revise question (an icon at 390, a §2.2 placement), Export and ⋯.
+  { id: 'research.title', surface: 'research', mock: '.topbar h1', app: '.research-topbar h1', checks: ['type'], status: 'active' },
+  { id: 'research.title-button', surface: 'research', mock: '.topbar h1 .ttl', app: '.research-topbar .research-title-button', checks: ['type', 'icon'],
+    icon: { mock: 'pen', app: 'pencil-line' }, status: 'active' },
+  { id: 'research.wait-chip', surface: 'research', mock: '.topbar .waitchip', app: '.research-topbar .wait-chip', checks: ['chrome', 'type', 'colour', 'icon'], widths: DESK,
+    icon: { mock: 'inbox', app: 'inbox' }, states: [], status: 'active' },
+  { id: 'research.revise', surface: 'research', mock: '.topbar [data-act="editq"]', app: '.research-revise', checks: ['chrome', 'type', 'colour', 'icon'], widths: DESK,
+    icon: { mock: 'pen', app: 'pencil-line' }, text: true, status: 'active' },
+  { id: 'research.export', surface: 'research', mock: '.topbar [data-menu="export"]', app: '.research-topbar .research-export', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'dl', app: 'download' }, text: true, status: 'active' },
+  { id: 'research.more', surface: 'research', mock: '.topbar [data-menu="research"]', app: '.research-topbar .research-more', checks: ['chrome', 'icon'],
+    icon: { mock: 'more', app: 'ellipsis' }, status: 'active' },
   { id: 'research.thread', surface: 'research', mock: '.thread-inner', app: '.thread-inner', checks: ['content'], breakpoint: true,
     status: 'active' },
-  { id: 'research.question', surface: 'research', mock: '.thread .q', app: '.chat-question', checks: ['content', 'type', 'colour'],
-    status: 'pending:S8', why: 'S8: question bubble with scope label and date · revision' },
+  // S8 (R13): the question bubble, its scope label in accent and "date · revision N".
+  { id: 'research.question', surface: 'research', mock: '.thread .q', app: '.chat-question', checks: ['content', 'type', 'colour'], status: 'active' },
+  { id: 'research.question-scope', surface: 'research', mock: '.thread .q b', app: '.chat-question > b', checks: ['type', 'colour', 'icon'], text: true,
+    icon: { mock: 'search', app: 'search' }, states: [], status: 'active' },
+  { id: 'research.question-time', surface: 'research', mock: '.thread .q time', app: '.chat-question > time', checks: ['type', 'colour'], states: [], status: 'active' },
   { id: 'research.steps', surface: 'research', mock: '.steps .step', app: '.chat-steps .chat-step', checks: ['content', 'type'], list: 'fixed',
     text: false,  // each step line mixes the phase with its counts; S9 separates them and sets `dataText` before turning this on
     status: 'pending:S9', why: 'S9: one line per phase' },

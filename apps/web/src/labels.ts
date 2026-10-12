@@ -259,9 +259,9 @@ const pauseReasons: Record<string, string> = {
   asset_removed: 'The PDF was removed from the source before OCR finished. Nothing was stored.',
   extraction_failed: 'The PDF could not be opened to find its pages without text.',
   // The sw workflow's own stops: the run has searched nothing yet (D80).
-  key_terms_needed: 'DEIXIS reads search terms from an English question and does not translate. Revise the question in English, or give the English key terms below.',
-  vocabulary_empty: 'No search term could be built from the question, so nothing was searched. Revise the question below, for example with other words for the topic or with key terms, and search again.',
-  vocabulary_too_broad: 'Every search term in the question is too common to search on its own, so nothing was searched. Revise the question below with a narrower topic or with key terms, and search again.',
+  key_terms_needed: 'DEIXIS reads search terms from an English question and does not translate. Revise the question in English, or give the English key terms above.',
+  vocabulary_empty: 'No search term could be built from the question, so nothing was searched. Revise the question above, for example with other words for the topic or with key terms, and search again.',
+  vocabulary_too_broad: 'Every search term in the question is too common to search on its own, so nothing was searched. Revise the question above with a narrower topic or with key terms, and search again.',
   search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
   user_plan_unsearchable: 'No record on OpenAlex holds any word of one block of your search plan, backups included, so nothing was searched. Edit the plan and search again.',
 }

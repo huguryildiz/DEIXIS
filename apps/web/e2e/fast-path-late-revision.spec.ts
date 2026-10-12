@@ -89,12 +89,14 @@ for (const width of [1440, 390]) {
     await expect(page.locator('[data-split-panel]')).toHaveCount(0)
     // The cited-sources exports follow V1 too: the thread's Download menu row, the topbar Export row (from 1100px, where
     // the topbar shows it) and the report's .bib and .ris links.
+    // Each row is read inside its own menu: a closing menu can still be in the DOM when the next one opens.
     await page.locator('.answer-thread .answer-acts').getByRole('button', { name: 'Download' }).click()
-    await expectV1Export(await page.getByRole('menuitem', { name: /^BIB/ }).getAttribute('href'))
+    await expectV1Export(await page.getByRole('menu', { name: 'Download' }).getByRole('menuitem', { name: /^BIB/ }).getAttribute('href'))
     await page.keyboard.press('Escape')
+    await expect(page.getByRole('menu', { name: 'Download' })).toHaveCount(0)
     if (width >= 1100) {
       await page.getByRole('button', { name: 'Export', exact: true }).click()
-      await expectV1Export(await page.getByRole('menuitem', { name: /^BIB/ }).getAttribute('href'))
+      await expectV1Export(await page.getByRole('menu', { name: 'Export' }).getByRole('menuitem', { name: /^BIB/ }).getAttribute('href'))
       await page.keyboard.press('Escape')
     }
     await page.locator('#research-answer').click()

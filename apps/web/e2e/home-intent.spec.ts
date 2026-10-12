@@ -114,10 +114,15 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
     // server's own list, polled by the shell.
     await page.route('**/api/researches', async route => {
       if (route.request().method() !== 'GET') return route.fallback()
-      const response = await route.fetch()
-      const list = await response.json() as Array<{ id: string; awaiting: { queue: number; pdf: number } }>
-      const mine = list.filter(r => r.id === id).map(r => ({ ...r, awaiting: { queue: 2, pdf: 1 } }))
-      await route.fulfill({ response, json: [...mine, ...list.filter(r => r.id !== id)] })
+      // A poll still in flight when the page navigates or closes has its response disposed; that poll is dropped.
+      try {
+        const response = await route.fetch()
+        const list = await response.json() as Array<{ id: string; awaiting: { queue: number; pdf: number } }>
+        const mine = list.filter(r => r.id === id).map(r => ({ ...r, awaiting: { queue: 2, pdf: 1 } }))
+        await route.fulfill({ response, json: [...mine, ...list.filter(r => r.id !== id)] })
+      } catch {
+        await route.abort().catch(() => {})
+      }
     })
     // Home is open before the answer exists: the card has no report yet and gains it when the shell's poll sees it.
     await page.goto(base)

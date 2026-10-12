@@ -4,6 +4,17 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D12 — A person can edit the search plan; a saved plan replaces the three planning calls for its revision
+Status: accepted (decided with Sol over S23a's review rounds, 12 Oct 2026) · Date: 2026-10-12 · Writer: Claude
+Context: The mockup's Search plan panel (P42, F18, slice S23a) lets a person change the search words, the criterion and the optional providers, then search again.
+Decision:
+- The plan is checked with SearchQuery's term rules and saved as a new scope revision (`user_plan_json`, migration 0008), never edited in place.
+- A run of that revision skips `vocabulary_labels`, `search_query` and `criterion_proposal` and builds their outputs from the plan (origin `user`). It counts the plan's terms on OpenAlex with backups as before, records the approval as `user_edited` and freezes the plan in the protocol before the first result fetch.
+- The plan's words alone make the keyword queries and the ranking and screening blocks; the question's own query is not searched beside them.
+- Its criterion, or its explicit absence, holds for that revision only: every reader takes the criterion that revision froze, and no other revision takes it back. The criterion's population and comparator mapping is carried with it, applies only while its part is unchanged, and is never added by a person.
+- OpenAlex is required. A Semantic Scholar, Crossref or Scopus left out gets no search or abstract-lookup request, recorded `excluded_by_user`.
+Limits: Full-text acquisition still asks Crossref for PDF links whatever is unchecked; the panel must say so (S23b). The query shown before a run is a preview, compiled again at run time. Tested on SYNTHETIC records with the fake model only; whether edited plans find better works is not measured, and D8's live run is still owed.
+
 ## D11 — Follow-up questions are answered only from passages the research already holds
 Status: accepted (decided with Sol over S22a's review rounds, 12 Oct 2026) · Date: 2026-10-12 · Writer: Claude
 Context: The mockup's follow-up box (R30, R31; F17, slice S22a) asks a further question inside a research. It must not start a search or cite anything the research has not read.

@@ -835,7 +835,9 @@ class ResearchFlow:
         """The query of a person's saved plan (UI parity S23a, F18), in place of the model's: no model is called.
 
         The plan's terms are counted on OpenAlex and a backup takes the place of a term no record holds, exactly as
-        for a model-written query (`search_query.check`); the code's query from the question is searched beside it.
+        for a model-written query (`search_query.check`). Unlike beside a model's query, the code's query from the
+        question is not searched: the plan's words alone make the keyword queries and the ranking and screening
+        blocks. The code vocabulary is still built, for the question's side lists (claim and exclusion words).
         The step is keyed `search_query` like the model's, so a resumed run reads the stored counts and asks nothing
         twice. A block the counts leave with no term ends the run (`user_plan_unsearchable`) before anything is
         frozen or searched: the person changes the plan in a new revision.
@@ -859,6 +861,9 @@ class ResearchFlow:
         if not checked["searchable"]:
             self._fail(run_id, "user_plan_unsearchable", {"checks": checked["checks"]})
         built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, user_plan_rules.record(plan))
+        # The person's words are the whole keyword search: the question's own query is not searched beside them, so
+        # a word they removed returns in no query, no ranking block and no screening block (F18).
+        built["code_query"] = built["code_query"] | {"searched": False, "left_out": "user_plan"}
         queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
         built = search_query_rules.with_compiled(built, queries)
         self.store.start_step(step["id"])
@@ -968,7 +973,8 @@ class ResearchFlow:
             return _criterion_result(step["output"])
         self.store.start_step(step["id"])
         plan = user_plan_rules.of(scope)
-        frozen = None if plan is not None else self.store.frozen_criterion(rid, scope["question"], scope.get("steering"))
+        frozen = None if plan is not None else self.store.frozen_criterion(rid, scope["question"], scope.get("steering"),
+                                                                           scope["revision"])
         if plan is not None:
             # The person's saved plan holds the criterion; no proposal is asked for (S23a). None: they set none.
             given = user_plan_rules.criterion(plan, _sought_terms(vocabulary))
@@ -2400,7 +2406,8 @@ class ResearchFlow:
         if step["status"] == "succeeded":
             return criterion_passages.compile_phrases([{"phrase": p} for p in step["output"]["phrases"]])["patterns"]
         self.store.start_step(step["id"])
-        frozen = self.store.frozen_criterion(run["research_id"], scope["question"], scope.get("steering"))
+        frozen = self.store.frozen_criterion(run["research_id"], scope["question"], scope.get("steering"),
+                                             scope["revision"])
         compiled = criterion_passages.compile_phrases((frozen or {}).get("cue_phrases") or [])
         phrases = [phrase for phrase, _ in compiled["patterns"]]
         reason = "no_criterion" if frozen is None else None if phrases else "no_phrases"
@@ -3271,7 +3278,7 @@ class ResearchFlow:
         limit = run["budget"]["max_fulltext_reads"]
         if read_limit is not None:
             limit = read_limit
-        frozen = self.store.frozen_criterion(rid, scope["question"], scope.get("steering"))
+        frozen = self.store.frozen_criterion(rid, scope["question"], scope.get("steering"), scope["revision"])
         if frozen is None:
             plan = {"limit": limit, "criterion": None, "works": [], "not_reached": 0,
                     "identity_unconfirmed": 0, "reason": "no_criterion"}
@@ -3575,7 +3582,8 @@ class ResearchFlow:
         """Whether a person's file can be read here: reading is `auto` and the research has a frozen criterion."""
         scope = self.store.scope(research_id)
         return (self.deps.settings.fulltext_adjudication == "auto"
-                and self.store.frozen_criterion(research_id, scope["question"], scope.get("steering")) is not None)
+                and self.store.frozen_criterion(research_id, scope["question"], scope.get("steering"),
+                                                 scope["revision"]) is not None)
 
     def attach_outcomes(self, research_id: str, work_ids: list[str]) -> dict[str, dict[str, str]]:
         """What a file with text would lead to on each version of these works, for the confirmation panel, by work

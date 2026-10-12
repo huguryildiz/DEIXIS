@@ -6,16 +6,18 @@ scope revision that carries the plan (`scope_revisions.user_plan_json`); nothing
 of that revision does what it always does up to the planning calls (question words, seed checks, OpenAlex term
 counts), then builds what `vocabulary_labels`, `search_query` and `criterion_proposal` would have given from the plan
 by code (origin `user`), records the approval as `user_edited` and freezes the protocol with the plan in it, before
-its first request that fetches search results.
+its first request that fetches search results. The plan's words alone make the keyword queries and the ranking and
+screening blocks: the code's query from the question is not searched beside them, so a removed word stays removed.
 
 Rules this module holds:
 - The plan is checked with the SearchQuery term rules (`contracts.check_user_search_plan`); a plan that breaks one
   is refused with the reasons and never stored.
 - OpenAlex is required. Semantic Scholar, Crossref and Scopus may be left out: such a provider gets no search request
   and no abstract lookup request in any run of the revision, and the record says `excluded_by_user`. Full-text
-  acquisition is not covered by this choice.
-- A revision made by another route (a new question, other seeds) carries no plan over, and a later criterion
-  is never taken back from a protocol whose criterion the person wrote (`store.frozen_criterion`).
+  acquisition is not covered by this choice: Crossref is still asked for a work's PDF links (`NOT_COVERED`).
+- The plan's criterion is the criterion of its own revision only (`store.frozen_criterion` with the revision): a
+  plan with no criterion is never given an older one, and a later revision never takes the plan's back.
+- A revision made by another route (a new question, other seeds) carries no plan over.
 """
 
 from __future__ import annotations
@@ -34,6 +36,9 @@ APPROVAL_MODE = "user_edited"
 EXCLUDED = "excluded_by_user"
 REQUIRED = contracts.USER_PLAN_REQUIRED_PROVIDER
 OPTIONAL = ("semantic_scholar", "crossref", "scopus")
+# Requests a left-out provider still gets, outside the search and the abstract lookups: full-text acquisition asks
+# Crossref for a work's PDF links (`documents/acquisition.py`, a required route).
+NOT_COVERED = {"crossref": ["pdf_link_lookup"]}
 SCHEMA_VERSION = contracts.SCHEMA_VERSIONS["UserSearchPlan"]
 
 
@@ -186,18 +191,15 @@ def _queries(body: dict[str, Any]) -> list[dict[str, Any]]:
              "compiled_from": "protocol"} for n, q in enumerate(rows, 1)]
 
 
-def _preview(plan: dict[str, Any], base: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """The queries a saved plan will search, compiled by the existing block compiler from its words before any count
-    is read: a backup only replaces a term once OpenAlex counts it at zero, in the run. The code's query from the
-    question is taken from the newest protocol of the same question, as the run will compile it again."""
+def _preview(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """The keyword query a saved plan will search, compiled by the existing block compiler from its words before any
+    count is read. A preview: the run compiles it again, and a backup only replaces a term once OpenAlex counts that
+    term at zero. The code's query from the question is not searched beside a plan, so there is no second query."""
     terms = [{"phrase": criterion_rules.norm(row["term"]), "block": block, "in_query": "phrase", "dropped": None,
               "root": criterion_rules.norm(row["term"])} for block in GATE_BLOCKS for row in plan[block]]
     compiled = query_compiler.compile_block_queries({"terms": terms}, [REQUIRED], 1)
-    rows = [{"origin": ORIGIN, "query_text": q["query_text"], "compiled_from": "plan_words"} for q in compiled]
-    code = [q for q in ((base or {}).get("body") or {}).get("compiled_queries") or []
-            if q["provider_id"] == REQUIRED and q.get("origin") == "code"]
-    rows += [{"origin": "code", "query_text": q["query_text"], "compiled_from": "protocol"} for q in code[:1]]
-    return [{"label": f"Query {n}"} | row for n, row in enumerate(rows, 1)]
+    return [{"label": f"Query {n}", "origin": ORIGIN, "query_text": q["query_text"], "compiled_from": "plan_words"}
+            for n, q in enumerate(compiled, 1)]
 
 
 def view(store: Any, research_id: str) -> dict[str, Any]:
@@ -207,11 +209,12 @@ def view(store: Any, research_id: str) -> dict[str, Any]:
     research = store.research(research_id)
     scope = store.scope(research_id)
     base = _base_protocol(store, research_id, scope)
-    plan, origin, queries = of(scope), None, []
+    plan, origin, queries, preview = of(scope), None, [], False
     if plan is not None:
         origin = ORIGIN
         searched = base is not None and base["scope_revision"] == scope["revision"]
-        queries = _queries(base["body"]) if searched else _preview(plan, base)
+        preview = not searched
+        queries = _preview(plan) if preview else _queries(base["body"])
     elif base is not None:
         body = base["body"]
         plan = from_protocol(body, scope)
@@ -228,10 +231,14 @@ def view(store: Any, research_id: str) -> dict[str, Any]:
         "plan": plan,
         "issues": [{"code": i.code, "path": i.path, "message": i.message} for i in issues],
         "queries": queries,
+        # True while the saved plan has not run: the queries are a preview, compiled again when the run starts.
+        "queries_preview": preview,
         "providers": [{"provider_id": provider, "required": provider == REQUIRED,
                        "checked": plan is not None and provider in plan["providers"],
                        "in_scope": provider in scope["providers"],
-                       "configured": CONNECTORS[provider].access_mode() != "not_configured"}
+                       "configured": CONNECTORS[provider].access_mode() != "not_configured",
+                       # What this provider is still asked for when it is left out (Crossref: PDF links).
+                       "not_covered": NOT_COVERED.get(provider, [])}
                       for provider in (REQUIRED, *OPTIONAL)],
     }
 

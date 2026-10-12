@@ -126,7 +126,7 @@ class _Context:
                 " AND m.removed_at IS NULL WHERE a.removed_at IS NULL ORDER BY a.retrieved_at DESC, a.id DESC",
                 (research_id,)):
             self.assets.setdefault(row["source_version_id"], dict(row))
-        frozen = store.frozen_criterion(research_id, scope["question"], scope.get("steering"))
+        frozen = store.frozen_criterion(research_id, scope["question"], scope.get("steering"), scope["revision"])
         parts = (frozen or {}).get("parts") or []
         self.criterion = frozen
         self.parts = ([{"name": part["name"], "definition": part["definition"],

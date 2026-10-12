@@ -49,7 +49,8 @@ def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: li
         # A person's saved plan (S23a): no prompt, no model and no StepInput, because none was asked. The plan itself
         # is in the body's `user_plan`; this block keeps the counts that decided the query, as for a model's.
         return {"status": record["status"], "origin": "user", "prompt": None, "model": None, "attempts": [],
-                "plan_sha256": record["plan_sha256"], **_query_outcome(vocabulary, queries)}
+                "plan_sha256": record["plan_sha256"],
+                "code_query_left_out": vocabulary["code_query"].get("left_out"), **_query_outcome(vocabulary, queries)}
     body = {
         "status": record["status"],
         # The prompt version: its method files, whose text `skill_package_hash` above covers, and the answer's schema.

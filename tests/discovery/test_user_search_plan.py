@@ -196,10 +196,12 @@ def test_a_saved_plan_is_searched_without_the_three_planning_calls_and_recorded_
     assert saved.status_code == 200, saved.text
     view = saved.json()
     assert view["scope_revision"] == 2 and view["origin"] == "user" and view["issues"] == []
-    # Before the run: Query 1 compiled from the words, Query 2 the code's query from the question's newest protocol.
-    assert view["queries"][0] == {"label": "Query 1", "origin": "user", "compiled_from": "plan_words",
-                                  "query_text": '"rail freight" AND ("timetable scheduling" OR "train dispatching")'}
-    assert view["queries"][1]["origin"] == "code"
+    # Before the run: a preview compiled from the plan's words alone; the question's query is not searched beside it.
+    assert view["queries_preview"] is True
+    assert view["queries"] == [{"label": "Query 1", "origin": "user", "compiled_from": "plan_words",
+                                "query_text": '"rail freight" AND ("timetable scheduling" OR "train dispatching")'}]
+    crossref = next(p for p in view["providers"] if p["provider_id"] == "crossref")
+    assert crossref["not_covered"] == ["pdf_link_lookup"]  # PDF links are still asked of Crossref
 
     second = discover(client, rid)
     assert second["status"] == "completed", second
@@ -227,11 +229,47 @@ def test_a_saved_plan_is_searched_without_the_three_planning_calls_and_recorded_
     user_query = next(q for q in body["compiled_queries"] if q.get("origin") == "user")
     assert user_query["query_text"] == '"rail freight" AND ("timetable scheduling" OR "train dispatching")'
     assert user_query["query_text"] in providers.searches
-    assert any(q.get("origin") == "code" for q in body["compiled_queries"])
+    assert {q.get("origin") for q in body["compiled_queries"]} == {"user"}
+    assert (query["code_query_searched"], query["code_query_left_out"]) == (False, "user_plan")
 
     # After the run the panel shows the queries the protocol froze.
     after = client.get(f"/api/researches/{rid}/search-plan").json()
-    assert after["origin"] == "user" and {q["compiled_from"] for q in after["queries"]} == {"protocol"}
+    assert after["origin"] == "user" and after["queries_preview"] is False
+    assert {q["compiled_from"] for q in after["queries"]} == {"protocol"}
+
+
+def test_a_word_left_out_of_the_plan_is_in_no_keyword_query_and_no_ranking_or_screening_block(tmp_path, monkeypatch):
+    """The model-made plan's own words and the question's words (the code's query) are all left out of the saved
+    plan: none of them is searched as a keyword query or read as a block term by ranking and screening."""
+    from deixis.workflow.expansion import searched_terms
+    from deixis.workflow.lookups import question_forms
+
+    providers = Providers()
+    client = client_for(tmp_path, monkeypatch, providers, FakeAdapter())
+    rid = create(client)
+    first = discover(client, rid)
+    assert first["status"] == "completed", first
+    model_made = protocols(client, rid)[0]
+    removed = {form for forms in model_made["concept_blocks"].values() for form in forms}
+    removed |= {form for forms in model_made["search_query"]["code_concept_blocks"].values() for form in forms}
+    assert removed and model_made["search_query"]["code_query_searched"]  # the model path searched both queries
+
+    providers.searches.clear()
+    assert save(client, rid, plan()).status_code == 200
+    run = discover(client, rid)
+    assert run["status"] == "completed", run
+    kept = {"rail freight", "timetable scheduling", "train dispatching"}
+    vocabulary = step_output(client, run["id"], "protocol_approval")["approved"]["vocabulary"]
+    assert {t["phrase"] for t in searched_terms(vocabulary)} == kept
+    assert {f for f in question_forms(vocabulary) if f in removed} == set()
+    body = protocols(client, rid)[-1]
+    keyword = [q["query_text"] for q in body["compiled_queries"]]
+    assert keyword and providers.searches
+    import re
+    for text in keyword + [q for q in providers.searches if q and (" AND " in q or '"' in q)]:
+        bare_text = re.sub(r"\b[a-z_]+:", "", text)  # a provider's field prefix (arXiv's `abs:`)
+        terms = {quoted or bare for quoted, bare in re.findall(r'"([^"]+)"|([^\s()"]+)', bare_text)} - {"AND", "OR"}
+        assert terms <= kept, (text, terms - kept)
 
 
 def test_a_term_no_record_holds_is_searched_as_its_backup_and_a_block_left_empty_ends_the_run(tmp_path, monkeypatch):
@@ -378,3 +416,99 @@ def test_a_later_revision_made_another_way_does_not_inherit_the_plan(tmp_path, m
     assert body["inclusion_criterion"] == model_criterion != plan()["criterion"]["text"]
     assert body["criterion_origin"]["origin"] == "protocol"  # taken back from revision 1's, the model's
     assert client.get(f"/api/researches/{rid}/search-plan").json()["origin"] == "model"
+
+
+# ---- the criterion belongs to the plan's revision: the full-text path reads exactly the one it froze -------------
+
+CROP = {"setting": [{"term": "field crop"}], "task": [{"term": "irrigation scheduling"}], "task_backup": []}
+
+
+def reading_client(tmp_path, monkeypatch, works, fetcher, adapter):
+    from test_abstract_flow import client_of
+    from test_adjudication_flow import app_for
+    from test_fulltext_flow import Transport
+
+    transport = Transport(works)
+    return client_of(app_for(tmp_path, monkeypatch, transport, fetcher, adapter=adapter)), transport
+
+
+def frozen_body(client, rid, revision):
+    row = client.app.state.store.conn.execute(
+        "SELECT protocol_revision, body_json FROM protocol_records WHERE research_id = ? AND scope_revision = ?"
+        " ORDER BY protocol_revision DESC LIMIT 1", (rid, revision)).fetchone()
+    return row[0], json.loads(row[1])
+
+
+def assert_read_under(client, adapter, rid, run_id, revision):
+    """The full-text plans and calls of this run read the criterion its revision froze, and its decisions carry
+    that criterion's digest: the criterion used is the one the provenance names."""
+    from deixis.domain.canonical import sha256_hex
+    from deixis.workflow.decisions import CRITERION_FIELDS
+
+    protocol_revision, body = frozen_body(client, rid, revision)
+    plans = [json.loads(row[0]) for row in client.app.state.store.conn.execute(
+        "SELECT output_json FROM run_steps WHERE run_id = ? AND kind = 'code:adjudication_plan' AND status = 'succeeded'",
+        (run_id,))]
+    assert plans and all(p["criterion"]["criterion"] == body["inclusion_criterion"]
+                         and p["criterion"]["protocol_revision"] == protocol_revision for p in plans), plans
+    calls = [si for si in adapter.calls if si["task_type"] == "fulltext_adjudication" and si["scope_revision"] == revision]
+    names = [part["name"] for part in body["criterion_parts"]]
+    assert calls and all([part["name"] for part in si["adjudication_target"]["parts"]] == names for si in calls)
+    hashes = {row[0] for row in client.app.state.store.conn.execute(
+        "SELECT criterion_hash FROM stage_decisions WHERE research_id = ? AND scope_revision = ? AND stage = 'fulltext'",
+        (rid, revision))}
+    assert hashes == {sha256_hex({field: body.get(field) for field in CRITERION_FIELDS})}
+    return body
+
+
+def test_the_first_run_of_a_plan_reads_full_text_under_the_persons_criterion(tmp_path, monkeypatch):
+    from test_adjudication_flow import papers
+
+    works, fetcher = papers(2)
+    adapter = FakeAdapter()
+    client, _ = reading_client(tmp_path, monkeypatch, works, fetcher, adapter)
+    rid = create(client)
+    assert save(client, rid, plan(**CROP)).status_code == 200
+    run = discover(client, rid)
+    assert run["status"] == "completed", run
+    body = assert_read_under(client, adapter, rid, run["id"], 2)
+    assert body["inclusion_criterion"] == plan()["criterion"]["text"]
+    assert not [si for si in adapter.calls if si["task_type"] == "criterion_proposal"]
+
+
+def test_a_plan_after_a_model_criterion_reads_its_own_and_a_plan_with_none_reads_nothing_older(tmp_path, monkeypatch):
+    """Revision 1: a model-made criterion. Revision 2: the person's plan with their criterion; the works it finds are
+    read under theirs, not the model's. Revision 3: a plan with no criterion; nothing older stands in for it, so
+    nothing is read in full and the protocol says there is none."""
+    from test_adjudication_flow import papers
+
+    works, fetcher = papers(6)
+    adapter = FakeAdapter()
+    client, transport = reading_client(tmp_path, monkeypatch, works[:2], fetcher, adapter)
+    rid = create(client)
+    assert discover(client, rid)["status"] == "completed"
+    model_criterion = frozen_body(client, rid, 1)[1]["inclusion_criterion"]
+    assert model_criterion
+
+    transport.works = works[2:4]  # new works, so the plan's run has full texts of its own to read
+    assert save(client, rid, plan(**CROP)).status_code == 200
+    run = discover(client, rid)
+    assert run["status"] == "completed", run
+    body = assert_read_under(client, adapter, rid, run["id"], 2)
+    assert body["inclusion_criterion"] == plan()["criterion"]["text"] != model_criterion
+    assert client.app.state.store.frozen_criterion(rid, QUESTION, None, 2)["criterion"] == body["inclusion_criterion"]
+
+    transport.works = works[4:]
+    assert save(client, rid, plan(criterion=None, **CROP)).status_code == 200
+    run = discover(client, rid)
+    assert run["status"] == "completed", run
+    _, body = frozen_body(client, rid, 3)
+    assert body["inclusion_criterion"] is None and "criterion_origin" not in body
+    plans = [json.loads(row[0]) for row in client.app.state.store.conn.execute(
+        "SELECT output_json FROM run_steps WHERE run_id = ? AND kind = 'code:adjudication_plan'", (run["id"],))]
+    assert plans and all(p["reason"] == "no_criterion" and p["criterion"] is None for p in plans)
+    assert not [si for si in adapter.calls if si["task_type"] in ("fulltext_adjudication", "criterion_proposal")
+                and si["scope_revision"] == 3]
+    assert client.app.state.store.frozen_criterion(rid, QUESTION, None, 3) is None
+    # The model's older criterion is still what an unplanned revision of the question would take back.
+    assert client.app.state.store.frozen_criterion(rid, QUESTION, None)["criterion"] == model_criterion

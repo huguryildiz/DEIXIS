@@ -1658,8 +1658,9 @@ export const followupApi = {
 }
 
 // The search plan panel (S23a; api/search_plan_routes.py). The person edits the words of each block, the criterion
-// and the optional providers; Query 1 and Query 2 are read-only strings compiled by code (`compiled_from`
-// `plan_words` before the saved plan has run, `protocol` once a run froze it). Saving makes a new scope revision and
+// and the optional providers; the queries are read-only strings compiled by code. A model-made plan shows the model's
+// query and the code's query from the question; a saved plan searches its own words only (one query), as a preview
+// (`queries_preview`, `compiled_from: 'plan_words'`) until a run compiles and freezes it (`protocol`). Saving makes a new scope revision and
 // starts no run. A plan that breaks a rule answers 422 with code `invalid_search_plan` and `issues` (the SearchQuery
 // term rules, `openalex_required`, `provider_not_in_scope`); a stale `expected_version` answers 409.
 export type SearchPlanTerm = { term: string }
@@ -1682,7 +1683,11 @@ export type SearchPlanView = {
   plan: UserSearchPlan | null
   issues: { code: string; path: string; message: string }[]  // rules the shown plan breaks (a code term may be long)
   queries: { label: string; origin: 'user' | 'model' | 'code'; query_text: string; compiled_from: 'plan_words' | 'protocol' }[]
-  providers: { provider_id: SearchPlanProvider; required: boolean; checked: boolean; in_scope: boolean; configured: boolean }[]
+  queries_preview: boolean  // true while a saved plan has not run: compiled again when the run starts
+  providers: {
+    provider_id: SearchPlanProvider; required: boolean; checked: boolean; in_scope: boolean; configured: boolean
+    not_covered: 'pdf_link_lookup'[]  // still asked when left out: Crossref is used to find PDF links
+  }[]
 }
 
 export const searchPlanApi = {

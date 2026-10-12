@@ -190,6 +190,23 @@ def provisional_title(question: str) -> str:
 
 EQUATION_SKIP_KEY = "equations_skip"
 
+
+def _criterion_of(body: dict[str, Any], protocol_revision: int) -> dict[str, Any]:
+    """A frozen body's criterion as `Store.frozen_criterion` returns it."""
+    origin = body.get("criterion_origin") or {}
+    return {
+        "criterion": body["inclusion_criterion"], "parts": body["criterion_parts"],
+        "cue_phrases": body["cue_phrases"], "exclusion_title_words": body["exclusion_title_words"],
+        # The source record of the run that proposed it travels with it; only `origin` becomes "protocol".
+        "dropped_exclusion_title_words": origin.get("dropped_exclusion_title_words", []),
+        "base_run": origin.get("base_run"), "runs_ok": origin.get("runs_ok", []),
+        "sought_term_in_criterion": origin.get("sought_term_in_criterion"),
+        "question_elements": origin.get("question_elements", []),
+        "required_roles": origin.get("required_roles", []),
+        **({"role_fallback": origin["role_fallback"]} if "role_fallback" in origin else {}),
+        "protocol_revision": protocol_revision,
+    }
+
 class Store:
     def __init__(self, conn: sqlite3.Connection, clock: Any = None):
         from deixis.workflow import fast_path
@@ -933,14 +950,27 @@ class Store:
         return {"id": row["id"], "protocol_revision": row["protocol_revision"],
                 "body": json.loads(row["body_json"]), "hash": row["body_sha256"]}
 
-    def frozen_criterion(self, research_id: str, question: str, steering: str | None) -> dict[str, Any] | None:
+    def frozen_criterion(self, research_id: str, question: str, steering: str | None,
+                         scope_revision: int | None = None) -> dict[str, Any] | None:
         """The criterion this research already froze for the same question and steering, or None (SW15, D78).
 
         Read across scope revisions on purpose: a revision that changed only the providers must not send the model
         back for a criterion, because the same question answered in other words would mark every decision made under
         the old criterion stale (`decisions.CRITERION_FIELDS`, SW11.10). A body whose criterion is null is passed
         over, so a research whose first run could not reach the model asks again.
+
+        A person's saved search plan (S23a) is tied to its own revision. For `scope_revision` holding a plan, the
+        criterion is the one that revision's protocol froze from the plan, or None when the plan set none or no
+        protocol of the revision is frozen yet: an older criterion never stands in for it. For any other revision,
+        a body frozen from a person's plan is passed over, so its criterion is never carried to a later revision.
         """
+        if scope_revision is not None and self._revision_has_plan(research_id, scope_revision):
+            row = self.conn.execute(
+                "SELECT body_json, protocol_revision FROM protocol_records WHERE research_id = ? AND scope_revision = ?"
+                " AND json_extract(body_json, '$.user_plan') IS NOT NULL ORDER BY protocol_revision DESC LIMIT 1",
+                (research_id, scope_revision)).fetchone()
+            body = json.loads(row["body_json"]) if row else None
+            return _criterion_of(body, row["protocol_revision"]) if body and body.get("inclusion_criterion") else None
         for row in self.conn.execute(
                 "SELECT body_json, protocol_revision FROM protocol_records WHERE research_id = ?"
                 " ORDER BY protocol_revision DESC", (research_id,)):
@@ -950,22 +980,14 @@ class Store:
             if body.get("steering") != steering:
                 continue
             if body.get("user_plan"):
-                # A criterion from a person's saved search plan holds for that plan's revision only (S23a).
-                continue
-            origin = body.get("criterion_origin") or {}
-            return {
-                "criterion": body["inclusion_criterion"], "parts": body["criterion_parts"],
-                "cue_phrases": body["cue_phrases"], "exclusion_title_words": body["exclusion_title_words"],
-                # The source record of the run that proposed it travels with it; only `origin` becomes "protocol".
-                "dropped_exclusion_title_words": origin.get("dropped_exclusion_title_words", []),
-                "base_run": origin.get("base_run"), "runs_ok": origin.get("runs_ok", []),
-                "sought_term_in_criterion": origin.get("sought_term_in_criterion"),
-                "question_elements": origin.get("question_elements", []),
-                "required_roles": origin.get("required_roles", []),
-                **({"role_fallback": origin["role_fallback"]} if "role_fallback" in origin else {}),
-                "protocol_revision": row["protocol_revision"],
-            }
+                continue  # a person's plan holds for its own revision only (S23a)
+            return _criterion_of(body, row["protocol_revision"])
         return None
+
+    def _revision_has_plan(self, research_id: str, scope_revision: int) -> bool:
+        row = self.conn.execute("SELECT user_plan_json FROM scope_revisions WHERE research_id = ? AND revision = ?",
+                                (research_id, scope_revision)).fetchone()
+        return bool(row and row[0])
 
     # ---- runs -------------------------------------------------------------------------
     def create_run(self, research_id: str, kind: str, budget: dict[str, Any], idempotency_key: str | None,

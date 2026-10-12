@@ -281,6 +281,13 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await form.evaluate(f => (f as HTMLFormElement).requestSubmit())
     expect((await viewOf(api, rid)).research.current_scope_revision).toBe(revision + 1)
     await shot(page, 's8-revise-conflict')
+    // Asking for the form again only moves focus: the draft and the conflict stay, Save stays blocked.
+    await form.getByLabel('English key terms (optional)').focus()
+    await topbar(page).getByRole('button', { name: 'Revise question' }).click()
+    await expect(question).toBeFocused()
+    await expect(conflict).toBeVisible()
+    await expect(question).toHaveValue(draft)
+    await expect(save).toBeDisabled()
     await conflict.getByRole('button', { name: `Base my draft on revision ${revision + 1}` }).click()
     await expect(conflict).toHaveCount(0)
     await expect(question).toBeFocused()
@@ -290,6 +297,50 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await expect(page.locator('.chat-question')).toContainText(draft)
     const after = await viewOf(api, rid)
     expect(after.research.current_scope_revision).toBe(revision + 2)
+  })
+
+  test('a revision this page has not received yet is refused by the backend (409) and the draft stays', async () => {
+    // The page gets no live updates, so it still holds the research version from before the other window saved.
+    await page.route('**/events/stream**', route => route.abort())
+    try {
+      await page.goto(`${server.url()}/#/research/${rid}`)
+      const before = await viewOf(api, rid)
+      const revision = before.research.current_scope_revision
+      await topbar(page).getByRole('button', { name: 'Revise question' }).click()
+      const form = page.getByRole('form', { name: 'Revise question' })
+      const question = form.getByRole('textbox', { name: 'Question', exact: true })
+      const draft = 'SYNTHETIC draft saved after an update this page never received?'
+      await question.fill(draft)
+      const other = 'SYNTHETIC question the other window saved first?'
+      expect((await post(api, `/api/researches/${rid}/scope`, { question: other, expected_version: before.research.version, key_terms: null })).ok()).toBe(true)
+      await form.getByRole('button', { name: `Save revision ${revision + 1}` }).click()
+      await expect(page.locator('.toast')).toContainText('Not applied:')
+      // The refusal reloads the page's state: the newer revision shows as a conflict over the kept draft.
+      await expect(form.getByRole('alert')).toContainText(`Revision ${revision + 1} of this question was saved in another window`)
+      await expect(question).toHaveValue(draft)
+      const after = await viewOf(api, rid)
+      expect(after.research.current_scope_revision).toBe(revision + 1)
+      await form.getByRole('button', { name: 'Cancel' }).click()
+      await expect(form).toHaveCount(0)
+    } finally { await page.unroute('**/events/stream**') }
+  })
+
+  test('a rename saved elsewhere within the same revision does not block saving the draft', async () => {
+    await page.goto(`${server.url()}/#/research/${rid}`)
+    const before = await viewOf(api, rid)
+    const revision = before.research.current_scope_revision
+    await topbar(page).getByRole('button', { name: 'Revise question' }).click()
+    const form = page.getByRole('form', { name: 'Revise question' })
+    const draft = 'SYNTHETIC draft kept across a rename made in another window?'
+    await form.getByRole('textbox', { name: 'Question', exact: true }).fill(draft)
+    const title = 'SYNTHETIC renamed in another window'
+    expect((await post(api, `/api/researches/${rid}/title`, { title, expected_version: before.research.version })).ok()).toBe(true)
+    await expect(topbar(page).locator('.research-title-button')).toHaveAttribute('aria-label', title)
+    await expect(form.getByRole('alert')).toHaveCount(0)
+    await form.getByRole('button', { name: `Save revision ${revision + 1}` }).click()
+    await expect(form).toHaveCount(0)
+    await expect(page.locator('.chat-question')).toContainText(draft)
+    expect((await viewOf(api, rid)).research.current_scope_revision).toBe(revision + 1)
   })
 
   test('the run chip follows the latest run: paused, stopped, failed, and an answer being written', async () => {

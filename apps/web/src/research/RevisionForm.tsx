@@ -6,15 +6,15 @@ import { t } from '../i18n'
 // and "Save revision N+1". Saving creates a new question revision; sources and earlier answers are kept.
 // `conflict` names a newer revision saved elsewhere while the form was open: the draft stays, and Save waits until the
 // person bases the draft on that revision.
-export function RevisionForm({ question, keyTerms, nextRevision, focus, conflict, disabled, onSubmit, onCancel, onRebase }: {
-  question: string; keyTerms: string; nextRevision: number; focus: 'question' | 'terms'; conflict: number | null
+export function RevisionForm({ question, keyTerms, nextRevision, focus, focusRequest, conflict, disabled, onSubmit, onCancel, onRebase }: {
+  question: string; keyTerms: string; nextRevision: number; focus: 'question' | 'terms'; focusRequest: number; conflict: number | null
   onRebase: () => void; disabled: boolean; onSubmit: (text: string, keyTerms: string | null) => void; onCancel: () => void
 }) {
   const [text, setText] = useState(question)
   const [terms, setTerms] = useState(keyTerms)
   const questionField = useRef<HTMLTextAreaElement>(null)
   const termsField = useRef<HTMLInputElement>(null)
-  useEffect(() => { (focus === 'terms' ? termsField : questionField).current?.focus() }, [focus])
+  useEffect(() => { (focus === 'terms' ? termsField : questionField).current?.focus() }, [focus, focusRequest])
   const changed = (text.trim() && text.trim() !== question) || terms.trim() !== keyTerms.trim()
   return <form className="chat-question is-editing" aria-label={t('Revise question')}
     onSubmit={e => { e.preventDefault(); if (!conflict && changed && text.trim()) onSubmit(text.trim(), terms.trim() || null) }}

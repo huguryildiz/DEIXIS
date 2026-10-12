@@ -52,7 +52,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [titleEditing, setTitleEditing] = useState(false)
   // The question bubble turns into the revise form (R7); 'terms' opens it on the key-terms field.
   // The revise form, pinned to the question revision it was opened on (see saveRevision).
-  const [revising, setRevising] = useState<false | { focus: 'question' | 'terms'; revision: number }>(false)
+  // `ask` counts the requests to focus a field while the form is open.
+  const [revising, setRevising] = useState<false | { focus: 'question' | 'terms'; revision: number; ask: number }>(false)
   const [savingRevision, setSavingRevision] = useState(false)
   const [error, setError] = useState('')
   const toast = useToast()
@@ -438,7 +439,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const waitingCount = view.counts.waiting_for_pdf ?? 0
   const dropForWaiting = (files: File[]) => { setWaitingFiles(files); openPanel('pdfs') }
   // Revise question turns the question bubble into the revise form (R7); Cancel and Save give focus back to the button.
-  const reviseQuestion = (focus: 'question' | 'terms' = 'question') => { setTitleEditing(false); setRevising({ focus, revision: view.research.current_scope_revision }) }
+  // A form that is already open keeps the revision it started from (only "Base my draft on revision N" moves it); asking
+  // again only moves focus to the requested field.
+  const reviseQuestion = (focus: 'question' | 'terms' = 'question') => {
+    setTitleEditing(false)
+    setRevising(form => (form ? { ...form, focus, ask: form.ask + 1 } : { focus, revision: view.research.current_scope_revision, ask: 0 }))
+  }
   const endRevise = () => { setRevising(false); focusWhenLost(() => reviseButton.current) }
   // A newer question revision saved elsewhere (another window) while the form was open: the draft is kept, Save waits until
   // the person bases the draft on that revision, so an old draft never silently replaces a newer question. While the
@@ -543,7 +549,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <div className="research-body thread-inner">
     {earlierRevision > 0 && <EarlierRevision key={earlierRevision} researchId={id} revision={earlierRevision} intent={view.research.intent} answer={earlierReport} onOpenReport={setOpenReportId} />}
     {revising
-      ? <RevisionForm question={view.scope.question} keyTerms={view.scope.key_terms ?? ''} nextRevision={view.research.current_scope_revision + 1} focus={revising.focus}
+      ? <RevisionForm question={view.scope.question} keyTerms={view.scope.key_terms ?? ''} nextRevision={view.research.current_scope_revision + 1} focus={revising.focus} focusRequest={revising.ask}
         conflict={reviseConflict} onRebase={() => setRevising(form => (form ? { ...form, revision: view.research.current_scope_revision } : form))}
         disabled={busy || active} onSubmit={(text, terms) => { void saveRevision(text, terms) }} onCancel={endRevise} />
       : <QuestionBubble question={view.scope.question} sourceScope={view.scope.source_scope} intent={view.research.intent} createdAt={view.scope.created_at} revision={view.research.current_scope_revision} />}

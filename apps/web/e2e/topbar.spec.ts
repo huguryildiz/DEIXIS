@@ -119,7 +119,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await expect(wait).toBeFocused()
   })
 
-  test('the ⋯ menu lists Rename, Activity, Candidates and Follow-up, the panels, the run actions and Move to Trash', async () => {
+  test('the ⋯ menu lists Rename, Activity, Candidates and Follow-up, the run actions and Move to Trash (the rail opens the other panels)', async () => {
     await page.goto(`${server.url()}/#/research/${rid}`)
     const more = page.getByRole('button', { name: 'Research actions' })
     await more.click()
@@ -127,7 +127,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     // A row's count follows its name; the names and details are compared without it.
     const rows = (await page.getByRole('menuitem').allTextContents()).map(text => text.replace(/ \d+/, ''))
     expect(rows).toEqual(['Rename', 'ActivityRuns, status, time and model calls', 'CandidatesClaims you test against the literature',
-      'Follow-upNew works after this research ran', 'Sources', 'Awaiting your decision', 'Get more full text', 'Evidence table',
+      'Follow-upNew works after this research ran',
       'Search again', 'Generate a new answer', 'Move to Trash'])
     await shot(page, 's8-research-menu')
     await page.keyboard.press('Escape')

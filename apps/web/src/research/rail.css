@@ -1,0 +1,30 @@
+/* The artifacts rail (mockup `.rail`, RL1-RL7): 300px beside the thread from 1100px while no panel is open. The page hides
+   the aside itself (panel open, narrower than 1100px), so no media query is needed here. */
+.research-rail[hidden]{display:none}
+.rail{position:sticky;top:0;display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:12px;width:300px;min-width:0;height:calc(100svh - 46px);overflow:auto;padding:14px;font-size:14px;line-height:1.5}
+.rail .box{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px}
+.rail .box>*{min-width:0}
+.rail .box h5{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 4px;color:var(--muted);font-family:var(--font-sans);font-size:12px;font-weight:500;line-height:1.5;letter-spacing:0;text-transform:none}
+.rail .box h5 button{color:var(--accent);font-weight:500;border-radius:4px}
+.rail .box>button.li{display:flex;align-items:center;gap:8px;margin:0 -6px;padding:6px;border-radius:6px;color:var(--ink-2);font-size:13px;text-align:left}
+.rail .box>button.li:hover{background:var(--hover-surface)}
+.rail .box>button.li>svg{flex:none}
+.rail .box>button.li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rail .box>button.li em{flex:none;margin-left:auto;color:var(--muted);font-size:12px;font-style:normal}
+.rail .rail-empty{color:var(--muted);font-size:12.5px}
+.rail .box.warnbox{border-color:transparent;background:var(--warn-surface)}
+.rail .box.warnbox h5{color:var(--tone-uncertain)}
+.rail .box.warnbox>button.li:hover{background:color-mix(in srgb,var(--ink),transparent 96%)}
+.rail button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.rail .fun{display:grid;gap:5px}
+.rail .fun button{display:grid;grid-template-columns:96px minmax(0,1fr) 34px;gap:8px;align-items:center;margin:0 -4px;padding:2px 4px;border-radius:5px;color:var(--muted);font-size:12px;text-align:left}
+.rail .fun button:hover{background:var(--hover-surface);color:var(--ink)}
+.rail .fun i{display:block;min-width:3px;height:8px;border-radius:2px;background:var(--accent)}
+.rail .fun b{color:var(--ink);font-weight:500;text-align:right}
+.rail .bar{display:flex;height:6px;overflow:hidden;border-radius:3px;background:var(--selected-surface)}
+.rail .bar i{display:block;height:100%;transition:width .3s}
+.rail .legend{display:flex;flex-wrap:wrap;gap:12px;color:var(--muted);font-size:11.5px}
+.rail .legend>span{display:flex;align-items:center;gap:5px}
+.rail .legend i{display:inline-block;width:8px;height:8px;border-radius:2px}
+.rail .kv{display:flex;justify-content:space-between;gap:8px;color:var(--ink-2);font-size:12.5px}
+.rail .kv span:last-child{color:var(--muted)}

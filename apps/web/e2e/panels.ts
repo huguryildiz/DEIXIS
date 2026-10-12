@@ -28,16 +28,28 @@ export function panel(page: Page, title: string | RegExp): Locator {
   return page.locator('[data-split-panel]').and(page.getByRole('region', name).or(page.getByRole('dialog', name)))
 }
 
-// Opens a panel the way a person does, from the topbar's Research actions menu, and returns it once it shows. In another
-// interface language the menu row and the panel title are given: `{ row, title, menu }` (the menu button's name).
+// From 1100px the rail and the single-key shortcuts open the Sources, queue, PDF and table panels; the menu keeps those
+// rows only below 1100px (S11). A page in the 1100px range or wider presses the panel's key, the way a person does with
+// no pointer: S Sources, Q queue, P PDFs, T table (shortcuts.spec.ts covers the keys themselves).
+export const RAIL_KEYS: Partial<Record<PanelName, string>> = { sources: 's', queue: 'q', pdfs: 'p', table: 't' }
+const wide = (page: Page) => (page.viewportSize()?.width ?? 1280) >= 1100
+
+// Opens a panel the way a person does, from the topbar's Research actions menu (or by its key, see above), and returns it
+// once it shows. In another interface language the menu row and the panel title are given: `{ row, title, menu }`.
 export async function openPanel(page: Page, name: PanelName, localized?: { row: RegExp; title: string | RegExp; menu?: string }): Promise<Locator> {
   const opened = panel(page, localized?.title ?? PANEL_TITLES[name])
   // The panel is already open (the URL named it before a reload): nothing to open.
   if (await opened.count()) { await expect(opened).toBeVisible(); return opened }
   // At 820px and below an open panel is a dialog over the top bar, so the menu is reached only once it is closed.
   if (await page.locator('[data-split-panel][role="dialog"]').count()) await closePanel(page)
-  await page.getByRole('button', { name: localized?.menu ?? 'Research actions' }).click()
-  await page.getByRole('menuitem', { name: localized?.row ?? MENU_ROWS[name] }).click()
+  const key = RAIL_KEYS[name]
+  if (key && wide(page)) {
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+    await page.keyboard.press(key)
+  } else {
+    await page.getByRole('button', { name: localized?.menu ?? 'Research actions' }).click()
+    await page.getByRole('menuitem', { name: localized?.row ?? MENU_ROWS[name] }).click()
+  }
   await expect(opened).toBeVisible()
   return opened
 }
@@ -80,8 +92,28 @@ export async function openPanelByKeyboard(page: Page, name: PanelName): Promise<
   return opened
 }
 
-// A panel's count, which the old tab carried, now sits on its row of the Research actions menu.
+// A panel's count, which the old tab carried. Candidates, Follow-up and Activity keep it on their menu row. The queue's count
+// is on the topbar's "N waiting for you" chip (or the open panel's title) and the PDFs' count on the rail's "N waiting for a PDF" row.
 export async function expectMenuCount(page: Page, name: PanelName, count: number | string) {
+  if (name === 'queue') {
+    if (await panel(page, PANEL_TITLES.queue).count()) { await expect(panel(page, `Awaiting your decision (${count})`)).toBeVisible(); return }
+    const chip = page.locator('.wait-chip')
+    if (Number(count) === 0) await expect(chip).toHaveCount(0)
+    else await expect(chip).toHaveText(`${count} waiting for you`)
+    return
+  }
+  if (name === 'pdfs') {
+    // With the panel open its own heading states the count; without it the rail's row does.
+    if (await panel(page, PANEL_TITLES.pdfs).count()) {
+      const n = Number(count)
+      await expect(panel(page, PANEL_TITLES.pdfs).getByRole('heading', { name: n === 0 ? 'No work waits for your PDF' : n === 1 ? '1 work waits for your PDF' : `${n} works wait for your PDF` })).toBeVisible()
+      return
+    }
+    const row = page.locator('.rail').getByRole('button', { name: /waiting for a PDF/ })
+    if (Number(count) === 0) await expect(row).toHaveCount(0)
+    else await expect(row).toContainText(`${count} waiting for a PDF`)
+    return
+  }
   await page.getByRole('button', { name: 'Research actions' }).click()
   const row = page.getByRole('menuitem', { name: MENU_ROWS[name] })
   await expect(row.locator('.research-tab-count')).toHaveText(String(count))

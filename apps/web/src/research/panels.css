@@ -345,18 +345,10 @@
 .research-thread-col{position:relative;flex:1;min-width:0;overflow:auto}
 .research-split.is-wide .research-thread-col{display:none}
 .legacy-research .research-thread{padding-top:20px;font-size:15px;line-height:1.9}
-/* The rail slot (S11 fills it): 300px beside the thread from 1100px while no panel is open; narrower, it follows the thread. */
+/* The rail slot: 300px beside the thread from 1100px while no panel is open (research/rail.css; the page hides the rail). */
 .research-thread-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;align-items:start;min-height:100%}
 .research-split.has-panel .research-thread-grid{grid-template-columns:minmax(0,1fr)}
-.research-rail[hidden]{display:none}
-.research-rail{position:sticky;top:0;display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:8px;min-width:0;padding:14px}
-.legacy-research .research-rail-title{margin:6px 0 0;color:var(--muted);font-family:var(--font-sans);font-size:12px;font-weight:500;line-height:1.5;letter-spacing:0}
-.research-rail .empty-inline{padding:4px 0;font-size:12.5px}
-@media(max-width:1099px){
-  .research-thread-grid{grid-template-columns:minmax(0,1fr)}
-  .research-rail{position:static;width:100%;max-width:640px;margin:0 auto;padding:0 24px 56px}
-}
-@media(max-width:820px){.research-rail{padding-inline:16px}}
+@media(max-width:1099px){.research-thread-grid{grid-template-columns:minmax(0,1fr)}}
 /* The panel (mockup `.panel`): 56% beside the thread, a 46px head and a body that scrolls. Full width hides the thread. */
 .split-panel{display:flex;flex:0 0 56%;flex-direction:column;min-width:0;border-left:1px solid var(--line);background:var(--paper);color:var(--ink)}
 .split-panel.is-wide{flex:1 1 auto;border-left:0}

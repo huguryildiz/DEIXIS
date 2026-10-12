@@ -426,11 +426,18 @@ export const PAIRS: Pair[] = [
     status: 'pending:S10', why: 'S10: next steps box' },
   { id: 'research.followup-composer', surface: 'research', mock: '.mini', app: '.followup-composer', checks: ['content', 'colour'],
     status: 'pending:S22b', why: 'S22b: sticky follow-up composer' },
-  { id: 'research.rail', surface: 'research', mock: '.rail', app: '.rail', checks: ['chrome'], widths: DESK, breakpoint: true,
-    status: 'pending:S11', why: 'S11: artifacts rail, hidden under 1100px' },
-  { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box', app: '.rail .box', checks: ['content', 'type'], list: 'fixed', widths: DESK,
-    dataText: { mock: ['.tnum', 'button.li span', 'button.li em'], app: ['.tnum', '.rail-data'] },
-    status: 'pending:S11', why: 'S11: artifacts, waiting, funnel, depth, run and usage boxes' },
+  // S11 (RL1-RL7): the artifacts rail. RL8's Usage box is S27's, so the box list is compared up to it (DEFERRED_TARGETS).
+  { id: 'research.rail', surface: 'research', mock: '.rail', app: '.rail', checks: ['chrome'], widths: DESK, breakpoint: true, status: 'active' },
+  // The boxes' h5 carries a count inside plain text (`Artifacts (2)`), so fixed text is not compared for the box frames;
+  // the funnel's labels and the Run box rows are (fixed text, data left out).
+  { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box', app: '.rail .box', checks: ['content'], list: 'fixed', text: false, widths: DESK, status: 'active' },
+  { id: 'research.rail-heads', surface: 'research', mock: '.rail .box:not(.warnbox) h5', app: '.rail .box:not(.warnbox) h5', checks: ['type', 'colour'], list: 'fixed', text: false, widths: DESK,
+    states: [], status: 'active' },
+  // The amber box's heading is a short tone label: the app's darker tone (warn-tone), checked at 3:1.
+  { id: 'research.rail-warn-head', surface: 'research', mock: '.rail .box.warnbox h5', app: '.rail .box.warnbox h5', checks: ['type', 'colour'], use: 'icon', text: false, widths: DESK,
+    states: [], status: 'active' },
+  { id: 'research.rail-funnel', surface: 'research', mock: '.rail .fun button', app: '.rail .fun button', checks: ['chrome', 'type', 'colour'], list: 'fixed', widths: DESK,
+    dataText: { mock: ['.tnum'], app: ['.rail-data'] }, states: ['hover'], status: 'active' },
 
   // S6: the Zotero dialog of Home (H17). The dialog's and the footer's height and y depend on the rows and on how the
   // §2.3 notes wrap, so those two frames are compared as content (x, width, padding, line height); the head row is

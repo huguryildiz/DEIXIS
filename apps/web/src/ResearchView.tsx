@@ -30,7 +30,9 @@ import { WaitingForPdf } from './WaitingForPdf'
 import { EnglishQuestion, UploadedTextNote } from './SemanticNotes'
 import { AnswerBlock } from './research/AnswerBlock'
 import { ActivityLog } from './research/ActivityLog'
-import { ArtifactsTab, TableCard } from './research/ArtifactsTab'
+import { TableCard } from './research/ArtifactsTab'
+import { Rail } from './research/Rail'
+import { useRailWide } from './research/railData'
 import { ExportLinks, ExportMenu } from './research/ExportMenu'
 import { RevisionForm } from './research/RevisionForm'
 import { EarlierRevision, QuestionBubble } from './research/QuestionBubble'
@@ -61,6 +63,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const panels = usePanelStack(panelFromSegment(initialTab))
   const panel = panels.current
   const phone = usePhone()
+  const railWide = useRailWide()
   const [candidateCount, setCandidateCount] = useState<number | null>(null)
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null)
   const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean; reportCitation?: boolean } | null>(null)
@@ -493,9 +496,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // The earlier question revision and the report written for it (R12).
   const earlierRevision = view.research.current_scope_revision - 1
   const earlierReport = reports.find(r => r.answer.scope_revision === earlierRevision) ?? null
-  // The ⋯ menu (R9): Rename, Activity, Candidates and Follow-up as drawn; until the rail (S11) and the steps (S9) open
-  // them, it also reaches the Sources, queue, PDF and table panels; Search again and Generate a new answer (§2.2); then
-  // Move to Trash.
+  // The ⋯ menu (R9): Rename, Activity, Candidates and Follow-up as drawn, Search again and Generate a new answer (§2.2),
+  // then Move to Trash. From 1100px the rail opens the Sources, queue, PDF and table panels; under 1100px (no rail) the
+  // menu keeps four rows for them, and for the report versions and evidence reports the rail lists (§0 rule 5).
   // A row with no mockup counterpart carries `research-menu-placement` (§2.2 and §0 rule 5).
   const panelRow = (name: string, label: string, Icon: typeof BookOpen, count: number | null, detail?: string) =>
     <DropdownMenuItem key={name} className={detail ? undefined : 'research-menu-placement'} onClick={() => { rowChosen.current = true; openPanel(name, { opener: moreButton.current }) }}>
@@ -534,12 +537,21 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
             {panelRow('activity', 'Activity', Clock, null, 'Runs, status, time and model calls')}
             {panelRow('cands', 'Candidates', Lightbulb, candidateCount, 'Claims you test against the literature')}
             {panelRow('watch', 'Follow-up', Clock, followupCount.count, 'New works after this research ran')}
-            <DropdownMenuSeparator />
-            {/* Temporary access to the panels until the rail opens them; S11 removes these four rows. */}
-            {panelRow('sources', 'Sources', BookOpen, view.sources.length)}
-            {panelRow('queue', 'Awaiting your decision', Inbox, queueCount)}
-            {panelRow('pdfs', 'Get more full text', FileText, waitingCount)}
-            {panelRow('table', 'Evidence table', Table2, tables?.length ?? null)}
+            {!railWide && <>
+              <DropdownMenuSeparator />
+              {panelRow('sources', 'Sources', BookOpen, view.sources.length)}
+              {panelRow('queue', 'Awaiting your decision', Inbox, queueCount)}
+              {panelRow('pdfs', 'Get more full text', FileText, waitingCount)}
+              {panelRow('table', 'Evidence table', Table2, tables?.length ?? null)}
+              {reports.filter(r => r.answer.id !== answer?.id).map(({ answer: older, version }) =>
+                <DropdownMenuItem key={older.id} className="research-menu-placement" onClick={() => { rowChosen.current = true; setOpenReportId(older.id) }}>
+                  <FileText size={15} aria-hidden /><span>{t('Report')} · V{version}</span>
+                </DropdownMenuItem>)}
+              {view.reportRuns.slice(1).map(item =>
+                <DropdownMenuItem key={item.id} className="research-menu-placement" onClick={() => { rowChosen.current = true; setOpenEvidenceReportId(item.id) }}>
+                  <FileText size={15} aria-hidden /><span>{t('Evidence report')}{item.report_version ? ` · V${item.report_version}` : ''}</span>
+                </DropdownMenuItem>)}
+            </>}
             {(hasAcademic && view.search_runs.length > 0) || answer ? <DropdownMenuSeparator /> : null}
             {hasAcademic && view.search_runs.length > 0 && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !seedSearchReady} onClick={() => { void startDiscovery() }}><Search size={15} aria-hidden /><span>{t('Search again')}</span></DropdownMenuItem>}
             {answer && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !(included || answersWithoutInclude)} onClick={() => { void startAnswer() }}><Sparkles size={15} aria-hidden /><span>{t('Generate a new answer')}</span></DropdownMenuItem>}
@@ -551,7 +563,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     </div>
 
     <div className={`research-split${panel ? ' has-panel' : ''}${panel && panels.wide ? ' is-wide' : ''}`}>
-    {/* The thread scrolls on its own; the artifacts rail (S11 fills it) sits beside it while no panel is open. */}
+    {/* The thread scrolls on its own; the artifacts rail sits beside it while no panel is open. */}
     <div className="research-thread-col" inert={Boolean(phone && panel)}>
     <div className="research-thread-grid">
     <div className="research-body thread-inner">
@@ -643,11 +655,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <input ref={replaceFileInput} type="file" accept=".pdf,application/pdf" hidden onChange={e => { void reviewReplacement(e.target.files); e.target.value = '' }} />
 
     </div>
-    {/* Hidden, not removed, while a panel is open: a panel opened from the rail hands focus back to its button. */}
-    <aside className="research-rail" aria-labelledby="research-rail-title" hidden={Boolean(panel)}>
-      <h2 id="research-rail-title" className="research-rail-title">{t('Artifacts')} <span className="research-tab-count">{reports.length + view.reportRuns.length + (tables?.length ?? 0)}</span></h2>
-      <ArtifactsTab reports={reports} tables={tables} reportRuns={view.reportRuns} heading={heading} onOpenReport={setOpenReportId} onOpenEvidenceReport={setOpenEvidenceReportId} onOpenTable={openTable} />
-    </aside>
+    {/* Hidden, not removed, while a panel is open or the window is under 1100px: a panel opened from the rail hands focus back to its button. */}
+    <Rail view={view} researchId={id} reports={reports} tables={tables} hidden={Boolean(panel)} candidateCount={candidateCount} followupCount={followupCount.count}
+      openPanel={openPanel} onOpenReport={setOpenReportId} onOpenEvidenceReport={setOpenEvidenceReportId} onOpenTable={openTable} />
     </div>
     </div>
     {panel && <SplitPanel stack={panels} phone={phone} />}

@@ -124,7 +124,8 @@ test.describe.serial('S7a: thread and side panel', () => {
 
   test('the menu opens a panel at its heading; Escape and Close hand focus back to the opener', async () => {
     await page.goto(`${server.url()}/#/research/${rid}`)
-    const sources = await openPanel(page, 'sources')
+    // Activity is still a row of the menu (the Sources panel opens from the rail or S, see rail.spec.ts).
+    const sources = await openPanel(page, 'activity')
     await expect(sources.locator('#split-panel-title')).toBeFocused()
     await expect(page.getByRole('complementary', { name: /^Artifacts/ })).toHaveCount(0)
     await shot(page, 's7a-sources-panel')

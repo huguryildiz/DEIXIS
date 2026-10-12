@@ -108,23 +108,28 @@ export const PLACEMENTS: Placement[] = [
   { id: 'jobs-sheet-controls', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Jobs sheet job line: Pause / Resume of an OCR run or a PDF collection, and the research title as a link', app: '.job-action, .job-research' },
   { id: 'jobs-sheet-unconfirmed', rule: '§2.3 / AGENTS.md (no success beyond stored state)', slice: 'S1', container: 'Jobs sheet, under Finished: jobs whose own run failed, was cancelled, or could not be read ("Status unknown")', app: null },
   { id: 'toast-dismiss', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Toast, after the text and the Undo link: the dismiss button (errors stay until dismissed)', app: '.toast-close' },
-  // S7a/S8: until the rail (S11) and the steps (S9) open them, the ⋯ menu also reaches four panels.
+  // S11: from 1100px the rail opens the Sources, queue, PDF and table panels; below it (no rail) the ⋯ menu keeps those rows.
   { id: 'panel-menu-rows', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S11',
-    container: 'Topbar ⋯ "Research actions", after Follow-up: Sources, Awaiting your decision, Get more full text and Evidence table with their counts, until the rail (S11) and the steps (S9) open them; Candidates and Follow-up keep their counts (dataText)', app: '.research-menu-placement' },
+    container: 'Topbar ⋯ "Research actions" below 1100px, after Follow-up: Sources, Awaiting your decision, Get more full text and Evidence table with their counts, and a row per older report version and evidence report (the rail lists them from 1100px); Candidates and Follow-up keep their counts (dataText)', app: '.research-menu-placement' },
+  { id: 'rail-funnel-opens-sources', rule: '§0 rule 5 (the Funnel panel is S14; its flow counts and search report are in the Sources panel today)', slice: 'S11',
+    container: 'Rail box "From search to answer": Open and the five bars open the Sources panel until the Funnel panel (P41) exists', app: null },
+  { id: 'rail-waiting-pdf-row', rule: '§0 rule 5 / §2.2 (works waiting for the person\'s PDF are part of "Awaiting you", S5)', slice: 'S11',
+    container: 'Rail box "Waiting for your decision", after the queue rows: "N waiting for a PDF" opens the PDFs panel; "N waiting for you" closes a list cut at eight rows', app: null },
+  { id: 'rail-metadata-depth', rule: '§0 rule 7 (an included work with no abstract and no PDF is not "abstract only")', slice: 'S11',
+    container: 'Rail box "How deeply sources were read": a third legend entry "Metadata only" when a source has neither', app: null },
   { id: 'run-controls', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S9',
     container: 'Topbar, beside Pause: Cancel of a live run (the mockup has no way to stop a live run). Resume run and Cancel run of a paused or stopped run are in the notice under its steps (R18)', app: '.run-strip .run-strip-cancel' },
   { id: 'revise-phone', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S22b',
     container: 'Topbar at ≤820px: Revise question stays as a 30px icon button (the mockup hides it there and revises through the follow-up composer, R30)', app: null },
   { id: 'key-terms-syntax', rule: '§0 rule 5 (the key-terms syntax is how a person writes the blocks the search reads)', slice: 'S8',
     container: 'Revise form, under English key terms: one 11.5px muted line on the block syntax', app: '#revise-key-terms-hint' },
-  { id: 'rail-under-thread', rule: '§0 rule 5 (the Artifacts list, the only way to older report versions, stays reachable)', slice: 'S11',
-    container: 'Below 1100px the rail slot follows the thread in the same scroll instead of hiding; S11/S12 (report version select) restore the mockup rule', app: '.research-rail' },
 ]
 
 /** Mockup copy replaced because it would be false (§2.3, Q2). The parity check compares structure, not text; behaviour
  *  tests of each state assert the replacement text. */
 export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: string }> = [
   { id: 'setup-leaves', rule: '§2.3 (Q2)', mock: 'Nothing leaves this computer except the searches.', app: 'Nothing leaves this computer except the searches and the model calls you set up.' },
+  { id: 'rail-table-draft', rule: '§2.3 (Q2: a label names only what the records hold)', mock: 'Evidence table · N sources · M columns   draft', app: 'Evidence table · N sources · M columns (no "draft" label: a table has no draft state in the records)' },
   { id: 'read-in-full', rule: '§2.3 (Q2)', mock: 'Read in full', app: 'Full text read' },
   { id: 'read-more-in-full', rule: '§2.3 (Q2)', mock: 'Read more in full', app: 'Get more full text' },
   { id: 'proxy-working', rule: '§2.3 (Q2)', mock: 'Working / VPN required / Access uncertain', app: 'Proxy reachable · article access not checked / Proxy did not answer' },
@@ -189,6 +194,9 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     note: 'At 390px the rename row keeps Suggest as a 30px icon button, so the row and field are 38px narrower and Save and ✕ sit 38px to the right of the field\'s end; y and height are compared, and every axis at 1280.' },
   { id: 's8-revise-buttons-y', rule: 'PLACEMENTS key-terms-syntax', pairs: ['revise.buttons'], axes: ['y'],
     note: 'Cancel and Save revision sit below the key-terms syntax line; x, width and height are compared.' },
+  { id: 'rail-rows-y', rule: '§0 rule 1 (a list has as many rows as the data has)',
+    pairs: ['research.rail-funnel'], axes: ['y'],
+    note: 'The Artifacts box lists every report version and table the research has (the fixture has V1, V2 and one table, the mockup one report row and one table), so the boxes below it sit lower; x, width and height are compared.' },
   { id: 'zotero-foot-buttons-y', rule: '§2.2 (placement zotero-library-source) and §2.3 (copy changes zotero-lead, zotero-account, zotero-count)',
     pairs: ['zotero.foot-buttons'], axes: ['y'],
     note: 'The footer sits below the library switch row and the replaced notes, whose wrapped height differs from the mockup; x, width and height are compared.' },
@@ -234,6 +242,8 @@ export const DEFERRED_TARGETS: Array<{ id: string; rule: string; selector: strin
     note: 'Plan step detail and too-broad notice: "Edit plan". The Search plan panel (P42) does not exist yet.' },
   { id: 'funnel-not-read-link', rule: 'S9 (never a link that does nothing)', selector: '.step-detail [data-panel="funnel"]', slice: 'S14',
     note: 'Screening step detail: "N not read" is plain text until the Funnel panel (P41) exists.' },
+  { id: 'rail-usage-box', rule: 'S11 (RL8 is S27: the usage figures need the S16 routes wired)', selector: '.rail .box:last-child', slice: 'S27',
+    note: 'Rail box "Usage": model calls against the limit and the OpenAlex budget today.' },
   { id: 'followup-send-key', rule: 'S3 (no key or command without a real target)', selector: '.keys > span:nth-of-type(27), .keys > span:nth-of-type(28)', slice: 'S22b',
     note: 'Keys dialog row "Send follow-up · ⌘ ↵", under IN A TEXT BOX: the follow-up composer (R30) does not exist yet.' },
 ]

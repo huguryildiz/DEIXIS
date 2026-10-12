@@ -4,7 +4,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { nextPort, readingDone } from './ports'
-import { backPanel, closePanel, openPanel, panel as panelOf, MENU_ROWS, PANEL_TITLES, type PanelName, reportPanel, showAnswer, sourcePanel } from './panels'
+import { backPanel, closePanel, openPanel, panel as panelOf, MENU_ROWS, PANEL_TITLES, RAIL_KEYS, type PanelName, reportPanel, showAnswer, sourcePanel } from './panels'
 
 // P9 H6 accessibility audit (plan X01 to X06). Synthetic records and a scripted model: this measures the interface,
 // not research quality. Part 1 scans a frozen screen list with axe in four states (X01 to X04); part 2 walks the A to G
@@ -1229,7 +1229,7 @@ async function photographRing(page: Page, name: string) {
   await quiet(page, 250)
 }
 
-// Gets to a named panel by keyboard alone: Tab to the Research actions button, Enter opens its menu, ArrowDown walks to the panel's row, Enter opens
+// Gets to a named panel by keyboard alone: the panel's key (Sources, queue, PDFs, table), or Tab to the Research actions button, Enter opens its menu, ArrowDown walks to the panel's row, Enter opens
 // it. 'answer' means no panel: the panel's Close button is reached with Tab and pressed with Enter.
 async function keyPanel(page: Page, name: PanelName | 'answer', step: string) {
   if (name === 'answer') {
@@ -1240,6 +1240,12 @@ async function keyPanel(page: Page, name: PanelName | 'answer', step: string) {
     return
   }
   if (await panelOf(page, PANEL_TITLES[name]).count()) return
+  // The Sources, queue, PDF and table panels have a key from 1100px (S11): the menu keeps their rows only below it.
+  const key = RAIL_KEYS[name]
+  if (key && (page.viewportSize()?.width ?? 1280) >= 1100) {
+    await press(page, key, `${step}: key ${key.toUpperCase()}`, () => expect(panelOf(page, PANEL_TITLES[name])).toBeVisible())
+    return
+  }
   const more = page.getByRole('button', { name: 'Research actions' })
   await tabTo(page, more, `${step}: Research actions`)
   await press(page, 'Enter', `${step}: open the menu`, () => expect(page.getByRole('menuitem').first()).toBeVisible())

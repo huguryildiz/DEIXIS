@@ -508,7 +508,7 @@ c=sqlite3.connect(sys.argv[1]); r=sys.argv[2]
 assert c.execute("SELECT status FROM runs WHERE id=(SELECT run_id FROM reports WHERE id=?)",(r,)).fetchone()[0]=='completed'
 c.execute("INSERT INTO report_gaps (id,report_id,gap_id,kind,text,basis_json,provenance_json,created_at) VALUES ('gap_k4_seed',?,'g1','corpus_absence',?,?,?,'2026-10-02T12:00:00Z')",(r,sys.argv[3],json.dumps({'basis_cell_ids':[],'basis_passage_ids':[],'basis_claim_keys':[]}),json.dumps({'origin':'code','section_id':'VI','step_input_id':None})))
 c.commit(); c.close()`, [reportId, ROW_TEXT])
-    const openReport = async () => { await showAnswer(page); await page.locator('.artifact-list').getByRole('button').filter({ hasText: 'Evidence report' }).first().click(); await expect(page.locator('.candidate-aspects')).toContainText(ROW_TEXT) }
+    const openReport = async () => { await showAnswer(page); await page.getByRole('button', { name: 'Open evidence report' }).click(); await expect(page.locator('.candidate-aspects')).toContainText(ROW_TEXT) }
     await page.reload(); await openReport()
     const block = page.locator('.candidate-aspects')
     await expect(block).toContainText('absent from the corpus read')
@@ -534,7 +534,7 @@ c.commit(); c.close()`, [reportId, ROW_TEXT])
     await page.route(`**${reportPath}`, route => route.fulfill({ json: { ...after, sections: after.sections.map((s: { section_id: string }) => s.section_id === 'VI' ? { ...s, status: 'draft' } : s) } }))
     await page.route(`**${reportPath}/gaps`, route => route.fulfill(failRows ? { status: 500, json: { detail: 'SYNTHETIC aspect fetch failed' } } : { json: rows }))
     await showAnswer(page)
-    const reportButton = page.locator('.artifact-list').getByRole('button').filter({ hasText: 'Evidence report' }).first()
+    const reportButton = page.getByRole('button', { name: 'Open evidence report' })
     await reportButton.click()
     await expect(block).toContainText('No aspects were recorded for this report.')
     await expect(block).toContainText('This section was not validated; the rows below are what the model proposed')

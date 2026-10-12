@@ -20,6 +20,20 @@ const TERMINAL = new Set<RunStatus>(['completed', 'failed', 'cancelled'])
 
 const reading = (view: ResearchView, record: Source) => (record.answer_reads_version_id ? view.sources.find(s => s.source_version_id === record.answer_reads_version_id) ?? record : record)
 
+// The included sources a PDF collection works on: how many have their PDF text in hand, how many were checked without
+// an open copy, and the total. Shared with the research page's rail.
+export function collectionProgress(view: ResearchView, steps: NonNullable<Run['steps']>) {
+  const records = view.sources.filter(s => s.version_role === 'record' && s.selection.state === 'included')
+  let inHand = 0, none = 0
+  for (const record of records) {
+    if (reading(view, record).has_pdf_text) { inHand++; continue }
+    const ids = new Set(view.sources.filter(s => s.work_id === record.work_id).map(s => s.source_version_id))
+    const own = steps.filter(s => ids.has(s.operation_key.split(':')[1] ?? ''))
+    if (own.length && !own.some(s => s.status === 'running' || s.status === 'queued')) none++
+  }
+  return { inHand, none, total: records.length }
+}
+
 function jobOf(research: ResearchSummary, view: ResearchView): Job | null {
   const run = view.runs.find(r => r.kind === research.last_run_kind)
   if (!run || !LIVE.has(run.status)) return null
@@ -31,15 +45,8 @@ function jobOf(research: ResearchSummary, view: ResearchView): Job | null {
     return { key: run.id, research, run, label: t(paused ? 'OCR reading paused' : 'Reading with OCR'), done: steps.filter(s => s.kind === 'ocr_page' && s.status === 'succeeded').length, total: found ? found.length : 0, extra: 0, unit: t('pages'), sub: research.title, paused }
   }
   // PDF collection: sources whose PDF is in hand, and sources already checked without an open copy.
-  const records = view.sources.filter(s => s.version_role === 'record' && s.selection.state === 'included')
-  let inHand = 0, none = 0
-  for (const record of records) {
-    if (reading(view, record).has_pdf_text) { inHand++; continue }
-    const ids = new Set(view.sources.filter(s => s.work_id === record.work_id).map(s => s.source_version_id))
-    const own = steps.filter(s => ids.has(s.operation_key.split(':')[1] ?? ''))
-    if (own.length && !own.some(s => s.status === 'running' || s.status === 'queued')) none++
-  }
-  return { key: run.id, research, run, label: t(paused ? 'PDF collection paused' : 'Collecting PDFs'), done: inHand, total: records.length, extra: none, unit: t('sources'), sub: research.title, paused }
+  const { inHand, none, total } = collectionProgress(view, steps)
+  return { key: run.id, research, run, label: t(paused ? 'PDF collection paused' : 'Collecting PDFs'), done: inHand, total, extra: none, unit: t('sources'), sub: research.title, paused }
 }
 
 const pct = (n: number, total: number) => `${total ? (100 * n) / total : 0}%`

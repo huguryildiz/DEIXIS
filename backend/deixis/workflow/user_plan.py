@@ -15,6 +15,8 @@ Rules this module holds:
 - OpenAlex is required. Semantic Scholar, Crossref and Scopus may be left out: such a provider gets no search request
   and no abstract lookup request in any run of the revision, and the record says `excluded_by_user`. Full-text
   acquisition is not covered by this choice: Crossref is still asked for a work's PDF links (`NOT_COVERED`).
+- The plan's criterion carries the population and comparator mapping of the criterion it started from, so an
+  unchanged criterion keeps the comparator guard; a mapping whose part the person changed is dropped, never invented.
 - The plan's criterion is the criterion of its own revision only (`store.frozen_criterion` with the revision): a
   plan with no criterion is never given an older one, and a later revision never takes the plan's back.
 - A revision made by another route (a new question, other seeds) carries no plan over.
@@ -113,9 +115,40 @@ def criterion(plan: dict[str, Any], sought_terms: list[str]) -> dict[str, Any] |
         "base_run": None,
         "runs_ok": [],
         "sought_term_in_criterion": criterion_rules._names_sought(proposal, sought_terms),
-        "question_elements": [],
-        "required_roles": [],
+        **applicable_elements(given),
     }
+
+
+def applicable_elements(given: dict[str, Any]) -> dict[str, Any]:
+    """The question elements of a plan's criterion that still apply, in the shape `criterion.consensus` writes them.
+
+    An element is carried from the frozen criterion the plan started from, never written by the person (`save`
+    refuses one no frozen protocol of the question holds). It still applies only while its part keeps its name, its
+    definition and its core role: a part the person changed no longer says what the element pointed at, so the
+    element is dropped, and with it a required role no remaining element holds. What `adjudication.mark_comparator`
+    reads therefore names the comparator part only while that part is the one the question's comparator was found in.
+    """
+    parts = {criterion_rules.norm(part["name"]): part for part in given["parts"]}
+    kept = [element for element in given["question_elements"]
+            if (part := parts.get(criterion_rules.norm(element["part"]))) is not None
+            and part["role"] == "core" and part["definition"] == element["part_definition"]]
+    roles = {element["role"] for element in kept}
+    return {"question_elements": sorted(({"role": e["role"], "words": e["words"], "part": e["part"]} for e in kept),
+                                        key=lambda e: e["role"]),
+            "required_roles": [role for role in given["required_roles"] if role in roles]}
+
+
+def _frozen_elements(body: dict[str, Any]) -> tuple[list[dict[str, str]], list[str]]:
+    """A frozen body's question elements with the definition of the part each names, and its required roles."""
+    if body.get("user_plan"):
+        given = body["user_plan"]["plan"]["criterion"] or {}
+        return list(given.get("question_elements") or []), list(given.get("required_roles") or [])
+    origin = body.get("criterion_origin") or {}
+    definitions = {criterion_rules.norm(part["name"]): part["definition"] for part in body.get("criterion_parts") or []}
+    elements = [{"role": e["role"], "words": e["words"], "part": e["part"],
+                 "part_definition": definitions[criterion_rules.norm(e["part"])]}
+                for e in origin.get("question_elements") or [] if criterion_rules.norm(e["part"]) in definitions]
+    return elements, list(origin.get("required_roles") or [])
 
 
 def approval(digest: str, plan: dict[str, Any], exclusion_words: list[str]) -> dict[str, Any]:
@@ -177,6 +210,9 @@ def from_protocol(body: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]
                                 "role": part.get("role", "core"), "phrases": cues.get(part["name"], [])[:15]}
                                for part in body.get("criterion_parts") or []],
                      "exclusion_title_words": list(body.get("exclusion_title_words") or [])}
+        # The population and comparator mapping travels with the criterion, so an unchanged criterion keeps
+        # the comparator guard (`adjudication.mark_comparator`, D109) when the person saves the plan.
+        criterion["question_elements"], criterion["required_roles"] = _frozen_elements(body)
     return {"schema_version": SCHEMA_VERSION,
             **{block: [{"term": form} for form in blocks[block]] for block in GATE_BLOCKS},
             **{f"{block}_backup": [{"term": term} for term in backups[block]] for block in GATE_BLOCKS},
@@ -256,4 +292,32 @@ def save(store: Any, research_id: str, expected_version: int, plan: Any) -> int:
         raise PlanRefused("invalid_search_plan", [{"code": "provider_not_in_scope", "path": "/providers",
                                                    "message": f"{p} is not among this research's sources"}
                                                   for p in outside])
+    invented = _invented_elements(store, research_id, scope, plan["criterion"])
+    if invented:
+        raise PlanRefused("invalid_search_plan", invented)
     return store.save_user_plan(research_id, expected_version, plan)
+
+
+def _invented_elements(store: Any, research_id: str, scope: dict[str, Any],
+                       given: dict[str, Any] | None) -> list[dict[str, str]]:
+    """Question elements and required roles no frozen protocol of this question holds. A mapping is carried from a
+    criterion a model proposed and the run froze, with the part text it was found in; the person cannot add one."""
+    if given is None:
+        return []
+    held: set[tuple[str, str, str, str]] = set()
+    roles: set[str] = set()
+    for row in store.conn.execute("SELECT body_json FROM protocol_records WHERE research_id = ?", (research_id,)):
+        body = json.loads(row[0])
+        if body.get("question") != scope["question"] or body.get("steering") != scope.get("steering"):
+            continue
+        elements, required = _frozen_elements(body)
+        held |= {(e["role"], e["words"], criterion_rules.norm(e["part"]), e["part_definition"]) for e in elements}
+        roles |= set(required)
+    issues = [{"code": "question_element_not_frozen", "path": f"/criterion/question_elements/{index}",
+               "message": "Only a population or comparator a frozen criterion of this question recorded can be kept"}
+              for index, e in enumerate(given["question_elements"])
+              if (e["role"], e["words"], criterion_rules.norm(e["part"]), e["part_definition"]) not in held]
+    issues += [{"code": "required_role_not_frozen", "path": "/criterion/required_roles",
+                "message": f"{role} was not a required role of a frozen criterion of this question"}
+               for role in given["required_roles"] if role not in roles]
+    return issues

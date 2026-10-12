@@ -13,7 +13,7 @@ PLAN = {"schema_version": "deixis.user_search_plan.v1",
         "criterion": {"text": "SYNTHETIC: a method that schedules rail freight timetables.",
                       "parts": [{"name": "scheduling method", "definition": "Builds a timetable.", "role": "core",
                                  "phrases": ["timetable"]}],
-                      "exclusion_title_words": []},
+                      "exclusion_title_words": [], "question_elements": [], "required_roles": []},
         "providers": ["openalex", "crossref"]}
 
 
@@ -71,3 +71,26 @@ def test_six_chosen_terms_pass_and_seven_are_refused():
     assert contracts.check_user_search_plan(six).ok
     seven = six | {"setting": [{"term": "s0"}, {"term": "s1"}]}
     assert "too_many_query_terms" in codes(seven)
+
+
+def test_a_phrase_or_element_text_that_cannot_be_stored_is_refused():
+    assert "blank_text" in codes(changed(["criterion", "parts", 0, "phrases"], ["time\x00table"]))
+    assert "blank_text" in codes(changed(["criterion", "parts", 0, "phrases"], ["time\ud800table"]))
+    element = {"role": "comparator", "words": "rail\x00", "part": "scheduling method", "part_definition": "Builds a timetable."}
+    assert "blank_text" in codes(changed(["criterion", "question_elements"], [element]))
+    twice = [element | {"words": "rail"}, element | {"words": "freight"}]
+    assert "duplicate_question_element" in codes(changed(["criterion", "question_elements"], twice))
+
+
+def test_an_element_applies_only_while_its_part_keeps_its_name_definition_and_core_role():
+    from deixis.workflow import user_plan
+
+    element = {"role": "comparator", "words": "rail freight", "part": "Scheduling Method",
+               "part_definition": "Builds a timetable."}
+    given = PLAN["criterion"] | {"question_elements": [element], "required_roles": ["comparator"]}
+    assert user_plan.applicable_elements(given) == {
+        "question_elements": [{"role": "comparator", "words": "rail freight", "part": "Scheduling Method"}],
+        "required_roles": ["comparator"]}
+    for change in ({"definition": "Builds something else."}, {"name": "another part"}, {"role": "aspect"}):
+        edited = given | {"parts": [given["parts"][0] | change]}
+        assert user_plan.applicable_elements(edited) == {"question_elements": [], "required_roles": []}

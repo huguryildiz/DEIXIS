@@ -1887,6 +1887,9 @@ def _check_user_criterion(criterion: dict[str, Any], report: ValidationReport) -
         names[normalize_phrase(part["name"])] += 1
         seen: set[str] = set()
         for position, phrase in enumerate(part["phrases"]):
+            # NUL and lone surrogates cannot be stored; a whitespace-only phrase is `criterion_phrase_empty` below.
+            if phrase.strip() and not _check_nonblank_text(phrase, f"{path}/phrases/{position}", report):
+                continue
             normalized = normalize_phrase(phrase)
             if not normalized:
                 report.issues.append(Issue("criterion_phrase_empty", f"{path}/phrases/{position}", phrase))
@@ -1900,6 +1903,14 @@ def _check_user_criterion(criterion: dict[str, Any], report: ValidationReport) -
         report.issues.append(Issue("duplicate_criterion_part", "/criterion/parts", f"{name!r} names more than one part"))
     for index, word in enumerate(criterion["exclusion_title_words"]):
         _check_nonblank_text(word, f"/criterion/exclusion_title_words/{index}", report)
+    roles: Counter[str] = Counter()
+    for index, element in enumerate(criterion["question_elements"]):
+        roles[element["role"]] += 1
+        for field in ("words", "part", "part_definition"):
+            _check_nonblank_text(element[field], f"/criterion/question_elements/{index}/{field}", report)
+    for role in sorted(r for r, count in roles.items() if count > 1):
+        report.issues.append(Issue("duplicate_question_element", "/criterion/question_elements",
+                                   f"{role!r} is named more than once"))
 
 
 def _check_abstract_screening(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:

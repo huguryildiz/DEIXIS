@@ -24,39 +24,59 @@
       "minItems": 1,
       "maxItems": 5,
       "description": "Where the work happens: the field, system, population or material.",
-      "items": {"$ref": "#/$defs/term"}
+      "items": {
+        "$ref": "#/$defs/term"
+      }
     },
     "task": {
       "type": "array",
       "minItems": 1,
       "maxItems": 5,
       "description": "What is looked for in that field.",
-      "items": {"$ref": "#/$defs/term"}
+      "items": {
+        "$ref": "#/$defs/term"
+      }
     },
     "setting_backup": {
       "type": "array",
       "minItems": 0,
       "maxItems": 3,
       "description": "Used in order when a chosen setting term finds no record on OpenAlex.",
-      "items": {"$ref": "#/$defs/term"}
+      "items": {
+        "$ref": "#/$defs/term"
+      }
     },
     "task_backup": {
       "type": "array",
       "minItems": 0,
       "maxItems": 3,
       "description": "Used in order when a chosen task term finds no record on OpenAlex.",
-      "items": {"$ref": "#/$defs/term"}
+      "items": {
+        "$ref": "#/$defs/term"
+      }
     },
     "criterion": {
       "description": "The inclusion criterion the abstract and full-text stages read. Null means the person set none; no model is asked for one.",
       "oneOf": [
-        {"type": "null"},
+        {
+          "type": "null"
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["text", "parts", "exclusion_title_words"],
+          "required": [
+            "text",
+            "parts",
+            "exclusion_title_words",
+            "question_elements",
+            "required_roles"
+          ],
           "properties": {
-            "text": {"type": "string", "minLength": 1, "maxLength": 600},
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 600
+            },
             "parts": {
               "type": "array",
               "minItems": 1,
@@ -65,17 +85,40 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["name", "definition", "role", "phrases"],
+                "required": [
+                  "name",
+                  "definition",
+                  "role",
+                  "phrases"
+                ],
                 "properties": {
-                  "name": {"type": "string", "minLength": 1, "maxLength": 60},
-                  "definition": {"type": "string", "minLength": 1, "maxLength": 400},
-                  "role": {"type": "string", "enum": ["core", "aspect"]},
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "definition": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 400
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "core",
+                      "aspect"
+                    ]
+                  },
                   "phrases": {
                     "type": "array",
                     "minItems": 0,
                     "maxItems": 15,
                     "description": "Words an author of such a paper writes, one to four words each.",
-                    "items": {"type": "string", "minLength": 1, "maxLength": 80}
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
                   }
                 }
               }
@@ -84,7 +127,65 @@
               "type": "array",
               "minItems": 0,
               "maxItems": 30,
-              "items": {"type": "string", "minLength": 1, "maxLength": 40}
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              }
+            },
+            "question_elements": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 2,
+              "description": "The population or comparator the question names, as a frozen criterion recorded them, each with the part that holds it and that part's definition when it was recorded. Carried, never written by the person: an element whose part was renamed, redefined or made an aspect no longer applies and is dropped when the plan is searched.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "role",
+                  "words",
+                  "part",
+                  "part_definition"
+                ],
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "population",
+                      "comparator"
+                    ]
+                  },
+                  "words": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "part": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "part_definition": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 400
+                  }
+                }
+              }
+            },
+            "required_roles": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 2,
+              "uniqueItems": true,
+              "description": "The roles a frozen criterion required; a role whose element is dropped is dropped with it.",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "population",
+                  "comparator"
+                ]
+              }
             }
           }
         }
@@ -95,14 +196,24 @@
       "minItems": 1,
       "uniqueItems": true,
       "description": "The providers this plan may send requests to. OpenAlex must be in it: the search and the citation chain run on OpenAlex. Leaving Semantic Scholar, Crossref or Scopus out means no search and no abstract lookup request goes to it.",
-      "items": {"type": "string", "enum": ["openalex", "semantic_scholar", "crossref", "scopus"]}
+      "items": {
+        "type": "string",
+        "enum": [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "scopus"
+        ]
+      }
     }
   },
   "$defs": {
     "term": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["term"],
+      "required": [
+        "term"
+      ],
       "properties": {
         "term": {
           "type": "string",

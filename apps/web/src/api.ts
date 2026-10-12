@@ -1672,6 +1672,10 @@ export type UserSearchPlan = {
     text: string
     parts: { name: string; definition: string; role: 'core' | 'aspect'; phrases: string[] }[]
     exclusion_title_words: string[]
+    // Carried from the frozen criterion, never written by the person; an element whose part was renamed, redefined
+    // or made an aspect is dropped when the plan is searched, and a new one is refused (`question_element_not_frozen`).
+    question_elements: { role: 'population' | 'comparator'; words: string; part: string; part_definition: string }[]
+    required_roles: ('population' | 'comparator')[]
   } | null
   providers: SearchPlanProvider[]  // always holds 'openalex'
 }

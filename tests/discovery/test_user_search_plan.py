@@ -122,7 +122,7 @@ def plan(providers=("openalex",), **changes):
             "criterion": {"text": "SYNTHETIC: the paper proposes a method that schedules rail freight timetables.",
                           "parts": [{"name": "scheduling method", "definition": "A method that builds a timetable.",
                                      "role": "core", "phrases": ["timetable", "freight train scheduling"]}],
-                          "exclusion_title_words": ["survey"]},
+                          "exclusion_title_words": ["survey"], "question_elements": [], "required_roles": []},
             "providers": list(providers)}
     return body | changes
 
@@ -512,3 +512,73 @@ def test_a_plan_after_a_model_criterion_reads_its_own_and_a_plan_with_none_reads
     assert client.app.state.store.frozen_criterion(rid, QUESTION, None, 3) is None
     # The model's older criterion is still what an unplanned revision of the question would take back.
     assert client.app.state.store.frozen_criterion(rid, QUESTION, None)["criterion"] == model_criterion
+
+
+# ---- the comparator guard travels with the criterion (slice 28, D109) ---------------------------------------------
+
+def comparator_responder(labels):
+    """The criterion proposal names the question's comparator in its `measured outcome` part (every run agrees, so
+    the role is required); every reading labels each part as `labels` says."""
+    from fakes import valid_response
+
+    def respond(si):
+        body = json.loads(valid_response(si))
+        if si["task_type"] == "criterion_proposal":
+            body["question_elements"] = [{"role": "comparator", "words": "rail freight", "part": "measured outcome"}]
+        elif si["task_type"] == "fulltext_adjudication":
+            for part in body["parts"]:
+                if labels.get(part["part"], "present") != "present":
+                    part.update(label=labels[part["part"]], quote="", passage_id=None)
+        return json.dumps(body)
+    return respond
+
+
+def test_a_plan_saved_with_the_criterion_unchanged_keeps_the_comparator_guard(tmp_path, monkeypatch):
+    """Only the words and providers change; the criterion is saved as the panel showed it. The reading still marks the
+    comparator part, and two negative readings are withheld for a person, not excluded."""
+    from deixis.workflow.decisions import DecisionStore
+    from test_adjudication_flow import papers
+
+    works, fetcher = papers(4)
+    adapter = FakeAdapter(comparator_responder({"method of its own": "absent", "measured outcome": "absent"}))
+    client, transport = reading_client(tmp_path, monkeypatch, works[:2], fetcher, adapter)
+    rid = create(client)
+    assert discover(client, rid)["status"] == "completed"
+    shown = client.get(f"/api/researches/{rid}/search-plan").json()["plan"]
+    assert shown["criterion"]["question_elements"] == [{
+        "role": "comparator", "words": "rail freight", "part": "measured outcome",
+        "part_definition": "SYNTHETIC: the paper reports a value it measured."}]
+    assert shown["criterion"]["required_roles"] == ["comparator"]
+
+    transport.works = works[2:]
+    assert save(client, rid, shown | CROP | {"providers": ["openalex"]}).status_code == 200
+    run = discover(client, rid)
+    assert run["status"] == "completed", run
+    body = assert_read_under(client, adapter, rid, run["id"], 2)
+    assert body["criterion_origin"]["required_roles"] == ["comparator"]
+    calls = [si for si in adapter.calls if si["task_type"] == "fulltext_adjudication" and si["scope_revision"] == 2]
+    assert all({p["name"]: p.get("role") for p in si["adjudication_target"]["parts"]}["measured outcome"] == "comparator"
+               for si in calls)
+    store = client.app.state.store
+    heads = {row[0] for row in store.conn.execute(
+        "SELECT source_version_id FROM stage_decisions WHERE research_id = ? AND scope_revision = 2"
+        " AND stage = 'fulltext'", (rid,))}
+    assert heads
+    for head in heads:
+        decision = DecisionStore(store).current(rid, head, "fulltext")
+        assert decision["reason_code"] == "comparator_exclusion_withheld", decision
+        state = store.conn.execute("SELECT state FROM selections WHERE research_id = ? AND source_version_id = ?",
+                                   (rid, head)).fetchone()[0]
+        assert state != "excluded"
+
+
+def test_a_comparator_mapping_the_frozen_criteria_never_held_is_refused(tmp_path, monkeypatch):
+    client = client_for(tmp_path, monkeypatch, Providers(), FakeAdapter())
+    rid = create(client)
+    invented = plan()
+    invented["criterion"] |= {"required_roles": ["comparator"], "question_elements": [
+        {"role": "comparator", "words": "rail freight", "part": "scheduling method",
+         "part_definition": "A method that builds a timetable."}]}
+    response = save(client, rid, invented)
+    assert response.status_code == 422, response.text
+    assert {i["code"] for i in response.json()["issues"]} == {"question_element_not_frozen", "required_role_not_frozen"}

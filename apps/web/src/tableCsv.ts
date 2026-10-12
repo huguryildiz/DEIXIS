@@ -1,6 +1,6 @@
 import { type CellRevision, type CellState, type CellValue, type Source, type TableColumn, type TableRow, type TableView } from './api'
 import { locatorText, versionText } from './labels'
-import { citationStyles, formatReferenceText, type CitationStyle } from './citations'
+import { citationStyle, formatReferenceText, type CitationStyle } from './citations'
 import { t, uiLocale } from './i18n'
 
 // The evidence table's words for cell states and values, and its CSV file. The table panel and the topbar Export menu
@@ -24,7 +24,7 @@ export function valueText(column: TableColumn, value: CellValue | null) {
 
 // The row head writes the source's full reference in the citation style chosen on the report.
 export function savedStyle(): CitationStyle {
-  try { const saved = localStorage.getItem('deixis-citation-style'); return saved && saved in citationStyles ? saved as CitationStyle : 'apa' } catch { return 'apa' }
+  return citationStyle()
 }
 
 export const hasValue = (rev: CellRevision) => rev.state === 'value' || rev.state === 'not_verified'

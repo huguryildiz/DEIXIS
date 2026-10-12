@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useSyncExternalStore, type ReactNode } from 'react'
 import type { Source } from './api'
 
 export type CitationStyle = 'apa' | 'ieee' | 'mla' | 'chicago'
@@ -8,6 +8,26 @@ export const citationStyles: Record<CitationStyle, { label: string; detail: stri
   ieee: { label: 'IEEE', detail: 'A. A. Author and B. B. Author, “Title,” Venue, Year.' },
   mla: { label: 'MLA 9', detail: 'Author, Given, and Given Author. “Title.” Venue, Year.' },
   chicago: { label: 'Chicago (author-date)', detail: 'Author, Given, and Given Author. Year. “Title.” Venue.' },
+}
+
+// The citation style chosen on a report: one value for the whole page, kept across reloads. The report panel, the
+// thread's chips, the Export menus and the table read it through this store, so an export made right after a change
+// already uses the new style (a value read from storage at an earlier render would not).
+const STYLE_KEY = 'deixis-citation-style'
+const readStyle = (): CitationStyle => {
+  try { const saved = localStorage.getItem(STYLE_KEY); return saved && saved in citationStyles ? saved as CitationStyle : 'apa' } catch { return 'apa' }
+}
+let currentStyle: CitationStyle | null = null
+const styleListeners = new Set<() => void>()
+export function citationStyle(): CitationStyle { return (currentStyle ??= readStyle()) }
+export function setCitationStyle(next: CitationStyle) {
+  currentStyle = next
+  try { localStorage.setItem(STYLE_KEY, next) } catch { /* the choice still applies for this tab */ }
+  styleListeners.forEach(listener => listener())
+}
+const subscribeStyle = (listener: () => void) => { styleListeners.add(listener); return () => { styleListeners.delete(listener) } }
+export function useCitationStyle(): [CitationStyle, (next: CitationStyle) => void] {
+  return [useSyncExternalStore(subscribeStyle, citationStyle), setCitationStyle]
 }
 
 type Name = { family: string; given: string[] }

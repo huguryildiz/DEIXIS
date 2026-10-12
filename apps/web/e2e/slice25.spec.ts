@@ -189,7 +189,19 @@ test.describe.serial('Q: an sw research with nothing included answers from its a
         const button = page.getByRole('button', { name: /Generate (source-linked|a new) answer/ })
         await expect(button).toBeEnabled()
         // The run ends within one poll, so the page never sees it running and shows no toast; the notice is the check.
-        if (width === 1440) await button.click()
+        // The new answer replaces the thread's answer (and its Methods box, whose Full method starts closed), so the
+        // case waits until the page shows the new version before it opens Full method.
+        if (width === 1440) {
+          const before: string[] = (await viewOf(api, rid)).answers.map((a: { id: string }) => a.id)
+          await button.click()
+          await expect.poll(async () => {
+            const view = await viewOf(api, rid)
+            return view.answers.some((a: { id: string }) => !before.includes(a.id)) && !view.runs.some((r: RunRow) => ['queued', 'running', 'pause_requested'].includes(r.status))
+          }, { timeout: 60_000 }).toBe(true)
+          const latest = (await viewOf(api, rid)).answers.find((a: { id: string }) => !before.includes(a.id)) as { report_version: number | null }
+          expect(latest.report_version).not.toBeNull()
+          await expect(page.locator('#research-answer .report-artifact-meta')).toContainText(`V${latest.report_version} ·`)
+        }
         // D234 (superseding D106's zero-included gate): the five abstract-only candidates give the answer its passages, so
         // the no-answer notice is absent and the start snapshot keeps "included 0" apart from what the model was given.
         // The answer's boundary sits in the Methods box under "Full method" (UI parity S10, §2.2).

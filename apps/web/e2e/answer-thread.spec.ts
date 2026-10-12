@@ -47,7 +47,10 @@ class ThreadServer {
   url() { return `http://127.0.0.1:${this.port}` }
 }
 
-type Evidence = { passage_id: string; source_version_id: string; work_id: string; source_key: string | null; kind: string; anchor_text: string | null }
+type Evidence = {
+  passage_id: string; source_version_id: string; work_id: string; source_key: string | null; kind: string; anchor_text: string | null
+  physical_page: number | null; printed_label: string | null; version_label: string | null; rendition?: boolean; title: string
+}
 type Claim = { id: string; section: string | null; evidence: Evidence[] }
 type Answer = {
   id: string; run_id: string; status: string; report_version: number | null; applicability: string; source_text_changed: boolean
@@ -55,7 +58,7 @@ type Answer = {
   validation: { reason?: string; issues?: { code: string; path: string }[] }; start_snapshot: { included: number } | null
   review: unknown; clarification: unknown
 }
-type Source = { source_version_id: string; work_id: string; version_role: string; selection: { state: string; version: number }; cited_in_latest_answer: boolean; access: { assets: { id: string }[] } }
+type Source = { source_version_id: string; work_id: string; title: string; version_role: string; selection: { state: string; version: number }; cited_in_latest_answer: boolean; access: { assets: { id: string }[] } }
 type View = {
   research: { current_scope_revision: number }
   runs: Array<{ id: string; kind: string; status: string; target?: Record<string, unknown> | null }>
@@ -180,6 +183,94 @@ test.describe.serial('S10: the answer in the thread', () => {
     await page.keyboard.press('Escape')
     await chooseStyle(/^APA/)
     await expect(chips).toHaveText(labels)
+  })
+
+  test('every IEEE number names its own passage and source version, in the report and in its Word file', async () => {
+    const view = await viewOf(api, rid)
+    const answer = view.answers[0]
+    // Computed here from the stored answer, not from the page's code: a passage's number is the order in which the
+    // claims first cite it; its locator and version label are the evidence record's own.
+    const expected: Evidence[] = []
+    answer.claims.forEach(c => c.evidence.forEach(e => { if (!expected.some(x => x.passage_id === e.passage_id)) expected.push(e) }))
+    expect(expected.length).toBeGreaterThan(1)
+    const locator = (e: Evidence) => e.kind === 'abstract' ? 'abstract' : e.physical_page ? (e.rendition ? `Europe PMC text, rendered p. ${e.physical_page}` : e.printed_label ? `PDF p. ${e.physical_page} (printed ${e.printed_label})` : `PDF p. ${e.physical_page}`) : 'section'
+    const versions: Record<string, string> = { publishedVersion: 'published version', acceptedVersion: 'accepted manuscript', submittedVersion: 'submitted manuscript' }
+    const version = (e: Evidence) => (e.version_label ? versions[e.version_label] ?? e.version_label : 'version not stated')
+    await visit(page, research())
+    await page.locator('#research-answer').click()
+    const report = reportPanel(page)
+    await report.getByRole('combobox', { name: 'Citation style' }).click()
+    await page.getByRole('option', { name: /^IEEE/ }).click()
+    const items = report.locator('.reference-list > li')
+    await expect(items).toHaveCount(expected.length)
+    for (const [i, e] of expected.entries()) {
+      const item = items.nth(i)
+      await expect(item.locator('.ref-num')).toHaveText(`[${i + 1}]`)
+      const pills = item.locator('.ref-pill')
+      await expect(pills.nth(0)).toHaveText(locator(e).charAt(0).toUpperCase() + locator(e).slice(1))
+      await expect(pills.nth(1)).toHaveText(version(e))
+      const source = view.sources.find(s => s.source_version_id === e.source_version_id)
+      await expect(item).toContainText(source?.title ?? e.title)
+      // The number opens exactly that passage (the cited copy), then Back returns to the report.
+      const opened = page.waitForRequest(r => new URL(r.url()).pathname.startsWith(`/api/researches/${rid}/passages/`))
+      await item.getByRole('button').first().click()
+      expect(new URL((await opened).url()).pathname).toBe(`/api/researches/${rid}/passages/${e.passage_id}`)
+      await expect(sourcePanel(page)).toBeVisible()
+      await page.locator('[data-split-panel]').getByRole('button', { name: 'Back', exact: true }).click()
+      await expect(report).toBeVisible()
+    }
+    // The Word file of the same answer in the same style lists the same numbers for the same passages, each with its
+    // locator and the stored anchor quote of every claim that cites it.
+    const docx = await api.context.get(`/api/researches/${rid}/answers/${answer.id}/export/docx?lang=en&style=ieee`)
+    expect(docx.ok()).toBe(true)
+    const file = path.join(server.dataDir, 'ieee-check.docx')
+    writeFileSync(file, await docx.body())
+    const script = 'import sys, zipfile, re\nx = zipfile.ZipFile(sys.argv[1]).read("word/document.xml").decode().replace("<w:br/>", "<w:t> </w:t>")\nfor p in re.findall(r"<w:p[ >].*?</w:p>", x, re.S): print("".join(re.findall(r"<w:t(?: [^>]*)?>([^<]*)</w:t>", p)))'
+    const read = spawnSync(PYTHON, ['-c', script, file], { encoding: 'utf8' })
+    expect(read.status).toBe(0)
+    const paragraphs = read.stdout.split('\n')
+    const head = paragraphs.indexOf('Cited passages')
+    expect(head).toBeGreaterThan(0)
+    const unescape = (text: string) => text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    const lines = paragraphs.slice(head + 1, head + 1 + expected.length).map(unescape)
+    for (const [i, e] of expected.entries()) {
+      const source = view.sources.find(s => s.source_version_id === e.source_version_id)
+      expect(lines[i].startsWith(`[${i + 1}] `), lines[i]).toBe(true)
+      expect(lines[i]).toContain(source?.title ?? e.title)
+      expect(lines[i]).toContain(` — ${locator(e)}`)
+      const quotes = new Set(answer.claims.flatMap(c => c.evidence.filter(x => x.passage_id === e.passage_id && x.anchor_text).map(x => x.anchor_text!)))
+      // A quote's line breaks are Word line breaks (read here as spaces), so both sides are compared with spaces squashed.
+      const squash = (text: string) => text.replace(/\s+/g, ' ')
+      for (const quote of quotes) expect(squash(lines[i])).toContain(squash(`“${quote}”`))
+    }
+    await report.getByRole('combobox', { name: 'Citation style' }).click()
+    await page.getByRole('option', { name: /^APA/ }).click()
+    await page.keyboard.press('Escape')
+  })
+
+  test('a style chosen in the open report applies to the next export at once', async () => {
+    const view = await viewOf(api, rid)
+    const answer = view.answers[0]
+    await visit(page, research())
+    await page.locator('#research-answer').click()
+    const report = reportPanel(page)
+    await report.getByRole('combobox', { name: 'Citation style' }).click()
+    await page.getByRole('option', { name: /^IEEE/ }).click()
+    // The report stays open; the topbar's Export menu already writes IEEE.
+    await expect(report).toBeVisible()
+    await page.locator('.research-topbar .research-export').click()
+    const rows = page.locator('.research-export-menu .research-export-item')
+    await expect(rows.filter({ hasText: 'Word document' })).toHaveAttribute('href', new RegExp(`/answers/${answer.id}/export/docx\\?lang=en&style=ieee$`))
+    const download = page.waitForEvent('download')
+    await rows.filter({ hasText: 'Markdown' }).click()
+    const markdown = readFileSync(await (await download).path(), 'utf8')
+    const cited = markdown.slice(markdown.indexOf('## Cited passages'))
+    expect(cited).toMatch(/\n\[1\] /)
+    expect(cited).not.toMatch(/\n\[[A-Za-z]/)
+    await expect(report).toBeVisible()
+    await report.getByRole('combobox', { name: 'Citation style' }).click()
+    await page.getByRole('option', { name: /^APA/ }).click()
+    await page.keyboard.press('Escape')
   })
 
   test('the Methods box says how the answer was reached from the stored method record', async () => {

@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
 import { answerDocxUrl, api, bibliographyUrl, prismaSUrl, tableExportUrl, type Answer, type Source, type TableSummary } from '../api'
-import { downloadTableCsv, savedStyle } from '../tableCsv'
+import { downloadTableCsv } from '../tableCsv'
+import { useCitationStyle } from '../citations'
 import { useToast } from '../Toast'
 import { t, uiLanguage } from '../i18n'
 import { downloadReportMarkdown } from './reportMarkdown'
@@ -36,11 +37,11 @@ export function ExportMenu({ researchId, report, sources, tables, included, cite
   included: number; cited: number; prisma: boolean; icon?: boolean
 }) {
   const toast = useToast()
+  const [style] = useCitationStyle()
   // A table exports once it has columns and rows; with several, the one changed last (its title names it).
   const exportable = (tables ?? []).filter(table => table.rows > 0 && table.columns > 0)
   const table = exportable.reduce<TableSummary | null>((latest, item) => (!latest || item.updated_at > latest.updated_at ? item : latest), null)
   if (!report && !table && !included && !prisma) return null
-  const style = savedStyle()
   const lang = uiLanguage() === 'tr' ? 'tr' : 'en'
   const row = (format: string, detail: string) => <><FileTypeIcon format={format} /><b>{format}</b><span>{detail}</span></>
   // A row with no mockup counterpart (the PRISMA-S search report, §2.2) carries `export-placement`.

@@ -12,7 +12,7 @@ import { useToast } from '../Toast'
 import { ModelName } from '../ModelName'
 import { useModelText } from '../modelText'
 import { Option } from '../Home'
-import { citationStyles, formatReference, type CitationStyle } from '../citations'
+import { citationStyles, formatReference, useCitationStyle, type CitationStyle } from '../citations'
 import { OCR_LABEL } from '../ocr'
 import { t, uiLocale } from '../i18n'
 import { SourceKey } from '../SourceKey'
@@ -87,7 +87,7 @@ function citedWorks(answer: Answer) {
 
 export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, runActive, thread, reviewPending = false }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; runActive: boolean; thread?: AnswerThreadContext; reviewPending?: boolean }) {
   const modelText = useModelText()
-  const [style, setStyle] = useState<CitationStyle>(() => { try { const saved = localStorage.getItem('deixis-citation-style'); return saved && Object.keys(citationStyles).includes(saved) ? saved as CitationStyle : 'apa' } catch { return 'apa' } })
+  const [style, chooseStyle] = useCitationStyle()
   const [copied, setCopied] = useState(false)
   const toast = useToast()
   const [reviewMode, setReviewMode] = useState(false)
@@ -103,7 +103,6 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     })
   }
   const openReviews = (request = false) => { mode(true, request); onReportOpenChange(true) }
-  const chooseStyle = (next: CitationStyle) => { setStyle(next); try { localStorage.setItem('deixis-citation-style', next) } catch { /* the choice still applies for this tab */ } }
   const ctx = showCard ? thread : undefined
   const latePending = ctx && answer.late_revision_status && ['waiting_fetch', 'reading', 'answering'].includes(answer.late_revision_status.status)
     ? <p className="foot-note answer-late-pending" role="status">{t(LATE_REVISION_PENDING)}</p> : null

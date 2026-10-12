@@ -3986,4 +3986,6 @@ const tr: Record<string, string> = {
   '{files} file(s) could not be removed from disk.': '{files} dosya diskten kaldırılamadı.',
   '{n} in “{research}” failed: {message}': '“{research}” içindeki {n} kaynak tamamlanamadı: {message}',
   '{n} not attempted.': '{n} kaynak denenmedi.',
+  '{n} no longer in the Trash, so nothing was changed for them.': '{n} kaynak artık Çöp kutusunda değildi, bunlar için hiçbir şey değiştirilmedi.',
+  'The sources you chose to delete changed, so nothing was deleted. Choose again.': 'Silmek için seçtiğiniz kaynaklar değişti, bu yüzden hiçbir şey silinmedi. Yeniden seçin.',
 }

@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { nextPort } from './ports'
+import { nextPort, readingDone } from './ports'
 
 // UI parity S26: the Trash page (mockup T1-T3). One bordered list, newest first; a row is the kind, "title · note",
 // Restore and Delete permanently; a delete asks inside its row. Every record here is SYNTHETIC. The mixed list comes
@@ -409,6 +409,101 @@ test.describe('S26: the Trash page', () => {
     await page.locator('.trash-notice').getByRole('button', { name: 'Delete permanently' }).click()
     await expect(page.locator('.trash-message')).toHaveText('Source permanently deleted.')
     expect(JSON.parse(seen.at(-1)!.body ?? '{}').source_version_ids).toEqual(['sv1', 'sv1b'])
+  })
+
+  test('an empty or partial answer from the backend is not reported as done', async ({ page }) => {
+    const data = twoResearches()
+    data.sources = [version(1, { title: 'Alpha source', research_id: 'rA', research_title: 'SYNTHETIC research A' }), version(2, { title: 'Charlie source', research_id: 'rA', research_title: 'SYNTHETIC research A' })]
+    await mockTrash(page, data, [])
+    // Delete: nothing deleted for the first request, then only sv1 of two.
+    let calls = 0
+    await page.route('**/api/researches/rA/sources/purge', route => {
+      calls += 1
+      return route.fulfill({ json: { deleted: calls === 1 ? [] : ['sv1'], files_not_removed: [] } })
+    })
+    await page.route('**/api/researches/rA/sources/restore', route => route.fulfill({ json: { changed_source_version_ids: ['sv1'] } }))
+    await open(page, server.url())
+    const bar = page.locator('.selection-bar')
+    const message = page.locator('.trash-message')
+    await page.getByRole('checkbox', { name: 'Select Alpha source' }).check()
+    await bar.getByRole('button', { name: 'Delete permanently' }).click()
+    await page.locator('.trash-bar-notice').getByRole('button', { name: 'Delete permanently' }).click()
+    await expect(message).toContainText('Deleted 0 of 1 sources.')
+    await expect(message).toContainText('1 no longer in the Trash, so nothing was changed for them.')
+    await expect(message).not.toContainText('permanently deleted')
+    await expect(bar).toContainText('1 source selected')  // it did not leave the selection
+    await page.getByRole('checkbox', { name: 'Select Charlie source' }).check()
+    await bar.getByRole('button', { name: 'Delete permanently' }).click()
+    await page.locator('.trash-bar-notice').getByRole('button', { name: 'Delete permanently' }).click()
+    await expect(message).toContainText('Deleted 1 of 2 sources. 1 no longer in the Trash')
+    // Restore: the answer names only sv1.
+    await page.getByRole('checkbox', { name: 'Select Alpha source' }).check()
+    await page.getByRole('checkbox', { name: 'Select Charlie source' }).check()
+    await bar.getByRole('button', { name: 'Restore' }).click()
+    await expect(message).toContainText('Restored 1 of 2 sources. 1 no longer in the Trash')
+  })
+
+  test('a research filter stays visible when only its research is left, so the rows it hides can be brought back', async ({ page }) => {
+    const data = twoResearches()
+    data.templates = [{ id: 'tp1', name: 'SYNTHETIC template without a research', trashed_at: '2026-10-04T10:00:00Z', columns: 3 }]
+    data.sources = [version(1, { title: 'Alpha source', research_id: 'rA', research_title: 'SYNTHETIC research A' }),
+      version(3, { title: 'Bravo source', research_id: 'rB', research_title: 'SYNTHETIC research B' }), version(4, { title: 'Delta source', research_id: 'rB', research_title: 'SYNTHETIC research B' })]
+    await mockTrash(page, data, [])
+    await open(page, server.url())
+    await page.getByRole('combobox', { name: /Research/ }).click()
+    await page.getByRole('option', { name: 'SYNTHETIC research B' }).click()
+    await expect(page.getByText('SYNTHETIC template without a research')).toHaveCount(0)
+    data.sources = data.sources.filter(s => s.research_id === 'rB')  // research A's last source leaves; only B remains in the list
+    await page.route('**/api/researches/rB/sources/restore', route => { data.sources = data.sources.filter(s => s.source_version_id !== 'sv3'); return route.fulfill({ json: { changed_source_version_ids: ['sv3'] } }) })
+    await rows(page).filter({ hasText: 'Bravo source' }).getByRole('button', { name: /^Restore/ }).click()
+    await expect(page.locator('.trash-message')).toHaveText('Source restored to SYNTHETIC research B.')
+    const picker = page.getByRole('combobox', { name: /Research/ })
+    await expect(picker).toBeVisible()  // one research left, still filtering: the control stays
+    await expect(page.getByText('SYNTHETIC template without a research')).toHaveCount(0)
+    await picker.click()
+    await page.getByRole('option', { name: /^All 1 research/ }).click()
+    await expect(page.getByText('SYNTHETIC template without a research')).toBeVisible()
+  })
+
+  test('on the real server a bulk delete confirmation lapses when a chosen source is restored meanwhile', async ({ page }) => {
+    test.setTimeout(150_000)
+    const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
+    const token = (await (await api.get('/api/session')).json()).csrf_token as string
+    const headers = { 'x-deixis-csrf': token }
+    const created = await api.post('/api/researches', { data: { question: 'SYNTHETIC: How is molecule release scheduling optimized?', model_connection: 'codex', requested_model: 'fixture-model', effort: 'quick' }, headers })
+    const id = (await created.json()).research.id as string
+    expect((await api.post(`/api/researches/${id}/runs`, { data: { kind: 'discovery' }, headers })).ok()).toBe(true)
+    type View = { runs: Array<{ kind: string; status: string }>; sources: Array<{ source_version_id: string; version_role: string; title: string }> }
+    const view = async () => (await (await api.get(`/api/researches/${id}`)).json()) as View
+    await expect.poll(async () => { const v = await view(); return readingDone(v) && v.runs.some(r => r.kind === 'answer') && !v.runs.some(r => ['queued', 'running', 'pause_requested'].includes(r.status)) }, { timeout: 100_000 }).toBe(true)
+    const records = (await view()).sources.filter(s => s.version_role === 'record')
+    expect((await api.delete(`/api/researches/${id}/sources`, { data: { source_version_ids: records.map(s => s.source_version_id) }, headers })).ok()).toBe(true)
+    // The fixture answer cites every source, so the real backend would refuse a purge; the page is shown them as deletable
+    // (only the list is rewritten; restore is the real route) and the confirmation is never confirmed.
+    await page.route('**/api/trash', async route => {
+      const response = await route.fetch()
+      const body = await response.json()
+      await route.fulfill({ response, json: { ...body, sources: body.sources.map((s: object) => ({ ...s, cited: 0 })) } })
+    })
+    const trashed = (await (await api.get('/api/trash')).json()).sources as Array<{ source_version_id: string; title: string }>
+    const [first, second] = trashed
+    expect(second).toBeTruthy()
+    await open(page, server.url())
+    await page.getByRole('checkbox', { name: `Select ${first.title}` }).check()
+    await page.getByRole('checkbox', { name: `Select ${second.title}` }).check()
+    await page.locator('.selection-bar').getByRole('button', { name: 'Delete permanently' }).click()
+    await expect(page.locator('.trash-bar-notice')).toContainText('Delete 2 sources permanently?')
+    // While the confirmation is open, one of the two comes back from its own row.
+    await rows(page).filter({ hasText: first.title }).getByRole('button', { name: /^Restore/ }).click()
+    await expect(page.locator('.trash-bar-notice')).toHaveCount(0)
+    await expect(page.getByText('The sources you chose to delete changed, so nothing was deleted. Choose again.')).toBeVisible()
+    await expect(page.locator('.trash-message')).not.toContainText('permanently deleted')
+    // Nothing was purged: the restored one is back in the research and the other is still in the Trash.
+    expect((await view()).sources.some(s => s.source_version_id === first.source_version_id)).toBe(true)
+    const left = ((await (await api.get('/api/trash')).json()).sources as Array<{ source_version_id: string }>).map(s => s.source_version_id)
+    expect(left).toContain(second.source_version_id)
+    expect(left).not.toContain(first.source_version_id)
+    await api.dispose()
   })
 
   test('on the real server a research goes to the Trash, comes back, and is deleted after a Cancel', async ({ page }) => {

@@ -12,7 +12,8 @@ import { t, uiLocale } from './i18n'
 // once nothing cites it (D65). Deleting asks inside the row, where the mockup asks.
 
 // The row that is asking: what it says and what a yes does.
-type Pending = { key: string; question: string; detail: string; confirm: () => void; from?: 'delete' | 'menu' }
+// `keys`: the rows a bulk confirmation is about; it lapses when one of them has left the Trash.
+type Pending = { key: string; question: string; detail: string; confirm: () => void; from?: 'delete' | 'menu'; keys?: string[] }
 type SourceTarget = { researchId: string; versions: RemovedSource[] }
 type Sort = 'removed' | 'title' | 'year'
 const sortLabels: Record<Sort, string> = { removed: 'Recently removed', title: 'Title', year: 'Year' }
@@ -81,6 +82,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     setMessage('')
     let done = 0
     let files = 0
+    let gone = 0  // asked for, but the backend found nothing to change: no longer in the Trash
     const finished = new Set<string>()
     let failure: { target: SourceTarget; message: string } | null = null
     let attempted = 0
@@ -88,26 +90,39 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
       attempted += 1
       try {
         const ids = one.versions.map(v => v.source_version_id)
-        if (verb === 'purge') files += (await api.purgeSources(one.researchId, ids)).files_not_removed.length
-        else await api.restoreSources(one.researchId, ids)
-        done += worksOf(one)
-        for (const v of one.versions) finished.add(`${one.researchId}:${v.work_id}`)
+        // What counts as done is what the backend says it changed, never what was asked for.
+        let changed: Set<string>
+        if (verb === 'purge') {
+          const result = await api.purgeSources(one.researchId, ids)
+          files += result.files_not_removed.length
+          changed = new Set(result.deleted)
+        } else changed = new Set((await api.restoreSources(one.researchId, ids)).changed_source_version_ids)
+        const works = new Set(one.versions.map(v => v.work_id))
+        for (const work of works) {
+          const mine = one.versions.filter(v => v.work_id === work)
+          // A restore brings a work's versions back together, so one is enough; a delete must have taken every version asked for.
+          if (verb === 'restore' ? mine.some(v => changed.has(v.source_version_id)) : mine.every(v => changed.has(v.source_version_id))) {
+            done += 1
+            finished.add(`${one.researchId}:${work}`)
+          } else gone += 1
+        }
       } catch (e) { failure = { target: one, message: errorText(e) }; break }
     }
     const total = targets.reduce((n, one) => n + worksOf(one), 0)
     const diskNote = files ? t('{files} file(s) could not be removed from disk.', { files }) : ''
-    if (!failure) {
+    if (!failure && gone === 0) {
       setMessage(verb === 'purge'
         ? (files ? t('{n} source(s) deleted, but {files} file(s) could not be removed from disk.', { n: done, files })
           : t(done === 1 ? 'Source permanently deleted.' : '{n} sources permanently deleted.', { n: done }))
         : t(done === 1 ? 'Source restored.' : '{n} sources restored.', { n: done }))
     } else {
-      const skipped = targets.slice(attempted).reduce((n, one) => n + worksOf(one), 0)
+      const skipped = failure ? targets.slice(attempted).reduce((n, one) => n + worksOf(one), 0) : 0
       setMessage([verb === 'purge' ? t('Deleted {done} of {total} sources.', { done, total }) : t('Restored {done} of {total} sources.', { done, total }),
-        t('{n} in “{research}” failed: {message}', { n: worksOf(failure.target), research: failure.target.versions[0].research_title, message: failure.message }),
+        gone > 0 && t('{n} no longer in the Trash, so nothing was changed for them.', { n: gone }),
+        failure && t('{n} in “{research}” failed: {message}', { n: worksOf(failure.target), research: failure.target.versions[0].research_title, message: failure.message }),
         skipped > 0 && t('{n} not attempted.', { n: skipped }), diskNote].filter(Boolean).join(' '))
     }
-    if (done > 0 || failure) onChanged()
+    if (done > 0 || failure || gone > 0) onChanged()
     setPicked(prev => { const next = new Set(prev); for (const k of finished) next.delete(k); return next })
     setBusy(null)
     await refresh()
@@ -193,14 +208,14 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
           restore: () => void run(key, async () => { await api.restoreSources(group.id, versions.map(v => v.source_version_id)); return t('Source restored to {research}.', { research: group.title }) }, 'Could not restore the sources: {message}'),
           remove: canDelete ? {
             key, question: t('Delete “{title}” permanently?', { title: first.title }), detail: sourceDetail(1),
-            confirm: () => purgeMany(key, [{ researchId: group.id, versions }]), from: 'delete',
+            confirm: () => purgeMany(key, [{ researchId: group.id, versions }]), from: 'delete', keys: [key],
           } : null,
           more: {
             open: openable ? () => setOpenSource({ key, researchId: group.id, researchTitle: group.title, passageId: openable.abstract_passage_id as string }) : null,
             restoreAll: group.works.length > 1 ? () => void bulk(`${group.id}:all`, [{ researchId: group.id, versions: group.works.flat() }], 'restore') : null,
             deleteAll: deletableWorks.length > 1 ? {
               key, question: t('Delete {n} sources removed from “{title}” permanently?', { n: deletableWorks.length, title: group.title }), detail: sourceDetail(deletableWorks.length),
-              confirm: () => purgeMany(`${group.id}:all`, [{ researchId: group.id, versions: deletableWorks.flat() }]), from: 'menu',
+              confirm: () => purgeMany(`${group.id}:all`, [{ researchId: group.id, versions: deletableWorks.flat() }]), from: 'menu', keys: deletableWorks.map(v => `${group.id}:${v[0].work_id}`),
             } : null,
           },
         })
@@ -241,15 +256,19 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
   const pickedEntries = entries.filter(e => e.source && picked.has(e.key))
   const pickedDeletable = pickedEntries.filter(e => e.remove)
   const decide = (target: Pending) => setPending(target)
+  // A confirmation about rows that have since left the Trash (restored elsewhere, deleted) no longer describes it.
+  const present = new Set(entries.map(e => e.key))
+  const lapsed = pending?.keys ? !pending.keys.every(k => present.has(k)) : false
+  const livePending = lapsed ? null : pending
 
-  const rowFor = (entry: Entry) => pending?.key === entry.key
+  const rowFor = (entry: Entry) => livePending?.key === entry.key
     ? <div className="trash-row trash-notice" key={entry.key} role="group" aria-label={t('Delete permanently?')} data-trash-key={entry.key}
-      onKeyDown={event => { if (event.key === 'Escape') closeAsk(pending) }}>
+      onKeyDown={event => { if (event.key === 'Escape') closeAsk(livePending) }}>
       <TriangleAlert size={16} aria-hidden />
-      <div className="trash-notice-body"><span>{pending.question} {pending.detail}</span>
+      <div className="trash-notice-body"><span>{livePending.question} {livePending.detail}</span>
         <div className="trash-acts">
-          <button type="button" className="trash-ghost trash-delete" onClick={() => { const target = pending; setPending(null); target.confirm() }}>{t('Delete permanently')}</button>
-          <button type="button" className="trash-ghost" autoFocus onClick={() => closeAsk(pending)}>{t('Cancel')}</button>
+          <button type="button" className="trash-ghost trash-delete" onClick={() => { const target = livePending; setPending(null); target?.confirm() }}>{t('Delete permanently')}</button>
+          <button type="button" className="trash-ghost" autoFocus onClick={() => closeAsk(livePending)}>{t('Cancel')}</button>
         </div></div>
     </div>
     : <div className={`trash-row${picked.has(entry.key) ? ' is-picked' : ''}`} key={entry.key} data-trash-key={entry.key}>
@@ -296,7 +315,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
             <button type="button" aria-pressed={scope === 'deletable'} onClick={() => setScope('deletable')}>{t('Deletable')} {entries.length - stillCited}</button>
             <button type="button" aria-pressed={scope === 'cited'} onClick={() => setScope('cited')}>{t('Still cited')} {stillCited}</button>
           </div>
-          {researchOptions.length > 1 && <div className="trash-select">
+          {(researchOptions.length > 1 || activeResearch !== 'all') && <div className="trash-select">
             <span id="trash-research-filter">{t('Research')}</span>
             <Select value={activeResearch} onValueChange={value => { if (value) setOnlyResearch(value as string) }}>
               <SelectTrigger aria-labelledby="trash-research-filter"><SelectValue>{(value: string) =>
@@ -343,13 +362,14 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
           })}
         </div>}
         {!whole && !needle && matching.length > ROW_LIMIT && <button type="button" className="trash-ghost trash-showmore" onClick={() => setWhole(true)}>{t('Show {n} more', { n: matching.length - ROW_LIMIT })}</button>}
-        {pending?.key === 'picked' && <div className="trash-notice trash-bar-notice" role="group" aria-label={t('Delete permanently?')}
-          onKeyDown={event => { if (event.key === 'Escape') closeAsk(pending) }}>
+        {lapsed && <p className="trash-foot" role="status">{t('The sources you chose to delete changed, so nothing was deleted. Choose again.')}</p>}
+        {livePending?.key === 'picked' && <div className="trash-notice trash-bar-notice" role="group" aria-label={t('Delete permanently?')}
+          onKeyDown={event => { if (event.key === 'Escape') closeAsk(livePending) }}>
           <TriangleAlert size={16} aria-hidden />
-          <div className="trash-notice-body"><span>{pending.question} {pending.detail}</span>
+          <div className="trash-notice-body"><span>{livePending.question} {livePending.detail}</span>
             <div className="trash-acts">
-              <button type="button" className="trash-ghost trash-delete" onClick={() => { const target = pending; setPending(null); target.confirm() }}>{t('Delete permanently')}</button>
-              <button type="button" className="trash-ghost" autoFocus onClick={() => closeAsk(pending)}>{t('Cancel')}</button>
+              <button type="button" className="trash-ghost trash-delete" onClick={() => { const target = livePending; setPending(null); target?.confirm() }}>{t('Delete permanently')}</button>
+              <button type="button" className="trash-ghost" autoFocus onClick={() => closeAsk(livePending)}>{t('Cancel')}</button>
             </div></div>
         </div>}
         {pickedEntries.length > 0 && <div className="selection-bar" data-trash-key="picked">
@@ -359,7 +379,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
             <button type="button" className="trash-ghost" disabled={busy === 'picked'} onClick={() => void bulk('picked', perResearch(pickedEntries.map(e => e.source as SourceTarget)), 'restore')}>{t('Restore')}</button>
             <button type="button" className="trash-ghost trash-delete" disabled={busy === 'picked' || pickedDeletable.length === 0}
               title={pickedDeletable.length === 0 ? t('An answer quote, an evidence table or a report still cites this source. It is deleted with its research.') : undefined}
-              onClick={() => decide({ key: 'picked', from: 'delete', question: t('Delete {n} sources permanently?', { n: pickedDeletable.length }), detail: sourceDetail(pickedDeletable.length),
+              onClick={() => decide({ key: 'picked', from: 'delete', keys: pickedDeletable.map(e => e.key), question: t('Delete {n} sources permanently?', { n: pickedDeletable.length }), detail: sourceDetail(pickedDeletable.length),
                 confirm: () => purgeMany('picked', perResearch(pickedDeletable.map(e => e.source as SourceTarget))) })}>{t('Delete permanently')}</button>
             <button type="button" className="trash-ghost" onClick={() => setPicked(new Set())}>{t('Clear selection')}</button>
           </div>

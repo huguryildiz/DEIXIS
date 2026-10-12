@@ -55,6 +55,7 @@
 .app .trash-fold:hover{background:var(--hover-surface);color:var(--ink)}
 .app .trash-bar-notice{border-radius:10px;padding:12px 14px}
 .app .trash-page>.selection-bar{bottom:20px}
+.app .trash-page .selection-bar>strong>span{display:block;margin-top:2px;color:var(--muted);font-size:12px;font-weight:400}
 /* A long Trash is filtered (the mockup list has no filter; it appears only past 50 rows). */
 .app .trash-search{flex:0 1 300px;min-width:200px;display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--muted)}
 .app .trash-search:focus-within{border-color:var(--accent)}

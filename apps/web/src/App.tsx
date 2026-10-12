@@ -4,7 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { api, ApiError, shellApi, type InstitutionalAccess, type Profile, type ProxySettings, type ResearchSummary, type RunStatus } from './api'
 import { runStatusLabels } from './labels'
 import { Home } from './Home'
-import { ResearchPage } from './ResearchView'
+import { EmptyResearch, ResearchPage } from './ResearchView'
 import { SettingsPage } from './Settings'
 import { LibraryPage } from './LibraryPage'
 import { QuickFind, type PaletteCommand } from './QuickFind'
@@ -133,7 +133,7 @@ export default function App() {
   const [asideWidth, setAsideWidth] = useState(SIDEBAR_MIN)
   const [language, setLanguage] = useState<UiLanguage>(uiLanguage)
   // The research opened last, for "Current research" (kept across reloads).
-  const [currentId, setCurrentId] = useState<string | null>(() => { const first = parseHash(); return first.view === 'research' ? first.id : readCurrent() })
+  const [currentId, setCurrentId] = useState<string | null>(() => { const first = parseHash(); return first.view === 'research' && first.id ? first.id : readCurrent() })
   const [profile, setProfile] = useState<Profile | null>(null)
   const toast = useToast()
   const dark = theme === 'dark' || (theme === 'system' && systemDark)
@@ -141,7 +141,7 @@ export default function App() {
   const researchKey = researches.map(r => r.id).join(',')
 
   useEffect(() => {
-    const onHash = () => { const next = parseHash(); setRoute(next); if (next.view === 'research') setCurrentId(next.id); setSidebar(false); window.scrollTo(0, 0) }
+    const onHash = () => { const next = parseHash(); setRoute(next); if (next.view === 'research' && next.id) setCurrentId(next.id); setSidebar(false); window.scrollTo(0, 0) }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
@@ -369,10 +369,10 @@ export default function App() {
     home: () => go({ view: 'home' }),
     library: () => go({ view: 'library' }),
     sidebar: () => { if (!phone) toggleCollapsed() },
-    onResearch: route.view === 'research',
+    onResearch: route.view === 'research' && Boolean(route.id),
     singleKeys,
   })
-  // The research opened last in this browser; disabled until one has been opened.
+  // The research opened last in this browser; until one has been opened, Current research shows "No research yet" (R32).
   const currentResearch = currentId && researches.some(r => r.id === currentId) ? currentId : null
   // "Awaiting you": open queue rows and works waiting for the person's PDF over every research, the two kept apart in the tooltip.
   const awaitingQueue = researches.reduce((sum, r) => sum + r.awaiting.queue, 0)
@@ -428,7 +428,7 @@ export default function App() {
       <nav aria-label={t('Main navigation')}>
         <button className={route.view === 'home' ? 'selected' : ''} onClick={() => go({ view: 'home' })} title={t('New research')}><Plus size={16} aria-hidden="true" /><span className="sidebar-label">{t('New research')}</span></button>
         <button className="sidebar-find" onClick={openSearch} aria-label={t('Search')} aria-keyshortcuts="Meta+K Control+K" title={t('Search')}><Search size={16} aria-hidden="true" /><span className="sidebar-label">{t('Search')}</span><kbd className="sidebar-label">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd></button>
-        <button className={route.view === 'research' && !awaitingOpen ? 'selected' : ''} disabled={!currentResearch} onClick={() => { if (currentResearch) go({ view: 'research', id: currentResearch }) }} title={t(currentResearch ? 'Current research' : 'No research opened yet')}><Clock size={16} aria-hidden="true" /><span className="sidebar-label">{t('Current research')}</span></button>
+        <button className={route.view === 'research' && !awaitingOpen ? 'selected' : ''} onClick={() => go({ view: 'research', id: currentResearch ?? '' })} title={t(currentResearch ? 'Current research' : 'No research opened yet')}><Clock size={16} aria-hidden="true" /><span className="sidebar-label">{t('Current research')}</span></button>
         <button className={awaitingOpen ? 'selected' : ''} disabled={!awaitingTarget} onClick={openAwaiting} aria-label={awaitingTotal ? `${t('Awaiting you')}: ${awaitingDetail}` : t('Awaiting you')} title={awaitingTotal ? `${t('Awaiting you')} · ${awaitingDetail}` : t('Awaiting you')}><Inbox size={16} aria-hidden="true" /><span className="sidebar-label">{t('Awaiting you')}</span>{awaitingTotal > 0 && <span className="nav-count" aria-hidden="true">{awaitingTotal}</span>}</button>
         <button className={route.view === 'library' ? 'selected' : ''} onClick={() => go({ view: 'library' })} title={t('Library')}><LibraryBig size={16} aria-hidden="true" /><span className="sidebar-label">{t('Library')}</span></button>
         <button className={route.view === 'settings' ? 'selected' : ''} onClick={() => go({ view: 'settings' })} title={t('Settings')}><SlidersHorizontal size={16} aria-hidden="true" /><span className="sidebar-label">{t('Settings')}</span></button>
@@ -486,13 +486,14 @@ export default function App() {
       </div>
       <main>
         {route.view === 'home' && <Home researches={researches} onCreated={id => { refreshList(); go({ view: 'research', id }) }} />}
-        {route.view === 'research' && <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />}
+        {route.view === 'research' && (route.id ? <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />
+          : <EmptyResearch opened={researches.length > 0} />)}
         {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={id => go({ view: 'research', id })} onStartResearch={() => go({ view: 'home' })} />}
         {route.view === 'settings' && <SettingsPage key={route.tab ?? 'defaults'} dark={dark} tab={route.tab ?? 'defaults'} onTab={tab => go({ view: 'settings', tab: tab === 'connections' ? 'connections' : undefined })} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>
       <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} language={language} onLanguage={chooseLanguage}
-        research={route.view === 'research' ? { answer: (openResearch?.answer_count ?? 0) > 0 } : null} singleKeys={singleKeys} onCommand={runCommand} />
+        research={route.view === 'research' && route.id ? { answer: (openResearch?.answer_count ?? 0) > 0 } : null} singleKeys={singleKeys} onCommand={runCommand} />
       <KeysDialog open={keysOpen} onOpenChange={setKeysOpen} returnFocus={keysOpener} singleKeys={singleKeys} onSingleKeys={chooseSingleKeys} />
     </div>
   </div>

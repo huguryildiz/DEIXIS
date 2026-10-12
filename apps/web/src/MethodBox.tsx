@@ -1,25 +1,21 @@
 import { useEffect, useState } from 'react'
-import { ChevronRight, ListChecks } from 'lucide-react'
-import { api, type AnswerMethod } from './api'
+import { ChevronRight, FileText } from 'lucide-react'
+import { api, type Answer, type AnswerMethod } from './api'
 import { t, uiLocale } from './i18n'
 import { providerName } from './labels'
+import { AnswerFlowNote } from './FlowReport'
 import './MethodBox.css'
 
 // How the answer was reached, from stored rows only (no model call). Counts stay apart: found, read, tried, included,
-// given and cited answer different questions, and what no row measures is said, not guessed.
+// given and cited answer different questions, and what no row measures is said, not guessed. The box under the answer
+// (mockup `.methods`, R26) says it in one paragraph; "Full method" opens every count, and the answer's boundary (where
+// the works stood when it started, what it was given; §2.2) closes it.
 
 const num = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
 const maybe = (n: number | null) => (n === null ? t('not recorded') : num(n))
 
-function oneLine(m: AnswerMethod) {
-  const parts = [t(m.search.queries.length === 1 ? '{n} search' : '{n} searches', { n: num(m.search.queries.length) })]
-  if (m.selection.works_found !== null) parts.push(t('{n} works found', { n: num(m.selection.works_found) }))
-  if (m.selection.included !== null) parts.push(t('{n} included', { n: num(m.selection.included) }))
-  parts.push(t('{n} cited', { n: num(m.evidence_base.cited_sources) }))
-  return parts.join(' · ')
-}
-
-export function MethodBox({ researchId, answerId }: { researchId: string; answerId: string }) {
+export function MethodBox({ researchId, answer, reviewPending, onShowFunnel }: { researchId: string; answer: Answer; reviewPending: boolean; onShowFunnel: (opener: HTMLElement) => void }) {
+  const answerId = answer.id
   const [method, setMethod] = useState<AnswerMethod | null>(null)
   useEffect(() => {
     let live = true
@@ -31,8 +27,29 @@ export function MethodBox({ researchId, answerId }: { researchId: string; answer
   const providers = [...new Set(search.queries.map(q => providerName(q.provider)))]
   const review = selection.vocabulary_review
   const years = base.year_min === null ? null : base.year_min === base.year_max ? String(base.year_min) : `${base.year_min}–${base.year_max}`
-  return <details className="search-summary flow-block method-box">
-    <summary><span><ListChecks size={14} aria-hidden />{t('Method')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{oneLine(method)}</small></summary>
+  const abstractOnly = answer.inputs_given?.depth?.abstract ?? 0
+  const queries = search.queries.length
+  const found = selection.works_found
+  return <section className="methods" aria-labelledby={`methods-${answerId}`}>
+    <h4 id={`methods-${answerId}`}><FileText size={16} aria-hidden />{t('Methods')}</h4>
+    <p>
+      {queries === 0 ? t('No search was recorded for this question revision.')
+        : <>{t(queries === 1 ? 'One search was sent to {providers}' : '{n} searches were sent to {providers}', { n: num(queries), providers: providers.join(', ') })}{search.chaining.ran ? t(', and citation chaining ran.') : t('; citation chaining did not run.')}</>}{' '}
+      {selection.abstract_read > 0
+        ? <>{found !== null ? t('The model read the abstracts of {read} of {found} works against the criterion', { read: num(selection.abstract_read), found: num(found) }) : t('The model read the abstracts of {read} works against the criterion', { read: num(selection.abstract_read) })}
+          {found !== null && found > selection.abstract_read && <> (<button type="button" className="link" onClick={e => onShowFunnel(e.currentTarget)}>{t('see what was not read')}</button>)</>}.</>
+        : t('No model reading of abstracts is recorded.')}{' '}
+      {selection.full_text_read > 0
+        ? <>{t(selection.full_text_read === 1 ? '{n} work was read in its full text (selected pages)' : '{n} works were read in their full text (selected pages)', { n: num(selection.full_text_read) })}{selection.included !== null ? t('; included when the answer started: {n}.', { n: num(selection.included) }) : '.'}</>
+        : t('No model reading of full texts is recorded.')}{' '}
+      {abstractOnly > 0 && <>{t(abstractOnly === 1 ? '{n} work was given to the answer from its abstract only; where cited it is labelled “From abstract”.' : '{n} works were given to the answer from their abstracts only; where cited they are labelled “From abstract”.', { n: num(abstractOnly) })}{' '}</>}
+      <span className="ok">{t('Every citation resolves to a stored passage given to this step.')}</span>{' '}
+      {answer.review?.status === 'completed' ? t('Claim support was reviewed by the reviewer model.')
+        : answer.review ? t('The reviewer model’s claim review gave no usable result.')
+        : reviewPending ? t('The reviewer model is reviewing claim support.') : t('Claim support was not reviewed by a reviewer model.')}
+    </p>
+    <details className="method-more">
+      <summary><span>{t('Full method')}</span><ChevronRight size={13} aria-hidden className="search-summary-chevron" /></summary>
     <div className="method-detail">
       <section>
         <p className="flow-head">{t('Approach')}</p>
@@ -60,7 +77,7 @@ export function MethodBox({ researchId, answerId }: { researchId: string; answer
         </ul>
         {!selection.snapshot && <p className="flow-note">{t('This answer kept no snapshot of the flow when it started, so the flow counts are not shown.')}</p>}
         {selection.criterion && <p className="flow-note">{t('Criterion: {text}', { text: selection.criterion })}</p>}
-        <p className="flow-note">{review.approved_by === 'unattended' ? t('Nobody reviewed the search vocabulary; the fast path went on without asking.') : review.approved_by === 'user' ? t('You edited and saved this search plan; it was searched as you saved it.') : t('Who approved the search vocabulary is not recorded.')}</p>
+        <p className="flow-note">{review.approved_by === 'unattended' ? t('Nobody reviewed the search vocabulary; the fast path went on without asking.') : review.approved_by === 'user' || review.approved_by === 'user_edited' ? t('You edited and saved this search plan; it was searched as you saved it.') : t('Who approved the search vocabulary is not recorded.')}</p>
       </section>
       <section>
         <p className="flow-head">{t('Extraction')}</p>
@@ -84,5 +101,7 @@ export function MethodBox({ researchId, answerId }: { researchId: string; answer
         <ul className="method-unmeasured">{method.not_measured.map(item => <li key={item}>{t(item)}</li>)}</ul>
       </section>
     </div>
-  </details>
+    <AnswerFlowNote answer={answer} />
+    </details>
+  </section>
 }

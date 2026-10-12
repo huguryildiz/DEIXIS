@@ -1,11 +1,20 @@
-/* How the answer was reached (mockup .methods): one quiet box on the side surface, its one line under the heading. */
-.method-box.search-summary{margin:18px 0 6px;padding:0 16px;border:1px solid var(--line);border-radius:12px;background:var(--sidebar-surface)}
-.method-box.search-summary summary{flex-wrap:wrap;justify-content:flex-start;gap:2px 8px;padding:12px 0;font-size:13px}
-.method-box.search-summary summary>span{gap:7px;font-weight:600}
-.method-box.search-summary summary small{flex:1 1 100%;color:var(--muted);font-size:12.5px;line-height:1.55;text-align:left}
-.method-detail{columns:280px 2;column-gap:32px;padding:0 0 14px}
+/* How the answer was reached (mockup `.methods`, R26): one quiet box on the side surface, its paragraph under the
+   heading; "Full method" opens every count and the answer's boundary (§2.2). */
+.methods{padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--sidebar-surface)}
+.methods h4{display:flex;align-items:center;gap:7px;margin:0 0 4px;color:var(--ink);font-size:13px;font-weight:600}
+.methods>p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.55}
+.methods .ok{color:var(--tone-include)}
+.methods .link{padding:0;border:0;background:none;color:var(--accent);font:inherit;font-weight:500;cursor:pointer}
+.methods .link:hover{text-decoration:underline;text-underline-offset:2px}
+.methods .link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.method-more{margin-top:8px}
+.method-more>summary{display:inline-flex;align-items:center;gap:4px;color:var(--muted);font-size:12px;cursor:pointer;list-style:none}
+.method-more>summary::-webkit-details-marker{display:none}
+.method-more>summary:hover{color:var(--ink)}
+.method-more>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.method-more[open]>summary .search-summary-chevron{transform:rotate(90deg)}
+.method-detail{columns:280px 2;column-gap:32px;padding:10px 0 4px}
 .method-detail>section{break-inside:avoid;margin-bottom:12px}
-.method-box:not([open]) .method-detail{display:none}
 .method-text{margin:2px 0 6px;color:var(--ink-2);font-size:12.5px;line-height:1.55}
 .method-queries li{align-items:flex-start}
 .method-queries li>span{min-width:0;overflow-wrap:anywhere}
@@ -13,3 +22,5 @@
 .method-queries small{display:block;color:var(--muted);font-size:11.5px}
 .method-queries strong{white-space:nowrap}
 .method-unmeasured{margin:8px 0 0;padding-left:16px;color:var(--muted);font-size:11.5px;line-height:1.5}
+.method-more .answer-flow{margin:0;color:var(--muted);font-size:12px;line-height:1.55}
+.method-more .answer-flow p{margin:0 0 3px}

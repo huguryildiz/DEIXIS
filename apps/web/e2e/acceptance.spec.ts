@@ -652,7 +652,7 @@ test.describe.serial('Failures: E and B (code check)', () => {
     await expect(page.getByText('Ran answer generation')).toBeVisible()
     const boundary = page.getByText('The model output failed validation after one repair attempt')
     await expect(boundary).toBeVisible()
-    await expect(page.locator('.legacy-answer')).toContainText('locator_in_claim_text')
+    await expect(page.locator('.answer-thread')).toContainText('locator_in_claim_text')
     await expect(page.locator('.cite-chip')).toHaveCount(0)
     await shot(page, 'B-invented-locator-rejected')
   })

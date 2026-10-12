@@ -191,6 +191,8 @@ export type RunTarget = {
   model?: CandidatePlan['model']; providers?: string[]; transport?: CandidatePlan['transport']; limits?: CandidatePlan['limits']
   version?: number; scope_revision?: number; skill_package_hash?: string; plan_version?: number; preview_fingerprint?: string
   report_id?: string
+  // answer_review: the answer it reviews.
+  answer_id?: string
   sources?: { source_version_id: string; column_ids: string[] }[]
   // pdf_ocr (D51): the PDF read and the Tesseract languages used.
   asset_id?: string; languages?: string[]

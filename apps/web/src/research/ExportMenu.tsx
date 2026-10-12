@@ -27,9 +27,10 @@ export type ExportReport = { answer: Answer; title: string; version: number }
 // writes it) and Word file, the table's CSV (written here) and its Excel and Word files, the bibliographies and the
 // PRISMA-S search report (§2.2). The PDF rows (print) are wired in S27.
 // Like the mockup's menu(), the list opens under the trigger at its left edge and slides back inside the window.
-export function ExportMenu({ researchId, report, sources, tables, included, cited, prisma }: {
+// `icon`: the answer's download button in the thread (mockup `.ib` with `data-menu="export"`) opens the same menu.
+export function ExportMenu({ researchId, report, sources, tables, included, cited, prisma, icon = false }: {
   researchId: string; report: ExportReport | null; sources: Source[]; tables: TableSummary[] | null
-  included: number; cited: number; prisma: boolean
+  included: number; cited: number; prisma: boolean; icon?: boolean
 }) {
   const toast = useToast()
   // A table exports once it has columns and rows; with several, the one changed last (its title names it).
@@ -48,7 +49,9 @@ export function ExportMenu({ researchId, report, sources, tables, included, cite
     catch (e) { toast('error', e instanceof Error ? e.message : String(e)) }
   }
   return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button variant="default" size="sm" className="research-export" />}><Download size={16} className="size-4" aria-hidden />{t('Export')}</DropdownMenuTrigger>
+    {icon
+      ? <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" className="answer-ib" aria-label={t('Download')} title={t('Download')} />}><Download size={16} aria-hidden /></DropdownMenuTrigger>
+      : <DropdownMenuTrigger render={<Button variant="default" size="sm" className="research-export" />}><Download size={16} className="size-4" aria-hidden />{t('Export')}</DropdownMenuTrigger>}
     <DropdownMenuContent align="start" sideOffset={6} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }} className="research-export-menu">
       {report && <DropdownMenuGroup>
         <DropdownMenuLabel>{t('Report')}</DropdownMenuLabel>

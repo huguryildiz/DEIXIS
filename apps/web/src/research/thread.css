@@ -315,7 +315,8 @@
 .answer-history-note{display:inline-flex;align-items:center;gap:9px;width:fit-content;max-width:100%;margin:2px 0 0;padding:8px 12px 8px 9px;border:1px solid transparent;border-radius:10px;background:var(--warn-surface);color:var(--ink-2);font-size:12.5px;line-height:1.45}
 .answer-history-icon{display:grid;flex:none;width:22px;height:22px;place-items:center;color:var(--tone-uncertain)}
 .legacy-research .claim{color:var(--ink)!important;font-size:15px;line-height:1.68;margin:0 0 12px}
-.claim.is-unverified{color:var(--muted)!important;text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--muted),transparent 60%)}
+/* An unverified draft's claims (mockup `.claim.is-unverified`): greyed behind a dashed rule, never as a cited answer. */
+.claim.is-unverified{color:var(--muted)!important;border-left:2px dashed var(--strong-line);padding-left:12px}
 .cite-chip{display:inline-flex;align-items:center;margin-left:4px;padding:0 5px;border-radius:4px;color:var(--muted);font-family:var(--font-sans);font-size:11.5px;font-weight:400;white-space:nowrap;vertical-align:baseline;background:var(--hover-surface)}
 .cite-chip:hover{background:var(--selected-surface);color:var(--ink)}
 .cite-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -359,3 +360,49 @@
 .chat-list>li.chat-list-round b{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--ink);margin-right:8px}
 .chat-list>li.chat-list-round b svg{color:var(--muted)}
 .chat-list>li.chat-list-round:not(:first-child){padding-top:18px}
+/* The latest answer in the thread (mockup `answerBlock()`, R22-R29, UI parity S10): notices, card, prose, Methods,
+   action pills and Next steps, 18px apart as in the mockup's `.thread-inner`. */
+.answer-thread{display:grid;gap:18px;margin:12px 0 0;font-size:14px;line-height:1.5}
+.answer-thread .notice{margin:0}
+.answer-thread .notice>svg{margin-top:2px}
+.answer-notice-question{color:var(--ink);font-size:15px}
+.answer-notice-list,.answer-notice-issues{margin:0;padding-left:18px;list-style:disc}
+.answer-notice-issues{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.answer-thread .src-m{color:var(--muted);font-size:12px;line-height:1.45}
+.answer-thread .foot-note{margin:0;color:var(--muted);font-size:12px}
+.answer-thread .report-artifact{margin:0}
+/* The mockup keeps the thumbnail and the 14px padding at phone width (the older cards drop them under 760px). */
+@media(max-width:760px){.answer-thread .report-artifact{padding:14px}.answer-thread .report-artifact-preview{display:block}}
+.report-artifact.is-on{border-color:var(--accent-line);background:var(--accent-tint)}
+.report-artifact.is-live{cursor:default}
+.report-artifact.is-live:hover{border-color:var(--line)}
+.report-artifact.is-live .report-artifact-preview::after{inset:auto 9px 30px}
+.answer-prose{color:var(--ink);font-size:15px;line-height:1.68}
+.answer-prose p{margin:0 0 12px}
+.answer-prose p:last-child{margin-bottom:0}
+.answer-prose .claim+.claim::before{content:' '}
+.legacy-research .answer-prose p.claim{margin:0 0 12px}
+.legacy-research .answer-prose p.claim:last-child{margin-bottom:0}
+.cite-chip.thread-cite{display:inline;margin:0 2px;padding:1px 5px;vertical-align:1px}
+.cite-chip.thread-cite:hover{background:var(--accent-tint);color:var(--accent)}
+.answer-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.answer-acts [data-slot=button].answer-pill{height:30px;gap:6px;padding-inline:10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:13px;font-weight:400}
+.answer-acts [data-slot=button].answer-pill:hover{background:var(--hover-surface)}
+.answer-ib[data-slot=button]{width:30px;height:30px;border-radius:7px;color:var(--muted)}
+.answer-ib[data-slot=button]:hover{background:var(--hover-surface);color:var(--ink)}
+.follow{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.follow h5{margin:0;padding:9px 16px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--muted);font-size:12px;font-weight:500}
+.follow button{display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:0;border-top:1px solid var(--line);background:none;color:var(--ink-2);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.follow h5+button{border-top:0}
+.follow button:hover{background:var(--hover-surface)}
+.follow button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.follow button>svg{flex:none}
+.follow .go{display:none;flex:none;place-items:center;width:24px;height:24px;margin-left:auto;border-radius:6px;background:var(--accent);color:var(--paper)}
+.follow button:is(:hover,:focus-visible,.first) .go{display:grid}
+/* "No research yet" (mockup `.empty`, R32): the research page before any research was opened. */
+.research-empty{display:grid;flex:1;place-items:center;min-height:60vh;padding:40px 24px;text-align:center}
+.research-empty>div{display:grid;justify-items:center;gap:10px;max-width:380px}
+.research-empty>div>svg{color:var(--muted)}
+.research-empty h1{margin:0;color:var(--ink);font-size:16px;font-weight:600;line-height:1.4;letter-spacing:0}
+.research-empty p{margin:0;color:var(--muted);font-size:13.5px}
+.research-empty [data-slot=button]{height:30px;gap:6px;padding-inline:12px;border-radius:7px;background:var(--accent);color:var(--paper);font-size:13px;font-weight:500}

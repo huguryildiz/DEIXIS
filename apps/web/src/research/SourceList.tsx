@@ -12,7 +12,9 @@ const sourceSorts: Record<SourceSort, string> = { relevant: 'Most relevant', fou
 // when semantic search scored the source (D30), then the best position in the searches that found it.
 const verdictOrder: Record<string, number> = { include: 0, uncertain: 1, exclude: 2 }
 const verdictRank = (s: Source) => verdictOrder[s.selection.proposal ?? ''] ?? 3
-const stateFilters = [['all', 'All'], ['included', 'Included'], ['pending', 'Undecided'], ['excluded', 'Excluded']] as const
+// "Cited in answer" (mockup P5's first tab, opened by the answer's "View N cited sources") lists the works the latest
+// answer cites; it shows once that answer cites any. The other P5 tabs come with S13.
+const stateFilters = [['cited', 'Cited in answer'], ['all', 'All'], ['included', 'Included'], ['pending', 'Undecided'], ['excluded', 'Excluded']] as const
 export type StateFilter = typeof stateFilters[number][0]
 type PdfFilter = 'all' | 'with_pdf' | 'without_pdf'
 const pdfFilterLabels: Record<PdfFilter, string> = { all: 'All PDFs', with_pdf: 'PDF attached', without_pdf: 'No PDF attached' }
@@ -40,14 +42,15 @@ export function SourceList({ sources, busy, filter, onFilter, focus, onFocus, pi
     if (source.version_role === 'other_version' && last?.[0].work_id === source.work_id) last.push(source)
     else families.push([source])
   }
-  const counts = { all: families.length, included: 0, pending: 0, excluded: 0 }
+  const isCited = (family: Source[]) => family.some(source => source.cited_in_latest_answer)
+  const counts = { cited: families.filter(isCited).length, all: families.length, included: 0, pending: 0, excluded: 0 }
   families.forEach(([record]) => counts[record.selection.state]++)
   const hasPdf = (family: Source[]) => family.some(source => source.access.assets.length > 0)
   const pdfCounts = { all: families.length, with_pdf: families.filter(hasPdf).length, without_pdf: families.filter(family => !hasPdf(family)).length }
   const needle = query.trim().toLocaleLowerCase()
   const matches = (s: Source) => [s.title, s.venue, s.doi, ...s.authors].some(text => text?.toLocaleLowerCase().includes(needle))
   const focused = focus ? families.filter(f => f[0].work_id === focus) : null
-  const shown = focused ?? families.filter(f => (filter === 'all' || f[0].selection.state === filter) && (pdfFilter === 'all' || (pdfFilter === 'with_pdf' ? hasPdf(f) : !hasPdf(f))) && (!needle || f.some(matches)))
+  const shown = focused ?? families.filter(f => (filter === 'all' || (filter === 'cited' ? isCited(f) : f[0].selection.state === filter)) && (pdfFilter === 'all' || (pdfFilter === 'with_pdf' ? hasPdf(f) : !hasPdf(f))) && (!needle || f.some(matches)))
     .sort((a, b) => sourceCompare[sort](a[0], b[0]))
   const shownIds = shown.flat().map(s => s.source_version_id)
   const allShownPicked = shownIds.length > 0 && shownIds.every(sid => picked.includes(sid))
@@ -57,7 +60,7 @@ export function SourceList({ sources, busy, filter, onFilter, focus, onFocus, pi
     {families.length > 1 && <div className="source-toolbar">
       {/* The state filters run as the strip above the toolbar row (mockup .tabs over .toolbar). */}
       <div className="source-filters" role="group" aria-label={t('Show sources')}>
-        {stateFilters.map(([key, label]) => <button key={key} aria-pressed={!focused && filter === key} onClick={() => { onFocus(null); onFilter(key) }}>{t(label)}<span>{counts[key]}</span></button>)}
+        {stateFilters.filter(([key]) => key !== 'cited' || counts.cited > 0 || filter === 'cited').map(([key, label]) => <button key={key} aria-pressed={!focused && filter === key} onClick={() => { onFocus(null); onFilter(key) }}>{t(label)}<span>{counts[key]}</span></button>)}
       </div>
       <label className="source-pick-all"><input type="checkbox" checked={allShownPicked} disabled={!shownIds.length}
         ref={node => { if (node) node.indeterminate = !allShownPicked && shownIds.some(sid => picked.includes(sid)) }}

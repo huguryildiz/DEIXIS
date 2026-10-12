@@ -118,7 +118,10 @@ test.describe.serial('M: the flow of an sw research and its search report', () =
     expect(given.sources).toBeGreaterThan(1)
     await page.goto('about:blank')
     await page.goto(`${server.url()}/#/research/${rid}`)
-    const line = page.getByRole('group', { name: 'Flow at the start of this answer' }).first()
+    // The answer's boundary sits in the Methods box under "Full method" (UI parity S10, §2.2) and in the answering step.
+    const methods = page.locator('.answer-thread .methods')
+    await methods.locator('summary', { hasText: 'Full method' }).click()
+    const line = methods.getByRole('group', { name: 'Flow at the start of this answer' })
     await expect(line).toContainText('When the answer started: included 1 (two agreeing runs 1, you confirmed 0); in your queue, not looked at 4')
     await expect(line).toContainText(`Given to the model: works ${given.sources}, passages ${given.passages}.`)
     await expect(line.locator('.is-attention')).toHaveCount(0)
@@ -150,7 +153,9 @@ test.describe.serial('M: the flow of an sw research and its search report', () =
         await shot(narrow, `M-flow-sources-390-${scheme}`)
         await narrow.goto('about:blank')
         await narrow.goto(`${server.url()}/#/research/${rid}`)
-        await expect(narrow.getByRole('group', { name: 'Flow at the start of this answer' }).first()).toBeVisible()
+        const methods = narrow.locator('.answer-thread .methods')
+        await methods.locator('summary', { hasText: 'Full method' }).click()
+        await expect(methods.getByRole('group', { name: 'Flow at the start of this answer' })).toBeVisible()
         expect(await narrow.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
         await shot(narrow, `M-answer-flow-390-${scheme}`)
       } finally { await narrow.close() }

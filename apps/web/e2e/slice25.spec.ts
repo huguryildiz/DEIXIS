@@ -192,7 +192,10 @@ test.describe.serial('Q: an sw research with nothing included answers from its a
         if (width === 1440) await button.click()
         // D234 (superseding D106's zero-included gate): the five abstract-only candidates give the answer its passages, so
         // the no-answer notice is absent and the start snapshot keeps "included 0" apart from what the model was given.
-        const flow = page.getByRole('group', { name: 'Flow at the start of this answer' }).first()
+        // The answer's boundary sits in the Methods box under "Full method" (UI parity S10, §2.2).
+        const methods = page.locator('.answer-thread .methods')
+        await methods.locator('summary', { hasText: 'Full method' }).click()
+        const flow = methods.getByRole('group', { name: 'Flow at the start of this answer' })
         await expect(flow).toBeVisible()
         await expect(flow).toContainText('included 0')
         await expect(flow).toContainText(/Given to the model: works [1-9]\d*, passages [1-9]\d*/)

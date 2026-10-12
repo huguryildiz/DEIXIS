@@ -28,7 +28,7 @@ import { HumanQueue } from './HumanQueue'
 import { FlowBlock } from './FlowReport'
 import { WaitingForPdf } from './WaitingForPdf'
 import { EnglishQuestion, UploadedTextNote } from './SemanticNotes'
-import { AnswerBlock } from './research/AnswerBlock'
+import { AnswerThread, type AnswerThreadContext } from './research/AnswerThread'
 import { ActivityLog } from './research/ActivityLog'
 import { TableCard } from './research/ArtifactsTab'
 import { Rail } from './research/Rail'
@@ -48,6 +48,17 @@ const TRANSCRIPT_KINDS = new Set<RunKind>(['discovery', 'pdf_collection', 'fullt
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 const shownAnswer = (view: ResearchView) => (view.answers.find(a => !(a.late_revision && a.status !== 'structurally_valid')) ?? view.answers[0]) as Answer | undefined
+
+// "No research yet" (mockup `.empty` of the first open, R32): Current research before any research was opened in this
+// browser. With researches in the list, none has been opened here yet, so the page says that instead.
+export function EmptyResearch({ opened }: { opened: boolean }) {
+  return <section className="research-empty"><div>
+    <Clock size={16} aria-hidden />
+    <h1>{t(opened ? 'No research opened yet' : 'No research yet')}</h1>
+    <p>{t(opened ? 'Open one from Recent research, or start a new one.' : 'Your questions and their answers will appear here. Set up a model first, then ask a question.')}</p>
+    <Button onClick={() => { window.location.hash = '/' }}>{t('New research')}</Button>
+  </div></section>
+}
 
 export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; initialTab?: string; dark: boolean; onChanged: () => void }) {
   const [view, setView] = useState<ResearchView | null>(null)
@@ -465,6 +476,29 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const origin = document.activeElement
     void act(() => api.controlRun(target.id, action)).then(ok => { if (ok && action === 'resume') toRunStatus(target.id, origin) })
   }
+  // The latest answer in the thread (S10): the run writing its next version, the earlier version of the same question
+  // revision, a claim review still running, and the panels its pills and Next steps rows open.
+  const answerRun = run && run.kind === 'answer' && active && answer && run.id !== answer.run_id ? run : null
+  const latestVersion = reports[0]?.version ?? 0
+  const answerVersion = answer?.report_version ?? 0
+  const answerThread: AnswerThreadContext | undefined = answer ? {
+    writing: answerRun && answer.status === 'structurally_valid' && latestVersion > 0 ? { next: latestVersion + 1, late: answer.late_revision_status?.status === 'answering' } : null,
+    previous: (() => { const earlier = reports.find(r => r.answer.id !== answer.id && r.answer.scope_revision === answer.scope_revision && r.version < answerVersion); return earlier ? { id: earlier.answer.id, version: earlier.version } : null })(),
+    reviewPending: view.runs.some(r => r.kind === 'answer_review' && ACTIVE.has(r.status) && r.target?.answer_id === answer.id),
+    included, hasTable: (tables?.length ?? 0) > 0,
+    canNewAnswer: !busy && !active && Boolean(included || answersWithoutInclude),
+    downloadMenu: answer.status === 'structurally_valid' ? <ExportMenu icon researchId={id} report={{ answer, title: answer.report_title ?? heading, version: answerVersion }}
+      sources={view.sources} tables={tables} included={included} cited={view.counts.cited} prisma={Boolean(view.counts.flow)} /> : null,
+    // Until the Funnel panel exists (S14) the funnel opens the Sources panel, which holds the flow counts (as the rail does).
+    onPanel: (name, opener) => openPanel(name === 'funnel' ? 'sources' : name, { opener }),
+    onShowSources: (filter, opener) => { setSourceFocus(null); setSourceFilter(filter); openPanel('sources', { opener }) },
+    onRevise: () => reviseQuestion(),
+    onNewAnswer: () => { void startAnswer() },
+    onOpenReport: setOpenReportId,
+  } : undefined
+  // A notice of the answer offers "Generate a new answer" when its evidence changed or it failed validation; the button
+  // under the thread then leaves it to the notice, so the page has one.
+  const answerOffersNew = Boolean(answer && (answer.status === 'unverified_draft' || (answer.status === 'structurally_valid' && (answer.source_text_changed || answer.applicability === 'stale_selection'))))
   // The too-broad notice's Search again (R21): the rewritten question becomes the next revision, which then searches.
   const rewriteAndSearch = async (question: string, keyTerms: string | null) => {
     if (!seedSearchReady) { toast('error', t('Choose a readable PDF to guide the search.')); return }
@@ -593,7 +627,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')}
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
-        latestAnswer={answer ? <><AnswerBlock eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
+        latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
       {!answer && tableCards}
       {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
         <span className="report-artifact-preview" aria-hidden="true"><strong>{heading}</strong></span>
@@ -642,7 +676,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
          While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */
       active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
-        <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>
+        {!answerOffersNew && <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>}
         {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
         {hasAcademic && (view.search_runs.length
           ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
@@ -732,7 +766,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       description={replaceTarget ? `${t('{file} will be read in later answers and cells instead of the current file. The current file is not deleted: evidence that cites it keeps opening it.', { file: replaceTarget.file.name })} ${t(replaceTarget.impact.researches.length === 1 ? 'The source is used in {n} research;' : 'The source is used in {n} researches;', { n: replaceTarget.impact.researches.length })} ${t('{cells} evidence table cells and {quotes} answer quotes cite the current file.', { cells: replaceTarget.impact.cells, quotes: replaceTarget.impact.quotes })}` : ''}
       context={replaceTarget?.source.title} confirmLabel={t('Replace PDF')} cancelLabel={t('Cancel')} busy={busy}
       onConfirm={confirmReplacement} onOpenChange={open => { if (!open) setReplaceTarget(null) }} />
-    {olderReport && <AnswerBlock eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
+    {olderReport && <AnswerThread eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
       reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf} />}
     {openEvidenceReportId && <ReportView researchId={id} reportId={openEvidenceReportId} view={view} title={heading} dark={dark} onClose={() => setOpenEvidenceReportId(null)}
       onOpenCandidate={candidate => { setOpenEvidenceReportId(null); setCandidateSelection({ ...candidate, id: candidate.card?.id ?? candidate.id }); openPanel('cands') }}

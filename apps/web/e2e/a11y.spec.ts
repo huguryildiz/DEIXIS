@@ -1130,32 +1130,60 @@ async function expectTrapped(page: Page, dialog: Locator, step: string) {
 }
 
 // A side panel is not modal on a desktop (S7a): the thread beside it stays usable, so there is no trap to test. What is tested instead is that focus
-// moved into the panel and that every tabbable element of the panel can be reached with Tab, in order, and left again with Shift+Tab, each stop inside it.
+// moved into the panel, that Tab visits exactly the panel's tabbable controls in DOM order (the set visited is compared with the set the DOM says is
+// tabbable, not just its first and last), that Shift+Tab walks the same set back, and that Tab from the last control leaves the panel.
 async function expectReachable(page: Page, region: Locator, step: string) {
+  // The tabbable controls as the browser counts them: a radio group is one stop (the checked radio, else the first), hidden and inert ones are not.
   const where = () => region.evaluate(root => {
+    const radioStop = (el: HTMLInputElement) => {
+      const group = Array.from(root.querySelectorAll<HTMLInputElement>(`input[type="radio"]`)).filter(r => r.name === el.name && r.form === el.form)
+      return el.checked || (!group.some(r => r.checked) && group[0] === el)
+    }
     const list = Array.from(root.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, summary, [tabindex]')).filter(el =>
-      el.tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[inert], [aria-hidden="true"]') && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden')
+      el.tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[inert], [aria-hidden="true"]') && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
+      && !(el instanceof HTMLInputElement && el.type === 'radio' && !radioStop(el)))
     return { count: list.length, index: list.indexOf(document.activeElement as HTMLElement), inside: root.contains(document.activeElement) }
   })
-  expect((await where()).inside, `${step}: focus moved into the panel`).toBe(true)
-  let w = await where()
-  for (let i = 0; i < w.count + 2 && w.index < w.count - 1; i++) {
+  const start = await where()
+  expect(start.inside, `${step}: focus moved into the panel`).toBe(true)
+  const everyIndex = Array.from({ length: start.count }, (_, i) => i)
+  const visited = new Set<number>(start.index >= 0 ? [start.index] : [])
+  let w = start
+  for (let i = 0; i < start.count + 2 && w.index < w.count - 1; i++) {
     await page.keyboard.press('Tab')
     await page.waitForTimeout(25)
     w = await where()
     expect(w.inside, `${step}: Tab stop ${i + 1} is inside the panel`).toBe(true)
+    expect(w.index, `${step}: Tab stop ${i + 1} is one of the ${w.count} tabbable controls`).toBeGreaterThanOrEqual(0)
+    visited.add(w.index)
     await audit(page, `${step} reach Tab`, 'tab')
   }
   expect(w.index, `${step}: Tab reached the last of ${w.count} tabbable elements`).toBe(w.count - 1)
+  // From the last control one more Tab leaves the panel (on a desktop; the thread beside it takes the focus).
+  const last = w.index
+  await page.keyboard.press('Tab')
+  await page.waitForTimeout(25)
+  expect((await where()).inside, `${step}: Tab from the last control leaves the panel`).toBe(false)
+  // Back down from the last control: re-focus it by script (Shift+Tab from outside the panel lands wherever the page's order puts it), then walk.
+  await region.evaluate((root, wanted) => {
+    const items = Array.from(root.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, summary, [tabindex]')).filter(el =>
+      el.tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[inert], [aria-hidden="true"]') && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden')
+    items[wanted]?.focus()
+  }, last)
+  w = await where()
+  expect(w.index, `${step}: back on the last control`).toBe(last)
   for (let i = 0; i < w.count + 2 && w.index > 0; i++) {
     await page.keyboard.press('Shift+Tab')
     await page.waitForTimeout(25)
     w = await where()
     expect(w.inside, `${step}: Shift+Tab stop ${i + 1} is inside the panel`).toBe(true)
+    expect(w.index, `${step}: Shift+Tab stop ${i + 1} is one of the ${w.count} tabbable controls`).toBeGreaterThanOrEqual(0)
+    visited.add(w.index)
     await audit(page, `${step} reach Shift+Tab`, 'tab')
   }
   expect(w.index, `${step}: Shift+Tab reached the first tabbable element`).toBe(0)
-  observations.push(`${step}: ${w.count} tabbable elements, all reached by Tab and left by Shift+Tab inside the panel (a side panel is not modal)`)
+  expect([...visited].sort((x, y) => x - y), `${step}: the controls visited are the tabbable ones`).toEqual(everyIndex)
+  observations.push(`${step}: ${w.count} tabbable elements, all visited by Tab and Shift+Tab inside the panel, Tab from the last leaves it (a side panel is not modal)`)
 }
 
 // Back to the panel below by keyboard: Tab to the Back button, Enter. The panel that was below shows again with focus on the control that opened

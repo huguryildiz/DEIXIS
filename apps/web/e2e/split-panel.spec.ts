@@ -1,10 +1,10 @@
-import { expect, request as apiRequest, test, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, request as apiRequest, test, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort, readingDone } from './ports'
-import { openPanel, panel } from './panels'
+import { openPanel, panel, reportPanel, sourcePanel } from './panels'
 
 // UI parity S7a: the research page is a thread with one side panel (mockup R10/P1) instead of tabs. The URL names the
 // open panel and the old tab names stay as aliases; panels stack with Back; Full width hides the thread; Close and
@@ -57,6 +57,29 @@ const focusedName = (page: Page) => page.evaluate(() => {
   const el = document.activeElement as HTMLElement | null
   return el ? (el.getAttribute('aria-label') ?? el.textContent ?? '').trim() : ''
 })
+
+// The panel's tabbable controls as the browser orders them, where the focus is among them (-1: outside the list), and, when asked, the
+// first or last one focused first.
+const tabStops = (dialog: Locator, focus?: 'first' | 'last') => dialog.evaluate((root, which) => {
+  const list = Array.from(root.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, summary, [tabindex]')).filter(el =>
+    el.tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[inert], [aria-hidden="true"]') && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden'
+    && !(el instanceof HTMLInputElement && el.type === 'radio' && !el.checked && Array.from(root.querySelectorAll<HTMLInputElement>('input[type="radio"]')).some(r => r.name === el.name && r.checked)))
+  if (which) list[which === 'first' ? 0 : list.length - 1]?.focus()
+  return { count: list.length, index: list.indexOf(document.activeElement as HTMLElement), inside: root.contains(document.activeElement) }
+}, focus)
+// The modal dialog keeps focus in: Tab from its last control comes back to its first, Shift+Tab from the first goes to the last.
+async function expectFocusWraps(page: Page, dialog: Locator, label: string) {
+  const atLast = await tabStops(dialog, 'last')
+  expect(atLast.index, `${label}: focus is on the last of ${atLast.count} tabbable controls`).toBe(atLast.count - 1)
+  await page.keyboard.press('Tab')
+  const afterTab = await tabStops(dialog)
+  expect(afterTab.inside, `${label}: Tab from the last control stays inside the dialog`).toBe(true)
+  expect(afterTab.index, `${label}: Tab from the last control comes back to the first`).toBe(0)
+  await page.keyboard.press('Shift+Tab')
+  const afterShift = await tabStops(dialog)
+  expect(afterShift.inside, `${label}: Shift+Tab from the first control stays inside the dialog`).toBe(true)
+  expect(afterShift.index, `${label}: Shift+Tab from the first control goes to the last`).toBe(afterShift.count - 1)
+}
 
 test.describe.serial('S7a: thread and side panel', () => {
   const server = new PanelServer(nextPort(), { DEIXIS_FIXTURE_QUEUE: 'on' })
@@ -266,11 +289,24 @@ test.describe.serial('S7a: thread and side panel', () => {
       // Full width stays in the head as the mockup draws it.
       await expect(dialog.getByRole('button', { name: 'Full width' })).toBeVisible()
       await shot(phone, 's7a-phone-dialog')
-      for (let i = 0; i < 40; i++) {
-        await phone.keyboard.press(i % 7 === 6 ? 'Shift+Tab' : 'Tab')
-        expect(await phone.evaluate(() => Boolean(document.activeElement?.closest('[data-split-panel]')))).toBe(true)
-      }
+      await expectFocusWraps(phone, dialog, 'Sources')
+      // Source details stacked on Sources, then the answer's report: each dialog keeps focus in at both ends.
+      await dialog.getByRole('button', { name: 'Read abstract' }).first().click()
+      const details = sourcePanel(phone)
+      await expect(details).toBeVisible()
+      await expectFocusWraps(phone, details, 'Source details')
+      await details.getByRole('button', { name: 'Back' }).click()
       await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+      await expect(phone.locator('[data-split-panel]')).toHaveCount(0)
+      await phone.goto(`${server.url()}/#/research/${rid}`)
+      const artifact = phone.getByRole('button', { name: /Open report:/ })
+      await expect(artifact).toBeVisible({ timeout: 60_000 })
+      await artifact.click()
+      const report = reportPanel(phone)
+      await expect(report).toBeVisible()
+      await expect(report).toHaveAttribute('role', 'dialog')
+      await expectFocusWraps(phone, report, 'report')
+      await report.getByRole('button', { name: 'Close', exact: true }).click()
       await expect(phone.locator('[data-split-panel]')).toHaveCount(0)
       expect(await focusedName(phone)).not.toBe('')
     } finally { await phone.close() }

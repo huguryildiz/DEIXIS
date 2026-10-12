@@ -51,7 +51,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [view, setView] = useState<ResearchView | null>(null)
   const [titleEditing, setTitleEditing] = useState(false)
   // The question bubble turns into the revise form (R7); 'terms' opens it on the key-terms field.
-  const [revising, setRevising] = useState<false | 'question' | 'terms'>(false)
+  // The revise form, pinned to the question revision it was opened on (see saveRevision).
+  const [revising, setRevising] = useState<false | { focus: 'question' | 'terms'; revision: number }>(false)
+  const [savingRevision, setSavingRevision] = useState(false)
   const [error, setError] = useState('')
   const toast = useToast()
   // The tabs became a side panel beside the thread (R10): the URL's last segment names the open panel, old tab names included.
@@ -436,10 +438,19 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const waitingCount = view.counts.waiting_for_pdf ?? 0
   const dropForWaiting = (files: File[]) => { setWaitingFiles(files); openPanel('pdfs') }
   // Revise question turns the question bubble into the revise form (R7); Cancel and Save give focus back to the button.
-  const reviseQuestion = (focus: 'question' | 'terms' = 'question') => { setTitleEditing(false); setRevising(focus) }
+  const reviseQuestion = (focus: 'question' | 'terms' = 'question') => { setTitleEditing(false); setRevising({ focus, revision: view.research.current_scope_revision }) }
   const endRevise = () => { setRevising(false); focusWhenLost(() => reviseButton.current) }
+  // A newer question revision saved elsewhere (another window) while the form was open: the draft is kept, Save waits until
+  // the person bases the draft on that revision, so an old draft never silently replaces a newer question. While the
+  // revision is unchanged the research version may move (a rename); the backend's expected_version still refuses a change
+  // this view has not received yet.
+  const reviseConflict = revising && !savingRevision && revising.revision !== view.research.current_scope_revision ? view.research.current_scope_revision : null
   const saveRevision = async (text: string, terms: string | null) => {
-    if (await act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))) endRevise()
+    if (!revising || revising.revision !== view.research.current_scope_revision) return
+    setSavingRevision(true)
+    const saved = await act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))
+    setSavingRevision(false)
+    if (saved) endRevise()
   }
   const controlRun = (target: Run, action: 'pause' | 'resume' | 'cancel') => {
     const origin = document.activeElement
@@ -463,7 +474,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // panel that controls them.
   const mainRun = run && run.kind !== 'watch_check' && !CANDIDATE_KINDS.has(run.kind) && !TABLE_RUN_KINDS.has(run.kind)
     && (active || run.status === 'paused' || (run.status === 'failed' && TRANSCRIPT_KINDS.has(run.kind))) ? run : null
-  const hasAnswer = view.answers.some(a => a.run_id !== run?.id)
+  // "Writing a new version" only once a valid report version exists; a clarification or an unverified draft is not one.
+  const hasAnswer = reports.some(r => r.answer.run_id !== run?.id && r.answer.report_version !== null)
   // The earlier question revision and the report written for it (R12).
   const earlierRevision = view.research.current_scope_revision - 1
   const earlierReport = reports.find(r => r.answer.scope_revision === earlierRevision) ?? null
@@ -509,6 +521,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
             {panelRow('cands', 'Candidates', Lightbulb, candidateCount, 'Claims you test against the literature')}
             {panelRow('watch', 'Follow-up', Clock, followupCount.count, 'New works after this research ran')}
             <DropdownMenuSeparator />
+            {/* Temporary access to the panels until the rail opens them; S11 removes these four rows. */}
             {panelRow('sources', 'Sources', BookOpen, view.sources.length)}
             {panelRow('queue', 'Awaiting your decision', Inbox, queueCount)}
             {panelRow('pdfs', 'Get more full text', FileText, waitingCount)}
@@ -530,7 +543,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <div className="research-body thread-inner">
     {earlierRevision > 0 && <EarlierRevision key={earlierRevision} researchId={id} revision={earlierRevision} intent={view.research.intent} answer={earlierReport} onOpenReport={setOpenReportId} />}
     {revising
-      ? <RevisionForm question={view.scope.question} keyTerms={view.scope.key_terms ?? ''} nextRevision={view.research.current_scope_revision + 1} focus={revising}
+      ? <RevisionForm question={view.scope.question} keyTerms={view.scope.key_terms ?? ''} nextRevision={view.research.current_scope_revision + 1} focus={revising.focus}
+        conflict={reviseConflict} onRebase={() => setRevising(form => (form ? { ...form, revision: view.research.current_scope_revision } : form))}
         disabled={busy || active} onSubmit={(text, terms) => { void saveRevision(text, terms) }} onCancel={endRevise} />
       : <QuestionBubble question={view.scope.question} sourceScope={view.scope.source_scope} intent={view.research.intent} createdAt={view.scope.created_at} revision={view.research.current_scope_revision} />}
     {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the panel that can show it. Scope and depth close the line. */}

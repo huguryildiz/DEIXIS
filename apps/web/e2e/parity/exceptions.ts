@@ -40,11 +40,6 @@ const WARN_TONE = ['.recents svg.i.wn', '.step.att>button', '.notice.warn>svg.i'
   '.warn-t', '.qcard header b', '.stage .lost b']
 
 export const COLOUR_EXCEPTIONS: ColourException[] = [
-  // Listed before muted-text, which matches every mockup element.
-  { id: 'typed-text-is-ink', rule: '§0 rule 4 (text a person writes is body text; WCAG 1.4.3)', token: '--ink',
-    property: 'color', use: 'text', selectors: ['.q.edit textarea', '.q.edit .field'], pairs: ['revise.question', 'revise.terms'],
-    mock: { light: '#6b7280', dark: '#9aa1ab' }, approved: { light: '#1f2328', dark: '#e7e9ec' },
-    states: ['default'], note: 'The mockup\'s revise fields inherit their label\'s --muted; the question and key terms a person edits are --ink, as in the title field.' },
   { id: 'muted-text', rule: '§0 rule 4 (D5: --muted stays #5b6475; mockup --muted on --chip fails 4.5:1)', token: '--muted',
     property: 'color', use: 'text', selectors: ['*'], mock: { light: '#6b7280', dark: '#9aa1ab' }, approved: { light: '#5b6475', dark: '#9aa1ab' },
     states: ['default', 'hover', 'selected'], note: 'Metadata, captions and quiet labels, including on the chip surface.' },
@@ -155,7 +150,8 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
 
 /** Geometry axes a pair may not compare because the position follows content the slice must change: a §2.3 copy
  *  change that wraps differently, or a §2.2 placement above the element. The other axes are still checked (±2 px). */
-export type GeometryException = { id: string; rule: string; pairs: string[]; axes: Array<'x' | 'y' | 'width' | 'height'>; note: string }
+// `widths`, when given, limits the exception to those viewport widths; every other width compares all axes.
+export type GeometryException = { id: string; rule: string; pairs: string[]; axes: Array<'x' | 'y' | 'width' | 'height'>; widths?: number[]; note: string }
 export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
   { id: 'setup-rows-y', rule: '§2.3 (copy changes setup-leaves and setup-proxy) and §0 rule 2 (example-setup row)',
     pairs: ['home-first.setup-num', 'home-first.setup-num-ok', 'home-first.connect', 'home-first.ready', 'home-first.add'], axes: ['y'],
@@ -171,6 +167,9 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
   { id: 's8-menu-rows-y', rule: 'PLACEMENTS panel-menu-rows and search-again-new-answer; DEFERRED_TARGETS export-pdf-row',
     pairs: ['research-menu.trash', 'export-menu.rows'], axes: ['y'],
     note: 'Move to Trash sits below the placement rows; the Export rows after the left-out PDF row move up. x, width and height are compared.' },
+  { id: 's8-suggest-phone', rule: '§0 rule 5 (Suggest a short title has no other path; the mockup hides it at ≤820px)', widths: [390],
+    pairs: ['title-edit.row', 'title-edit.field', 'title-edit.save', 'title-edit.cancel'], axes: ['x', 'width'],
+    note: 'At 390px the rename row keeps Suggest as a 30px icon button, so the row and field are 38px narrower and Save and ✕ sit 38px to the right of the field\'s end; y and height are compared, and every axis at 1280.' },
   { id: 's8-revise-buttons-y', rule: 'PLACEMENTS key-terms-syntax', pairs: ['revise.buttons'], axes: ['y'],
     note: 'Cancel and Save revision sit below the key-terms syntax line; x, width and height are compared.' },
   { id: 'zotero-foot-buttons-y', rule: '§2.2 (placement zotero-library-source) and §2.3 (copy changes zotero-lead, zotero-account, zotero-count)',

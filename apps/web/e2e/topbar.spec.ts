@@ -259,6 +259,39 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await expect(earlier).toHaveCount(0)
   })
 
+  test('a revision saved in another window while the form is open keeps the draft and blocks Save until the draft is based on it', async () => {
+    await page.goto(`${server.url()}/#/research/${rid}`)
+    const before = await viewOf(api, rid)
+    const revision = before.research.current_scope_revision
+    await topbar(page).getByRole('button', { name: 'Revise question' }).click()
+    const form = page.getByRole('form', { name: 'Revise question' })
+    const question = form.getByRole('textbox', { name: 'Question', exact: true })
+    const draft = 'SYNTHETIC draft written while another window revised the question?'
+    await question.fill(draft)
+    // Another window saves a revision with the version this page also holds.
+    const other = 'SYNTHETIC question saved in the other window?'
+    expect((await post(api, `/api/researches/${rid}/scope`, { question: other, expected_version: before.research.version, key_terms: null })).ok()).toBe(true)
+    const conflict = form.getByRole('alert')
+    await expect(conflict).toContainText(`Revision ${revision + 1} of this question was saved in another window while you edited.`)
+    await expect(conflict).toContainText(other)
+    await expect(question).toHaveValue(draft)
+    const save = form.getByRole('button', { name: `Save revision ${revision + 2}` })
+    await expect(save).toBeDisabled()
+    // A submit that bypasses the disabled button is refused too.
+    await form.evaluate(f => (f as HTMLFormElement).requestSubmit())
+    expect((await viewOf(api, rid)).research.current_scope_revision).toBe(revision + 1)
+    await shot(page, 's8-revise-conflict')
+    await conflict.getByRole('button', { name: `Base my draft on revision ${revision + 1}` }).click()
+    await expect(conflict).toHaveCount(0)
+    await expect(question).toBeFocused()
+    await expect(question).toHaveValue(draft)
+    await save.click()
+    await expect(form).toHaveCount(0)
+    await expect(page.locator('.chat-question')).toContainText(draft)
+    const after = await viewOf(api, rid)
+    expect(after.research.current_scope_revision).toBe(revision + 2)
+  })
+
   test('the run chip follows the latest run: paused, stopped, failed, and an answer being written', async () => {
     test.setTimeout(240_000)
     // Paused by the person (the fixture asks for the pause in the read stage): amber, with Resume and Cancel.
@@ -317,7 +350,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('SYNTHETIC research for the trash row')
   })
 
-  test('at 390px the waiting chip gives way, Revise question is an icon and nothing scrolls sideways', async () => {
+  test('at 390px the waiting chip gives way, Revise question and Suggest are icons and nothing scrolls sideways', async () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto(`${server.url()}/#/research/${rid}`)
     await expect(topbar(page).locator('.wait-chip')).toBeHidden()
@@ -326,6 +359,15 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     expect((await revise.boundingBox())!.width).toBeLessThanOrEqual(31)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
     await shot(page, 's8-topbar-390')
+    // The rename row keeps Suggest a short title as an icon button (its only path), Revise question steps aside.
+    await topbar(page).locator('.research-title-button').click()
+    const suggest = topbar(page).getByRole('button', { name: 'Suggest a short title' })
+    await expect(suggest).toBeVisible()
+    expect((await suggest.boundingBox())!.width).toBeLessThanOrEqual(31)
+    await expect(revise).toBeHidden()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+    await shot(page, 's8-title-edit-390')
+    await page.keyboard.press('Escape')
     await page.setViewportSize({ width: 1280, height: 900 })
   })
 })

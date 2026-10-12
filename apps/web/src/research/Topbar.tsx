@@ -60,7 +60,7 @@ export function TitleEditRow({ title, busy, canSuggest, onSave, onCancel, onSugg
         else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel() }
       }} />
     <Button variant="ghost" size="sm" className="research-topbar-action research-title-suggest" disabled={busy || !canSuggest} onClick={onSuggest}
-      title={t('The model names the research from its question and included sources, in at most 15 words.')}><Lightbulb size={16} className="size-4" aria-hidden />{t('Suggest a short title')}</Button>
+      title={t('The model names the research from its question and included sources, in at most 15 words.')}><Lightbulb size={16} className="size-4" aria-hidden /><span className="research-topbar-label">{t('Suggest a short title')}</span></Button>
     <Button size="sm" className="research-title-save" disabled={busy || !draft.trim()} onClick={save}>{t('Save')}</Button>
     <Button variant="ghost" size="icon-sm" className="research-title-cancel" aria-label={t('Cancel')} title={t('Cancel')} onClick={onCancel}><X size={16} aria-hidden /></Button>
   </div>

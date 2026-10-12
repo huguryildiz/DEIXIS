@@ -3779,4 +3779,6 @@ const tr: Record<string, string> = {
   'RIS · {n} included source': 'RIS · dahil edilen {n} kaynak',
   'RIS · {n} included sources': 'RIS · dahil edilen {n} kaynak',
   'PRISMA-S search report': 'PRISMA-S arama raporu',
+  'Revision {n} of this question was saved in another window while you edited. Your draft is kept below.': 'Siz düzenlerken bu sorunun revizyon {n} hâli başka bir pencerede kaydedildi. Taslağınız aşağıda duruyor.',
+  'Base my draft on revision {n}': 'Taslağımı revizyon {n} üzerine kur',
 }

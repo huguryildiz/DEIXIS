@@ -448,7 +448,7 @@ async function checkItem(pair: Pair, item: Pair, m: Side, v: Variant, mock: Page
   if (out.length) return out
   if (pair.checks.includes('chrome')) {
     // A declared geometry exception (exceptions.ts) leaves out only its axes.
-    const free = new Set(GEOMETRY_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id))).flatMap(e => e.axes))
+    const free = new Set(GEOMETRY_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id)) && (!e.widths || e.widths.includes(v.width))).flatMap(e => e.axes))
     const axes = (data ? ['x', 'width', 'height'] as Axis[] : ['x', 'y', 'width', 'height'] as Axis[]).filter(a => !free.has(a))
     out.push(...checkChrome(item, m, axes))
   }

@@ -1,4 +1,4 @@
-import { type Answer, type Evidence, type Limitation, type Source } from '../api'
+import { type Answer, type Evidence, type Limitation, type Source, type Verdict } from '../api'
 import { locatorText, pageLocator, verdictLabels } from '../labels'
 import { formatReferenceText, type CitationStyle } from '../citations'
 import { OCR_LABEL } from '../ocr'
@@ -6,6 +6,9 @@ import { t } from '../i18n'
 
 // The report of a valid answer as parts and as a Markdown file. The report panel (Copy, Download) and the topbar Export
 // menu (UI parity S8) write the same file. Split from AnswerBlock.tsx.
+
+// A claim review's tone (mockup `.badge-s`): supported green, partly supported amber, not supported red, cannot assess plain.
+export const verdictTones: Record<Verdict, string> = { supported: 'ok', partially_supported: 'part', not_supported: 'bad', cannot_assess: 'plain' }
 
 function reportFilename(title: string, version: number) {
   const base = title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 80)

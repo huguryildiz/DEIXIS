@@ -10,7 +10,7 @@ import type { FixtureContext } from './gates'
 export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
 export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog' | 'research-panel' | 'palette' | 'keys'
-  | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty'
+  | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty' | 'report-panel' | 'cite-panel' | 'detail-panel'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -121,6 +121,19 @@ export const SURFACES: Surface[] = [
   { id: 'research', mock: "setScenario('ok')", app: '#/research/{research}', ready: '.research-topbar' },
   // The research page with one side panel open (S7a, R10/P1): the Sources panel, opened fresh.
   { id: 'research-panel', mock: "setScenario('ok'); openPanel('sources', 'cited', false)", app: '#/research/{research}/sources', ready: '[data-split-panel] #split-panel-title' },
+  // S12: the report panel (P2/P3), the Citation panel (P11) and Source details (P12-P20). The mockup's report has two
+  // versions as the fixture's research has. The app opens the Citation panel from the fourth chip of the thread (the
+  // first claim that cites a PDF page, as the mockup's cob22 is a PDF work) and Source details from that entry.
+  { id: 'report-panel', mock: "setScenario('ok'); st.version = 2; st.viewVer = 2; openPanel('report')", app: '#/research/{research}', ready: '.research-topbar',
+    appAct: async page => { await page.locator('#research-answer').click(); await page.locator('.report-document-head h1').waitFor() } },
+  { id: 'cite-panel', mock: "setScenario('ok'); openPanel('cite', 'cob22')", app: '#/research/{research}', ready: '.research-topbar',
+    appAct: async page => { await page.locator('.answer-thread .answer-prose .cite-chip').nth(3).click(); await page.locator('.cite-entry .quote mark').waitFor() } },
+  { id: 'detail-panel', mock: "setScenario('ok'); openPanel('cite', 'cob22'); openPanel('detail', 'cob22')", app: '#/research/{research}', ready: '.research-topbar',
+    appAct: async page => {
+      await page.locator('.answer-thread .answer-prose .cite-chip').nth(3).click()
+      await page.locator('.cite-entry .rowacts button').first().click()
+      await page.locator('.source-detail .docnav').waitFor()
+    } },
   { id: 'zotero', mock: "setScenario('ok'); go('home'); zoteroDlg('home')", app: '#/', ready: '.zotero-dialog .zotero-cols label',
     prepare: page => page.route('**/api/zotero/collections**', route => route.fulfill({ json: { source: 'local', collections: ZOTERO_COLLECTIONS } })),
     open: async page => {
@@ -519,6 +532,54 @@ export const PAIRS: Pair[] = [
   { id: 'panel.thread', surface: 'research-panel', mock: '.thread-inner', app: '.thread-inner', checks: ['content'], widths: DESK, status: 'active' },
   { id: 'panel.thread@1024', surface: 'research-panel', mock: '.thread-inner', app: '.thread-inner', checks: [], widths: [], breakpoint: true,
     status: 'pending:S1', why: 'S1: sidebar 256px at 1024 (app 224px), then the thread beside the panel is 338px as in the mockup' },
+  // S12 report panel (P2/P3). The head: the title, Version, Citation style, Review with another model, Download. They
+  // are compared at 1280 only: at 390 the mockup's head runs past the screen's edge (its controls are not hidden there and
+  // its title shrinks to nothing), so it has no phone layout to match; a11y.spec checks the app's head at 390.
+  { id: 'report-panel.title', surface: 'report-panel', widths: DESK, mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['type', 'colour', 'icon'],
+    icon: { mock: 'doc', app: 'text-align-start' }, states: [], status: 'active' },
+  { id: 'report-panel.version', surface: 'report-panel', widths: DESK, mock: '.panel .p-head select[data-ver]', app: '.split-panel-head .report-select[aria-label="Version"]', checks: ['type'], unordered: true, states: [], status: 'active' },
+  { id: 'report-panel.style', surface: 'report-panel', widths: DESK, mock: '.panel .p-head select[data-cstyle]', app: '.split-panel-head .report-select[aria-label="Citation style"]', checks: ['type'], unordered: true, states: [], status: 'active' },
+  { id: 'report-panel.review', surface: 'report-panel', widths: DESK, mock: '.panel .p-head [data-act="review"]', app: '.split-panel-head .report-review', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'shield', app: 'shield-check' }, states: ['hover'], unordered: true, status: 'active' },
+  { id: 'report-panel.download', surface: 'report-panel', widths: DESK, mock: '.panel .p-head [data-menu="rexport"]', app: '.split-panel-head .report-download', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'dl', app: 'download' }, states: ['hover'], unordered: true, status: 'active' },
+  // The document: the serif title, the meta line, the section headings, the claim badges, the references, the check line.
+  { id: 'report-panel.h1', surface: 'report-panel', mock: '.report h1', app: '.report-document-head h1', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'report-panel.meta', surface: 'report-panel', mock: '.report .meta', app: '.report-document-head .meta', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'report-panel.h2', surface: 'report-panel', mock: '.report h2', app: '.report-content h2', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'report-panel.badge-abs', surface: 'report-panel', mock: '.report .badge-s.v-abs', app: '.report-content .badge-s.v-abs', checks: ['type', 'colour'], text: true, unordered: true, states: [], status: 'active' },
+  { id: 'report-panel.refs', surface: 'report-panel', mock: '.report .refs li', app: '.report-content .refs > li', checks: ['type'], states: [], status: 'active' },
+  { id: 'report-panel.check', surface: 'report-panel', mock: '.report .check', app: '.report-content .check', checks: ['type', 'colour'], states: [], status: 'active' },
+  // S12 Citation panel (P11): one entry per cited passage.
+  { id: 'cite-panel.title', surface: 'cite-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'link', app: 'link' }, text: true, states: [], status: 'active' },
+  { id: 'cite-panel.entry', surface: 'cite-panel', mock: '.cit article', app: '.cite-entry', checks: ['colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'cite-panel.venue', surface: 'cite-panel', mock: '.cit .venue', app: '.cite-entry .venue', checks: ['type', 'colour', 'icon'], icon: { mock: 'file', app: 'file-text' }, states: [], status: 'active' },
+  { id: 'cite-panel.work', surface: 'cite-panel', mock: '.cit h3', app: '.cite-entry h3', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'cite-panel.authors', surface: 'cite-panel', mock: '.cit .au', app: '.cite-entry .au', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'cite-panel.quote', surface: 'cite-panel', mock: '.cit .quote', app: '.cite-entry .quote', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'cite-panel.mark', surface: 'cite-panel', mock: '.cit .quote mark', app: '.cite-entry .quote mark.citation-highlight', checks: ['colour'], states: [], status: 'active' },
+  { id: 'cite-panel.loc', surface: 'cite-panel', mock: '.cit .loc', app: '.cite-entry .loc', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'cite-panel.located', surface: 'cite-panel', mock: '.cit .loc .ok-t', app: '.cite-entry .loc .ok-t', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'cite-panel.actions', surface: 'cite-panel', mock: '.cit .rowacts button', app: '.cite-entry .rowacts button', checks: ['type', 'colour', 'icon'], list: 'fixed',
+    icon: [{ mock: 'doc', app: 'text-align-start' }, { mock: 'file', app: 'file-text' }], states: [], status: 'active' },
+  // S12 Source details (P12-P20): the work, where it stands, the action row, the tabs, the cited place, the foot.
+  { id: 'detail-panel.title', surface: 'detail-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'file', app: 'file-text' }, text: true, states: [], status: 'active' },
+  { id: 'detail-panel.back', surface: 'detail-panel', mock: '.panel .p-head [data-act="back"]', app: '.split-panel-head [aria-label="Back"]', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'left', app: 'chevron-left' }, unordered: true, states: [], status: 'active' },
+  { id: 'detail-panel.venue', surface: 'detail-panel', mock: '.detail .dhead .venue', app: '.source-detail .dhead .venue', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'detail-panel.work', surface: 'detail-panel', mock: '.detail h1', app: '.source-detail .dhead .source-title', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'detail-panel.authors', surface: 'detail-panel', mock: '.detail .dhead .au', app: '.source-detail .dhead .au', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'detail-panel.pills', surface: 'detail-panel', mock: '.detail .dhead .pill', app: '.source-detail .dhead .pills .ref-pill', checks: ['type', 'colour'], list: 'data', expected: () => 2, states: [], status: 'active' },
+  { id: 'detail-panel.dmeta', surface: 'detail-panel', mock: '.detail .dmeta', app: '.source-detail .dmeta', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'detail-panel.primary', surface: 'detail-panel', mock: '.detail .dacts .btn-pri', app: '.source-detail .dacts .btn-pri', checks: ['type', 'colour', 'icon'], text: true,
+    icon: { mock: 'file', app: 'file-text' }, states: ['hover'], status: 'active' },
+  { id: 'detail-panel.icons', surface: 'detail-panel', mock: '.detail .dacts .ib', app: '.source-detail .dacts .ib', checks: ['colour', 'icon'], list: 'fixed', text: false,
+    icon: [{ mock: 'link', app: 'link' }, { mock: 'copy', app: 'copy' }, { mock: 'more', app: 'ellipsis' }], states: [], status: 'active' },
+  { id: 'detail-panel.tabs', surface: 'detail-panel', mock: '.detail .tabs button', app: '.source-detail [role=tablist] [role=tab]', checks: ['type'], list: 'fixed', states: [], status: 'active' },
+  { id: 'detail-panel.docnav', surface: 'detail-panel', mock: '.detail .docnav', app: '.source-detail .docnav', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'detail-panel.foot', surface: 'detail-panel', mock: '.detail > p.foot-note:last-child', app: '.source-detail .source-sheet-foot', checks: ['type', 'colour'], states: [], status: 'active' },
 ]
 
 /** Pending pairs per slice, for the summary line. */

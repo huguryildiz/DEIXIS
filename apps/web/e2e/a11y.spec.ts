@@ -2138,7 +2138,7 @@ test.describe.serial('X06: reduced motion and the 200% layout', () => {
       await artifact.click()
       const report = reportPanel(page)
       await expect(report).toBeVisible()
-      await layout(page, log, 'answer report panel', { Close: report.getByRole('button', { name: 'Close' }), Copy: report.getByRole('button', { name: 'Copy' }), Download: report.getByRole('button', { name: 'Download' }), 'citation chip': report.locator('.cite-chip'), 'reference button': report.locator('.reference-list li').first().getByRole('button') })
+      await layout(page, log, 'answer report panel', { Close: report.getByRole('button', { name: 'Close' }), 'Download report': report.getByRole('button', { name: 'Download report' }), 'Review with another model': report.getByRole('button', { name: /^Review with another model/ }), 'citation chip': report.locator('.cite-chip'), 'reference button': report.locator('.reference-list li').first().getByRole('button') })
       await report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule release scheduling with bisection' }).getByRole('button').click()
       const sheet = sourcePanel(page)
       await expect(sheet.locator('mark.citation-highlight')).toBeVisible()

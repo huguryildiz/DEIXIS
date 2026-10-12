@@ -380,3 +380,114 @@
 }
 /* A row's count follows its name, so the detail line sets the menu's width (mockup `.menu`, 250px). */
 [data-slot=dropdown-menu-item] .research-tab-count{margin-left:2px}
+/* UI parity S12: the report, Citation and Source details panels (mockup `.report`, `.cit`, `.pad.detail`; P2, P3,
+   P11-P20). Scoped to the panels: the evidence report sheet (report/ReportView.tsx) keeps its own head. */
+.split-panel :is(.ib){position:relative;display:grid;flex:none;place-items:center;width:30px;height:30px;border-radius:7px;color:var(--muted)}
+.split-panel .ib:hover{background:var(--hover-surface);color:var(--ink)}
+.split-panel .ib[aria-pressed=true]{background:var(--accent-tint);color:var(--accent)}
+.split-panel .ib:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.split-panel .ib:disabled{opacity:.45;cursor:default}
+.split-panel .ib .ib-count{position:absolute;top:1px;right:0;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:var(--accent);color:var(--paper);font-size:9.5px;font-weight:600;line-height:14px;text-align:center}
+.report-toolbar-actions [data-slot=select-trigger].report-select{width:auto;height:auto;min-height:0;gap:4px;margin-right:0;padding:4px 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12.5px;line-height:normal;box-shadow:none}
+/* The answer report's head keeps the mockup's 6px between its controls. */
+.split-panel-actions .report-toolbar-actions:has(.report-review){gap:6px}
+.report-toolbar-actions [data-slot=select-trigger].report-select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@container report-sheet (max-width:520px){.report-toolbar-actions [data-slot=select-trigger].report-select{display:none}}
+/* The document head: the serif title, then one meta line (mockup `.report .meta`). */
+.report-panel .report-document-head{display:block;height:auto;margin:0;padding:0;border:0}
+.report-panel .report-document-head h1{margin:0 0 6px;font-size:27px}
+.report-panel .report-document-head .meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 18px;color:var(--muted);font-size:12.5px;line-height:1.65}
+.report-panel .report-content h2{margin:24px 0 8px;color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:600;line-height:1.65;letter-spacing:0}
+.report-panel .report-content .refs>li{font-size:13px;line-height:1.5}
+.report-panel .report-content .check{line-height:1.65}
+.report-panel .report-content .answer-section:first-of-type h2{margin-top:0}
+.report-panel .report-content .gap{margin:0 0 12px;padding:2px 0 2px 12px;border-left:3px solid var(--tone-uncertain);color:var(--ink-2)}
+/* A claim's marks (mockup `.badge-s`): the review's verdict, an interpretation, the reading depth of what it cites. */
+.split-panel .badge-s,.report-sheet .badge-s{display:inline-flex;align-items:center;gap:4px;margin-left:4px;padding:1px 5px;border:0;border-radius:4px;background:var(--ui-accent);color:var(--muted);font-family:var(--font-sans);font-size:10.5px;font-weight:500;line-height:normal;letter-spacing:0;white-space:nowrap;vertical-align:1px}
+.report-panel .report-document-head .badge-s{margin-left:0;vertical-align:0}
+.split-panel .badge-s svg,.report-sheet .badge-s svg{flex:none;width:11px;height:11px}
+.split-panel .badge-s.v-ok,.report-sheet .badge-s.v-ok{background:var(--ok-surface);color:var(--ok-ink)}
+.split-panel .badge-s.v-part,.report-sheet .badge-s.v-part{background:var(--warn-surface);color:var(--warn-ink)}
+.split-panel .badge-s.v-bad,.report-sheet .badge-s.v-bad{background:var(--error-surface);color:var(--error-ink)}
+.split-panel .badge-s.v-full,.report-sheet .badge-s.v-full{color:var(--accent)}
+.report-panel .report-content .claim .cite-chip+.badge-s,.report-panel .report-content .claim>.badge-s:first-of-type{margin-left:4px}
+/* The structural check line with the cited sources' files (mockup `.check`: "Export cited: .bib .ris"). */
+.report-panel .report-content .check .export-links{display:inline-flex;align-items:baseline;gap:4px;height:auto;border:0;border-radius:0;background:none;overflow:visible;vertical-align:baseline}
+.report-panel .report-content .check .export-links-label{gap:0;padding:0;font-size:inherit;font-weight:400}
+.report-panel .report-content .check .export-links-label svg{display:none}
+.report-panel .report-content .check .export-links-label::after{content:":"}
+.report-panel .report-content .check .export-formats{gap:4px;border:0}
+.report-panel .report-content .check .export-links a{padding:0 5px;border:0;border-radius:4px;background:var(--hover-surface);color:var(--muted);font-size:11.5px;font-weight:400}
+.report-panel .report-content .check .export-links a:hover{background:var(--selected-surface);color:var(--ink)}
+/* Neutral pills inside the panels, as inside the sheets: grey text on a hairline, the depth or version as a dot. */
+.split-panel-content .ref-pill{gap:5px;padding:0 6px;border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);font-size:11.5px;font-weight:400;line-height:19px}
+.split-panel-content .ref-pill>svg{display:none}
+.split-panel-content .ref-pill:is(.is-abstract,.is-text,.is-ocr,.is-published,.is-accepted,.is-submitted,.is-removed,.is-cited,.is-similarity)::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pill)}
+.split-panel-content .pills,.source-sheet .pills{display:flex;flex-wrap:wrap;gap:5px}
+.split-panel-content .pill:not(.ref-pill),.source-sheet .pill:not(.ref-pill){display:inline-flex;align-items:center;gap:4px;padding:0 6px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:11.5px;line-height:19px;white-space:nowrap}
+.split-panel-content .pill.ok,.source-sheet .pill.ok{color:var(--tone-include)}
+.split-panel-content .pill.warn:not(.ref-pill),.source-sheet .pill.warn:not(.ref-pill){color:var(--tone-uncertain)}
+.split-panel-content .pill svg{flex:none;width:12px;height:12px}
+/* Citation panel (mockup `.cit`): one entry per cited passage. */
+.split-panel-content.cite-panel{padding:0;font-size:13px;line-height:1.6}
+.cite-panel .cite-entry{display:grid;gap:4px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.cite-panel .venue{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;line-height:1.5}
+.cite-panel .venue svg{flex:none;width:16px;height:16px}
+.cite-panel h3{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:14px;font-weight:500;line-height:1.4;letter-spacing:0}
+.cite-panel h3 button{text-align:left}
+.cite-panel h3 button:hover{color:var(--accent)}
+.cite-panel .au{color:var(--muted);font-size:12.5px;line-height:1.5}
+.cite-panel .quote{margin:6px 0 0;padding:2px 0 2px 12px;border-left:2px solid var(--strong-line);color:var(--ink-2);font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+.cite-panel .loc{display:flex;flex-wrap:wrap;gap:0 8px;margin-top:4px;color:var(--muted);font-size:11.5px;line-height:1.5}
+.cite-panel .loc>span+span::before{content:"·";margin-right:8px;color:var(--faint)}
+.cite-panel .loc .ok-t{color:var(--tone-include)}
+.cite-panel .loc .warn-t{color:var(--tone-uncertain)}
+.cite-panel .rowacts{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px;font-size:12px;line-height:1.5}
+.cite-panel .rowacts button{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font-weight:500}
+.cite-panel .rowacts button:hover{text-decoration:underline;text-underline-offset:2px}
+.cite-panel .rowacts button svg{width:12px;height:12px}
+.cite-chip.thread-cite.is-on{background:var(--accent-tint);color:var(--accent)}
+.cite-panel mark.citation-highlight{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
+/* Source details (mockup `.pad.detail`): the work, where it stands, one primary action, the tabs and their views. */
+.split-panel .source-panel .sheet-body.source-detail,.detail-sheet.source-sheet .sheet-body.source-detail{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:10px}
+.source-detail>*{margin-top:0;margin-bottom:0}
+.source-detail .dhead{display:grid;gap:4px}
+.source-detail .dhead .venue{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.source-detail .dhead .venue i{font-size:12px}
+.source-sheet .source-detail h3.source-title{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:17px;font-weight:600;line-height:1.35;letter-spacing:-.1px;text-wrap:balance}
+.source-sheet .source-detail .source-byline{margin:0;font-size:12.5px;line-height:1.5}
+.source-detail .dhead .pills{margin-top:4px}
+.source-detail .dmeta{display:flex;flex-wrap:wrap;gap:0 6px;margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+.source-detail .dmeta>span+span::before{content:"·";margin-right:6px;color:var(--faint)}
+.source-detail .dmeta .is-included{color:var(--tone-include)}
+.source-detail .dmeta .is-excluded{color:var(--tone-exclude)}
+.source-detail .dmeta .is-pending{color:var(--tone-uncertain)}
+.source-detail .dacts{display:flex;flex-wrap:nowrap;align-items:center;gap:2px}
+.source-detail .dacts .ib{position:relative;display:grid;flex:none;place-items:center;width:30px;height:30px;border-radius:7px;color:var(--muted)}
+.source-detail .dacts .ib:hover{background:var(--hover-surface);color:var(--ink)}
+.source-detail .btn-pri{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:7px;background:var(--accent-deep);color:#fff;font-size:13px;font-weight:500;line-height:1.5;white-space:nowrap}
+.source-detail .btn-pri:hover:not(:disabled){background:color-mix(in srgb,var(--accent-deep),#000 14%)}
+.source-detail .btn-pri:disabled{opacity:.5}
+.source-detail .btn-pri svg{flex:none;width:16px;height:16px}
+.source-detail .dacts .btn-pri{margin-right:6px}
+.source-detail .find-block{margin:0}
+.source-detail .find-block .pdf-search-spin{flex:none;margin-top:2px;color:var(--accent)}
+.source-detail .find-block .btn-link{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:13px;text-decoration:none}
+.source-detail .source-view-tabs{margin:0;padding:0}
+.source-detail .source-view-tabs [role=tab]{font-weight:400;line-height:1.5}
+.source-detail .source-notice{margin:0}
+.source-detail .docnav{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px;padding:2px 4px 2px 10px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;line-height:1.5}
+.source-detail .docnav .spacer{flex:1}
+.source-detail .docnav>span:last-child{padding-right:6px}
+.source-detail .source-page-link{display:inline-flex;align-items:center;gap:5px;margin-top:10px;color:var(--accent);font-size:12.5px;font-weight:500}
+.source-detail .abstract{color:var(--ink-2);font-size:13.5px;line-height:1.65}
+.source-detail .foot-note{margin:0;color:var(--muted);font-size:12px}
+.source-detail .source-sheet-foot{display:block;flex:none;padding:0;border:0;font-size:13px;line-height:1.5}
+.source-detail .source-sheet-foot>span+span::before{content:" · ";margin:0}
+.source-detail .source-empty{display:grid;place-items:center;padding:24px 0;text-align:center}
+.source-detail .source-empty>div{display:grid;justify-items:center;gap:10px;max-width:380px}
+.source-detail .source-empty>div>svg{width:22px;height:22px;color:var(--muted)}
+.source-detail .source-empty h2{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:16px;font-weight:600;line-height:1.4;letter-spacing:0}
+.source-detail .source-empty p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.55}
+.source-detail .source-empty .acts{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+.source-detail .source-empty .acts [data-slot=button]{height:30px;gap:6px;padding-inline:10px;border-color:var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:13px;font-weight:400}

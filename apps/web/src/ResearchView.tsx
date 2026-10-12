@@ -29,6 +29,7 @@ import { FlowBlock } from './FlowReport'
 import { WaitingForPdf } from './WaitingForPdf'
 import { EnglishQuestion, UploadedTextNote } from './SemanticNotes'
 import { AnswerThread, type AnswerThreadContext } from './research/AnswerThread'
+import { CitationPanel, type CitationOpen } from './research/CitationPanel'
 import { ActivityLog } from './research/ActivityLog'
 import { TableCard } from './research/ArtifactsTab'
 import { Rail } from './research/Rail'
@@ -77,7 +78,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const railWide = useRailWide()
   const [candidateCount, setCandidateCount] = useState<number | null>(null)
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null)
-  const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean; reportCitation?: boolean } | null>(null)
+  // `view`: the tab Source details opens on (the Citation panel's Show in the PDF); `find`: start the open-copy lookup there.
+  const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean; reportCitation?: boolean; view?: 'text' | 'pdf'; find?: boolean } | null>(null)
+  // The claim of the latest answer whose citations the Citation panel shows (P11).
+  const [citeClaimId, setCiteClaimId] = useState<string | null>(null)
   const [pdfTarget, setPdfTarget] = useState<{ assetId: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [events, setEvents] = useState<ActivityEvent[]>([])
@@ -325,10 +329,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       toast(next.file_restore ? fileRestoreTone(next.file_restore) : 'success', [t('PDF attached to this source. Its text was extracted page by page (no OCR).'), fileRestoreNote(next.file_restore)].filter(Boolean).join(' '))
     }
   })
+  // Whether the lookup finished (Source details then reads its recorded answers).
   const discoverPdf = async (source: Source) => {
     setPdfFinding(source.source_version_id)
-    try { await api.discoverPdf(id, source.source_version_id); await load(); onChanged() }
-    catch (e) { toast('error', errorText(e)) }
+    try { await api.discoverPdf(id, source.source_version_id); await load(); onChanged(); return true }
+    catch (e) { toast('error', errorText(e)); return false }
     finally { setPdfFinding(null) }
   }
   const chooseSourcePdf = (source: Source) => { setAttachTarget(source.source_version_id); sourceFileInput.current?.click() }
@@ -488,6 +493,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // revision, a claim review still running, and the panels its pills and Next steps rows open.
   const answerRun = run && run.kind === 'answer' && active && answer && run.id !== answer.run_id ? run : null
   const latestVersion = reports[0]?.version ?? 0
+  // The report panel's version select lists every valid report of the research (V1, V2 …).
+  const reportVersions = reports.map(r => ({ id: r.answer.id, version: r.version })).sort((a, b) => a.version - b.version)
+  const citeClaim = answer && citeClaimId ? answer.claims.find(c => c.id === citeClaimId) ?? null : null
+  const openCitation = (target: CitationOpen) => setPassageTarget({ passageId: target.passageId, highlightText: target.anchor, fromCitation: true, view: target.view, find: target.find })
   const answerVersion = answer?.report_version ?? 0
   const answerThread: AnswerThreadContext | undefined = answer ? {
     writing: answerRun && answer.status === 'structurally_valid' && latestVersion > 0 ? { next: latestVersion + 1, late: answer.late_revision_status?.status === 'answering' } : null,
@@ -503,6 +512,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     onRevise: () => reviseQuestion(),
     onNewAnswer: () => { void startAnswer() },
     onOpenReport: setOpenReportId,
+    citing: citeClaimId,
+    onCite: claim => setCiteClaimId(claim.id),
   } : undefined
   // A notice of the answer offers "Generate a new answer" when its evidence changed or it failed validation; the button
   // under the thread then leaves it to the notice, so the page has one.
@@ -636,7 +647,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')}
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
-        latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
+        latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
+          versions={reportVersions} latestVersion={latestVersion} onVersion={setOpenReportId} />{tableCards}</> : null} />
       {!answer && tableCards}
       {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
         <span className="report-artifact-preview" aria-hidden="true"><strong>{heading}</strong></span>
@@ -777,12 +789,18 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       onConfirm={confirmReplacement} onOpenChange={open => { if (!open) setReplaceTarget(null) }} />
     {olderReport && <AnswerThread eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
       reviewPending={view.runs.some(r => r.kind === 'answer_review' && ACTIVE.has(r.status) && r.target?.answer_id === olderReport.answer.id)}
-      reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf} />}
+      reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf}
+      versions={reportVersions} latestVersion={latestVersion} onVersion={setOpenReportId} />}
     {openEvidenceReportId && <ReportView researchId={id} reportId={openEvidenceReportId} view={view} title={heading} dark={dark} onClose={() => setOpenEvidenceReportId(null)}
       onOpenCandidate={candidate => { setOpenEvidenceReportId(null); setCandidateSelection({ ...candidate, id: candidate.card?.id ?? candidate.id }); openPanel('cands') }}
       onOpenCitation={(passageId, highlightText, expectHighlight) => setPassageTarget({ passageId, highlightText, fromCitation: expectHighlight, reportCitation: true })}
       onChanged={async () => { await load(); onChanged() }} />}
-    <PassageSheet asPanel={!passageTarget?.reportCitation} researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : 'text'} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} citationLabels={passageTarget?.reportCitation ? { marked: t('Exact text cited in this report'), mark: t('Exact text cited in this report'), unmarked: t('This report citation has no located text anchor, so its passage opens without a mark.') } : undefined} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
+    <CitationPanel researchId={id} claim={citeClaim} sources={view.sources} onClose={() => setCiteClaimId(null)} onOpen={openCitation} />
+    <PassageSheet asPanel={!passageTarget?.reportCitation} researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : passageTarget?.view ?? 'text'}
+      findOnOpen={Boolean(passageTarget?.find)} latestAnswer={answer?.status === 'structurally_valid' ? { version: answerVersion, claims: answer.claims } : null}
+      actions={passageTarget?.reportCitation ? undefined : { busy, finding: pdfFinding, onFind: discoverPdf, onAttach: chooseSourcePdf, onReplace: chooseReplacement,
+        onRemove: source => { void askRemoval([source.source_version_id]) }, onReextract: (source, assetId) => { void reextract(source, assetId) }, onRereadEquations: (source, assetId) => { void rereadEquations(source, assetId) },
+        ocr: { tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } } }} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} citationLabels={passageTarget?.reportCitation ? { marked: t('Exact text cited in this report'), mark: t('Exact text cited in this report'), unmarked: t('This report citation has no located text anchor, so its passage opens without a mark.') } : undefined} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
       onRestoreSource={svid => { setPassageTarget(null); void act(() => api.restoreSources(id, [svid]), t('Restored to this research.')) }} />
   </section></PanelStackContext.Provider>
 }

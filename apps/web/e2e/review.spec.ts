@@ -110,7 +110,8 @@ async function reportFixture(page: Page, held = false): Promise<Target> {
   return { rid, kind: 'report', id, readReport }
 }
 async function openReviews(page: Page) {
-  const toggle = sheet(page).getByRole('button', { name: /^Reviews/ })
+  // The answer's report names its toggle "Review with another model" (S12, mockup P2); the evidence report keeps "Reviews".
+  const toggle = sheet(page).getByRole('button', { name: /^Reviews/ }).or(sheet(page).locator('button.report-review'))
   if (await toggle.getAttribute('aria-pressed') !== 'true') await toggle.click()
   await expect(pane(page).getByRole('heading', { name: 'Review by another model', exact: true })).toBeFocused()
 }

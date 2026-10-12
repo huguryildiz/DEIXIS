@@ -143,13 +143,16 @@ test.describe.serial('S10: the answer in the thread', () => {
       return `${c.evidence[0].source_key}${others > 0 ? ` +${others}` : ''}`
     })
     await expect(chips).toHaveText(labels)
-    // The chip opens the first cited passage at its located anchor, in Source details: the passage the claim's first
-    // evidence names, with that evidence's anchor text marked.
+    // The chip opens the Citation panel (S12, P11); its first entry opens the first cited passage at its located anchor,
+    // in Source details: the passage the claim's first evidence names, with that evidence's anchor text marked.
     const firstEvidence = shown.find(c => c.evidence.length)!.evidence[0]
     expect(firstEvidence.anchor_text).toBeTruthy()
-    const opened = page.waitForRequest(r => new URL(r.url()).pathname.startsWith(`/api/researches/${rid}/passages/`))
     await chips.first().click()
-    expect(new URL((await opened).url()).pathname).toBe(`/api/researches/${rid}/passages/${firstEvidence.passage_id}`)
+    const cite = panel(page, 'Citation')
+    await expect(cite.locator('.cite-entry').first()).toBeVisible()
+    const opened = page.waitForRequest(r => new URL(r.url()).pathname === `/api/researches/${rid}/passages/${firstEvidence.passage_id}`)
+    await cite.locator('.cite-entry').first().locator('.rowacts button').first().click()
+    await opened
     const source = sourcePanel(page)
     await expect(source).toBeVisible()
     const mark = source.locator('mark.citation-highlight').first()

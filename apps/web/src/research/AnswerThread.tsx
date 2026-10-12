@@ -1,7 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { ArrowUp, ArrowUpRight, BadgeCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, PencilLine, RotateCw, ScanText, Sigma, Quote, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
+import { ArrowUp, ArrowUpRight, BadgeCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { type Answer, type Claim, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
 import { locatorText, pauseReasonText, verdictLabels, versionText, versionTones } from '../labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../labels'
@@ -11,8 +10,7 @@ import { useReviewList } from '../review/useReviewList'
 import { useToast } from '../Toast'
 import { ModelName } from '../ModelName'
 import { useModelText } from '../modelText'
-import { Option } from '../Home'
-import { citationStyles, formatReference, useCitationStyle, type CitationStyle } from '../citations'
+import { formatReference, useCitationStyle } from '../citations'
 import { OCR_LABEL } from '../ocr'
 import { t, uiLocale } from '../i18n'
 import { SourceKey } from '../SourceKey'
@@ -20,13 +18,14 @@ import { Notice } from '../Notice'
 import { AnswerFlowNote } from '../FlowReport'
 import { MethodBox } from '../MethodBox'
 import { ExportLinks } from './ExportMenu'
-import { ReportSheet } from './ReportSheet'
-import { downloadReportMarkdown, reportMarkdown, reportParts } from './reportMarkdown'
+import { ReportPanel, type ReportVersion } from './ReportPanel'
+import { downloadReportMarkdown, reportMarkdown, reportParts, verdictTones } from './reportMarkdown'
 
 // The latest answer in the thread (mockup `answerBlock()`, R22-R29): the notices of its state, the report card (or the
 // live card while a new version is written), the first paragraphs of its claims with their citations, the Methods box,
 // the action pills and the Next steps box. Every number is the answer's own stored record or the view's count. The full
-// report opens as a side panel (ReportSheet); an older version opens the same panel without the thread part.
+// report opens as a side panel (ReportPanel); an older version opens the same panel without the thread part. A claim's
+// citation chip in the thread opens the Citation panel (P11), which lists what the claim cites.
 
 async function writeClipboard(text: string) {
   if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text)
@@ -60,6 +59,9 @@ export type AnswerThreadContext = {
   onRevise: () => void
   onNewAnswer: () => void
   onOpenReport: (answerId: string) => void
+  // The Citation panel of one claim (P11): its chip is on while that claim's citations are open.
+  citing: string | null
+  onCite: (claim: Claim, opener: HTMLElement) => void
 }
 
 // A notice in the mockup's `.notice` form: an icon, the sentences, then the actions.
@@ -85,10 +87,11 @@ function citedWorks(answer: Answer) {
   return new Set(answer.claims.flatMap(c => c.evidence.map(e => e.work_id))).size
 }
 
-export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, runActive, thread, reviewPending = false }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; runActive: boolean; thread?: AnswerThreadContext; reviewPending?: boolean }) {
+// versions: the question's valid reports, newest first, for the report panel's version select; latestVersion marks an
+// earlier version in the report's meta line.
+export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, runActive, thread, reviewPending = false, versions = [], latestVersion = version, onVersion }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; runActive: boolean; thread?: AnswerThreadContext; reviewPending?: boolean; versions?: ReportVersion[]; latestVersion?: number; onVersion?: (answerId: string) => void }) {
   const modelText = useModelText()
   const [style, chooseStyle] = useCitationStyle()
-  const [copied, setCopied] = useState(false)
   const toast = useToast()
   const [reviewMode, setReviewMode] = useState(false)
   const [requestReview, setRequestReview] = useState(false)
@@ -152,55 +155,54 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   const numeric = style === 'ieee'
   const markdown = () => reportMarkdown(answer, sources, title, version, style)
   const copyReport = async () => {
-    try { await writeClipboard(markdown()); setCopied(true); toast('success', t('Report copied to clipboard.')) }
+    try { await writeClipboard(markdown()); toast('success', t('Report copied to clipboard.')) }
     catch { toast('error', t('Could not copy the report.')) }
   }
   const downloadReport = () => downloadReportMarkdown(answer, sources, title, version, style)
+  // A claim's marks after its citations (mockup `.badge-s`, P3): the claim review's verdict, an interpretation, and the
+  // reading depth of the passages it cites (From abstract, Full text; both when it cites both).
+  const badges = (claim: Claim) => <>
+    {claim.review && <span className={`badge-s review-badge v-${verdictTones[claim.review.verdict]}`} title={t('Reviewer: {reason}', { reason: claim.review.reason })}>{t(verdictLabels[claim.review.verdict])}</span>}
+    {claim.support_type === 'analyst_inference' && <span className="badge-s support-badge v-part">{t('interpretation')}</span>}
+    {(claim.evidence_basis === 'abstract' || claim.evidence_basis === 'mixed') && <span className="badge-s support-badge v-abs">{t('From abstract')}</span>}
+    {(claim.evidence_basis === 'full_text' || claim.evidence_basis === 'mixed') && <span className="badge-s support-badge v-full"><FileText size={11} aria-hidden />{t('Full text')}</span>}
+  </>
+  let headed = 0
   const report = <div className="legacy-answer report-content">
-    <div className="section-label">{t('Source-linked answer')}{answer.applicability === 'stale_scope' ? ` · ${t('earlier question revision')}` : answer.applicability === 'stale_selection' ? ` · ${t('earlier source selection')}` : ''}</div>
+    {(answer.applicability !== 'current' || answer.late_revision) && <div className="section-label">{t('Source-linked answer')}{answer.applicability === 'stale_scope' ? ` · ${t('earlier question revision')}` : answer.applicability === 'stale_selection' ? ` · ${t('earlier source selection')}` : ''}</div>}
     {answer.late_revision && <p className="legacy-mini-note"><span className="support-badge">{t(LATE_REVISION_LABEL)}</span> {answer.late_revision.base_report_version !== null && t(LATE_REVISION_DETAIL, { n: answer.late_revision.upgraded_sources, v: answer.late_revision.base_report_version })}</p>}
     {answer.applicability === 'stale_scope' && <Notice tone="attention">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</Notice>}
     {answer.applicability === 'stale_selection' && <Notice tone="attention">{t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}</Notice>}
     {answer.source_text_changed && <Notice tone="attention">{t('A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.')}</Notice>}
     {answer.capability_notice && <Notice tone="info">{answer.capability_notice}</Notice>}
-    {/* A section is one paragraph led by its main point in bold, as the answer method asks (D230); its label names a topic, not a finding. */}
-    {sections.map(({ heading, claims }, index) => <section className="answer-section" key={index}><p className="answer-paragraph">
-      {heading && <strong className="answer-lead">{heading}</strong>}
-      {claims.map(claim => <span className="claim" key={claim.id}>
-        <MathText text={claim.text} />{claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}
-        {claim.evidence_basis === 'abstract' && <span className="support-badge">{t('From abstract')}</span>}
+    {/* A section is one paragraph (D230) under its numbered heading (mockup `.report h2`); its label names a topic. */}
+    {sections.map(({ heading, claims }, index) => <section className="answer-section" key={index}>
+      {heading && <h2>{++headed}. {heading}</h2>}
+      <p className="answer-paragraph">{claims.map(claim => <span className="claim" key={claim.id}>
+        <MathText text={claim.text} />
         {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{e.source_key && !numeric ? citeLabel(claim, e) : `[${refs.get(e.passage_id)?.n}]`}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>)}
-        {claim.review && <span className={`review-badge is-${claim.review.verdict}`} title={t('Reviewer: {reason}', { reason: claim.review.reason })}><ShieldCheck size={11} aria-hidden />{t(verdictLabels[claim.review.verdict])}</span>}
+        {badges(claim)}
         {claim.review && claim.review.verdict !== 'supported' && <small className="review-reason">{t('Reviewer: {reason}', { reason: claim.review.reason })}</small>}
-      </span>)}
-    </p></section>)}
+      </span>)}</p>
+    </section>)}
     {!answer.claims.length && <p>{t('No claim could be linked to the passages given to the model.')}</p>}
-    {answer.unanswered_aspects.length > 0 && <><h3>{t('Not answered by the inspected passages')}</h3><ul className="plain-list">{answer.unanswered_aspects.map(a => <li key={a}><MathText text={a} /></li>)}</ul></>}
-    {limits.length > 0 && <><h3>{t('Limits')}</h3><ul className="plain-list">{limits.map((l, i) => <li key={i}><em>{t(l.kind.replace('_', ' '))}:</em> <MathText text={l.text} /></li>)}</ul></>}
+    {answer.unanswered_aspects.length > 0 && <><h2>{t('Not answered by the inspected passages')}</h2>{answer.unanswered_aspects.map(a => <p className="gap" key={a}><MathText text={a} /></p>)}</>}
+    {limits.length > 0 && <><h2>{t('Limits')}</h2><ul className="plain-list">{limits.map((l, i) => <li key={i}><em>{t(l.kind.replace('_', ' '))}:</em> <MathText text={l.text} /></li>)}</ul></>}
     {refs.size > 0 && <>
-      <div className="reference-head"><h3>{t('Cited passages')}</h3>
-        <div className="reference-tools"><ExportLinks researchId={researchId} sources="cited" answerId={answer.id} />
-        <Select value={style} onValueChange={value => { if (value) chooseStyle(value as CitationStyle) }}>
-          <SelectTrigger aria-label={t('Citation style')} title={t('How the cited sources are written')}><SelectValue>{(value: string) => <><Quote size={14} />{t(citationStyles[value as CitationStyle].label)}</>}</SelectValue></SelectTrigger>
-          <SelectContent className="intake-select-content has-details" align="end" alignItemWithTrigger={false}>
-            <div className="intake-select-heading" aria-hidden="true">{t('Citation style')}</div>
-            {(Object.keys(citationStyles) as CitationStyle[]).map(k => <SelectItem key={k} value={k}><Option icon={Quote} title={t(citationStyles[k].label)} detail={t(citationStyles[k].detail)} /></SelectItem>)}
-          </SelectContent>
-        </Select></div>
-      </div>
-      <ol className="reference-list">{[...refs.values()].map(({ n, e }) => {
+      <h2>{t('Cited passages')}</h2>
+      <ol className={`reference-list refs${numeric ? ' ieee' : ''}`}>{[...refs.values()].map(({ n, e }) => {
         const source = sources.find(s => s.source_version_id === e.source_version_id)
         const locator = locatorText(e)
         return <li key={e.passage_id}><button onClick={() => onOpen(e.passage_id, e.anchor_text)}>
           {e.source_key && !numeric ? <SourceKey value={e.source_key} className="ref-key" /> : <span className="ref-num">[{n}]</span>}
           <span className="ref-body">
-            <span className="ref-text">{source ? formatReference(style, source) : e.title}</span>
-            <span className="ref-pills">
-              <span className={`ref-pill ${e.kind === 'abstract' ? 'is-abstract' : 'is-text'}`}>{e.kind === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{locator.charAt(0).toUpperCase() + locator.slice(1)}</span>
-              <span className={`ref-pill is-${versionTones[e.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(e.version_label)}</span>
-              {e.text_source === 'ocr' && <span className="ref-pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
-              {e.text_source === 'latex_source' && <span className="ref-pill is-text"><Sigma size={12} aria-hidden />{t('arXiv source')}</span>}
-              {e.removed_from_research && <span className="ref-pill is-removed"><ListMinus size={12} aria-hidden />{t('Removed from this research')}</span>}
+            <span className="ref-text cf">{source ? formatReference(style, source) : e.title}</span>
+            <span className="ref-pills pills">
+              <span className={`ref-pill pill ${e.kind === 'abstract' ? 'is-abstract' : 'is-text'}`}>{e.kind === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{locator.charAt(0).toUpperCase() + locator.slice(1)}</span>
+              <span className={`ref-pill pill is-${versionTones[e.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(e.version_label)}</span>
+              {e.text_source === 'ocr' && <span className="ref-pill pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
+              {e.text_source === 'latex_source' && <span className="ref-pill pill is-text"><Sigma size={12} aria-hidden />{t('arXiv source')}</span>}
+              {e.removed_from_research && <span className="ref-pill pill is-removed"><ListMinus size={12} aria-hidden />{t('Removed from this research')}</span>}
             </span>
           </span>
         </button></li>
@@ -208,22 +210,25 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     </>}
     {/* An earlier report has no thread part, so its own method record (with Full method) stays in its report (§0.5). */}
     {!ctx && answer.status === 'structurally_valid' && answer.start_snapshot !== undefined && <MethodBox key={answer.id} researchId={researchId} answer={answer} reviewPending={reviewPending} inReport />}
-    <p className="legacy-mini-note">{t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.')} {answer.model && <>{t('Model')}: <ModelName connection={answer.model.connection} text={modelText(answer.model.resolved_model ?? answer.model.requested_model ?? t('unknown'))} />.</>} {answer.inputs_given ? t('{passages} passages from {sources} sources were provided.', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }) : ''}</p>
+    {/* The structural check (mockup `.check`), with the cited sources' bibliography files (P3). */}
+    <p className="legacy-mini-note check">{t('Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.')} {answer.model && <>{t('Model')}: <ModelName connection={answer.model.connection} text={modelText(answer.model.resolved_model ?? answer.model.requested_model ?? t('unknown'))} />.</>} {answer.inputs_given ? t('{passages} passages from {sources} sources were provided.', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }) : ''}
+      {refs.size > 0 && <> <ExportLinks researchId={researchId} sources="cited" answerId={answer.id} /></>}</p>
     <AnswerFlowNote answer={answer} />
     <ReviewNote review={answer.review} />
     <ChecksNote warnings={answer.validation.warnings} />
     {suggestion && <PdfSuggestions notes={suggestion.notes} sources={suggestion.sources} busy={busy} onAttachPdf={onAttachPdf} />}
   </div>
   // The thread's citation chip (mockup `.cite`): one per claim, naming its first source and "+N" for the others it cites;
-  // with keyless sources, or in the IEEE style (R25), the numbers of the cited passages, as the report lists them. It opens the first cited passage at its located anchor; the
-  // report lists every passage of the claim.
+  // with keyless sources, or in the IEEE style (R25), the numbers of the cited passages, as the report lists them. It opens
+  // the Citation panel (P11), which lists every passage the claim cites; each opens in Source details at its anchor.
   const chip = (claim: Claim) => {
     if (!claim.evidence.length) return null
     const first = claim.evidence[0]
     const others = new Set(claim.evidence.map(e => e.source_version_id)).size - 1
     const label = first.source_key && !numeric ? `${first.source_key}${others > 0 ? ` +${others}` : ''}` : `[${[...new Set(claim.evidence.map(e => refs.get(e.passage_id)?.n))].join(', ')}]`
     const titleText = claim.evidence.map(e => [e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')).join('\n')
-    return <button type="button" className="cite-chip thread-cite" title={titleText} onClick={() => onOpen(first.passage_id, first.anchor_text)}>{label}</button>
+    return <button type="button" className={`cite-chip thread-cite${ctx?.citing === claim.id ? ' is-on' : ''}`} title={titleText} aria-expanded={ctx?.citing === claim.id}
+      onClick={e => (ctx ? ctx.onCite(claim, e.currentTarget) : onOpen(first.passage_id, first.anchor_text))}>{label}</button>
   }
   const cited = citedWorks(answer)
   const abstractOnly = answer.inputs_given?.depth?.abstract ?? 0
@@ -286,11 +291,12 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   </div>
   return <>
     {threadPart}
-    <ReportSheet open={reportOpen} onOpenChange={open => { onReportOpenChange(open); if (!open) { setCopied(false); setReviewMode(false); setRequestReview(false) } }} dark={dark} title={title} version={version} researchId={researchId} answer={answer} sources={sources}
-      eventCursor={eventCursor} runActive={runActive} reviewMode={reviewMode} requestReview={requestReview} copied={copied} reviewCount={reviewList.reviews.length} reviewsButton={reviewsButton} scrollRoot={scrollRoot}
+    <ReportPanel open={reportOpen} onOpenChange={open => { onReportOpenChange(open); if (!open) { setReviewMode(false); setRequestReview(false) } }} dark={dark} title={title} version={version} latestVersion={latestVersion}
+      versions={versions} onVersion={id => onVersion?.(id)} researchId={researchId} answer={answer} sources={sources} style={style} onStyle={chooseStyle}
+      eventCursor={eventCursor} runActive={runActive} reviewMode={reviewMode} requestReview={requestReview} reviewCount={reviewList.reviews.length} reviewsButton={reviewsButton} scrollRoot={scrollRoot}
       onToggleReviews={() => mode(!reviewMode)} onCopy={() => { void copyReport() }} onDownload={downloadReport} onOpenPassage={onOpen} onReviewsChanged={async () => { await reviewList.refresh() }}>
       {report}
-    </ReportSheet>
+    </ReportPanel>
   </>
 }
 

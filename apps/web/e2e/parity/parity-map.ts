@@ -9,7 +9,7 @@ import type { FixtureContext } from './gates'
 
 export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
-export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog' | 'research-panel'
+export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog' | 'research-panel' | 'palette' | 'keys'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -145,6 +145,11 @@ export const SURFACES: Surface[] = [
       await page.locator('.recent-list .recent-more').first().click()
       await page.locator('[data-slot=dropdown-menu-content]').waitFor()
     } },
+  // S3 (O1, O2): the search palette and the keys dialog over the research page, each opened by its key.
+  { id: 'palette', mock: "setScenario('ok')", mockAct: 'palette()', app: '#/research/{research}', ready: '.research-topbar',
+    appAct: async page => { await page.keyboard.press('ControlOrMeta+k'); await page.locator('.quick-find .quick-find-foot').waitFor() } },
+  { id: 'keys', mock: "setScenario('ok')", mockAct: 'keysDlg()', app: '#/research/{research}', ready: '.research-topbar',
+    appAct: async page => { await page.keyboard.press('?'); await page.locator('.keys-dialog .keys').waitFor() } },
   { id: 'dialog', mock: HOME, mockAct: "zoteroDlg('home')", app: '#/settings/connections', ready: '.connection-grid', reader: 'not-installed',
     appAct: async page => {
       await page.getByRole('button', { name: /^Marker/ }).click()
@@ -222,9 +227,55 @@ const states: Pair[] = [
   { id: 'dialog.footer', surface: 'dialog', mock: '.pal.dlg .dlg-f', app: '.dialog-footer', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
 ]
 
+// O1 (S3): the search palette over the research page. The page's rows leave out the funnel row (DEFERRED_TARGETS); the
+// recent rows are the fixture's researches; the letter keys are compared as their own lists (dataText leaves them out
+// of the row text, so "Read more in full" meets its copy change).
+const PAL_PAGE = '#palList button:is([data-pal^="panel:"], [data-pal="theme"])'
+const PAL_GOTO = '#palList button:is([data-pal="go:home"], [data-pal="go:library"], [data-pal="go:settings"], [data-pal="keys"])'
+const APP_GROUP = (group: string) => `.quick-find [aria-labelledby="qf-group-${group}"] [role=option]`
+const palette: Pair[] = [
+  { id: 'palette.scrim', surface: 'palette', mock: '.scrim', app: '.quick-find-backdrop', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'palette.box', surface: 'palette', mock: '.pal', app: '.quick-find', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  // STYLE_EXCEPTIONS palette-focus-line: the app's focus line under the field.
+  { id: 'palette.field', surface: 'palette', mock: '.pal-in', app: '.quick-find-field', checks: ['chrome', 'colour', 'icon'], use: 'icon',
+    icon: { mock: 'search', app: 'search' }, unordered: true, states: [], status: 'active' },
+  { id: 'palette.input', surface: 'palette', mock: '#palq', app: '.quick-find-field input', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
+  { id: 'palette.headings', surface: 'palette', mock: '.pal-list h6', app: '.quick-find-group', checks: ['chrome', 'type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
+  { id: 'palette.page-rows', surface: 'palette', mock: PAL_PAGE, app: APP_GROUP('Page'), checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed',
+    dataText: { mock: ['em'], app: ['em'] },
+    icon: [{ mock: 'book', app: 'book-open' }, { mock: 'doc', app: 'text-align-start' }, { mock: 'inbox', app: 'inbox' }, { mock: 'file', app: 'file-text' }, { mock: 'moon', app: 'moon' }],
+    unordered: true, states: [], status: 'active' },
+  { id: 'palette.page-keys', surface: 'palette', mock: `${PAL_PAGE} em`, app: `${APP_GROUP('Page')} em`, checks: ['chrome', 'type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
+  { id: 'palette.recent-rows', surface: 'palette', mock: '#palList button[data-pal="go:research"]', app: APP_GROUP('Research'), checks: ['chrome', 'type', 'icon'], list: 'data',
+    expected: ctx => Math.min(5, ctx.researches), icon: { mock: 'node', app: 'vector-square' }, unordered: true, status: 'active' },
+  { id: 'palette.goto-rows', surface: 'palette', mock: PAL_GOTO, app: APP_GROUP('Pages'), checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed',
+    dataText: { mock: ['em'], app: ['em'] },
+    icon: [{ mock: 'plus', app: 'plus' }, { mock: 'lib', app: 'library-big' }, { mock: 'gear', app: 'sliders-horizontal' }, { mock: 'kbd', app: 'keyboard' }],
+    unordered: true, states: [], status: 'active' },
+  { id: 'palette.goto-keys', surface: 'palette', mock: `${PAL_GOTO} em`, app: `${APP_GROUP('Pages')} em`, checks: ['chrome', 'type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
+  { id: 'palette.foot', surface: 'palette', mock: '.pal-foot', app: '.quick-find-foot', checks: ['chrome', 'type', 'colour'], text: true, unordered: true, states: [], status: 'active' },
+]
+// O2 (S3): the keys dialog. Its rows leave out "Search funnel" and "Send follow-up" (DEFERRED_TARGETS); its foot line
+// with the off switch is an app addition (APP_ADDITIONS keys-off-switch), not measured.
+const keysDialog: Pair[] = [
+  { id: 'keys.scrim', surface: 'keys', mock: '.scrim', app: '.dialog-scrim', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'keys.dialog', surface: 'keys', mock: '.pal', app: '.keys-dialog', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'keys.head', surface: 'keys', mock: '.pal .pal-in', app: '.keys-dialog .dialog-head', checks: ['chrome', 'colour', 'icon'], use: 'decorative',
+    icon: { mock: 'kbd', app: 'keyboard' }, unordered: true, status: 'active' },
+  { id: 'keys.title', surface: 'keys', mock: '.pal .pal-in b', app: '.keys-dialog .dialog-title', checks: ['type'], text: true, unordered: true, status: 'active' },
+  { id: 'keys.close', surface: 'keys', mock: '.pal .pal-in .ib', app: '.keys-dialog .dialog-close', checks: ['chrome', 'icon'], icon: { mock: 'x', app: 'x' }, unordered: true, status: 'active' },
+  { id: 'keys.grid', surface: 'keys', mock: '.keys', app: '.keys-dialog .keys', checks: ['content'], unordered: true, status: 'active' },
+  { id: 'keys.headings', surface: 'keys', mock: '.keys h6', app: '.keys-dialog .keys-heading', checks: ['chrome', 'type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
+  { id: 'keys.labels', surface: 'keys', mock: '.keys > span:nth-of-type(odd)', app: '.keys-dialog .keys > span:not(.keys-keys)', checks: ['chrome', 'type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
+  { id: 'keys.keys', surface: 'keys', mock: '.keys > span:nth-of-type(even)', app: '.keys-dialog .keys-keys', checks: ['chrome', 'type'], list: 'fixed', unordered: true, status: 'active' },
+  { id: 'keys.kbd', surface: 'keys', mock: '.keys kbd', app: '.keys-dialog .keys kbd', checks: ['chrome', 'type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
+]
+
 export const PAIRS: Pair[] = [
   ...shell('home'),
   ...states,
+  ...palette,
+  ...keysDialog,
   { id: 'home.composer', surface: 'home', mock: '.composer', app: 'form.composer', checks: ['chrome'], status: 'active' },
   { id: 'home.scope-button', surface: 'home', mock: '.band .band-btn', app: '.composer-scope', checks: ['chrome', 'type'],
     status: 'active' },

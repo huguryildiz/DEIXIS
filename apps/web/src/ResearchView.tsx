@@ -202,14 +202,15 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [id, openPanel])
-  // The shortcut keys and the search palette (S3) open a panel, the shown answer's report, or close the open panel.
+  // The shortcut keys and the search palette (S3) open a panel, the shown answer's report, or close the open panel. Each
+  // starts a new stack, so R brings the report back in front of a source opened from one of its citations.
   const closePanels = panels.close
   useEffect(() => {
     const onRequest = (event: Event) => {
       const { name, opener } = (event as CustomEvent<ResearchPanelRequest>).detail
       const shown = view && shownAnswer(view)
       if (name === null) closePanels()
-      else if (name === 'report') { if (shown) setOpenReportId(shown.id) }
+      else if (name === 'report') { if (shown) { openPanel(`report:${shown.id}`, { fresh: true, opener }); setOpenReportId(shown.id) } }
       else openPanel(name, { fresh: true, opener })
     }
     window.addEventListener(RESEARCH_PANEL_EVENT, onRequest)

@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 import { execSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { COLOUR_EXCEPTIONS, COPY_CHANGES, EXCLUDED_MOCK_CONTROLS, GEOMETRY_EXCEPTIONS, PLACEMENTS, type ColourException, type Use } from './exceptions'
+import { COLOUR_EXCEPTIONS, COPY_CHANGES, DEFERRED_TARGETS, EXCLUDED_MOCK_CONTROLS, GEOMETRY_EXCEPTIONS, PLACEMENTS, STYLE_EXCEPTIONS, type ColourException, type Use } from './exceptions'
 import type { Pair, Theme } from './parity-map'
 
 // The parity gate of plan §4.1 as reusable helpers. A slice runs them for its screens through parity.spec.ts; each
@@ -389,7 +389,9 @@ export function checkColour(pair: Pair, m: Side, v: Variant): string[] {
     if (px(m.mock.style[k]) !== px(m.app.style[k])) out.push(`${pair.id}: ${k} mockup ${m.mock.style[k]} app ${m.app.style[k]}`)
   }
   const shadow = (s: string) => s.replace(/rgba?\([^)]*\)/g, c => c.replace(/\s+/g, '')).replace(/\s+/g, ' ').trim()
-  if (shadow(m.mock.style['box-shadow']) !== shadow(m.app.style['box-shadow'])) {
+  // A declared style exception (exceptions.ts) leaves out only its properties.
+  const freeStyle = new Set(STYLE_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id))).flatMap(e => e.properties))
+  if (!freeStyle.has('box-shadow') && shadow(m.mock.style['box-shadow']) !== shadow(m.app.style['box-shadow'])) {
     out.push(`${pair.id}: box-shadow mockup ${m.mock.style['box-shadow']} app ${m.app.style['box-shadow']}`)
   }
   return out
@@ -431,7 +433,7 @@ export function checkBreakpoint(pair: Pair, m: Side): string[] {
   return out
 }
 
-export const MOCK_EXCLUDE = EXCLUDED_MOCK_CONTROLS.map(c => c.selector)
+export const MOCK_EXCLUDE = [...EXCLUDED_MOCK_CONTROLS, ...DEFERRED_TARGETS].map(c => c.selector)
 export const APP_EXCLUDE = PLACEMENTS.flatMap(p => (p.app ? [p.app] : []))
 export const PROBE = [...new Set(COLOUR_EXCEPTIONS.flatMap(e => e.selectors))]
 

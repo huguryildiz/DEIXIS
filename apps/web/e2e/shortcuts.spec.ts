@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort, readingDone } from './ports'
-import { panel, reportPanel } from './panels'
+import { panel, reportPanel, sourcePanel } from './panels'
 import { chooseLanguage } from './language'
 
 // UI parity S3: the shortcut layer (mockup keydown handler, O3), the keys dialog (O2) and the search palette (O1).
@@ -98,8 +98,27 @@ test.describe.serial('S3: shortcuts, keys dialog, palette', () => {
       await expect.poll(() => hash(page)).toBe(`#/research/${rid}/${segment}`)
     }
     await page.keyboard.press('r')
-    await expect(reportPanel(page), 'R opens the shown answer’s report').toBeVisible()
+    const report = reportPanel(page)
+    await expect(report, 'R opens the shown answer’s report').toBeVisible()
+    // A new stack like the other keys: the Evidence table open before is not below it.
+    await expect(report.getByRole('button', { name: 'Back', exact: true })).toHaveCount(0)
     await shot(page, 's3-report-by-key')
+    // Report → a cited source's details stacked on it → R brings the report back in front, as a new stack.
+    await report.locator('.reference-list li').getByRole('button').first().click()
+    await expect(sourcePanel(page)).toBeVisible()
+    await expect(report).toHaveCount(0)
+    await page.keyboard.press('r')
+    await expect(reportPanel(page), 'R returns to the report over its source details').toBeVisible()
+    await expect(reportPanel(page).locator('#split-panel-title')).toBeFocused()
+    await expect(sourcePanel(page)).toHaveCount(0)
+    await expect(reportPanel(page).getByRole('button', { name: 'Back', exact: true })).toHaveCount(0)
+    // The same from the palette's Open report row.
+    await reportPanel(page).locator('.reference-list li').getByRole('button').first().click()
+    await expect(sourcePanel(page)).toBeVisible()
+    await page.keyboard.press('ControlOrMeta+k')
+    await palette(page).getByRole('option', { name: 'Open report' }).click()
+    await expect(reportPanel(page)).toBeVisible()
+    await expect(sourcePanel(page)).toHaveCount(0)
 
     // Escape from the thread (outside the panel) closes it, as Escape inside the panel already did.
     await page.keyboard.press('s')

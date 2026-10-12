@@ -324,11 +324,11 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
    a foot with the list keys. Group headings are uppercase by CSS over sentence-case text. Mockup `--faint` text is `--muted`. */
 .quick-find-backdrop{position:fixed;inset:0;z-index:60;background:rgb(15 20 25/.32)}
 .quick-find{position:fixed;z-index:61;top:14vh;left:50%;transform:translateX(-50%);width:calc(100vw - 32px);max-width:560px;display:flex;flex-direction:column;overflow:hidden;background:var(--paper);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-float);font-family:var(--font-sans);line-height:1.5}
-.quick-find-field{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--line);color:var(--muted)}
+.quick-find-field{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--line);color:var(--faint)}
 .quick-find-field svg{flex:none;stroke-width:1.6}
 /* The field's focus indicator (the a11y checks need one; the mockup draws none). */
 .quick-find-field:focus-within{box-shadow:inset 0 -2px 0 var(--accent)}
-.quick-find-field input{flex:1;min-width:0;background:transparent;border:0;outline:none;color:var(--ink);font-size:14px}
+.quick-find-field input{flex:1;min-width:0;background:transparent;border:0;border-radius:4px;outline:none;color:var(--ink);font-size:14px}
 .quick-find-field input::placeholder{color:var(--muted)}
 .quick-find-list{max-height:360px;overflow-y:auto;padding:6px;overscroll-behavior:contain}
 .quick-find-group{margin:8px 8px 4px;font-size:10.5px;font-weight:500;letter-spacing:.7px;line-height:1.5;color:var(--muted)}
@@ -337,14 +337,13 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .quick-find-option svg{flex:none;width:16px;height:16px;stroke-width:1.6}
 .quick-find-option:hover,.quick-find-option[aria-selected=true]{background:var(--hover-surface)}
 .quick-find-option>span{min-width:0}
-.quick-find-option strong{display:block;font-weight:400;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.quick-find-option strong{display:block;font-weight:400;overflow-wrap:anywhere}
 .quick-find-option small{display:block;margin-top:1px;color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .quick-find-option em{margin-left:auto;flex:none;font-style:normal;color:var(--muted);font-size:11.5px}
 .quick-find-option .quick-find-current{color:var(--accent)}
 .quick-find-option .quick-find-current+em{margin-left:8px}
 .quick-find-empty{margin:0;padding:12px 8px;color:var(--muted);font-size:12.5px}
 .quick-find-foot{display:flex;flex-wrap:wrap;gap:14px;padding:8px 14px;border-top:1px solid var(--line);font-size:11.5px;color:var(--muted)}
-@media(max-width:760px){.quick-find{top:12px}}
 
 /* Keys dialog (mockup `keysDlg`, O2): the dialog shell with a two-column grid of actions and keys, and the off switch
    for single keys as one line at its foot (WCAG 2.1.4). */

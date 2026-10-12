@@ -29,7 +29,7 @@ const FAINT_TEXT = ['.side h6', '.recents p', '.rrow em', '.composer textarea::p
   '.menu button:disabled', '.menu .badge', '.q time', '.revline', '.step-detail .row>span:last-child', '.next',
   '.usage-line', '.box h5', '.box>button.li em', '.tabs button em', '.nr', '.more-row td', '.loc', '.foot-note', '.pgm',
   '.cell small', '.cell.nrc', '.cell .nrc', '.zcols em', '.elist b', '.hist li small', '.detail h4.sub', '.cols-list button em',
-  '.pal-list h6', '.pal-list button em', '.pal-foot']
+  '.pal-list h6', '.pal-list button em', '.pal-foot', '.keys h6']
 // The mockup's icons and marks that use `--faint`: the app keeps D5's `--faint`, held at 3:1 for icons.
 const FAINT_ICON = ['.recents svg.i', '.th-b svg.i', '.search', '.pal-in', '.refs li::before', '.dmeta>span+span::before']
 // `--warn` text on the `--warn-bg` tint in the mockup: below 4.5:1, so text on a tint uses `--warn-ink` (D5).
@@ -146,6 +146,14 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
   { id: 'setup-rows-y', rule: '§2.3 (copy changes setup-leaves and setup-proxy) and §0 rule 2 (example-setup row)',
     pairs: ['home-first.setup-num', 'home-first.setup-num-ok', 'home-first.connect', 'home-first.ready', 'home-first.add'], axes: ['y'],
     note: 'The setup rows sit under the replaced head sentence, and the proxy row holds the replaced proxy sentence; both wrap differently from the mockup at 390 px. x, width and height are compared.' },
+  // S3: the palette and the keys dialog leave out the rows of DEFERRED_TARGETS, and the palette's recent rows are as many
+  // as the fixture's researches, so the rows below them sit higher than in the mockup.
+  { id: 's3-rows-y', rule: 'DEFERRED_TARGETS funnel-key-palette, funnel-key-dialog, followup-send-key; §0 rule 1 (recent rows are data)',
+    pairs: ['palette.headings', 'palette.page-rows', 'palette.page-keys', 'palette.goto-rows', 'palette.goto-keys', 'keys.headings', 'keys.labels', 'keys.keys', 'keys.kbd'], axes: ['y'],
+    note: 'Rows after a left-out row, or after the recent research rows, move up; x, width and height are compared.' },
+  { id: 'palette-recent-height', rule: '§0 rule 1 (example data is not copied: the row is a research title from the records)',
+    pairs: ['palette.recent-rows'], axes: ['height'],
+    note: 'A recent research row wraps its title as the mockup\'s does, so its height follows the title\'s length (the fixture\'s title is longer than the mockup\'s example). x and width are compared.' },
   { id: 'zotero-foot-buttons-y', rule: '§2.2 (placement zotero-library-source) and §2.3 (copy changes zotero-lead, zotero-account, zotero-count)',
     pairs: ['zotero.foot-buttons'], axes: ['y'],
     note: 'The footer sits below the library switch row and the replaced notes, whose wrapped height differs from the mockup; x, width and height are compared.' },
@@ -166,4 +174,23 @@ export const CHECK_ROWS: Array<{ id: string; rule: string; mock: string; app: st
  *  a background colour alone). The pairs compare the mockup's elements; these extras are not measured. */
 export const APP_ADDITIONS: Array<{ id: string; rule: string; app: string; slice: string }> = [
   { id: 'selected-row-check', rule: 'WCAG 1.4.1 (selection shown by more than a background tint)', app: 'a check mark at the right of the selected row of the scope menu and the depth menu', slice: 'S4' },
+  { id: 'keys-off-switch', rule: '§2.4 (single-key shortcuts) / WCAG 2.1.4 (character key shortcuts can be turned off)', app: 'the keys dialog\'s foot: one line with the "Single-key shortcuts" checkbox, kept across reloads (.keys-dialog .keys-foot)', slice: 'S3' },
+]
+
+/** Styles the app draws where the mockup draws none, kept for accessibility. The listed properties of the listed pairs
+ *  are not compared; every other check of those pairs still runs. */
+export const STYLE_EXCEPTIONS: Array<{ id: string; rule: string; pairs: string[]; properties: string[]; note: string }> = [
+  { id: 'palette-focus-line', rule: 'WCAG 2.4.7 (focus visible; a11y.spec X05 needs an indicator on every focus stop)', pairs: ['palette.field'], properties: ['box-shadow'],
+    note: 'While its input has focus the palette field draws a 2px accent line along its bottom edge (inset box-shadow); the mockup\'s field has no focus indicator.' },
+]
+
+/** Mockup elements whose target the app does not have yet (S3: a key or row is not shown before the thing it opens
+ *  exists). Their mockup elements are left out of the lists they sit in, like the excluded mockup controls. */
+export const DEFERRED_TARGETS: Array<{ id: string; rule: string; selector: string; slice: string; note: string }> = [
+  { id: 'funnel-key-palette', rule: 'S3 (no key or command without a real target)', selector: '#palList button[data-pal="panel:funnel"]', slice: 'S14',
+    note: 'Palette row "Open search funnel" (F): the Funnel panel (P41) does not exist yet.' },
+  { id: 'funnel-key-dialog', rule: 'S3 (no key or command without a real target)', selector: '.keys > span:nth-of-type(19), .keys > span:nth-of-type(20)', slice: 'S14',
+    note: 'Keys dialog row "Search funnel · F", under ON A RESEARCH: the Funnel panel (P41) does not exist yet.' },
+  { id: 'followup-send-key', rule: 'S3 (no key or command without a real target)', selector: '.keys > span:nth-of-type(27), .keys > span:nth-of-type(28)', slice: 'S22b',
+    note: 'Keys dialog row "Send follow-up · ⌘ ↵", under IN A TEXT BOX: the follow-up composer (R30) does not exist yet.' },
 ]

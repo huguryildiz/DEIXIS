@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Check, Circle, Clock, Ellipsis, Inbox, LibraryBig, Menu, Moon, PanelLeft, Pause, PencilLine, Plus, Search, SlidersHorizontal, Sun, Trash2, TriangleAlert } from 'lucide-react'
+import { Check, Circle, Clock, Ellipsis, Inbox, Keyboard, LibraryBig, Menu, Moon, PanelLeft, Pause, PencilLine, Plus, Search, SlidersHorizontal, Sun, Trash2, TriangleAlert } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, shellApi, type InstitutionalAccess, type Profile, type ProxySettings, type ResearchSummary, type RunStatus } from './api'
 import { runStatusLabels } from './labels'
@@ -7,7 +7,9 @@ import { Home } from './Home'
 import { ResearchPage } from './ResearchView'
 import { SettingsPage } from './Settings'
 import { LibraryPage } from './LibraryPage'
-import { QuickFind } from './QuickFind'
+import { QuickFind, type PaletteCommand } from './QuickFind'
+import { KeysDialog } from './KeysDialog'
+import { IS_MAC, readSingleKeys, requestResearchPanel, useShortcuts, writeSingleKeys } from './Shortcuts'
 import { BackgroundJobs } from './BackgroundJobs'
 import { useToast } from './Toast'
 import { focusWhenLost } from './focus'
@@ -28,12 +30,11 @@ import './Trash.css'
 type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: 'connections' } | { view: 'trash' } | { view: 'library' }
 type ThemeChoice = 'system' | 'light' | 'dark'
 
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent)
 const activeRunStatuses = new Set<RunStatus>(['queued', 'running', 'pause_requested'])
 const SIDEBAR_MIN = 200
 const SIDEBAR_MAX = 420
-// Quick find has no trigger element, so the control that had focus when it opened is remembered and handed back on Escape.
-const rememberFocus = (ref: { current: HTMLElement | null }) => { const active = document.activeElement; if (active instanceof HTMLElement && !active.closest('.quick-find')) ref.current = active }
+// Quick find and the keys dialog may open by a key, so the control that had focus when they opened is remembered and handed back on Escape.
+const rememberFocus = (ref: { current: HTMLElement | null }) => { const active = document.activeElement; if (active instanceof HTMLElement && !active.closest('.quick-find, .keys-dialog')) ref.current = active }
 const clampSidebar = (width: number) => Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)))
 
 function readSidebarWidth(): number | null {
@@ -120,6 +121,10 @@ export default function App() {
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const [findOpen, setFindOpen] = useState(false)
   const findOpener = useRef<HTMLElement | null>(null)
+  const [keysOpen, setKeysOpen] = useState(false)
+  const keysOpener = useRef<HTMLElement | null>(null)
+  // Single-key shortcuts are on until the keys dialog's switch turns them off (WCAG 2.1.4); kept across reloads.
+  const [singleKeys, setSingleKeys] = useState(readSingleKeys)
   const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('deixis-sidebar') === 'collapsed' } catch { return false } })
   const [sidebarWidth, setSidebarWidth] = useState<number | null>(readSidebarWidth)
   const [resizing, setResizing] = useState(false)
@@ -133,14 +138,6 @@ export default function App() {
   const dark = theme === 'dark' || (theme === 'system' && systemDark)
   // Which researches exist right now; views with their own data (the Library) reload when this changes.
   const researchKey = researches.map(r => r.id).join(',')
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') { event.preventDefault(); rememberFocus(findOpener); setFindOpen(open => !open) }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
 
   useEffect(() => {
     const onHash = () => { const next = parseHash(); setRoute(next); if (next.view === 'research') setCurrentId(next.id); setSidebar(false); window.scrollTo(0, 0) }
@@ -365,6 +362,15 @@ export default function App() {
   }
 
   const activeId = route.view === 'research' ? route.id : null
+  useShortcuts({
+    palette: () => { if (findOpen) setFindOpen(false); else openSearch() },
+    keys: () => openKeys(),
+    home: () => go({ view: 'home' }),
+    library: () => go({ view: 'library' }),
+    sidebar: () => { if (!phone) toggleCollapsed() },
+    onResearch: route.view === 'research',
+    singleKeys,
+  })
   // The research opened last in this browser; disabled until one has been opened.
   const currentResearch = currentId && researches.some(r => r.id === currentId) ? currentId : null
   // "Awaiting you": open queue rows and works waiting for the person's PDF over every research, the two kept apart in the tooltip.
@@ -379,7 +385,17 @@ export default function App() {
     go({ view: 'research', id: awaitingTarget.id, tab: queue === 0 && pdf > 0 ? 'waiting' : 'queue' })
   }
   const awaitingOpen = route.view === 'research' && (route.tab === 'queue' || route.tab === 'waiting')
-  const openSearch = () => { rememberFocus(findOpener); setFindOpen(true) }
+  const openSearch = () => { rememberFocus(findOpener); setKeysOpen(false); setFindOpen(true) }
+  const openKeys = (opener?: HTMLElement | null) => { if (opener !== undefined) keysOpener.current = opener; else rememberFocus(keysOpener); setFindOpen(false); setKeysOpen(true) }
+  const chooseSingleKeys = (on: boolean) => { setSingleKeys(on); writeSingleKeys(on) }
+  const openResearch = researches.find(r => r.id === activeId)
+  // A palette command: the research page opens its panel (the palette's opener gets focus back when it closes), the theme
+  // changes, or the keys dialog opens in the palette's place.
+  const runCommand = (command: PaletteCommand) => {
+    if (command === 'theme') toggleTheme()
+    else if (command === 'keys') openKeys(findOpener.current)
+    else requestResearchPanel({ name: command, opener: findOpener.current })
+  }
   const themeName = t(dark ? 'Switch to light mode' : 'Switch to dark mode')
 
   // The proxy line states only that the host answered; the Scopus line is the separate full-view check (plan §2.3).
@@ -456,6 +472,7 @@ export default function App() {
         <div className="user">
           <span className="avatar" aria-hidden="true" style={profile ? undefined : { visibility: 'hidden' }}>{profile?.initials ?? ''}</span>
           <span className="user-name" title={profile?.full_name}>{profile?.full_name ?? ''}</span>
+          <button type="button" className="keys-toggle" onClick={() => openKeys()} aria-label={t('Shortcuts')} aria-keyshortcuts={singleKeys ? '?' : undefined} title={`${t('Shortcuts')} (?)`}><Keyboard size={16} aria-hidden="true" /></button>
           <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={themeName} title={t(dark ? 'Light mode' : 'Dark mode')}>{dark ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}</button>
         </div>
       </div>
@@ -473,7 +490,9 @@ export default function App() {
         {route.view === 'settings' && <SettingsPage key={route.tab ?? 'defaults'} dark={dark} tab={route.tab ?? 'defaults'} onTab={tab => go({ view: 'settings', tab: tab === 'connections' ? 'connections' : undefined })} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>
-      <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} language={language} onLanguage={chooseLanguage} />
+      <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} language={language} onLanguage={chooseLanguage}
+        research={route.view === 'research' ? { answer: (openResearch?.answer_count ?? 0) > 0 } : null} singleKeys={singleKeys} onCommand={runCommand} />
+      <KeysDialog open={keysOpen} onOpenChange={setKeysOpen} returnFocus={keysOpener} singleKeys={singleKeys} onSingleKeys={chooseSingleKeys} />
     </div>
   </div>
 }

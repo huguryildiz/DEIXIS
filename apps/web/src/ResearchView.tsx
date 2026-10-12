@@ -37,6 +37,7 @@ import { SelectionBar } from './research/SelectionBar'
 import { SourceList, type StateFilter } from './research/SourceList'
 import { SplitPanel, StackPanel } from './research/SplitPanel'
 import { PanelStackContext, panelFromSegment, usePanelStack, usePhone, URL_PANELS } from './research/usePanelStack'
+import { RESEARCH_PANEL_EVENT, type ResearchPanelRequest } from './Shortcuts'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const TRANSCRIPT_KINDS = new Set<RunKind>(['discovery', 'pdf_collection', 'fulltext_fetch', 'fulltext_adjudication', 'pdf_ocr', 'answer', 'report', 'review'])
@@ -89,6 +90,8 @@ function TypewriterTitle({ text, onStartEdit }: { text: string; onStartEdit: () 
     }}
   ><span aria-hidden>{shown}</span></h1>
 }
+
+const shownAnswer = (view: ResearchView) => (view.answers.find(a => !(a.late_revision && a.status !== 'structurally_valid')) ?? view.answers[0]) as Answer | undefined
 
 export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; initialTab?: string; dark: boolean; onChanged: () => void }) {
   const [view, setView] = useState<ResearchView | null>(null)
@@ -199,6 +202,19 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [id, openPanel])
+  // The shortcut keys and the search palette (S3) open a panel, the shown answer's report, or close the open panel.
+  const closePanels = panels.close
+  useEffect(() => {
+    const onRequest = (event: Event) => {
+      const { name, opener } = (event as CustomEvent<ResearchPanelRequest>).detail
+      const shown = view && shownAnswer(view)
+      if (name === null) closePanels()
+      else if (name === 'report') { if (shown) setOpenReportId(shown.id) }
+      else openPanel(name, { fresh: true, opener })
+    }
+    window.addEventListener(RESEARCH_PANEL_EVENT, onRequest)
+    return () => window.removeEventListener(RESEARCH_PANEL_EVENT, onRequest)
+  }, [view, openPanel, closePanels])
   // Leaving the Sources panel ends the audit sample's focus and the chosen rows: coming back shows the whole list.
   const sourcesOpen = panels.entries.some(entry => entry.name === 'sources')
   const [sourcesWereOpen, setSourcesWereOpen] = useState(sourcesOpen)
@@ -301,7 +317,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const active = run ? ACTIVE.has(run.status) : false
   const candidateRun = view.runs.find(r => CANDIDATE_KINDS.has(r.kind) && (ACTIVE.has(r.status) || r.status === 'paused'))
   const watchRun = view.runs.find(r => r.kind === 'watch_check' && (ACTIVE.has(r.status) || r.status === 'paused'))
-  const answer = (view.answers.find(a => !(a.late_revision && a.status !== 'structurally_valid')) ?? view.answers[0]) as Answer | undefined
+  const answer = shownAnswer(view)
   const hasAcademic = view.scope.source_scope !== 'attached'
   const needsSeed = view.scope.source_scope === 'attached_and_academic' && view.scope.seed_mode === 'uploaded_seed'
   const seedSearchReady = !needsSeed || view.scope.seed_status === 'ready'

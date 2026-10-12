@@ -564,7 +564,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   test('quick find: choosing a source opens its research at the Sources section', async () => {
     await page.goto(server.url())
     await page.keyboard.press('ControlOrMeta+k')
-    await page.getByLabel('Find research, sources or pages').fill('visiting hours')
+    await page.getByLabel('Search research, library, or type a command…').fill('visiting hours')
     await page.getByRole('option', { name: /SYNTHETIC optimization of hospital visiting hours/ }).click()
     await page.waitForURL(/#\/research\/[^/]+\/sources$/)
     const sourcesPanel = panel(page, 'Sources')

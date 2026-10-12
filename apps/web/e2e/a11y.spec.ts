@@ -723,7 +723,7 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     await reach(['11a quick find'], async () => {
       await page.goto(main.url())
       await expect(page.getByLabel('Research question')).toBeVisible()
-      const field = page.getByLabel('Find research, sources or pages')
+      const field = page.getByLabel('Search research, library, or type a command…')
       const open = async () => {
         if (await field.isVisible().catch(() => false)) return
         await page.keyboard.press('ControlOrMeta+k')
@@ -1390,7 +1390,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     test.setTimeout(240_000)
     await tabTo(page, page.getByRole('button', { name: 'Search', exact: true }), 'Quick find button')
     await page.keyboard.press('ControlOrMeta+k')
-    const field = page.getByLabel('Find research, sources or pages')
+    const field = page.getByLabel('Search research, library, or type a command…')
     await expect(field).toBeVisible()
     await expectFocusOn(field, 'the quick find field')
     await audit(page, 'quick find opened')
@@ -1420,7 +1420,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
   // measured for a page, a research and a source result, opened from the sidebar button (by keyboard: Tab to it, Enter) and by the shortcut.
   test('quick find: what has focus after a page, a research or a source result is chosen (from the button and by shortcut)', async () => {
     test.setTimeout(300_000)
-    const field = page.getByLabel('Find research, sources or pages')
+    const field = page.getByLabel('Search research, library, or type a command…')
     const button = page.getByRole('button', { name: 'Search', exact: true })
     const choose = async (via: 'button' | 'shortcut', kind: string, query: string, group: string) => {
       await page.goto(mainUrl.split('#')[0])  // every choice starts from the home screen, so each result changes the route
@@ -1453,18 +1453,18 @@ test.describe.serial('X05: A to G by keyboard', () => {
       observations.push(`quick find opened from the ${via}, ${kind} result chosen by Enter: focus is on ${await activeNow()}`)
     }
     for (const via of ['button', 'shortcut'] as const) {
-      await choose(via, 'page', 'Connections', 'Pages')
+      await choose(via, 'page', 'Settings', 'Pages')
       await choose(via, 'research', 'molecule', 'Research')
       await choose(via, 'source', 'hospital visiting hours', 'Sources')
     }
     // The route that is already open: no route change, so the opener (the sidebar button) gets focus back once the dialog is gone.
-    await page.goto(`${mainUrl.split('#')[0]}#/connections`)  // the exact hash the quick find item sets, so the choice changes no route
-    await expect(page.getByRole('tab', { name: 'Connections' })).toBeVisible()
+    await page.goto(`${mainUrl.split('#')[0]}#/settings`)  // the exact hash the palette's Settings row sets, so the choice changes no route
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
     await tabTo(page, button, 'Quick find button')
     await press(page, 'Enter', 'Quick find button', () => expect(field).toBeVisible())
-    await page.keyboard.type('Connections')
+    await page.keyboard.type('Settings')
     await expect(page.getByRole('option').first()).toBeVisible()
-    for (let i = 0; i < 12 && !(await field.getAttribute('aria-activedescendant'))?.includes('page-connections'); i++) await page.keyboard.press('ArrowDown')
+    for (let i = 0; i < 12 && !(await field.getAttribute('aria-activedescendant'))?.includes('page-settings'); i++) await page.keyboard.press('ArrowDown')
     await page.keyboard.press('Enter')
     await expect(field).toHaveCount(0)
     await expectFocusOn(button, 'the Quick find button after choosing the page that is already open')

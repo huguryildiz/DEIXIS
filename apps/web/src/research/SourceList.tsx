@@ -12,8 +12,10 @@ const sourceSorts: Record<SourceSort, string> = { relevant: 'Most relevant', fou
 // when semantic search scored the source (D30), then the best position in the searches that found it.
 const verdictOrder: Record<string, number> = { include: 0, uncertain: 1, exclude: 2 }
 const verdictRank = (s: Source) => verdictOrder[s.selection.proposal ?? ''] ?? 3
-// "Cited in answer" (mockup P5's first tab, opened by the answer's "View N cited sources") lists the works the latest
-// answer cites; it shows once that answer cites any. The other P5 tabs come with S13.
+// "Cited in answer" (mockup P5's first tab, opened by the answer's "View N cited sources") lists the works the answer shown
+// in the thread cites, from that answer's stored claims (`cited`: the source versions its evidence names). The view's
+// `cited_in_latest_answer` flag follows the newest draft, which is not the shown answer after a failed late revision.
+// The tab shows once that answer cites any. The other P5 tabs come with S13.
 const stateFilters = [['cited', 'Cited in answer'], ['all', 'All'], ['included', 'Included'], ['pending', 'Undecided'], ['excluded', 'Excluded']] as const
 export type StateFilter = typeof stateFilters[number][0]
 type PdfFilter = 'all' | 'with_pdf' | 'without_pdf'
@@ -31,7 +33,7 @@ const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
 
 type SourceActions = { onRemoveFromResearch: (source: Source) => void; onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; onReplaceAsset: (source: Source, assetId: string) => void; onReextract: (source: Source, assetId: string) => void; onRereadEquations: (source: Source, assetId: string) => void; pdfFinding: string | null; ocr: OcrContext }
 
-export function SourceList({ sources, busy, filter, onFilter, focus, onFocus, picked, onPick, onRemoveFromResearch, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, pdfFinding, ocr }: { sources: Source[]; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; focus: string | null; onFocus: (workId: string | null) => void; picked: string[]; onPick: (ids: string[]) => void } & SourceActions) {
+export function SourceList({ sources, cited, busy, filter, onFilter, focus, onFocus, picked, onPick, onRemoveFromResearch, onSelect, onReason, onAbstract, onDiscoverPdf, onAttachPdf, onAttachCandidate, onOpenPdf, onRemoveAsset, onReplaceAsset, onReextract, onRereadEquations, pdfFinding, ocr }: { sources: Source[]; cited: ReadonlySet<string>; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; focus: string | null; onFocus: (workId: string | null) => void; picked: string[]; onPick: (ids: string[]) => void } & SourceActions) {
   const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('relevant')
@@ -42,7 +44,7 @@ export function SourceList({ sources, busy, filter, onFilter, focus, onFocus, pi
     if (source.version_role === 'other_version' && last?.[0].work_id === source.work_id) last.push(source)
     else families.push([source])
   }
-  const isCited = (family: Source[]) => family.some(source => source.cited_in_latest_answer)
+  const isCited = (family: Source[]) => family.some(source => cited.has(source.source_version_id))
   const counts = { cited: families.filter(isCited).length, all: families.length, included: 0, pending: 0, excluded: 0 }
   families.forEach(([record]) => counts[record.selection.state]++)
   const hasPdf = (family: Source[]) => family.some(source => source.access.assets.length > 0)

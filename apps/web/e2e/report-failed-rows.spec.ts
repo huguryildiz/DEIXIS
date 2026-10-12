@@ -28,7 +28,7 @@ async function screenshots(page: Page, state: 'choice' | 'sheet') {
       await page.reload()
       if (state === 'choice') await openPanel(page, 'table'); else await showAnswer(page)
       if (state === 'sheet') await page.getByRole('button', { name: 'Open evidence report' }).click()
-      const surface = state === 'choice' ? page.locator('.notice') : page.locator('.report-sheet')
+      const surface = state === 'choice' ? page.locator('.notice', { hasText: NOTE }) : page.locator('.report-sheet')
       await expect(surface).toContainText(NOTE)
       await surface.scrollIntoViewIfNeeded()
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
@@ -73,7 +73,8 @@ test('explicitly write a report with a recorded failed row and disclose it in th
     const toolbar = page.locator('.evidence-toolbar')
     await expect(toolbar.getByRole('button', { name: 'Write the report with missing rows' })).toBeEnabled({ timeout: 60_000 })
     await expect(toolbar.getByRole('button', { name: 'Write a manuscript draft', exact: true })).toHaveCount(0)
-    await expect(page.locator('.notice')).toContainText(NOTE)
+    // The answer's own notices in the thread are .notice too (UI parity S10); this one is the table's.
+    await expect(page.locator('.notice', { hasText: NOTE })).toBeVisible()
     const tables = await (await api.get(`/api/researches/${rid}/tables`)).json()
     const tableId = tables[0].id as string
     expect(tables[0].report_ready).toMatchObject({ ready: false, can_continue_with_failed: true, failed_rows: 1, failed_cells: 1, included_rows: 2 })
@@ -81,7 +82,7 @@ test('explicitly write a report with a recorded failed row and disclose it in th
     expect(refused.status()).toBe(409)
     expect(await refused.text()).toContain('Include sources and fill every active evidence-table column before starting a report')
     const panel = page.locator('.evidence-toolbar')
-    await expect(page.locator('.notice')).toContainText(NOTE)
+    await expect(page.locator('.notice', { hasText: NOTE })).toBeVisible()
     await expect(panel.getByRole('button', { name: 'Write a manuscript draft', exact: true })).toHaveCount(0)
     await screenshots(page, 'choice')
     await panel.getByRole('button', { name: 'Write the report with missing rows' }).click()

@@ -47,7 +47,7 @@ class ThreadServer {
   url() { return `http://127.0.0.1:${this.port}` }
 }
 
-type Evidence = { passage_id: string; source_version_id: string; source_key: string | null; kind: string }
+type Evidence = { passage_id: string; source_version_id: string; source_key: string | null; kind: string; anchor_text: string | null }
 type Claim = { id: string; section: string | null; evidence: Evidence[] }
 type Answer = {
   id: string; run_id: string; status: string; report_version: number | null; applicability: string; source_text_changed: boolean
@@ -143,11 +143,19 @@ test.describe.serial('S10: the answer in the thread', () => {
       return `${c.evidence[0].source_key}${others > 0 ? ` +${others}` : ''}`
     })
     await expect(chips).toHaveText(labels)
-    // The chip opens the first cited passage at its located anchor, in Source details.
+    // The chip opens the first cited passage at its located anchor, in Source details: the passage the claim's first
+    // evidence names, with that evidence's anchor text marked.
+    const firstEvidence = shown.find(c => c.evidence.length)!.evidence[0]
+    expect(firstEvidence.anchor_text).toBeTruthy()
+    const opened = page.waitForRequest(r => new URL(r.url()).pathname.startsWith(`/api/researches/${rid}/passages/`))
     await chips.first().click()
+    expect(new URL((await opened).url()).pathname).toBe(`/api/researches/${rid}/passages/${firstEvidence.passage_id}`)
     const source = sourcePanel(page)
     await expect(source).toBeVisible()
-    await expect(source.locator('mark.citation-highlight').first()).toBeVisible()
+    const mark = source.locator('mark.citation-highlight').first()
+    await expect(mark).toBeVisible()
+    const squash = (text: string) => text.replace(/\s+/g, ' ').trim()
+    expect(squash(await mark.innerText())).toBe(squash(firstEvidence.anchor_text!))
     await page.keyboard.press('Escape')
     await expect(page.locator('[data-split-panel]')).toHaveCount(0)
     // The card opens the report panel; while it is open the card reads as on (mockup `.art.on`).
@@ -382,8 +390,24 @@ test.describe.serial('S10: the answer in the thread', () => {
     await expect(page.locator('#research-answer .report-artifact-meta')).toContainText('Report · V2', { timeout: 30_000 })
     const latest = notice(page, 'Answer V2 is the latest.')
     await expect(latest).toContainText('V1 is kept.')
+    // An earlier report keeps its own method record (§0.5): V1's panel loads the method of V1's answer, not V2's.
+    const answers = (await viewOf(api, held)).answers
+    const v1 = answers.find(a => a.report_version === 1)!
+    const v1Method = await (await api.context.get(`/api/researches/${held}/answers/${v1.id}/method`)).json() as { selection: { works_found: number | null; abstract_read: number } }
+    const methodRequest = page.waitForRequest(r => /\/answers\/[^/]+\/method$/.test(new URL(r.url()).pathname) && r.url().includes(v1.id))
     await latest.getByRole('button', { name: 'Open V1' }).click()
-    await expect(reportPanel(page).locator('.report-document-head')).toContainText('Report · V1')
+    const report = reportPanel(page)
+    await expect(report.locator('.report-document-head')).toContainText('Report · V1')
+    await methodRequest
+    const methods = report.locator('.methods')
+    await expect(methods.locator('h4')).toHaveText('Methods')
+    await expect(methods.locator(':scope > p')).toContainText(`The model read the abstracts of ${v1Method.selection.abstract_read} of ${v1Method.selection.works_found} works against the criterion.`)
+    // No funnel to open from a report: the "see what was not read" link stays in the thread's box.
+    await expect(methods.getByRole('button', { name: 'see what was not read' })).toHaveCount(0)
+    await methods.locator('summary', { hasText: 'Full method' }).click()
+    await expect(methods.locator('.method-more')).toHaveAttribute('open', '')
+    // The thread's box belongs to V2.
+    await expect(thread(page).locator('.methods')).toHaveCount(1)
     await page.keyboard.press('Escape')
   })
 

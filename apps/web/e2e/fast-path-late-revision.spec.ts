@@ -43,6 +43,10 @@ for (const width of [1440, 390]) {
       // Synthetic API state: the backend regression separately exercises failed validation.
       view.answers[0].status = 'unverified_draft'
       view.answers[0].review = null
+      // As the backend stores it: the unverified draft keeps no claims, and the sources' "cited in latest answer" flags
+      // follow that newest, citation-less draft.
+      view.answers[0].claims = []
+      for (const source of view.sources) source.cited_in_latest_answer = false
       view.answers[1].late_revision_status.status = 'failed'
       view.answers[1].late_revision_status.skip_reason = 'revision_unverified'
       await route.fulfill({ response, json: view })
@@ -50,6 +54,19 @@ for (const width of [1440, 390]) {
     await page.goto(`${url}/#/research/${rid}`)
     await expect(page.locator('#research-answer')).toContainText('Report · V1')
     await expect(page.locator('.answer-thread')).not.toContainText('A late full text produced answer')
+    // V1's "View N cited sources" lists the works V1 cites, from its own claims, not the draft's empty flags.
+    const view = await (await fetch(`${url}/api/researches/${rid}`)).json() as { answers: { report_version: number; claims: { evidence: { source_version_id: string }[] }[] }[]; sources: { source_version_id: string; work_id: string }[] }
+    const v1 = view.answers.find(a => a.report_version === 1)!
+    const workOf = new Map(view.sources.map(s => [s.source_version_id, s.work_id]))
+    const citedWorks = new Set(v1.claims.flatMap(c => c.evidence.map(e => workOf.get(e.source_version_id))))
+    expect(citedWorks.size).toBeGreaterThan(0)
+    await page.locator('.answer-thread .answer-acts').getByRole('button', { name: /^View \d+ cited sources?$/ }).click()
+    const sources = page.locator('[data-split-panel]')
+    await expect(sources.getByRole('button', { name: /^Cited in answer/ })).toHaveAttribute('aria-pressed', 'true')
+    await expect(sources.getByRole('button', { name: /^Cited in answer/ })).toContainText(String(citedWorks.size))
+    await expect(sources.locator('.source-row')).toHaveCount(view.sources.filter(s => citedWorks.has(s.work_id)).length)
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-split-panel]')).toHaveCount(0)
     await page.locator('#research-answer').click()
     await expect(page.locator('.report-content')).toBeVisible()
     await expect(page.locator('.report-content')).not.toContainText('Full text added for')

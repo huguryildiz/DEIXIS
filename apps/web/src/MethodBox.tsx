@@ -14,7 +14,8 @@ import './MethodBox.css'
 const num = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
 const maybe = (n: number | null) => (n === null ? t('not recorded') : num(n))
 
-export function MethodBox({ researchId, answer, reviewPending, onShowFunnel }: { researchId: string; answer: Answer; reviewPending: boolean; onShowFunnel: (opener: HTMLElement) => void }) {
+// In an earlier report (`inReport`) the report itself closes with the answer's boundary, and there is no funnel to open.
+export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inReport = false }: { researchId: string; answer: Answer; reviewPending: boolean; onShowFunnel?: (opener: HTMLElement) => void; inReport?: boolean }) {
   const answerId = answer.id
   const [method, setMethod] = useState<AnswerMethod | null>(null)
   useEffect(() => {
@@ -37,7 +38,7 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel }: {
         : <>{t(queries === 1 ? 'One search was sent to {providers}' : '{n} searches were sent to {providers}', { n: num(queries), providers: providers.join(', ') })}{search.chaining.ran ? t(', and citation chaining ran.') : t('; citation chaining did not run.')}</>}{' '}
       {selection.abstract_read > 0
         ? <>{found !== null ? t('The model read the abstracts of {read} of {found} works against the criterion', { read: num(selection.abstract_read), found: num(found) }) : t('The model read the abstracts of {read} works against the criterion', { read: num(selection.abstract_read) })}
-          {found !== null && found > selection.abstract_read && <> (<button type="button" className="link" onClick={e => onShowFunnel(e.currentTarget)}>{t('see what was not read')}</button>)</>}.</>
+          {found !== null && found > selection.abstract_read && onShowFunnel && <> (<button type="button" className="link" onClick={e => onShowFunnel(e.currentTarget)}>{t('see what was not read')}</button>)</>}.</>
         : t('No model reading of abstracts is recorded.')}{' '}
       {selection.full_text_read > 0
         ? <>{t(selection.full_text_read === 1 ? '{n} work was read in its full text (selected pages)' : '{n} works were read in their full text (selected pages)', { n: num(selection.full_text_read) })}{selection.included !== null ? t('; included when the answer started: {n}.', { n: num(selection.included) }) : '.'}</>
@@ -101,7 +102,7 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel }: {
         <ul className="method-unmeasured">{method.not_measured.map(item => <li key={item}>{t(item)}</li>)}</ul>
       </section>
     </div>
-    <AnswerFlowNote answer={answer} />
+    {!inReport && <AnswerFlowNote answer={answer} />}
     </details>
   </section>
 }

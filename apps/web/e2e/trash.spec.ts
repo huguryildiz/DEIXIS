@@ -443,6 +443,23 @@ test.describe('S26: the Trash page', () => {
     await expect(message).toContainText('Restored 1 of 2 sources. 1 no longer in the Trash')
   })
 
+  test('a delete that took only some versions of a source says partly deleted, not unchanged', async ({ page }) => {
+    const data = twoResearches()
+    data.sources = [version(1, { title: 'Alpha source', work_id: 'w1', research_id: 'rA', research_title: 'SYNTHETIC research A' }),
+      version(2, { title: 'Alpha source', work_id: 'w1', source_version_id: 'sv1b', version_label: 'acceptedVersion', research_id: 'rA', research_title: 'SYNTHETIC research A' })]
+    await mockTrash(page, data, [])
+    await page.route('**/api/researches/rA/sources/purge', route => route.fulfill({ json: { deleted: ['sv1b'], files_not_removed: [] } }))
+    await open(page, server.url())
+    await page.getByRole('checkbox', { name: 'Select Alpha source' }).check()
+    await page.locator('.selection-bar').getByRole('button', { name: 'Delete permanently' }).click()
+    await page.locator('.trash-bar-notice').getByRole('button', { name: 'Delete permanently' }).click()
+    const message = page.locator('.trash-message')
+    await expect(message).toContainText('Deleted 0 of 1 sources.')
+    await expect(message).toContainText('1 source(s) partly deleted: 1 of their versions were deleted; the rest were no longer in the Trash.')
+    await expect(message).not.toContainText('nothing was changed')
+    await expect(page.locator('.selection-bar')).toHaveCount(0)
+  })
+
   test('a research filter stays visible when only its research is left, so the rows it hides can be brought back', async ({ page }) => {
     const data = twoResearches()
     data.templates = [{ id: 'tp1', name: 'SYNTHETIC template without a research', trashed_at: '2026-10-04T10:00:00Z', columns: 3 }]

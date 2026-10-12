@@ -82,7 +82,9 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     setMessage('')
     let done = 0
     let files = 0
-    let gone = 0  // asked for, but the backend found nothing to change: no longer in the Trash
+    let gone = 0  // asked for, but no requested version was changed: no longer in the Trash
+    let partial = 0  // a delete took some of a work's requested versions and not the others
+    let partialVersions = 0
     const finished = new Set<string>()
     let failure: { target: SourceTarget; message: string } | null = null
     let attempted = 0
@@ -100,17 +102,19 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
         const works = new Set(one.versions.map(v => v.work_id))
         for (const work of works) {
           const mine = one.versions.filter(v => v.work_id === work)
-          // A restore brings a work's versions back together, so one is enough; a delete must have taken every version asked for.
-          if (verb === 'restore' ? mine.some(v => changed.has(v.source_version_id)) : mine.every(v => changed.has(v.source_version_id))) {
-            done += 1
-            finished.add(`${one.researchId}:${work}`)
-          } else gone += 1
+          const taken = mine.filter(v => changed.has(v.source_version_id)).length
+          // A restore brings a work's versions back together, so one returned version means the work is back; a partial
+          // restore cannot happen, and no message is written for one. A delete is done only when every requested version
+          // went; some of them is partial (what is left is no longer in the Trash), none is unchanged.
+          if (taken === 0) gone += 1
+          else if (verb === 'restore' || taken === mine.length) { done += 1; finished.add(`${one.researchId}:${work}`) }
+          else { partial += 1; partialVersions += taken; finished.add(`${one.researchId}:${work}`) }
         }
       } catch (e) { failure = { target: one, message: errorText(e) }; break }
     }
     const total = targets.reduce((n, one) => n + worksOf(one), 0)
     const diskNote = files ? t('{files} file(s) could not be removed from disk.', { files }) : ''
-    if (!failure && gone === 0) {
+    if (!failure && gone === 0 && partial === 0) {
       setMessage(verb === 'purge'
         ? (files ? t('{n} source(s) deleted, but {files} file(s) could not be removed from disk.', { n: done, files })
           : t(done === 1 ? 'Source permanently deleted.' : '{n} sources permanently deleted.', { n: done }))
@@ -118,11 +122,12 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     } else {
       const skipped = failure ? targets.slice(attempted).reduce((n, one) => n + worksOf(one), 0) : 0
       setMessage([verb === 'purge' ? t('Deleted {done} of {total} sources.', { done, total }) : t('Restored {done} of {total} sources.', { done, total }),
+        partial > 0 && t('{n} source(s) partly deleted: {k} of their versions were deleted; the rest were no longer in the Trash.', { n: partial, k: partialVersions }),
         gone > 0 && t('{n} no longer in the Trash, so nothing was changed for them.', { n: gone }),
         failure && t('{n} in “{research}” failed: {message}', { n: worksOf(failure.target), research: failure.target.versions[0].research_title, message: failure.message }),
         skipped > 0 && t('{n} not attempted.', { n: skipped }), diskNote].filter(Boolean).join(' '))
     }
-    if (done > 0 || failure || gone > 0) onChanged()
+    if (done > 0 || partial > 0 || failure || gone > 0) onChanged()
     setPicked(prev => { const next = new Set(prev); for (const k of finished) next.delete(k); return next })
     setBusy(null)
     await refresh()

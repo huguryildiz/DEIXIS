@@ -4,6 +4,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { nextPort, readingDone } from './ports'
+import { backPanel, closePanel, openPanel, panel as panelOf, MENU_ROWS, PANEL_TITLES, type PanelName, reportPanel, showAnswer, sourcePanel } from './panels'
 
 // P9 H6 accessibility audit (plan X01 to X06). Synthetic records and a scripted model: this measures the interface,
 // not research quality. Part 1 scans a frozen screen list with axe in four states (X01 to X04); part 2 walks the A to G
@@ -88,7 +89,6 @@ const settle = async (page: Page) => {
 }
 const row = (page: Page, title: string, other = false) =>
   page.locator(other ? '.source-row.is-other-version' : '.source-row:not(.is-other-version)', { has: page.getByText(title, { exact: true }) })
-const openTab = (page: Page, name: RegExp | string) => page.getByRole('tab', { name }).click()
 
 const SOURCES = [
   'SYNTHETIC molecule release scheduling with bisection',
@@ -155,13 +155,13 @@ const COMBOS = [
 ] as const
 const SCREENS = [
   '1a home composer', '1b home source-scope list open',
-  '2a sources tab', '2b sources exclude-reason form',
-  '3a answer tab before an answer', '3b answer tab after an answer',
-  '4a answer report sheet',
+  '2a sources panel', '2b sources exclude-reason form',
+  '3a answer thread before an answer', '3b answer thread after an answer',
+  '4a answer report panel',
   '4b-1 evidence report with check panel', '4b-2 evidence report claim edit form', '4b-3 evidence report citation removal',
-  '5 passage sheet with citation highlight',
-  '6a source sheet PDF tab', '6b source sheet plain-text document',
-  '7a evidence tab empty', '7b evidence tab filled', '7c evidence cell panel',
+  '5 source panel with citation highlight',
+  '6a source panel PDF tab', '6b source panel plain-text document',
+  '7a evidence panel empty', '7b evidence panel filled', '7c evidence cell panel',
   '8a library', '8b trash',
   '9a settings defaults', '9b settings connections', '9c connection sheet',
   '10a human queue list', '10b human queue open row',
@@ -319,11 +319,24 @@ async function domState(page: Page) {
 const NO_TRANSITIONS = '*,*::before,*::after{transition:none!important}'
 async function still(page: Page) {
   await page.evaluate(css => { const el = document.createElement('style'); el.setAttribute('data-a11y-freeze', ''); el.textContent = css; document.head.appendChild(el) }, NO_TRANSITIONS)
+  // The research page's top bar and panels put controls where the content's corner used to be empty (the top bar spans the width, a panel is a
+  // dialog at 390 px), so the rest point is the first spot of a short list, 24 px in from the left edge of the content, that has no control under it.
   const corner = await page.evaluate(() => {
     const box = document.querySelector('main')!.getBoundingClientRect()
-    const x = Math.max(box.left, 0) + 24, y = Math.max(box.top, 0) + 1  // 24 px in: the sidebar resizer straddles the content's left edge
-    const hit = document.elementFromPoint(x, y)
-    return { x, y, control: (() => { const c = hit?.closest('a[href], button, summary, input, select, textarea, label, [role="button"], [role="tab"], [role="option"], [role="menuitem"], [role="link"], [role="checkbox"], [role="combobox"]'); return c ? `${c.tagName.toLowerCase()}${typeof c.className === 'string' && c.className ? '.' + c.className.split(/\s+/)[0] : ''}` : '' })() }
+    const x = Math.max(box.left, 0) + 24
+    const control = (px: number, py: number) => {
+      const hit = document.elementFromPoint(px, py)
+      const c = hit?.closest('a[href], button, summary, input, select, textarea, label, [role="button"], [role="tab"], [role="option"], [role="menuitem"], [role="link"], [role="checkbox"], [role="combobox"]')
+      return c ? `${c.tagName.toLowerCase()}${typeof c.className === 'string' && c.className ? '.' + c.className.split(/\s+/)[0] : ''}` : ''
+    }
+    let best = { x, y: Math.max(box.top, 0) + 1, control: control(x, Math.max(box.top, 0) + 1) }
+    for (const dy of [1, 12, 24, 36, 48, 60, 72, 90, 110]) {
+      const y = Math.max(box.top, 0) + dy
+      if (y >= innerHeight - 1) break
+      const found = control(x, y)
+      if (!found) { best = { x, y, control: '' }; break }
+    }
+    return best
   })
   if (corner.control) throw new Error(`the resting pointer (${corner.x}, ${corner.y}) is over a control: ${corner.control}`)
   await page.mouse.move(corner.x, corner.y)
@@ -466,17 +479,17 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     })
   })
 
-  test('2 to 6: research with a PDF seed, sources, answer, report sheet, passage sheet, PDF tab (readiness panel: SYNTHETIC API state)', async () => {
+  test('2 to 6: research with a PDF seed, sources, answer, report panel, source panel, PDF tab (readiness panel: SYNTHETIC API state)', async () => {
     test.setTimeout(600_000)
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
-    await reach(['2a sources tab', '2b sources exclude-reason form', '3a answer tab before an answer', '3b answer tab after an answer', '4a answer report sheet', '5 passage sheet with citation highlight', '6a source sheet PDF tab', '6b source sheet plain-text document'], async () => {
+    await reach(['2a sources panel', '2b sources exclude-reason form', '3a answer thread before an answer', '3b answer thread after an answer', '4a answer report panel', '5 source panel with citation highlight', '6a source panel PDF tab', '6b source panel plain-text document'], async () => {
       await reading.ensure()
       await startResearch(page, reading, 'SYNTHETIC: How is molecule release scheduling optimized?', 'Files + academic search')
       await dismissToasts(page)
-      await openTab(page, /Sources/)
+      await openPanel(page, 'sources')
       await expect(row(page, 'SYNTHETIC optimization of hospital visiting hours')).toBeVisible()
-      await scan(page, '2a sources tab')
+      await scan(page, '2a sources panel')
       const hospital = row(page, 'SYNTHETIC optimization of hospital visiting hours')
       await hospital.getByRole('button', { name: 'Exclude' }).click()
       await expect(hospital.getByLabel('Reason for excluding this source')).toBeVisible()
@@ -496,47 +509,47 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
         await route.fulfill({ response, json: body })
       })
       await page.reload()
-      await openTab(page, /Answer/)
+      await showAnswer(page)
       await expect(page.getByRole('button', { name: 'Generate answer now' })).toBeVisible()
-      await scan(page, '3a answer tab before an answer')
+      await scan(page, '3a answer thread before an answer')
       await page.unroute(viewUrl)
       await page.reload()
-      await openTab(page, /Answer/)
+      await showAnswer(page)
       const artifact = page.getByRole('button', { name: /Open report:/ })
       await expect(artifact).toContainText('Report · V1')
       await page.getByRole('button', { name: 'Generate a new answer' }).click()
       await expect(artifact).toContainText('Report · V2', { timeout: 60_000 })
       await dismissToasts(page)
-      await scan(page, '3b answer tab after an answer', () => dismissToasts(page))
+      await scan(page, '3b answer thread after an answer', () => dismissToasts(page))
 
       await artifact.click()
-      const report = page.locator('.report-sheet')
+      const report = reportPanel(page)
       await expect(report).toBeVisible()
       await expect(report.locator('.reference-list li').first()).toBeVisible()
-      await scan(page, '4a answer report sheet', () => dismissToasts(page))
+      await scan(page, '4a answer report panel', () => dismissToasts(page))
 
       await report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule release scheduling with bisection' }).getByRole('button').click()
-      const sheet = page.getByRole('dialog', { name: 'Source details' })
+      const sheet = sourcePanel(page)
       await expect(sheet.locator('mark.citation-highlight')).toBeVisible()
-      await scan(page, '5 passage sheet with citation highlight', () => dismissToasts(page))
+      await scan(page, '5 source panel with citation highlight', () => dismissToasts(page))
       await sheet.getByRole('tab', { name: 'PDF' }).click()
       await expect(sheet.locator('.pdf-viewer canvas')).toHaveAttribute('width', /\d{3,}/)
       await expect(sheet.getByText('Loading PDF…')).toHaveCount(0)
-      await scan(page, '6a source sheet PDF tab', () => dismissToasts(page))
-      await page.keyboard.press('Escape')
-      await report.getByRole('button', { name: 'Close' }).click()
+      await scan(page, '6a source panel PDF tab', () => dismissToasts(page))
+      await backPanel(page)
+      await closePanel(page)
 
       // 6b: the document view of a source with a PDF, opened from the Sources tab once the answer has fetched the PDF (Open PDF, then the
       // Plain text tab). Screen 5 is the citation's passage view; this one lists every page of extracted text, so it is a different DOM
       // (the passage sheet scanned twice gave identical pass counts, 27 and 27, which is why 6b is opened here).
-      await reach(['6b source sheet plain-text document'], async () => {
-        await openTab(page, /Sources/)
+      await reach(['6b source panel plain-text document'], async () => {
+        await openPanel(page, 'sources')
         await row(page, 'SYNTHETIC molecule release scheduling with bisection').getByRole('button', { name: 'Open PDF' }).click()
-        const document_ = page.getByRole('dialog', { name: 'Source details' })
+        const document_ = sourcePanel(page)
         await document_.getByRole('tab', { name: 'Plain text' }).click()
         await expect(document_.getByRole('heading', { name: 'Extracted PDF text' })).toBeVisible()
-        await scan(page, '6b source sheet plain-text document', () => dismissToasts(page))
-        await page.keyboard.press('Escape')
+        await scan(page, '6b source panel plain-text document', () => dismissToasts(page))
+        await backPanel(page)
         await expect(document_).toHaveCount(0)
       })
     })
@@ -549,8 +562,8 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     await reach(['4b-1 evidence report with check panel', '4b-2 evidence report claim edit form', '4b-3 evidence report citation removal'], async () => {
       await startResearch(page, main, 'SYNTHETIC: How are molecule release schedules compared? [report-two-citations]')
       await dismissToasts(page)
-      await openTab(page, /Sources/)
-      await openTab(page, /Evidence/)
+      await openPanel(page, 'sources')
+      await openPanel(page, 'table')
       await page.getByRole('button', { name: /Add a column/ }).click()
       const editor = page.getByRole('dialog', { name: 'Add column' })
       await editor.getByLabel('Short name').fill('SYNTHETIC method')
@@ -559,7 +572,7 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       await page.getByRole('button', { name: /^Fill empty cells/ }).click()
       await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
       await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
-      await page.getByRole('tab', { name: 'Answer' }).click()
+      await showAnswer(page)
       await expect(page.getByRole('button', { name: 'Open evidence report' })).toBeVisible({ timeout: 90_000 })
       const rid = page.url().split('/research/')[1].split('/')[0]
       const summaries: { id: string }[] = await (await page.request.get(`${main.url()}api/researches/${rid}/reports`)).json()
@@ -598,22 +611,22 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     })
   })
 
-  test('7 evidence tab: empty, filled, cell panel', async () => {
+  test('7 evidence panel: empty, filled, cell panel', async () => {
     test.setTimeout(480_000)
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
-    await reach(['7a evidence tab empty', '7b evidence tab filled', '7c evidence cell panel'], async () => {
+    await reach(['7a evidence panel empty', '7b evidence panel filled', '7c evidence cell panel'], async () => {
       await startResearch(page, main, 'SYNTHETIC: What sample sizes do molecule release schedules use?')
       await dismissToasts(page)
-      await openTab(page, /Evidence/)
+      await openPanel(page, 'table')
       await expect(page.getByText('No table yet.')).toBeVisible()
-      await scan(page, '7a evidence tab empty', () => dismissToasts(page))
+      await scan(page, '7a evidence panel empty', () => dismissToasts(page))
       await addColumn(page)
       await page.getByRole('button', { name: /^Fill empty cells/ }).click()
       await expect(page.locator('[data-cell="0:0"]')).toContainText('128 byte', { timeout: 60_000 })
       await expect(page.locator('.evidence-run')).toHaveCount(0, { timeout: 30_000 })  // the run line leaves when the fill is over
       await dismissToasts(page)
-      await scan(page, '7b evidence tab filled', () => dismissToasts(page))
+      await scan(page, '7b evidence panel filled', () => dismissToasts(page))
       await page.locator('[data-cell="0:0"]').click()
       const panel = page.getByRole('dialog', { name: 'Sample size' })
       await expect(panel.locator('.evidence-current')).toHaveText('128 byte')
@@ -1064,7 +1077,7 @@ async function dismissToastsByKeyboard(page: Page) {
   const info = await audit(page, 'toast dismissed by Enter')
   expect(info.tag, 'keyboard toast dismissal preserves focus').not.toBe('body')
   expect(info.guard).toBe(false)
-  expect(info.visible && info.inViewport, 'returned toast focus is visible inside the viewport').toBe(true)
+  expect(info.visible && info.inViewport, `returned toast focus is visible inside the viewport: ${JSON.stringify(info)}`).toBe(true)
   expect(info.kind, 'returned toast focus has an indicator').not.toBe('none')
 }
 
@@ -1116,6 +1129,42 @@ async function expectTrapped(page: Page, dialog: Locator, step: string) {
   observations.push(`${step}: ${last.count} tabbable elements; Tab from the last stayed inside (focus on #${afterLast.index}), Shift+Tab from the first stayed inside (focus on #${beforeFirst.index}; first was #${first.index})`)
 }
 
+// A side panel is not modal on a desktop (S7a): the thread beside it stays usable, so there is no trap to test. What is tested instead is that focus
+// moved into the panel and that every tabbable element of the panel can be reached with Tab, in order, and left again with Shift+Tab, each stop inside it.
+async function expectReachable(page: Page, region: Locator, step: string) {
+  const where = () => region.evaluate(root => {
+    const list = Array.from(root.querySelectorAll<HTMLElement>('a[href], button, input, select, textarea, summary, [tabindex]')).filter(el =>
+      el.tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[inert], [aria-hidden="true"]') && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden')
+    return { count: list.length, index: list.indexOf(document.activeElement as HTMLElement), inside: root.contains(document.activeElement) }
+  })
+  expect((await where()).inside, `${step}: focus moved into the panel`).toBe(true)
+  let w = await where()
+  for (let i = 0; i < w.count + 2 && w.index < w.count - 1; i++) {
+    await page.keyboard.press('Tab')
+    await page.waitForTimeout(25)
+    w = await where()
+    expect(w.inside, `${step}: Tab stop ${i + 1} is inside the panel`).toBe(true)
+    await audit(page, `${step} reach Tab`, 'tab')
+  }
+  expect(w.index, `${step}: Tab reached the last of ${w.count} tabbable elements`).toBe(w.count - 1)
+  for (let i = 0; i < w.count + 2 && w.index > 0; i++) {
+    await page.keyboard.press('Shift+Tab')
+    await page.waitForTimeout(25)
+    w = await where()
+    expect(w.inside, `${step}: Shift+Tab stop ${i + 1} is inside the panel`).toBe(true)
+    await audit(page, `${step} reach Shift+Tab`, 'tab')
+  }
+  expect(w.index, `${step}: Shift+Tab reached the first tabbable element`).toBe(0)
+  observations.push(`${step}: ${w.count} tabbable elements, all reached by Tab and left by Shift+Tab inside the panel (a side panel is not modal)`)
+}
+
+// Back to the panel below by keyboard: Tab to the Back button, Enter. The panel that was below shows again with focus on its heading.
+async function keyBack(page: Page, gone: Locator, step: string) {
+  await tabTo(page, page.locator('[data-split-panel]').getByRole('button', { name: 'Back', exact: true }), `${step}: Back`)
+  await press(page, 'Enter', `${step}: Back`, () => expect(gone).toHaveCount(0))
+  await expectFocusOn(page.locator('[data-split-panel] #split-panel-title'), `the panel heading after Back from ${step}`)
+}
+
 // One photograph of a control that relies on Chrome's native ring, in each theme (an observation, not a change).
 let nativePhotos = 0
 async function photographFocus(page: Page, name: string) {
@@ -1151,19 +1200,24 @@ async function photographRing(page: Page, name: string) {
   await quiet(page, 250)
 }
 
-// Gets from the research tab list to a named tab with arrow keys, then Enter or Space when focus alone does not select it.
-async function keyTab(page: Page, name: RegExp | string, step: string) {
-  const wanted = page.getByRole('tab', { name })
-  if ((await wanted.getAttribute('aria-selected')) === 'true') return
-  // The tab stop of the list is the tab with tabindex 0 (the last one arrowed to), which is not always the selected one.
-  const stop = page.locator('.research-tabs-bar [role="tab"][tabindex="0"]')
-  const selected = await page.locator('.research-tabs-bar [role="tab"][aria-selected="true"]').getAttribute('tabindex')
-  if (selected !== '0') observations.push(`${step}: the Tab stop of the research tab list was not the selected tab (selected tab tabindex=${selected}); roving focus follows the last tab arrowed to.`)
-  await tabTo(page, stop.first(), `${step}: tab list`)
-  for (let i = 0; i < 10 && !(await wanted.evaluate(el => el === document.activeElement)); i++) await press(page, 'ArrowRight', `${step}: tab list`)
-  await expectFocusOn(wanted, `the ${String(name)} tab`)
-  if ((await wanted.getAttribute('aria-selected')) !== 'true') await press(page, 'Enter', `${step}: activate tab`)
-  await expect(wanted).toHaveAttribute('aria-selected', 'true')
+// Gets to a named panel by keyboard alone: Tab to the Research actions button, Enter opens its menu, ArrowDown walks to the panel's row, Enter opens
+// it. 'answer' means no panel: the panel's Close button is reached with Tab and pressed with Enter.
+async function keyPanel(page: Page, name: PanelName | 'answer', step: string) {
+  if (name === 'answer') {
+    if (!(await page.locator('[data-split-panel]').count())) return
+    const close = page.locator('[data-split-panel] .split-panel-head').getByRole('button').last()
+    await tabTo(page, close, `${step}: panel Close`)
+    await press(page, 'Enter', `${step}: close the panel`, () => expect(page.locator('[data-split-panel]')).toHaveCount(0))
+    return
+  }
+  if (await panelOf(page, PANEL_TITLES[name]).count()) return
+  const more = page.getByRole('button', { name: 'Research actions' })
+  await tabTo(page, more, `${step}: Research actions`)
+  await press(page, 'Enter', `${step}: open the menu`, () => expect(page.getByRole('menuitem').first()).toBeVisible())
+  const wanted = page.getByRole('menuitem', { name: MENU_ROWS[name] })
+  for (let i = 0; i < 10 && !(await wanted.evaluate(el => el === document.activeElement)); i++) await press(page, 'ArrowDown', `${step}: menu`)
+  await expectFocusOn(wanted, `the ${name} row of the menu`)
+  await press(page, 'Enter', `${step}: open the panel`, () => expect(panelOf(page, PANEL_TITLES[name])).toBeVisible())
 }
 
 // The composer by keyboard: Tab to the textarea, type, Tab to Start research, Enter.
@@ -1183,7 +1237,7 @@ async function startByKeyboard(page: Page, server: Fixture, question: string, op
   const start = page.getByRole('button', { name: 'Start research' })
   await expect(start).toBeEnabled()
   await tabTo(page, start, 'Start research')
-  await press(page, 'Enter', 'Start research', async () => { await page.waitForURL(/#\/research\//); await expect(page.locator('.research-tabs-bar')).toBeVisible() })
+  await press(page, 'Enter', 'Start research', async () => { await page.waitForURL(/#\/research\//); await expect(page.locator('.research-topbar')).toBeVisible() })
 }
 
 test.describe.serial('X05: A to G by keyboard', () => {
@@ -1198,29 +1252,34 @@ test.describe.serial('X05: A to G by keyboard', () => {
   })
   test.afterAll(async () => { writeFocusLog(); await page?.context().close() })
 
-  test('composer by Tab, Start research by Enter, tab list by arrow keys', async () => {
+  // The research page has no tab list any more (S7a): its panels open from the Research actions menu, which takes the arrow keys the tab list took.
+  test('composer by Tab, Start research by Enter, Research actions menu by arrow keys', async () => {
     test.setTimeout(240_000)
     await startByKeyboard(page, keys, 'SYNTHETIC: How is molecule release scheduling optimized?', { files: true })
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
     await includeSources(page, keys)  // setup through the API
     await page.reload()
     mainUrl = page.url()
-    await tabTo(page, page.locator('.research-tabs-bar [role="tab"][tabindex="0"]').first(), 'tab list')
-    const tabs = await page.getByRole('tab').all()
-    expect(tabs.length).toBeGreaterThan(2)
-    await press(page, 'ArrowRight', 'tab list')
-    await expectFocusOn(tabs[1], 'the second tab after ArrowRight')
-    await press(page, 'ArrowLeft', 'tab list')
-    await expectFocusOn(tabs[0], 'the first tab after ArrowLeft')
-    await press(page, 'End', 'tab list')
-    await expectFocusOn(tabs[tabs.length - 1], 'the last tab after End')
-    await press(page, 'Home', 'tab list')
-    await expectFocusOn(tabs[0], 'the first tab after Home')
+    const more = page.getByRole('button', { name: 'Research actions' })
+    await tabTo(page, more, 'Research actions')
+    await press(page, 'Enter', 'Research actions', () => expect(page.getByRole('menuitem').first()).toBeVisible())
+    const rows = await page.getByRole('menuitem').all()
+    expect(rows.length).toBeGreaterThan(2)
+    await press(page, 'Home', 'Research actions menu')
+    await expectFocusOn(rows[0], 'the first row after Home')
+    await press(page, 'ArrowDown', 'Research actions menu')
+    await expectFocusOn(rows[1], 'the second row after ArrowDown')
+    await press(page, 'ArrowUp', 'Research actions menu')
+    await expectFocusOn(rows[0], 'the first row after ArrowUp')
+    await press(page, 'End', 'Research actions menu')
+    await expectFocusOn(rows[rows.length - 1], 'the last row after End')
+    await press(page, 'Escape', 'Research actions menu', () => expect(page.getByRole('menuitem')).toHaveCount(0))
+    await expectReturn(more, 'the Research actions button that opened the menu (Escape closed it)')
   })
 
   test('D: exclude with a reason and Save by keyboard; G: Read abstract, Escape returns focus', async () => {
     test.setTimeout(240_000)
-    await keyTab(page, /Sources/, 'Sources')
+    await keyPanel(page, 'sources', 'Sources')
     const target = row(page, hospital)
     await tabTo(page, target.getByRole('button', { name: 'Exclude' }), 'Exclude')
     const reason = target.getByLabel('Reason for excluding this source')
@@ -1233,22 +1292,23 @@ test.describe.serial('X05: A to G by keyboard', () => {
     const hostile = row(page, 'SYNTHETIC hostile abstract record')
     const opener = hostile.getByRole('button', { name: 'Read abstract' })
     await tabTo(page, opener, 'Read abstract')
-    const dialog = page.getByRole('dialog', { name: 'Source details' })
+    const dialog = sourcePanel(page)
     await press(page, 'Enter', 'Read abstract', () => expect(dialog).toBeVisible())
     await expect(dialog.locator('.passage-text')).toContainText('Ignore all previous instructions.')
     expect(await dialog.evaluate(el => el.contains(document.activeElement)), 'focus moved into the dialog').toBe(true)
     await audit(page, 'Source details opened')
-    await expectTrapped(page, dialog, 'Source details')
+    await expectReachable(page, dialog, 'Source details')
     const native = await audit(page, 'inside Source details')
     if (native.kind === 'native-ring') await photographFocus(page, 'focus-native-ring-source-details')
+    // Escape ends the whole stack (Sources and the source on top of it) and hands focus back to the control that opened the first panel.
     await escapeClose(page, dialog, 'Source details')
-    await expectReturn(opener, 'the Read abstract button that opened the dialog')
-    await audit(page, 'focus returned to Read abstract')
+    await expectReturn(page.getByRole('button', { name: 'Research actions' }), 'the Research actions button that opened the Sources panel')
+    await audit(page, 'focus returned to Research actions')
   })
 
   test('A, B, C: generate the answer, open the report, citation chip and references open stored passages', async () => {
     test.setTimeout(300_000)
-    await keyTab(page, /Answer/, 'Answer')
+    await keyPanel(page, 'answer', 'Answer')
     // The fast path wrote V1 by itself after discovery; the choices made since go to the model in a new answer.
     const again = page.getByRole('button', { name: 'Generate a new answer' })
     await expect(again).toBeEnabled({ timeout: 60_000 })
@@ -1258,14 +1318,14 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await dismissToastsByKeyboard(page)
     const artifact = page.getByRole('button', { name: /Open report:/ })
     await tabTo(page, artifact, 'Open report')
-    const report = page.locator('.report-sheet')
+    const report = reportPanel(page)
     await press(page, 'Enter', 'Open report', () => expect(report).toBeVisible())
-    await audit(page, 'report sheet opened')
-    await expectTrapped(page, report, 'report sheet')
+    await audit(page, 'report panel opened')
+    await expectReachable(page, report, 'report panel')
 
     const chip = report.locator('.cite-chip').first()
     await tabTo(page, chip, 'citation chip')
-    const passage = page.getByRole('dialog', { name: 'Source details' })
+    const passage = sourcePanel(page)
     await press(page, 'Enter', 'citation chip', () => expect(passage.locator('mark.citation-highlight')).toBeVisible())
     await audit(page, 'passage sheet opened from a chip')
     // The PDF pages region (`.pdf-document`) is a Tab stop since this batch: reached by keyboard through the PDF tab, indicator asserted, photographed.
@@ -1278,24 +1338,21 @@ test.describe.serial('X05: A to G by keyboard', () => {
     expect(pagesRing.kind, `PDF pages region indicator (${pagesRing.detail ?? ''})`).not.toBe('none')
     observations.push(`PDF pages region (.pdf-document), reached by Tab: indicator ${pagesRing.kind}`)
     await photographRing(page, 'focus-pdf-pages')
-    await escapeClose(page, passage, 'passage sheet')
-    await expectReturn(chip, 'the citation chip that opened the passage')
-    await audit(page, 'focus returned to the chip')
+    await keyBack(page, passage, 'passage panel')
+    await audit(page, 'focus returned to the report panel')
 
     // B: an abstract-only reference; C: the manuscript version stays labelled. Both reached by keyboard.
     const relay = report.locator('.reference-list li', { hasText: 'SYNTHETIC relay budget allocation' }).getByRole('button')
     await tabTo(page, relay, 'reference: abstract-only source')
-    const abstractSheet = page.getByRole('dialog', { name: 'Source details' })
+    const abstractSheet = sourcePanel(page)
     await press(page, 'Enter', 'reference: abstract-only source', () => expect(abstractSheet.locator('.source-chips')).toContainText('Abstract only'))
-    await escapeClose(page, abstractSheet, 'abstract-only passage')
-    await expectReturn(relay, 'the abstract-only reference button')
+    await keyBack(page, abstractSheet, 'abstract-only passage')
     const letter = report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule schedule letter' }).filter({ hasText: 'submitted manuscript' }).getByRole('button')
     await tabTo(page, letter, 'reference: submitted manuscript')
-    const manuscriptSheet = page.getByRole('dialog', { name: 'Source details' })
+    const manuscriptSheet = sourcePanel(page)
     await press(page, 'Enter', 'reference: submitted manuscript', () => expect(manuscriptSheet).toContainText('submitted manuscript'))
-    await escapeClose(page, manuscriptSheet, 'manuscript passage')
-    await expectReturn(letter, 'the manuscript reference button')
-    await escapeClose(page, report, 'report sheet')
+    await keyBack(page, manuscriptSheet, 'manuscript passage')
+    await escapeClose(page, report, 'report panel')
     await expectReturn(artifact, 'the Open report button')
     await audit(page, 'focus returned to Open report')
   })
@@ -1325,11 +1382,11 @@ test.describe.serial('X05: A to G by keyboard', () => {
     // F: question, selection and reason survive a reload.
     await page.goto(mainUrl)
     await page.reload()
-    await keyTab(page, /Sources/, 'Sources after reload')
+    await keyPanel(page, 'sources', 'Sources after reload')
     await expect(row(page, hospital).getByText('Your reason: No optimization model')).toBeVisible()
   })
 
-  // Choosing a result on another route hands the focus to the destination (QuickFind `finalFocus` is false then): the page heading, or the Sources tab
+  // Choosing a result on another route hands the focus to the destination (QuickFind `finalFocus` is false then): the page heading, or the Sources panel's heading
   // for a source result. Choosing the route that is already open changes nothing there, and the opener gets focus back. What has focus afterwards is
   // measured for a page, a research and a source result, opened from the sidebar button (by keyboard: Tab to it, Enter) and by the shortcut.
   test('quick find: what has focus after a page, a research or a source result is chosen (from the button and by shortcut)', async () => {
@@ -1360,8 +1417,8 @@ test.describe.serial('X05: A to G by keyboard', () => {
       const activeNow = () => page.evaluate(() => { const el = document.activeElement; return !el || el === document.body ? 'body' : `${el.tagName.toLowerCase()}${el.getAttribute('role') ? `[role=${el.getAttribute('role')}]` : ''} "${(el.getAttribute('aria-label') ?? el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40)}"` })
       await expect.poll(activeNow, { timeout: 8000, message: `${kind} result chosen after opening from the ${via}: focus leaves <body>` }).not.toBe('body')
       // The destination itself: the page heading (a page or a research result), or the Sources tab button (a source result).
-      const destination = kind === 'source' ? page.getByRole('tab', { name: /^Sources/ }) : page.getByRole('heading', { level: 1 })
-      await expect(destination, `${kind} result chosen after opening from the ${via}: focus is on ${kind === 'source' ? 'the Sources tab button' : 'the h1'}`).toBeFocused({ timeout: 8000 })
+      const destination = kind === 'source' ? page.locator('[data-split-panel] #split-panel-title') : page.getByRole('heading', { level: 1 })
+      await expect(destination, `${kind} result chosen after opening from the ${via}: focus is on ${kind === 'source' ? 'the Sources panel heading' : 'the h1'}`).toBeFocused({ timeout: 8000 })
       await quiet(page)
       await audit(page, `focus after choosing a ${kind} result in quick find (opened from the ${via})`)
       observations.push(`quick find opened from the ${via}, ${kind} result chosen by Enter: focus is on ${await activeNow()}`)
@@ -1390,7 +1447,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
     await includeSources(page, keys)  // setup through the API
     await page.reload()
-    await keyTab(page, /Evidence/, 'Evidence')
+    await keyPanel(page, 'table', 'Evidence')
     await tabTo(page, page.getByRole('button', { name: /Add a column/ }), 'Add a column')
     const editor = page.getByRole('dialog', { name: 'Add column' })
     await press(page, 'Enter', 'Add a column', () => expect(editor).toBeVisible())
@@ -1428,7 +1485,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await includeSources(page, keys)  // setup through the API
     await page.reload()
     // Setup by click, named: the evidence column, its fill and the report request. What is walked by keyboard is the report sheet.
-    await openTab(page, /Evidence/)
+    await openPanel(page, 'table')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
     await editor.getByLabel('Short name').fill('SYNTHETIC method')
@@ -1437,7 +1494,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
     await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
     await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
-    await page.getByRole('tab', { name: 'Answer' }).click()
+    await showAnswer(page)
     const open = page.getByRole('button', { name: 'Open evidence report' })
     await expect(open).toBeVisible({ timeout: 90_000 })
     const card = open.and(page.locator('.report-artifact'))
@@ -1464,7 +1521,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     test.setTimeout(240_000)
     await startByKeyboard(page, keys, 'SYNTHETIC [rate-limit] How is molecule release scheduling optimized?')
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
-    await keyTab(page, /Sources/, 'Sources')
+    await keyPanel(page, 'sources', 'Sources')
     const summary = page.locator('.search-summary:not(.flow-block) summary')
     await tabTo(page, summary, 'Search details')
     await press(page, 'Enter', 'Search details', () => expect(page.locator('.search-summary:not(.flow-block)')).toHaveAttribute('open', ''))
@@ -1482,7 +1539,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await expect(page.getByText('Search & screening · Paused')).toBeVisible({ timeout: 60_000 })
     await tabTo(page, page.getByRole('button', { name: 'Resume' }), 'Resume')
     await press(page, 'Enter', 'Resume', () => expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 }))
-    await keyTab(page, /Answer/, 'Answer')
+    await keyPanel(page, 'answer', 'Answer')
   })
 
   test('X05: every focus stop was visible, inside the viewport and had an indicator', async () => {
@@ -1600,7 +1657,7 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
       await startResearch(page, keys, 'SYNTHETIC [answer-hold]: How is molecule release scheduling optimized?')
       researchId = page.url().match(/#\/research\/([^/]+)/)?.[1]
       if (!researchId) throw new Error('research id missing from URL')
-      await openTab(page, /Answer/)
+      await showAnswer(page)
       const again = page.getByRole('button', { name: 'Generate a new answer' })
       await expect(again).toBeEnabled({ timeout: 60_000 })
       rmSync(releaseFile, { force: true })
@@ -1668,7 +1725,7 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
   for (const key of ['Shift', 'ArrowLeft', 'Tab']) test(`fill status: ${key} ${key === 'Tab' ? 'moves focus and cancels follow' : 'keeps follow until the current cell'}`, async ({ page }) => {
     test.setTimeout(240_000)
     await startResearch(page, keys, `SYNTHETIC [slow-cells] ${key}: What sample sizes do molecule release schedules use?`)
-    await openTab(page, /Evidence/)
+    await openPanel(page, 'table')
     await addColumn(page)
     await dismissToastsByKeyboard(page)
     const fill = page.getByRole('button', { name: /^Fill empty cells/ })
@@ -1692,7 +1749,7 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
   test('fill response arriving after the person moved to Export CSV does not take the focus or follow it later', async ({ page }) => {
     test.setTimeout(240_000)
     await startResearch(page, keys, 'SYNTHETIC [slow-cells] delayed fill: What sample sizes do molecule release schedules use?')
-    await openTab(page, /Evidence/)
+    await openPanel(page, 'table')
     await addColumn(page)
     await dismissToastsByKeyboard(page)
     let release!: () => void
@@ -1724,7 +1781,7 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
 
   test('Exclude response preserves the Filter sources field and subsequent typing', async ({ page }) => {
     await startResearch(page, keys, 'SYNTHETIC delayed selection: How is molecule release scheduling optimized?')
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     const target = row(page, SOURCES[0])
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })
@@ -1756,7 +1813,7 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
 
   test('failed fill returns focus to Fill empty cells without a success handoff', async ({ page }) => {
     await startResearch(page, keys, 'SYNTHETIC failed fill: What sample sizes do molecule release schedules use?')
-    await openTab(page, /Evidence/)
+    await openPanel(page, 'table')
     await addColumn(page)
     await page.route('**/api/researches/*/tables/*/fill', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'SYNTHETIC fill rejected' }) }))
     const fill = page.getByRole('button', { name: /^Fill empty cells/ })
@@ -1773,7 +1830,7 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
 
   for (const status of [409, 503]) test(`failed answer start (${status}) returns focus to Generate a new answer, leaving the previous run alone`, async ({ page }) => {
     await startResearch(page, keys, `SYNTHETIC failed start ${status}: How is molecule release scheduling optimized?`)
-    await openTab(page, /Answer/)
+    await showAnswer(page)
     // The fast path's own answer is the previous run; the person's next answer start is the one refused.
     const retry = page.getByRole('button', { name: 'Generate a new answer' })
     await expect(retry).toBeEnabled({ timeout: 60_000 })
@@ -1793,7 +1850,7 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
 
   test('keyboard toast dismissal returns focus to the control before the toast', async ({ page }) => {
     await startResearch(page, keys, 'SYNTHETIC toast focus: How is molecule release scheduling optimized?')
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     await page.route('**/api/researches/*/selections/*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'SYNTHETIC selection rejected' }) }))
     await tabTo(page, row(page, SOURCES[0]).getByRole('button', { name: 'Exclude' }), 'toast-triggering Exclude')
     await page.keyboard.press('Enter')
@@ -1851,8 +1908,8 @@ async function motionScenario(browser: Browser, reduced: boolean, label: string)
     // The scripted model finishes at once, so live work needs the [slow-cells] marker: each cell call takes 1.5 s.
     await startResearch(page, motion, `SYNTHETIC [slow-cells] ${label} What sample sizes do molecule release schedules use?`)
     await dismissToasts(page)
-    await measure('research tabs, sources')
-    await openTab(page, /Evidence/)
+    await measure('research thread, sources')
+    await openPanel(page, 'table')
     await addColumn(page)
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
     const line = page.locator('.evidence-run')
@@ -1881,11 +1938,11 @@ async function motionScenario(browser: Browser, reduced: boolean, label: string)
     await measure('success toast')
     await dismissToasts(page)
     const opener = row(page, 'SYNTHETIC hostile abstract record')
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     await opener.getByRole('button', { name: 'Read abstract' }).click()
-    await expect(page.getByRole('dialog', { name: 'Source details' })).toBeVisible()
+    await expect(sourcePanel(page)).toBeVisible()
     await page.waitForTimeout(400)
-    await measure('source sheet open')
+    await measure('source panel open')
     await page.keyboard.press('Escape')
     // Typewriter title: with reduced motion the full title appears at once. The fast path's answer has already named
     // the research, so the stored title is changed once more (through the API, as a rename elsewhere would) and the
@@ -2033,21 +2090,21 @@ test.describe.serial('X06: reduced motion and the 200% layout', () => {
       await includeSources(page, zoom)
       await page.reload()
       await dismissToasts(page)
-      await openTab(page, /Sources/)
+      await openPanel(page, 'sources')
       await expect(row(page, 'SYNTHETIC molecule release scheduling with bisection')).toBeVisible()
-      await layout(page, log, 'research, Sources', { 'Sources tab': page.getByRole('tab', { name: /Sources/ }), 'Answer tab': page.getByRole('tab', { name: /Answer/ }), 'Evidence tab': page.getByRole('tab', { name: /Evidence/ }), 'first Read abstract': page.getByRole('button', { name: 'Read abstract' }) })
-      await openTab(page, /Answer/)
+      await layout(page, log, 'research, Sources', { 'Sources panel Close': panelOf(page, 'Sources').getByRole('button', { name: 'Close' }), 'Sources panel Full width': panelOf(page, 'Sources').getByRole('button', { name: 'Full width' }), 'first Read abstract': page.getByRole('button', { name: 'Read abstract' }) })
+      await showAnswer(page)
       // The answer the fast path wrote by itself after discovery.
       const artifact = page.getByRole('button', { name: /Open report:/ })
       await expect(artifact).toBeVisible({ timeout: 60_000 })
       await dismissToasts(page)
-      await layout(page, log, 'research, Answer', { 'Open report': artifact, 'Answer tab': page.getByRole('tab', { name: /Answer/ }) })
+      await layout(page, log, 'research, Answer', { 'Open report': artifact, 'Research actions': page.getByRole('button', { name: 'Research actions' }) })
       await artifact.click()
-      const report = page.locator('.report-sheet')
+      const report = reportPanel(page)
       await expect(report).toBeVisible()
-      await layout(page, log, 'answer report sheet', { Close: report.getByRole('button', { name: 'Close' }), Copy: report.getByRole('button', { name: 'Copy' }), Download: report.getByRole('button', { name: 'Download' }), 'citation chip': report.locator('.cite-chip'), 'reference button': report.locator('.reference-list li').first().getByRole('button') })
+      await layout(page, log, 'answer report panel', { Close: report.getByRole('button', { name: 'Close' }), Copy: report.getByRole('button', { name: 'Copy' }), Download: report.getByRole('button', { name: 'Download' }), 'citation chip': report.locator('.cite-chip'), 'reference button': report.locator('.reference-list li').first().getByRole('button') })
       await report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule release scheduling with bisection' }).getByRole('button').click()
-      const sheet = page.getByRole('dialog', { name: 'Source details' })
+      const sheet = sourcePanel(page)
       await expect(sheet.locator('mark.citation-highlight')).toBeVisible()
       // "Go to cited text" belongs to the document view of the page ("Extracted PDF text"); the single-passage view ("Cited passage") has no such button.
       await expect(sheet.getByRole('heading', { name: /^(Extracted PDF text|Cited passage)/ })).toBeVisible()
@@ -2058,10 +2115,10 @@ test.describe.serial('X06: reduced motion and the 200% layout', () => {
         Close: sheet.getByRole('button', { name: 'Close' }), 'Plain text tab': sheet.getByRole('tab', { name: 'Plain text' }), 'PDF tab': sheet.getByRole('tab', { name: 'PDF' }),
         ...(documentView ? { 'Go to cited text': goTo } : {}),
       })
-      await page.keyboard.press('Escape')
-      await report.getByRole('button', { name: 'Close' }).click()
+      await backPanel(page)
+      await closePanel(page)
       // evidence cell -> panel
-      await openTab(page, /Evidence/)
+      await openPanel(page, 'table')
       await addColumn(page)
       await page.getByRole('button', { name: /^Fill empty cells/ }).click()
       await expect(page.locator('[data-cell="0:0"]')).toContainText('128 byte', { timeout: 60_000 })

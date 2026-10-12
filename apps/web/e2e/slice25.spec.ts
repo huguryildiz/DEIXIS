@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort, readingDone } from './ports'
+import { reportPanel } from './panels'
 
 // Case P (slice 25, SW21, D106): works whose own PDF is withheld get their text from Europe PMC's open-access XML,
 // drawn as a PDF by DEIXIS. Every surface that names one of its pages says "Europe PMC text, rendered p. n", never
@@ -148,7 +149,7 @@ test.describe.serial('P: pages of Europe PMC’s drawn text say "rendered" on ev
     await page.goto('about:blank')
     await page.goto(`${server.url()}/#/research/${rid}`)
     await page.getByRole('button', { name: /Open report:/ }).first().click()
-    const report = page.locator('.report-sheet')
+    const report = reportPanel(page)
     const reference = report.locator('.reference-list li', { hasText: AGREED })
     await expect(reference.locator('.ref-pills')).toContainText(RENDERED)
     // The fast answer also cites the abstracts of the works it did not read in full, so the chip is the drawn work's.

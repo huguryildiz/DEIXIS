@@ -8,6 +8,7 @@ import type { CandidateCard, CandidateEdit, CandidateListItem, CandidatePlan, Co
 import { nextPort } from './ports'
 import { chooseLanguage } from './language'
 import { switchTheme } from './theme'
+import { openPanel } from './panels'
 
 // SYNTHETIC records and the scripted model only; a separate process, port and data directory.
 // These cases check workflow behavior, not scientific review quality. Browser execution is external to the sandbox.
@@ -82,7 +83,7 @@ async function fixture(page: Page, held = false): Promise<Fixture> {
   await page.waitForURL(/#\/research\//)
   const rid = page.url().split('/research/')[1].split('/')[0]
   await expect.poll(async () => ((await (await page.request.get(`${server.url}/api/researches/${rid}`)).json()) as ResearchView).runs[0]?.status).toBe('completed')
-  await page.getByRole('tab', { name: /^Candidates/ }).click()
+  await openPanel(page, 'cands')
   await page.getByRole('button', { name: 'Add candidate' }).click()
   await page.getByLabel('Your sentence').fill('SYNTHETIC bounded scheduling reduces delay under bounded arrivals.')
   await page.locator('.candidates-view').getByRole('button', { name: 'Save', exact: true }).click()

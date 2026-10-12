@@ -7,6 +7,7 @@ import type { LineageBaseline, LineageLink, LineagePlan, LineageReason, LineageS
 import { nextPort } from './ports'
 import { chooseLanguage } from './language'
 import { switchTheme } from './theme'
+import { openPanel, chooseTheme } from './panels'
 
 // Synthetic application behavior only. Port from nextPort().
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -84,7 +85,7 @@ async function fixture(page: Page, api: APIRequestContext, marker = '[lineage]',
   return { api, headers, rid, tid, base, ids }
 }
 async function openLines(page: Page) {
-  await page.getByRole('tab', { name: /^Evidence/ }).click()
+  await openPanel(page, 'table')
   await page.getByRole('tab', { name: 'Development lines', exact: true }).click()
   await expect(page.locator('.lineage-status')).toBeVisible()
 }
@@ -100,7 +101,7 @@ async function capture(page: Page, state: string, prepare?: () => Promise<void>,
     await page.setViewportSize({ width, height: width === 1440 ? 1000 : 844 })
     for (const theme of ['light', 'dark']) {
       const dark = await page.locator('html').evaluate(el => el.classList.contains('dark'))
-      if (dark !== (theme === 'dark')) await switchTheme(page, dark ? 'Switch to light mode' : 'Switch to dark mode')
+      if (dark !== (theme === 'dark')) await chooseTheme(page, theme as 'light' | 'dark')
       if (prepare) await prepare()
       if (focus) await focus.scrollIntoViewIfNeeded()
       if (width === 390) await expect.poll(() => page.locator('.lineage-view').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
@@ -403,7 +404,7 @@ test.describe('recorded development lines', () => {
     for (const theme of ['light', 'dark']) {
       await page.setViewportSize({ width: 390, height: 844 })
       const dark = await page.locator('html').evaluate(el => el.classList.contains('dark'))
-      if (dark !== (theme === 'dark')) await switchTheme(page, dark ? 'Switch to light mode' : 'Switch to dark mode')
+      if (dark !== (theme === 'dark')) await chooseTheme(page, theme as 'light' | 'dark')
       await expect.poll(() => page.locator('.lineage-view').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
       await page.screenshot({ path: path.join(OUT, `l7-mocked-390-${theme}.png`), fullPage: true, animations: 'disabled' })
     }

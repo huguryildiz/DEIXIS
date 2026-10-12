@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
+import { backPanel, openPanel, reportPanel, showAnswer, sourcePanel } from './panels'
 
 // Case O: the arXiv source route (slice 22, D104). With DEIXIS_ARXIV_SOURCE=auto and Marker not installed, a PDF that
 // is an arXiv version gets the numbered display equations of the authors' LaTeX source of that version placed into
@@ -79,13 +80,13 @@ test.describe.serial('O: the arXiv source route', () => {
     // equations (D253); a table fill does (D104's table route), so the source row shows nothing until a cell is filled.
     await startResearch(page, server, 'SYNTHETIC signal detection threshold study')
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
-    await page.getByRole('tab', { name: /Sources/ }).click()
+    await openPanel(page, 'sources')
     // Both readings include it when its PDF names its DOI; otherwise the person includes it.
     const include = row(page, TITLE).getByRole('button', { name: 'Include' })
     if (await include.isEnabled()) await include.click()
     await expect(include).toBeDisabled()
     await expect(row(page, TITLE).locator('.source-status')).not.toContainText('Equations from the arXiv source')
-    await page.getByRole('tab', { name: /Evidence/ }).click()
+    await openPanel(page, 'table')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
     await editor.getByLabel('Short name').fill('Threshold')
@@ -97,7 +98,7 @@ test.describe.serial('O: the arXiv source route', () => {
   })
 
   test('the source row reports equations matched to the page by their numbers, from the arXiv source', async () => {
-    await page.getByRole('tab', { name: /Sources/ }).click()
+    await openPanel(page, 'sources')
     const source = row(page, TITLE)
     await expect(source).toBeVisible()
     await expect(source.locator('.source-status')).toContainText('Equations from the arXiv source (v2) · 2 matched to 1 page by their numbers', { timeout: 30_000 })
@@ -132,13 +133,13 @@ test.describe.serial('O: the arXiv source route', () => {
       await route.fulfill({ response, json: body })
     })
     await page.reload()
-    await page.getByRole('tab', { name: /Answer/ }).click()
+    await showAnswer(page)
     const artifact = page.getByRole('button', { name: /Open report:/ })
     await expect(artifact).toBeVisible()
     const dismiss = page.getByRole('button', { name: 'Dismiss notification' })
     if (await dismiss.isVisible()) await dismiss.click()
     await artifact.click()
-    const report = page.locator('.report-sheet')
+    const report = reportPanel(page)
     await expect(report).toBeVisible()
     // The origin is visible on the citation chip itself (Sol r1 finding 5), and named for a screen reader.
     const chip = report.locator('.cite-chip', { has: page.locator('.cite-chip-origin') }).first()
@@ -156,7 +157,7 @@ test.describe.serial('O: the arXiv source route', () => {
     await page.setViewportSize({ width: 1280, height: 900 })
 
     await chip.click()
-    const sheet = page.getByRole('dialog', { name: 'Source details' })
+    const sheet = sourcePanel(page)
     await expect(sheet).toBeVisible()
     await expect(sheet.locator('.ref-pill', { hasText: 'arXiv source' })).toBeVisible()
     const notice = sheet.locator('.source-notice', { hasText: 'authors’ LaTeX from the arXiv source' })
@@ -169,6 +170,6 @@ test.describe.serial('O: the arXiv source route', () => {
     await notice.scrollIntoViewIfNeeded()
     await shot(page, 'O-passage-notice-phone')
     await page.setViewportSize({ width: 1280, height: 900 })
-    await page.keyboard.press('Escape')
+    await backPanel(page)
   })
 })

@@ -9,6 +9,7 @@ import { setUiLanguage, t } from '../src/i18n'
 import { nextPort } from './ports'
 import { chooseLanguage } from './language'
 import { switchTheme } from './theme'
+import { backPanel, openPanel, panel, reportPanel, showAnswer, sourcePanel } from './panels'
 
 // SYNTHETIC stored inputs and scripted model output. Mocked failures/races do not create backend evidence.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -42,9 +43,10 @@ class ReextractServer {
 }
 
 const row = (page: Page, title: string) => page.locator('.source-row:not(.is-other-version)').filter({ hasText: title })
-const sheet = (page: Page) => page.getByRole('dialog', { name: 'Source details' })
-const reportSheet = (page: Page) => page.locator('.report-sheet').last()
-const sourcesTab = (page: Page) => page.getByRole('tab', { name: /^Sources/ }).click()
+// An answer's citation opens Source details as a side panel; the evidence table and the evidence report still open their own sheet.
+const sheet = (page: Page) => sourcePanel(page).or(page.getByRole('dialog', { name: 'Source details' }))
+const reportSheet = (page: Page) => page.locator('.report-sheet').last()  // the evidence report is still a sheet
+const sourcesTab = (page: Page) => openPanel(page, 'sources')
 const quiet = async (page: Page) => { for (const button of await page.getByRole('button', { name: 'Dismiss notification' }).all()) await button.click().catch(() => {}) }
 const shot = async (page: Page, name: string, record: unknown) => {
   writeFileSync(path.join(OUT, `${name}.json`), JSON.stringify({ evidence: 'synthetic application records; simulated states are labelled', record }, null, 2))
@@ -116,7 +118,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     await shot(ui, 'reextract-initial-1280-light', await view())
 
     step('2a: generate source-linked answer')
-    await ui.getByRole('tab', { name: 'Answer', exact: true }).click()
+    await showAnswer(ui)
     await ui.getByRole('button', { name: 'Generate source-linked answer', exact: true }).click()
     await expect.poll(async () => (await view()).answers[0]?.status).toBe('structurally_valid')
     const answered = await view()
@@ -124,7 +126,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     expect(answerEvidence.length).toBeGreaterThan(0)
     const answerPassageId = answerEvidence[0].passage_id
     step('2b: add and fill evidence column')
-    await ui.getByRole('tab', { name: /^Evidence/ }).click()
+    await openPanel(ui, 'table')
     await ui.getByRole('button', { name: /Add a column/ }).click()
     const editor = ui.getByRole('dialog', { name: 'Add column' })
     await editor.getByLabel('Short name').fill('SYNTHETIC method')
@@ -155,17 +157,17 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
       expect(p.occurrence!.is_current).toBe(true)
     }
     step('2d: open current answer citation with exact extraction ID')
-    await ui.getByRole('tab', { name: 'Answer', exact: true }).click()
+    await showAnswer(ui)
     async function openAnswerCitation() {
       // AnswerBlock renders citations inside its report drawer, opened by the answer artifact.
       await ui.getByRole('button', { name: /^(Open report:|Raporu aç:)/ }).first().click()
-      await ui.locator('.report-sheet .legacy-answer .claim .cite-chip').first().click()
+      await reportPanel(ui).locator('.legacy-answer .claim .cite-chip').first().click()
     }
     async function closeAnswerCitation() {
-      await ui.keyboard.press('Escape')
+      await backPanel(ui)
       await expect(ui.locator('.source-sheet')).toHaveCount(0)
       await ui.keyboard.press('Escape')
-      await expect(ui.locator('.report-sheet')).toHaveCount(0)
+      await expect(reportPanel(ui)).toHaveCount(0)
     }
     const currentRequest = ui.waitForRequest(r => r.url().includes(textPath))
     await openAnswerCitation()
@@ -289,7 +291,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
       await expect(sheet(ui)).toContainText('Which bytes this text was read from was not recorded.')
       await expect(sheet(ui)).toContainText('The PDF file was restored after this text was extracted.')
     }
-    await ui.getByRole('tab', { name: 'Answer', exact: true }).click()
+    await showAnswer(ui)
     const citedRequest = ui.waitForRequest(r => r.url().includes(textPath))
     await openAnswerCitation()
     expect(new URL((await citedRequest).url()).searchParams.get('extraction_id')).toBe(oldId)
@@ -305,13 +307,13 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     expect((await passage(answerPassageId)).occurrence!.file_restored_after).toBe(true)
     await closeAnswerCitation()
     step('8b: cell panel Open in source')
-    await ui.getByRole('tab', { name: /^Evidence/ }).click()
+    await openPanel(ui, 'table')
     await ui.locator('[data-cell="0:0"]').click()
     await ui.getByRole('dialog', { name: 'SYNTHETIC method', exact: true }).getByRole('button', { name: 'Open in source', exact: true }).first().click()
     await assertCited(); expect((await passage(cellPassageId)).evidence_status).toBe('text_superseded')
     await ui.keyboard.press('Escape'); await ui.keyboard.press('Escape')
     step('8c/9: report freshness notice and report citation')
-    await ui.getByRole('tab', { name: 'Answer', exact: true }).click()
+    await showAnswer(ui)
     await ui.getByRole('button', { name: 'Open evidence report', exact: true }).click()
     const refreshedReport = await report()
     const count = refreshedReport.passage_freshness.affected.filter(p => p.evidence_status === 'text_superseded').length
@@ -339,7 +341,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     await entries.nth(0).getByText('Details', { exact: true }).click()
     await expect(entries.nth(0)).toContainText(history.text_retries[0].candidate!.extraction_version)
     step('11: translated Activity event labels')
-    await ui.getByRole('tab', { name: 'Activity', exact: true }).click()
+    await openPanel(ui, 'activity')
     await expect(ui.getByText('PDF text retried', { exact: true }).first()).toBeVisible()
     await expect(ui.getByText('PDF file restore', { exact: true }).first()).toBeVisible()
     await expect(ui.locator('.activity-panel')).not.toContainText('asset_text_retried')
@@ -348,7 +350,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
 
     // Simulated response-identity mismatch must fall back to the stored single passage.
     step('12c: simulated mismatched document identity')
-    await ui.getByRole('tab', { name: 'Answer', exact: true }).click()
+    await showAnswer(ui)
     const currentText = await get<AssetText>(client, textPath)
     await ui.route(`**${textPath}?extraction_id=*`, route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(currentText) }))
     await openAnswerCitation()
@@ -409,7 +411,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
       await shot(ui, `reextract-history-${width}-${theme}`, history)
       expect((await new AxeBuilder({ page: ui }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([])
       step(`14: cited sheet ${width}px / ${theme}`)
-      await ui.getByRole('tab', { name: 'Answer', exact: true }).click()
+      await showAnswer(ui)
       await openAnswerCitation(); await assertCited()
       await shot(ui, `reextract-cited-${width}-${theme}`, await passage(answerPassageId))
       expect((await new AxeBuilder({ page: ui }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([])
@@ -439,16 +441,16 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     await closeAnswerCitation()
     step('13: Turkish results, history and occurrence notice')
     await chooseLanguage(ui, 'tr')
-    await ui.getByRole('tab', { name: /^Kaynaklar/ }).click()
+    await openPanel(ui, 'sources', { row: /^Kaynaklar\b/, title: 'Kaynaklar', menu: 'Araştırma işlemleri' })
     await expect(row(ui, titles[0])).toContainText('Metin yeniden çıkarıldı.')
     await expect(row(ui, titles[2])).toContainText('Bu PDF parola gerektiriyor.')
     const trHistory = row(ui, titles[1]).getByRole('button', { name: /Metni yeniden okuma geçmişi/ })
     if (await trHistory.getAttribute('aria-expanded') !== 'true') await trHistory.click()
     await expect(entries).toContainText(['Bu çıkarım kullanıma alındı.', 'Dosya geri yüklendi; bu işlem metni yeniden okumadı.', 'Reddedildi:'])
     for (const sentence of ['Text extracted again.', 'File restored.', 'Future work uses this extraction', 'Not measured:', 'Refused:']) await expect(row(ui, titles[1])).not.toContainText(sentence)
-    await ui.getByRole('tab', { name: 'Yanıt', exact: true }).click()
+    await showAnswer(ui)
     await openAnswerCitation()
-    await expect(sheet(ui).or(ui.getByRole('dialog', { name: 'Kaynak ayrıntıları' }))).toContainText('Bu pasaj önceki bir metin çıkarımından geliyor')
+    await expect(panel(ui, 'Kaynak ayrıntıları')).toContainText('Bu pasaj önceki bir metin çıkarımından geliyor')
     await expect(ui.locator('.source-sheet')).toContainText('Bu metnin hangi baytlardan okunduğu kaydedilmedi.')
     await expect(ui.locator('.source-sheet')).not.toContainText('This passage comes from')
     await shot(ui, 'reextract-turkish-390-dark', { history: await get<RecoveryHistory>(client, `${researchPath}/sources/${s2}/assets/${a2.id}/recovery-history`), passage: await passage(answerPassageId) })

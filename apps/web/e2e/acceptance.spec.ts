@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
 import { nextPort } from './ports'
 import { switchTheme } from './theme'
+import { backPanel, closePanel, openPanel, panel, reportPanel, showAnswer, sourcePanel } from './panels'
 
 // A–G acceptance cases (the first web slice) in a real browser against the fixture server.
 // Records are SYNTHETIC and the model is scripted: this checks application behavior, not model quality.
@@ -82,7 +83,7 @@ test('stored old sw inspection keeps answer, evidence, transcript and waiting wi
     await page.goto(server.url(`#/research/${rid}`))
     await expect(page.getByRole('button', { name: /Ran answer generation/ })).toBeVisible()
     await page.getByRole('button', { name: /Open report:/ }).click()
-    const report = page.locator('.report-sheet')
+    const report = reportPanel(page)
     await expect(report).toContainText('SYNTHETIC stored claim.')
     await expect(report.locator('.claim')).toContainText('SYNTHETIC stored claim.')
     const checks = report.locator('.phrasing-note')
@@ -102,15 +103,15 @@ test('stored old sw inspection keeps answer, evidence, transcript and waiting wi
     await page.setViewportSize({ width: 1280, height: 900 })
     const reference = report.locator('.reference-list li', { hasText: 'SYNTHETIC historical sw source' })
     await reference.getByRole('button').click()
-    await expect(page.getByRole('dialog', { name: 'Source details' })).toContainText('SYNTHETIC stored exercise evidence.')
-    await page.keyboard.press('Escape')
+    await expect(sourcePanel(page)).toContainText('SYNTHETIC stored exercise evidence.')
+    await backPanel(page)
     const waiting = await (await page.request.get(`${server.url()}api/researches/${rid}/waiting`)).json()
     expect(waiting.order).toBe('fulltext_plan')
     expect(waiting.count).toBe(1)
     await page.setViewportSize({ width: 390, height: 844 })
     await expect(report).toContainText('SYNTHETIC stored claim.')
-    await report.getByRole('button', { name: 'Close' }).click()
-    await page.getByRole('tab', { name: /Waiting for your PDF/ }).click()
+    await closePanel(page)
+    await openPanel(page, 'pdfs')
     await expect(page.getByRole('list', { name: 'Works waiting for your PDF, in reading order' })).toContainText(
       'SYNTHETIC historical sw source')
     const after = await (await page.request.get(url)).json()
@@ -137,7 +138,7 @@ test('fast answer abstract basis label renders at desktop and narrow widths in b
     })
     await page.goto(server.url(`#/research/${rid}`))
     await page.getByRole('button', { name: /Open report:/ }).click()
-    const report = page.locator('.report-sheet')
+    const report = reportPanel(page)
     const badge = report.getByText('From abstract', { exact: true })
     for (const width of [1280, 390]) {
       await page.setViewportSize({ width, height: 900 })
@@ -332,7 +333,7 @@ async function startResearch(page: Page, server: FixtureServer, question: string
   if (question.includes('[rate-limit]') || question.includes('[model-down]') || question.includes('[model-quota]')) return
   await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
   if (includeInUi) {
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     const titles = [
       'SYNTHETIC molecule release scheduling with bisection',
       'SYNTHETIC relay budget allocation',
@@ -344,9 +345,9 @@ async function startResearch(page: Page, server: FixtureServer, question: string
       await expect(source.getByRole('button', { name: 'Include', exact: true })).toBeDisabled()
     }
     await page.reload()
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     for (const title of titles) await expect(row(page, title).getByRole('button', { name: 'Include', exact: true })).toBeDisabled()
-    await openTab(page, /Answer/)
+    await showAnswer(page)
     return
   }
   const rid = page.url().match(/#\/research\/([^/]+)/)?.[1]
@@ -367,8 +368,6 @@ async function startResearch(page: Page, server: FixtureServer, question: string
   }
   await page.reload()
 }
-
-async function openTab(page: Page, name: RegExp) { await page.getByRole('tab', { name }).click() }
 
 test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   // Full-text retrieval and reading on, as the app ships: the fast path reads the open PDFs before its cutoff, so the
@@ -410,7 +409,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   })
 
   test('D: a keyword false positive can be excluded with a reason that is kept', async () => {
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     const hospital = row(page, 'SYNTHETIC optimization of hospital visiting hours')
     await expect(hospital).toContainText('cited by 1,234 (OpenAlex)')
     await hospital.getByRole('button', { name: 'Exclude' }).click()
@@ -419,7 +418,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await expect(hospital.getByText('Your reason: No optimization model; the title uses the word loosely.')).toBeVisible()
     await expect(hospital.getByRole('button', { name: 'Exclude' })).toBeDisabled()
     await page.reload()
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     await expect(row(page, 'SYNTHETIC optimization of hospital visiting hours')).toContainText('Your reason: No optimization model; the title uses the word loosely.')
     await shot(page, 'D-excluded-with-reason')
   })
@@ -445,7 +444,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     expect(await passage.locator('img').count()).toBe(0)
     expect(await page.evaluate(() => (window as unknown as { __injected?: number }).__injected)).toBeUndefined()
     await shot(page, 'G-hostile-abstract-as-text')
-    await page.keyboard.press('Escape')
+    await backPanel(page)
     await expect(page.locator('.research-facts')).toContainText('Files + academic search')
 
     await page.locator('input[type=file]').first().setInputFiles(server.hostilePdf())
@@ -454,7 +453,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   })
 
   test('A: an answer citation opens the stored passage of the cited source version', async () => {
-    await openTab(page, /Answer/)
+    await showAnswer(page)
     // The fast path wrote V1 by itself when discovery ended; the choices made since (D excluded a source, G added a
     // file) reach the model in a new answer, V2.
     const artifact = page.getByRole('button', { name: /Open report:/ })
@@ -465,7 +464,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     const dismiss = page.getByRole('button', { name: 'Dismiss notification' })
     if (await dismiss.isVisible()) await dismiss.click()
     await artifact.click()
-    const report = page.locator('.report-sheet')
+    const report = reportPanel(page)
     await expect(report).toBeVisible()
     await shot(page, 'answer-report-drawer-desktop')
     await page.setViewportSize({ width: 390, height: 844 })
@@ -493,7 +492,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await reference.scrollIntoViewIfNeeded()
     await shot(page, 'D59-answer-references')
     await reference.getByRole('button').click()
-    const sheet = page.getByRole('dialog', { name: 'Source details' })
+    const sheet = sourcePanel(page)
     await expect(sheet.getByText('PDF text passage', { exact: true })).toBeVisible()
     await expect(sheet.locator('.source-title')).toHaveText('SYNTHETIC molecule release scheduling with bisection')
     const highlight = sheet.locator('mark.citation-highlight')
@@ -514,38 +513,38 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await shot(page, 'A-citation-opens-pdf-tab')
     await sheet.getByRole('tab', { name: 'Plain text' }).click()
     await expect(highlight).toBeVisible()
-    await page.keyboard.press('Escape')
+    await backPanel(page)
     if (await dismiss.isVisible()) await dismiss.click()
-    await report.getByRole('button', { name: 'Close' }).click()
+    await closePanel(page)
     await switchTheme(page, 'Switch to dark mode')
     await artifact.click()
     await expect(report).toBeVisible()
     await shot(page, 'answer-report-drawer-dark')
     await report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule release scheduling with bisection' }).getByRole('button').click()
-    const darkSheet = page.getByRole('dialog', { name: 'Source details' })
+    const darkSheet = sourcePanel(page)
     await expect(darkSheet.locator('mark.citation-highlight')).toBeVisible()
     await shot(page, 'A-citation-highlight-dark')
-    await page.keyboard.press('Escape')
-    await report.getByRole('button', { name: 'Close' }).click()
+    await backPanel(page)
+    await closePanel(page)
     await switchTheme(page, 'Switch to light mode')
     await artifact.click()
   })
 
   test('B: an abstract-only source is labelled as abstract-based, without a page', async () => {
-    const reference = page.locator('.report-sheet .reference-list li', { hasText: 'SYNTHETIC relay budget allocation' })
+    const reference = reportPanel(page).locator('.reference-list li', { hasText: 'SYNTHETIC relay budget allocation' })
     await expect(reference.locator('.ref-pills')).toContainText('Abstract')
     await reference.getByRole('button').click()
-    const sheet = page.getByRole('dialog', { name: 'Source details' })
+    const sheet = sourcePanel(page)
     await expect(sheet.locator('.source-chips')).toContainText('Abstract only')
     await expect(sheet.locator('.source-section')).toHaveText('Abstract')  // no page locator
     await expect(sheet.getByRole('tab', { name: 'PDF' })).toBeDisabled()
     await shot(page, 'B-abstract-only')
-    await page.keyboard.press('Escape')
+    await backPanel(page)
   })
 
   test('C: evidence from the manuscript stays labelled with the manuscript version', async () => {
     // D48: the answer reads one version per work. The record has no PDF text, so the manuscript's open PDF is read and cited as the manuscript.
-    const letter = page.locator('.report-sheet .reference-list li', { hasText: 'SYNTHETIC molecule schedule letter' })
+    const letter = reportPanel(page).locator('.reference-list li', { hasText: 'SYNTHETIC molecule schedule letter' })
     await expect(letter).toHaveCount(1)
     await expect(letter).toContainText('submitted manuscript')
     await expect(letter.locator('.ref-pills')).toContainText('PDF p. 1')
@@ -553,11 +552,11 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   })
 
   test('G: instructions inside an uploaded PDF do not change scope or choices', async () => {
-    const report = page.locator('.report-sheet')
+    const report = reportPanel(page)
     await expect(report.locator('.reference-list')).toContainText('hostile')  // cited as a passage like any other text
     await expect(page.locator('.research-facts')).toContainText('Files + academic search')
-    await report.getByRole('button', { name: 'Close' }).click()
-    await openTab(page, /Sources/)
+    await closePanel(page)
+    await openPanel(page, 'sources')
     await expect(row(page, 'SYNTHETIC optimization of hospital visiting hours').getByText('Your reason:')).toBeVisible()
     await expect(row(page, 'SYNTHETIC relay budget allocation').getByRole('button', { name: 'Include' })).toBeDisabled()
   })
@@ -568,25 +567,25 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await page.getByLabel('Find research, sources or pages').fill('visiting hours')
     await page.getByRole('option', { name: /SYNTHETIC optimization of hospital visiting hours/ }).click()
     await page.waitForURL(/#\/research\/[^/]+\/sources$/)
-    const sourcesTab = page.getByRole('tab', { name: /Sources/ })
-    await expect(sourcesTab).toHaveAttribute('aria-selected', 'true')
-    await expect(sourcesTab).toBeFocused()
-    await expect(sourcesTab).toBeInViewport()
+    const sourcesPanel = panel(page, 'Sources')
+    await expect(sourcesPanel).toBeVisible()
+    await expect(sourcesPanel.locator('#split-panel-title')).toBeFocused()
+    await expect(sourcesPanel).toBeInViewport()
     await expect(row(page, 'SYNTHETIC optimization of hospital visiting hours')).toBeVisible()
     await shot(page, 'quick-find-opens-sources')
   })
 
   async function expectReopened(label: string) {
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Synthetic evidence for release scheduling and optimization in constrained molecular communication networks')
-    await openTab(page, /Answer/)
+    await showAnswer(page)
     await page.getByRole('button', { name: /Open report:/ }).click()
-    const report = page.locator('.report-sheet')
+    const report = reportPanel(page)
     expect(await report.locator('.claim').allInnerTexts()).toEqual(claimsBefore)
     await report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule schedule letter' }).filter({ hasText: 'submitted manuscript' }).getByRole('button').click()
-    await expect(page.getByRole('dialog', { name: 'Source details' })).toContainText('submitted manuscript')
-    await page.keyboard.press('Escape')
-    await report.getByRole('button', { name: 'Close' }).click()
-    await openTab(page, /Sources/)
+    await expect(sourcePanel(page)).toContainText('submitted manuscript')
+    await backPanel(page)
+    await closePanel(page)
+    await openPanel(page, 'sources')
     await expect(row(page, 'SYNTHETIC optimization of hospital visiting hours').getByText('Your reason: No optimization model')).toBeVisible()
     await expect(row(page, 'SYNTHETIC molecule schedule letter').getByRole('button', { name: 'Include' })).toBeDisabled()
     await shot(page, `F-${label}`)
@@ -614,7 +613,7 @@ test.describe.serial('Failures: E and B (code check)', () => {
   test('E: a provider rate limit stays visible and is not shown as zero results', async () => {
     await startResearch(page, server, 'SYNTHETIC [rate-limit] How is molecule release scheduling optimized?')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     // The fast path also lists its citation-chain requests (chain:fast:…) to OpenAlex, which the keyword rate limit
     // does not reach; the limited request is the keyword search, and no OpenAlex row reads as zero results.
     const openAlex = page.locator('.search-summary:not(.flow-block) .search-summary-list > div', { hasText: 'OpenAlex' })
@@ -632,14 +631,14 @@ test.describe.serial('Failures: E and B (code check)', () => {
     await expect(page.getByText('The service did not give a recovery time.', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Resume' })).toHaveCSS('background-color', 'rgb(59, 91, 154)')
     await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCSS('color', 'rgb(180, 35, 24)')
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     await expect(page.locator('.source-row')).toHaveCount(6)  // the completed search is kept
     await expect(page.locator('.proposal', { hasText: 'Model proposal' })).toHaveCount(0)
     await shot(page, 'E-model-failed-paused')
     await page.getByRole('button', { name: 'Resume' }).click()
     await expect(page.locator('.source-row')).toHaveCount(6)  // sw screening resumes without creating legacy selection proposals
     // The run's name and model live in the timeline, so the finished run is read on the Answer tab.
-    await openTab(page, /Answer/)
+    await showAnswer(page)
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 30000 })
     // The fast path's own answer follows the resumed discovery, which is then folded: open it to read its model.
     const discovery = page.locator('.chat-toggle', { hasText: 'Ran search & screening' })
@@ -694,7 +693,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
   test('a table starts from the included sources, takes a column and a suggested column, and fills', async () => {
     await startResearch(page, server, 'SYNTHETIC: What sample sizes do molecule release schedules use?', undefined, true)
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    await openTab(page, /Evidence/)
+    await openPanel(page, 'table')
     await expect(page.getByText('No table yet.')).toBeVisible()
     await shot(page, 'evidence-empty-desktop')
     await page.getByRole('button', { name: /Add a column/ }).click()
@@ -729,7 +728,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     const rowKey = (await firstRow.locator('.source-key').innerText()).trim()
     expect(rowKey).toMatch(/^Synthetic(\d\d|nd)[a-z]{0,2}$/)
     await firstRow.locator('.evidence-row-open').click()
-    const details = page.getByRole('dialog', { name: 'Source details' })
+    const details = page.getByRole('dialog', { name: 'Source details' })  // the table's own source sheet
     await expect(details.locator('.source-venue .source-key')).toHaveText(rowKey)
     await shot(page, 'D59-evidence-row-opens-source')
     await page.keyboard.press('Escape')
@@ -751,7 +750,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await expect(panel.locator('.evidence-current')).toHaveText('128 byte')
     await expect(panel).toContainText('Semantic support not checked.')
     await panel.getByRole('button', { name: 'Open in source' }).first().click()
-    const sheet = page.getByRole('dialog', { name: 'Source details' })
+    const sheet = page.getByRole('dialog', { name: 'Source details' })  // the table's own source sheet
     await expect(sheet.locator('.source-title')).toHaveText('SYNTHETIC molecule release scheduling with bisection')
     await expect(sheet.locator('mark.citation-highlight')).toBeVisible()
     await shot(page, 'evidence-show-evidence')
@@ -793,7 +792,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
   test('a write from an older second tab is refused with 409 and its draft is kept', async ({ browser }) => {
     const other = await browser.newPage()
     try {
-      await other.goto(`${page.url().replace(/\/evidence$/, '')}/evidence`)
+      await other.goto(`${page.url().replace(/\/(evidence|table)$/, '')}/table`)
       await page.locator('[data-cell="1:0"]').click()
       await other.locator('[data-cell="1:0"]').click()
       const first = page.getByRole('dialog', { name: 'Sample size' })
@@ -852,10 +851,10 @@ test.describe.serial('Evidence table runs and templates', () => {
   test.afterAll(async () => { await server.stop() })
 
   // "[slow-cells]": each cell extraction call takes 1.5 s in the fixture, so the fill can be controlled while it runs.
-  test('a table fill pauses, is reached from the tab bar, resumes, and cancels after a confirmation; written values stay', async () => {
+  test('a table fill pauses, is reached from the top bar chip, resumes, and cancels after a confirmation; written values stay', async () => {
     await startResearch(page, server, 'SYNTHETIC [slow-cells] What sample sizes do molecule release schedules use?')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    await openTab(page, /Evidence/)
+    await openPanel(page, 'table')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
     await editor.getByLabel('Short name').fill('Sample size')
@@ -867,7 +866,7 @@ test.describe.serial('Evidence table runs and templates', () => {
     const line = page.locator('.evidence-run')
     await expect(line).toContainText('Filling empty cells')
     await expect(line).toContainText('/ 3 sources')
-    await expect(page.locator('.research-tabs-bar .run-strip')).toHaveCount(0)  // controls sit above the table, not in the tab bar
+    await expect(page.locator('.research-topbar .run-strip')).toHaveCount(0)  // controls sit above the table, not in the top bar
     await expect(written()).toHaveCount(1)
     await toastsOff()
     await shot(page, 'evidence-run-live')
@@ -880,11 +879,11 @@ test.describe.serial('Evidence table runs and templates', () => {
     await page.waitForTimeout(2000)
     await expect(written()).toHaveCount(atPause)  // nothing is written while paused
 
-    await openTab(page, /Answer/)
+    await showAnswer(page)
     const chip = page.locator('.run-chip')
     await expect(chip).toHaveText(/Table fill · Paused/)
     await chip.click()
-    await expect(page.getByRole('tab', { name: 'Evidence' })).toHaveAttribute('aria-selected', 'true')
+    await expect(panel(page, 'Evidence table')).toBeVisible()
     await expect(chip).toHaveCount(0)
 
     await line.getByRole('button', { name: 'Resume' }).click()
@@ -941,13 +940,13 @@ test.describe.serial('Replacing a source PDF (P5 slice 2, D45)', () => {
     await startResearch(page, server, 'SYNTHETIC: How is molecule release scheduling optimized?')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
     // The fast path read the open PDF before its cutoff and its own answer cites it.
-    await openTab(page, /Answer/)
+    await showAnswer(page)
     await expect(page.getByText('Ran answer generation')).toBeVisible()
     await page.getByRole('button', { name: /Open report:/ }).click()
-    await expect(page.locator('.report-sheet .notice', { hasText: 'A PDF this answer read' })).toHaveCount(0)
-    await page.locator('.report-sheet').getByRole('button', { name: 'Close' }).click()
+    await expect(reportPanel(page).locator('.notice', { hasText: 'A PDF this answer read' })).toHaveCount(0)
+    await closePanel(page)
 
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     const source = row(page, title)
     const chooser = page.waitForEvent('filechooser')
     await source.getByRole('button', { name: 'Replace PDF' }).click()
@@ -961,12 +960,12 @@ test.describe.serial('Replacing a source PDF (P5 slice 2, D45)', () => {
     await expect(source).toContainText('Previous PDF replaced on')
     await shot(page, 'D45-source-row-replaced')
 
-    await openTab(page, /Answer/)
+    await showAnswer(page)
     await page.getByRole('button', { name: /Open report:/ }).click()
-    await expect(page.locator('.report-sheet .notice', { hasText: 'A PDF this answer read was replaced' })).toBeVisible()
+    await expect(reportPanel(page).locator('.notice', { hasText: 'A PDF this answer read was replaced' })).toBeVisible()
     await shot(page, 'D45-report-source-text-changed')
-    await page.locator('.report-sheet .reference-list li', { hasText: title }).getByRole('button').click()
-    const sheet = page.getByRole('dialog', { name: 'Source details' })
+    await reportPanel(page).locator('.reference-list li', { hasText: title }).getByRole('button').click()
+    const sheet = sourcePanel(page)
     await expect(sheet.locator('.source-notice')).toContainText('comes from a PDF that was later replaced')
     await expect(sheet.locator('mark.citation-highlight')).toBeVisible()  // the stored anchor of the previous file's passage
     await shot(page, 'D45-citation-previous-pdf-text')
@@ -977,7 +976,7 @@ test.describe.serial('Replacing a source PDF (P5 slice 2, D45)', () => {
     await sheet.getByRole('tab', { name: 'Plain text' }).click()
     expect(await sheet.locator('.sheet-body').evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
     await shot(page, 'D45-citation-previous-pdf-mobile')
-    await page.keyboard.press('Escape')
+    await backPanel(page)
     await page.setViewportSize({ width: 1280, height: 900 })
   })
 })
@@ -998,7 +997,7 @@ test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)'
     await startResearch(page, server, 'SYNTHETIC: How is molecule release scheduling optimized?')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
     researchUrl = page.url()
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     await pick(relay).check()
     await pick(hostile).check()
     const bar = page.getByRole('region', { name: 'Chosen sources' })
@@ -1011,7 +1010,7 @@ test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)'
     await expect(confirm).toHaveCSS('opacity', '1')
     await shot(page, 'D50-start-table-confirmation')
     await confirm.getByRole('button', { name: 'Start table' }).click()
-    await expect(page.getByRole('tab', { name: 'Evidence' })).toHaveAttribute('aria-selected', 'true')
+    await expect(panel(page, 'Evidence table')).toBeVisible()
 
     await page.getByRole('button', { name: 'Add column', exact: true }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
@@ -1036,12 +1035,12 @@ test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)'
     await tableRow.getByRole('button', { name: 'Restore' }).click()
     await expect(page.getByText('Trash is empty.')).toBeVisible()
     await page.goto(researchUrl)
-    await openTab(page, /Evidence/)
+    await openPanel(page, 'table')
     await expect(page.locator('.evidence-cell')).toHaveText(cells)
   })
 
   test('a removed source comes back from the notification, and again from the Trash', async () => {
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     await toastsOff()
     const relayRow = row(page, relay)
     await relayRow.getByRole('button', { name: 'Remove from research' }).click()
@@ -1095,15 +1094,15 @@ test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)'
     await removed.locator('.trash-row', { hasText: relay }).getByRole('button', { name: 'Restore' }).click()
     await expect(page.getByText('Trash is empty.')).toBeVisible()
     await page.goto(researchUrl)
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     await expect(row(page, relay)).toBeVisible()
   })
 
   test('a quote of a removed source opens with a label and can restore it', async () => {
-    await openTab(page, /Answer/)
+    await showAnswer(page)
     // The answer the fast path wrote by itself after discovery quotes the source removed below.
     await expect(page.getByText('Ran answer generation')).toBeVisible()
-    await openTab(page, /Sources/)
+    await openPanel(page, 'sources')
     await toastsOff()
     await pick(bisection).check()
     await page.setViewportSize({ width: 390, height: 844 })
@@ -1117,19 +1116,19 @@ test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)'
     await expect(row(page, bisection)).toHaveCount(0)
     await toastsOff()
 
-    await openTab(page, /Answer/)
+    await showAnswer(page)
     await page.getByRole('button', { name: /Open report:/ }).click()
-    const reference = page.locator('.report-sheet .reference-list li', { hasText: bisection })
+    const reference = reportPanel(page).locator('.reference-list li', { hasText: bisection })
     await expect(reference.locator('.ref-pills')).toContainText('Removed from this research')
     await reference.getByRole('button').click()
-    const sheet = page.getByRole('dialog', { name: 'Source details' })
+    const sheet = sourcePanel(page)
     await expect(sheet.locator('.source-notice.is-removed')).toContainText('This source was removed from this research.')
     await expect(sheet.locator('mark.citation-highlight')).toBeVisible()
     await shot(page, 'D50-removed-source-quote')
     await sheet.getByRole('button', { name: 'Restore to this research' }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Restored to this research.' })).toBeVisible()
-    await page.locator('.report-sheet').getByRole('button', { name: 'Close' }).click()
-    await openTab(page, /Sources/)
+    await closePanel(page)
+    await openPanel(page, 'sources')
     await expect(row(page, bisection)).toBeVisible()
   })
 })

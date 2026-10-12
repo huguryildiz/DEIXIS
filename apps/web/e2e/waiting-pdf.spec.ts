@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort, readingDone } from './ports'
+import { expectMenuCount, openPanel } from './panels'
 
 // Case K: the works of an sw research waiting for the person's PDF (slice 18a). A work no route found a PDF for is
 // listed in reading order with its DOI link; the person drops a publisher file, the match names the work by its DOI,
@@ -115,9 +116,8 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
 
   test('a waiting work is listed in reading order with its DOI link, at desktop and phone width', async () => {
     await page.goto(`${URL}/#/research/${rid}`)
-    const tab = page.getByRole('tab', { name: /^Waiting for your PDF/ })
-    await expect(tab).toHaveText(/1$/)
-    await tab.click()
+    await expectMenuCount(page, 'pdfs', 1)
+    await openPanel(page, 'pdfs')
     await expect(page.getByRole('heading', { name: '1 work waits for your PDF' })).toBeVisible()
     const row = rows(page).getByRole('listitem').filter({ hasText: WAITING_TITLE })
     await expect(row).toContainText('No open copy was found by any route.')
@@ -150,7 +150,6 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
   test('a dropped file is matched by its DOI, the person picks the version and confirms, and the work leaves the list', async () => {
     await page.goto('about:blank')
     await page.goto(`${URL}/#/research/${rid}/waiting`)
-    const tab = page.getByRole('tab', { name: /^Waiting for your PDF/ })
     await expect(rows(page)).toBeVisible()
     await dropFile(page, publisherPdf, 'q955-publisher.pdf')
     const panel = page.getByRole('group', { name: 'Where q955-publisher.pdf goes' })
@@ -169,7 +168,7 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
     await expect(page.getByText('PDF attached to the version you chose.', { exact: false })).toBeVisible()
     await expect(panel).toHaveCount(0)
     await expect(page.getByRole('heading', { name: 'No work waits for your PDF' })).toBeVisible()
-    await expect(tab).toHaveText(/0$/)
+    await expectMenuCount(page, 'pdfs', 0)
     await shot(page, 'K-waiting-empty-1440')
   })
 

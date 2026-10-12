@@ -9,6 +9,7 @@ import { setUiLanguage } from '../src/i18n'
 import { stepLabel } from '../src/labels'
 import { nextPort } from './ports'
 import { switchTheme } from './theme'
+import { expectMenuCount, openPanelByKeyboard, panel, showAnswer, chooseTheme } from './panels'
 
 // Port from nextPort().
 // This suite exercises synthetic application behavior only; it makes no real model/provider request.
@@ -85,12 +86,8 @@ async function installResponseBarrier(page: Page, token: string) {
   }, token)
 }
 async function candidatesTab(page: Page) {
-  const tab = page.getByRole('tab', { name: /^Candidates/ })
-  // Walk Tab from the tab strip, rather than relying on pointer input.
-  await page.getByRole('tab', { name: 'Answer', exact: true }).focus()
-  for (let i = 0; i < 15 && !(await tab.evaluate(el => el === document.activeElement)); i++) await page.keyboard.press('Tab')
-  await expect(tab).toBeFocused()
-  await tab.press('Enter')
+  // Reach the panel from the keyboard, rather than relying on pointer input.
+  await openPanelByKeyboard(page, 'cands')
   await expect(pane(page)).toBeVisible()
 }
 async function add(page: Page, f: Fixture, text = CLAIM) {
@@ -129,7 +126,7 @@ async function capture(page: Page, name: string, root: Locator, prepare?: () => 
     const focused = await page.evaluateHandle(() => document.activeElement)
     try {
       await page.evaluate(() => window.scrollTo({ top: 0, left: 0, behavior: 'instant' }))
-      await switchTheme(page, dark ? 'Switch to light mode' : 'Switch to dark mode')
+      await chooseTheme(page, theme)
       // Theme navigation must not replace the opener focus being asserted by the caller.
       await focused.evaluate(el => { if (el instanceof HTMLElement && el.isConnected) el.focus({ preventScroll: true }) })
     } finally { await focused.dispose() }
@@ -511,7 +508,7 @@ c=sqlite3.connect(sys.argv[1]); r=sys.argv[2]
 assert c.execute("SELECT status FROM runs WHERE id=(SELECT run_id FROM reports WHERE id=?)",(r,)).fetchone()[0]=='completed'
 c.execute("INSERT INTO report_gaps (id,report_id,gap_id,kind,text,basis_json,provenance_json,created_at) VALUES ('gap_k4_seed',?,'g1','corpus_absence',?,?,?,'2026-10-02T12:00:00Z')",(r,sys.argv[3],json.dumps({'basis_cell_ids':[],'basis_passage_ids':[],'basis_claim_keys':[]}),json.dumps({'origin':'code','section_id':'VI','step_input_id':None})))
 c.commit(); c.close()`, [reportId, ROW_TEXT])
-    const openReport = async () => { await page.getByRole('tab', { name: /^Artifacts/ }).click(); await page.locator('.artifact-list').getByRole('button').filter({ hasText: 'Evidence report' }).first().click(); await expect(page.locator('.candidate-aspects')).toContainText(ROW_TEXT) }
+    const openReport = async () => { await showAnswer(page); await page.locator('.artifact-list').getByRole('button').filter({ hasText: 'Evidence report' }).first().click(); await expect(page.locator('.candidate-aspects')).toContainText(ROW_TEXT) }
     await page.reload(); await openReport()
     const block = page.locator('.candidate-aspects')
     await expect(block).toContainText('absent from the corpus read')
@@ -536,7 +533,7 @@ c.commit(); c.close()`, [reportId, ROW_TEXT])
     let rows: { id: string; gap_id: string; kind: string; text: string }[] = [], failRows = false
     await page.route(`**${reportPath}`, route => route.fulfill({ json: { ...after, sections: after.sections.map((s: { section_id: string }) => s.section_id === 'VI' ? { ...s, status: 'draft' } : s) } }))
     await page.route(`**${reportPath}/gaps`, route => route.fulfill(failRows ? { status: 500, json: { detail: 'SYNTHETIC aspect fetch failed' } } : { json: rows }))
-    await page.getByRole('tab', { name: /^Artifacts/ }).click()
+    await showAnswer(page)
     const reportButton = page.locator('.artifact-list').getByRole('button').filter({ hasText: 'Evidence report' }).first()
     await reportButton.click()
     await expect(block).toContainText('No aspects were recorded for this report.')
@@ -643,7 +640,8 @@ c.close()`, [f.rid, id])
     await expect(pane(page).locator('.candidate-list-row')).toHaveCount(2)
     await expect(pane(page)).toContainText('In the Trash')
     await expect(pane(page).getByText('SYNTHETIC stored trash')).toBeVisible()
-    await expect(page.getByRole('tab', { name: /^Candidates/ })).toContainText('2')
+    await expect(panel(page, 'Candidates')).toBeVisible()
+    await expectMenuCount(page, 'cands', 2)
     await expect(pane(page).locator('.candidate-list-row').last()).toContainText(CLAIM)
     await capture(page, 'mock-list', pane(page))
     await keyboardActivate(pane(page).locator('.candidate-list-row').last())

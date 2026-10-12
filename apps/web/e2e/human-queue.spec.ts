@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort, readingDone } from './ports'
+import { expectMenuCount, openPanel, PANEL_TITLES, panel, showAnswer } from './panels'
 
 // Case J: the human queue of an sw research (slice 17, D97). A person sees the works the reading could not settle,
 // opens a row's page, and answers; an answer can be taken back, a row that moved is refused, and the list follows the
@@ -115,9 +116,9 @@ test.describe.serial('J: the human queue of an sw research', () => {
   })
   test.afterAll(async () => { await page?.close(); await api?.context.dispose(); await server.stop() })
 
-  test('the tab and its count are in the research', async () => {
+  test('the panel and its count are in the research', async () => {
     await page.goto(`${server.url()}/#/research/${rid}`)
-    await expect(page.getByRole('tab', { name: 'Awaiting your decision 4' })).toBeVisible()
+    await expectMenuCount(page, 'queue', 4)
     // The reading run's turn names the rows once and opens the tab.
     await page.locator('.chat-queue-line').getByRole('button', { name: 'Open' }).click()
     await expect(list(page)).toBeVisible()
@@ -200,7 +201,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     // The note is not left under the row the selection moved to.
     await expect(detail(page).getByRole('textbox')).toHaveCount(0)
     // The three views were read again: the tab's count follows the queue.
-    await expect(page.getByRole('tab', { name: 'Awaiting your decision 3' })).toBeVisible()
+    await expectMenuCount(page, 'queue', 3)
     await page.unroute('**/events/stream**')
     expect((await post(api, `/api/researches/${rid}/queue/${row.source_version_id}/undo`, { row_token: answered.undo_token })).ok()).toBe(true)
     await expect(option(page, TITLES.find_part)).toHaveCount(1)
@@ -242,7 +243,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     })
     await page.goto('about:blank')
     await page.goto(`${server.url()}/#/research/${rid}/queue`)
-    await expect(page.getByRole('tab', { name: /Awaiting your decision/ })).toBeVisible()
+    await expect(panel(page, PANEL_TITLES.queue)).toBeVisible()
     await page.waitForTimeout(500)  // the event stream is open
     // While the first read is held, another tab's answer and undo are two events, and each reads the list again.
     const row = await rowOf(api, rid, 'find_part')
@@ -307,8 +308,8 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await option(page, TITLES.choose_run).click()
     await detail(page).getByRole('button', { name: 'Yes', exact: true }).click()
     await expect(option(page, TITLES.choose_run)).toHaveCount(0)
-    await expect(page.getByRole('tab', { name: 'Awaiting your decision 3' })).toBeVisible()
-    await page.getByRole('tab', { name: /^Sources/ }).click()
+    await expectMenuCount(page, 'queue', 3)
+    await openPanel(page, 'sources')
     const row = page.locator('.source-row', { hasText: TITLES.choose_run })
     await expect(row.getByRole('button', { name: 'Include' })).toHaveAttribute('aria-pressed', 'true')
     await expect(row).toContainText('Your answer in the queue: you included it')
@@ -346,7 +347,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
   test('the keyboard reaches the list, moves through it, opens a page and answers; focus goes to the next row', async () => {
     await page.reload()
     await expect(list(page)).toBeVisible()
-    await page.getByRole('tab', { name: /Awaiting your decision/ }).focus()
+    await page.locator('[data-split-panel] #split-panel-title').focus()
     for (let i = 0; i < 20 && !(await list(page).evaluate(el => el === document.activeElement)); i++) await page.keyboard.press('Tab')
     await expect(list(page)).toBeFocused()
     const first = await list(page).getAttribute('aria-activedescendant')
@@ -376,7 +377,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     const narrow = await browser.newPage({ viewport: { width: 390, height: 844 } })
     try {
       await openQueue(narrow, server, rid)
-      await expect(narrow.getByRole('tab', { name: /Awaiting your decision/ })).toBeVisible()
+      await expect(panel(narrow, PANEL_TITLES.queue)).toBeVisible()
       await expect(detail(narrow)).toBeHidden()
       await option(narrow, TITLES.confirm_quote).click()
       await expect(list(narrow)).toBeHidden()
@@ -385,7 +386,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
       await expect(title).toHaveText(TITLES.confirm_quote)
       await shot(narrow, 'J-queue-detail-390')
       // Scrolled to the end, the pinned answers rest under the last section instead of over it.
-      await narrow.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+      await narrow.locator('.split-panel-body').evaluate(body => body.scrollTo(0, body.scrollHeight))  // the panel's body is what scrolls now
       const last = await narrow.locator('.queue-detail section').last().boundingBox()
       const foot = await narrow.locator('.queue-foot').boundingBox()
       expect(last!.y + last!.height).toBeLessThanOrEqual(foot!.y + 1)
@@ -441,7 +442,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await cards.first().scrollIntoViewIfNeeded()
     await shot(page, 'J-audit-abstract-1440')
     await cards.first().getByRole('button', { name: `Find ${OFF_TOPIC} in the source list` }).click()
-    await expect(page.getByRole('tab', { name: /^Sources/ })).toHaveAttribute('aria-selected', 'true')
+    await expect(panel(page, 'Sources')).toBeVisible()
     await expect(page.locator('.source-focus')).toContainText('Showing the one work the audit sample sent you to.')
     const source = page.locator('.source-row', { hasText: OFF_TOPIC })
     await expect(page.locator('.source-row')).toHaveCount(1)
@@ -463,7 +464,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     const search = page.getByRole('searchbox', { name: 'Filter sources' })
     await search.fill('SYNTHETIC greedy')
     const follow = async () => {
-      await page.getByRole('tab', { name: /Awaiting your decision/ }).click()
+      await openPanel(page, 'queue')
       await page.locator('.audit-abstract .audit-row', { hasText: OFF_TOPIC }).first()
         .getByRole('button', { name: `Find ${OFF_TOPIC} in the source list` }).click()
       await expect(focusLine).toBeVisible()
@@ -477,13 +478,13 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await expect(page.locator('.source-row')).toHaveCount(total)
     // Leaving the Sources tab ends the focus: coming back shows the whole list.
     await follow()
-    await page.getByRole('tab', { name: 'Answer', exact: true }).click()
-    await page.getByRole('tab', { name: /^Sources/ }).click()
+    await showAnswer(page)
+    await openPanel(page, 'sources')
     await expect(focusLine).toHaveCount(0)
     await expect(page.locator('.source-row')).toHaveCount(total)
     // The list edit is the person's decision: the target leaves the sample (strata hold no person's work), its twin
     // stays, and the override line counts it on the list path against the model runs' abstract-stage decision.
-    await page.getByRole('tab', { name: /Awaiting your decision/ }).click()
+    await openPanel(page, 'queue')
     await expect(page.locator('.audit-abstract .audit-row', { hasText: OFF_TOPIC })).toHaveCount(1)
     await expect(page.locator('.overrides-line')).toContainText('model runs 1)')
   })

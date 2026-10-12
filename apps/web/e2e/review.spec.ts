@@ -7,6 +7,7 @@ import path from 'node:path'
 import type { Connections, ReportDetail, ResearchView, ReviewCard, ReviewDetail, ReviewPreview, ReviewRequest } from '../src/api'
 import { nextPort } from './ports'
 import { chooseLanguage } from './language'
+import { openPanel, reportPanel, showAnswer } from './panels'
 
 // SYNTHETIC records and the scripted model only. No live providers, models or library; own process.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -48,7 +49,8 @@ test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
 })
 
-const sheet = (page: Page) => page.locator('.report-sheet').last()
+// An answer's report is a side panel (its toolbar is in the panel's head); an evidence report is still a sheet.
+const sheet = (page: Page) => reportPanel(page).or(page.locator('.report-sheet').last())
 const pane = (page: Page) => sheet(page).locator('.review-pane')
 const requestForm = (page: Page) => pane(page).locator('.review-request')
 const finding = (page: Page, kind = 'overstated') => pane(page).locator(`[data-finding-kind="${kind}"]`).first()
@@ -79,7 +81,7 @@ async function includedResearch(page: Page, marker: string) {
   await page.waitForURL(/#\/research\//)
   const rid = page.url().split('/research/')[1].split('/')[0]
   await expect(page.getByText('Ran search & screening')).toBeVisible()
-  await page.getByRole('tab', { name: /Sources/ }).click()
+  await openPanel(page, 'sources')
   const source = page.locator('.source-row:not(.is-other-version)').filter({ hasText: 'SYNTHETIC molecule release scheduling with bisection' })
   await source.getByRole('button', { name: 'Include' }).click()
   await expect(source.getByRole('button', { name: 'Include' })).toBeDisabled()
@@ -87,7 +89,7 @@ async function includedResearch(page: Page, marker: string) {
 }
 async function reportFixture(page: Page, held = false): Promise<Target> {
   const rid = await includedResearch(page, held ? '[review-hold]' : '')
-  await page.getByRole('tab', { name: /Evidence/ }).click()
+  await openPanel(page, 'table')
   await page.getByRole('button', { name: /Add a column/ }).click()
   const editor = page.getByRole('dialog', { name: 'Add column' })
   await editor.getByLabel('Short name').fill('SYNTHETIC method')
@@ -96,7 +98,7 @@ async function reportFixture(page: Page, held = false): Promise<Target> {
   await page.getByRole('button', { name: /^Fill empty cells/ }).click()
   await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
   await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
-  await page.getByRole('tab', { name: 'Answer' }).click()
+  await showAnswer(page)
   await expect.poll(async () => (await view(page, rid)).runs.find(r => r.kind === 'report')?.status, { timeout: 60_000 }).toBe('completed')
   const reports: { id: string }[] = await (await page.request.get(`${server.url}/api/researches/${rid}/reports`)).json()
   const id = reports[0].id
@@ -334,7 +336,7 @@ test('3 apply: checked editor save, dependency recovery and identical retry with
 
 test('4 source-linked answer review records acceptance without an editor', async ({ page }) => {
   const rid = await includedResearch(page, '')
-  await page.getByRole('tab', { name: 'Answer' }).click()
+  await showAnswer(page)
   // The fast path writes the answer by itself when discovery ends.
   await expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 })
   const research = await view(page, rid)

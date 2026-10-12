@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
+import { openPanel } from './panels'
 
 // Case N: the built-in embedding model in Settings (slice 21). Order of the choices, the download confirmation with
 // disk sizes, the install's steps, ready with the file check, choosing it; Gemini's free-key path and free-tier
@@ -140,9 +141,9 @@ test.describe.serial('N: the built-in embedding model', () => {
     await page.setViewportSize({ width: 1280, height: 900 })
   })
 
-  test('a Turkish question asks for one English sentence in the Sources tab, and the line shows it once saved', async () => {
+  test('a Turkish question asks for one English sentence in the Sources panel, and the line shows it once saved', async () => {
     await startResearch(page, server, TURKISH)
-    await page.getByRole('tab', { name: /Sources/ }).click()
+    await openPanel(page, 'sources')
     const notice = page.locator('.english-question')
     await expect(notice).toContainText('The built-in semantic model reads English only. This question is not in English, so the built-in model is off for this research.')
     await expect(notice.getByRole('button', { name: 'The question is already in English' })).toBeVisible()

@@ -80,7 +80,7 @@ test.describe.serial('M: the flow of an sw research and its search report', () =
   })
   test.afterAll(async () => { await page?.close(); await api?.context.dispose(); await server.stop() })
 
-  test('the Sources tab shows the five counts in one line and every bucket when opened', async () => {
+  test('the Sources panel shows the five counts in one line and every bucket when opened', async () => {
     await page.goto(`${server.url()}/#/research/${rid}/sources`)
     const block = page.locator('details.flow-block')
     await expect(block.locator('summary')).toContainText('1 included (two agreeing runs 1, you confirmed 0) · 4 in your queue, not looked at · 0 waiting for a PDF')

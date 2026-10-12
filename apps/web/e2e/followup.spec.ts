@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { Connections, ResearchSummary, ResearchView, Run, Watch, WatchCheck, WatchItem, WatchPreview } from '../src/api'
 import { nextPort } from './ports'
+import { expectMenuCount, openPanel as openPanelFromMenu, showAnswer } from './panels'
 
 // SYNTHETIC records, future dates and the scripted model only. These cases test screen behavior,
 // not scientific correctness, coverage or provider recall. Chrome runs outside the writer's sandbox.
@@ -95,7 +96,7 @@ async function checkNow(page: Page, mode: 'base' | 'new' | 'partial' | 'fail' | 
 }
 async function counts(page: Page, n: number) {
   await expect(panel(page).getByRole('heading', { name: `New to this research (${n})`, exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: /^Follow-up/ }).locator('.research-tab-count')).toHaveText(String(n))
+  await expectMenuCount(page, 'watch', n)
   await expect.poll(async () => {
     const rows: ResearchSummary[] = await (await page.request.get(server.url + '/api/researches')).json()
     return rows.find(row => row.id === rid)?.followup_new
@@ -383,11 +384,11 @@ with sqlite3.connect(sys.argv[1]) as conn:
   await expect(await details(page)).toContainText('Covered back to')
 })
 
-test('10 acknowledgement survives tab switching but not a page reload', async ({ page }) => {
+test('10 acknowledgement survives panel switching but not a page reload', async ({ page }) => {
   const gap = (await currentWatch(page)).gaps[0]
   await button(panel(page).locator('.notice').filter({ has: page.locator(`[data-gap-id="${gap.id}"]`) }), 'Acknowledge').click()
   await expect(panel(page).locator('.notice [data-gap-id]')).toHaveCount(0)
-  await page.getByRole('tab', { name: 'Answer', exact: true }).click(); await page.getByRole('tab', { name: /^Follow-up/ }).click()
+  await showAnswer(page); await openPanelFromMenu(page, 'watch')
   await expect(panel(page).locator('.notice [data-gap-id]')).toHaveCount(0)
   await panel(page).getByText(/^Gaps not checked \(/).click()
   await expect(panel(page).locator(`.followup-gap-row[data-gap-id="${gap.id}"]`)).toContainText('One catch-up check was queued.')

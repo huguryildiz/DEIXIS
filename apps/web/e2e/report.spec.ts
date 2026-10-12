@@ -7,6 +7,7 @@ import { failedSectionReasonText, reportAssemblyDraftText } from '../src/labels'
 import { setUiLanguage } from '../src/i18n'
 import { nextPort } from './ports'
 import { switchTheme } from './theme'
+import { openPanel, showAnswer } from './panels'
 
 // SYNTHETIC records and a scripted report model exercise the UI, not the quality of a research report.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -51,11 +52,11 @@ const readyResearch = async (page: Page, server: ReportServer, question: string)
   await page.waitForURL(/#\/research\//)
   const researchId = page.url().split('/research/')[1].split('/')[0]
   await expect(page.getByText('Ran search & screening')).toBeVisible()
-  await page.getByRole('tab', { name: /Sources/ }).click()
+  await openPanel(page, 'sources')
   const source = page.locator('.source-row:not(.is-other-version)').filter({ hasText: 'SYNTHETIC molecule release scheduling with bisection' })
   await source.getByRole('button', { name: 'Include' }).click()
   await expect(source.getByRole('button', { name: 'Include' })).toBeDisabled()
-  await page.getByRole('tab', { name: /Evidence/ }).click()
+  await openPanel(page, 'table')
   await page.getByRole('button', { name: /Add a column/ }).click()
   const editor = page.getByRole('dialog', { name: 'Add column' })
   await editor.getByLabel('Short name').fill('SYNTHETIC method')
@@ -79,11 +80,11 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await page.waitForURL(/#\/research\//)
     const researchId = page.url().split('/research/')[1].split('/')[0]
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    await page.getByRole('tab', { name: /Sources/ }).click()
+    await openPanel(page, 'sources')
     const source = page.locator('.source-row:not(.is-other-version)').filter({ hasText: 'SYNTHETIC molecule release scheduling with bisection' })
     await source.getByRole('button', { name: 'Include' }).click()
     await expect(source.getByRole('button', { name: 'Include' })).toBeDisabled()
-    await page.getByRole('tab', { name: /Evidence/ }).click()
+    await openPanel(page, 'table')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
     await editor.getByLabel('Short name').fill('SYNTHETIC method')
@@ -97,7 +98,7 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await toastsOff(page)
     await shot(page, 'report-readiness-desktop')
     await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
-    await page.getByRole('tab', { name: 'Answer' }).click()
+    await showAnswer(page)
     await expect(page.getByText(/Writing sections|Wrote the sections|Report sections/)).toBeVisible({ timeout: 60_000 })
     await expect(page.getByRole('button', { name: 'Open evidence report' })).toContainText('Evidence report · V1', { timeout: 60_000 })
     const summaries = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string }[]
@@ -297,11 +298,11 @@ test('a scripted report review finding appears as a model flag', async ({ browse
     await page.waitForURL(/#\/research\//)
     const researchId = page.url().split('/research/')[1].split('/')[0]
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    await page.getByRole('tab', { name: /Sources/ }).click()
+    await openPanel(page, 'sources')
     const source = page.locator('.source-row:not(.is-other-version)').filter({ hasText: 'SYNTHETIC molecule release scheduling with bisection' })
     await source.getByRole('button', { name: 'Include' }).click()
     await expect(source.getByRole('button', { name: 'Include' })).toBeDisabled()
-    await page.getByRole('tab', { name: /Evidence/ }).click()
+    await openPanel(page, 'table')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
     await editor.getByLabel('Short name').fill('SYNTHETIC method')
@@ -310,7 +311,7 @@ test('a scripted report review finding appears as a model flag', async ({ browse
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
     await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
     await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
-    await page.getByRole('tab', { name: 'Answer' }).click()
+    await showAnswer(page)
     await expect(page.getByRole('button', { name: 'Open evidence report' })).toContainText('Evidence report · V1', { timeout: 60_000 })
     const summaries = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string }[]
     const report = await (await api.get(`/api/researches/${researchId}/reports/${summaries[0].id}`)).json()
@@ -344,7 +345,7 @@ test('a banned word in a section pauses the report with the section failed and n
   try {
     const researchId = await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared? [report-banned-word]')
     await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
-    await page.getByRole('tab', { name: 'Answer' }).click()
+    await showAnswer(page)
     const researchPath = `/api/researches/${researchId}`
     await expect.poll(async () => {
       const view = await (await api.get(researchPath)).json()
@@ -408,7 +409,7 @@ test('an empty section pauses the report and can be cancelled', async ({ browser
   try {
     const researchId = await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared? [report-empty-section]')
     await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
-    await page.getByRole('tab', { name: 'Answer' }).click()
+    await showAnswer(page)
     const researchPath = `/api/researches/${researchId}`
     await expect.poll(async () => {
       const view = await (await api.get(researchPath)).json()
@@ -512,7 +513,7 @@ test('a bad cell anchor fails after one repair and displays only the stored reas
   try {
     const researchId = await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared? [report-bad-anchor]')
     await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
-    await page.getByRole('tab', { name: 'Answer' }).click()
+    await showAnswer(page)
     const researchPath = `/api/researches/${researchId}`
     await expect.poll(async () => {
       const view = await (await api.get(researchPath)).json()

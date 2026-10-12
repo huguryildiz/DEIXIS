@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
+import { openPanel, showAnswer } from './panels'
 
 // Synthetic records and one fixed extraction failure; this tests the report boundary, not model quality.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -25,7 +26,7 @@ async function screenshots(page: Page, state: 'choice' | 'sheet') {
       }, theme)
       // Reload applies the actual theme prop to portaled sheets too.
       await page.reload()
-      await page.getByRole('tab', { name: state === 'choice' ? 'Evidence' : 'Answer' }).click()
+      if (state === 'choice') await openPanel(page, 'table'); else await showAnswer(page)
       if (state === 'sheet') await page.getByRole('button', { name: 'Open evidence report' }).click()
       const surface = state === 'choice' ? page.locator('.notice') : page.locator('.report-sheet')
       await expect(surface).toContainText(NOTE)
@@ -56,13 +57,13 @@ test('explicitly write a report with a recorded failed row and disclose it in th
     await page.waitForURL(/#\/research\//)
     const rid = page.url().split('/research/')[1].split('/')[0]
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    await page.getByRole('tab', { name: /Sources/ }).click()
+    await openPanel(page, 'sources')
     for (const title of [FAILED, 'SYNTHETIC relay budget allocation']) {
       const row = page.locator('.source-row:not(.is-other-version)').filter({ hasText: title })
       await row.getByRole('button', { name: 'Include' }).click()
       await expect(row.getByRole('button', { name: 'Include' })).toBeDisabled()
     }
-    await page.getByRole('tab', { name: /Evidence/ }).click()
+    await openPanel(page, 'table')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
     await editor.getByLabel('Short name').fill('SYNTHETIC method')
@@ -94,7 +95,7 @@ test('explicitly write a report with a recorded failed row and disclose it in th
     expect(report.missing_rows.counts).toEqual({ included: 2, completed: 1, failed: 1, cells_total: 2, cells_missing: 1 })
     expect(report.missing_rows.failed_rows[0].title).toBe(FAILED)
     expect(report.table_i.rows.filter((row: { failed?: boolean }) => row.failed)).toHaveLength(1)
-    await page.getByRole('tab', { name: 'Answer' }).click()  // the report card sits on the Answer tab since D230
+    await showAnswer(page)  // the report card sits on the Answer tab since D230
     await page.getByRole('button', { name: 'Open evidence report' }).click()
     const sheet = page.locator('.report-sheet')
     await expect(sheet.locator('.report-document > .notice').first()).toContainText(NOTE)

@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
+import { openPanel } from './panels'
 
 // Synthetic sources and the fixture's scripted adapter only; no cell-quality measurement.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -38,7 +39,7 @@ async function screenshots(page: Page, state: 'toolbar' | 'added' | 'sheet') {
     for (const theme of ['light', 'dark']) {
       await page.evaluate(theme => localStorage.setItem('deixis-theme', theme), theme)
       await page.reload()
-      await page.getByRole('tab', { name: /Evidence/ }).click()
+      await openPanel(page, 'table')
       if (state === 'sheet') {
         await page.locator('.evidence-col-head').filter({ hasText: NAMES[0] }).click()
         await expect(page.getByRole('dialog', { name: 'Edit column' })).toContainText(HINT)
@@ -61,7 +62,7 @@ async function screenshots(page: Page, state: 'toolbar' | 'added' | 'sheet') {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.evaluate(() => localStorage.setItem('deixis-theme', 'light'))
   await page.reload()
-  await page.getByRole('tab', { name: /Evidence/ }).click()
+  await openPanel(page, 'table')
 }
 
 test.describe('explicit development columns', () => {
@@ -79,7 +80,7 @@ test.describe('explicit development columns', () => {
       await page.waitForURL(/#\/research\//)
       const rid = page.url().split('/research/')[1].split('/')[0]
       await expect(page.getByText('Ran search & screening')).toBeVisible()
-      await page.getByRole('tab', { name: /Sources/ }).click()
+      await openPanel(page, 'sources')
       const row = page.locator('.source-row:not(.is-other-version)').filter({ hasText: 'SYNTHETIC molecule release scheduling with bisection' })
       await row.getByRole('button', { name: 'Include' }).click()
       await expect(row.getByRole('button', { name: 'Include' })).toBeDisabled()
@@ -91,7 +92,7 @@ test.describe('explicit development columns', () => {
       const initial = await api.post(`${tableUrl}/columns`, { data: { name: 'Synthetic method', instruction: 'Record the method stated by the source.', answer_format: 'text', expected_version: table.table.version }, headers: { 'x-deixis-csrf': csrf } })
       expect(initial.status()).toBe(201)
       await page.reload()
-      await page.getByRole('tab', { name: /Evidence/ }).click()
+      await openPanel(page, 'table')
       await screenshots(page, 'toolbar')
       await page.locator('.evidence-toolbar').getByRole('button', { name: 'Add development columns' }).click()
       await expect(page.getByRole('status').filter({ hasText: 'Development columns added.' })).toBeVisible()
@@ -123,7 +124,7 @@ test.describe('explicit development columns', () => {
       await expect(button).toHaveCount(0)
       await expect(page.locator('.evidence-col-head')).toHaveCount(4)
       await page.reload()
-      await page.getByRole('tab', { name: /Evidence/ }).click()
+      await openPanel(page, 'table')
       await expect(page.locator('.evidence-col-head')).toHaveCount(4)
       const persisted = await (await api.get(tableUrl)).json()
       expect(persisted.columns.filter((c: { lineage_role: string | null }) => c.lineage_role)).toHaveLength(3)
@@ -132,7 +133,7 @@ test.describe('explicit development columns', () => {
       expect(empty.status()).toBe(201)
       const emptyTable = await empty.json()
       await page.reload()
-      await page.getByRole('tab', { name: /Evidence/ }).click()
+      await openPanel(page, 'table')
       await page.getByLabel('Table', { exact: true }).selectOption(emptyTable.table.id)
       await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Add development columns' })).toHaveCount(0)
       await page.getByRole('button', { name: 'Add development columns' }).click()

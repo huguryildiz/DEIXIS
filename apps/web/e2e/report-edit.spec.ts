@@ -7,6 +7,7 @@ import type { EditCheck, ReportClaim, ReportDetail, ResearchView } from '../src/
 import { nextPort } from './ports'
 import { chooseLanguage } from './language'
 import { switchTheme } from './theme'
+import { openPanel, showAnswer } from './panels'
 
 // Synthetic records, scripted model and mocked OpenAlex only.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -71,11 +72,11 @@ async function readyResearch(page: Page, question: string) {
   await page.waitForURL(/#\/research\//)
   const rid = page.url().split('/research/')[1].split('/')[0]
   await expect(page.getByText('Ran search & screening')).toBeVisible()
-  await page.getByRole('tab', { name: /Sources/ }).click()
+  await openPanel(page, 'sources')
   const source = page.locator('.source-row:not(.is-other-version)').filter({ hasText: 'SYNTHETIC molecule release scheduling with bisection' })
   await source.getByRole('button', { name: 'Include' }).click()
   await expect(source.getByRole('button', { name: 'Include' })).toBeDisabled()
-  await page.getByRole('tab', { name: /Evidence/ }).click()
+  await openPanel(page, 'table')
   await page.getByRole('button', { name: /Add a column/ }).click()
   const editor = page.getByRole('dialog', { name: 'Add column' })
   await editor.getByLabel('Short name').fill('SYNTHETIC method')
@@ -97,7 +98,7 @@ async function fixture(page: Page): Promise<Fixture> {
   await watchToasts(page)
   const rid = await readyResearch(page, 'SYNTHETIC: How are molecule release schedules compared? [report-two-citations]')
   await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
-  await page.getByRole('tab', { name: 'Answer' }).click()
+  await showAnswer(page)
   await expect.poll(async () => {
     const view: ResearchView = await (await page.request.get(`${server.url()}/api/researches/${rid}`)).json()
     return view.runs.find(r => r.kind === 'report')?.status

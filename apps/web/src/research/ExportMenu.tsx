@@ -8,14 +8,15 @@ import { useToast } from '../Toast'
 import { t, uiLanguage } from '../i18n'
 import { downloadReportMarkdown } from './reportMarkdown'
 
-// Bibliography files for reference managers, downloaded from the local API.
-export function ExportLinks({ researchId, sources }: { researchId: string; sources: 'included' | 'cited' }) {
+// Bibliography files for reference managers, downloaded from the local API. Cited sources are the ones `answerId` cites
+// (a report's own export), so an earlier report exports its own sources.
+export function ExportLinks({ researchId, sources, answerId }: { researchId: string; sources: 'included' | 'cited'; answerId?: string }) {
   const label = t(sources === 'included' ? 'included sources' : 'cited sources')
   return <span className="export-links" role="group" aria-label={t('Export {label}', { label })}>
     <span className="export-links-label"><Download size={15} aria-hidden />{t(sources === 'included' ? 'Export included' : 'Export cited')}</span>
     <span className="export-formats">
-      <a href={bibliographyUrl(researchId, 'bibtex', sources)} download title={t('BibTeX file of the {label} (LaTeX, Zotero, JabRef)', { label })}>.bib</a>
-      <a href={bibliographyUrl(researchId, 'ris', sources)} download title={t('RIS file of the {label} (Zotero, EndNote, Mendeley)', { label })}>.ris</a>
+      <a href={bibliographyUrl(researchId, 'bibtex', sources, answerId)} download title={t('BibTeX file of the {label} (LaTeX, Zotero, JabRef)', { label })}>.bib</a>
+      <a href={bibliographyUrl(researchId, 'ris', sources, answerId)} download title={t('RIS file of the {label} (Zotero, EndNote, Mendeley)', { label })}>.ris</a>
     </span>
   </span>
 }
@@ -28,6 +29,8 @@ export type ExportReport = { answer: Answer; title: string; version: number }
 // PRISMA-S search report (§2.2). The PDF rows (print) are wired in S27.
 // Like the mockup's menu(), the list opens under the trigger at its left edge and slides back inside the window.
 // `icon`: the answer's download button in the thread (mockup `.ib` with `data-menu="export"`) opens the same menu.
+// `cited`: the works the report's answer cites that are still in this research (what its BibTeX lists); the row exports
+// that answer's sources, so it needs the report.
 export function ExportMenu({ researchId, report, sources, tables, included, cited, prisma, icon = false }: {
   researchId: string; report: ExportReport | null; sources: Source[]; tables: TableSummary[] | null
   included: number; cited: number; prisma: boolean; icon?: boolean
@@ -36,7 +39,7 @@ export function ExportMenu({ researchId, report, sources, tables, included, cite
   // A table exports once it has columns and rows; with several, the one changed last (its title names it).
   const exportable = (tables ?? []).filter(table => table.rows > 0 && table.columns > 0)
   const table = exportable.reduce<TableSummary | null>((latest, item) => (!latest || item.updated_at > latest.updated_at ? item : latest), null)
-  if (!report && !table && !included && !cited && !prisma) return null
+  if (!report && !table && !included && !prisma) return null
   const style = savedStyle()
   const lang = uiLanguage() === 'tr' ? 'tr' : 'en'
   const row = (format: string, detail: string) => <><FileTypeIcon format={format} /><b>{format}</b><span>{detail}</span></>
@@ -64,9 +67,9 @@ export function ExportMenu({ researchId, report, sources, tables, included, cite
         {link(tableExportUrl(researchId, table.id, 'xlsx', lang, style), 'XLSX', t('Excel workbook'))}
         {link(tableExportUrl(researchId, table.id, 'docx', lang, style), 'DOCX', t('Word table'))}
       </DropdownMenuGroup>}
-      {(cited > 0 || included > 0 || prisma) && <DropdownMenuGroup>
+      {((report && cited > 0) || included > 0 || prisma) && <DropdownMenuGroup>
         <DropdownMenuLabel>{t('Sources')}</DropdownMenuLabel>
-        {cited > 0 && link(bibliographyUrl(researchId, 'bibtex', 'cited'), 'BIB', t(cited === 1 ? 'BibTeX · {n} cited source' : 'BibTeX · {n} cited sources', { n: cited }))}
+        {report && cited > 0 && link(bibliographyUrl(researchId, 'bibtex', 'cited', report.answer.id), 'BIB', t(cited === 1 ? 'BibTeX · {n} cited source' : 'BibTeX · {n} cited sources', { n: cited }))}
         {included > 0 && link(bibliographyUrl(researchId, 'ris', 'included'), 'RIS', t(included === 1 ? 'RIS · {n} included source' : 'RIS · {n} included sources', { n: included }))}
         {prisma && link(prismaSUrl(researchId, 'md'), 'MD', t('PRISMA-S search report'), 'export-placement')}
         {prisma && link(prismaSUrl(researchId, 'json'), 'JSON', t('PRISMA-S search report'), 'export-placement')}

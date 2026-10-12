@@ -1,5 +1,6 @@
 """BibTeX and RIS export of included and cited sources (D16)."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
@@ -74,7 +75,10 @@ def test_export_downloads_included_sources_and_refuses_an_empty_cited_set(tmp_pa
 
         assert client.get(f"/api/researches/{rid}/bibliography").text.startswith("@misc{anonmolecule,\n")
         cited = client.get(f"/api/researches/{rid}/bibliography", params={"sources": "cited"})
-        assert cited.status_code == 422 and cited.json()["detail"] == "The latest answer cites no source"
+        assert cited.status_code == 422 and cited.json()["detail"] == "The answer cites no source still in this research"
+        # An answer id names one answer of this research; an unknown one is refused, never replaced by another answer.
+        assert client.get(f"/api/researches/{rid}/bibliography", params={"sources": "cited", "answer_id": "ans_unknown"}).status_code == 404
+        assert client.get(f"/api/researches/{rid}/bibliography", params={"answer_id": "ans_unknown"}).status_code == 422
 
 
 def test_x3_default_full_literal_before_refactor():
@@ -120,6 +124,71 @@ def test_x3_default_full_literal_before_refactor():
         '  volume = {2},\n  number = {3},\n  pages = {4--5},\n'
         '  eprint = {2601.12345},\n  eprinttype = {arxiv}\n}\n'
     )
+
+
+
+# UI parity S10 (Sol round 2): cited sources follow one answer, from its stored evidence links, not the view's
+# `cited_in_latest_answer` flags (which follow the newest answer, a failed late revision included).
+def _cited_svids(lib, answer_id):
+    return {r[0] for r in lib.store.conn.execute(
+        "SELECT l.source_version_id FROM evidence_links l JOIN claims c ON c.id = l.claim_id WHERE c.answer_id = ?", (answer_id,))}
+
+
+def _exported(lib, answer_id=None):
+    return {s["source_version_id"] for s in bibliography.export_sources(lib.store, lib.rid, "cited", answer_id)}
+
+
+def test_cited_export_after_a_failed_late_revision_lists_the_shown_answers_works(tmp_path):
+    from test_fast_path_late_revision import drain, prepared, read_late
+    from deixis.workflow import late_revision, views
+    lib = prepared(tmp_path)
+    read_late(lib)
+    late_revision.advance(lib.flow)
+    lib.flow.deps.adapters["fake"] = FakeAdapter(lambda si: '{}')
+    drain(lib)
+    view = views.research_view(lib.store, lib.rid)
+    draft = view["answers"][0]
+    assert draft["status"] == "unverified_draft" and draft["late_revision"]["base_answer_id"] == lib.base["id"]
+    # The newest answer cites nothing, so its flags are empty; V1, the answer shown, cites sources.
+    assert not any(s["cited_in_latest_answer"] for s in view["sources"])
+    v1 = _cited_svids(lib, lib.base["id"])
+    assert v1
+    assert bibliography.shown_answer_id(view) == lib.base["id"]
+    assert _exported(lib) == v1
+    assert _exported(lib, lib.base["id"]) == v1
+    assert _exported(lib, draft["id"]) == set()
+
+
+def test_cited_export_of_an_earlier_answer_lists_its_own_works_after_a_newer_one(tmp_path):
+    from test_fast_path_late_revision import drain, prepared, read_late
+    from deixis.workflow import late_revision, views
+    lib = prepared(tmp_path)
+    read_late(lib)
+    late_revision.advance(lib.flow)
+    drain(lib)
+    view = views.research_view(lib.store, lib.rid)
+    v2 = view["answers"][0]
+    assert v2["status"] == "structurally_valid" and v2["late_revision"]["base_answer_id"] == lib.base["id"]
+    v1 = _cited_svids(lib, lib.base["id"])
+    # SYNTHETIC: V2 stops citing one of V1's sources, so the two cited sets differ.
+    dropped = sorted(v1)[0]
+    lib.store.conn.execute("DELETE FROM evidence_links WHERE source_version_id = ? AND claim_id IN (SELECT id FROM claims WHERE answer_id = ?)",
+                           (dropped, v2["id"]))
+    v2_cited = _cited_svids(lib, v2["id"])
+    assert dropped not in v2_cited
+    assert _exported(lib, lib.base["id"]) == v1
+    assert _exported(lib, v2["id"]) == v2_cited
+    assert _exported(lib) == v2_cited  # the page shows V2
+
+
+def test_cited_export_refuses_an_unknown_answer_or_one_of_another_research(tmp_path):
+    from test_fast_path_late_revision import prepared
+    lib = prepared(tmp_path)
+    other = lib.store.create_research("SYNTHETIC other question?", "academic", "quick", ["openalex"], "fake", "fake-model", None)
+    with pytest.raises(LookupError):
+        bibliography.export_sources(lib.store, other, "cited", lib.base["id"])
+    with pytest.raises(LookupError):
+        bibliography.export_sources(lib.store, lib.rid, "cited", "ans_unknown")
 
 
 import re

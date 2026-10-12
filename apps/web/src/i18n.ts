@@ -3957,4 +3957,7 @@ const tr: Record<string, string> = {
   'Works with a current full-text decision (reading or yours)': 'Güncel bir tam metin kararı olan eserler (okumanın ya da sizin)',
   'Works given to the latest report (V{n})': 'En son rapora (V{n}) verilen eserler',
   'question revision {n}': 'soru revizyonu {n}',
+  // UI parity S10 Sol round 2
+  'The answer also cites {n} work since removed from this research. It is not listed here; its quotes still open from the report.': 'Yanıt ayrıca bu araştırmadan sonradan çıkarılmış {n} esere atıf yapıyor. Burada listelenmiyor; alıntıları rapordan açılmaya devam ediyor.',
+  'The answer also cites {n} works since removed from this research. They are not listed here; their quotes still open from the report.': 'Yanıt ayrıca bu araştırmadan sonradan çıkarılmış {n} esere atıf yapıyor. Burada listelenmiyorlar; alıntıları rapordan açılmaya devam ediyor.',
 }

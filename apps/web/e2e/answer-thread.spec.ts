@@ -47,7 +47,7 @@ class ThreadServer {
   url() { return `http://127.0.0.1:${this.port}` }
 }
 
-type Evidence = { passage_id: string; source_version_id: string; source_key: string | null; kind: string; anchor_text: string | null }
+type Evidence = { passage_id: string; source_version_id: string; work_id: string; source_key: string | null; kind: string; anchor_text: string | null }
 type Claim = { id: string; section: string | null; evidence: Evidence[] }
 type Answer = {
   id: string; run_id: string; status: string; report_version: number | null; applicability: string; source_text_changed: boolean
@@ -74,11 +74,8 @@ const settled = async (api: Api, rid: string, kinds: string[]) => expect.poll(as
   const view = await viewOf(api, rid)
   return kinds.every(k => view.runs.some(r => r.kind === k)) && !view.runs.some(r => ACTIVE.has(r.status))
 }, { timeout: 110_000, intervals: [500] }).toBe(true)
-// The works an answer cites, each once over its versions (the view's "cited" count).
-const citedWorks = (answer: Answer, view: View) => {
-  const workOf = new Map(view.sources.map(s => [s.source_version_id, s.work_id]))
-  return new Set(answer.claims.flatMap(c => c.evidence.map(e => workOf.get(e.source_version_id) ?? e.source_version_id))).size
-}
+// The works an answer cites, each once over its versions, by the work id each citation stores.
+const citedWorks = (answer: Answer) => new Set(answer.claims.flatMap(c => c.evidence.map(e => e.work_id))).size
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 // A hash-only change does not load the page again, so every visit starts from a blank page.
 const visit = async (page: Page, url: string) => { await page.goto('about:blank'); await page.goto(url) }
@@ -121,7 +118,7 @@ test.describe.serial('S10: the answer in the thread', () => {
     expect(answer.status).toBe('structurally_valid')
     await visit(page, research())
     // R22: "Report · Vn · N claims · N sources", the sources counted as works, as the view's Cited count.
-    const cited = citedWorks(answer, view)
+    const cited = citedWorks(answer)
     expect(cited).toBe(view.counts.cited)
     const card = page.locator('#research-answer')
     await expect(card).toHaveAccessibleName(/^Open report: /)
@@ -198,7 +195,7 @@ test.describe.serial('S10: the answer in the thread', () => {
   test('the action pills and the Next steps rows open their places, with counts from the record', async () => {
     const view = await viewOf(api, rid)
     const answer = view.answers[0]
-    const cited = citedWorks(answer, view)
+    const cited = citedWorks(answer)
     await visit(page, research())
     const acts = thread(page).locator('.answer-acts')
     await expect(acts.getByRole('button')).toHaveText([`View ${cited} cited sources`, 'Evidence table', 'Search funnel', '', ''])
@@ -408,6 +405,22 @@ test.describe.serial('S10: the answer in the thread', () => {
     await expect(methods.locator('.method-more')).toHaveAttribute('open', '')
     // The thread's box belongs to V2.
     await expect(thread(page).locator('.methods')).toHaveCount(1)
+    await page.keyboard.press('Escape')
+    // A cited work removed from the research keeps counting as the work it was (its citations store the work id): the
+    // pill still counts it, and the Cited tab says it leaves it out (SYNTHETIC removal of one cited work).
+    const before = await viewOf(api, held)
+    const v2 = before.answers.find(a => a.report_version === 2)!
+    const cited = citedWorks(v2)
+    const gone = v2.claims.flatMap(c => c.evidence)[0].work_id
+    const removed = await api.context.delete(`/api/researches/${held}/sources`, { data: { source_version_ids: before.sources.filter(s => s.work_id === gone).map(s => s.source_version_id) }, headers: { 'x-deixis-csrf': api.token } })
+    expect(removed.ok()).toBe(true)
+    await visit(page, research(held))
+    const pill = thread(page).locator('.answer-acts').getByRole('button', { name: cited === 1 ? 'View 1 cited source' : `View ${cited} cited sources` })
+    await expect(pill).toBeVisible()
+    await pill.click()
+    const sources = panel(page, PANEL_TITLES.sources)
+    await expect(sources.getByRole('button', { name: /^Cited in answer/ })).toContainText(String(cited - 1))
+    await expect(sources.locator('.source-cited-scope')).toHaveText('The answer also cites 1 work since removed from this research. It is not listed here; its quotes still open from the report.')
     await page.keyboard.press('Escape')
   })
 

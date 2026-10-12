@@ -79,10 +79,10 @@ function startLine(answer: Answer) {
     included: count(five.included), queued: count(five.queued), waiting: count(five.waiting_for_pdf), notRead: count(five.not_read), notMet: count(five.not_met) })
 }
 
-// The works an answer cites, each counted once over its versions (as the view's "cited" count does).
-function citedWorks(answer: Answer, sources: Source[]) {
-  const workOf = new Map(sources.map(s => [s.source_version_id, s.work_id]))
-  return new Set(answer.claims.flatMap(c => c.evidence.map(e => workOf.get(e.source_version_id) ?? e.source_version_id))).size
+// The works an answer cites, each counted once over its versions, by the work id stored with each citation (a source
+// removed from the research since keeps its work).
+function citedWorks(answer: Answer) {
+  return new Set(answer.claims.flatMap(c => c.evidence.map(e => e.work_id))).size
 }
 
 export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, runActive, thread, reviewPending = false }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; runActive: boolean; thread?: AnswerThreadContext; reviewPending?: boolean }) {
@@ -179,7 +179,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {limits.length > 0 && <><h3>{t('Limits')}</h3><ul className="plain-list">{limits.map((l, i) => <li key={i}><em>{t(l.kind.replace('_', ' '))}:</em> <MathText text={l.text} /></li>)}</ul></>}
     {refs.size > 0 && <>
       <div className="reference-head"><h3>{t('Cited passages')}</h3>
-        <div className="reference-tools"><ExportLinks researchId={researchId} sources="cited" />
+        <div className="reference-tools"><ExportLinks researchId={researchId} sources="cited" answerId={answer.id} />
         <Select value={style} onValueChange={value => { if (value) chooseStyle(value as CitationStyle) }}>
           <SelectTrigger aria-label={t('Citation style')} title={t('How the cited sources are written')}><SelectValue>{(value: string) => <><Quote size={14} />{t(citationStyles[value as CitationStyle].label)}</>}</SelectValue></SelectTrigger>
           <SelectContent className="intake-select-content has-details" align="end" alignItemWithTrigger={false}>
@@ -225,7 +225,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     const titleText = claim.evidence.map(e => [e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')).join('\n')
     return <button type="button" className="cite-chip thread-cite" title={titleText} onClick={() => onOpen(first.passage_id, first.anchor_text)}>{label}</button>
   }
-  const cited = citedWorks(answer, sources)
+  const cited = citedWorks(answer)
   const abstractOnly = answer.inputs_given?.depth?.abstract ?? 0
   const stale = answer.applicability === 'stale_selection'
   const late = answer.late_revision && answer.late_revision.base_report_version !== null ? answer.late_revision : null

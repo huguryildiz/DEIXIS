@@ -26,6 +26,22 @@ test.beforeAll(async () => {
   rid = records[0].id
 })
 
+type Bib = { answers: { id: string; report_version: number; claims: { evidence: { source_version_id: string }[] }[] }[]; sources: { source_version_id: string; work_id: string; title: string }[] }
+// A cited-sources export link names V1's answer and downloads the sources V1's claims cite (titles from the records).
+async function expectV1Export(href: string | null) {
+  const view = await (await fetch(`${url}/api/researches/${rid}`)).json() as Bib
+  const v1 = view.answers.find(a => a.report_version === 1)!
+  expect(href).toContain(`answer_id=${v1.id}`)
+  const response = await fetch(new URL(href!, url))
+  expect(response.status).toBe(200)
+  const text = await response.text()
+  const cited = new Set(v1.claims.flatMap(c => c.evidence.map(e => e.source_version_id)))
+  const listed = view.sources.filter(s => cited.has(s.source_version_id))
+  expect(listed.length).toBeGreaterThan(0)
+  expect(text.match(/^@\w+\{/gm) ?? text.match(/^TY {2}- /gm)).toHaveLength(listed.length)
+  for (const source of listed) expect(text).toContain(source.title.slice(0, 30))
+}
+
 test.afterAll(async () => {
   if (proc && proc.exitCode === null) {
     const ended = new Promise(resolve => proc!.once('exit', resolve))
@@ -71,8 +87,19 @@ for (const width of [1440, 390]) {
     await expect(sources.locator('.source-row')).toHaveCount(view.sources.filter(s => citedWorks.has(s.work_id)).length)
     await page.keyboard.press('Escape')
     await expect(page.locator('[data-split-panel]')).toHaveCount(0)
+    // The cited-sources exports follow V1 too: the thread's Download menu row, the topbar Export row (from 1100px, where
+    // the topbar shows it) and the report's .bib and .ris links.
+    await page.locator('.answer-thread .answer-acts').getByRole('button', { name: 'Download' }).click()
+    await expectV1Export(await page.getByRole('menuitem', { name: /^BIB/ }).getAttribute('href'))
+    await page.keyboard.press('Escape')
+    if (width >= 1100) {
+      await page.getByRole('button', { name: 'Export', exact: true }).click()
+      await expectV1Export(await page.getByRole('menuitem', { name: /^BIB/ }).getAttribute('href'))
+      await page.keyboard.press('Escape')
+    }
     await page.locator('#research-answer').click()
     await expect(page.locator('.report-content')).toBeVisible()
+    for (const format of ['.bib', '.ris']) await expectV1Export(await page.locator('.report-content .export-links a', { hasText: format }).getAttribute('href'))
     await expect(page.locator('.report-content')).not.toContainText('Full text added for')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
     await page.screenshot({ path: path.join(OUT, `late-pdf-unverified-${width}.png`), fullPage: true })
@@ -87,6 +114,8 @@ for (const width of [1440, 390]) {
     await expect(thread.locator('.answer-notice')).toContainText('A late full text produced answer V2. Full text for 1 source arrived after V1 was written; V2 reads it (selected pages). This happens once per answer. V1 is kept.')
     await thread.getByRole('button', { name: 'Open V1' }).click()
     await expect(page.locator('.report-document-head')).toContainText('Report · V1')
+    // The old report's cited-sources links export V1's sources, not V2's.
+    for (const format of ['.bib', '.ris']) await expectV1Export(await page.locator('.report-content .export-links a', { hasText: format }).getAttribute('href'))
     await page.keyboard.press('Escape')
     await expect(page.locator('.report-document-head')).toHaveCount(0)
     await page.locator('#research-answer').click()

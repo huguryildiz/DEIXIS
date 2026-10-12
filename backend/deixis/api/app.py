@@ -1960,12 +1960,19 @@ def create_app(
     @app.get("/api/researches/{research_id}/bibliography")
     async def export_bibliography(research_id: str, request: Request,
                                   fmt: Literal["bibtex", "ris"] = Query("bibtex", alias="format"),
-                                  sources: Literal["included", "cited"] = "included") -> Response:
+                                  sources: Literal["included", "cited"] = "included",
+                                  answer_id: str | None = None) -> Response:
         store = store_of(request)
         store.research(research_id)
-        chosen = bibliography.export_sources(store, research_id, sources)
+        # Cited sources follow one answer: the one named (a report's own export), else the one the page shows.
+        if answer_id is not None and sources != "cited":
+            raise HTTPException(422, "answer_id applies to cited sources only")
+        try:
+            chosen = bibliography.export_sources(store, research_id, sources, answer_id)
+        except LookupError:
+            raise HTTPException(404, "Answer not found in this research") from None
         if not chosen:
-            raise HTTPException(422, "No source is included" if sources == "included" else "The latest answer cites no source")
+            raise HTTPException(422, "No source is included" if sources == "included" else "The answer cites no source still in this research")
         text = bibliography.to_bibtex(chosen) if fmt == "bibtex" else bibliography.to_ris(chosen)
         name = bibliography.filename(store.research(research_id)["title"], sources, fmt)
         return Response(text, media_type=bibliography.MEDIA_TYPES[fmt], headers={"Content-Disposition": f'attachment; filename="{name}"'})

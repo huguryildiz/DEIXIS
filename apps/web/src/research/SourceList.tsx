@@ -13,8 +13,9 @@ const sourceSorts: Record<SourceSort, string> = { relevant: 'Most relevant', fou
 const verdictOrder: Record<string, number> = { include: 0, uncertain: 1, exclude: 2 }
 const verdictRank = (s: Source) => verdictOrder[s.selection.proposal ?? ''] ?? 3
 // "Cited in answer" (mockup P5's first tab, opened by the answer's "View N cited sources") lists the works the answer shown
-// in the thread cites, from that answer's stored claims (`cited`: the source versions its evidence names). The view's
+// in the thread cites, from that answer's stored claims (`cited`: the work ids its evidence names). The view's
 // `cited_in_latest_answer` flag follows the newest draft, which is not the shown answer after a failed late revision.
+// A cited work since removed from the research is not in `sources`, so the tab says how many it leaves out.
 // The tab shows once that answer cites any. The other P5 tabs come with S13.
 const stateFilters = [['cited', 'Cited in answer'], ['all', 'All'], ['included', 'Included'], ['pending', 'Undecided'], ['excluded', 'Excluded']] as const
 export type StateFilter = typeof stateFilters[number][0]
@@ -44,9 +45,10 @@ export function SourceList({ sources, cited, busy, filter, onFilter, focus, onFo
     if (source.version_role === 'other_version' && last?.[0].work_id === source.work_id) last.push(source)
     else families.push([source])
   }
-  const isCited = (family: Source[]) => family.some(source => cited.has(source.source_version_id))
+  const isCited = (family: Source[]) => cited.has(family[0].work_id)
   const counts = { cited: families.filter(isCited).length, all: families.length, included: 0, pending: 0, excluded: 0 }
   families.forEach(([record]) => counts[record.selection.state]++)
+  const citedRemoved = Math.max(0, cited.size - counts.cited)
   const hasPdf = (family: Source[]) => family.some(source => source.access.assets.length > 0)
   const pdfCounts = { all: families.length, with_pdf: families.filter(hasPdf).length, without_pdf: families.filter(family => !hasPdf(family)).length }
   const needle = query.trim().toLocaleLowerCase()
@@ -81,6 +83,7 @@ export function SourceList({ sources, cited, busy, filter, onFilter, focus, onFo
         </SelectContent>
       </Select>
     </div>}
+    {!focused && filter === 'cited' && citedRemoved > 0 && <p className="source-focus source-cited-scope">{t(citedRemoved === 1 ? 'The answer also cites {n} work since removed from this research. It is not listed here; its quotes still open from the report.' : 'The answer also cites {n} works since removed from this research. They are not listed here; their quotes still open from the report.', { n: citedRemoved })}</p>}
     {focused && <p className="source-focus">{t('Showing the one work the audit sample sent you to.')} <button type="button" onClick={() => { onFocus(null); onFilter('all'); setPdfFilter('all'); setQuery('') }}>{t('Show all sources')}</button></p>}
     <div className={`source-list${picked.length ? ' has-selection-bar' : ''}`}>{shown.flat().map(source => <SourceRow key={source.source_version_id} source={source} busy={busy}
       picked={picked.includes(source.source_version_id)} onPick={on => togglePick(source.source_version_id, on)} onRemoveFromResearch={() => onRemoveFromResearch(source)}

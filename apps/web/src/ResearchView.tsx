@@ -275,12 +275,14 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const candidateRun = view.runs.find(r => CANDIDATE_KINDS.has(r.kind) && (ACTIVE.has(r.status) || r.status === 'paused'))
   const watchRun = view.runs.find(r => r.kind === 'watch_check' && (ACTIVE.has(r.status) || r.status === 'paused'))
   const answer = shownAnswer(view)
-  // The source versions the shown answer cites (its stored claims), for the Sources panel's "Cited in answer" tab.
+  // The works the shown answer cites, from its stored claims: each citation keeps its work id, so a source since removed
+  // from the research still counts as the work it was (the view's `counts.cited` follows the newest draft instead, which
+  // after a failed late revision cites nothing while V1 is shown). The facts strip, the rail and the Cited tab use it.
+  const citedWorkIds = new Set(answer?.claims.flatMap(c => c.evidence.map(e => e.work_id)) ?? [])
+  const citedCount = citedWorkIds.size
+  // What its BibTeX export lists: the cited versions still in this research, counted as works.
   const citedVersions = new Set(answer?.claims.flatMap(c => c.evidence.map(e => e.source_version_id)) ?? [])
-  // The works it cites, each once over its versions. The view's `counts.cited` follows the newest draft, which after a
-  // failed late revision cites nothing while V1 is shown; the facts strip and the rail count the shown answer's works.
-  const workOfVersion = new Map(view.sources.map(s => [s.source_version_id, s.work_id]))
-  const citedCount = new Set([...citedVersions].map(v => workOfVersion.get(v) ?? v)).size
+  const citedListed = new Set(view.sources.filter(s => citedVersions.has(s.source_version_id)).map(s => s.work_id)).size
   const hasAcademic = view.scope.source_scope !== 'attached'
   const needsSeed = view.scope.source_scope === 'attached_and_academic' && view.scope.seed_mode === 'uploaded_seed'
   const seedSearchReady = !needsSeed || view.scope.seed_status === 'ready'
@@ -494,7 +496,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     included, hasTable: (tables?.length ?? 0) > 0,
     canNewAnswer: !busy && !active && Boolean(included || answersWithoutInclude),
     downloadMenu: answer.status === 'structurally_valid' ? <ExportMenu icon researchId={id} report={{ answer, title: answer.report_title ?? heading, version: answerVersion }}
-      sources={view.sources} tables={tables} included={included} cited={view.counts.cited} prisma={Boolean(view.counts.flow)} /> : null,
+      sources={view.sources} tables={tables} included={included} cited={citedListed} prisma={Boolean(view.counts.flow)} /> : null,
     // Until the Funnel panel exists (S14) the funnel opens the Sources panel, which holds the flow counts (as the rail does).
     onPanel: (name, opener) => openPanel(name === 'funnel' ? 'sources' : name, { opener }),
     onShowSources: (filter, opener) => { setSourceFocus(null); setSourceFilter(filter); openPanel('sources', { opener }) },
@@ -569,7 +571,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onClick={() => reviseQuestion()}><PencilLine size={16} className="size-4" aria-hidden /><span className="research-topbar-label">{t('Revise question')}</span></Button>
       {!titleEditing && <>
         <ExportMenu researchId={id} report={answer?.status === 'structurally_valid' ? { answer, title: answer.report_title ?? heading, version: answer.report_version ?? 0 } : null}
-          sources={view.sources} tables={tables} included={included} cited={view.counts.cited} prisma={Boolean(view.counts.flow)} />
+          sources={view.sources} tables={tables} included={included} cited={citedListed} prisma={Boolean(view.counts.flow)} />
         <DropdownMenu onOpenChange={open => { if (open) rowChosen.current = false }}>
           <DropdownMenuTrigger render={<Button ref={moreButton} variant="ghost" size="icon-sm" className="research-more" aria-label={t('Research actions')} title={t('Research actions')} />}><Ellipsis size={16} aria-hidden /></DropdownMenuTrigger>
           <DropdownMenuContent align="start" sideOffset={6} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }} className="research-actions-menu" finalFocus={() => (rowChosen.current ? false : moreButton.current)}>
@@ -724,7 +726,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
         {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
         <a href="#/trash">{t('Show in Trash')}</a></p>}
-      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourceList sources={view.sources} cited={citedVersions} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
+      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourceList sources={view.sources} cited={citedWorkIds} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
         onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
         onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
         onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}

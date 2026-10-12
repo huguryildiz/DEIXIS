@@ -462,7 +462,8 @@ export type Source = {
   provider_records: string[]
 }
 export type Evidence = {
-  passage_id: string; source_version_id: string; source_key: string | null; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
+  // work_id: the work the cited version belongs to, kept for a source since removed from the research (it is not in `sources`).
+  passage_id: string; source_version_id: string; work_id: string; source_key: string | null; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
   printed_label: string | null; reading_depth: string; title: string; version_label: string | null; anchor_text: string | null
   evidence_status: EvidenceStatus
   // null for abstracts; 'ocr' text was not checked against the page (D51); 'latex_source' holds the authors' LaTeX of
@@ -1376,8 +1377,9 @@ export type AnswerMethod = {
 export const prismaSUrl = (researchId: string, format: 'md' | 'json') =>
   `/api/researches/${researchId}/prisma-s?format=${format}`
 
-export const bibliographyUrl = (researchId: string, format: 'bibtex' | 'ris', sources: 'included' | 'cited') =>
-  `/api/researches/${researchId}/bibliography?format=${format}&sources=${sources}`
+// Cited sources are one answer's: `answerId` names it (the server refuses an answer of another research).
+export const bibliographyUrl = (researchId: string, format: 'bibtex' | 'ris', sources: 'included' | 'cited', answerId?: string) =>
+  `/api/researches/${researchId}/bibliography?format=${format}&sources=${sources}${answerId ? `&answer_id=${encodeURIComponent(answerId)}` : ''}`
 
 const textFragment = (text: string) => encodeURIComponent(text.replace(/\s+/g, ' ').trim()).replace(/-/g, '%2D')
 

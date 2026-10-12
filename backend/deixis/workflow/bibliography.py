@@ -46,10 +46,35 @@ _TEX = {"\\": r"\textbackslash{}", "{": r"\{", "}": r"\}", "&": r"\&", "%": r"\%
 _KEY_STOPWORDS = {"a", "an", "the", "on", "of", "in", "for", "and", "to", "with"}
 
 
-def export_sources(store: Store, research_id: str, selection: Selection) -> list[dict[str, Any]]:
-    """Sources in the order the research lists them: the included ones, or the ones cited in the latest answer."""
-    chosen = [s for s in research_view(store, research_id)["sources"]
-              if (s["selection"]["state"] == "included" if selection == "included" else s["cited_in_latest_answer"])]
+def shown_answer_id(view: dict[str, Any]) -> str | None:
+    """The answer the research page shows: the newest one, unless it is a late revision that failed (then the answer it
+    revised stays shown). The view's `cited_in_latest_answer` flags follow the newest answer instead."""
+    answers = view["answers"]
+    shown = next((a for a in answers if not (a.get("late_revision") and a["status"] != "structurally_valid")),
+                 answers[0] if answers else None)
+    return shown["id"] if shown else None
+
+
+def cited_by(store: Store, research_id: str, answer_id: str) -> set[str]:
+    """The source versions one answer of this research cites, from its stored evidence links. An answer of another
+    research, or none, raises LookupError: never another answer's sources."""
+    if store.conn.execute("SELECT 1 FROM answers WHERE id = ? AND research_id = ?", (answer_id, research_id)).fetchone() is None:
+        raise LookupError("answer not found in this research")
+    return {r[0] for r in store.conn.execute(
+        "SELECT DISTINCT l.source_version_id FROM evidence_links l JOIN claims c ON c.id = l.claim_id WHERE c.answer_id = ?",
+        (answer_id,))}
+
+
+def export_sources(store: Store, research_id: str, selection: Selection, answer_id: str | None = None) -> list[dict[str, Any]]:
+    """Sources in the order the research lists them: the included ones, or the ones an answer cites (`answer_id`, else
+    the answer the page shows). Cited sources since removed from the research are not listed (D50)."""
+    view = research_view(store, research_id)
+    if selection == "included":
+        chosen = [s for s in view["sources"] if s["selection"]["state"] == "included"]
+    else:
+        target = answer_id or shown_answer_id(view)
+        cited = cited_by(store, research_id, target) if target else set()
+        chosen = [s for s in view["sources"] if s["source_version_id"] in cited]
     for source in chosen:
         row = store.conn.execute(
             "SELECT value FROM identifier_mappings WHERE source_version_id = ? AND scheme = 'arxiv' LIMIT 1",

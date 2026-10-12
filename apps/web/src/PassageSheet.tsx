@@ -125,7 +125,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   // passage is not that text (an abstract citation of a source that has a PDF, a PDF page of a source with an abstract).
   // null: not read yet; false: the read failed (it is not asked again until the panel opens something else).
   const [abstractPassage, setAbstractPassage] = useState<Passage | null | false>(null)
-  const [extraText, setExtraText] = useState<AssetText | null | false>(null)
+  // The source PDF's text is kept with the file it was read from: when the source's file changes (Replace PDF) the
+  // earlier text no longer counts and the new file's is read.
+  const [extraText, setExtraText] = useState<{ assetId: string; value: AssetText | false } | null>(null)
   const [comparing, setComparing] = useState(false)
   const [loadingCurrent, setLoadingCurrent] = useState(false)
   const [comparisonError, setComparisonError] = useState('')
@@ -215,7 +217,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): every page it names says "rendered". Each view
   // takes it from what it shows: the text view from the passage read from the PDF or the document shown, the PDF view
   // from the opened file's stored record (an abstract passage carries none of its own).
-  const textRendition = passage && !abstract ? Boolean(passage.rendition) : Boolean((assetText ?? (extraText || null))?.asset.rendition)
+  // The text read for the source's current file, if it has been read: null not yet, false the read failed.
+  const extra = extraText && extraText.assetId === rowAssetId ? extraText.value : null
+  const textRendition = passage && !abstract ? Boolean(passage.rendition) : Boolean((assetText ?? (extra || null))?.asset.rendition)
   const pdfRendition = passage && !abstract && passage.asset_id === pdfAssetId ? Boolean(passage.rendition)
     : assetText && assetText.asset.id === pdfAssetId ? Boolean(assetText.asset.rendition)
     : Boolean(row?.access.assets.find(a => a.id === pdfAssetId)?.rendition)
@@ -226,8 +230,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const abstractId = abstract ? passage!.id : row?.access.abstract_passage_id ?? opened?.access.abstract_passage_id ?? null
   const abstractShown = abstract ? passage : abstractPassage || null
   // The text the Plain text tab reads when the opened passage is not a PDF page: the opened file's, else the source's PDF.
-  const otherText = assetText ?? (extraText || null)
-  const needsOtherText = tab === 'text' && !assetText && extraText === null && Boolean(rowAssetId) && !removed && (abstract || detailsOnly)
+  const otherText = assetText ?? (extra || null)
+  const needsOtherText = tab === 'text' && !assetText && extra === null && Boolean(rowAssetId) && !removed && (abstract || detailsOnly)
   const needsAbstract = tab === 'abs' && abstractPassage === null && Boolean(abstractId) && !abstract
 
   useEffect(() => {
@@ -238,8 +242,11 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   }, [needsAbstract, abstractId, researchId])
   useEffect(() => {
     if (!needsOtherText || !rowAssetId) return
+    // A read still running for an earlier file is let go when the file changes, and its answer is kept with its own
+    // file id, so it can never stand for the new file's text.
     let live = true
-    api.assetText(researchId, rowAssetId).then(value => { if (live) setExtraText(value) }, () => { if (live) setExtraText(false) })
+    const assetId = rowAssetId
+    api.assetText(researchId, assetId).then(value => { if (live) setExtraText({ assetId, value }) }, () => { if (live) setExtraText({ assetId, value: false }) })
     return () => { live = false }
   }, [needsOtherText, rowAssetId, researchId])
 
@@ -271,7 +278,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   // The file and its text are told apart (P12): a passage read from the PDF, or its loaded text, says there is text;
   // otherwise the stored extraction state of the file does. A kept file can have no text (no text layer, a failed read).
   const fileAsset = pdfAssetId ? row?.access.assets.find(item => item.id === pdfAssetId) ?? null : null
-  const loadedText = (passage && !abstract) ? true : assetText ? assetText.passages.length > 0 : extraText ? extraText.passages.length > 0 : null
+  const loadedText = (passage && !abstract) ? true : assetText ? assetText.passages.length > 0 : extra ? extra.passages.length > 0 : null
   const pdfText: 'text' | 'none' | 'pending' | null = loadedText === true ? 'text' : loadedText === false ? 'none' : textState(fileAsset) ?? (hasPdf ? 'pending' : null)
   const finding = Boolean(row && actions?.finding.includes(row.source_version_id))
   const canFind = Boolean(row && actions && row.doi && !row.access.assets.length && row.version_role !== 'other_version')

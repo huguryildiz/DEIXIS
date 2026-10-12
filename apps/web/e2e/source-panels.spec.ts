@@ -1,6 +1,6 @@
 import { expect, request as apiRequest, test, type APIRequestContext, type Page } from '@playwright/test'
-import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
@@ -43,6 +43,15 @@ class PanelServer {
     rmSync(this.dataDir, { recursive: true, force: true })
   }
   url() { return `http://127.0.0.1:${this.port}` }
+  // A SYNTHETIC one-page PDF from the fixture server ("SYNTHETIC replacement scan: …"), for Replace PDF (D45).
+  replacementPdf(name: string) {
+    const file = path.join(this.dataDir, '..', `${name}-${this.port}.pdf`)
+    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend') }
+    spawnSync(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', '0', '--write-replacement-pdf', file], { cwd: REPO, env })
+    // A trailing comment after %%EOF makes each file's bytes differ (the backend refuses the file already in use).
+    appendFileSync(file, `\n%SYNTHETIC ${name}\n`)
+    return file
+  }
 }
 
 type Evidence = {
@@ -183,7 +192,7 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await shot(page, 's12-report-panel')
       await page.keyboard.press('Escape')
       await expect(page.locator('[data-split-panel]')).toHaveCount(0)
-    } finally { await page.unroute(`**/api/researches/${rid}`) }
+    } finally { await page.unrouteAll({ behavior: 'ignoreErrors' }) }
   })
 
   test('the version select shows each of three versions in the same panel, and Back returns to the version shown', async () => {
@@ -461,8 +470,8 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await expect(sourcePanel(page).locator('.dhead .pills .ref-pill').first()).toHaveText('PDF without extracted text')
       await page.keyboard.press('Escape')
     } finally {
-      await page.unroute(`**/api/researches/${rid}`)
-      await page.unroute(`**/sources/${source.source_version_id}/pdf-discovery`)
+      // In-flight handlers of this case end quietly when the next case navigates.
+      await page.unrouteAll({ behavior: 'ignoreErrors' })
     }
   })
 
@@ -501,8 +510,8 @@ test.describe('S12: report, Citation and Source details panels', () => {
       }
       await page.keyboard.press('Escape')
     } finally {
-      await page.unroute(`**/api/researches/${rid}`)
-      await page.unroute(`**/sources/${svid}/pdf-discovery`)
+      // In-flight handlers of this case end quietly when the next case navigates.
+      await page.unrouteAll({ behavior: 'ignoreErrors' })
     }
   })
 
@@ -552,8 +561,8 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await expect(block.locator('.pill')).toHaveText(asked.map(p => PROVIDERS[p] ?? p))
       await page.keyboard.press('Escape')
     } finally {
-      await page.unroute(`**/sources/${a.source_version_id}/pdf-discovery`)
-      await page.unroute(`**/sources/${b.source_version_id}/pdf-discovery`)
+      // In-flight handlers of this case end quietly when the next case navigates.
+      await page.unrouteAll({ behavior: 'ignoreErrors' })
     }
   })
 
@@ -595,8 +604,81 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await expect(notice).toHaveCount(0)
       await page.keyboard.press('Escape')
     } finally {
-      await page.unroute(`**/api/researches/${rid}`)
-      await page.unroute(`**/assets/${file.id}/text**`)
+      // In-flight handlers of this case end quietly when the next case navigates.
+      await page.unrouteAll({ behavior: 'ignoreErrors' })
+    }
+  })
+
+  test('after Replace PDF the Plain text of an abstract-opened work reads the new file, and an earlier read never overwrites it', async () => {
+    const view = await viewOf(api, rid)
+    const latest = [...valid(view)].sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
+    const abstracts = latest.claims.flatMap(c => c.evidence).filter(e => e.kind === 'abstract')
+    // Another abstract-cited work than the earlier cases' (its file is replaced twice here).
+    const cited = abstracts[abstracts.length - 1]
+    const source = view.sources.find(s => s.source_version_id === cited.source_version_id)!
+    const first = source.access.assets[0]
+    expect(first, 'the fixture fetched this work\'s PDF').toBeTruthy()
+    // PATCHED VIEW: the work's first file is marked as Europe PMC's text drawn by DEIXIS, so its replacement (the
+    // publisher-like fixture PDF) must change the text view's provenance too. The second file's text read is held 6 s
+    // and its text swapped for "SYNTHETIC STALE TEXT", so a late answer for it would show.
+    await page.route(`**/api/researches/${rid}`, async route => {
+      const response = await route.fetch()
+      const body = await response.json() as View
+      for (const s of body.sources) for (const x of s.access.assets) if (x.id === first.id) x.rendition = true
+      await route.fulfill({ response, json: body })
+    })
+    let secondId: string | null = null
+    let staleDone!: () => void
+    const staleAnswered = new Promise<void>(resolve => { staleDone = resolve })
+    await page.route('**/assets/*/text**', async route => {
+      const id = new URL(route.request().url()).pathname.split('/').at(-2)!
+      const response = await route.fetch()
+      const body = await response.json() as { asset: Record<string, unknown>; passages: Array<{ text: string }> }
+      if (id === first.id) return route.fulfill({ response, json: { ...body, asset: { ...body.asset, rendition: true } } })
+      if (secondId === null) secondId = id
+      if (id !== secondId) return route.fulfill({ response })
+      await new Promise(r => setTimeout(r, 6000))
+      await route.fulfill({ response, json: { ...body, passages: body.passages.map(p => ({ ...p, text: 'SYNTHETIC STALE TEXT' })) } }).catch(() => {})
+      staleDone()
+    })
+    const replace = async (name: string) => {
+      const details = sourcePanel(page)
+      await details.locator('.dacts').getByRole('button', { name: 'More actions' }).click()
+      const chooser = page.waitForEvent('filechooser')
+      await page.locator('.source-more-menu [data-slot=dropdown-menu-item]').filter({ hasText: 'Replace PDF' }).click()
+      await (await chooser).setFiles(server.replacementPdf(name))
+      await page.getByRole('dialog', { name: 'Replace PDF?' }).getByRole('button', { name: 'Replace PDF' }).click()
+      await expect(page.getByText('PDF replaced.').first()).toBeVisible()
+    }
+    try {
+      await visit(page, research())
+      await page.locator('#research-answer').click()
+      await reportPanel(page).locator('.reference-list > li').filter({ hasText: source.title }).filter({ has: page.locator('.ref-pills', { hasText: 'Abstract' }) }).first().getByRole('button').click()
+      const details = sourcePanel(page)
+      const text = details.locator('#source-text-view')
+      await details.getByRole('tab', { name: 'Plain text' }).click()
+      // The fixture's first file names the work's DOI on its first page.
+      await expect(text).toContainText(`https://doi.org/${source.doi}`)
+      await expect(details.locator('.docnav')).toContainText(/Text drawn from Europe PMC · \d+ pages/)
+      // The first replacement: its text read is held; the second replacement comes while it still runs.
+      await replace('replacement-a')
+      await expect(text).toContainText('Loading PDF text…')
+      await replace('replacement-b')
+      await expect(text).toContainText('SYNTHETIC replacement scan', { timeout: 20_000 })
+      await expect(text).not.toContainText(`https://doi.org/${source.doi}`)
+      await expect(details.locator('.docnav')).toContainText('Text from the PDF · 1 page')
+      await expect(details.locator('.dhead .pills .ref-pill').first()).toHaveText('PDF text · 1 pp.')
+      // The held read for the second file answers now; the third file's text stays.
+      await staleAnswered
+      await page.waitForTimeout(500)
+      await expect(text).not.toContainText('SYNTHETIC STALE TEXT')
+      await expect(text).toContainText('SYNTHETIC replacement scan')
+      const current = (await viewOf(api, rid)).sources.find(s => s.source_version_id === source.source_version_id)!.access.assets[0]
+      expect([first.id, secondId]).not.toContain(current.id)
+      await page.keyboard.press('Escape')
+    } finally {
+      // In-flight handlers of this case end quietly when the next case navigates.
+      await page.unrouteAll({ behavior: 'ignoreErrors' })
     }
   })
 

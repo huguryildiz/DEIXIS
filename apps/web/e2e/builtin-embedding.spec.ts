@@ -225,7 +225,8 @@ test.describe.serial('N: a failed passage ranking still says where uploaded text
     await startResearch(page, server, 'SYNTHETIC [embed-fails] comparison of molecular release schedules', 'Attached files')
     await page.getByRole('button', { name: 'Generate source-linked answer' }).click()
     await expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 })
-    await page.getByRole('button', { name: /Ran answer generation/ }).click()
+    // The latest answer's steps stay open (S9), so the ranking line is in view without a click.
+    await expect(page.getByRole('button', { name: /Ran answer generation/ })).toHaveAttribute('aria-expanded', 'true')
     const line = page.getByText(/Unavailable · continued with keyword search/)
     await expect(line).toContainText('went in a request that brought no vectors back; whether Google received')
     await line.scrollIntoViewIfNeeded()

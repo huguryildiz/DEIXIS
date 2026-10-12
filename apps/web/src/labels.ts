@@ -336,6 +336,7 @@ export const searchQueryTriesLeft = (run: { error: unknown }) => (run.error as {
 const approvedByNames: Record<string, string> = {
   unattended: 'Nobody reviewed the search vocabulary; the fast path went on without asking.',
   user: 'You edited and saved this search plan; it was searched as you saved it.',
+  user_edited: 'You edited and saved this search plan; it was searched as you saved it.',
 }
 export const approvedByText = (by: string | null) => (by ? t(approvedByNames[by] ?? by) : '')
 

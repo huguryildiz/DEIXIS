@@ -3881,4 +3881,5 @@ const tr: Record<string, string> = {
   'semantic, seed {n}': 'anlamsal, tohum {n}',
   'keyword': 'anahtar sözcük',
   'The search uses these terms ahead of the question.': 'Arama bu terimleri sorudan önce kullanır.',
+  'Seed PDFs matched to an OpenAlex work are used as the first seeds, before the works of the semantic search.': 'Bir OpenAlex eseriyle eşleşen tohum PDF\'ler, anlamsal aramanın eserlerinden önce ilk tohumlar olarak kullanılır.',
 }

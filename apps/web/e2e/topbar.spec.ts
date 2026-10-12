@@ -257,7 +257,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await shot(page, 's8-earlier-revision')
     await line.getByRole('button', { name: 'Hide' }).click()
     await expect(earlier).toHaveCount(0)
- 
+
     // Key terms saved with one revision and cleared in the next are cleared, not carried over (null would keep them).
     await revise.click()
     await form.getByLabel('English key terms (optional)').fill('molecule release scheduling')

@@ -111,6 +111,7 @@ const embeddingOf = (stored: string) => {
 // A 429 the embedding step waited out stays visible (slice 21).
 const waitedText = (output: Step['output']) => output?.rate_limited_waits ? t('rate limited, waited {s} s', { s: Math.round(output.waited_seconds ?? 0) }) : ''
 const embeddingServices: Record<string, string> = { gemini: 'Google', openai: 'OpenAI' }
+const USER_PLAN = new Set(['user', 'user_edited'])
 const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unknown'
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
@@ -696,7 +697,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     switch (key) {
       case 'plan':
         if (live) return ongoing(t('Planning the searches from the question'), detail(key, state, group))
-        return t(run.approval?.approved_by === 'user' ? 'Planned the searches from your saved plan' : 'Planned the searches from the question’s words')
+        // A person's saved plan is recorded as approved_by 'user' with mode 'user_edited' (user_plan.py); the view passes
+        // approved_by, and either value means the plan is the person's, not the question's words.
+        return t(USER_PLAN.has(run.approval?.approved_by ?? '') ? 'Planned the searches from your saved plan' : 'Planned the searches from the question’s words')
       case 'search':
         if (live) return ongoing(searchedProviders ? t('Searching {providers}', { providers: searchedProviders }) : t('Searching the providers'))
         if (!searches.length) return fallback()
@@ -812,6 +815,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       // How the chain picks its seeds and which works it keeps, with the arrival cutoff (fast_chain_v1), as the approval
       // record said it before S9.
       if (limits) parts.push(<div key="rule">{t('OpenAlex only. While the search runs, OpenAlex is asked for the works that the first {seeds} works of its semantic search cite, and for the works that cite them; when that search gives fewer works, the ranking fills the list. Works you verified are not used as seeds. A new work is kept when a setting or task term stands in its title or abstract and its reply arrives a few seconds before the ranking stage ends; the run says how many seeds it used once the search is done.', { seeds: limits.seeds })}</div>)
+      // Seed PDFs come first (fast_chain.pdf_seeds, D2/D3): each one matched to an OpenAlex work is a seed before the search's.
+      if (limits) parts.push(<div key="seed-pdfs">{t('Seed PDFs matched to an OpenAlex work are used as the first seeds, before the works of the semantic search.')}</div>)
       if (limits) parts.push(<div key="limits">{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: limits.backward_requests, forward: limits.forward_requests, cap: limits.citing_cap, attempts: limits.attempt_limit })}</div>)
     }
     if (key === 'screen' && run.kind === 'discovery') {
@@ -943,10 +948,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         <div className="notice-actions">
           {resumable && onControlRun && <Button size="sm" disabled={busy} onClick={() => onControlRun(run, 'resume')}><Play size={14} aria-hidden />{t('Resume run')}</Button>}
           {/* Code does not translate a question, so this stop is answered in the revision form and nowhere else (SW2.1). */}
-          {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
+          {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" className="notice-ghost" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
           {/* Resume asks the model once more while a try is left; this button never asks it again (D92). */}
-          {run.pause_reason === 'search_query_failed' && onChooseCodeQuery && <Button variant="outline" size="sm" onClick={() => void onChooseCodeQuery(run)}>{t('Search with the query built from the question’s words')}</Button>}
-          {onControlRun && <Button variant="outline" size="sm" disabled={busy} onClick={() => onControlRun(run, 'cancel')}>{t('Cancel run')}</Button>}
+          {run.pause_reason === 'search_query_failed' && onChooseCodeQuery && <Button variant="outline" size="sm" className="notice-ghost" onClick={() => void onChooseCodeQuery(run)}>{t('Search with the query built from the question’s words')}</Button>}
+          {onControlRun && <Button variant="outline" size="sm" className="notice-ghost" disabled={busy} onClick={() => onControlRun(run, 'cancel')}>{t('Cancel run')}</Button>}
         </div>
       </div>
     </div>}

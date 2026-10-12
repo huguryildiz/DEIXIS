@@ -264,7 +264,7 @@
 .notice-body b{font-weight:600}
 .notice-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .notice-actions [data-slot=button]{height:30px;gap:6px;padding-inline:12px;border-radius:7px;font-size:13px}
-.notice-actions [data-slot=button][data-variant=outline]{padding-inline:10px;border-color:var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-weight:400}
+.notice-actions .notice-ghost{padding-inline:10px;border-color:var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-weight:400}
 .notice-field{width:100%;padding:8px 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--paper);color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.5;resize:vertical}
 .notice-field:focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:1px}
 .notice-label{display:grid;gap:4px;font-size:13px;color:var(--muted)}

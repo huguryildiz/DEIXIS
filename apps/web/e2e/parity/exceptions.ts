@@ -112,7 +112,7 @@ export const PLACEMENTS: Placement[] = [
   { id: 'panel-menu-rows', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S11',
     container: 'Topbar ⋯ "Research actions", after Follow-up: Sources, Awaiting your decision, Get more full text and Evidence table with their counts, until the rail (S11) and the steps (S9) open them; Candidates and Follow-up keep their counts (dataText)', app: '.research-menu-placement' },
   { id: 'run-controls', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S9',
-    container: 'Topbar, beside Pause: Cancel of a live run (the mockup has no way to stop a live run). Resume run and Cancel run of a paused or stopped run are in the notice under its steps (R18)', app: '.run-strip [data-variant=destructive]' },
+    container: 'Topbar, beside Pause: Cancel of a live run (the mockup has no way to stop a live run). Resume run and Cancel run of a paused or stopped run are in the notice under its steps (R18)', app: '.run-strip .run-strip-cancel' },
   { id: 'revise-phone', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S22b',
     container: 'Topbar at ≤820px: Revise question stays as a 30px icon button (the mockup hides it there and revises through the follow-up composer, R30)', app: null },
   { id: 'key-terms-syntax', rule: '§0 rule 5 (the key-terms syntax is how a person writes the blocks the search reads)', slice: 'S8',

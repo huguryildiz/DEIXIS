@@ -77,6 +77,16 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
   const [requestReview, setRequestReview] = useState(false)
   const reviewList = useReviewList(researchId, 'report', reportId, view.last_event_id)
   const reviewsButton = useRef<HTMLButtonElement>(null), scrollRoot = useRef<HTMLDivElement>(null), documentScroll = useRef(0)
+  // The control that opened the sheet gets focus back on close and is scrolled into view: the thread above it keeps the
+  // latest search and answer open (S9), so the opener can sit below the fold, and a focus stop must be in view.
+  const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null)
+  const returnToOpener = () => {
+    const target = opener.current
+    if (!target?.isConnected) return true
+    target.focus({ preventScroll: true })
+    target.scrollIntoView({ block: 'nearest' })
+    return false
+  }
   const [applying, setApplying] = useState<{ reviewId: string; finding: ReviewFindingRow; claim: ReportClaim } | null>(null)
   const mode = (on: boolean, request = false) => {
     if (on && !reviewMode) documentScroll.current = scrollRoot.current?.scrollTop ?? 0
@@ -281,7 +291,7 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
     const cell = table.cells.find(item => item.source_version_id === row.source_version_id && item.column_id === column.column_id)
     return <td key={column.column_id}>{cell ? cell.state === 'value' ? valueText(cell.value, column.options) : cell.state === 'not_verified' ? t('{value} (not verified: no quote linked)', { value: valueText(cell.value, column.options) }) : t(cell.state.replaceAll('_', ' ')) : '—'}</td>
   })}</tr>)}</tbody></table></div>
-  return <Sheet open onOpenChange={open => { if (!open) onClose() }}><SheetContent className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
+  return <Sheet open onOpenChange={open => { if (!open) onClose() }}><SheetContent finalFocus={returnToOpener} className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
     <SheetHeader className="report-toolbar"><div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div><SheetDescription className="sr-only">{t('Evidence report')}</SheetDescription><div className="report-toolbar-actions"><Button ref={reviewsButton} variant="ghost" size="sm" aria-label={t('Reviews, {n}', { n: reviewList.reviews.length })} aria-pressed={reviewMode} onClick={() => mode(!reviewMode)}>{t('Reviews')} <span className="research-tab-count" aria-hidden>{reviewList.reviews.length}</span></Button><Button variant="ghost" size="sm" aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Quote size={14} aria-hidden /><span className="report-head-label">{t('Evidence view')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Copy Markdown')} onClick={() => void markdown('copy')}><Copy size={14} aria-hidden /><span className="report-export-label">{t('Copy Markdown')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download .md')} onClick={() => void markdown('download')}><Download size={14} aria-hidden /><span className="report-export-label">{t('Download .md')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download LaTeX')} onClick={() => void latex()}><FileCode size={14} aria-hidden /><span className="report-export-label">{t('Download LaTeX')}</span></Button></div></SheetHeader>
     <div className="report-scroll" ref={scrollRoot}>
     {reviewMode && <ReviewPane researchId={researchId} targetKind="report" targetId={reportId} version={report?.report_version ?? 0} eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} unavailableReason={reviewUnavailable} sources={view.sources} sectionLabel={labels} showRequest={requestReview} open={(id, anchor) => onOpenCitation(id, anchor, true)} changed={async () => { await reviewList.refresh(); await onChanged() }} apply={openApply} />}

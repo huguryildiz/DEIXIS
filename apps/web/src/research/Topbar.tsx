@@ -95,6 +95,6 @@ export function RunChip({ run, hasAnswer, busy, inThread, onControl }: {
     {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" className="research-topbar-action run-strip-pause" disabled={busy} onClick={() => onControl('pause')}><Pause size={14} aria-hidden />{t('Pause')}</Button>}
     {!active && !inThread && run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)
       && <Button variant="default" size="sm" disabled={busy} onClick={() => onControl('resume')}><Play size={14} aria-hidden />{t('Resume')}</Button>}
-    {(active || !inThread) && <Button variant="destructive" size="sm" disabled={busy} onClick={() => onControl('cancel')}><X size={14} aria-hidden />{t('Cancel')}</Button>}
+    {(active || !inThread) && <Button variant="destructive" size="sm" className="run-strip-cancel" disabled={busy} onClick={() => onControl('cancel')}><X size={14} aria-hidden />{t('Cancel')}</Button>}
   </div>
 }

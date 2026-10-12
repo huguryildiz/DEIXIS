@@ -1158,11 +1158,12 @@ async function expectReachable(page: Page, region: Locator, step: string) {
   observations.push(`${step}: ${w.count} tabbable elements, all reached by Tab and left by Shift+Tab inside the panel (a side panel is not modal)`)
 }
 
-// Back to the panel below by keyboard: Tab to the Back button, Enter. The panel that was below shows again with focus on its heading.
-async function keyBack(page: Page, gone: Locator, step: string) {
+// Back to the panel below by keyboard: Tab to the Back button, Enter. The panel that was below shows again with focus on the control that opened
+// the panel above (a citation chip, a reference).
+async function keyBack(page: Page, gone: Locator, step: string, opener: Locator) {
   await tabTo(page, page.locator('[data-split-panel]').getByRole('button', { name: 'Back', exact: true }), `${step}: Back`)
   await press(page, 'Enter', `${step}: Back`, () => expect(gone).toHaveCount(0))
-  await expectFocusOn(page.locator('[data-split-panel] #split-panel-title'), `the panel heading after Back from ${step}`)
+  await expectFocusOn(opener, `the control that opened ${step}, after Back`)
 }
 
 // One photograph of a control that relies on Chrome's native ring, in each theme (an observation, not a change).
@@ -1338,20 +1339,20 @@ test.describe.serial('X05: A to G by keyboard', () => {
     expect(pagesRing.kind, `PDF pages region indicator (${pagesRing.detail ?? ''})`).not.toBe('none')
     observations.push(`PDF pages region (.pdf-document), reached by Tab: indicator ${pagesRing.kind}`)
     await photographRing(page, 'focus-pdf-pages')
-    await keyBack(page, passage, 'passage panel')
-    await audit(page, 'focus returned to the report panel')
+    await keyBack(page, passage, 'passage panel', chip)
+    await audit(page, 'focus returned to the chip')
 
     // B: an abstract-only reference; C: the manuscript version stays labelled. Both reached by keyboard.
     const relay = report.locator('.reference-list li', { hasText: 'SYNTHETIC relay budget allocation' }).getByRole('button')
     await tabTo(page, relay, 'reference: abstract-only source')
     const abstractSheet = sourcePanel(page)
     await press(page, 'Enter', 'reference: abstract-only source', () => expect(abstractSheet.locator('.source-chips')).toContainText('Abstract only'))
-    await keyBack(page, abstractSheet, 'abstract-only passage')
+    await keyBack(page, abstractSheet, 'abstract-only passage', relay)
     const letter = report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule schedule letter' }).filter({ hasText: 'submitted manuscript' }).getByRole('button')
     await tabTo(page, letter, 'reference: submitted manuscript')
     const manuscriptSheet = sourcePanel(page)
     await press(page, 'Enter', 'reference: submitted manuscript', () => expect(manuscriptSheet).toContainText('submitted manuscript'))
-    await keyBack(page, manuscriptSheet, 'manuscript passage')
+    await keyBack(page, manuscriptSheet, 'manuscript passage', letter)
     await escapeClose(page, report, 'report panel')
     await expectReturn(artifact, 'the Open report button')
     await audit(page, 'focus returned to Open report')

@@ -134,7 +134,7 @@ test.describe.serial('S7a: thread and side panel', () => {
     await shot(page, 's7a-source-details-stacked')
     await details.getByRole('button', { name: 'Back' }).click()
     await expect(panel(page, 'Sources')).toBeVisible()
-    await expect(page.locator('[data-split-panel] #split-panel-title')).toBeFocused()
+    await expect(panel(page, 'Sources').getByRole('button', { name: 'Read abstract' }).first()).toBeFocused()  // Back returns focus to the control that opened the source
     await expect(panel(page, 'Source details')).toHaveCount(0)
     await expect(panel(page, 'Sources').getByRole('button', { name: 'Back' })).toHaveCount(0)
 

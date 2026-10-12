@@ -624,7 +624,9 @@ export const flowBoxLabels: Record<string, string> = {
   abstract_read_by_model: 'Works whose abstract the model read',
   out_of_scope_model: 'Out of scope at the abstract stage (model runs)',
   out_of_scope_code: 'Out of scope at the abstract stage (code rule)', fulltext_sought: 'Full text sought',
-  fulltext_not_retrieved: 'Full text not retrieved', fulltext_read: 'Full text read',
+  fulltext_not_retrieved: 'Full text not retrieved',
+  // Not the rail's "Full text read" (two stored passes): a current full-text decision, the reading's or the person's (S11 follow-up).
+  fulltext_read: 'Works with a current full-text decision (reading or yours)',
   not_met: 'Criterion not met', queued: 'In your queue', included: 'Included (two agreeing runs or you)',
 }
 // The audit sample's groups (decision 5): the machine decision that puts a work in each.

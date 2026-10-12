@@ -3953,4 +3953,8 @@ const tr: Record<string, string> = {
   'Open one from Recent research, or start a new one.': 'Son araştırmalardan birini açın ya da yenisini başlatın.',
   'Your questions and their answers will appear here. Set up a model first, then ask a question.': 'Sorularınız ve yanıtları burada görünür. Önce bir model kurun, sonra bir soru sorun.',
 
+  // UI parity S11 follow-up
+  'Works with a current full-text decision (reading or yours)': 'Güncel bir tam metin kararı olan eserler (okumanın ya da sizin)',
+  'Works given to the latest report (V{n})': 'En son rapora (V{n}) verilen eserler',
+  'question revision {n}': 'soru revizyonu {n}',
 }

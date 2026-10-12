@@ -28,3 +28,5 @@
 .rail .legend i{display:inline-block;width:8px;height:8px;border-radius:2px}
 .rail .kv{display:flex;justify-content:space-between;gap:8px;color:var(--ink-2);font-size:12.5px}
 .rail .kv span:last-child{color:var(--muted)}
+/* The depth box's scope line (S11 follow-up): which report's input the bar counts. */
+.rail .rail-scope{margin:0 0 6px;color:var(--muted);font-size:11.5px;line-height:1.4}

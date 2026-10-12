@@ -151,6 +151,8 @@ test.describe.serial('S11: the artifacts rail', () => {
     const depth = box(page, 'How deeply sources were read')
     await expect(depth.locator('.legend')).toContainText(`PDF text ${given.pdf}`)
     await expect(depth.locator('.legend')).toContainText(`Abstract only ${given.abstract}`)
+    // Its scope: the works the newest report was given, named by its version (S11 follow-up).
+    await expect(depth.locator('.rail-scope')).toHaveText(`Works given to the latest report (V${reports})`)
     // Run: Activity with the research's run count (all of them, not the ten the view lists), Candidates, Follow-up.
     // Usage is not here (RL8 is S27's).
     expect(view.run_total).toBeGreaterThanOrEqual(view.runs.length)
@@ -254,6 +256,47 @@ test.describe.serial('S11: the artifacts rail', () => {
     await expect(queueRows).toHaveCount(0)
     await expect(amber.locator('button.li')).toHaveText([/1 waiting for a PDF/])
     await page.unroute(`**/api/researches/${rid}`)
+  })
+
+  test('the flow boxes name their own full-text count apart from the rail’s Full text read', async () => {
+    // The rail counts works whose two full-text passes stored a result; the PRISMA-style box counts works with a current
+    // full-text decision, the reading's or the person's. One label each (S11 follow-up).
+    const view = await viewOf(api, rid) as View & { counts: { flow_boxes?: { boxes: { key: string; count: number | null }[] } } }
+    const box = view.counts.flow_boxes!.boxes.find(b => b.key === 'fulltext_read')!
+    await page.goto(`${research()}/sources`)
+    const flow = page.locator('details.flow-block')
+    await flow.locator('summary').click()
+    const row = flow.locator('.flow-list li', { hasText: 'Works with a current full-text decision (reading or yours)' })
+    await expect(row.locator('strong')).toHaveText(String(box.count))
+    await expect(flow.locator('.flow-list li span', { hasText: /^Full text read$/ })).toHaveCount(0)
+  })
+
+  test('a paused PDF collection reads as paused in the background box', async () => {
+    // SYNTHETIC: the fixture's collections end within a poll, so a paused collection run is added to the view the page
+    // receives (rail.spec's other states are the server's).
+    await page.route(`**/api/researches/${rid}`, async route => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      const response = await route.fetch()
+      const body = await response.json() as View
+      body.runs = [{ ...body.runs[0], id: 'run_synthetic_collection', kind: 'pdf_collection', status: 'paused', steps: [] }, ...body.runs]
+      await route.fulfill({ response, json: body })
+    })
+    await page.goto('about:blank')
+    await page.goto(research())
+    const background = box(page, 'In the background')
+    await expect(background.locator('.kv span').first()).toHaveText('PDF collection paused')
+    await page.unroute(`**/api/researches/${rid}`)
+  })
+
+  test('after a question change the depth box says its report belongs to the earlier revision', async () => {
+    const before = await viewOf(api, rid)
+    const reports = before.answers.filter(a => a.status === 'structurally_valid').length
+    const research_ = await (await api.context.get(`/api/researches/${rid}`)).json() as { research: { version: number } }
+    const revised = await post(api, `/api/researches/${rid}/scope`, { question: `${PARITY} (SYNTHETIC revision)`, expected_version: research_.research.version, key_terms: null })
+    expect(revised.ok(), await revised.text()).toBe(true)
+    await page.goto('about:blank')
+    await page.goto(research())
+    await expect(box(page, 'How deeply sources were read').locator('.rail-scope')).toHaveText(`Works given to the latest report (V${reports}) · question revision 1`)
   })
 
   test('at phone width the same rows open the panels as dialogs', async () => {

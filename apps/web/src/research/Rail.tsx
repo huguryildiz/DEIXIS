@@ -108,6 +108,8 @@ export function Rail({ view, researchId, reports, tables, hidden, candidateCount
     </Box>}
 
     {reports.length > 0 && depthTotal > 0 && <Box title={t('How deeply sources were read')} action={{ label: t('Open'), name: t('How deeply sources were read'), onClick: open('pdfs') }}>
+      {/* Its scope: the works the newest report's answer was given, which after a question change belong to an earlier revision. */}
+      <p className="rail-scope">{t('Works given to the latest report (V{n})', { n: reports[0].version })}{reports[0].answer.scope_revision !== view.research.current_scope_revision ? ` · ${t('question revision {n}', { n: reports[0].answer.scope_revision })}` : ''}</p>
       <div className="bar" aria-hidden>
         <i style={{ width: `${depth.pdf / depthTotal * 100}%`, background: 'var(--attr-text)' }} />
         <i style={{ width: `${depth.abstract / depthTotal * 100}%`, background: 'var(--attr-abstract)' }} />
@@ -121,8 +123,9 @@ export function Rail({ view, researchId, reports, tables, hidden, candidateCount
     </Box>}
 
     {collection && collection.total > 0 && <Box title={t('In the background')}>
-      <div className="kv"><span>{t('Collecting PDFs')}</span><span className="tnum rail-data">{number(collection.inHand)} / {number(collection.total)}</span></div>
-      <div className="bar" aria-hidden><i style={{ width: `${collection.inHand / collection.total * 100}%`, background: 'var(--accent)' }} /></div>
+      {/* A paused collection is named as paused (as the jobs sheet does), not as collecting. */}
+      <div className="kv"><span>{t(collecting?.status === 'paused' ? 'PDF collection paused' : 'Collecting PDFs')}</span><span className="tnum rail-data">{number(collection.inHand)} / {number(collection.total)}</span></div>
+      <div className="bar" aria-hidden><i style={{ width: `${collection.inHand / collection.total * 100}%`, background: collecting?.status === 'paused' ? 'var(--muted)' : 'var(--accent)' }} /></div>
     </Box>}
 
     <Box title={t('Run')}>

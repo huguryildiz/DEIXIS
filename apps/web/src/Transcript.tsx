@@ -1,22 +1,23 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, Check, ChevronDown, ChevronRight, Hand, LoaderCircle, Minus, RotateCw, Sparkles, TriangleAlert, Waypoints } from 'lucide-react'
+import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, FileText, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Waypoints, type LucideIcon } from 'lucide-react'
 import { api, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
-import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, runStatusLabels, searchQueryTriesLeft, stepLabel, verdictLabels } from './labels'
+import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
-import { ProtocolApproval } from './ProtocolApproval'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
 import { ModelName } from './ModelName'
+import { effortLabels } from './Home'
+import { AnswerFlowNote } from './FlowReport'
 import type { ModelText } from './modelText'
 import { t, uiLocale } from './i18n'
 import { scrollBehavior } from './motion'
 import { Button } from '@/components/ui/button'
 
-// The research as a record of work: one node per run on a thin rail, each run one line per phase, details a disclosure deeper.
-// The page's event stream refreshes the view; a one-second clock keeps running durations moving between events.
-// Pause, resume and cancel sit next to the tabs, so one set of controls serves every tab.
+// The research as a record of work: one turn per run, each run one line per phase (mockup `.steps`, R14), details one
+// click deeper (R15). The page's event stream refreshes the view; a one-second clock keeps running durations moving.
+// Pause sits beside the run chip in the topbar; Resume run and Cancel run sit in the notice under a stopped run's steps (R18).
 
-type PhaseKey = 'plan' | 'search' | 'screen' | 'pdf' | 'ocr' | 'semantic' | 'answer' | 'review' | 'sections' | 'assembly'
+type PhaseKey = 'plan' | 'search' | 'chain' | 'screen' | 'pdf' | 'ocr' | 'semantic' | 'answer' | 'review' | 'sections' | 'assembly'
 type PhaseState = 'done' | 'running' | 'attention' | 'waiting' | 'skipped'
 type Step = NonNullable<Run['steps']>[number]
 
@@ -25,6 +26,7 @@ const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const titles: Record<PhaseKey, [string, string, string]> = {
   plan: ['Planning the searches', 'Planned the searches', 'Search plan'],
   search: ['Searching the providers', 'Searched the providers', 'Provider searches'],
+  chain: ['Following citations from the strongest matches', 'Followed one round of citations', 'Citation chaining'],
   screen: ['Screening the candidates', 'Screened the candidates', 'Screening'],
   pdf: ['Downloading open-access PDFs', 'Downloaded open-access PDFs', 'Open-access PDFs'],
   ocr: ['Reading scanned pages with OCR', 'Read scanned pages with OCR', 'OCR of scanned pages'],
@@ -34,6 +36,17 @@ const titles: Record<PhaseKey, [string, string, string]> = {
   sections: ['Writing sections', 'Wrote the sections', 'Report sections'],
   assembly: ['Checking the assembled report', 'Checked the assembled report', 'Assembled report'],
 }
+// The mockup's icon of each phase (18px box); a live phase shows the spinner, a stopped one the warning sign.
+const phaseIcons: Record<PhaseKey, LucideIcon> = { plan: PencilLine, search: Search, chain: Waypoints, screen: ListChecks, pdf: BookOpen, ocr: ScanText,
+  semantic: Sparkles, answer: FileText, review: ShieldCheck, sections: FileText, assembly: ShieldCheck }
+// What a stopped phase was doing, for "Paused while …" / "Stopped while …".
+const doingNames: Record<PhaseKey, string> = { plan: 'planning', search: 'searching', chain: 'following citations', screen: 'screening',
+  pdf: 'reading full texts', ocr: 'reading scanned pages', semantic: 'preparing semantic search', answer: 'writing the answer',
+  review: 'checking citations', sections: 'writing sections', assembly: 'checking the report' }
+// A phase not reached yet, as the "Next:" line names it.
+const nextNames: Record<PhaseKey, string> = { plan: 'plan the searches', search: 'search the providers', chain: 'follow citations',
+  screen: 'screen abstracts', pdf: 'read full texts', ocr: 'read scanned pages', semantic: 'prepare semantic search',
+  answer: 'write a source-linked answer', review: 'check citations', sections: 'write the sections', assembly: 'check the report' }
 // Attached PDFs are already on this computer: the same phase reads them rather than downloading anything.
 const attachedTitles = (n: number): [string, string, string] => n === 1
   ? ['Reading the attached PDF', 'Read the attached PDF', 'Attached PDF']
@@ -54,15 +67,15 @@ function phaseOf(kind: string): PhaseKey | null {
   if (kind === 'model:report_plan') return 'plan'
   if (kind === 'model:report_section' || kind === 'model:report_phrase_repair') return 'sections'
   if (kind === 'model:report_review') return 'assembly'
-  if (kind === 'model:search_plan') return 'plan'
+  if (kind === 'model:search_plan' || kind === 'model:search_query') return 'plan'
   // An sw run plans its search in code before it searches; those steps are its plan phase.
   if (['code:vocabulary', 'model:vocabulary_labels', 'model:criterion_proposal', 'code:criterion', 'code:protocol_approval'].includes(kind)) return 'plan'
   if (kind.startsWith('provider_search')) return 'search'
   if (kind === 'model:screening') return 'screen'
   // An sw run screens abstracts in two steps: code classifies every record, then the model proposes.
   if (kind === 'code:abstract_stage' || kind === 'model:abstract_screening') return 'screen'
-  // The fast chain's requests are not searches of the question; screening reports what they brought (D95).
-  if (kind.startsWith('provider_chain:')) return 'screen'
+  // The fast chain's requests are not searches of the question; they are the run's citation-chaining phase (D95).
+  if (kind.startsWith('provider_chain:') || kind.startsWith('code:fast_chain') || kind === 'code:chain_filter' || kind === 'code:chain_record_flags') return 'chain'
   if (kind === 'fetch_pdf' || kind === 'pdf_other_copy') return 'pdf'
   // An answer run reads equations out of its PDFs before it answers; the PDF phase shows that work under its own title.
   if (kind === 'read_equations') return 'pdf'
@@ -102,9 +115,16 @@ const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unk
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onControlRun, onRewrite, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
+  // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
+  onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
+  // The too-broad notice (R21): the rewritten question is saved as a new revision, which then searches.
+  onRewrite?: (question: string) => Promise<void>
+  // The reading step's "Get more full text" link opens the PDFs panel.
+  onOpenPdfs?: () => void
+  busy?: boolean
   // The way out of a `key_terms_needed` stop: the revision form in the question bubble, on its key-terms field.
   onGiveKeyTerms?: () => void
   // The way on after the model could not write the query: search with the code's query alone (D92).
@@ -113,11 +133,15 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   queueCount?: number; onOpenQueue?: () => void
 }) {
   const runs = [...view.runs].reverse()  // the view lists the newest run first
-  // The turn that names the works awaiting a decision: the reading run, or, for a small-batch discovery run (D237, the
-  // default since D239), which reads inside the discovery run and has no reading run of its own, that discovery run.
+  // The turn that names the works awaiting a decision: the current question's latest search, whose screening step
+  // shows them (S9); without one, the reading run, or a small-batch discovery run (D237), which reads inside itself.
   const lastReading = runs.filter(r => r.kind === 'fulltext_adjudication'
     || (r.kind === 'discovery' && (r.budget as unknown as { inspection?: { policy?: string } } | null)?.inspection?.policy === 'small_batch_fused_v1')).at(-1)?.id
   const active = runs.some(r => ACTIVE.has(r.status))
+  // The steps stay open for the current question's latest search and the latest answer, so the thread reads as one list
+  // of phases from the plan to the citation check; earlier runs fold to their heading.
+  const latestAnswerRun = runs.filter(r => r.kind === 'answer').at(-1)?.id
+  const latestDiscovery = view.runs.find(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision)?.id
   const end = useRef<HTMLDivElement>(null)
   const [atEnd, setAtEnd] = useState(true)
   const [now, setNow] = useState(() => Date.now())
@@ -136,8 +160,10 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   // The current question opens the thread as the user's turn (ResearchView's question bubble, S8).
   return <>
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
-    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
-      queueLine={run.id === lastReading && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
+    {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} keepOpen={run.id === latestAnswerRun || run.id === latestDiscovery}
+      modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
+      onControlRun={onControlRun} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} busy={busy}
+      queueLine={run.id === (latestDiscovery ?? lastReading) && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
     {!runs.length && <div className="chat-say"><Sparkles size={18} strokeWidth={1.6} aria-hidden /><p>{emptyText}</p></div>}
@@ -147,18 +173,21 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueLine = null, children }: {
-  run: Run; view: ResearchView; now: number; latest: boolean; modelText: ModelText
+function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onRewrite, onOpenPdfs, busy, queueLine = null, children }: {
+  run: Run; view: ResearchView; now: number; latest: boolean; keepOpen: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   onGiveKeyTerms?: () => void
-  onChooseCodeQuery?: (run: Run) => Promise<void>; queueLine?: { count: number; open: () => void } | null; children: ReactNode
+  onChooseCodeQuery?: (run: Run) => Promise<void>
+  onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
+  onRewrite?: (question: string) => Promise<void>
+  onOpenPdfs?: () => void
+  busy: boolean
+  queueLine?: { count: number; open: () => void } | null; children: ReactNode
 }) {
   const active = ACTIVE.has(run.status)
   const [open, setOpen] = useState<boolean | null>(null)
   // Each phase reads as one line; what it found (plan text, concepts, queries, counts) opens under it on request.
   const [openPhases, setOpenPhases] = useState<Partial<Record<PhaseKey, boolean>>>({})
-  // While the run works, the phases it has not reached collapse into one "Next:" line; the full ladder stays one click away.
-  const [allSteps, setAllSteps] = useState(false)
   const [usageOpen, setUsageOpen] = useState(false)
   const [ownerReview, setOwnerReview] = useState<{ card: ReviewCard; kind: ReviewTargetKind } | null>(null)
   const reviewLookup = useRef<{
@@ -216,17 +245,20 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
     })().catch(() => { /* Keep the last recorded assessment if its status refresh fails. */ })
     return () => { live = false }
   }, [run.id, run.kind, run.status, view.research.id, reviewTargets, candidateReviewPlan, reviewTargetKind, reviewTargetId])
-  // A finished run folds away once something follows it; the latest search stays open so its queries can be read.
-  const expanded = open ?? (run.status !== 'completed' || (latest && run.kind === 'discovery'))
+  // A finished run folds away once something follows it; the current question's latest search and the latest answer stay open.
+  const expanded = open ?? (run.status !== 'completed' || keepOpen)
   const clock = active ? Math.max(now, Date.parse(run.updated_at)) : Date.parse(run.updated_at)
 
   const steps = run.steps ?? []
   // An sw discovery run queued since slice 17a fetches the full text itself, beside its screening.
   const overlap = run.kind === 'discovery' && (run.budget.fulltext_fetch as unknown as { mode?: string } | undefined)?.mode === 'overlap'
-  const order: PhaseKey[] = run.kind === 'review' ? ['review'] : run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? ['plan', 'search', 'screen', ...(overlap ? ['pdf' as const] : [])] : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : ['pdf', 'semantic', 'answer', ...(view.reviewer.model ? ['review' as const] : [])]
+  // The answer the fast path writes from discovery's evidence fetches nothing and ranks nothing: it answers, then its
+  // citations are checked. An answer over attached PDFs reads them and ranks their passages first.
+  const boundAnswer = run.kind === 'answer' && Boolean((run.budget as unknown as { fast_path?: unknown }).fast_path)
+  const order: PhaseKey[] = run.kind === 'review' ? ['review'] : run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? discoveryOrder(run) : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : [...(boundAnswer ? [] : ['pdf' as const, 'semantic' as const]), 'answer', 'review']
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
   const reached = run.kind === 'report' && !active ? 2 : Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
-  // A citation chain's requests are not searches of the question; the screening phase reports them (D95).
+  // A citation chain's requests are not searches of the question; the chaining phase reports them (D95).
   // The funnel counts belong to the current question revision; only its latest discovery run may show them (D233).
   const latestDiscovery = run.kind === 'discovery' && view.runs.find(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision)?.id === run.id
   const searches = view.search_runs.filter(s => s.run_id === run.id && !s.query_text.startsWith('chain:'))
@@ -241,7 +273,6 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
     .map(s => [s.kind.split(':')[1] ?? '', providerName(s.kind.split(':')[1] ?? '')])).entries()]
   const retrying = run.kind === 'discovery' && !active && (run.status === 'completed' || run.status === 'paused')
     && steps.some(s => s.kind.startsWith('provider_search') && troubled(s))
-  const runningSearch = groups[order.indexOf('search')]?.find(s => s.status === 'running')
   // The screening the run itself proposed on, and the sources the answer run reads.
   const screened = view.sources.filter(s => s.found_in_revision === run.scope_revision)
   const included = view.sources.filter(s => s.selection.state === 'included')
@@ -280,6 +311,12 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
     if (run.kind === 'review' && ownerReview && ['partial', 'failed', 'cancelled', 'paused'].includes(ownerReview.card.state)) return 'attention'
     if (run.kind === 'report' && order[i] === 'assembly') return active ? 'waiting' : run.status === 'completed' ? 'done' : 'attention'
     if (run.kind === 'report' && order[i] === 'sections' && run.status === 'paused') return 'attention'
+    // An answer's citations are checked in code when it is validated: every anchor of a valid answer was located in its
+    // passage. A reviewer model's claim review, when one ran in this run, is part of the same phase.
+    if (run.kind === 'answer' && order[i] === 'review' && !groups[i].length) {
+      if (answer?.status === 'structurally_valid') return 'done'
+      return active || run.status === 'paused' ? 'waiting' : 'skipped'
+    }
     const hasTrouble = groups[i].some(troubled)
     if (groups[i].some(step => step.status === 'running')) return 'running'
     if (overlap && active && order[i] === 'screen' && groups[i].length && !fetchPlanned) return 'running'
@@ -492,17 +529,12 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
               <ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)} {t('{works} works, {only} no other source’s search found', { works: source.works, only: source.only })}
             </span>)}</p>
           : <p className="chat-report-line"><span>{t('Works per source were not counted for this run')}</span></p>)
-        // What the citation chain brought, counted the same way, beside the searches rather than as one of them.
-        const chained = !arms && counts?.counted && counts.chain ? <p className="chat-provider-totals">
-          <span>{t('Citation chaining')}</span>
-          <span><ConnectionIcon id="openalex" />{t('{works} works, {only} not found by any search', { works: counts.chain.works, only: counts.chain.only })}</span>
-        </p> : null
         // A single provider is already named on each query row below.
         const totals = perProvider.size < 2 ? null : <p className="chat-provider-totals">{[...perProvider].map(([id, { taken, total }]) => <span key={id}>
           <ConnectionIcon id={id} />{providerName(id)} {total !== null && total > taken ? t('{count} of {total}', { count: taken, total: compact(total) }) : taken}
         </span>)}</p>
-        if (!totals && !perSource && !chained && !arms && !notFound) return null
-        return <>{totals}{perSource}{chained}{arms}{notFound}</>
+        if (!totals && !perSource && !arms && !notFound) return null
+        return <>{totals}{perSource}{arms}{notFound}</>
       }
       case 'screen': {
         const basis = tally(present(screened.map(s => s.selection.proposal_basis)))
@@ -561,7 +593,6 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
         const stated = answer.claims.filter(c => c.support_type === 'source_stated').length
         const lines = [
           t('{stated} source-stated · {inferred} inferred', { stated, inferred: answer.claims.length - stated }),
-          t('cited {cited} of {included} included sources', { cited: new Set(answer.claims.flatMap(c => c.evidence.map(e => e.source_version_id))).size, included: answer.inputs_given?.sources ?? 0 }),
           answer.unanswered_aspects.length ? plural(answer.unanswered_aspects.length, '{n} aspect not answered', '{n} aspects not answered') : '',
           answer.limitations.length ? plural(answer.limitations.length, '{n} limitation', '{n} limitations') : '',
         ].filter(Boolean)
@@ -614,12 +645,204 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
   const models = order.filter((key, i) => agents[key]?.model && stateOf(i) !== 'skipped').map(key => agents[key]!)
     .filter((agent, i, all) => all.findIndex(a => a.role === agent.role) === i)  // the literature model plans and screens; name it once
     .map(agent => <span key={agent.role} className="chat-run-model">{agent.role && <>{t(agent.role)} · </>}<ModelName connection={agent.connection} text={modelText(agent.model, agent.effort)} /></span>)
-  // Live runs read as one line of work: what the run has not reached, and what it skips, stay out until it is done.
+  // Live runs read as one line per phase: what the run has not reached yet is named once in the "Next:" line, and what it
+  // skips stays out (mockup `.steps`, R14 and R16).
   const phaseStates = order.map((_, i) => stateOf(i))
-  const idle = (state: PhaseState) => state === 'waiting' || state === 'skipped'
-  const collapsed = active && !allSteps && phaseStates.some(idle)
-  const waitingNext = collapsed ? order.filter((_, i) => phaseStates[i] === 'waiting').map(key => t((key === 'pdf' && attachedOnly ? attachedTitles(included.length) : titles[key])[2]).toLocaleLowerCase(uiLocale())) : []
+  const collapsed = active && phaseStates.some(state => state === 'waiting')
   const busyEquationPdfs = new Set(steps.filter(step => step.kind === 'read_equations' && step.output?.outcome === 'file_busy').map(step => step.output?.asset_id)).size
+
+  // The numbers the step lines and details name, each from a stored record of this run or of this question revision.
+  const funnel = latestDiscovery ? view.counts.funnel ?? null : null
+  const fiveCounts = latestDiscovery ? view.counts.flow?.five ?? null : null
+  const flowBuckets = latestDiscovery ? view.counts.flow?.buckets ?? null : null
+  const notScreened = flowBuckets?.not_screened ?? null
+  const listFormat = (names: string[]) => new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(names)
+  const searchedProviders = listFormat([...new Set([...searches.map(s => s.provider), ...steps.filter(s => s.kind.startsWith('provider_search:')).map(s => s.kind.split(':')[1] ?? '')])].filter(Boolean).map(providerName))
+  // Each abstract the model read, by how many successful reads it had: the fast path reads every batch twice.
+  const abstractReads = new Map<string, number>()
+  steps.filter(s => s.kind === 'model:abstract_screening' && s.status === 'succeeded').forEach(s => (s.output?.candidate_ids ?? []).forEach((id: string) => abstractReads.set(id, (abstractReads.get(id) ?? 0) + 1)))
+  const readTwice = abstractReads.size > 0 && [...abstractReads.values()].every(n => n >= 2)
+  const evidence = answer?.claims.flatMap(c => c.evidence) ?? []
+  const citedSources = new Set(evidence.map(e => e.source_version_id)).size
+  const citedPassages = new Set(evidence.map(e => e.passage_id)).size
+  const similarityScored = Boolean(similarity && similarity.kind !== 'similarity:off' && (similarity.status === 'succeeded' || similarity.status === 'partial'))
+  const fastPath = (run.budget as unknown as { fast_path?: { K?: number; mode?: string; auto_answer?: boolean; ledger_run_id?: string } }).fast_path
+  // Stage N of M counts the fast path's whole sequence: a discovery run that queues its answer by itself counts the
+  // answer and its citation check too, and that answer continues the count of the discovery it answers from (R16).
+  const autoAnswer = run.kind === 'discovery' && fastPath?.auto_answer === true
+  const ledger = boundAnswer && fastPath?.ledger_run_id ? view.runs.find(r => r.id === fastPath.ledger_run_id) : undefined
+  const stageOffset = ledger ? discoveryOrder(ledger).length : 0
+  const stageTotal = stageOffset + order.length + (autoAnswer ? 2 : 0)
+
+  // What a stopped phase says: where the run stood when it paused, stopped or was cancelled.
+  const stopText = (key: PhaseKey) => {
+    if (key === 'plan' && run.pause_reason === 'vocabulary_too_broad') return t('Stopped while planning: the question is too broad')
+    if (key === 'plan' && run.pause_reason === 'vocabulary_empty') return t('Stopped while planning: no search term could be built from the question')
+    const doing = t(doingNames[key])
+    return run.status === 'cancelled' ? t('Cancelled while {doing}', { doing }) : run.status === 'paused' && run.pause_reason === 'user_requested' ? t('Paused while {doing}', { doing }) : t('Stopped while {doing}', { doing })
+  }
+  // The line of a phase (mockup step copy for the search and answer phases; the other runs keep their own words).
+  const lineText = (key: PhaseKey, state: PhaseState, group: Step[]): string => {
+    const fallback = () => [title(key, state, group), detail(key, state, group)].filter(Boolean).join(' · ')
+    if (run.kind !== 'discovery' && !(run.kind === 'answer' && (key === 'answer' || key === 'review'))) return fallback()
+    if (state === 'attention' && run.status !== 'completed') return stopText(key)
+    const live = state === 'running'
+    const ongoing = (text: string, progress = '') => [`${text}…`, progress].filter(Boolean).join(' · ')
+    switch (key) {
+      case 'plan':
+        if (live) return ongoing(t('Planning the searches from the question'), detail(key, state, group))
+        return t(run.approval?.approved_by === 'user' ? 'Planned the searches from your saved plan' : 'Planned the searches from the question’s words')
+      case 'search':
+        if (live) return ongoing(searchedProviders ? t('Searching {providers}', { providers: searchedProviders }) : t('Searching the providers'))
+        if (!searches.length) return fallback()
+        return [t('Searched {providers}', { providers: searchedProviders }), funnel ? plural(funnel.unique, '{n} unique work', '{n} unique works', { n: funnel.unique.toLocaleString(uiLocale()) })
+          : plural(searches.reduce((sum, s) => sum + (s.status === 'completed' ? s.result_count : 0), 0), '{n} record retrieved', '{n} records retrieved')].join(' · ')
+      case 'chain':
+        if (live) return ongoing(t('Following citations from the strongest matches'))
+        return [t('Followed one round of citations'), chainNew === undefined ? '' : [plural(chainNew, '{n} work added', '{n} works added'),
+          funnel ? t('{n} in the pool', { n: funnel.unique.toLocaleString(uiLocale()) }) : ''].filter(Boolean).join(', ')].filter(Boolean).join(' · ')
+      case 'screen': {
+        if (live) return ongoing(t('Screening abstracts against the criterion'), detail(key, state, group))
+        const read = funnel?.abstracts_read ?? abstractReads.size
+        if (!read) return fallback()
+        const screenedText = t(readTwice ? 'Screened {n} abstracts twice' : 'Screened {n} abstracts', { n: read.toLocaleString(uiLocale()) })
+        if (!funnel) return screenedText
+        // A candidate passed the abstract stage; nothing is called relevant, and an abstract alone includes nothing. The
+        // out-of-scope count is the flow's own bucket: read minus passed is not it, as the funnel's candidates also count
+        // works code let through without a read.
+        const outOfScope = flowBuckets ? flowBuckets.out_of_scope_model + flowBuckets.out_of_scope_code : null
+        const passed = funnel.candidates.toLocaleString(uiLocale())
+        return [screenedText, outOfScope === null ? t('{n} passed the abstract stage', { n: passed })
+          : t('{passed} passed the abstract stage, {out} out of scope', { passed, out: outOfScope.toLocaleString(uiLocale()) })].join(' · ')
+      }
+      case 'pdf': {
+        if (!group.some(s => s.kind === 'model:fulltext_adjudication' || s.kind === 'code:adjudication_plan')) return fallback()
+        const { done, total } = readingWorks(group)
+        if (live) return ongoing(t('Reading full texts of works that passed the abstract stage'), t('{done} of {total} works', { done, total }))
+        // §2.3: the reading takes selected pages of each PDF, not the whole text.
+        return [plural(done, 'Read {n} work in its full text (selected pages)', 'Read {n} works in their full text (selected pages)'),
+          fiveCounts?.not_read_not_tried ? t('{n} passed the abstract stage, full text not tried', { n: fiveCounts.not_read_not_tried }) : ''].filter(Boolean).join(' · ')
+      }
+      case 'answer':
+        if (live) return ongoing(t('Writing a source-linked answer'))
+        if (answer?.status !== 'structurally_valid') return fallback()
+        return [t('Wrote a source-linked answer'), t('{claims} claims from {sources} sources', { claims: answer.claims.length, sources: citedSources })].join(' · ')
+      case 'review':
+        if (group.length) return fallback()
+        if (live) return ongoing(t('Checking every citation against its passage'))
+        return [t('Checked citations'), t('{located} of {total} anchors located in their passages', { located: evidence.length, total: evidence.length })].join(' · ')
+      default:
+        return fallback()
+    }
+  }
+
+  // One detail row: a label and its value, as the mockup's `.step-detail .row`.
+  const row = (label: ReactNode, value: ReactNode, key?: string) => <div className="step-row" key={key}><span>{label}</span><span className="step-row-value">{value}</span></div>
+  const searchRows = () => {
+    // A query read page by page has one search row per page; the row shows it once, with its pages summed. The semantic
+    // search sends the question itself; the keyword queries are numbered as the plan lists them.
+    const keywordTexts = [...new Set([...(run.approval?.approved.queries ?? []).map(q => q.query_text), ...searches.map(s => s.query_text)])]
+      .filter(text => text !== view.scope.question && text !== view.semantic?.english_question?.text)
+    return [...searches.reduce((byQuery, s) => byQuery.set(`${s.provider}\n${s.query_text}`, [...(byQuery.get(`${s.provider}\n${s.query_text}`) ?? []), s]), new Map<string, SearchRun[]>()).values()].map(pages => {
+      const s = pages[0]
+      const failed = pages.find(p => p.status !== 'completed' && p.status !== 'zero_results')
+      const count = pages.reduce((sum, p) => sum + p.result_count, 0)
+      const total = pages.find(p => p.provider_total !== null)?.provider_total ?? null
+      const retryCount = pages.reduce((sum, page) => sum + (page.error?.retries ?? 0), 0)
+      const kind = keywordTexts.includes(s.query_text) ? t('keyword, query {n}', { n: keywordTexts.indexOf(s.query_text) + 1 }) : t('semantic')
+      return <div key={s.id} className={`step-row${failed ? ' is-attention' : ''}`}>
+        <span><ConnectionIcon id={s.provider} />{providerName(s.provider)} · {kind}</span>
+        <span className="step-row-value">{failed && count === 0 ? t(failed.status.replace('_', ' ')) : total === null ? t('{n} taken', { n: count.toLocaleString(uiLocale()) }) : t('{count} of {total} taken', { count: count.toLocaleString(uiLocale()), total: total.toLocaleString(uiLocale()) })}{pages.length > 1 && <> · {plural(pages.length, '{n} page', '{n} pages')}</>}{failed && count > 0 && <> · {t(failed.status.replace('_', ' '))}</>}{retryCount > 0 && <> · {providerRetryText(retryCount)}</>}</span>
+      </div>
+    })
+  }
+  const chainRecords = (direction: string) => view.search_runs.filter(s => s.run_id === run.id && s.query_text.startsWith('chain:') && s.query_text.includes(`:${direction}:`)).reduce((sum, s) => sum + s.result_count, 0)
+  const modelRow = (label: string, agent: { connection: string; model: string | null; effort: string | null } | undefined) => agent?.model ? row(t(label), <ModelName connection={agent.connection} text={modelText(agent.model, agent.effort)} />) : null
+
+  // What the finished phase found (R15): the plan, the queries and their counts, the chain, the screening, the reading,
+  // the answer's inputs and its citation check, each from stored records; then the existing report lines of the phase.
+  const stepDetail = (key: PhaseKey, state: PhaseState, group: Step[], seconds: number | null): ReactNode => {
+    const note = report(key, state, group)
+    const parts: ReactNode[] = []
+    if (key === 'plan' && run.kind === 'discovery') {
+      const approved = run.approval?.approved
+      const words = approved?.terms.filter(term => !term.dropped).map(term => term.phrase) ?? []
+      const queries = [...new Map((approved?.queries ?? []).map(q => [q.query_text, q])).values()]
+      if (words.length) parts.push(<div key="words">{t('Search words')}: {words.map(word => <code key={word}>{word}</code>)}</div>)
+      // Each provider gets its own query text; with more than one provider the row names whose query it is.
+      const severalProviders = new Set(queries.map(q => q.provider_id)).size > 1
+      // The query text follows its label on the row, wrapping under it when long (mockup `.row` with a `code`).
+      queries.forEach((query, i) => parts.push(<div key={`query-${i}`} className="step-row"><span>{t('Query {n}', { n: i + 1 })}{severalProviders && <> · {providerName(query.provider_id)}</>}{query.origin && <> · {t(query.origin === 'model' ? 'model' : query.origin === 'user' ? 'your plan' : 'from the question’s words')}</>}</span><code>{query.query_text}</code></div>))
+      if (approved?.criterion?.criterion) parts.push(<div key="criterion" className="step-row"><span>{t('Inclusion criterion')}</span><span className="step-row-text">{approved.criterion.criterion}</span></div>)
+      // The English sentence the semantic search sent, and the PDFs that guided the search (§2.2), for the current question.
+      if (latestDiscovery && view.semantic?.english_question?.text) parts.push(<div key="english" className="step-row"><span>{t('English question for the semantic search')}</span><span className="step-row-text">{view.semantic.english_question.text}</span></div>)
+      if (latestDiscovery && view.scope.seeds.length) parts.push(<div key="seeds" className="step-seeds"><span>{t('PDFs guiding the search')}</span>
+        {view.scope.seeds.map(seed => row(seed.title, seedUseText(seed.use), seed.source_version_id))}</div>)
+      if (run.approval?.approved_by) parts.push(<div key="approved">{approvedByText(run.approval.approved_by)}</div>)
+      const attempt = detail(key, state, group)
+      if (attempt) parts.push(<div key="attempt">{attempt}</div>)
+    }
+    if (key === 'search' && run.kind === 'discovery') {
+      parts.push(...searchRows())
+      if (funnel) parts.push(funnel.chained
+        ? <div key="merged">{row(t('Records retrieved by search'), funnel.retrieved.toLocaleString(uiLocale()))}{row(t('Unique works, with the citation chain'), funnel.unique.toLocaleString(uiLocale()))}</div>
+        : row(t('Records merged by DOI'), `${funnel.retrieved.toLocaleString(uiLocale())} → ${funnel.unique.toLocaleString(uiLocale())}`, 'merged'))
+    }
+    if (key === 'chain') {
+      parts.push(row(t('Reference lists of {n} seed works', { n: chainSeeds }), plural(chainRecords('backward'), '{n} record returned', '{n} records returned'), 'backward'))
+      parts.push(row(t('Works citing the seeds'), plural(chainRecords('forward'), '{n} record returned', '{n} records returned'), 'forward'))
+      if (run.source_counts?.counted && run.source_counts.chain) parts.push(row(t('Works the chain brought'), t('{works} works, {only} not found by any search', { works: run.source_counts.chain.works, only: run.source_counts.chain.only }), 'brought'))
+      if (chainDone) parts.push(<div key="requests">{chainLine}</div>)
+      const limits = run.approval?.chaining
+      if (limits) parts.push(<div key="limits">{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: limits.backward_requests, forward: limits.forward_requests, cap: limits.citing_cap, attempts: limits.attempt_limit })}</div>)
+    }
+    if (key === 'screen' && run.kind === 'discovery') {
+      if (readTwice) parts.push(<div key="twice">{t('Each batch is read twice by the literature model. An abstract alone never includes a work.')}</div>)
+      if (funnel) {
+        const top = t(similarityScored ? 'Ranked by similarity, top {n} read' : 'Top {n} of the ranking read', { n: funnel.abstracts_read.toLocaleString(uiLocale()) })
+        parts.push(row(top, notScreened === null ? '' : t('{n} not read', { n: notScreened.toLocaleString(uiLocale()) }), 'top'))
+        parts.push(row(t('Passed the abstract stage'), funnel.candidates.toLocaleString(uiLocale()), 'passed'))
+      }
+    }
+    // The works awaiting a person, named once on the run that read them: under its screening, or under its reading when
+    // the run reads only.
+    if (queueLine && key === (order.includes('screen') ? 'screen' : 'pdf')) parts.push(row(t('Waiting for your decision'), <>{queueLine.count} · <button type="button" className="step-link" onClick={queueLine.open}>{t('Open')}</button></>, 'queue'))
+    if (key === 'pdf' && run.kind === 'discovery') {
+      if (fetchSummary) parts.push(row(t('Full text retrieved'), fetchSummary.fetched ?? 0, 'fetched'))
+      if (group.some(s => s.kind === 'model:fulltext_adjudication' || s.kind === 'code:adjudication_plan')) parts.push(row(t('Full text read (selected pages)'), readingWorks(group).done, 'read'))
+      if (fiveCounts) parts.push(row(t('Passed the abstract stage, full text not tried'), <>{fiveCounts.not_read_not_tried}{onOpenPdfs && fiveCounts.not_read_not_tried > 0 && <> · <button type="button" className="step-link" onClick={onOpenPdfs}>{t('Get more full text')}</button></>}</>, 'not-tried'))
+      if (fastPath?.K) parts.push(row(t('Full-text limit at {depth} depth', { depth: t(effortLabels[fastPath.mode as keyof typeof effortLabels] ?? fastPath.mode ?? '') }), fastPath.K, 'limit'))
+    }
+    if (key === 'answer' && run.kind === 'answer' && answer) {
+      if (answer.inputs_given) parts.push(row(t('Passages given to the model'), t('{passages} from {sources} sources', { passages: answer.inputs_given.passages, sources: answer.inputs_given.sources }), 'given'))
+      if (answer.status === 'structurally_valid') parts.push(row(t('Passages cited'), citedPassages, 'cited'))
+      const model = modelRow('Answer model', agents.answer)
+      if (model) parts.push(<div key="model">{model}</div>)
+      parts.push(<AnswerFlowNote key="flow" answer={answer} />)
+    }
+    if (key === 'review' && run.kind === 'answer' && !group.length && answer?.status === 'structurally_valid') {
+      parts.push(<div key="anchors">{t('Each cited quote was found in a stored passage that was given to this step.')}</div>)
+      const review = answer.review
+      parts.push(row(review?.model?.resolved_model ? t('Claim review by {model}', { model: review.model.resolved_model }) : t('Claim review'),
+        !review ? t('Not recorded for this answer') : review.status !== 'completed' ? t('No usable review') : tally(review.reviews.map(r => r.verdict)).map(([verdict, n]) => `${n} ${t(verdictLabels[verdict as Verdict])}`).join(' · '), 'review'))
+    }
+    if (note) parts.push(<div key="note" className="chat-step-note">{note}</div>)
+    if (seconds !== null && state !== 'running') parts.push(row(t('Time taken'), durationText(seconds), 'time'))
+    return parts.length ? <>{parts}</> : null
+  }
+
+  // The notice under a stopped run's steps (R18, R21): why it stopped, with Resume run and Cancel run, or for a question
+  // too broad to search, a field to rewrite it.
+  const resumable = run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)
+  const userPaused = run.status === 'paused' && run.pause_reason === 'user_requested'
+  const vocabularyEnd = run.status === 'failed' && (run.pause_reason === 'vocabulary_too_broad' || run.pause_reason === 'vocabulary_empty')
+  const nextLine = active ? (() => {
+    const waiting = [...order.filter((_, i) => phaseStates[i] === 'waiting'), ...(autoAnswer ? ['answer', 'review'] as PhaseKey[] : [])]
+      .map(key => t(key === 'pdf' && run.kind !== 'discovery' ? (attachedOnly ? 'read the attached PDFs' : 'download open-access PDFs') : nextNames[key]))
+    const at = phaseStates.findIndex(state => state === 'running')
+    const stage = stageOffset + (at < 0 ? Math.max(0, phaseStates.findIndex(state => state === 'waiting')) : at) + 1
+    return `${t('Next: {list}', { list: waiting.length ? waiting.join(', ') : '—' })} · ${t('stage {n} of {total}', { n: stage, total: stageTotal })}`
+  })() : ''
   return <section className={`chat-turn${active ? ' is-active' : ''}`}>
     <div className="chat-group">
       <button type="button" className="chat-toggle" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
@@ -638,109 +861,103 @@ function RunTurn({ run, view, now, latest, modelText, onRetryFailedSearches, onG
           <Sparkles size={14} strokeWidth={1.8} aria-hidden />
           <div><p className="chat-run-plan-title">{run.kind === 'review' ? (ownerReview && run.target?.plan?.groups ? plural(run.target.plan.groups.length, 'A model you chose reads a stored copy of the {target} in {n} group. It changes nothing in the {target}.', 'A model you chose reads a stored copy of the {target} in {n} groups. It changes nothing in the {target}.', { target: t(ownerReview.kind === 'candidate' ? 'candidate' : ownerReview.kind === 'answer' ? 'answer' : 'report'), n: run.target.plan.groups.length }) : t('A model you chose reads a stored copy. It changes no target text.')) : run.kind === 'report' ? t('Write a sectioned report from the evidence table, one model step per section.') : run.kind === 'discovery' ? t('Search {providers}, then screen the candidates.', { providers }) : run.kind === 'pdf_collection' ? t('Try each included source’s open PDF links, then look once for another open copy.') : run.kind === 'fulltext_fetch' ? t('Retrieve the open full text of the candidate works in rank order; nothing is included or excluded by this.') : run.kind === 'fulltext_adjudication' ? t('A model reads selected passages of each work twice; code checks every quote on the page and decides.') : run.kind === 'pdf_ocr' ? t('Read the pages without text of “{title}” with Tesseract on this computer, one page at a time. No file leaves this computer.', { title: ocrSource?.title ?? t('a PDF') }) : t(attachedOnly ? 'Read the attached PDFs, then write a source-linked answer.' : 'Download the open-access PDFs of the included sources, then write a source-linked answer.')}</p></div>
         </div>}
-        <ol className="chat-steps">{order.map((key, i) => {
-        const state = stateOf(i)
-        if (collapsed && idle(state)) return null
-        const group = groups[i]
-        const seconds = phaseSeconds(group, state)
-        const text = detail(key, state, group)
-        const hasQueries = key === 'search' && (searches.length > 0 || Boolean(runningSearch && active))
-        const note = report(key, state, group)
-        const hasDetails = hasQueries || Boolean(note)
-        // Closed by default; a search in progress shows its queries so the live row can be read.
-        const detailsOpen = openPhases[key] ?? (run.kind === 'review' || hasQueries && state === 'running')
-        // A search that did not complete belongs to the search line itself, in the attention colour, not to a paragraph after the run (D18).
-        const missed = key === 'search' ? failedProviders : []
-        return <li key={key} className={`chat-step is-${state}`}>
-          <div className="chat-step-line">
-            <span className="chat-step-icon" role="img" aria-label={t(state === 'done' ? 'Done' : state === 'running' ? 'In progress' : state === 'attention' ? 'Stopped here' : state === 'waiting' ? 'Waiting' : 'Not run')}>
-              {state === 'done' ? <Check size={13} strokeWidth={2.5} /> : state === 'running' ? <LoaderCircle size={14} className="chat-spin" /> : state === 'attention' ? <TriangleAlert size={13} /> : state === 'skipped' ? <Minus size={13} /> : null}
-            </span>
-            <span className="chat-step-main">
-              {hasDetails
-                ? <button type="button" className="chat-step-title" aria-expanded={detailsOpen} onClick={() => setOpenPhases({ ...openPhases, [key]: !detailsOpen })}><span className={state === 'running' ? 'shimmer-text' : undefined}>{title(key, state, group)}</span>{detailsOpen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}</button>
-                : <span className={`chat-step-title${state === 'running' ? ' shimmer-text' : ''}`}>{title(key, state, group)}</span>}
-              {(text || missed.length > 0) && <small>{text}{text && missed.length ? ' · ' : ''}
-                {missed.length > 0 && <em className="chat-step-missed">{missed.map(([id]) => <ConnectionIcon key={id} id={id} />)}{missed.map(([id, name]) => {
+        <ol className="chat-steps steps">{order.map((key, i) => {
+          const state = phaseStates[i]
+          // A phase the run has not reached is named in the "Next:" line; a phase it skipped is not drawn.
+          if (state === 'waiting' || state === 'skipped') return null
+          const group = groups[i]
+          const seconds = phaseSeconds(group, state)
+          // A live phase is one line; its details open once it has finished. A review run lists its groups as they go.
+          const expandable = state !== 'running' || run.kind === 'review'
+          const details = expandable ? stepDetail(key, state, group, seconds) : null
+          const detailsOpen = Boolean(details) && (openPhases[key] ?? run.kind === 'review')
+          const Icon = phaseIcons[key]
+          // A search that did not complete belongs to the search line itself, in the attention colour, not to a paragraph after the run (D18).
+          const missed = key === 'search' ? failedProviders : []
+          return <li key={key} className={`chat-step step is-${state}${detailsOpen ? ' open' : ''}${state === 'attention' ? ' att' : ''}`}>
+            <button type="button" className="chat-step-line" disabled={!details} aria-expanded={details ? detailsOpen : undefined}
+              onClick={() => setOpenPhases(phases => ({ ...phases, [key]: !detailsOpen }))}>
+              <span className="chat-step-icon ico" role="img" aria-label={t(state === 'done' ? 'Done' : state === 'running' ? 'In progress' : 'Stopped here')}>
+                {state === 'running' ? <span className="step-spin base" /> : state === 'attention' ? <TriangleAlert size={16} className="base" /> : <Icon size={16} className="base" />}
+                {details && <ChevronRight size={16} className="chev" />}
+              </span>
+              <span className="chat-step-text"><span className={state === 'running' ? 'shimmer-text' : undefined}>{lineText(key, state, group)}</span>
+                {missed.length > 0 && <> · <em className="chat-step-missed">{missed.map(([id]) => <ConnectionIcon key={id} id={id} />)}{missed.map(([id, name]) => {
                   const failure = searches.filter(row => row.provider === id && !['completed', 'zero_results'].includes(row.status)).at(-1)
                   return serviceErrorSentence({ kind: serviceKind(failure?.error?.service_kind ?? failure?.error?.error_kind ?? failure?.status, failure?.error?.http_status),
                     service: name, resetAt: failure?.error?.reset_at, effect: run.status === 'completed' ? 'continued' : undefined })
-                }).join(' ')}</em>}</small>}
-            </span>
-            <time>{seconds === null ? '' : durationText(seconds)}</time>
-          </div>
-          {collapsed && state === 'running' && <div className="chat-step-progress">
-            <span className="chat-step-progress-bar"><span style={{ width: `${Math.round(((i + 0.5) / order.length) * 100)}%` }} /></span>
-            <small>{t('stage {n} of {total}', { n: i + 1, total: order.length })}</small>
-          </div>}
-          {note && detailsOpen && <div className="chat-step-note">{note}</div>}
-          {hasQueries && detailsOpen && <ul className="chat-list">
-            {/* A query read page by page has one search row per page; the list shows it once, with its pages summed. */}
-            {[...searches.reduce((byQuery, s) => byQuery.set(`${s.provider}\n${s.query_text}`, [...(byQuery.get(`${s.provider}\n${s.query_text}`) ?? []), s]), new Map<string, SearchRun[]>()).values()].map(pages => {
-              const s = pages[0]
-              const failed = pages.find(p => p.status !== 'completed' && p.status !== 'zero_results')
-              const count = pages.reduce((sum, p) => sum + p.result_count, 0)
-              const total = pages.find(p => p.provider_total !== null)?.provider_total ?? null
-              const retryCount = pages.reduce((sum, page) => sum + (page.error?.retries ?? 0), 0)
-              return <li key={s.id} className={failed ? 'is-attention' : undefined}>
-                <span className="chat-list-text"><code>{s.query_text}</code></span>
-                <span className="chat-list-meta"><ConnectionIcon id={s.provider} />{providerName(s.provider)} · <b>{failed && count === 0 ? t(failed.status.replace('_', ' ')) : total === null ? plural(count, '{n} result taken', '{n} results taken') : t('{count} of {total} results taken', { count, total: compact(total) })}</b>{pages.length > 1 && <> · {plural(pages.length, '{n} page', '{n} pages')}</>}{failed && count > 0 && <> · {t(failed.status.replace('_', ' '))}</>}{retryCount > 0 && <> · {providerRetryText(retryCount)}</>}</span>
-              </li>
-            })}
-            {/* The fast chain is not a search of the question (D95); one line says what it checked and what it added. */}
-            {(chainDone || run.approval?.chaining?.enabled) && <li className="chat-list-round">
-              <b><Waypoints size={13} aria-hidden />{t('Citation chaining')}</b>
-              <span>{chainDone
-                ? chainLine
-                : t('While the search runs, the reference lists and citing papers of the best matches are checked')}</span>
-            </li>}
-            {runningSearch && active && <li className="is-running">
-              <span className="chat-list-text shimmer-text">{t('Searching')}</span>
-              <span className="chat-list-meta"><LoaderCircle size={13} className="chat-spin" aria-hidden /><ConnectionIcon id={runningSearch.kind.split(':')[1] ?? ''} />{providerName(runningSearch.kind.split(':')[1] ?? '')}</span>
-            </li>}
-          </ul>}
-        </li>
+                }).join(' ')}</em></>}</span>
+            </button>
+            {detailsOpen && <div className="chat-step-detail step-detail">{details}</div>}
+          </li>
         })}
-        {waitingNext.length > 0 && <li className="chat-step is-next">
-          <div className="chat-step-line"><span className="chat-step-icon" aria-hidden /><span className="chat-step-main"><small>{t('Next: {list}', { list: waitingNext.join(', ') })}</small></span></div>
-        </li>}</ol>
-        <div className="chat-run-foot">
-          {/* What ran this run and what it spent: one quiet line under the phases, not a disclosure. */}
-          {(run.status !== 'queued' || run.kind === 'review') && run.kind !== 'pdf_collection' && run.kind !== 'pdf_ocr' && run.kind !== 'fulltext_fetch' && <p className="chat-run-meta">
-            {models.length > 0 && <span className="chat-run-models">{models}</span>}
-            {/* What the run spent sits behind one quiet toggle; the limit itself speaks only once it is reached. */}
-            <button type="button" className="chat-usage-toggle" aria-expanded={usageOpen} onClick={() => setUsageOpen(!usageOpen)}>{t('Usage')}</button>
-            {usageOpen && <span>{spend}</span>}
-          </p>}
+        {nextLine && <li className="chat-steps-next next">{nextLine}</li>}
+        {/* Which model ran each model phase, and what the run spent behind one quiet toggle (mockup `.usage-line`). */}
+        {(run.status !== 'queued' || run.kind === 'review') && run.kind !== 'pdf_collection' && run.kind !== 'pdf_ocr' && run.kind !== 'fulltext_fetch' && <li className="chat-run-meta usage-line">
+          {models.length > 0 && <span className="chat-run-models">{models}</span>}
+          <button type="button" className="chat-usage-toggle" aria-expanded={usageOpen} onClick={() => setUsageOpen(!usageOpen)}>{t('Usage')}</button>
+        </li>}
+        {usageOpen && <li className="usage-box">{spend}</li>}
+        </ol>
+        {(callLimitReached || (retrying && onRetryFailedSearches)) && <div className="chat-run-foot">
           {callLimitReached && <p className="chat-run-limit"><TriangleAlert size={13} aria-hidden />{t('The model call limit for this run was reached.')}</p>}
-          {/* Pause, resume and cancel ride with the tabs, where every tab reaches them; the foot only opens the full ladder. */}
-          {active && order.length > 1 && <button type="button" className="chat-steps-toggle" onClick={() => setAllSteps(!allSteps)}>{t(allSteps ? 'Show fewer steps' : 'Show every step')}</button>}
           {retrying && onRetryFailedSearches && <Button variant="outline" size="sm" onClick={() => void onRetryFailedSearches(run)}>
             <RotateCw size={13} />{t('Retry failed searches')}
           </Button>}
-        </div>
+        </div>}
       </>}
     </div>
 
-    {run.status === 'paused' && <div className="chat-note is-warning">
-      <p>{pauseReasonText(run.pause_reason, run.error)}</p>
-      {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
-      {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
-      {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
-      {/* Code does not translate a question, so this stop is answered in the revision form and nowhere else (SW2.1). */}
-      {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
-      {/* Resume asks the model once more while a try is left; this button never asks it again (D92). */}
-      {run.pause_reason === 'search_query_failed' && <>
-        {searchQueryTriesLeft(run) === 0 && <p>{t('The model has had its second try.')}</p>}
-        {onChooseCodeQuery && <Button variant="outline" size="sm" onClick={() => void onChooseCodeQuery(run)}>{t('Search with the query built from the question’s words')}</Button>}
-      </>}
+    {run.status === 'paused' && <div className={`chat-note notice ${userPaused ? 'is-warning' : 'is-error'}`}>
+      {userPaused ? <Pause size={16} aria-hidden /> : <TriangleAlert size={16} aria-hidden />}
+      <div className="notice-body">
+        {userPaused
+          ? <p><b>{t('Paused after the current call.')}</b> {t('Nothing was lost: the finished steps are kept and will not run again.')}</p>
+          : <p><b>{pauseReasonText(run.pause_reason, run.error)}</b></p>}
+        {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
+        {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
+        {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
+        {run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0 && <p>{t('The model has had its second try.')}</p>}
+        <div className="notice-actions">
+          {resumable && onControlRun && <Button size="sm" disabled={busy} onClick={() => onControlRun(run, 'resume')}><Play size={14} aria-hidden />{t('Resume run')}</Button>}
+          {/* Code does not translate a question, so this stop is answered in the revision form and nowhere else (SW2.1). */}
+          {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
+          {/* Resume asks the model once more while a try is left; this button never asks it again (D92). */}
+          {run.pause_reason === 'search_query_failed' && onChooseCodeQuery && <Button variant="outline" size="sm" onClick={() => void onChooseCodeQuery(run)}>{t('Search with the query built from the question’s words')}</Button>}
+          {onControlRun && <Button variant="outline" size="sm" disabled={busy} onClick={() => onControlRun(run, 'cancel')}>{t('Cancel run')}</Button>}
+        </div>
+      </div>
     </div>}
-    {/* What this run froze before it searched (D80). */}
-    {run.approval && <ProtocolApproval approval={run.approval} />}
-    {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note ${run.status === 'failed' ? 'is-error' : 'is-neutral'}`}><p>{pauseReasonText(run.pause_reason, run.error)}</p>{pauseDetailText(run).map(line => <p key={line}>{line}</p>)}</div>}
-    {queueLine && <p className="chat-queue-line"><Hand size={14} aria-hidden /><span>{t(queueLine.count === 1 ? '{n} work awaits your decision' : '{n} works await your decision', { n: queueLine.count })}</span>
-      <span aria-hidden>·</span><button type="button" onClick={queueLine.open}>{t('Open')}</button></p>}
+    {(run.status === 'failed' || run.status === 'cancelled') && run.pause_reason && <div className={`chat-note notice ${vocabularyEnd ? 'is-warning' : run.status === 'failed' ? 'is-error' : 'is-neutral'}`}>
+      <TriangleAlert size={16} aria-hidden />
+      <div className="notice-body">
+        <p>{vocabularyEnd ? pauseReasonText(run.pause_reason, run.error) : <b>{pauseReasonText(run.pause_reason, run.error)}</b>}</p>
+        {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
+        {vocabularyEnd && !olderRevision && onRewrite && <RewriteField question={view.scope.question} busy={busy} onRewrite={onRewrite} />}
+      </div>
+    </div>}
     {children}
     {!children && answer && run.kind === 'answer' && <div className="answer-history-note"><span className="answer-history-icon" aria-hidden="true"><TriangleAlert size={14} /></span><span>{t('An earlier answer: {status}.', { status: t(answer.status.replaceAll('_', ' ')) })}</span></div>}
   </section>
+}
+
+// The way on from a question whose words cannot be searched (R21): a field holding the question to rewrite, and Search
+// again, which saves the rewritten question as a new revision and searches it. Editing the plan itself waits for the
+// Search plan panel (S23b).
+function RewriteField({ question, busy, onRewrite }: { question: string; busy: boolean; onRewrite: (question: string) => Promise<void> }) {
+  const [draft, setDraft] = useState(question)
+  return <>
+    <textarea className="notice-field" rows={3} aria-label={t('Rewrite the question')} value={draft} onChange={e => setDraft(e.target.value)} />
+    <div className="notice-actions">
+      <Button size="sm" disabled={busy || !draft.trim() || draft.trim() === question.trim()} onClick={() => void onRewrite(draft.trim())}><Search size={14} aria-hidden />{t('Search again')}</Button>
+    </div>
+  </>
+}
+
+// The phases of a discovery run, as its run turn lists them; an answer of the fast path counts on from them (R16).
+function discoveryOrder(run: Run): PhaseKey[] {
+  const steps = run.steps ?? []
+  const overlap = (run.budget.fulltext_fetch as unknown as { mode?: string } | undefined)?.mode === 'overlap'
+  const chaining = Boolean(run.approval?.chaining?.enabled) || steps.some(s => phaseOf(s.kind) === 'chain')
+  return ['plan', 'search', ...(chaining ? ['chain' as const] : []), 'screen', ...(overlap ? ['pdf' as const] : [])]
 }

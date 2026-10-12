@@ -462,6 +462,14 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const origin = document.activeElement
     void act(() => api.controlRun(target.id, action)).then(ok => { if (ok && action === 'resume') toRunStatus(target.id, origin) })
   }
+  // The too-broad notice's Search again (R21): the rewritten question becomes the next revision, which then searches.
+  const rewriteAndSearch = async (question: string) => {
+    if (!seedSearchReady) { toast('error', t('Choose a readable PDF to guide the search.')); return }
+    await act(async () => {
+      await api.reviseScope(id, question, view.research.version, view.scope.key_terms ?? null)
+      await api.startRun(id, 'discovery', crypto.randomUUID())
+    }, t('Question revised. The new revision searches.'))
+  }
   // Move to Trash (R9) leaves the page; Undo restores the research from the Trash (D50) and opens it again.
   const moveToTrash = async () => {
     setBusy(true)
@@ -570,7 +578,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
         onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
         onGiveKeyTerms={() => reviseQuestion('terms')}
-        queueCount={queueCount} onOpenQueue={showQueue}
+        queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')}
+        onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
         latestAnswer={answer ? <><AnswerBlock eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf} />{tableCards}</> : null} />
       {!answer && tableCards}

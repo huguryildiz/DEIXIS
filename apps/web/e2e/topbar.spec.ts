@@ -345,15 +345,18 @@ test.describe.serial('S8: research topbar and question bubble', () => {
 
   test('the run chip follows the latest run: paused, stopped, failed, and an answer being written', async () => {
     test.setTimeout(240_000)
-    // Paused by the person (the fixture asks for the pause in the read stage): amber, with Resume and Cancel.
+    // Paused by the person (the fixture asks for the pause in the read stage): amber. Resume run and Cancel run sit in
+    // the notice under the steps (S9, R18); the topbar keeps only the chip.
     const paused = await create(api, '[pause-at-read] How is SYNTHETIC molecule release scheduling optimized?')
     await page.goto(`${server.url()}/#/research/${paused}`)
     await expect(chip(page)).toHaveText('Search & screening · Paused', { timeout: 60_000 })
     await expect(chip(page)).toHaveClass(/is-warn/)
-    await expect(topbar(page).getByRole('button', { name: 'Resume' })).toBeVisible()
-    await expect(topbar(page).getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+    await expect(topbar(page).getByRole('button', { name: /Resume|Cancel/ })).toHaveCount(0)
+    const pausedNote = page.locator('.chat-note.notice')
+    await expect(pausedNote.getByRole('button', { name: 'Resume run' })).toBeVisible()
+    await expect(pausedNote.getByRole('button', { name: 'Cancel run' })).toBeVisible()
     await shot(page, 's8-chip-paused')
-    await topbar(page).getByRole('button', { name: 'Resume' }).click()
+    await pausedNote.getByRole('button', { name: 'Resume run' }).click()
     await settled(api, paused)
     await expect(chip(page)).toHaveCount(0, { timeout: 30_000 })
 
@@ -361,8 +364,9 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     const stopped = await create(api, '[model-down] How is SYNTHETIC molecule release scheduling optimized?')
     await page.goto(`${server.url()}/#/research/${stopped}`)
     await expect(chip(page)).toHaveText('Search & screening · Stopped', { timeout: 60_000 })
-    await expect(topbar(page).getByRole('button', { name: 'Resume' })).toBeVisible()
-    await topbar(page).getByRole('button', { name: 'Cancel', exact: true }).click()
+    const stoppedNote = page.locator('.chat-note.notice')
+    await expect(stoppedNote.getByRole('button', { name: 'Resume run' })).toBeVisible()
+    await stoppedNote.getByRole('button', { name: 'Cancel run' }).click()
     await expect(chip(page)).toHaveCount(0, { timeout: 30_000 })
 
     // Failed before any search (every term too common): the chip says Stopped and offers no Resume.
@@ -370,7 +374,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await page.goto(`${server.url()}/#/research/${failed}`)
     await expect(chip(page)).toHaveText('Search & screening · Stopped', { timeout: 60_000 })
     await expect(page.locator('.run-strip')).toHaveCount(0)
-    await expect(topbar(page).getByRole('button', { name: 'Resume' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^Resume/ })).toHaveCount(0)
 
     // The automatic answer is held: the chip spins with Pause and says the first version is being written.
     const release = path.join(server.dataDir, 'answer-release')
@@ -381,6 +385,8 @@ test.describe.serial('S8: research topbar and question bubble', () => {
       await expect(chip(page)).toHaveText('Answer · Writing the first version', { timeout: 60_000 })
       await expect(chip(page)).toHaveClass(/is-live/)
       await expect(topbar(page).getByRole('button', { name: 'Pause' })).toBeVisible()
+      // A live run can be cancelled beside Pause (the mockup draws no other way to stop it; §0 rule 5).
+      await expect(topbar(page).getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
       await shot(page, 's8-chip-answer-writing')
     } finally { writeFileSync(release, 'SYNTHETIC release\n') }
     await settled(api, held)

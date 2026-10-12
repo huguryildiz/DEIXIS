@@ -627,13 +627,14 @@ test.describe.serial('Failures: E and B (code check)', () => {
     await expect(page.getByText('DEIXIS could not reach Codex.', { exact: true })).toBeVisible()
     // The connection's own words sit under the reason, so a usage limit and a rate limit read differently there.
     await expect(page.getByText('The service did not give a recovery time.', { exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Resume' })).toHaveCSS('background-color', 'rgb(59, 91, 154)')
-    await expect(page.getByRole('button', { name: 'Cancel' })).toHaveCSS('color', 'rgb(180, 35, 24)')
+    // The notice under the steps carries the run's controls (S9, R18): Resume run filled, Cancel run a quiet pill.
+    await expect(page.getByRole('button', { name: 'Resume run' })).toHaveCSS('background-color', 'rgb(59, 91, 154)')
+    await expect(page.getByRole('button', { name: 'Cancel run' })).toHaveCSS('border-radius', '999px')
     await openPanel(page, 'sources')
     await expect(page.locator('.source-row')).toHaveCount(6)  // the completed search is kept
     await expect(page.locator('.proposal', { hasText: 'Model proposal' })).toHaveCount(0)
     await shot(page, 'E-model-failed-paused')
-    await page.getByRole('button', { name: 'Resume' }).click()
+    await page.getByRole('button', { name: 'Resume run' }).click()
     await expect(page.locator('.source-row')).toHaveCount(6)  // sw screening resumes without creating legacy selection proposals
     // The run's name and model live in the timeline, so the finished run is read on the Answer tab.
     await showAnswer(page)

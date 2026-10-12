@@ -175,6 +175,9 @@ const phoneLater = (pair: Pair, slice: string, why: string): Pair[] => [
   { ...pair, id: `${pair.id}@390`, widths: PHONE, status: `pending:${slice}`, why },
 ]
 
+// The steps' phase icons (S9): pen, search, graph, checks, book, file and shield in the mockup's `P` table.
+const STEP_ICONS = [{ mock: 'pen', app: 'pencil-line' }, { mock: 'search', app: 'search' }, { mock: 'graph', app: 'waypoints' },
+  { mock: 'checks', app: 'list-checks' }, { mock: 'book', app: 'book-open' }, { mock: 'file', app: 'file-text' }, { mock: 'shield', app: 'shield-check' }]
 const NAV_ICONS = [['plus', 'plus'], ['search', 'search'], ['clock', 'clock'], ['inbox', 'inbox'], ['lib', 'library-big'], ['gear', 'sliders-horizontal'], ['trash', 'trash']].map(([mock, app]) => ({ mock, app }))
 
 const shell = (surface: SurfaceId): Pair[] => [
@@ -404,11 +407,15 @@ export const PAIRS: Pair[] = [
   { id: 'research.question-scope', surface: 'research', mock: '.thread .q b', app: '.chat-question > b', checks: ['type', 'colour', 'icon'], text: true,
     icon: { mock: 'search', app: 'search' }, states: [], status: 'active' },
   { id: 'research.question-time', surface: 'research', mock: '.thread .q time', app: '.chat-question > time', checks: ['type', 'colour'], states: [], status: 'active' },
-  { id: 'research.steps', surface: 'research', mock: '.steps .step', app: '.chat-steps .chat-step', checks: ['content', 'type'], list: 'fixed',
-    text: false,  // each step line mixes the phase with its counts; S9 separates them and sets `dataText` before turning this on
-    status: 'pending:S9', why: 'S9: one line per phase' },
+  // S9 (R14): one line per phase, from the plan to the citation check. The discovery run's five phases and the latest
+  // answer's two are open; an earlier answer folds to its run heading. A line's words carry its counts and provider
+  // names (data), so its text is checked by the behaviour tests (e2e/steps.spec.ts), not here.
+  { id: 'research.steps', surface: 'research', mock: '.steps .step', app: '.chat-steps .chat-step', checks: ['content', 'type', 'icon'], list: 'fixed',
+    text: false, icon: STEP_ICONS, status: 'active' },
+  { id: 'research.step-lines', surface: 'research', mock: '.steps .step > button', app: '.chat-steps .chat-step-line', checks: ['content', 'type', 'colour'], list: 'fixed',
+    text: false, states: ['hover'], status: 'active' },
   { id: 'research.usage-line', surface: 'research', mock: '.steps .usage-line', app: '.usage-line', checks: ['content', 'type', 'colour'],
-    status: 'pending:S9', why: 'S9: role · model usage line' },
+    states: [], status: 'active' },
   { id: 'research.answer-card', surface: 'research', mock: '.thread .art', app: '.thread .art', checks: ['content', 'type', 'colour'],
     status: 'pending:S10', why: 'S10: answer card in the thread' },
   { id: 'research.prose', surface: 'research', mock: '.thread .prose', app: '.thread .prose', checks: ['content', 'type'],

@@ -119,8 +119,10 @@ test.describe.serial('J: the human queue of an sw research', () => {
   test('the panel and its count are in the research', async () => {
     await page.goto(`${server.url()}/#/research/${rid}`)
     await expectMenuCount(page, 'queue', 4)
-    // The reading run's turn names the rows once and opens the tab.
-    await page.locator('.chat-queue-line').getByRole('button', { name: 'Open' }).click()
+    // The reading run's turn names the rows once, in its screening step's details, and opens the panel (S9, R15).
+    await page.locator('.chat-step-line', { hasText: 'Screened' }).click()
+    await expect(page.locator('.chat-step-detail .step-row', { hasText: 'Waiting for your decision' })).toContainText('4')
+    await page.locator('.chat-step-detail').getByRole('button', { name: 'Open' }).click()
     await expect(list(page)).toBeVisible()
     await expect(list(page).getByRole('option')).toHaveCount(4)
   })

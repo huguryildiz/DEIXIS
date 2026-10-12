@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
 
-// Case I: a model writes the sw discovery run's search query, the run searches with it without asking and the folded
-// protocol lists the queries it sent, and a failed model stops the run until the user says what to search with (D92).
+// Case I: a model writes the sw discovery run's search query, the run searches with it without asking and the plan
+// step's details list the queries it sent (S9, R15), and a failed model stops the run until the user says what to
+// search with (D92).
 //
 // Its own fixture server: the application of cases A–G started with the model-written query. The model is scripted and
 // every record SYNTHETIC, so a passing case shows application behavior, not whether a model writes a good query.
@@ -49,7 +50,14 @@ class ModelQueryServer {
 }
 
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled', fullPage: true })
-const card = (page: Page) => page.locator('.approval-card')
+// The plan step of the run and its details (S9, R15): the search words, each query with who wrote it, the criterion.
+const planLine = (page: Page) => page.locator('.chat-step-line', { hasText: 'Planned the searches' })
+async function openPlan(page: Page) {
+  const line = planLine(page).first()
+  await expect(line).toBeVisible({ timeout: 60_000 })
+  if (await line.getAttribute('aria-expanded') !== 'true') await line.click()
+  return page.locator('.chat-step.open', { has: line }).locator('.chat-step-detail')
+}
 const MODEL_QUERY = '"relay networks" AND ("molecule release" OR "bisection search")'
 
 async function startResearch(page: Page, server: ModelQueryServer, question: string) {
@@ -70,13 +78,11 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
   })
   test.afterAll(async () => { await page?.close(); await server.stop() })
 
-  test('the run searches without asking, and the folded protocol lists the model query it sent', async () => {
+  test('the run searches without asking, and the plan step lists the model query it sent', async () => {
     await startResearch(page, server, QUESTION)
-    const approved = page.locator('.approval-card')
-    await expect(approved).toBeVisible({ timeout: 60_000 })
-    await expect(approved).toContainText('not reviewed, fast path')
-    await approved.locator('.approval-toggle').click()
-    await expect(approved.locator('.approval-diff-group', { hasText: 'Queries sent' })).toContainText(MODEL_QUERY)
+    const plan = await openPlan(page)
+    await expect(plan).toContainText('Nobody reviewed the search vocabulary; the fast path went on without asking.')
+    await expect(plan.locator('.step-row', { hasText: MODEL_QUERY }).first()).toContainText('model')
     await shot(page, 'I-model-query-approved-desktop')
   })
 
@@ -86,12 +92,12 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
     await expect(toggle).toBeVisible({ timeout: 60_000 })
     if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
     const turn = page.locator('.chat-turn').filter({ has: toggle })
-    await turn.locator('.chat-step-title', { hasText: /Conducted \d+ search/ }).click()
+    await turn.locator('.chat-step-line', { hasText: /^Searched / }).click()
     const arms = turn.locator('.chat-arms').first()
     await expect(arms).toContainText('Full text not read yet: included counts come with the reading.')
     await expect(arms).toContainText('no other source’s search found')
     await expect(arms).not.toContainText('included by two agreeing runs')
-    await turn.locator('.chat-step-title', { hasText: 'Screened the candidates' }).click()
+    await turn.locator('.chat-step-line', { hasText: /^Screened / }).click()
     await expect(turn).toContainText('Too few to judge a signal by (fewer than 30).')
     await shot(page, 'I-arms-not-read-desktop')
   })
@@ -113,7 +119,7 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
       await expect(toggle).toBeVisible({ timeout: 60_000 })
       if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
       const turn = page.locator('.chat-turn').filter({ has: toggle })
-      await turn.locator('.chat-step-title', { hasText: /Conducted \d+ search/ }).click()
+      await turn.locator('.chat-step-line', { hasText: /^Searched / }).click()
       await expect(turn).toContainText('A search or the citation chain of this question revision found every work you confirmed or brought.')
       await expect(turn).not.toContainText('Your work no search found')
     } finally { await page.unroute(view) }
@@ -121,18 +127,19 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
 
   test('a failed model stops the run, and the code query is searched only when the user chooses it', async () => {
     await startResearch(page, server, `${QUESTION} [query-down]`)
-    const note = page.locator('.chat-note.is-warning')
+    // A stop the run did not ask for: the notice under the steps is the error one and carries Resume run (S9, R18).
+    const note = page.locator('.chat-note.is-error')
     await expect(note).toContainText('The model could not write the search query', { timeout: 60_000 })
-    // Nothing was searched, and no protocol was frozen for a query nobody wrote.
-    await expect(card(page)).toHaveCount(0)
-    await expect(page.locator('.run-strip').getByRole('button', { name: 'Resume' })).toBeVisible()
+    // Nothing was searched, and no protocol was frozen for a query nobody wrote: the plan step stopped.
+    await expect(planLine(page)).toHaveCount(0)
+    await expect(page.locator('.chat-step.att .chat-step-line')).toHaveText('Stopped while planning')
+    await expect(note.getByRole('button', { name: 'Resume run' })).toBeVisible()
     await shot(page, 'I-model-query-failed-desktop')
     await note.getByRole('button', { name: 'Search with the query built from the question’s words' }).click()
     // The run goes on without asking; the queries it sent are the code's, not the model's.
-    const approved = page.locator('.approval-card')
-    await expect(approved).toBeVisible({ timeout: 60_000 })
-    await approved.locator('.approval-toggle').click()
-    await expect(approved.locator('.approval-diff-group', { hasText: 'Queries sent' })).not.toContainText(MODEL_QUERY)
+    const plan = await openPlan(page)
+    await expect(plan.locator('code').first()).toBeVisible()
+    await expect(plan).not.toContainText(MODEL_QUERY)
     await shot(page, 'I-model-query-code-only-desktop')
   })
 })

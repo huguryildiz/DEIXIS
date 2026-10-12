@@ -148,12 +148,11 @@
 .chat-when{color:var(--muted);font-size:12px;font-weight:400;white-space:nowrap}
 .chat-toggle>svg:first-child{flex:none;margin-inline:1px;color:var(--muted)}
 .chat-toggle>span{min-width:0}
-.chat-toggle time,.chat-step-line time{margin-left:auto;padding-left:10px;font-size:11.5px;font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.chat-toggle time{margin-left:auto;padding-left:10px;font-size:11.5px;font-weight:400;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .chat-run-plan{display:flex;align-items:flex-start;gap:10px;margin:0;padding:2px 0}
 .chat-run-plan>svg{flex:none;margin:2px 2px 0;color:var(--accent)}
 .chat-run-plan>div{min-width:0}
 .chat-run-plan-title{margin:0;color:var(--muted);font-size:12.5px;font-weight:450;line-height:1.5;overflow-wrap:anywhere}
-.chat-run-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin:0;color:var(--muted);font-size:12px;line-height:1.6}
 .chat-run-foot{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;margin:2px 0 0 28px}
 .chat-usage-toggle{padding:0;border:0;background:none;color:var(--muted);font-size:12px;text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--muted),transparent 50%);text-underline-offset:2px;cursor:pointer}
 .chat-usage-toggle:hover,.chat-usage-toggle[aria-expanded=true]{color:var(--ink)}
@@ -165,32 +164,46 @@
 .model-name .connection-icon{align-self:center;width:12px;height:12px}
 .chat-run-model .connection-icon{display:inline-flex}
 .chat-run-model .connection-icon svg{width:12px;height:12px}
+/* The steps (mockup `.steps`, R14): one line per phase, an 18px icon box, muted until hovered or opened. The phase icon
+   gives way to a chevron on hover, focus and while open; a live phase spins and shimmers and does not open; a stopped
+   phase reads in the uncertain tone. */
 .chat .chat-steps{display:grid;gap:2px;list-style:none;margin:0;padding:0;border:0}
-.chat .chat-steps>li{list-style:none;margin:0;border:0}
-.chat-step-line{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:0 10px;align-items:start;padding:5px 0;color:var(--ink-2);font-size:13px;line-height:1.45}
-.chat-step-main{display:flex;flex-wrap:wrap;align-items:baseline;gap:1px 10px;min-width:0}
-.chat-step-line small{color:var(--muted);font-size:12px}
+.chat .chat-steps>li{list-style:none;margin:0;border:0;font-size:14px;line-height:1.5}
+.chat-step-line{display:flex;gap:10px;align-items:flex-start;width:100%;padding:5px 0;border:0;background:none;color:var(--muted);font-family:inherit;font-size:13px;line-height:1.45;text-align:left;cursor:pointer}
+.chat-step-line:disabled{cursor:default}
+.chat-step-line:hover:not(:disabled),.chat-step.open>.chat-step-line{color:var(--ink)}
+.chat-step.att>.chat-step-line{color:var(--tone-uncertain)}
+.chat-step-icon{display:grid;place-items:center;flex:none;width:18px;padding-top:1px}
+.chat-step-icon>*{grid-area:1/1}
+.chat-step-icon .chev{display:none}
+.chat-step-line:is(:hover,:focus-visible):not(:disabled) .chat-step-icon .base,.chat-step.open .chat-step-icon .base{display:none}
+.chat-step-line:is(:hover,:focus-visible):not(:disabled) .chat-step-icon .chev,.chat-step.open .chat-step-icon .chev{display:block}
+.chat-step.open .chat-step-icon .chev{transform:rotate(90deg)}
+.step-spin{display:block;width:13px;height:13px;margin-top:2px;border:1.6px solid var(--accent-line);border-top-color:var(--accent);border-radius:50%;animation:chat-spin .8s linear infinite}
+.chat-step-text{min-width:0;overflow-wrap:anywhere}
 .chat-step-missed{display:inline-flex;align-items:center;gap:5px;font-style:normal;color:color-mix(in srgb,var(--tone-uncertain),var(--ink) 30%)}
 .chat-step-missed .connection-icon{display:inline-flex}
 .chat-step-missed .connection-icon svg{width:12px;height:12px}
-.chat-step-title{display:inline-flex;align-items:center;gap:6px;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left}
-button.chat-step-title{cursor:pointer}
-button.chat-step-title:hover{color:var(--ink)}
-/* The chevron shows where it helps: on hover, on focus and while the details are open (mockup .step .chev). */
-button.chat-step-title svg{color:var(--muted);opacity:0;transition:opacity .12s ease}
-button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacity:1}
-@media (hover:none){button.chat-step-title svg{opacity:1}}
-.chat-step-progress{display:flex;align-items:center;gap:10px;padding:0 0 6px 28px}
-.chat-step-progress-bar{flex:1;height:3px;border-radius:999px;background:var(--line);overflow:hidden}
-.chat-step-progress-bar>span{display:block;height:100%;border-radius:999px;background:var(--accent);transition:width .4s ease}
-.chat-step-progress small{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.chat-step.is-next .chat-step-line{color:var(--muted)}
-.chat-step-icon{display:grid;place-items:center;flex:none;width:18px;height:18px;color:var(--muted)}
-.chat-step.is-done .chat-step-icon{color:var(--tone-include)}
-.chat-step.is-running .chat-step-icon{color:var(--accent)}
-.chat-step.is-attention .chat-step-icon{color:var(--tone-uncertain)}
-.chat-step.is-waiting .chat-step-icon::before{content:"";width:11px;height:11px;border:1.5px dashed var(--faint);border-radius:50%}
-.chat-step.is-waiting .chat-step-line,.chat-step.is-skipped .chat-step-line{color:var(--muted)}
+/* A phase's details (mockup `.step-detail`, R15): sentences and label · value rows on a hairline under the line. */
+.chat-step-detail{display:grid;gap:6px;margin:2px 0 8px 28px;padding-left:12px;border-left:1px solid var(--line);color:var(--muted);font-size:12.5px;line-height:1.5}
+.chat-step-detail code{display:inline-block;max-width:100%;margin:0 4px 2px 0;padding:2px 6px;border-radius:5px;background:var(--selected-surface);color:var(--ink-2);font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-size:12px;overflow-wrap:anywhere}
+.step-row{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.step-row>span:first-child{display:inline-flex;align-items:center;gap:6px;min-width:0}
+.step-row>.step-row-value{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
+.step-row>.step-row-text{color:var(--ink-2)}
+.step-row.is-attention>.step-row-value{color:var(--tone-uncertain)}
+.step-row .connection-icon{display:inline-flex}
+.step-row .connection-icon svg{width:13px;height:13px}
+.step-seeds{display:grid;gap:4px}
+.step-link{padding:0;border:0;background:none;color:var(--accent);font:inherit;font-weight:500;cursor:pointer}
+.step-link:hover{text-decoration:underline;text-underline-offset:2px}
+.chat-step-detail .chat-step-note{margin:0;padding:0;border:0}
+.chat-step-detail .answer-flow{margin:0}
+.chat-step-detail .answer-flow p{margin:0 0 3px}
+/* "Next: … · stage N of M" (R16), then the models and the Usage toggle (mockup `.next`, `.usage-line`, `.usage-box`). */
+.chat .chat-steps>.chat-steps-next{padding:2px 0 0 28px;color:var(--muted);font-size:12px}
+.chat .chat-steps>.usage-line{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:4px 0 0 28px;color:var(--muted);font-size:12px;line-height:1.5}
+.chat .chat-steps>.usage-box{display:grid;gap:3px;margin:4px 0 0 28px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12.5px}
 /* Plan concepts and provider queries: rows indented under the phase line on a left hairline, meta on the right. */
 .chat-list{list-style:none;margin:2px 0 8px 28px;padding:0 0 0 12px;border-left:1px solid var(--line)}
 .chat-list>li{display:flex;align-items:baseline;gap:4px 14px;padding:4px 0;font-size:12.5px;color:var(--muted)}
@@ -239,25 +252,20 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 /* A paused run needs attention (amber); a failed run is a blocking failure (red); a cancelled run was stopped on purpose (neutral). */
 .chat-note.is-error{--note-surface:var(--error-surface)}
 .chat-note.is-neutral{--note-surface:var(--sidebar-surface);border-color:var(--line)}
-/* The frozen protocol of a discovery run (ProtocolApproval.tsx, D80): it sits inside the run's timeline item, so it
-   is in the flow of the page and carries no shadow. One line, opened to show the queries sent and the citation chain. */
-.approval-card{color:var(--ink);font-size:13px;line-height:1.6}
-.approval-block-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
-.approval-block-head strong{font-size:12px;font-weight:600}
-.approval-block-head small{color:var(--muted);font-size:11.5px}
-.approval-chaining{margin-top:10px}
-.approval-hint{margin:6px 0 0;color:var(--muted);font-size:11.5px}
-.approval-toggle{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:2px 10px;width:100%;padding:5px 0;border:0;background:none;color:var(--ink-2);font-size:13px;text-align:left;cursor:pointer}
-.approval-toggle:hover{color:var(--ink)}
-.approval-toggle>svg{flex:none;color:var(--muted)}
-.approval-toggle small{grid-column:2;color:var(--muted);font-size:11.5px}
-.approval-diff{padding:0 0 10px 25px}
-.approval-diff-group{margin-top:10px}
-.approval-diff-group strong{display:block;font-size:12px;font-weight:600}
-.approval-diff-group ul{list-style:none;margin:4px 0 0;padding:0}
-.approval-diff-group li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:3px 0;border-top:1px solid color-mix(in srgb,var(--line),transparent 50%);font-size:12.5px}
-.approval-diff-group li small{color:var(--muted);font-size:11px}
-.approval-diff-group code{font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-size:11.5px;overflow-wrap:anywhere}
+/* The notice under a stopped run's steps (mockup `.notice`, R18, R21): an icon, the reason, then its actions. */
+.chat-note.notice{display:flex;gap:10px;align-items:flex-start}
+.chat-note.notice>svg{flex:none;margin-top:2px}
+.chat-note.notice.is-warning>svg{color:var(--tone-uncertain)}
+.chat-note.notice.is-error>svg{color:var(--error-ink)}
+.chat-note.notice.is-neutral>svg{color:var(--muted)}
+.notice-body{display:grid;gap:8px;flex:1;min-width:0}
+.notice-body p,.notice-body p:last-child{margin:0}
+.notice-body b{font-weight:600}
+.notice-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.notice-actions [data-slot=button]{height:30px;gap:6px;padding-inline:12px;border-radius:7px;font-size:13px}
+.notice-actions [data-slot=button][data-variant=outline]{padding-inline:10px;border-color:var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-weight:400}
+.notice-field{width:100%;padding:8px 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--paper);color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.5;resize:vertical}
+.notice-field:focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:1px}
 .pdf-suggest{margin:26px 0 0;border:1px solid var(--strong-line);border-radius:12px;background:var(--raised-surface);overflow:hidden}
 .pdf-suggest-head{display:flex;align-items:flex-start;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line)}
 .pdf-suggest-head>svg{flex:none;margin-top:3px;color:var(--muted)}
@@ -291,8 +299,7 @@ button.chat-step-title:is(:hover,:focus-visible,[aria-expanded=true]) svg{opacit
 @keyframes text-shimmer{from{background-position:100% 0}to{background-position:0 0}}
 @media (prefers-reduced-motion:reduce){.shimmer-text{animation:none;background:none;-webkit-text-fill-color:currentColor}}
 @container (max-width:760px){.chat-list>li{flex-wrap:wrap}.chat-list-meta{width:100%;justify-content:flex-start}}
-@container (max-width:480px){.chat-step-line{grid-template-columns:18px minmax(0,1fr);row-gap:2px}.chat-step-line time{grid-column:2;margin-left:0;padding-left:0}}
-@media (max-width:650px){.chat-step-note,.chat-list{margin-left:9px}.chat-run-foot,.chat-step-progress{margin-left:0;padding-left:0}}
+@media (max-width:650px){.chat-step-detail,.chat-list{margin-left:9px}.chat-run-foot{margin-left:0;padding-left:0}}
 .answer-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:18px 0 8px}
 .answer-actions [data-slot=button]:not(.quiet-action){border-radius:999px}
 .legacy-research .research-thread .review-entry{display:inline-flex;align-self:flex-start;align-items:center;width:auto;height:30px;margin:4px 0;padding:0 12px;border:1px solid var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:13px;text-decoration:none}

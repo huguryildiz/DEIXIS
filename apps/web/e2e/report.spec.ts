@@ -422,8 +422,8 @@ test('an empty section pauses the report and can be cancelled', async ({ browser
     await expect(page.getByText('Report paused').first()).toBeVisible()
     await page.getByRole('button', { name: 'Report sections' }).click()
     await expect(page.getByText('IV failed: the section had no claims or explanation of missing evidence', { exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Resume' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Resume run' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Cancel run' })).toBeVisible()
     const summaries = await (await api.get(`/api/researches/${researchId}/reports`)).json() as { id: string; status: string }[]
     expect(summaries[0].status).toBe('in_progress')
     const reportId = summaries[0].id
@@ -463,7 +463,7 @@ test('an empty section pauses the report and can be cancelled', async ({ browser
     await page.getByText('IV failed: the section had no claims or explanation of missing evidence', { exact: true }).scrollIntoViewIfNeeded()
     await shot(page, 'report-paused-390')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
-    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    await page.getByRole('button', { name: 'Cancel run' }).click()
     await expect.poll(async () => {
       const next = await (await api.get(researchPath)).json()
       return next.runs.find((item: { id: string }) => item.id === run.id)?.status

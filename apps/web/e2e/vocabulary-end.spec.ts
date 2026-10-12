@@ -6,8 +6,9 @@ import path from 'node:path'
 import { nextPort } from './ports'
 
 // Case T (clean start, decision B): a discovery run whose vocabulary cannot be searched ends with a plain reason.
-// Nothing is searched, no approval card waits for the user and Resume is not offered; the way on is to revise the
-// question, and the new revision searches as any other does. "[vocab-empty]" makes every count probe answer 0,
+// Nothing is searched, nothing waits for the user's approval and Resume is not offered; the way on is to rewrite the
+// question in the notice under the steps (S9, R21), and Search again saves it as a new revision that searches as any
+// other does. "[vocab-empty]" makes every count probe answer 0,
 // "[vocab-broad]" more than the very-large limit (tests/acceptance/fixture_server.py). Every record is SYNTHETIC and
 // the model is scripted: a passing case shows application behavior, not how often this happens with a live provider.
 
@@ -21,9 +22,11 @@ const QUESTION = 'How is SYNTHETIC molecule release scheduling optimized in rela
 // Every term too common ends the run only when the terms make one block, so that case asks a one-concept question.
 const CASES = [
   { question: `${QUESTION} [vocab-empty]`, reason: 'vocabulary_empty',
-    text: 'No search term could be built from the question, so nothing was searched.' },
+    text: 'No search term could be built from the question, so nothing was searched.',
+    step: 'Stopped while planning: no search term could be built from the question' },
   { question: 'Which relay networks are reported? [vocab-broad]', reason: 'vocabulary_too_broad',
-    text: 'Every search term in the question is too common to search on its own, so nothing was searched.' },
+    text: 'Every search term in the question is too common to search on its own, so nothing was searched.',
+    step: 'Stopped while planning: the question is too broad' },
 ]
 
 type RunRow = { id: string, kind: string, status: string, pause_reason: string | null, scope_revision: number }
@@ -74,7 +77,7 @@ async function view(page: Page, rid: string) {
 const noHorizontalScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
 
 for (const width of [1440, 390]) {
-  for (const { question, reason, text } of CASES) {
+  for (const { question, reason, text, step } of CASES) {
     test(`T: ${reason} ends the run in plain words and a revised question searches, at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 })
       await page.goto(`${server.url}/`)
@@ -84,18 +87,20 @@ for (const width of [1440, 390]) {
       await page.waitForURL(/#\/research\//)
       const rid = decodeURIComponent(page.url().split('#/research/')[1].split(/[/?]/)[0])
 
-      // The timeline says why in plain words, and the run's status change is announced.
-      const note = page.locator('.chat-note.is-error')
+      // The steps say where it stopped, the notice under them says why in plain words (mockup's warn notice), and the
+      // run's status change is announced.
+      const note = page.locator('.chat-note.notice.is-warning')
       await expect(note).toContainText(text, { timeout: 60_000 })
       await expect(note).toContainText('Revise the question above')
       await expect(note).not.toContainText(reason)
+      await expect(page.locator('.chat-step.att .chat-step-line')).toHaveText(step)
       await expect(page.locator('.toast.is-error')).toContainText(`Search & screening failed. ${text}`)
 
-      // No approval card or pending approval, and no Resume: the run is over, not waiting.
-      await expect(page.locator('.approval-card')).toHaveCount(0)
+      // No plan to approve and no Resume: the run is over, not waiting. Nothing was planned, so no plan step finished.
+      await expect(page.locator('.chat-step-line', { hasText: 'Planned the searches' })).toHaveCount(0)
       await expect(page.getByRole('button', { name: /approve/i })).toHaveCount(0)
       await expect(page.locator('.run-strip')).toHaveCount(0)
-      await expect(page.getByRole('button', { name: 'Resume' })).toHaveCount(0)
+      await expect(page.getByRole('button', { name: /^Resume/ })).toHaveCount(0)
       let current = await view(page, rid)
       const failed = current.runs.find(r => r.kind === 'discovery')!
       expect([failed.status, failed.pause_reason]).toEqual(['failed', reason])
@@ -106,23 +111,26 @@ for (const width of [1440, 390]) {
       expect(await noHorizontalScroll(page)).toBe(true)
       await page.screenshot({ path: path.join(OUT, `T-${reason}-${width}.png`), animations: 'disabled', fullPage: true })
 
-      // The user revises the question; the new revision searches and the run goes on without asking.
+      // The user rewrites the question in the notice; Search again saves it as revision 2, which searches without asking.
       await page.getByRole('button', { name: 'Dismiss notification' }).click()
-      await page.getByRole('button', { name: 'Revise question' }).click()
-      await page.getByRole('textbox', { name: 'Question', exact: true }).fill(QUESTION)
-      await page.getByRole('button', { name: 'Save revision' }).click()
-      await expect(page.locator('.toast')).toContainText('Question revised.')
-      await page.getByRole('button', { name: 'Search providers' }).click()
-      await expect(page.locator('.approval-card')).toContainText('not reviewed, fast path', { timeout: 60_000 })
+      const rewrite = note.getByRole('textbox', { name: 'Rewrite the question' })
+      await expect(rewrite).toHaveValue(question)
+      await rewrite.fill(QUESTION)
+      await note.getByRole('button', { name: 'Search again' }).click()
+      const planned = page.locator('.chat-step-line', { hasText: 'Planned the searches' })
+      await expect(planned).toBeVisible({ timeout: 60_000 })
+      await planned.click()
+      await expect(page.locator('.chat-step.open .chat-step-detail')).toContainText('Nobody reviewed the search vocabulary; the fast path went on without asking.')
       await expect.poll(async () => {
         current = await view(page, rid)
         return current.runs.find(r => r.kind === 'discovery' && r.scope_revision === 2)?.status
       }, { timeout: 60_000 }).toBe('completed')
       expect(current.scope.revision).toBe(2)
       expect(current.search_runs.length).toBeGreaterThan(0)
-      // The ended run stays in the history with its reason.
+      // The ended run stays in the history with its reason; its notice no longer offers a rewrite of the old question.
       expect(current.runs.find(r => r.id === failed.id)).toMatchObject({ status: 'failed', pause_reason: reason })
-      await expect(page.locator('.chat-note.is-error')).toContainText(text)
+      await expect(page.locator('.chat-note.notice.is-warning')).toContainText(text)
+      await expect(page.getByRole('textbox', { name: 'Rewrite the question' })).toHaveCount(0)
       expect(await noHorizontalScroll(page)).toBe(true)
       await page.screenshot({ path: path.join(OUT, `T-${reason}-revised-${width}.png`), animations: 'disabled', fullPage: true })
     })

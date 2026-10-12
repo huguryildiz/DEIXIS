@@ -3960,4 +3960,20 @@ const tr: Record<string, string> = {
   // UI parity S10 Sol round 2
   'The answer also cites {n} work since removed from this research. It is not listed here; its quotes still open from the report.': 'Yanıt ayrıca bu araştırmadan sonradan çıkarılmış {n} esere atıf yapıyor. Burada listelenmiyor; alıntıları rapordan açılmaya devam ediyor.',
   'The answer also cites {n} works since removed from this research. They are not listed here; their quotes still open from the report.': 'Yanıt ayrıca bu araştırmadan sonradan çıkarılmış {n} esere atıf yapıyor. Burada listelenmiyorlar; alıntıları rapordan açılmaya devam ediyor.',
+  // UI parity S26
+  'The Trash is empty': 'Çöp kutusu boş',
+  'Research and sources you remove wait here until you restore or delete them.': 'Kaldırdığınız araştırmalar ve kaynaklar, geri yükleyene ya da silene kadar burada bekler.',
+  'Nothing in the Trash expires.': 'Çöp kutusundaki hiçbir şeyin süresi dolmaz.',
+  'Table template': 'Tablo şablonu',
+  'removed from {research} on {date}': '{date} tarihinde {research} araştırmasından kaldırıldı',
+  'deleted with its research': 'araştırmasıyla birlikte silinir',
+  'Delete “{title}” permanently?': '“{title}” kalıcı olarak silinsin mi?',
+  'Delete {n} sources removed from “{title}” permanently?': '“{title}” araştırmasından kaldırılan {n} kaynak kalıcı olarak silinsin mi?',
+  'Delete permanently: {title}': 'Kalıcı olarak sil: {title}',
+  'Its answers, decisions, run history, unshared evidence and files go with it. Sources another research holds and items you saved to the library stay. This cannot be undone.': 'Yanıtları, kararları, çalıştırma geçmişi, paylaşılmayan kanıtları ve dosyaları da silinir. Başka bir araştırmanın tuttuğu kaynaklar ve kütüphaneye kaydettiğiniz öğeler kalır. Bu geri alınamaz.',
+  'The research loses its record of this source, your decision and notes on it. Its library record, passages and PDF go too, unless another research holds it or you saved it to the library. This cannot be undone.': 'Araştırma bu kaynağın kaydını, ona ilişkin kararınızı ve notlarınızı kaybeder. Başka bir araştırma tutmuyorsa ya da kütüphaneye kaydetmediyseniz kütüphane kaydı, pasajları ve PDF’i de silinir. Bu geri alınamaz.',
+  'The research loses its record of {n} sources, your decisions and notes on them. Their library records, passages and PDFs go too, unless another research holds them or you saved them to the library. This cannot be undone.': 'Araştırma {n} kaynağın kaydını, bunlara ilişkin kararlarınızı ve notlarınızı kaybeder. Başka bir araştırma tutmuyorsa ya da kütüphaneye kaydetmediyseniz kütüphane kayıtları, pasajları ve PDF’leri de silinir. Bu geri alınamaz.',
+  'Restore all from this research': 'Bu araştırmadakilerin hepsini geri yükle',
+  'Delete all deletable from this research permanently': 'Bu araştırmadaki silinebilir olanların hepsini kalıcı olarak sil',
+  'Filter the Trash': 'Çöp kutusunu süz',
 }

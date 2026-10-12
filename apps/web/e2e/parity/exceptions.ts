@@ -104,7 +104,9 @@ export const PLACEMENTS: Placement[] = [
   { id: 'development-lines', rule: '§2.2 (Q1)', slice: 'S15a', container: 'Evidence table ⋯ menu', app: null },
   { id: 'text-recovery', rule: '§2.2 (Q1)', slice: 'S12', container: 'Source details ⋯ menu', app: null },
   { id: 'activity-events', rule: '§2.2 (Q1)', slice: 'S14', container: 'Activity panel, under the runs table', app: null },
-  { id: 'trash-kinds', rule: '§2.2 (Q1)', slice: 'S26', container: 'Trash flat list, kinds "Evidence table" / "Table template"', app: null },
+  { id: 'trash-kinds', rule: '§2.2 (Q1)', slice: 'S26', container: 'Trash flat list, kinds "Evidence table" / "Table template" (same row as Research and Source)', app: null },
+  { id: 'trash-source-menu', rule: '§2.2 (Q1)', slice: 'S26', container: 'Trash Source rows, after Delete permanently: a ⋯ button (30px, the mockup `.ghost.sq`) with Open source details, Restore all from this research and Delete all deletable from this research permanently; the source title opens its abstract', app: '.trash-sq, .trash-title' },
+  { id: 'trash-filter', rule: '§2.2 (Q1)', slice: 'S26', container: 'Trash, above the list and only past 50 rows: a filter field and a "Show N more" button (the mockup list has 2 rows and neither)', app: '.trash-search, .trash-showmore' },
   { id: 'library-pager', rule: '§2.2 (Q1)', slice: 'S25', container: 'Pager under the Library table', app: null },
   { id: 'copyright-footer', rule: '§2.2 (Q1)', slice: 'S24', container: 'Bottom of Settings, foot-note style', app: null },
   { id: 'seed-choice-stale', rule: '§2.2 (Q1)', slice: 'S23b', container: 'Search plan panel, "PDFs guiding the search"; stale-seed warn notice in the plan step', app: null },
@@ -136,6 +138,9 @@ export const PLACEMENTS: Placement[] = [
 /** Mockup copy replaced because it would be false (§2.3, Q2). The parity check compares structure, not text; behaviour
  *  tests of each state assert the replacement text. */
 export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: string }> = [
+  { id: 'trash-confirm-research', rule: '§2.3 (Q2; §2.2 S19a: a sentence about what deletion removes also says what stays)', mock: 'Its answers, decisions and run history go with it.', app: 'Its answers, decisions, run history, unshared evidence and files go with it. Sources another research holds and items you saved to the library stay.' },
+  { id: 'trash-confirm-source', rule: '§2.3 (Q2; S19a: the library record stays when another research holds the source or it is saved)', mock: 'Your decision and notes on it go with it.', app: 'The research loses its record of this source, your decision and notes on it. Its library record, passages and PDF go too, unless another research holds it or you saved it to the library.' },
+  { id: 'trash-confirm-table-template', rule: '§0 rule 5 (the mockup asks for research and sources only)', mock: '(none)', app: 'Table: its rows, columns, cells with a value and edits of yours are deleted; passages, files and answers stay. Template: its column definitions are deleted; tables started from it keep their own columns.' },
   { id: 'setup-leaves', rule: '§2.3 (Q2)', mock: 'Nothing leaves this computer except the searches.', app: 'Nothing leaves this computer except the searches and the model calls you set up.' },
   { id: 'rail-table-draft', rule: '§2.3 (Q2: a label names only what the records hold)', mock: 'Evidence table · N sources · M columns   draft', app: 'Evidence table · N sources · M columns (no "draft" label: a table has no draft state in the records)' },
   { id: 'read-in-full', rule: '§2.3 (Q2)', mock: 'Read in full', app: 'Full text read' },
@@ -223,6 +228,12 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     note: 'The Artifacts box has one row per report version, table and evidence report the research has; x, y and width are compared.' },
   { id: 'rail-depth-scope-height', rule: '§2.3 (S11 review item 2: the depth box names its scope, the works given to the latest report)', pairs: ['research.rail-depth'], axes: ['height'],
     note: 'The "How deeply sources were read" box carries one line more than the mockup ("Works given to the latest report (VN)"), so it is taller. Only this box: the other rail boxes keep their height check. x and width are compared, y as rail-rows-y says; rail.spec checks the line.' },
+  { id: 'trash-rows-y', rule: '§0 rule 1 (row notes are data: the dates and titles come from the records) and PLACEMENTS trash-source-menu',
+    pairs: ['trash.restore', 'trash.delete'], axes: ['y'],
+    note: 'The buttons sit in the middle of their row, and a row is as tall as its note wraps (a source note is longer than the mockup\'s example). x, width and height are compared.' },
+  { id: 'trash-confirm-buttons-y', rule: 'COPY_CHANGES trash-confirm-research and trash-confirm-source',
+    pairs: ['trash-confirm.buttons', 'trash-confirm.icon'], axes: ['y'],
+    note: 'The icon is centred on the notice and the buttons sit under the confirm text, which says more than the mockup\'s and wraps onto more lines. x, width and height are compared.' },
   { id: 'zotero-foot-buttons-y', rule: '§2.2 (placement zotero-library-source) and §2.3 (copy changes zotero-lead, zotero-account, zotero-count)',
     pairs: ['zotero.foot-buttons'], axes: ['y'],
     note: 'The footer sits below the library switch row and the replaced notes, whose wrapped height differs from the mockup; x, width and height are compared.' },

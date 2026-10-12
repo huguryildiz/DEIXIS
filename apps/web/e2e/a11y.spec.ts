@@ -162,10 +162,10 @@ const SCREENS = [
   '5 source panel with citation highlight',
   '6a source panel PDF tab', '6b source panel plain-text document',
   '7a evidence panel empty', '7b evidence panel filled', '7c evidence cell panel',
-  '8a library', '8b trash',
+  '8a library', '8b trash', '8c trash delete confirmation',
   '9a settings defaults', '9b settings connections', '9c connection sheet',
   '10a human queue list', '10b human queue open row',
-  '11a quick find', '11b confirm dialog', '11c error toast',
+  '11a quick find', '11c error toast',
 ]
 
 type Violation = { rule: string; impact: string; help: string; nodes: number; selector: string; detail?: string; nodeList?: string[] }
@@ -635,11 +635,11 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     })
   })
 
-  test('8, 11b, 11c library, trash, confirm dialog, error toast', async () => {
+  test('8, 11c library, trash, trash delete confirmation, error toast', async () => {
     test.setTimeout(480_000)
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
-    await reach(['8a library', '8b trash', '11b confirm dialog', '11c error toast'], async () => {
+    await reach(['8a library', '8b trash', '8c trash delete confirmation', '11c error toast'], async () => {
       await page.goto(main.url())
       await page.getByRole('button', { name: 'Library', exact: true }).click()
       await expect(page.locator('.library-title').first()).toBeVisible()
@@ -666,9 +666,10 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       await scan(page, '8b trash', () => dismissToasts(page))
       await page.setViewportSize({ width: 1280, height: 900 })
       await page.getByRole('button', { name: 'Delete permanently' }).first().click()
-      const confirm = page.getByRole('dialog', { name: 'Delete permanently?' })
+      // The delete asks inside its row (S26); Escape inside the row cancels it.
+      const confirm = page.locator('.trash-notice')
       await expect(confirm).toBeVisible()
-      await scan(page, '11b confirm dialog')
+      await scan(page, '8c trash delete confirmation')
       await page.keyboard.press('Escape')
       await expect(confirm).toHaveCount(0)
     })

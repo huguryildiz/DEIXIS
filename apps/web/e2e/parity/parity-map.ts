@@ -10,7 +10,7 @@ import type { FixtureContext } from './gates'
 export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
 export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog' | 'research-panel' | 'palette' | 'keys'
-  | 'research-menu' | 'export-menu' | 'title-edit' | 'revise'
+  | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -99,6 +99,15 @@ async function firstRun(page: Page) {
   await page.route('**/api/suggestions', route => route.fulfill({ json: { suggestions: [] } }))
 }
 
+/** S26: a Trash of one research and one removed source, the research newer, as the mockup's two rows. */
+async function trashRows(page: Page) {
+  await page.route('**/api/trash', route => route.fulfill({ json: {
+    researches: [{ id: 'syn-trashed', title: 'SYNTHETIC research moved to the Trash', trashed_at: '2026-10-09T10:00:00Z' }], tables: [], templates: [],
+    sources: [{ source_version_id: 'sv-syn', work_id: 'w-syn', title: 'SYNTHETIC removed source title', version_label: 'publishedVersion', year: 2021, research_id: 'syn-research', research_title: 'SYNTHETIC research that lost a source',
+      removed_at: '2026-10-08T10:00:00Z', removal_note: null, found_again_at: null, quotes: 0, cells: 0, abstract_passage_id: null, cited: 0 }],
+  } }))
+}
+
 /** S5b: two SYNTHETIC PDFs attached in a mixed search, so the composer shows its guide rows (Q3). */
 export const GUIDE_PDFS = ['SYNTHETIC-guide-first.pdf', 'SYNTHETIC-guide-second.pdf']
 
@@ -156,6 +165,12 @@ export const SURFACES: Surface[] = [
     appAct: async page => { await page.locator('.research-topbar .research-more').click(); await page.locator('[data-slot=dropdown-menu-content]').waitFor() } },
   { id: 'export-menu', mock: "setScenario('ok')", mockAct: "menu('export', document.querySelector('.topbar [data-menu=\"export\"]'))", app: '#/research/{research}', ready: '.research-topbar',
     appAct: async page => { await page.locator('.research-topbar .research-export').click(); await page.locator('[data-slot=dropdown-menu-content]').waitFor() } },
+  // S26: the Trash page. The app's /api/trash is answered with two SYNTHETIC rows shaped like the mockup's (a research,
+  // then a source); the fixture server's own Trash is empty and nothing in the parity research is removed.
+  { id: 'trash', mock: "setScenario('ok'); go('trash')", app: '#/trash', ready: '.trash-rows', prepare: trashRows },
+  { id: 'trash-confirm', mock: "setScenario('ok'); go('trash')", mockAct: 'st.trashAsk = 0; render()', app: '#/trash', ready: '.trash-rows', prepare: trashRows,
+    appAct: page => page.locator('.trash-row .trash-delete').first().click() },
+  { id: 'trash-empty', mock: "setScenario('ok'); st.trashR = []; go('trash')", app: '#/trash', ready: '.trash-empty', prepare: page => page.route('**/api/trash', route => route.fulfill({ json: { researches: [], tables: [], sources: [], templates: [] } })) },
   { id: 'title-edit', mock: "setScenario('ok')", mockAct: 'st.renTitle = true; render()', app: '#/research/{research}', ready: '.research-topbar',
     // The app focuses the field it opens; the mockup's render leaves it unfocused, so the field is compared at rest.
     appAct: async page => { await page.locator('.research-topbar .research-title-button').click(); await page.locator('.research-title-input').blur() } },
@@ -323,7 +338,31 @@ const revise: Pair[] = [
   { id: 'revise.buttons', surface: 'revise', mock: '.q.edit .rowbtns button', app: '.chat-question-buttons button', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: false, status: 'active' },
 ]
 
+// S26: the Trash page (T1-T3). The source row's ⋯ button and title button are the PLACEMENT trash-source-menu; the
+// confirm texts are COPY_CHANGES trash-confirm-*. Row notes are data (the dates and titles come from the records).
+const TR = '.settings .rows > div'
+const trashPage: Pair[] = [
+  { id: 'trash.title', surface: 'trash', mock: '.settings h1', app: '.trash-page > h1', checks: ['chrome', 'type', 'colour'], text: true, status: 'active' },
+  { id: 'trash.rows', surface: 'trash', mock: '.settings .rows', app: '.trash-rows', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'trash.row', surface: 'trash', mock: TR, app: '.trash-rows > .trash-row', checks: ['content', 'colour'], use: 'decorative', list: 'fixed', text: false, status: 'active' },
+  { id: 'trash.kind', surface: 'trash', mock: `${TR} > b`, app: '.trash-row > b', checks: ['content', 'type', 'colour'], list: 'fixed', text: true, status: 'active' },
+  { id: 'trash.note', surface: 'trash', mock: `${TR} > p`, app: '.trash-row > p', checks: ['content', 'type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'trash.restore', surface: 'trash', mock: `${TR} [data-trrestore]`, app: '.trash-restore', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], status: 'active' },
+  { id: 'trash.delete', surface: 'trash', mock: `${TR} [data-trdel]`, app: '.trash-delete', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], status: 'active' },
+  { id: 'trash.foot', surface: 'trash', mock: '.settings .foot-note', app: '.trash-foot', checks: ['content', 'type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'trash-confirm.notice', surface: 'trash-confirm', mock: '.settings .notice.warn', app: '.trash-notice', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'trash-confirm.icon', surface: 'trash-confirm', mock: '.notice.warn > svg.i', app: '.trash-notice > svg', checks: ['chrome', 'colour', 'icon'], use: 'icon', icon: { mock: 'warn', app: 'triangle-alert' }, states: [], status: 'active' },
+  { id: 'trash-confirm.text', surface: 'trash-confirm', mock: '.notice.warn .nb > span', app: '.trash-notice-body > span', checks: ['content', 'type', 'colour'], text: false, status: 'active' },
+  { id: 'trash-confirm.buttons', surface: 'trash-confirm', mock: '.notice.warn .acts .ghost', app: '.trash-acts .trash-ghost', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], status: 'active' },
+  { id: 'trash-empty.empty', surface: 'trash-empty', mock: '.settings .empty', app: '.trash-empty', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'trash-empty.icon', surface: 'trash-empty', mock: '.empty svg.i', app: '.trash-empty svg', checks: ['chrome', 'colour', 'icon'], use: 'icon', icon: { mock: 'trash', app: 'trash' }, status: 'active' },
+  { id: 'trash-empty.heading', surface: 'trash-empty', mock: '.empty h2', app: '.trash-empty h2', checks: ['chrome', 'type', 'colour'], text: true, status: 'active' },
+  { id: 'trash-empty.text', surface: 'trash-empty', mock: '.empty p', app: '.trash-empty p', checks: ['content', 'type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'trash-empty.foot', surface: 'trash-empty', mock: '.settings .foot-note', app: '.trash-foot', checks: ['content', 'type', 'colour'], text: true, states: [], status: 'active' },
+]
+
 export const PAIRS: Pair[] = [
+  ...trashPage,
   ...researchMenu,
   ...exportMenu,
   ...titleEdit,

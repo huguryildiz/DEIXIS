@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { Ellipsis, Info, Search, Trash2, TriangleAlert } from 'lucide-react'
+import { ChevronDown, ChevronRight, Ellipsis, Info, Search, Trash2, TriangleAlert } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, type RemovedSource, type Trash } from './api'
 import { versionText } from './labels'
@@ -11,12 +12,17 @@ import { t, uiLocale } from './i18n'
 // once nothing cites it (D65). Deleting asks inside the row, where the mockup asks.
 
 // The row that is asking: what it says and what a yes does.
-type Pending = { key: string; question: string; detail: string; confirm: () => void }
+type Pending = { key: string; question: string; detail: string; confirm: () => void; from?: 'delete' | 'menu' }
+type SourceTarget = { researchId: string; versions: RemovedSource[] }
+type Sort = 'removed' | 'title' | 'year'
+const sortLabels: Record<Sort, string> = { removed: 'Recently removed', title: 'Title', year: 'Year' }
 // The row opened in the source sheet, on the abstract this research can still read (D50).
 type OpenSource = { key: string; researchId: string; researchTitle: string; passageId: string }
 type Entry = {
   key: string; at: string; kind: string; title: string; titleNode?: ReactNode; note: string
   restore: () => void; remove: Pending | null; deleteTitle?: string
+  researchId: string | null; researchTitle: string | null; year: number
+  source?: SourceTarget
   more?: { open: (() => void) | null; restoreAll: (() => void) | null; deleteAll: Pending | null }
 }
 const inspectable = (versions: RemovedSource[]) => versions.find(v => v.abstract_passage_id) ?? null
@@ -45,6 +51,12 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
   const [pending, setPending] = useState<Pending | null>(null)
   const [query, setQuery] = useState('')
   const [whole, setWhole] = useState(false)
+  const [scope, setScope] = useState<'all' | 'deletable' | 'cited'>('all')
+  const [onlyResearch, setOnlyResearch] = useState('all')
+  const [sort, setSort] = useState<Sort>('removed')
+  const [grouped, setGrouped] = useState(false)
+  const [folded, setFolded] = useState<Set<string>>(new Set())
+  const [picked, setPicked] = useState<Set<string>>(new Set())
   const [openSource, setOpenSource] = useState<OpenSource | null>(null)
 
   const refresh = useCallback(() => api.trash().then(next => { setTrash(next); setError('') }, (e: Error) => setError(e.message)), [])
@@ -61,14 +73,33 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
   // A source an answer quote, a table or a report still cites is not offered for deletion: that evidence must keep opening (D65).
   const deletable = (versions: RemovedSource[]) => versions.every(v => !v.cited)
 
-  function purgeSources(key: string, groupSources: RemovedSource[][], researchId: string) {
-    const versions = groupSources.flat()
+  function purgeMany(key: string, targets: SourceTarget[]) {
     void run(key, async () => {
-      const result = await api.purgeSources(researchId, versions.map(v => v.source_version_id))
-      return result.files_not_removed.length
-        ? t('{n} source(s) deleted, but {files} file(s) could not be removed from disk.', { n: result.deleted.length, files: result.files_not_removed.length })
-        : t(result.deleted.length === 1 ? 'Source permanently deleted.' : '{n} sources permanently deleted.', { n: result.deleted.length })
+      let deleted = 0
+      let files = 0
+      for (const one of targets) {
+        const result = await api.purgeSources(one.researchId, one.versions.map(v => v.source_version_id))
+        deleted += result.deleted.length
+        files += result.files_not_removed.length
+      }
+      setPicked(new Set())
+      return files
+        ? t('{n} source(s) deleted, but {files} file(s) could not be removed from disk.', { n: deleted, files })
+        : t(deleted === 1 ? 'Source permanently deleted.' : '{n} sources permanently deleted.', { n: deleted })
     }, 'Could not delete the sources: {message}')
+  }
+  // restoreSources and purgeSources each take one research, so a choice across researches is one call per research.
+  const perResearch = (picks: SourceTarget[]): SourceTarget[] => {
+    const by = new Map<string, RemovedSource[]>()
+    for (const pick of picks) by.set(pick.researchId, [...(by.get(pick.researchId) ?? []), ...pick.versions])
+    return [...by].map(([researchId, versions]) => ({ researchId, versions }))
+  }
+  const toggled = (set: Set<string>, key: string) => { const next = new Set(set); if (!next.delete(key)) next.add(key); return next }
+  // Returns focus to the row that asked, once the notice is gone.
+  const closeAsk = (target: Pending | null) => {
+    setPending(null)
+    if (!target) return
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-trash-key="${CSS.escape(target.key)}"] ${target.from === 'menu' ? '.trash-sq' : '.trash-delete'}`)?.focus())
   }
 
   const sourceDetail = (count: number) => t(count === 1
@@ -79,7 +110,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
   if (trash) {
     for (const r of trash.researches) {
       entries.push({
-        key: r.id, at: r.trashed_at, kind: t('Research'), title: r.title, note: t('Moved to Trash {date}', { date: dateText(r.trashed_at) }),
+        key: r.id, at: r.trashed_at, kind: t('Research'), title: r.title, researchId: r.id, researchTitle: r.title, year: 0, note: t('Moved to Trash {date}', { date: dateText(r.trashed_at) }),
         restore: () => void run(r.id, async () => { await api.restore(r.id); return t('Research restored.') }, 'Could not restore research: {message}'),
         remove: {
           key: r.id, question: t('Delete “{title}” permanently?', { title: r.title }),
@@ -95,7 +126,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     }
     for (const table of trash.tables) {
       entries.push({
-        key: table.id, at: table.trashed_at, kind: t('Evidence table'), title: table.title,
+        key: table.id, at: table.trashed_at, kind: t('Evidence table'), title: table.title, researchId: table.research_id, researchTitle: table.research_title, year: 0,
         note: [table.research_title, t(table.rows === 1 ? '{n} row' : '{n} rows', { n: table.rows }), t(table.columns === 1 ? '{n} column' : '{n} columns', { n: table.columns }),
           t(table.cells === 1 ? '{n} cell with a value' : '{n} cells with a value', { n: table.cells }),
           table.human_edits > 0 && t(table.human_edits === 1 ? '{n} edit of yours' : '{n} edits of yours', { n: table.human_edits }),
@@ -128,7 +159,8 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
           first.removal_note && t('Your note: {note}', { note: first.removal_note }),
         ].filter(Boolean).join(' · ')
         entries.push({
-          key, at: first.removed_at, kind: t('Source'), title: first.title, note: parts,
+          key, at: first.removed_at, kind: t('Source'), title: first.title, note: parts, researchId: group.id, researchTitle: group.title, year: first.year ?? 0,
+          source: { researchId: group.id, versions },
           titleNode: openable
             ? <button type="button" className="trash-title" title={first.title}
               onClick={() => setOpenSource({ key, researchId: group.id, researchTitle: group.title, passageId: openable.abstract_passage_id as string })}>{first.title}</button>
@@ -136,14 +168,14 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
           restore: () => void run(key, async () => { await api.restoreSources(group.id, versions.map(v => v.source_version_id)); return t('Source restored to {research}.', { research: group.title }) }, 'Could not restore the sources: {message}'),
           remove: canDelete ? {
             key, question: t('Delete “{title}” permanently?', { title: first.title }), detail: sourceDetail(1),
-            confirm: () => purgeSources(key, [versions], group.id),
+            confirm: () => purgeMany(key, [{ researchId: group.id, versions }]), from: 'delete',
           } : null,
           more: {
             open: openable ? () => setOpenSource({ key, researchId: group.id, researchTitle: group.title, passageId: openable.abstract_passage_id as string }) : null,
             restoreAll: group.works.length > 1 ? () => void run(`${group.id}:all`, async () => { await api.restoreSources(group.id, group.works.flat().map(s => s.source_version_id)); return t('{n} sources restored to {research}.', { n: group.works.length, research: group.title }) }, 'Could not restore the sources: {message}') : null,
             deleteAll: deletableWorks.length > 1 ? {
               key, question: t('Delete {n} sources removed from “{title}” permanently?', { n: deletableWorks.length, title: group.title }), detail: sourceDetail(deletableWorks.length),
-              confirm: () => purgeSources(`${group.id}:all`, deletableWorks, group.id),
+              confirm: () => purgeMany(`${group.id}:all`, [{ researchId: group.id, versions: deletableWorks.flat() }]), from: 'menu',
             } : null,
           },
         })
@@ -151,7 +183,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     }
     for (const template of trash.templates) {
       entries.push({
-        key: template.id, at: template.trashed_at, kind: t('Table template'), title: template.name,
+        key: template.id, at: template.trashed_at, kind: t('Table template'), title: template.name, researchId: null, researchTitle: null, year: 0,
         note: `${t(template.columns === 1 ? '{n} column' : '{n} columns', { n: template.columns })} · ${t('Moved to Trash {date}', { date: dateText(template.trashed_at) })}`,
         restore: () => void run(template.id, async () => { await api.restoreTemplate(template.id); return t('Template restored.') }, 'Could not restore the template: {message}'),
         remove: {
@@ -161,13 +193,60 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
         },
       })
     }
-    entries.sort((a, b) => b.at.localeCompare(a.at))
   }
+  const sorters: Record<Sort, (a: Entry, b: Entry) => number> = {
+    removed: (a, b) => b.at.localeCompare(a.at),
+    title: (a, b) => a.title.localeCompare(b.title, uiLocale()),
+    year: (a, b) => b.year - a.year || b.at.localeCompare(a.at),
+  }
+  const stillCited = entries.filter(e => e.source && !e.remove).length
+  const researchOptions = [...new Map(entries.filter(e => e.researchId && e.researchTitle).map(e => [e.researchId as string, e.researchTitle as string])).entries()]
 
   const needle = query.trim().toLocaleLowerCase(uiLocale())
-  const matching = needle ? entries.filter(e => `${e.title} ${e.note}`.toLocaleLowerCase(uiLocale()).includes(needle)) : entries
+  const matching = entries
+    .filter(e => (scope === 'all' || (scope === 'deletable') === (e.remove !== null)) && (onlyResearch === 'all' || e.researchId === onlyResearch)
+      && (!needle || `${e.title} ${e.note}`.toLocaleLowerCase(uiLocale()).includes(needle)))
+    .sort(sorters[sort])
   const shown = whole || needle ? matching : matching.slice(0, ROW_LIMIT)
-  const decide = (target: Pending) => { setPending(target) }
+  const shownSources = shown.filter(e => e.source)
+  const pickedEntries = entries.filter(e => e.source && picked.has(e.key))
+  const pickedDeletable = pickedEntries.filter(e => e.remove)
+  const decide = (target: Pending) => setPending(target)
+
+  const rowFor = (entry: Entry) => pending?.key === entry.key
+    ? <div className="trash-row trash-notice" key={entry.key} role="group" aria-label={t('Delete permanently?')} data-trash-key={entry.key}
+      onKeyDown={event => { if (event.key === 'Escape') closeAsk(pending) }}>
+      <TriangleAlert size={16} aria-hidden />
+      <div className="trash-notice-body"><span>{pending.question} {pending.detail}</span>
+        <div className="trash-acts">
+          <button type="button" className="trash-ghost trash-delete" onClick={() => { const target = pending; setPending(null); target.confirm() }}>{t('Delete permanently')}</button>
+          <button type="button" className="trash-ghost" autoFocus onClick={() => closeAsk(pending)}>{t('Cancel')}</button>
+        </div></div>
+    </div>
+    : <div className={`trash-row${picked.has(entry.key) ? ' is-picked' : ''}`} key={entry.key} data-trash-key={entry.key}>
+      <b>{entry.source && <input type="checkbox" className="trash-pick" checked={picked.has(entry.key)} aria-label={t('Select {title}', { title: entry.title })}
+        onChange={() => setPicked(toggled(picked, entry.key))} />}{entry.kind}</b>
+      <p>{entry.titleNode ?? entry.title} · {entry.note}</p>
+      <button type="button" className="trash-ghost trash-restore" disabled={busy === entry.key} aria-label={t('Restore {title}', { title: entry.title })} onClick={entry.restore}>{t('Restore')}</button>
+      <button type="button" className="trash-ghost trash-delete" disabled={busy === entry.key || !entry.remove} aria-label={t('Delete permanently: {title}', { title: entry.title })}
+        title={entry.remove ? undefined : t('An answer quote, an evidence table or a report still cites this source. It is deleted with its research.')}
+        onClick={() => entry.remove && decide({ ...entry.remove, from: 'delete' })}>{t('Delete permanently')}</button>
+      {entry.more && (entry.more.open || entry.more.restoreAll || entry.more.deleteAll) && <DropdownMenu>
+        <DropdownMenuTrigger className="trash-ghost trash-sq" aria-label={t('Actions for {title}', { title: entry.title })} title={t('More actions')}><Ellipsis size={15} aria-hidden /></DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto">
+          {entry.more.open && <DropdownMenuItem onClick={entry.more.open}>{t('Open source details')}</DropdownMenuItem>}
+          {entry.more.restoreAll && <DropdownMenuItem onClick={entry.more.restoreAll}>{t('Restore all from this research')}</DropdownMenuItem>}
+          {entry.more.deleteAll && <>
+            {(entry.more.open || entry.more.restoreAll) && <DropdownMenuSeparator />}
+            <DropdownMenuItem variant="destructive" onClick={() => entry.more?.deleteAll && decide({ ...entry.more.deleteAll, from: 'menu' })}><Trash2 size={15} />{t('Delete all deletable from this research permanently')}</DropdownMenuItem>
+          </>}
+        </DropdownMenuContent>
+      </DropdownMenu>}
+    </div>
+
+  // Grouped by research: the sources of one research sit under a head row that folds them and picks them together.
+  const loose = grouped ? shown.filter(e => !e.source) : shown
+  const groups = grouped ? [...shownSources.reduce((m, e) => m.set(e.researchId as string, [...(m.get(e.researchId as string) ?? []), e]), new Map<string, Entry[]>())] : []
 
   return <section className="trash-page">
     <h1 tabIndex={-1}>{t('Trash')}</h1>
@@ -177,44 +256,90 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
       : entries.length === 0 ? <div className="trash-empty"><div><Trash2 size={16} aria-hidden /><h2>{t('The Trash is empty')}</h2>
         <p>{t('Research and sources you remove wait here until you restore or delete them.')}</p></div></div>
       : <>
-        {entries.length > ROW_LIMIT && <div className="trash-search" role="search">
-          <Search size={15} aria-hidden />
-          <input type="search" value={query} onChange={event => setQuery(event.target.value)}
-            placeholder={t('Filter by title or research')} aria-label={t('Filter the Trash')} />
-        </div>}
-        <div className="trash-rows">
-          {shown.map(entry => pending?.key === entry.key
-            ? <div className="trash-row trash-notice" key={entry.key} role="group" aria-label={t('Delete permanently?')}
-              onKeyDown={event => { if (event.key === 'Escape') setPending(null) }}>
-              <TriangleAlert size={16} aria-hidden />
-              <div className="trash-notice-body"><span>{pending.question} {pending.detail}</span>
-                <div className="trash-acts">
-                  <button type="button" className="trash-ghost trash-delete" onClick={() => { const target = pending; setPending(null); target.confirm() }}>{t('Delete permanently')}</button>
-                  <button type="button" className="trash-ghost" autoFocus onClick={() => setPending(null)}>{t('Cancel')}</button>
-                </div></div>
-            </div>
-            : <div className="trash-row" key={entry.key}>
-              <b>{entry.kind}</b>
-              <p>{entry.titleNode ?? entry.title} · {entry.note}</p>
-              <button type="button" className="trash-ghost trash-restore" disabled={busy === entry.key} aria-label={t('Restore {title}', { title: entry.title })} onClick={entry.restore}>{t('Restore')}</button>
-              <button type="button" className="trash-ghost trash-delete" disabled={busy === entry.key || !entry.remove} aria-label={t('Delete permanently: {title}', { title: entry.title })}
-                title={entry.remove ? undefined : t('An answer quote, an evidence table or a report still cites this source. It is deleted with its research.')}
-                onClick={() => entry.remove && decide(entry.remove)}>{t('Delete permanently')}</button>
-              {entry.more && (entry.more.open || entry.more.restoreAll || entry.more.deleteAll) && <DropdownMenu>
-                <DropdownMenuTrigger className="trash-ghost trash-sq" aria-label={t('Actions for {title}', { title: entry.title })} title={t('More actions')}><Ellipsis size={15} aria-hidden /></DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-auto">
-                  {entry.more.open && <DropdownMenuItem onClick={entry.more.open}>{t('Open source details')}</DropdownMenuItem>}
-                  {entry.more.restoreAll && <DropdownMenuItem onClick={entry.more.restoreAll}>{t('Restore all from this research')}</DropdownMenuItem>}
-                  {entry.more.deleteAll && <>
-                    {(entry.more.open || entry.more.restoreAll) && <DropdownMenuSeparator />}
-                    <DropdownMenuItem variant="destructive" onClick={() => entry.more?.deleteAll && decide(entry.more.deleteAll)}><Trash2 size={15} />{t('Delete all deletable from this research permanently')}</DropdownMenuItem>
-                  </>}
-                </DropdownMenuContent>
-              </DropdownMenu>}
-            </div>)}
+        <div className="trash-tools">
+          <div className="trash-search" role="search">
+            <Search size={15} aria-hidden />
+            <input type="search" value={query} onChange={event => setQuery(event.target.value)}
+              placeholder={t('Filter by title or research')} aria-label={t('Filter the Trash')} />
+          </div>
+          <div className="trash-scope" role="group" aria-label={t('Which removed sources to show')}>
+            <button type="button" aria-pressed={scope === 'all'} onClick={() => setScope('all')}>{t('All')} {entries.length}</button>
+            <button type="button" aria-pressed={scope === 'deletable'} onClick={() => setScope('deletable')}>{t('Deletable')} {entries.length - stillCited}</button>
+            <button type="button" aria-pressed={scope === 'cited'} onClick={() => setScope('cited')}>{t('Still cited')} {stillCited}</button>
+          </div>
+          {researchOptions.length > 1 && <div className="trash-select">
+            <span id="trash-research-filter">{t('Research')}</span>
+            <Select value={onlyResearch} onValueChange={value => { if (value) setOnlyResearch(value as string) }}>
+              <SelectTrigger aria-labelledby="trash-research-filter"><SelectValue>{(value: string) =>
+                value === 'all' ? t('All {n} research', { n: researchOptions.length }) : researchOptions.find(([id]) => id === value)?.[1] ?? ''}</SelectValue></SelectTrigger>
+              <SelectContent align="end">
+                <SelectItem value="all">{t('All {n} research', { n: researchOptions.length })}</SelectItem>
+                {researchOptions.map(([id, title]) => <SelectItem key={id} value={id}>{title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>}
+          <div className="trash-select">
+            <span id="trash-sort">{t('Sort')}</span>
+            <Select value={sort} onValueChange={value => { if (value) setSort(value as Sort) }}>
+              <SelectTrigger aria-labelledby="trash-sort"><SelectValue>{(value: string) => t(sortLabels[value as Sort])}</SelectValue></SelectTrigger>
+              <SelectContent align="end">
+                {(Object.keys(sortLabels) as Sort[]).map(order => <SelectItem key={order} value={order}>{t(sortLabels[order])}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <button type="button" className="trash-ghost" aria-pressed={grouped} onClick={() => setGrouped(!grouped)}>{t('Group by research')}</button>
+          {shownSources.length > 0 && <label className="trash-pick-all"><input type="checkbox" className="trash-pick" aria-label={t('Select the {n} sources shown here', { n: shownSources.length })}
+            checked={shownSources.every(e => picked.has(e.key))}
+            onChange={event => { const next = new Set(picked); for (const e of shownSources) { if (event.target.checked) next.add(e.key); else next.delete(e.key) } setPicked(next) }} />{t('Select the sources shown')}</label>}
         </div>
+        {shown.length === 0 && <p className="trash-foot">{t('No removed source matches this filter.')}</p>}
+        {shown.length > 0 && <div className="trash-rows">
+          {loose.map(rowFor)}
+          {groups.map(([researchId, list]) => {
+            const isFolded = folded.has(researchId)
+            const title = list[0].researchTitle as string
+            return <div className="trash-group" key={researchId}>
+              <div className="trash-row trash-group-head">
+                <button type="button" className="trash-fold" aria-expanded={!isFolded}
+                  aria-label={t(isFolded ? 'Show the sources removed from {research}' : 'Hide the sources removed from {research}', { research: title })}
+                  onClick={() => setFolded(toggled(folded, researchId))}>{isFolded ? <ChevronRight size={15} aria-hidden /> : <ChevronDown size={15} aria-hidden />}</button>
+                <b>{title}</b>
+                <p>{t(list.length === 1 ? '{n} source' : '{n} sources', { n: list.length })}</p>
+                <input type="checkbox" className="trash-pick" aria-label={t('Select the {n} sources of {research}', { n: list.length, research: title })}
+                  checked={list.every(e => picked.has(e.key))}
+                  onChange={event => { const next = new Set(picked); for (const e of list) { if (event.target.checked) next.add(e.key); else next.delete(e.key) } setPicked(next) }} />
+              </div>
+              {!isFolded && list.map(rowFor)}
+            </div>
+          })}
+        </div>}
         {!whole && !needle && matching.length > ROW_LIMIT && <button type="button" className="trash-ghost trash-showmore" onClick={() => setWhole(true)}>{t('Show {n} more', { n: matching.length - ROW_LIMIT })}</button>}
-        {needle && matching.length === 0 && <p className="trash-foot">{t('No removed source matches this filter.')}</p>}
+        {pending?.key === 'picked' && <div className="trash-notice trash-bar-notice" role="group" aria-label={t('Delete permanently?')}
+          onKeyDown={event => { if (event.key === 'Escape') closeAsk(pending) }}>
+          <TriangleAlert size={16} aria-hidden />
+          <div className="trash-notice-body"><span>{pending.question} {pending.detail}</span>
+            <div className="trash-acts">
+              <button type="button" className="trash-ghost trash-delete" onClick={() => { const target = pending; setPending(null); target.confirm() }}>{t('Delete permanently')}</button>
+              <button type="button" className="trash-ghost" autoFocus onClick={() => closeAsk(pending)}>{t('Cancel')}</button>
+            </div></div>
+        </div>}
+        {pickedEntries.length > 0 && <div className="selection-bar" data-trash-key="picked">
+          <strong>{t(pickedEntries.length === 1 ? '{n} source selected' : '{n} sources selected', { n: pickedEntries.length })}
+            <span>{[t('{n} deletable', { n: pickedDeletable.length }), t('from {n} research', { n: new Set(pickedEntries.map(e => e.researchId)).size })].join(' · ')}</span></strong>
+          <div className="selection-bar-actions">
+            <button type="button" className="trash-ghost" disabled={busy === 'picked'} onClick={() => void run('picked', async () => {
+              const restored = pickedEntries.length
+              for (const one of perResearch(pickedEntries.map(e => e.source as SourceTarget))) await api.restoreSources(one.researchId, one.versions.map(v => v.source_version_id))
+              setPicked(new Set())
+              return t('{n} sources restored.', { n: restored })
+            }, 'Could not restore the sources: {message}')}>{t('Restore')}</button>
+            <button type="button" className="trash-ghost trash-delete" disabled={busy === 'picked' || pickedDeletable.length === 0}
+              title={pickedDeletable.length === 0 ? t('An answer quote, an evidence table or a report still cites this source. It is deleted with its research.') : undefined}
+              onClick={() => decide({ key: 'picked', from: 'delete', question: t('Delete {n} sources permanently?', { n: pickedDeletable.length }), detail: sourceDetail(pickedDeletable.length),
+                confirm: () => purgeMany('picked', perResearch(pickedDeletable.map(e => e.source as SourceTarget))) })}>{t('Delete permanently')}</button>
+            <button type="button" className="trash-ghost" onClick={() => setPicked(new Set())}>{t('Clear selection')}</button>
+          </div>
+        </div>}
       </>}
     <p className="trash-foot">{t('Nothing in the Trash expires.')}</p>
     {openSource && <PassageSheet researchId={openSource.researchId} passageId={openSource.passageId}

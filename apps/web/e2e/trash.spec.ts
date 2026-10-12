@@ -208,6 +208,136 @@ test.describe('S26: the Trash page', () => {
     await expect(rows(page).filter({ hasText: 'SYNTHETIC cited source' })).toHaveCount(1)
   })
 
+  // Two researches lost sources: A has a, b (b cited), B has c. Titles and years fix the sorts.
+  const twoResearches = () => {
+    const data = mixed()
+    data.researches = []; data.tables = []; data.templates = []
+    data.sources = [
+      version(1, { title: 'Alpha source', year: 2019, research_id: 'rA', research_title: 'SYNTHETIC research A', removed_at: '2026-10-01T10:00:00Z' }),
+      version(2, { title: 'Charlie source', year: 2023, research_id: 'rA', research_title: 'SYNTHETIC research A', removed_at: '2026-10-03T10:00:00Z', cited: 1, quotes: 1 }),
+      version(3, { title: 'Bravo source', year: 2021, research_id: 'rB', research_title: 'SYNTHETIC research B', removed_at: '2026-10-02T10:00:00Z' }),
+    ]
+    return data
+  }
+  const titles = (page: Page) => page.locator('.trash-rows .trash-row:not(.trash-group-head) > p').evaluateAll(ps => ps.map(p => (p.textContent ?? '').split(' · ')[0]))
+
+  test('filter, scope, research and sort narrow the list; the filter field stays while a query applies', async ({ page }) => {
+    await mockTrash(page, twoResearches(), [])
+    await open(page, server.url())
+    expect(await titles(page)).toEqual(['Charlie source', 'Bravo source', 'Alpha source'])  // recently removed
+    await page.getByRole('combobox', { name: /Sort/ }).click()
+    await page.getByRole('option', { name: 'Title' }).click()
+    expect(await titles(page)).toEqual(['Alpha source', 'Bravo source', 'Charlie source'])
+    await page.getByRole('combobox', { name: /Sort/ }).click()
+    await page.getByRole('option', { name: 'Year' }).click()
+    expect(await titles(page)).toEqual(['Charlie source', 'Bravo source', 'Alpha source'])
+    await page.getByRole('button', { name: /^Deletable/ }).click()
+    expect(await titles(page)).toEqual(['Bravo source', 'Alpha source'])
+    await page.getByRole('button', { name: /^Still cited/ }).click()
+    expect(await titles(page)).toEqual(['Charlie source'])
+    await page.getByRole('button', { name: /^All/ }).click()
+    await page.getByRole('combobox', { name: /Research/ }).click()
+    await page.getByRole('option', { name: 'SYNTHETIC research B' }).click()
+    expect(await titles(page)).toEqual(['Bravo source'])
+    await page.getByRole('combobox', { name: /Research/ }).click()
+    await page.getByRole('option', { name: /^All 2 research/ }).click()
+    await page.getByRole('searchbox', { name: 'Filter the Trash' }).fill('alpha')
+    expect(await titles(page)).toEqual(['Alpha source'])
+  })
+
+  test('group by research folds a research\'s sources; a choice across researches restores and deletes per research', async ({ page }) => {
+    const seen: Seen[] = []
+    await mockTrash(page, twoResearches(), seen)
+    await open(page, server.url())
+    await page.getByRole('button', { name: 'Group by research' }).click()
+    await expect(page.locator('.trash-group-head > b')).toHaveText(['SYNTHETIC research A', 'SYNTHETIC research B'])
+    await page.getByRole('button', { name: 'Hide the sources removed from SYNTHETIC research A' }).click()
+    expect(await titles(page)).toEqual(['Bravo source'])  // A's rows folded away
+    await page.getByRole('button', { name: 'Show the sources removed from SYNTHETIC research A' }).click()
+    // Pick one source of each research (the cited one too), restore: one call per research.
+    await page.getByRole('checkbox', { name: 'Select Alpha source' }).check()
+    await page.getByRole('checkbox', { name: 'Select Charlie source' }).check()
+    await page.getByRole('checkbox', { name: 'Select Bravo source' }).check()
+    const bar = page.locator('.selection-bar')
+    await expect(bar).toContainText('3 sources selected')
+    await expect(bar).toContainText('2 deletable · from 2 research')
+    await bar.getByRole('button', { name: 'Clear selection' }).click()
+    await expect(bar).toHaveCount(0)
+    await page.getByRole('checkbox', { name: 'Select Alpha source' }).check()
+    await page.getByRole('checkbox', { name: 'Select Bravo source' }).check()
+    // Delete asks first; Cancel returns focus to the bar's Delete button.
+    await bar.getByRole('button', { name: 'Delete permanently' }).click()
+    const notice = page.locator('.trash-bar-notice')
+    await expect(notice).toContainText('Delete 2 sources permanently?')
+    await notice.getByRole('button', { name: 'Cancel' }).click()
+    await expect(bar.getByRole('button', { name: 'Delete permanently' })).toBeFocused()
+    await bar.getByRole('button', { name: 'Restore' }).click()
+    await expect(page.locator('.trash-message')).toHaveText('2 sources restored.')
+    expect(seen.map(s => s.url).sort()).toEqual(['/api/researches/rA/sources/restore', '/api/researches/rB/sources/restore'])
+    expect(await titles(page)).toEqual(['Charlie source'])
+  })
+
+  test('a selection across researches is deleted one call per research', async ({ page }) => {
+    const seen: Seen[] = []
+    const data = twoResearches()
+    data.sources[1].cited = 0
+    await mockTrash(page, data, seen)
+    await open(page, server.url())
+    await page.getByRole('checkbox', { name: 'Select the 3 sources shown here' }).check()
+    const bar = page.locator('.selection-bar')
+    await bar.getByRole('button', { name: 'Delete permanently' }).click()
+    await page.locator('.trash-bar-notice').getByRole('button', { name: 'Delete permanently' }).click()
+    await expect(page.locator('.trash-message')).toHaveText('3 sources permanently deleted.')
+    expect(seen.map(s => s.url).sort()).toEqual(['/api/researches/rA/sources/purge', '/api/researches/rB/sources/purge'])
+    expect(seen.flatMap(s => JSON.parse(s.body ?? '{}').source_version_ids).sort()).toEqual(['sv1', 'sv2', 'sv3'])
+  })
+
+  test('Cancel and Escape return focus to the row\'s Delete permanently', async ({ page }) => {
+    await mockTrash(page, mixed(), [])
+    await open(page, server.url())
+    const first = rows(page).first()
+    await first.getByRole('button', { name: /^Delete permanently/ }).click()
+    await page.locator('.trash-notice').getByRole('button', { name: 'Cancel' }).click()
+    await expect(first.getByRole('button', { name: /^Delete permanently/ })).toBeFocused()
+    await first.getByRole('button', { name: /^Delete permanently/ }).click()
+    await page.keyboard.press('Escape')
+    await expect(first.getByRole('button', { name: /^Delete permanently/ })).toBeFocused()
+  })
+
+  test('with 51 rows the filter stays after a restore leaves 50 and Show more is gone', async ({ page }) => {
+    const data = mixed()
+    data.researches = []; data.tables = []; data.sources = []
+    data.templates = Array.from({ length: 51 }, (_, i) => ({ id: `tp${i}`, name: `SYNTHETIC template ${String(i).padStart(2, '0')}`, trashed_at: `2026-09-${String((i % 28) + 1).padStart(2, '0')}T10:00:00Z`, columns: 1 }))
+    await mockTrash(page, data, [])
+    await open(page, server.url())
+    await expect(rows(page)).toHaveCount(50)
+    await expect(page.getByRole('button', { name: 'Show 1 more' })).toBeVisible()
+    const field = page.getByRole('searchbox', { name: 'Filter the Trash' })
+    await field.fill('template 0')
+    const count = await rows(page).count()
+    expect(count).toBe(10)
+    await rows(page).first().getByRole('button', { name: /^Restore/ }).click()
+    await expect(rows(page)).toHaveCount(9)
+    await expect(field).toHaveValue('template 0')
+    await field.fill('')
+    await expect(rows(page)).toHaveCount(50)
+    await expect(page.getByRole('button', { name: /^Show \d+ more/ })).toHaveCount(0)
+  })
+
+  test('the Turkish delete confirmation keeps a source when either protection holds', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('deixis-ui-language', 'tr'))
+    await mockTrash(page, mixed(), [])
+    await open(page, server.url())
+    await rows(page).filter({ hasText: 'SYNTHETIC removed source 2' }).locator('.trash-delete').click()
+    const text = (await page.locator('.trash-notice').textContent()) ?? ''
+    expect(text).toContain('tutmuyorsa ve kütüphaneye kaydetmediyseniz')
+    expect(text).not.toContain('ya da kütüphaneye kaydetmediyseniz')
+    await page.locator('.trash-notice').getByRole('button', { name: 'İptal et' }).click()
+    await rows(page).filter({ hasText: 'SYNTHETIC removed source 2' }).locator('.trash-sq').click()
+    await page.getByRole('menuitem', { name: /silinebilir/ }).click()
+    expect((await page.locator('.trash-notice').textContent()) ?? '').toContain('tutmuyorsa ve kütüphaneye kaydetmediyseniz')
+  })
+
   test('on the real server a research goes to the Trash, comes back, and is deleted after a Cancel', async ({ page }) => {
     const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
     const token = (await (await api.get('/api/session')).json()).csrf_token as string

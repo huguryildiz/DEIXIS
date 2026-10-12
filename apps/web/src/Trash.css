@@ -22,7 +22,7 @@
 .app .trash-ghost.trash-delete{color:var(--destructive)}
 .app .trash-showmore{justify-self:start}
 /* The mockup's `.notice.warn`, here as a row of the list. */
-.app .trash-notice{align-items:center;gap:12px;border:1px solid transparent;border-radius:0;background:var(--warn-surface);color:var(--ink-2);font-size:13px}
+.app .trash-notice{display:flex;align-items:center;gap:12px;border:1px solid transparent;border-radius:0;background:var(--warn-surface);color:var(--ink-2);font-size:13px}
 .app .trash-notice>svg{flex:none;margin-top:2px;color:var(--tone-uncertain)}
 .app .trash-notice-body{display:grid;flex:1;gap:8px;min-width:0}
 .app .trash-acts{display:flex;flex-wrap:wrap;gap:6px}
@@ -34,8 +34,29 @@
 .app .trash-empty h2{margin:6px 0 0;color:var(--ink);font-family:var(--font-sans);font-size:14px;font-weight:600;letter-spacing:0;line-height:1.5}
 .app .trash-empty p{margin:0;color:var(--muted);font-size:13.5px}
 .app .trash-page>.trash-foot{color:var(--muted);font-size:12px}
+/* The toolbar above the list (filter, scope, research, sort, grouping, select shown) and the grouped head rows: the
+   removed-source tools the mockup list has no place for (PLACEMENTS trash-tools). */
+.app .trash-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.app .trash-select{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px}
+.app .trash-select [data-slot=select-trigger]{height:28px;max-width:230px;padding:0 9px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);box-shadow:none;color:var(--ink);font-size:12.5px}
+.app .trash-scope{display:flex;flex-wrap:wrap;gap:6px}
+.app .trash-scope button{height:28px;padding:0 12px;border:1px solid var(--strong-line);border-radius:999px;background:transparent;color:var(--muted);font-size:12.5px;font-weight:500}
+.app .trash-scope button:hover{background:var(--hover-surface);color:var(--ink)}
+.app .trash-scope button[aria-pressed=true],.app .trash-tools .trash-ghost[aria-pressed=true]{border-color:transparent;background:color-mix(in srgb,var(--accent),transparent 88%);color:color-mix(in srgb,var(--accent),var(--ink) 25%);font-weight:600}
+.app .trash-tools .trash-ghost{height:28px;padding:0 12px;font-size:12.5px}
+.app .trash-pick-all{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px;cursor:pointer}
+.app .trash-pick{flex:none;width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}
+.app .trash-row>b{display:flex;align-items:center;gap:8px}
+.app .trash-row.is-picked{background:var(--accent-tint)}
+.app .trash-group-head{background:var(--sidebar-surface)}
+.app .trash-group-head>b{min-width:0;flex:1 1 180px}
+.app .trash-group-head>p{flex:none;min-width:0}
+.app .trash-fold{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:6px;color:var(--muted)}
+.app .trash-fold:hover{background:var(--hover-surface);color:var(--ink)}
+.app .trash-bar-notice{border-radius:10px;padding:12px 14px}
+.app .trash-page>.selection-bar{bottom:20px}
 /* A long Trash is filtered (the mockup list has no filter; it appears only past 50 rows). */
-.app .trash-search{display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--muted)}
+.app .trash-search{flex:0 1 300px;min-width:200px;display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--muted)}
 .app .trash-search:focus-within{border-color:var(--accent)}
 .app .trash-search svg{flex:none}
 .app .trash-search input{flex:1;min-width:0;height:100%;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;outline:none}

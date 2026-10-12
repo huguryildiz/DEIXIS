@@ -157,8 +157,14 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
     await expect(page.locator('.home-setup')).toHaveCount(0)
 
     await page.route('**/api/connections**', async route => {
-      const response = await route.fetch()
-      await route.fulfill({ response, json: { ...(await response.json()), models: {} } })
+      // A request from the page being reloaded is disposed mid-flight; let it go instead of failing the test.
+      try {
+        const response = await route.fetch()
+        const json = await response.json()
+        await route.fulfill({ response, json: { ...json, models: {} } })
+      } catch {
+        await route.abort().catch(() => {})
+      }
     })
     await page.reload()
     const setup = page.locator('.home-setup')

@@ -49,6 +49,8 @@ SCHEMA_FILES = {
     "KillSearchQuery": "kill-search-query.schema.json",
     "ClaimAssessment": "claim-assessment.schema.json",
     "ReportSectionAnchorRepair": "report-section-anchor-repair.schema.json",
+    # Not a model output: a search plan a person saved (UI parity S23a, F18), checked by `check_user_search_plan`.
+    "UserSearchPlan": "user-search-plan.schema.json",
 }
 SCHEMA_VERSIONS = {
     "OwnerReview": "deixis.owner_review.v1",
@@ -72,6 +74,7 @@ SCHEMA_VERSIONS = {
     "KillSearchQuery": "deixis.kill_search_query.v1",
     "ClaimAssessment": "deixis.claim_assessment.v1",
     "ReportSectionAnchorRepair": "deixis.report_section_anchor_repair.v1",
+    "UserSearchPlan": "deixis.user_search_plan.v1",
 }
 # Model outputs each task may return. More than one output type is wrapped in an
 # object with one nullable property per type; exactly one must be non-null.
@@ -1840,6 +1843,63 @@ def _check_search_query(draft: dict[str, Any], report: ValidationReport) -> None
             report.issues.append(Issue("duplicate_query_term", path, f"{term!r} is also {seen[normalized]}"))
         else:
             seen[normalized] = path
+
+
+USER_PLAN_REQUIRED_PROVIDER = "openalex"  # routing, semantic page, keyword pages and the citation chain (F18)
+
+
+def check_user_search_plan(plan: Any) -> ValidationReport:
+    """A search plan a person saved (UI parity S23a, F18), checked before it becomes a scope revision.
+
+    The schema, then the same term rules a model-written query is held to (`_check_search_query`, D92), the
+    criterion's bounds, and OpenAlex among the providers. Every finding is an error and nothing is repaired: the
+    plan is refused with the reasons and the person corrects it.
+    """
+    report = ValidationReport(output_type="UserSearchPlan")
+    report.issues += [Issue("user_plan_schema_invalid", "/" + "/".join(map(str, e.absolute_path)), e.message)
+                      for e in canonical_validator("UserSearchPlan").iter_errors(plan)]
+    if report.issues:
+        return report
+    _check_search_query(plan, report)
+    if USER_PLAN_REQUIRED_PROVIDER not in plan["providers"]:
+        report.issues.append(Issue("openalex_required", "/providers",
+                                   "OpenAlex cannot be left out: the search and the citation chain run on it"))
+    if plan["criterion"] is not None:
+        _check_user_criterion(plan["criterion"], report)
+    if report.ok:
+        report.result = plan
+    return report
+
+
+def _check_user_criterion(criterion: dict[str, Any], report: ValidationReport) -> None:
+    """The criterion of a person's plan: text that can be stored, at least one core part, no part name twice, and
+    phrases of one to four words, none twice in a part. Unlike a model proposal it may have fewer than six phrases
+    a part: the person is not asked to write an author's vocabulary."""
+    _check_nonblank_text(criterion["text"], "/criterion/text", report)
+    if not any(part["role"] == "core" for part in criterion["parts"]):
+        report.issues.append(Issue("criterion_core_missing", "/criterion/parts", "at least one core part is required"))
+    names: Counter[str] = Counter()
+    for index, part in enumerate(criterion["parts"]):
+        path = f"/criterion/parts/{index}"
+        if not (_check_nonblank_text(part["name"], f"{path}/name", report)
+                and _check_nonblank_text(part["definition"], f"{path}/definition", report)):
+            continue
+        names[normalize_phrase(part["name"])] += 1
+        seen: set[str] = set()
+        for position, phrase in enumerate(part["phrases"]):
+            normalized = normalize_phrase(phrase)
+            if not normalized:
+                report.issues.append(Issue("criterion_phrase_empty", f"{path}/phrases/{position}", phrase))
+                continue
+            if len(normalized.split()) > MAX_PHRASE_WORDS:
+                report.issues.append(Issue("criterion_phrase_too_long", f"{path}/phrases/{position}", phrase))
+            if normalized in seen:
+                report.issues.append(Issue("duplicate_criterion_phrase", f"{path}/phrases/{position}", normalized))
+            seen.add(normalized)
+    for name in sorted(n for n, count in names.items() if count > 1):
+        report.issues.append(Issue("duplicate_criterion_part", "/criterion/parts", f"{name!r} names more than one part"))
+    for index, word in enumerate(criterion["exclusion_title_words"]):
+        _check_nonblank_text(word, f"/criterion/exclusion_title_words/{index}", report)
 
 
 def _check_abstract_screening(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:

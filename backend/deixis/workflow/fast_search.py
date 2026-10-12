@@ -12,7 +12,7 @@ from deixis.providers.common import FIRST_PAGE, SearchOutcome
 from deixis.providers.registry import CONNECTORS, reading
 from deixis.storage.db import now, transaction
 from deixis.providers import openalex
-from deixis.workflow import english_question, fast_path, seed_match
+from deixis.workflow import english_question, fast_path, seed_match, user_plan
 
 
 def seed_query(question, envelope):
@@ -83,9 +83,12 @@ def build_plan(store, run, scope, queries, seed_context=None):
         query, seed, parts = seed_query(sentence[0], seed_context)
         sentence = (query, sentence[1])
     deep = policy["mode"] == "deep"
+    # The providers a person left out of a saved search plan get no request (S23a); OpenAlex cannot be left out.
+    excluded = user_plan.excluded(scope)
     keyword = [{"index": i, "query": q} for i, q in enumerate(queries) if q["provider_id"] == "openalex"]
     s2_index = next((i for i, q in enumerate(queries)
-                     if deep and q["provider_id"] == "semantic_scholar" and q.get("endpoint") == "bulk"), None)
+                     if deep and q["provider_id"] == "semantic_scholar" and q.get("endpoint") == "bulk"
+                     and "semantic_scholar" not in excluded), None)
     s2 = queries[s2_index] if s2_index is not None else None
     return {"version": 1, "semantic": {"provider_id": "openalex", "endpoint": "semantic",
             "query_text": openalex.semantic_text(sentence[0]) if sentence else None, "limit": policy["semantic_top"],
@@ -95,9 +98,12 @@ def build_plan(store, run, scope, queries, seed_context=None):
             "page_size": 100, "order": "page_then_query", "s2_bulk": s2 if deep else None,
             "s2_bulk_index": s2_index,
             "s2_reserved": 500 if deep else 0,
-            "dropped": [{"index": i, "query": q, "reason": "openalex_only"}
+            "dropped": [{"index": i, "query": q,
+                         "reason": user_plan.EXCLUDED if q["provider_id"] in excluded else "openalex_only"}
                         for i, q in enumerate(queries) if q["provider_id"] != "openalex" and i != s2_index],
-            "expansion": "fast_path_frozen_plan"}
+            "expansion": "fast_path_frozen_plan",
+            # Only a run of a revision with a saved plan names this, so every other plan freezes as before.
+            **({"excluded_providers": excluded} if user_plan.of(scope) is not None else {})}
 
 
 def stored_plan(store, run):
@@ -159,8 +165,17 @@ async def execute(flow, run, scope, plan, retry_failed):
     def stopped():
         return flow._stop_requested(run_id, run["scope_revision"]) or fast_path.past_deadline(store, run, "search")
 
+    excluded = plan.get("excluded_providers") or []
+
     async def send_page(query, key, number, cursor, before, total, limit, klass, index, terminal=None, after=None):
         nonlocal failure
+        if query["provider_id"] in excluded:
+            # The frozen plan leaves this provider out (S23a): no request, whatever planned it.
+            step = store.step(run_id, key, f"provider_search:{query['provider_id']}")
+            if step["status"] == "pending":
+                store.finish_step(step["id"], "cancelled", error_code=user_plan.EXCLUDED,
+                                  output={"stop_reason": user_plan.EXCLUDED, "result_count": 0})
+            return store.step_output(step["id"]), 0
         connector = reading(query)
         allowance = page_allowance(query, effort, run["budget"])
         page = Page(number, cursor, before, total, plan["keyword_cap"] if klass == 1 else limit,
@@ -309,9 +324,10 @@ async def execute(flow, run, scope, plan, retry_failed):
                                   output={"stop_reason": "deadline", "result_count": 0})
         elif plan["s2_reserved"]:
             step = store.step(run_id, "search:fast:s2_bulk", "provider_search:semantic_scholar")
+            reason = user_plan.EXCLUDED if "semantic_scholar" in excluded else "not_planned"
             if step["status"] == "pending":
-                store.finish_step(step["id"], "cancelled", error_code="not_planned",
-                                  output={"stop_reason": "not_planned", "result_count": 0})
+                store.finish_step(step["id"], "cancelled", error_code=reason,
+                                  output={"stop_reason": reason, "result_count": 0})
 
     # Finish the independent S2 slot before admitting keyword pages (request 1).
     # Its transport overlaps the first keyword page; writes keep admission order.

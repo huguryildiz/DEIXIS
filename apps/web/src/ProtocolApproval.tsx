@@ -22,7 +22,7 @@ export function ProtocolApproval({ approval }: { approval: RunApproval }) {
       {approved.queries.length > 0 && <div className="approval-diff-group">
         <strong>{t('Queries sent')}</strong>
         <ul>{approved.queries.map(query => <li key={`${query.provider_id}:${query.query_text}`}>
-          {query.origin && <small>{t(query.origin === 'model' ? 'model' : 'from the question’s words')}</small>} <code>{query.query_text}</code></li>)}</ul>
+          {query.origin && <small>{t(query.origin === 'model' ? 'model' : query.origin === 'user' ? 'your plan' : 'from the question’s words')}</small>} <code>{query.query_text}</code></li>)}</ul>
       </div>}
       {approval.chaining && <ChainingSection chaining={approval.chaining} />}
     </div>}

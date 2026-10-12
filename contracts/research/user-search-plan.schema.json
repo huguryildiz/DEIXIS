@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/user-search-plan.schema.json",
+  "title": "UserSearchPlan",
+  "description": "A search plan a person edited and saved as a new scope revision (UI parity S23a, F18). It is not a model output: a discovery run of that revision builds its query, block labels and criterion from it instead of asking a model. Terms follow the SearchQuery term rules (at most 6 chosen terms in total, at most 4 words each, no quotation marks, brackets or Boolean operators, no term twice); code counts every term on OpenAlex, puts a backup in place of a term no record holds and compiles the query. OpenAlex is required; the other providers may be left out.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "setting",
+    "task",
+    "setting_backup",
+    "task_backup",
+    "criterion",
+    "providers"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "deixis.user_search_plan.v1"
+    },
+    "setting": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "description": "Where the work happens: the field, system, population or material.",
+      "items": {"$ref": "#/$defs/term"}
+    },
+    "task": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "description": "What is looked for in that field.",
+      "items": {"$ref": "#/$defs/term"}
+    },
+    "setting_backup": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "description": "Used in order when a chosen setting term finds no record on OpenAlex.",
+      "items": {"$ref": "#/$defs/term"}
+    },
+    "task_backup": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "description": "Used in order when a chosen task term finds no record on OpenAlex.",
+      "items": {"$ref": "#/$defs/term"}
+    },
+    "criterion": {
+      "description": "The inclusion criterion the abstract and full-text stages read. Null means the person set none; no model is asked for one.",
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["text", "parts", "exclusion_title_words"],
+          "properties": {
+            "text": {"type": "string", "minLength": 1, "maxLength": 600},
+            "parts": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 5,
+              "description": "At least one core part; an aspect is never an inclusion requirement.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "definition", "role", "phrases"],
+                "properties": {
+                  "name": {"type": "string", "minLength": 1, "maxLength": 60},
+                  "definition": {"type": "string", "minLength": 1, "maxLength": 400},
+                  "role": {"type": "string", "enum": ["core", "aspect"]},
+                  "phrases": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 15,
+                    "description": "Words an author of such a paper writes, one to four words each.",
+                    "items": {"type": "string", "minLength": 1, "maxLength": 80}
+                  }
+                }
+              }
+            },
+            "exclusion_title_words": {
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 30,
+              "items": {"type": "string", "minLength": 1, "maxLength": 40}
+            }
+          }
+        }
+      ]
+    },
+    "providers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "The providers this plan may send requests to. OpenAlex must be in it: the search and the citation chain run on OpenAlex. Leaving Semantic Scholar, Crossref or Scopus out means no search and no abstract lookup request goes to it.",
+      "items": {"type": "string", "enum": ["openalex", "semantic_scholar", "crossref", "scopus"]}
+    }
+  },
+  "$defs": {
+    "term": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["term"],
+      "properties": {
+        "term": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "1 to 4 words, no quotation marks, brackets or Boolean operators."
+        }
+      }
+    }
+  }
+}

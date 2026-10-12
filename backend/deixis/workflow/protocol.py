@@ -43,9 +43,13 @@ def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: li
     code's query alone says that instead."""
     from deixis.domain.contracts import SCHEMA_VERSIONS
     from deixis.domain.skill import RUNTIME_FILES
-    from deixis.workflow.expansion import queried_form, queried_terms
 
     record = vocabulary["search_query"]
+    if record.get("origin") == "user":
+        # A person's saved plan (S23a): no prompt, no model and no StepInput, because none was asked. The plan itself
+        # is in the body's `user_plan`; this block keeps the counts that decided the query, as for a model's.
+        return {"status": record["status"], "origin": "user", "prompt": None, "model": None, "attempts": [],
+                "plan_sha256": record["plan_sha256"], **_query_outcome(vocabulary, queries)}
     body = {
         "status": record["status"],
         # The prompt version: its method files, whose text `skill_package_hash` above covers, and the answer's schema.
@@ -55,10 +59,17 @@ def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: li
     }
     if record["status"] != "ready":
         return body | {"choice": record.get("choice"), "code_query_searched": True}
-    code = vocabulary["code_query"]
     body["prompt"]["skill_package_hash"] = record["skill_package_hash"]  # the StepInput's, not the freeze's
-    return body | {
-        "step_input_id": record["step_input_id"], "resolved_model": record["resolved_model"],
+    return body | {"step_input_id": record["step_input_id"], "resolved_model": record["resolved_model"],
+                   **_query_outcome(vocabulary, queries)}
+
+
+def _query_outcome(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
+    """The answer, the counts that decided the query and what came of the code's query beside it."""
+    from deixis.workflow.expansion import queried_form, queried_terms
+
+    record, code = vocabulary["search_query"], vocabulary["code_query"]
+    return {
         "answer": record["answer"], "checks": record["checks"], "warnings": record["warnings"],
         "terms": record["meta"],
         # Whether a code-origin query is really among the compiled ones: the switch can be on while the request
@@ -108,6 +119,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     from deixis.workflow.search_query import THRESHOLDS as SEARCH_QUERY_THRESHOLDS
     from deixis.workflow.chaining import policy as chain_policy
     from deixis.workflow import seed_match as seed_match_rules
+    from deixis.workflow import user_plan as user_plan_rules
 
     queried = [t for t in vocabulary["terms"] if not t["dropped"]] if vocabulary else []
     # The words this research reads a title for a survey with, and the ones its own question took away (SW5.1).
@@ -156,6 +168,9 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
            if criterion else {}),
         # How this vocabulary and criterion were agreed before the freeze (SW2.6, SW15.3).
         **({"approval": approval} if approval else {}),
+        # The search plan a person saved, when this revision has one (S23a, F18): the plan, its digest, the revision
+        # holding it and the providers it leaves out. Beside `search_query`, which then says origin `user`.
+        **({"user_plan": user_plan_block} if (user_plan_block := user_plan_rules.protocol_block(scope)) else {}),
         # Who wrote the query and what came of it, when a model wrote it (D92). A body without it is 13g's.
         **({"search_query": _search_query(scope, vocabulary, queries)}
            if vocabulary and vocabulary.get("search_query") else {}),

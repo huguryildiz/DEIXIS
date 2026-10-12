@@ -981,6 +981,7 @@ def create_app(
     register_library_routes(app, settings)
     register_screen_more_routes(app)
     from deixis.api.followup_turns_routes import register_followup_turns_routes; register_followup_turns_routes(app)
+    from deixis.api.search_plan_routes import register_search_plan_routes; register_search_plan_routes(app)
 
     @app.exception_handler(WatchRefusal)
     async def watch_refusal(_: Request, exc: WatchRefusal):

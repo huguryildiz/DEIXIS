@@ -32,6 +32,7 @@ from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, now, transaction
 from deixis.workflow.decisions import DecisionStore
+from deixis.workflow import user_plan
 from deixis.workflow.store import Store
 
 MAX_LOOKUP_REQUESTS = 200  # planned requests of one run over both sources; hand-picked, not measured
@@ -95,8 +96,15 @@ def asked_out(store: Store, source_version_id: str, provider: str) -> bool:
 
 
 def in_scope(scope: dict[str, Any], provider: str) -> bool:
-    """A source is asked only when the research chose it and it is configured — `_count_probe`'s rule."""
-    return provider in scope["providers"] and CONNECTORS[provider].access_mode() != "not_configured"
+    """A source is asked only when the research chose it, it is configured — `_count_probe`'s rule — and the person
+    did not leave it out of this revision's saved search plan (UI parity S23a)."""
+    return (provider in scope["providers"] and CONNECTORS[provider].access_mode() != "not_configured"
+            and provider not in user_plan.excluded(scope))
+
+
+def _not_asked(scope: dict[str, Any], provider: str) -> str:
+    """Why a source that is not `in_scope` is not asked, as its plan records it."""
+    return user_plan.EXCLUDED if provider in user_plan.excluded(scope) else "out_of_scope"
 
 
 def _records(store: Store, research_id: str, scope_revision: int, only: set[str] | None = None) -> list[dict[str, Any]]:
@@ -150,7 +158,7 @@ def plan_semantic_scholar(store: Store, research_id: str, scope_revision: int, s
                           words: tuple[str, ...], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None) -> dict[str, Any]:
     """Who Semantic Scholar is asked about, split into batches; `outside_limit` counts the records left over."""
     if not in_scope(scope, "semantic_scholar"):
-        return {"batches": [], "outside_limit": 0, "skipped": "out_of_scope"} | _outside_shortlist(store, research_id, scope_revision, only)
+        return {"batches": [], "outside_limit": 0, "skipped": _not_asked(scope, "semantic_scholar")} | _outside_shortlist(store, research_id, scope_revision, only)
     wanted = [{"source_version_id": row["source_version_id"], "doi": row["doi"], "reason": reason}
               for row in _records(store, research_id, scope_revision, only)
               if (reason := _wanted(row, words)) and not answered(store, row["source_version_id"], "semantic_scholar")]
@@ -169,7 +177,7 @@ def plan_crossref(store: Store, research_id: str, scope_revision: int, scope: di
     failure is not the other's.
     """
     if not in_scope(scope, "crossref"):
-        return {"chunks": [], "outside_limit": 0, "skipped": "out_of_scope"} | _outside_shortlist(store, research_id, scope_revision, only)
+        return {"chunks": [], "outside_limit": 0, "skipped": _not_asked(scope, "crossref")} | _outside_shortlist(store, research_id, scope_revision, only)
     wanted = [{"source_version_id": row["source_version_id"], "doi": row["doi"]}
               for row in _records(store, research_id, scope_revision, only)
               if _wanted(row, words) == "abstract" and not row["has_abstract"]
@@ -386,7 +394,7 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
     before Scopus became an abstract source.
     """
     if not in_scope(scope, "scopus"):
-        return {"chunks": [], "outside_limit": 0, "skipped": "out_of_scope"}
+        return {"chunks": [], "outside_limit": 0, "skipped": _not_asked(scope, "scopus")}
     step = store.step(run["id"], "lookup_plan:scopus", "code:lookup_plan")
     if step["status"] == "succeeded":
         return step["output"]

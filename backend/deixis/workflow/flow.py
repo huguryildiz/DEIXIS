@@ -66,6 +66,7 @@ from deixis.workflow import ranking as ranking_rules
 from deixis.workflow import report_pipeline
 from deixis.workflow import routing as routing_rules
 from deixis.workflow import search_query as search_query_rules
+from deixis.workflow import user_plan as user_plan_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
 from deixis.workflow.equations import EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, equation_state
@@ -184,6 +185,12 @@ def answer_source_order(included: list[str], facts: dict[str, tuple[bool, int]],
         relevance = {s: 1 / (61 + lexical_rank[s]) + (1 / (61 + semantic_rank[s]) if s in semantic_rank else 0.0) for s in included}
     # Selection order stays a signal (D17); the identifier only breaks what is equal down to that order (SW14.6).
     return sorted(included, key=lambda s: (not facts.get(s, (False, 0))[0], -facts.get(s, (False, 0))[1], -relevance[s], position[s], s))
+
+
+def _planned_providers(scope: dict[str, Any]) -> list[str]:
+    """The scope's providers less those the person left out of a saved search plan (S23a); all of them otherwise."""
+    excluded = user_plan_rules.excluded(scope)
+    return [provider for provider in scope["providers"] if provider not in excluded]
 
 
 def _sought_terms(vocabulary: dict[str, Any]) -> list[str]:
@@ -692,7 +699,7 @@ class ResearchFlow:
         built = await vocabulary_rules.build_vocabulary(extraction, self._count_probe(scope, run_id))
         built["labelling"] = labelling
         self._checkpoint(run_id, revision)
-        queries = query_compiler.compile_block_queries(built, scope["providers"], budget["max_provider_requests"])
+        queries = query_compiler.compile_block_queries(built, _planned_providers(scope), budget["max_provider_requests"])
         self.store.finish_step(step["id"], "succeeded", output={
             "vocabulary": built, "queries": queries, "query_compiler": query_compiler.BLOCKS_VERSION})
         # The counts are stored before the run stops, so resuming re-reads them instead of paying for them again.
@@ -702,8 +709,8 @@ class ResearchFlow:
                        ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """The code vocabulary as the step left it. Where a model writes the query, a code query that cannot be
         searched does not stop the run here: it is left out beside the model's, or stops the run later if the user
-        chooses it alone (D92)."""
-        if self.deps.settings.search_query == "model":
+        chooses it alone (D92). The same holds beside a person's saved plan (S23a), whatever the setting."""
+        if self.deps.settings.search_query == "model" or self._user_plan_run(run_id):
             return built, queries
         return self._proposed(run_id, built, queries)
 
@@ -723,6 +730,8 @@ class ResearchFlow:
         after the service is restarted with `search_query=code`, so its resume never searches the code's query alone.
         """
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        if user_plan_rules.of(scope) is not None:
+            return await self._user_search_query(run, scope, code_vocabulary, code_queries)
         step = self.store.existing_step(run_id, "search_query")
         if step is None and self.deps.settings.search_query != "model":
             return code_vocabulary, code_queries
@@ -806,7 +815,7 @@ class ResearchFlow:
                   "skill_package_hash": self.store.step_input_payload(answer["step_input_id"])["skill_package_hash"],
                   "answer": answer["result"]}
         built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, record)
-        queries = search_query_rules.compile_queries(built, scope["providers"], run["budget"]["max_provider_requests"])
+        queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
         built = search_query_rules.with_compiled(built, queries)
         # D6, diagnosis only: the model's terms that share no word with the question and some word with the seeds.
         seeded = {"seed_terms": search_query_rules.seed_terms(built["terms"], [scope["question"]] + [
@@ -815,6 +824,47 @@ class ResearchFlow:
         self.store.finish_step(step["id"], "succeeded", output=output | {
             "status": "ready", "vocabulary": built, "queries": queries,
             "query_compiler": query_compiler.BLOCKS_VERSION, "seed_passages_sha256": seed_sha} | seeded)
+        return self._proposed(run_id, built, queries)
+
+    def _user_plan_run(self, run_id: str) -> bool:
+        run = self.store.run(run_id)
+        return user_plan_rules.of(self.store.scope(run["research_id"], run["scope_revision"])) is not None
+
+    async def _user_search_query(self, run: dict[str, Any], scope: dict[str, Any], code_vocabulary: dict[str, Any],
+                                 code_queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """The query of a person's saved plan (UI parity S23a, F18), in place of the model's: no model is called.
+
+        The plan's terms are counted on OpenAlex and a backup takes the place of a term no record holds, exactly as
+        for a model-written query (`search_query.check`); the code's query from the question is searched beside it.
+        The step is keyed `search_query` like the model's, so a resumed run reads the stored counts and asks nothing
+        twice. A block the counts leave with no term ends the run (`user_plan_unsearchable`) before anything is
+        frozen or searched: the person changes the plan in a new revision.
+        """
+        run_id, revision = run["id"], run["scope_revision"]
+        plan = user_plan_rules.of(scope)
+        step = self.store.step(run_id, "search_query", "code:user_search_query")
+        if step["status"] == "succeeded":
+            stored = step["output"]
+            return self._proposed(run_id, search_query_rules.settled(stored["vocabulary"], stored["queries"]),
+                                  stored["queries"])
+        self._checkpoint(run_id, revision)
+        output = step["output"] or {}
+        if output.get("checked") is not None:
+            checked = output["checked"]
+        else:
+            checked = await search_query_rules.check(user_plan_rules.answer(plan), self._count_probe(scope, run_id))
+            # The person, not a model, chose these terms; the record says so wherever a term's origin is read.
+            checked["terms"] = [term | {"origin": user_plan_rules.ORIGIN} for term in checked["terms"]]
+            self.store.set_step_output(step["id"], {"checked": checked})
+        if not checked["searchable"]:
+            self._fail(run_id, "user_plan_unsearchable", {"checks": checked["checks"]})
+        built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, user_plan_rules.record(plan))
+        queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
+        built = search_query_rules.with_compiled(built, queries)
+        self.store.start_step(step["id"])
+        self.store.finish_step(step["id"], "succeeded", output={
+            "status": "ready", "origin": user_plan_rules.ORIGIN, "checked": checked, "vocabulary": built,
+            "queries": queries, "query_compiler": query_compiler.BLOCKS_VERSION})
         return self._proposed(run_id, built, queries)
 
     def _seed_passages(self, run_id: str, scope: dict[str, Any]) -> tuple[str | None, list[dict[str, Any]] | None]:
@@ -870,7 +920,8 @@ class ResearchFlow:
         """
         run_id, revision = run["id"], run["scope_revision"]
         phrases = vocabulary_rules.labelling_phrases(extraction)
-        skipped = ("user_key_terms" if extraction.block_assignment == "user" else
+        skipped = ("user_plan" if user_plan_rules.of(scope) is not None else  # the person's plan has its blocks (S23a)
+                   "user_key_terms" if extraction.block_assignment == "user" else
                    "no_phrases" if not phrases else
                    "too_many_phrases" if len(phrases) > vocabulary_rules.MAX_LABELLED_PHRASES else None)
         if skipped:
@@ -916,8 +967,14 @@ class ResearchFlow:
         if step["status"] == "succeeded":
             return _criterion_result(step["output"])
         self.store.start_step(step["id"])
-        frozen = self.store.frozen_criterion(rid, scope["question"], scope.get("steering"))
-        if frozen is not None:
+        plan = user_plan_rules.of(scope)
+        frozen = None if plan is not None else self.store.frozen_criterion(rid, scope["question"], scope.get("steering"))
+        if plan is not None:
+            # The person's saved plan holds the criterion; no proposal is asked for (S23a). None: they set none.
+            given = user_plan_rules.criterion(plan, _sought_terms(vocabulary))
+            output = {"origin": user_plan_rules.ORIGIN if given else None, "criterion": given,
+                      "protocol_revision": None, "failures": []}
+        elif frozen is not None:
             taken = frozen.pop("protocol_revision")  # where it was read from; the criterion fields stay as they were
             output = {"origin": "protocol", "criterion": frozen, "protocol_revision": taken, "failures": []}
         else:
@@ -962,10 +1019,13 @@ class ResearchFlow:
         failures = (self.store.step(run_id, "criterion", "code:criterion")["output"] or {}).get("failures", [])
         routing = self._routing_step(run_id)
         digest = approval_rules.proposal_hash(vocabulary, criterion)
-        record = {
+        exclusion = approval_rules.exclusion_words_in_question(scope["question"], criterion)
+        plan = user_plan_rules.of(scope)
+        # A person's saved plan is approved by saving it (S23a): `user_edited`, never `unattended`.
+        record = user_plan_rules.approval(digest, plan, exclusion) if plan is not None else {
             "mode": "unattended", "approved_by": "unattended", "asked": False, "edited": False,
             "proposal_hash": digest, "term_edits": 0, "criterion_edited": False,
-            "exclusion_word_in_question": approval_rules.exclusion_words_in_question(scope["question"], criterion),
+            "exclusion_word_in_question": exclusion,
         }
         self.store.finish_step(step["id"], "succeeded", output={
             "proposal": {"vocabulary": vocabulary, "queries": queries, "criterion": criterion,
@@ -1186,7 +1246,8 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         query = routing_rules.gate_query(vocabulary)
         reads = await self._distribution(scope, query)
-        routing = routing_rules.route(scope["providers"], query, *reads[query] if query in reads else (None, "unavailable"))
+        routing = routing_rules.route(scope["providers"], query, *reads[query] if query in reads else (None, "unavailable"),
+                                      excluded=user_plan_rules.excluded(scope))
         built, compiled = self._compiled(vocabulary, routing["providers"], run["budget"])
         # Written before the run can stop, so a resumed run reads the answer back instead of asking again.
         self.store.finish_step(step["id"], "succeeded", output={

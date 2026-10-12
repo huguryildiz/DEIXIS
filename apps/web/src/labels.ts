@@ -263,6 +263,7 @@ const pauseReasons: Record<string, string> = {
   vocabulary_empty: 'No search term could be built from the question, so nothing was searched. Revise the question below, for example with other words for the topic or with key terms, and search again.',
   vocabulary_too_broad: 'Every search term in the question is too common to search on its own, so nothing was searched. Revise the question below with a narrower topic or with key terms, and search again.',
   search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
+  user_plan_unsearchable: 'No record on OpenAlex holds any word of one block of your search plan, backups included, so nothing was searched. Edit the plan and search again.',
 }
 export { reviewFindingLabels, reviewFocusLabels, reviewDecisionLabels, reviewStaleLabels, reviewNotReviewedLabels, reviewContextLabels, notReviewedText } from './review/labels'
 export const pauseReasonText = (reason: string | null, detail?: unknown) => {
@@ -334,6 +335,7 @@ export const searchQueryTriesLeft = (run: { error: unknown }) => (run.error as {
 // ---- the frozen protocol of a discovery run (D80) ----
 const approvedByNames: Record<string, string> = {
   unattended: 'Nobody reviewed the search vocabulary; the fast path went on without asking.',
+  user: 'You edited and saved this search plan; it was searched as you saved it.',
 }
 export const approvedByText = (by: string | null) => (by ? t(approvedByNames[by] ?? by) : '')
 
@@ -585,7 +587,7 @@ export const queueAnsweredText: Record<QueueAnswer, string> = {
 
 // Slice 19: the arm kinds of a discovery run, in run order, and the origin of a query (D92).
 export const armKindLabels: Record<string, string> = { keyword: 'Keywords', chain: 'Citation chaining' }
-export const queryOriginLabels: Record<string, string> = { model: 'the model’s query', code: 'the code’s query' }
+export const queryOriginLabels: Record<string, string> = { model: 'the model’s query', code: 'the code’s query', user: 'your plan’s query' }
 // The ranking signals (D79) and the two stored orders the signal table reads beside them.
 export const signalLabels: Record<string, string> = {
   bm25: 'BM25', blocks: 'Concept blocks', tfidf: 'TF-IDF', graph: 'Citation graph', joint: 'Terms named together',

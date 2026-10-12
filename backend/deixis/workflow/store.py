@@ -542,6 +542,8 @@ class Store:
         snapshot = read_seed_snapshot(json.loads(raw) if (raw := scope.pop("seed_snapshot_json", None)) else None)
         scope["seeds"], scope["seed_key"] = snapshot["seeds"], snapshot["seed_key"]
         scope["seed_not_selected"], scope["seed_skipped"] = snapshot["not_selected"], snapshot["skipped"]
+        # The search plan a person saved with this revision (UI parity S23a, F18), or None.
+        scope["user_plan"] = json.loads(raw) if (raw := scope.pop("user_plan_json", None)) else None
         # A person's model changes (UI parity S17, F10) hold for the research, whatever its revision: every scope read
         # gives the models in effect now, so a step input built after a change carries the new model. What a finished
         # step ran on stays in its StepInput and model session, never in this read.
@@ -601,6 +603,8 @@ class Store:
             current.update(revision=revision, question=question.strip(), steering=steering, created_at=now())
             if key_terms is not None and "key_terms" in current:
                 current["key_terms"] = key_terms
+            # A person's search plan belongs to the revision it was saved with; a new question does not inherit it.
+            current.pop("user_plan_json", None)
             if current.get("seed_mode") == "uploaded_seed":
                 current["seed_snapshot_json"] = None
             names = ", ".join(current)
@@ -621,6 +625,34 @@ class Store:
                     " WHERE research_id = ? AND scope_revision = ?",
                     (revision, now(), research_id, revision - 1))
             self._event(research_id, "scope_revised", {"scope_revision": revision})
+        return revision
+
+    def save_user_plan(self, research_id: str, expected_version: int, plan: dict[str, Any]) -> int:
+        """Save a person's search plan as the next scope revision (UI parity S23a, F18); returns that revision.
+
+        Every other field of the current revision is kept, the question's English sentence goes with it, and the
+        plan is stored as given (`user_plan.check` has passed it). A run of an earlier revision stops at its next
+        checkpoint, as with any newer revision; the plan is never edited afterwards.
+        """
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            current = dict(self.conn.execute(
+                "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?",
+                (research_id, research["current_scope_revision"])).fetchone())
+            revision = research["current_scope_revision"] + 1
+            current.update(revision=revision, created_at=now(), user_plan_json=dumps(plan))
+            self.conn.execute(
+                f"INSERT INTO scope_revisions ({', '.join(current)}) VALUES ({', '.join('?' for _ in current)})",
+                tuple(current.values()))
+            self.conn.execute(
+                "UPDATE researches SET current_scope_revision = ?, version = version + 1, updated_at = ? WHERE id = ?",
+                (revision, now(), research_id))
+            self.conn.execute(
+                "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
+                " SELECT research_id, ?, text, origin, ? FROM scope_english_questions"
+                " WHERE research_id = ? AND scope_revision = ?", (revision, now(), research_id, revision - 1))
+            self._event(research_id, "scope_revised", {"scope_revision": revision, "user_plan": True})
         return revision
 
     # ---- the built-in model's English sentence (slice 21) ---------------------------------------------
@@ -836,6 +868,7 @@ class Store:
                 "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?", (research_id, scope["revision"])
             ).fetchone())
             row.update(revision=revision, seed_mode="uploaded_seed", seed_snapshot_json=dumps(snapshot), created_at=now())
+            row.pop("user_plan_json", None)  # other seeds are a new plan; a person's saved plan is not carried over
             columns = list(row)
             self.conn.execute(
                 f"INSERT INTO scope_revisions ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
@@ -915,6 +948,9 @@ class Store:
             if body.get("inclusion_criterion") is None or body.get("question") != question:
                 continue
             if body.get("steering") != steering:
+                continue
+            if body.get("user_plan"):
+                # A criterion from a person's saved search plan holds for that plan's revision only (S23a).
                 continue
             origin = body.get("criterion_origin") or {}
             return {

@@ -36,13 +36,16 @@ def gate_query(vocabulary: dict[str, Any] | None) -> str | None:
     return " AND ".join(groups) if groups else None
 
 
-def _usable(provider: str, scope_providers: list[str]) -> str | None:
-    """Why this connector cannot be searched by an sw run of this scope, or None when it can."""
+def _usable(provider: str, scope_providers: list[str], excluded: tuple[str, ...] | list[str] = ()) -> str | None:
+    """Why this connector cannot be searched by an sw run of this scope, or None when it can. `excluded` are the
+    providers a person left out of a saved search plan (UI parity S23a)."""
     connector = CONNECTORS[provider]
     if not connector.sw_searchable:
         return "not_in_sw_search"
     if provider not in scope_providers:
         return "not_in_scope"
+    if provider in excluded:
+        return "excluded_by_user"
     if connector.access_mode() == "not_configured":
         return "not_configured"
     return None
@@ -54,7 +57,7 @@ def needs_distribution(scope_providers: list[str]) -> bool:
 
 
 def route(scope_providers: list[str], query: str | None, distribution: dict[str, Any] | None,
-          status: str) -> dict[str, Any]:
+          status: str, excluded: tuple[str, ...] | list[str] = ()) -> dict[str, Any]:
     """The routing record: the distribution read, every searchable connector chosen or left out with its reason, and
     the providers the queries are compiled for, in search order (OpenAlex, Semantic Scholar, then the chosen domain
     sources in registry order).
@@ -74,7 +77,7 @@ def route(scope_providers: list[str], query: str | None, distribution: dict[str,
     for provider, connector in CONNECTORS.items():
         if not connector.searchable:
             continue
-        reason = _usable(provider, scope_providers)
+        reason = _usable(provider, scope_providers, excluded)
         if provider in ALWAYS_SEARCHED:
             (left_out if reason else chosen).append({"provider_id": provider, "reason": reason or "always"})
             continue

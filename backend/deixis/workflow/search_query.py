@@ -233,9 +233,11 @@ def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int
 
     Interleaving keeps the pair the measurement read — both queries on OpenAlex — on every effort, however few
     queries it allows. A code query whose text is the model's own is not sent twice. Every query says where it came
-    from (`origin`). `routed` false is an sw run from before D93 (`compile_block_queries`).
+    from (`origin`: `model`, `user` for a person's saved plan, or `code`). `routed` false is an sw run from before D93 (`compile_block_queries`).
     """
-    model = {q["provider_id"]: q | {"origin": "model"}
+    # The terms of a person's saved search plan (S23a) take the model's place and say so.
+    origin = "user" if vocabulary["search_query"].get("origin") == "user" else "model"
+    model = {q["provider_id"]: q | {"origin": origin}
              for q in query_compiler.compile_block_queries(vocabulary, providers, limit, routed=routed)}
     code = {q["provider_id"]: q | {"origin": "code"} for q in vocabulary["code_query"]["queries"]} \
         if vocabulary["code_query"]["searched"] else {}

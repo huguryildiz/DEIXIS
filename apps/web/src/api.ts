@@ -294,10 +294,10 @@ export type ApprovalSide = {
   gate_count: number | null; too_broad: boolean
   criterion: ApprovalCriterion | null
   // The compiled text of every query the run sends, and which vocabulary wrote each one (D92).
-  queries: { provider_id: string; query_text: string; origin?: 'model' | 'code' }[]
+  queries: { provider_id: string; query_text: string; origin?: 'model' | 'code' | 'user' }[]
 }
 export type RunApproval = {
-  // Who let the run search with this protocol; in practice always 'unattended' (nobody is asked any more).
+  // Who let the run search with this protocol: 'unattended' (nobody was asked), or 'user' for a plan the person saved (S23a).
   approved_by: string | null; proposal_hash: string
   approved: ApprovalSide
   // How the run chains citations (the fast chain), frozen in its budget when it was queued; null for a run that
@@ -1655,4 +1655,40 @@ export const followupApi = {
   ask: (researchId: string, question: string, expectedScopeRevision: number, idempotencyKey: string) =>
     request<FollowupTurn>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns`,
       json('POST', { question, expected_scope_revision: expectedScopeRevision }, { 'Idempotency-Key': idempotencyKey })),
+}
+
+// The search plan panel (S23a; api/search_plan_routes.py). The person edits the words of each block, the criterion
+// and the optional providers; Query 1 and Query 2 are read-only strings compiled by code (`compiled_from`
+// `plan_words` before the saved plan has run, `protocol` once a run froze it). Saving makes a new scope revision and
+// starts no run. A plan that breaks a rule answers 422 with code `invalid_search_plan` and `issues` (the SearchQuery
+// term rules, `openalex_required`, `provider_not_in_scope`); a stale `expected_version` answers 409.
+export type SearchPlanTerm = { term: string }
+export type SearchPlanProvider = 'openalex' | 'semantic_scholar' | 'crossref' | 'scopus'
+export type UserSearchPlan = {
+  schema_version: 'deixis.user_search_plan.v1'
+  setting: SearchPlanTerm[]; task: SearchPlanTerm[]; setting_backup: SearchPlanTerm[]; task_backup: SearchPlanTerm[]
+  criterion: {
+    text: string
+    parts: { name: string; definition: string; role: 'core' | 'aspect'; phrases: string[] }[]
+    exclusion_title_words: string[]
+  } | null
+  providers: SearchPlanProvider[]  // always holds 'openalex'
+}
+export type SearchPlanView = {
+  research_id: string; expected_version: number; scope_revision: number
+  editable: boolean  // false for a research over attached files only
+  origin: 'user' | 'model' | 'code' | null  // null: no run of this question has frozen a plan yet
+  based_on: { scope_revision: number; protocol_revision: number } | null
+  plan: UserSearchPlan | null
+  issues: { code: string; path: string; message: string }[]  // rules the shown plan breaks (a code term may be long)
+  queries: { label: string; origin: 'user' | 'model' | 'code'; query_text: string; compiled_from: 'plan_words' | 'protocol' }[]
+  providers: { provider_id: SearchPlanProvider; required: boolean; checked: boolean; in_scope: boolean; configured: boolean }[]
+}
+
+export const searchPlanApi = {
+  get: (researchId: string) =>
+    request<SearchPlanView>(`/api/researches/${encodeURIComponent(researchId)}/search-plan`),
+  save: (researchId: string, expectedVersion: number, plan: UserSearchPlan) =>
+    request<SearchPlanView>(`/api/researches/${encodeURIComponent(researchId)}/search-plan`,
+      json('POST', { expected_version: expectedVersion, plan })),
 }

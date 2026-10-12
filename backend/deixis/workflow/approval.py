@@ -35,6 +35,8 @@ def block_origins(vocabulary: dict[str, Any]) -> dict[str, str]:
     """Who put each phrase in its block: the code rule, the model's labelling step, the model that wrote the query
     (D92) or the user's own key terms (SW17.6, SW2.6)."""
     default = {"user": "user", "search_query": "search_query"}.get(vocabulary["block_assignment"], "rule")
+    if (vocabulary.get("search_query") or {}).get("origin") == "user":
+        default = "user"  # the blocks of a person's saved search plan (UI parity S23a)
     origins = {row["phrase"]: default for row in proposal_rows(vocabulary)}
     origins |= {record["phrase"]: record["origin"]
                 for record in (vocabulary.get("labelling") or {}).get("phrases", [])}

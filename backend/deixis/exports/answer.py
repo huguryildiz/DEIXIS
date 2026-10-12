@@ -36,8 +36,9 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
             if evidence.get("anchor_text") and evidence["anchor_text"] not in quotes:
                 quotes.append(evidence["anchor_text"])
 
+    # IEEE cites by the passage's number, as the browser does (UI parity S10, R25); the other styles by the source key.
     def cite_label(claim: dict[str, Any], evidence: dict[str, Any]) -> str:
-        if not evidence.get("source_key"):
+        if not evidence.get("source_key") or style == "ieee":
             return str(refs[evidence["passage_id"]][0])
         repeated = sum(e["source_version_id"] == evidence["source_version_id"] for e in claim["evidence"]) > 1
         if not repeated:
@@ -99,7 +100,7 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
         for passage_id, (number, evidence) in refs.items():
             source = next((s for s in sources if s["source_version_id"] == evidence["source_version_id"]), None)
             reference = reference_text(style, source) if source else evidence.get("title") or ""
-            key = evidence.get("source_key")
+            key = None if style == "ieee" else evidence.get("source_key")
             line = f"[{number if key is None else key}] {reference} — {locator_text(t, evidence)}"
             if evidence.get("text_source") == "ocr":
                 line += f" ({t(OCR_LABEL)})"

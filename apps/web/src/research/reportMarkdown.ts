@@ -24,12 +24,13 @@ export function pdfSuggestion(answer: Answer, sources: Source[]): { notes: Limit
 
 // The report's numbered references, its sections and the limits shown under it. The Markdown file (report sheet and
 // the topbar Export menu, S8) and the rendered report read the same parts.
-export function reportParts(answer: Answer, sources: Source[]) {
+// `style`: IEEE cites by number (the reference's [n]); the other styles by the source's key when it has one.
+export function reportParts(answer: Answer, sources: Source[], style?: CitationStyle) {
   const refs = new Map<string, { n: number; e: Answer['claims'][number]['evidence'][number] }>()
   answer.claims.forEach(c => c.evidence.forEach(e => { if (!refs.has(e.passage_id)) refs.set(e.passage_id, { n: refs.size + 1, e }) }))
   // A citation names its source's key (D59); a claim citing two passages of one source adds each passage's place.
   const citeLabel = (claim: Answer['claims'][number], e: Evidence) => {
-    if (!e.source_key) return `${refs.get(e.passage_id)?.n}`
+    if (!e.source_key || style === 'ieee') return `${refs.get(e.passage_id)?.n}`
     const repeated = claim.evidence.filter(x => x.source_version_id === e.source_version_id).length > 1
     return repeated ? `${e.source_key}, ${e.kind === 'abstract' ? t('abstract') : e.physical_page ? pageLocator(e.physical_page, e.rendition) : t('section')}` : e.source_key
   }
@@ -43,7 +44,7 @@ export function reportParts(answer: Answer, sources: Source[]) {
 }
 
 export function reportMarkdown(answer: Answer, sources: Source[], title: string, version: number, style: CitationStyle) {
-  const { refs, citeLabel, sections, limits } = reportParts(answer, sources)
+  const { refs, citeLabel, sections, limits } = reportParts(answer, sources, style)
   const lines = [`# ${title}`, '', `${t('Report')} · V${version}`, '']
   if (answer.applicability === 'stale_scope') lines.push(`> ${t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}`, '')
   if (answer.applicability === 'stale_selection') lines.push(`> ${t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}`, '')
@@ -64,7 +65,7 @@ export function reportMarkdown(answer: Answer, sources: Source[], title: string,
     lines.push(`## ${t('Cited passages')}`, '')
     refs.forEach(({ n, e }) => {
       const source = sources.find(s => s.source_version_id === e.source_version_id)
-      lines.push(`[${e.source_key ?? n}] ${source ? formatReferenceText(style, source) : e.title} — ${locatorText(e)}${e.text_source === 'ocr' ? ` (${t(OCR_LABEL)})` : ''}${e.text_source === 'latex_source' ? ` (${t('arXiv source')})` : ''}`)
+      lines.push(`[${style === 'ieee' ? n : e.source_key ?? n}] ${source ? formatReferenceText(style, source) : e.title} — ${locatorText(e)}${e.text_source === 'ocr' ? ` (${t(OCR_LABEL)})` : ''}${e.text_source === 'latex_source' ? ` (${t('arXiv source')})` : ''}`)
     })
     lines.push('')
   }

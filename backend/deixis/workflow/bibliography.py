@@ -72,7 +72,10 @@ def export_sources(store: Store, research_id: str, selection: Selection, answer_
     if selection == "included":
         chosen = [s for s in view["sources"] if s["selection"]["state"] == "included"]
     else:
-        target = answer_id or shown_answer_id(view)
+        # Only a missing id means the shown answer; an empty one names no answer and is refused.
+        target = shown_answer_id(view) if answer_id is None else answer_id
+        if target is not None and not target.strip():
+            raise LookupError("empty answer id")
         cited = cited_by(store, research_id, target) if target else set()
         chosen = [s for s in view["sources"] if s["source_version_id"] in cited]
     for source in chosen:

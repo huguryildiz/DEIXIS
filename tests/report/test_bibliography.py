@@ -79,6 +79,9 @@ def test_export_downloads_included_sources_and_refuses_an_empty_cited_set(tmp_pa
         # An answer id names one answer of this research; an unknown one is refused, never replaced by another answer.
         assert client.get(f"/api/researches/{rid}/bibliography", params={"sources": "cited", "answer_id": "ans_unknown"}).status_code == 404
         assert client.get(f"/api/researches/{rid}/bibliography", params={"answer_id": "ans_unknown"}).status_code == 422
+        # An empty id is refused, not read as "the shown answer".
+        empty = client.get(f"/api/researches/{rid}/bibliography", params={"sources": "cited", "answer_id": ""})
+        assert empty.status_code == 422 and empty.json()["detail"] == "answer_id is empty"
 
 
 def test_x3_default_full_literal_before_refactor():
@@ -189,6 +192,9 @@ def test_cited_export_refuses_an_unknown_answer_or_one_of_another_research(tmp_p
         bibliography.export_sources(lib.store, other, "cited", lib.base["id"])
     with pytest.raises(LookupError):
         bibliography.export_sources(lib.store, lib.rid, "cited", "ans_unknown")
+    for empty in ("", "  "):
+        with pytest.raises(LookupError):
+            bibliography.export_sources(lib.store, lib.rid, "cited", empty)
 
 
 import re

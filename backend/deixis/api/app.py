@@ -1967,6 +1967,8 @@ def create_app(
         # Cited sources follow one answer: the one named (a report's own export), else the one the page shows.
         if answer_id is not None and sources != "cited":
             raise HTTPException(422, "answer_id applies to cited sources only")
+        if answer_id is not None and not answer_id.strip():
+            raise HTTPException(422, "answer_id is empty")
         try:
             chosen = bibliography.export_sources(store, research_id, sources, answer_id)
         except LookupError:

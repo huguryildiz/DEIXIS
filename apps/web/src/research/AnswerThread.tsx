@@ -149,7 +149,8 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       {latePending}
     </div>
   }
-  const { refs, citeLabel, sections, suggestion, limits } = reportParts(answer, sources)
+  const { refs, citeLabel, sections, suggestion, limits } = reportParts(answer, sources, style)
+  const numeric = style === 'ieee'
   const markdown = () => reportMarkdown(answer, sources, title, version, style)
   const copyReport = async () => {
     try { await writeClipboard(markdown()); setCopied(true); toast('success', t('Report copied to clipboard.')) }
@@ -169,7 +170,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       {claims.map(claim => <span className="claim" key={claim.id}>
         <MathText text={claim.text} />{claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}
         {claim.evidence_basis === 'abstract' && <span className="support-badge">{t('From abstract')}</span>}
-        {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{e.source_key ? citeLabel(claim, e) : `[${refs.get(e.passage_id)?.n}]`}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>)}
+        {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{e.source_key && !numeric ? citeLabel(claim, e) : `[${refs.get(e.passage_id)?.n}]`}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>)}
         {claim.review && <span className={`review-badge is-${claim.review.verdict}`} title={t('Reviewer: {reason}', { reason: claim.review.reason })}><ShieldCheck size={11} aria-hidden />{t(verdictLabels[claim.review.verdict])}</span>}
         {claim.review && claim.review.verdict !== 'supported' && <small className="review-reason">{t('Reviewer: {reason}', { reason: claim.review.reason })}</small>}
       </span>)}
@@ -192,7 +193,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
         const source = sources.find(s => s.source_version_id === e.source_version_id)
         const locator = locatorText(e)
         return <li key={e.passage_id}><button onClick={() => onOpen(e.passage_id, e.anchor_text)}>
-          {e.source_key ? <SourceKey value={e.source_key} className="ref-key" /> : <span className="ref-num">[{n}]</span>}
+          {e.source_key && !numeric ? <SourceKey value={e.source_key} className="ref-key" /> : <span className="ref-num">[{n}]</span>}
           <span className="ref-body">
             <span className="ref-text">{source ? formatReference(style, source) : e.title}</span>
             <span className="ref-pills">
@@ -215,13 +216,13 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {suggestion && <PdfSuggestions notes={suggestion.notes} sources={suggestion.sources} busy={busy} onAttachPdf={onAttachPdf} />}
   </div>
   // The thread's citation chip (mockup `.cite`): one per claim, naming its first source and "+N" for the others it cites;
-  // with keyless sources the numbers of the cited passages. It opens the first cited passage at its located anchor; the
+  // with keyless sources, or in the IEEE style (R25), the numbers of the cited passages, as the report lists them. It opens the first cited passage at its located anchor; the
   // report lists every passage of the claim.
   const chip = (claim: Claim) => {
     if (!claim.evidence.length) return null
     const first = claim.evidence[0]
     const others = new Set(claim.evidence.map(e => e.source_version_id)).size - 1
-    const label = first.source_key ? `${first.source_key}${others > 0 ? ` +${others}` : ''}` : `[${[...new Set(claim.evidence.map(e => refs.get(e.passage_id)?.n))].join(', ')}]`
+    const label = first.source_key && !numeric ? `${first.source_key}${others > 0 ? ` +${others}` : ''}` : `[${[...new Set(claim.evidence.map(e => refs.get(e.passage_id)?.n))].join(', ')}]`
     const titleText = claim.evidence.map(e => [e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')).join('\n')
     return <button type="button" className="cite-chip thread-cite" title={titleText} onClick={() => onOpen(first.passage_id, first.anchor_text)}>{label}</button>
   }

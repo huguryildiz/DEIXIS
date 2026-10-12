@@ -515,6 +515,13 @@ c.commit(); c.close()`, [reportId, ROW_TEXT])
     await expect(page.locator('.report-sheet')).toContainText('Candidate aspects the model inferred from the evidence table; none was checked by a kill-search.')
     await page.keyboard.press('Escape')
     await capture(page, 'report-vi', block, openReport, () => page.keyboard.press('Escape'))
+    // The aspects reload whenever a new event reaches the page (its event cursor). The latest event id the page's research
+    // view has received is recorded, so the mocked part below starts only once the page holds the newest event.
+    let seenEvent = 0
+    page.on('response', async response => {
+      if (response.request().method() !== 'GET' || new URL(response.url()).pathname !== `/api/researches/${f.rid}`) return
+      try { seenEvent = Math.max(seenEvent, ((await response.json()) as { last_event_id: number }).last_event_id) } catch { /* not a view body */ }
+    })
     await openReport()
     const count = (await research(f)).runs.length
     await keyboardActivate(block.getByRole('button', { name: 'Investigate' }))
@@ -529,6 +536,10 @@ c.commit(); c.close()`, [reportId, ROW_TEXT])
     expect((await research(f)).runs.length).toBe(count)
     const after = await (await api.get(reportPath)).json()
     expect(after.sections.map((s: { claims: unknown }) => s.claims)).toEqual(before.sections.map((s: { claims: unknown }) => s.claims))
+    // The second Investigate wrote an event; once the page has it, no event reloads the aspects behind the mocked
+    // failure, so its Retry stays until it is pressed.
+    const latest = ((await research(f)) as unknown as { last_event_id: number }).last_event_id
+    await expect.poll(() => seenEvent, { timeout: 20_000 }).toBeGreaterThanOrEqual(latest)
     // Mock only the additive read route and VI's status to exercise empty, failed and unvalidated rendering.
     let rows: { id: string; gap_id: string; kind: string; text: string }[] = [], failRows = false
     await page.route(`**${reportPath}`, route => route.fulfill({ json: { ...after, sections: after.sections.map((s: { section_id: string }) => s.section_id === 'VI' ? { ...s, status: 'draft' } : s) } }))

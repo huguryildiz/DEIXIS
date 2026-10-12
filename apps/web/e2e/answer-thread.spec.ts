@@ -161,6 +161,25 @@ test.describe.serial('S10: the answer in the thread', () => {
     await expect(card).toHaveClass(/is-on/)
     await page.keyboard.press('Escape')
     await shot(page, 's10-answer-card-prose')
+    // R25: in the IEEE style the chips cite by number, the numbers of the report's cited passages ([n, m]); the report
+    // lists the same numbers. The choice is the report's Citation style; it is set back to APA after.
+    const numberOf = new Map<string, number>()
+    answer.claims.forEach(c => c.evidence.forEach(e => { if (!numberOf.has(e.passage_id)) numberOf.set(e.passage_id, numberOf.size + 1) }))
+    const chooseStyle = async (name: RegExp) => {
+      await card.click()
+      await reportPanel(page).getByRole('combobox', { name: 'Citation style' }).click()
+      await page.getByRole('option', { name }).click()
+      await page.keyboard.press('Escape')
+      await expect(page.locator('[data-split-panel]')).toHaveCount(0)
+    }
+    await chooseStyle(/^IEEE/)
+    await expect(chips).toHaveText(shown.filter(c => c.evidence.length).map(c => `[${[...new Set(c.evidence.map(e => numberOf.get(e.passage_id)))].join(', ')}]`))
+    await card.click()
+    await expect(reportPanel(page).locator('.reference-list .ref-num').first()).toHaveText('[1]')
+    await expect(reportPanel(page).locator('.reference-list .ref-key')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await chooseStyle(/^APA/)
+    await expect(chips).toHaveText(labels)
   })
 
   test('the Methods box says how the answer was reached from the stored method record', async () => {

@@ -166,6 +166,7 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
     await expect(rows.nth(0)).toContainText('Answer and literature models')
     await expect(rows.nth(1)).toContainText('Scholarly sources')
     await expect(rows.nth(1).locator('.st.ok')).toHaveText('Ready')
+    await expect(rows.nth(1)).toContainText('Configured · not tested live.')  // configuration, not a request to the provider
     await expect(rows.nth(2)).toContainText('Lets you open PDFs your library pays for, through its sign-in.')
     await expect(rows.nth(2).getByRole('button', { name: 'Add' })).toBeVisible()
     await expect(page.getByText('Connect a model to start', { exact: true })).toBeVisible()
@@ -231,5 +232,40 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
     await expect(boxes.nth(5)).toHaveAccessibleDescription('At most five PDFs guide one search.')
     await boxes.nth(0).uncheck()
     await expect(boxes.nth(5)).toBeEnabled()
+  })
+
+  test('guide rows: an unchecked PDF stays unchecked when the other is removed, and the search cannot start unguided', async ({ page }) => {
+    await page.goto(server.url())
+    await expect(page.locator('.models-summary')).toContainText('fixture-model')
+    await page.getByLabel('Source scope').click()
+    await page.getByRole('option', { name: 'Files + academic search' }).click()
+    await page.locator('input[type=file]').first().setInputFiles([tinyPdf('SYNTHETIC-A.pdf'), tinyPdf('SYNTHETIC-B.pdf')])
+    await page.getByLabel('Research question').fill('SYNTHETIC question guided by one PDF')
+    const guide = page.locator('.composer .guide')
+    await guide.getByRole('checkbox', { name: 'SYNTHETIC-B.pdf' }).uncheck()
+    await page.getByRole('button', { name: 'Remove SYNTHETIC-A.pdf' }).click()
+    // One PDF left, still unchecked: its row stays so it can be checked again, and nothing guides the search.
+    await expect(guide.getByRole('checkbox')).toHaveCount(1)
+    await expect(guide.getByRole('checkbox', { name: 'SYNTHETIC-B.pdf' })).not.toBeChecked()
+    await expect(guide.getByRole('status')).toHaveText('Choose at least one PDF to guide the search.')
+    await expect(page.getByRole('button', { name: 'Start research' })).toBeDisabled()
+    await expect(page.locator('.attachment-chip', { hasText: 'SYNTHETIC-B.pdf' })).not.toContainText('guides the search')
+    // Checked again, the one PDF guides the search, as a single attached PDF always does; its row is no longer needed.
+    await guide.getByRole('checkbox', { name: 'SYNTHETIC-B.pdf' }).click()
+    await expect(page.locator('.composer .guide')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Start research' })).toBeEnabled()
+  })
+
+  test('two quick adds keep every file and its check mark', async ({ page }) => {
+    await page.goto(server.url())
+    await page.getByLabel('Source scope').click()
+    await page.getByRole('option', { name: 'Files + academic search' }).click()
+    const input = page.locator('input[type=file]').first()
+    // The second change event fires while the first add is still reading its file headers.
+    await Promise.all([input.setInputFiles([tinyPdf('SYNTHETIC-q1.pdf'), tinyPdf('SYNTHETIC-q2.pdf')]), input.setInputFiles(tinyPdf('SYNTHETIC-q3.pdf'))])
+    await expect(page.locator('.attachment-chip')).toHaveCount(3)
+    const boxes = page.locator('.composer .guide input[type=checkbox]')
+    await expect(boxes).toHaveCount(3)
+    for (let n = 0; n < 3; n++) await expect(boxes.nth(n)).toBeChecked()
   })
 })

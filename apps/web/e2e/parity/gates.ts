@@ -499,6 +499,24 @@ async function hoverMeasure(page: Page, selector: string, exclude: string[], pro
   return m
 }
 
+/** A surface that changes on hover (a card that lifts): background, border colour and shadow in the hover state, as
+ *  in the default state's colour check (ΔE2000 ≤ 1, shadows equal). */
+function checkHoverSurface(pair: Pair, m: Side, v: Variant): string[] {
+  if (!m.mock || !m.app) return []
+  const out: string[] = []
+  const white: Rgba = [255, 255, 255, 1]
+  for (const key of ['background-color', 'border-top-color'] as const) {
+    const mc = m.mock.colours[key], ac = m.app.colours[key]
+    const d = Math.abs(mc[3] - ac[3]) > 0.02 ? Infinity : deltaE2000(flatten(mc, white), flatten(ac, white))
+    if (d > 1) out.push(`${pair.id}: hover ${key} mockup ${hex(mc)} app ${hex(ac)} (${v.theme} ${v.width})`)
+  }
+  const shadow = (s: string) => s.replace(/rgba?\([^)]*\)/g, c => c.replace(/\s+/g, '')).replace(/\s+/g, ' ').trim()
+  if (shadow(m.mock.style['box-shadow']) !== shadow(m.app.style['box-shadow'])) {
+    out.push(`${pair.id}: hover box-shadow mockup ${m.mock.style['box-shadow']} app ${m.app.style['box-shadow']} (${v.theme} ${v.width})`)
+  }
+  return out
+}
+
 /** Hover and selected states of a pair's `color` (plan §4.1), for the item at `index` (a list checks every item, each
  *  with its own exception and contrast use). Hover moves the pointer over that very element on both pages; the selected
  *  state reads the pair's `selected` selectors (every selected item, matched by position). An exception element must
@@ -516,6 +534,7 @@ export async function checkColourStates(pair: Pair, v: Variant, mock: Page, app:
       const m = { mock: await hoverMeasure(mock, pair.mock, MOCK_EXCLUDE, PROBE, mockIndex), app: await hoverMeasure(app, pair.app, APP_EXCLUDE, [], index) }
       if (!m.mock || !m.app) { out.push(`${pair.id}: hover item missing (mockup ${!!m.mock}, app ${!!m.app})`); continue }
       out.push(...checkStateColour(pair, m, v, 'hover', fallback))
+      if (pair.hoverSurface) out.push(...checkHoverSurface(pair, m, v))
     } else if (index === 0) {  // the selected items are one set per pair, checked once
       if (!pair.selected) { out.push(`${pair.id}: declares a selected state but no \`selected\` selectors`); continue }
       const [ms, as] = [await measureAll(mock, pair.selected.mock, MOCK_EXCLUDE, PROBE), await measureAll(app, pair.selected.app, APP_EXCLUDE, [])]

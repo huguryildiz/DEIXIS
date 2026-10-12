@@ -235,7 +235,7 @@ function SetupCard({ connections, reasons, proxy }: { connections: Connections; 
     <h2 id="home-setup-title"><span>{t('Set up DEIXIS')}</span><small>{t('Three things before the first question. Nothing leaves this computer except the searches and the model calls you set up.')}</small></h2>
     <div className="home-setup-row">{num(1, false)}<p>{t('Answer and literature models')}<small>{t('Not connected. Use Codex CLI, Claude Code, or an API key.')}</small>{reasons && <small className="home-setup-reason">{reasons}</small>}</p>
       <button type="button" className="setup-connect" onClick={settings}>{t('Connect')}</button></div>
-    <div className="home-setup-row">{num(2, sourcesReady)}<p>{t('Scholarly sources')}<small>{t('OpenAlex and Crossref work without a key.')}</small></p>
+    <div className="home-setup-row">{num(2, sourcesReady)}<p>{t('Scholarly sources')}<small>{t('OpenAlex and Crossref work without a key. Configured · not tested live.')}</small></p>
       {sourcesReady ? <span className="st ok">{t('Ready')}</span> : <button type="button" className="setup-add" onClick={settings}>{t('Connect')}</button>}</div>
     <div className="home-setup-row">{num(3, Boolean(proxy))}<p>{t('Institution proxy (optional)')}<small>{t('Lets you open PDFs your library pays for, through its sign-in.')}</small></p>
       {proxy ? <span className="st no">{t('Address saved')}</span> : <button type="button" className="setup-add" onClick={settings}>{t('Add')}</button>}</div>
@@ -270,9 +270,12 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const [pickerRole, setPickerRole] = useState<ModelRole | null>(null)
   // Each choice in the menu remounts the picker, so choosing the same role again opens its list again.
   const [pickerNonce, setPickerNonce] = useState(0)
-  const [files, setFiles] = useState<File[]>([])
+  // The attached PDFs and the ones the person unchecked as search guides, kept in one state so every change to the
+  // files and their check marks is one atomic update (two quick adds cannot drop a file or a mark).
+  const [attached, setAttached] = useState<{ files: File[]; unguided: Set<string> }>({ files: [], unguided: new Set() })
+  const files = attached.files
   // Attached PDFs the person unchecked in the guide rows: they are still read as sources but do not guide the search.
-  const [unguided, setUnguided] = useState<Set<string>>(new Set())
+  const unguided = attached.unguided
   // A Zotero collection chosen before the research exists; it is imported right after the research is created.
   const [zotero, setZotero] = useState<ZoteroChoice | null>(null)
   const [zoteroOpen, setZoteroOpen] = useState(false)
@@ -308,15 +311,20 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const efforts = chosen?.reasoning_efforts ?? []
   const needsFiles = scope === 'attached'
   const needsSource = scope !== 'academic'
-  // A mixed search with several PDFs shows one check row per PDF (Q3, D3): every checked one guides the search.
-  const guideRows = scope === 'attached_and_academic' && files.length > 1
+  // A mixed search guides itself with its checked PDFs (Q3, D3). The check marks hold whether or not the rows are
+  // shown: rows appear with two or more PDFs, and also for a single PDF the person unchecked, so it stays re-checkable.
+  // A mixed search whose PDFs are all unchecked (and no Zotero collection) cannot start: nothing would guide it, and
+  // turning it into an attached-only research would change the scope the person chose.
+  const mixed = scope === 'attached_and_academic'
   const guidedFiles = files.filter(f => !unguided.has(f.name))
+  const guideRows = mixed && (files.length > 1 || guidedFiles.length < files.length)
+  const noGuide = mixed && files.length > 0 && !guidedFiles.length && !zotero
   const activeChip: ModeChip = scope === 'attached' && intent === 'report' ? 'ask' : intent
 
   // What guides the search: every eligible PDF while all rows are checked (the backend keeps five), otherwise the
   // checked uploads plus the Zotero items, in that order, among the PDFs the backend can use.
   function seedSelection(candidates: { source_version_id: string; origin: string }[], uploaded: Map<string, string>) {
-    if (!guideRows || guidedFiles.length === files.length) return { all_eligible: true as const }
+    if (guidedFiles.length === files.length) return { all_eligible: true as const }
     const usable = new Set(candidates.map(c => c.source_version_id))
     const chosen = guidedFiles.map(f => uploaded.get(f.name)).filter((v): v is string => Boolean(v && usable.has(v)))
     const fromZotero = candidates.filter(c => c.origin === 'zotero_import').map(c => c.source_version_id)
@@ -356,13 +364,14 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
       const header = await file.slice(0, 5).text()
       if (header === '%PDF-') accepted.push(file); else rejected.push(file.name)
     }
-    const next = [...new Map([...files, ...accepted].map(f => [f.name, f])).values()]
-    // At most five PDFs guide one search (D3): a file added past five starts unchecked.
-    const out = new Set([...unguided].filter(name => next.some(f => f.name === name)))
-    let guided = 0
-    for (const f of next) { if (out.has(f.name)) continue; if (guided < MAX_SEED_PDFS) guided++; else out.add(f.name) }
-    setFiles(next)
-    setUnguided(out)
+    setAttached(old => {
+      const next = [...new Map([...old.files, ...accepted].map(f => [f.name, f])).values()]
+      // At most five PDFs guide one search (D3): a file added past five starts unchecked.
+      const out = new Set([...old.unguided].filter(name => next.some(f => f.name === name)))
+      let guided = 0
+      for (const f of next) { if (out.has(f.name)) continue; if (guided < MAX_SEED_PDFS) guided++; else out.add(f.name) }
+      return { files: next, unguided: out }
+    })
     if (accepted.length && scope === 'academic') setScope('attached_and_academic')  // attachments must be part of the scope
     setError(rejected.length ? t('{files}: only PDF files can be attached.', { files: rejected.join(', ') }) : '')
   }
@@ -371,7 +380,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
     if (!question.trim() || busy) return
     if (needsFiles && !files.length && !zotero) { setError(t('Attach at least one PDF to use “Attached files”.')); return }
     if (scope === 'attached_and_academic' && !files.length && !zotero) { setError(t('Add a PDF or Zotero collection to guide the search.')); return }
-    if (guideRows && !guidedFiles.length && !zotero) { setError(t('Choose at least one PDF to guide the search.')); return }
+    if (noGuide) { setError(t('Choose at least one PDF to guide the search.')); return }
     const literatureChoice = models.find(m => m.id === literature)
     if (!chosen || !literatureChoice) { setError(t('Choose the answer and literature models first. DEIXIS does not pick them for you.')); return }
     setBusy(true)
@@ -455,7 +464,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
           <span className="attachment-icon" aria-hidden><FileText size={13} /></span>
           <span className="attachment-name" title={file.name}>{file.name}</span><small>{guideRows && !unguided.has(file.name) ? t('guides the search') : fileSize(file.size)}</small>
         </span>
-        <button type="button" className="attachment-remove" aria-label={t('Remove {name}', { name: file.name })} onClick={() => { setFiles(old => old.filter(f => f.name !== file.name)); setUnguided(old => { const next = new Set(old); next.delete(file.name); return next }) }}><X size={13} /></button>
+        <button type="button" className="attachment-remove" aria-label={t('Remove {name}', { name: file.name })} onClick={() => setAttached(old => ({ files: old.files.filter(f => f.name !== file.name), unguided: new Set([...old.unguided].filter(name => name !== file.name)) }))}><X size={13} /></button>
       </div>)}
   </div>
 
@@ -522,7 +531,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
             {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d} className="home-menu-item"><MenuRow icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={effortDetail(d, limits)} /></SelectItem>)}
           </SelectContent>
         </Select>
-        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero) || (guideRows && !guidedFiles.length && !zotero)} aria-label={t('Start research')} title={noModel ? t('Connect a model to start') : undefined}><ArrowUp size={17} /></Button>
+        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero) || noGuide} aria-label={t('Start research')} title={noModel ? t('Connect a model to start') : undefined}><ArrowUp size={17} /></Button>
       </div>
       {guideRows && <div className="guide" role="group" aria-labelledby="guide-lead">
         <span id="guide-lead">{t('PDFs guiding the search · their titles, abstracts and references shape the query.')}</span>
@@ -531,11 +540,12 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
           const full = !checked && guidedFiles.length >= MAX_SEED_PDFS
           return <label key={file.name} title={full ? t('At most five PDFs guide one search.') : file.name}>
             <input type="checkbox" checked={checked} disabled={full} aria-describedby={full ? 'guide-limit' : undefined}
-              onChange={() => setUnguided(old => { const next = new Set(old); if (checked) next.add(file.name); else next.delete(file.name); return next })} />
+              onChange={() => setAttached(old => { const next = new Set(old.unguided); if (checked) next.add(file.name); else next.delete(file.name); return { ...old, unguided: next } })} />
             <span>{file.name}</span>
           </label>
         })}
         {guidedFiles.length >= MAX_SEED_PDFS && files.length > MAX_SEED_PDFS && <span id="guide-limit" className="sr-only">{t('At most five PDFs guide one search.')}</span>}
+        {noGuide && <span className="guide-none" role="status">{t('Choose at least one PDF to guide the search.')}</span>}
       </div>}
       {pickerRole && models.length > 0 && <div className="composer-options composer-models">
         {pickerRole === 'answer' && <ModelPicker key={pickerNonce} defaultOpen role={t(modelRoles.answer.label)} icon={modelRoles.answer.icon} hint={t(modelRoles.answer.hint)} models={models} value={model}

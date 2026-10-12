@@ -3712,7 +3712,7 @@ const tr: Record<string, string> = {
   'Answer and literature models': 'Cevap ve literatür modelleri',
   'Not connected. Use Codex CLI, Claude Code, or an API key.': 'Bağlı değil. Codex CLI, Claude Code ya da bir API anahtarı kullanın.',
   'Connect': 'Bağla',
-  'OpenAlex and Crossref work without a key.': 'OpenAlex ve Crossref anahtarsız çalışır.',
+  'OpenAlex and Crossref work without a key. Configured · not tested live.': 'OpenAlex ve Crossref anahtarsız çalışır. Yapılandırıldı · canlı denenmedi.',
   'Institution proxy (optional)': 'Kurum proxy’si (isteğe bağlı)',
   'Lets you open PDFs your library pays for, through its sign-in.': 'Kütüphanenizin abone olduğu PDF’leri, kurumunuzun girişi üzerinden açmanızı sağlar.',
   'Address saved': 'Adres kaydedildi',

@@ -27,6 +27,7 @@ export type Pair = {
   text?: boolean            // compare fixed text (default: on for fixed lists, off otherwise)
   dataText?: { mock?: string[]; app?: string[] }  // selectors inside the element whose text is data, left out of the comparison
   states?: Array<'hover' | 'selected'>             // interaction states the element has; colour is checked in each
+  hoverSurface?: boolean    // on hover also compare background, border colour and shadow (a card that lifts, §4.1)
   selected?: { mock: string; app: string }         // the selected item, when `states` has 'selected'
   widths?: number[]         // only at these viewport widths (default: every width)
   unordered?: boolean       // not part of the surface's order check (floating or positioned chrome)
@@ -244,8 +245,8 @@ export const PAIRS: Pair[] = [
     icon: [['file', 'file-text'], ['search', 'search'], ['table', 'table-2'], ['graph', 'network'], ['clip', 'paperclip']].map(([mock, app]) => ({ mock, app })),
     states: ['hover', 'selected'], selected: { mock: '.chips .chip.on', app: '.mode-chips .chip.on' }, status: 'active' },
   // Resume (one research exists) plus up to two Suggested cards from stored unanswered aspects (Q4).
-  { id: 'home.cards', surface: 'home', mock: '.cards .card', app: '.home-cards .card', checks: ['content', 'type'], list: 'data',
-    expected: ctx => (ctx.researches ? 1 : 0) + Math.min(2, ctx.suggestions), status: 'active' },
+  { id: 'home.cards', surface: 'home', mock: '.cards .card', app: '.home-cards .card', checks: ['content', 'type', 'colour'], list: 'data',
+    expected: ctx => (ctx.researches ? 1 : 0) + Math.min(2, ctx.suggestions), states: ['hover'], hoverSurface: true, status: 'active' },
   { id: 'home.card-tag', surface: 'home', mock: '.cards .card .tag', app: '.home-cards .card .home-card-tag', checks: ['chrome', 'type', 'colour', 'icon'], list: 'data',
     expected: ctx => (ctx.researches ? 1 : 0) + Math.min(2, ctx.suggestions), states: [],
     icon: [{ mock: 'redo', app: 'rotate-cw' }, { mock: 'bulb', app: 'lightbulb' }, { mock: 'bulb', app: 'lightbulb' }], status: 'active' },

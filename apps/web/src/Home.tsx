@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
-import { api, ApiError, homeApi, type Connections, type Effort, type EffortLimits, type IntentOutcome, type ModelOption, type ModelRole, type ResearchIntent, type ResearchSummary, type RoleModelSetting, type SourceScope, type Suggestion } from './api'
+import { api, ApiError, homeApi, type Connections, type Effort, type EffortLimits, type IntentOutcome, type ModelOption, type ModelRole, type ResearchIntent, type ResearchSummary, type RoleModelSetting, type SeedSelection, type SourceScope, type Suggestion } from './api'
 import { connectionName, fileRestoreNote, fileRestoreTone, isPlannedModel, reasoningLabel, scopeLabels } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroDialog, type ZoteroChoice } from './ZoteroDialog'
@@ -200,15 +200,22 @@ const outcomeText: Record<IntentOutcome['reason'], string> = {
   run_active: 'No study table: another run was active',
 }
 
+// What changes on a research when its background work moves on; the shell's list is polled, and Home reads the
+// research view and the suggestions again only when one of these changes.
+const progressKey = (r: ResearchSummary) => `${r.id}:${r.updated_at}:${r.last_run_status ?? ''}:${r.answer_count}`
+
 // The Resume card (H14): the most recently updated research, its latest report version and what waits for the person.
 function ResumeCard({ research }: { research: ResearchSummary }) {
   const [facts, setFacts] = useState<{ version: number | null; outcome: IntentOutcome | null } | null>(null)
+  const key = progressKey(research)
   useEffect(() => {
+    let current = true
     api.research(research.id).then(view => {
       const latest = view.answers.filter(a => a.status === 'structurally_valid').sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
-      setFacts({ version: latest?.report_version ?? null, outcome: view.intent_outcome })
-    }, () => setFacts(null))
-  }, [research.id])
+      if (current) setFacts({ version: latest?.report_version ?? null, outcome: view.intent_outcome })
+    }, () => { if (current) setFacts(null) })
+    return () => { current = false }
+  }, [research.id, key])
   const waiting = research.awaiting.queue + research.awaiting.pdf
   const parts = [
     facts?.version ? t('Report V{n}', { n: facts.version }) : null,
@@ -242,19 +249,22 @@ function SetupCard({ connections, reasons, proxy }: { connections: Connections; 
   </section>
 }
 
-export function Home({ onCreated }: { onCreated: (id: string) => void }) {
+// `researches` is the shell's list (refreshed by its poll), newest first: the Resume card and the suggestions follow it.
+export function Home({ onCreated, researches }: { onCreated: (id: string) => void; researches: ResearchSummary[] }) {
   const [question, setQuestion] = useState('')
   const [scope, setScope] = useState<SourceScope>('academic')
   const [intent, setIntent] = useState<ResearchIntent>('report')
   // Home's real data: the latest research (Resume), stored unanswered aspects (Suggested) and the proxy setting.
-  const [latest, setLatest] = useState<ResearchSummary | null>(null)
+  const latest = researches[0] ?? null
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [proxy, setProxy] = useState<string | null | undefined>(undefined)
+  useEffect(() => { api.institutionProxy().then(result => setProxy(result.address), () => setProxy(null)) }, [])
+  const listKey = researches.map(progressKey).join('|')
   useEffect(() => {
-    api.researches().then(list => setLatest(list[0] ?? null), () => setLatest(null))
-    homeApi.suggestions().then(result => setSuggestions(result.suggestions.slice(0, 2)), () => setSuggestions([]))
-    api.institutionProxy().then(result => setProxy(result.address), () => setProxy(null))
-  }, [])
+    let current = true
+    homeApi.suggestions().then(result => { if (current) setSuggestions(result.suggestions.slice(0, 2)) }, () => { if (current) setSuggestions([]) })
+    return () => { current = false }
+  }, [listKey])
   const [effort, setEffort] = useState<Effort>('standard')
   const [limits, setLimits] = useState<EffortLimits | null>(null)
   useEffect(() => { api.effortLimits().then(setLimits, () => setLimits(null)) }, [])
@@ -321,16 +331,11 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const noGuide = mixed && files.length > 0 && !guidedFiles.length && !zotero
   const activeChip: ModeChip = scope === 'attached' && intent === 'report' ? 'ask' : intent
 
-  // What guides the search: every eligible PDF while all rows are checked (the backend keeps five), otherwise the
-  // checked uploads plus the Zotero items, in that order, among the PDFs the backend can use.
-  function seedSelection(candidates: { source_version_id: string; origin: string }[], uploaded: Map<string, string>) {
-    if (guidedFiles.length === files.length) return { all_eligible: true as const }
-    const usable = new Set(candidates.map(c => c.source_version_id))
-    const chosen = guidedFiles.map(f => uploaded.get(f.name)).filter((v): v is string => Boolean(v && usable.has(v)))
-    const fromZotero = candidates.filter(c => c.origin === 'zotero_import').map(c => c.source_version_id)
-    const ids = [...chosen, ...fromZotero].slice(0, MAX_SEED_PDFS)
-    if (!ids.length) throw new Error(t('none of the checked PDFs has text that can guide a search'))
-    return { source_version_ids: ids }
+  // What guides the search: every eligible PDF, less the uploads the person unchecked. The backend picks five among
+  // the rest by D3's rule and records the others as not selected; the unchecked uploads stay attached sources.
+  function seedSelection(uploaded: Map<string, string>): SeedSelection {
+    const excluded = files.filter(f => unguided.has(f.name)).map(f => uploaded.get(f.name)).filter((v): v is string => Boolean(v))
+    return excluded.length ? { all_eligible: true, excluded_source_version_ids: excluded } : { all_eligible: true }
   }
 
   function chooseChip(chip: ModeChip) {
@@ -418,7 +423,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
       if (scope === 'attached_and_academic') {
         step = 'Research saved, but the PDFs could not guide the search: {message}. Choose a readable PDF on the research page.'
         try {
-          latestView = await api.setSeeds(id, seedSelection(latestView.scope.seed_candidates, uploaded), latestView.research.version)
+          latestView = await api.setSeeds(id, seedSelection(uploaded), latestView.research.version)
         } catch (e) {
           // 409 is a real conflict: another choice was stored meanwhile. Do not search on a guess; let the person check it.
           if (e instanceof ApiError && e.status === 409) { toast('warning', t('The PDF choice changed elsewhere; check it on the research page.')); onCreated(id); return }

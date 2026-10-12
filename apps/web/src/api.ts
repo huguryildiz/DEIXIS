@@ -124,7 +124,8 @@ export type SeedUse =
 export type SeedPdf = { source_version_id: string; asset_id: string; asset_sha256: string; extraction_version: string
   title: string; title_basis: string; page_count: number | null; text_pages: number; passage_count: number; use: SeedUse }
 export type SeedCandidate = { source_version_id: string; title: string; origin: 'user_upload' | 'zotero_import' | 'library' }
-export type SeedSelection = { source_version_ids: string[] } | { all_eligible: true }
+// With every eligible PDF, the PDFs the person unchecked on Home (S5b) are left out before the backend's choice of five.
+export type SeedSelection = { source_version_ids: string[] } | { all_eligible: true; excluded_source_version_ids?: string[] }
 
 export type Scope = {
   research_id: string; revision: number; question: string; language_hint: string | null; source_scope: SourceScope

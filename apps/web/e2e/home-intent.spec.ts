@@ -102,33 +102,31 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
     expect(createBody(await created)).toMatchObject({ intent: 'report', source_scope: 'attached' })
   })
 
-  test('Resume card: the latest research, its report version and what waits for the person', async ({ page, request }) => {
+  test('Resume card: the latest research, its report version and what waits for the person, kept current by the shell', async ({ page, request }) => {
     const base = server.url()
     const token = (await (await request.get(`${base}api/session`)).json()).csrf_token as string
     const headers = { origin: base.replace(/\/$/, ''), 'x-deixis-csrf': token }
     const title = 'SYNTHETIC resume card research'
     const made = await (await request.post(`${base}api/researches`, { headers, data: { question: title, model_connection: 'codex', requested_model: 'fixture-model', effort: 'quick' } })).json()
     const id = made.research.id as string
-    await request.post(`${base}api/researches/${id}/runs`, { headers: { ...headers, 'Idempotency-Key': `resume-${id}` }, data: { kind: 'discovery' } })
-    await expect.poll(async () => {
-      const view = await (await request.get(`${base}api/researches/${id}`)).json() as { answers: Array<{ status: string }> }
-      return view.answers.some(a => a.status === 'structurally_valid')
-    }, { timeout: 90_000 }).toBe(true)
-    // Renaming makes it the most recently updated research, whatever the earlier tests' runs still write.
-    const version = (await (await request.get(`${base}api/researches/${id}`)).json()).research.version as number
-    expect((await request.post(`${base}api/researches/${id}/title`, { headers, data: { title, expected_version: version } })).ok()).toBe(true)
-    // The awaiting counts of this research are SYNTHETIC: two queue rows and one work waiting for a PDF.
+    // The list this page receives puts this research first, so the earlier tests' background runs cannot take the
+    // card; its awaiting counts are SYNTHETIC (two queue rows and one work waiting for a PDF). Everything else is the
+    // server's own list, polled by the shell.
     await page.route('**/api/researches', async route => {
       if (route.request().method() !== 'GET') return route.fallback()
       const response = await route.fetch()
       const list = await response.json() as Array<{ id: string; awaiting: { queue: number; pdf: number } }>
-      await route.fulfill({ response, json: list.map(r => r.id === id ? { ...r, awaiting: { queue: 2, pdf: 1 } } : r) })
+      const mine = list.filter(r => r.id === id).map(r => ({ ...r, awaiting: { queue: 2, pdf: 1 } }))
+      await route.fulfill({ response, json: [...mine, ...list.filter(r => r.id !== id)] })
     })
+    // Home is open before the answer exists: the card has no report yet and gains it when the shell's poll sees it.
     await page.goto(base)
     const card = page.locator('.home-cards .card').first()
     await expect(card).toContainText('Resume')
-    await expect(card.locator('p')).toHaveText(title)
-    await expect(card.locator('small')).toContainText('Report V1 · 3 waiting for you')
+    await expect(card.locator('small')).not.toContainText('Report V1')
+    await request.post(`${base}api/researches/${id}/runs`, { headers: { ...headers, 'Idempotency-Key': `resume-${id}` }, data: { kind: 'discovery' } })
+    await expect(card.locator('small')).toContainText('Report V1 · 3 waiting for you', { timeout: 90_000 })
+    await expect(card.locator('p')).not.toHaveText('')
     await expect(card.locator('small')).toContainText('2 in the queue · 1 waiting for your PDF')  // the split, for screen readers
     await card.click()
     await expect(page).toHaveURL(new RegExp(`#/research/${id}$`))
@@ -211,12 +209,12 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
       }
     })
     await page.getByRole('button', { name: 'Start research' }).click()
-    const body = (await seeds).postDataJSON() as { source_version_ids?: string[]; all_eligible?: boolean }
-    expect(body.all_eligible).toBeUndefined()
-    expect(body.source_version_ids).toHaveLength(1)
+    // Every eligible PDF less the unchecked upload: the backend keeps the choice of five (D3) and its records.
+    const body = (await seeds).postDataJSON() as { source_version_ids?: string[]; all_eligible?: boolean; excluded_source_version_ids?: string[] }
     const uploads = await Promise.all(pending)
     expect(uploads).toHaveLength(2)
-    expect(body.source_version_ids![0]).toBe(uploads[0])
+    expect(body).toMatchObject({ all_eligible: true, excluded_source_version_ids: [uploads[1]] })
+    expect(body.source_version_ids).toBeUndefined()
   })
 
   test('guide rows: a sixth PDF starts unchecked and cannot be checked while five guide the search', async ({ page }) => {

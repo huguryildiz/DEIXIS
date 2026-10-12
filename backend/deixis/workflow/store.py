@@ -15,7 +15,7 @@ import re
 import sqlite3
 from uuid import uuid4
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from deixis.domain.canonical import sha256_hex
 from deixis.documents.jats import RENDITION_SQL
@@ -768,8 +768,13 @@ class Store:
         return self.set_seeds(research_id, expected_version, [source_version_id])
 
     def set_seeds(self, research_id: str, expected_version: int, source_version_ids: list[str] | None, *,
-                  all_eligible: bool = False) -> int:
+                  all_eligible: bool = False, excluded: Sequence[str] = ()) -> int:
         """Freeze the seed set in a new scope revision: the PDFs named, in that order, or every candidate (D3).
+
+        With every candidate, `excluded` are PDFs the person chose not to let guide the search (Home's unchecked rows,
+        UI parity S5b). They are dropped before anything else, so they are neither seeds, not selected nor skipped,
+        and stay the research's sources; the choice of five among the rest is unchanged. The exclusion is recorded on
+        the `seed_selected` event.
 
         One named PDF that cannot be a seed raises as D2 did; of several, those that cannot are listed as skipped, and
         none left raises with the first reason. Above five usable PDFs the five whose first two pages share most of
@@ -782,7 +787,9 @@ class Store:
             scope = self.scope(research_id)
             if scope["source_scope"] != "attached_and_academic":
                 raise SeedUnavailable("A PDF seed requires Files + academic search")
-            asked = ([c["source_version_id"] for c in self.seed_candidates(research_id)] if all_eligible
+            left_out = set(excluded)
+            asked = ([c["source_version_id"] for c in self.seed_candidates(research_id)
+                      if c["source_version_id"] not in left_out] if all_eligible
                      else list(dict.fromkeys(source_version_ids or [])))
             usable, skipped = [], []
             for svid in asked:
@@ -847,7 +854,8 @@ class Store:
                                                        "source_version_id": seeds[0]["source_version_id"],
                                                        "asset_id": seeds[0]["asset_id"],
                                                        **({"source_version_ids": seed_source_ids(snapshot)}
-                                                          if len(seeds) > 1 else {})})
+                                                          if len(seeds) > 1 else {}),
+                                                       **({"excluded_by_user": sorted(left_out)} if left_out else {})})
             return revision
 
     # ---- protocol ---------------------------------------------------------------------

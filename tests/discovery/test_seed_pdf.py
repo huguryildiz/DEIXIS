@@ -996,3 +996,40 @@ def test_a_seed_part_cut_off_on_sending_did_not_guide_the_semantic_search(tmp_pa
                               lambda store, scope, length=length: ("q" * length, "question"))
                 use = client.get(f"/api/researches/{rid}").json()["scope"]["seeds"][0]["use"]
                 assert use["semantic"] is used, length
+
+
+def test_s5b_an_excluded_upload_leaves_the_choice_of_five_to_the_backend(tmp_path, monkeypatch):
+    """UI parity S5b: Home unchecks an uploaded PDF. With six Zotero PDFs and one other upload there are seven usable
+    candidates; D3's rule keeps five by question words and records the other two as not selected. The unchecked upload
+    scores highest, yet is neither a seed, nor not selected, nor skipped, and stays an attached source."""
+    transport = ZoteroSeedTransport(records(), semantic=[])
+    zotero_scores = [5, 0, 3, 1, 2, 4]
+    for i, score in enumerate(zotero_scores):
+        zotero_item(transport, tmp_path, "MANYZOT1", 30 + i, f"SYNTHETIC Zotero paper {i}", f"10.1/zot.{930 + i}",
+                    make_pdf([f"SYNTHETIC Zotero paper {i} " + " ".join(TERMS[:score]), "Body text"]))
+    app, _ = app_for(tmp_path, monkeypatch, transport=transport)
+    with client_of(app) as client:
+        rid = research(client)
+        kept_upload = upload(client, rid, "a.pdf", make_pdf(["SYNTHETIC upload a " + " ".join(TERMS[:4]), "Body text"]))
+        unchecked = upload(client, rid, "b.pdf", make_pdf(["SYNTHETIC upload b " + " ".join(TERMS[:6]), "Body text"]))
+        import_collection(client, rid, "MANYZOT1")
+        store = app.state.store
+        candidates = client.get(f"/api/researches/{rid}").json()["scope"]["seed_candidates"]
+        zotero = {c["title"]: c["source_version_id"] for c in candidates if c["origin"] == "zotero_import"}
+        assert len(candidates) == 8 and len(zotero) == 6
+        # Only with every eligible PDF; never with a named list.
+        select(client, rid, expect=422, source_version_ids=[kept_upload], excluded_source_version_ids=[unchecked])
+        view = select(client, rid, all_eligible=True, excluded_source_version_ids=[unchecked])
+        z = [zotero[f"SYNTHETIC Zotero paper {i}"] for i in range(6)]
+        scope = view["scope"]
+        assert {s["source_version_id"] for s in scope["seeds"]} == {kept_upload, z[0], z[2], z[4], z[5]}
+        assert [(n["source_version_id"], n["score"]) for n in scope["seed_not_selected"]] == [(z[1], 0), (z[3], 1)]
+        assert scope["seed_skipped"] == []
+        assert unchecked in {s["source_version_id"] for s in view["sources"] if s["selection"]["state"] == "included"}
+        event = store.conn.execute("SELECT payload_json FROM events WHERE research_id = ? AND type = 'seed_selected'"
+                                   " ORDER BY id DESC LIMIT 1", (rid,)).fetchone()[0]
+        assert json.loads(event)["excluded_by_user"] == [unchecked]
+        # The same request again changes nothing.
+        revision = store.scope(rid)["revision"]
+        select(client, rid, all_eligible=True, excluded_source_version_ids=[unchecked])
+        assert store.scope(rid)["revision"] == revision

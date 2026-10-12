@@ -319,16 +319,21 @@ SourceVersionId = Annotated[str, Field(pattern=r"^srv_[0-9A-Za-z]{8,40}$")]
 
 
 class SeedSelection(BaseModel):
-    """One PDF, an ordered list of 1 to 50, or every eligible PDF; exactly one of the three (D3)."""
+    """One PDF, an ordered list of 1 to 50, or every eligible PDF; exactly one of the three (D3). With every eligible
+    PDF, `excluded_source_version_ids` names the PDFs the person unchecked on Home (UI parity S5b): they stay attached
+    sources and are left out before D3's choice of five, which stays the backend's."""
     source_version_id: SourceVersionId | None = None
     source_version_ids: list[SourceVersionId] | None = Field(default=None, min_length=1, max_length=50)
     all_eligible: Literal[True] | None = None
+    excluded_source_version_ids: list[SourceVersionId] | None = Field(default=None, min_length=1, max_length=50)
     expected_version: int
 
     @model_validator(mode="after")
     def one_selection(self) -> "SeedSelection":
         if sum(value is not None for value in (self.source_version_id, self.source_version_ids, self.all_eligible)) != 1:
             raise ValueError("Send exactly one of source_version_id, source_version_ids or all_eligible")
+        if self.excluded_source_version_ids is not None and not self.all_eligible:
+            raise ValueError("excluded_source_version_ids goes only with all_eligible")
         return self
 
 
@@ -1406,7 +1411,7 @@ def create_app(
         store = store_of(request)
         store.set_seeds(research_id, body.expected_version,
                         [body.source_version_id] if body.source_version_id else body.source_version_ids,
-                        all_eligible=bool(body.all_eligible))
+                        all_eligible=bool(body.all_eligible), excluded=body.excluded_source_version_ids or ())
         return research_view(store, research_id)
 
     @app.post("/api/researches/{research_id}/runs", status_code=202)

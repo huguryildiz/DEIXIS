@@ -3719,5 +3719,4 @@ const tr: Record<string, string> = {
   'PDFs guiding the search · their titles, abstracts and references shape the query.': 'Aramaya yön veren PDF’ler · başlıkları, özetleri ve kaynakçaları sorguyu biçimlendirir.',
   'At most five PDFs guide one search.': 'Bir aramaya en fazla beş PDF yön verir.',
   'Choose at least one PDF to guide the search.': 'Aramaya yön verecek en az bir PDF seçin.',
-  'none of the checked PDFs has text that can guide a search': 'işaretli PDF’lerin hiçbirinde aramaya yön verebilecek metin yok',
 }

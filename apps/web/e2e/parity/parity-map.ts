@@ -532,17 +532,24 @@ export const PAIRS: Pair[] = [
   { id: 'panel.thread', surface: 'research-panel', mock: '.thread-inner', app: '.thread-inner', checks: ['content'], widths: DESK, status: 'active' },
   { id: 'panel.thread@1024', surface: 'research-panel', mock: '.thread-inner', app: '.thread-inner', checks: [], widths: [], breakpoint: true,
     status: 'pending:S1', why: 'S1: sidebar 256px at 1024 (app 224px), then the thread beside the panel is 338px as in the mockup' },
-  // S12 report panel (P2/P3). The head: the title, Version, Citation style, Review with another model, Download. They
-  // are compared at 1280 only: at 390 the mockup's head runs past the screen's edge (its controls are not hidden there and
-  // its title shrinks to nothing), so it has no phone layout to match; a11y.spec checks the app's head at 390.
-  { id: 'report-panel.title', surface: 'report-panel', widths: DESK, mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['type', 'colour', 'icon'],
+  // S12 report panel (P2/P3). The head: the title, Version, Citation style, Review with another model, Download. At 1280
+  // every check runs. At 390 the mockup's head runs past the screen's edge (its controls are not hidden there and its
+  // title shrinks to no width), so the phone pairs compare type, colour and icons and leave out geometry by the declared
+  // exception report-head-phone (exceptions.ts); the title is not paired at 390 for the same reason.
+  { id: 'report-panel.title', surface: 'report-panel', widths: DESK, mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
     icon: { mock: 'doc', app: 'text-align-start' }, states: [], status: 'active' },
-  { id: 'report-panel.version', surface: 'report-panel', widths: DESK, mock: '.panel .p-head select[data-ver]', app: '.split-panel-head .report-select[aria-label="Version"]', checks: ['type'], unordered: true, states: [], status: 'active' },
-  { id: 'report-panel.style', surface: 'report-panel', widths: DESK, mock: '.panel .p-head select[data-cstyle]', app: '.split-panel-head .report-select[aria-label="Citation style"]', checks: ['type'], unordered: true, states: [], status: 'active' },
+  { id: 'report-panel.version', surface: 'report-panel', widths: DESK, mock: '.panel .p-head select[data-ver]', app: '.split-panel-head .report-select[aria-label="Version"]', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
+  { id: 'report-panel.style', surface: 'report-panel', widths: DESK, mock: '.panel .p-head select[data-cstyle]', app: '.split-panel-head .report-select[aria-label="Citation style"]', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
   { id: 'report-panel.review', surface: 'report-panel', widths: DESK, mock: '.panel .p-head [data-act="review"]', app: '.split-panel-head .report-review', checks: ['chrome', 'colour', 'icon'],
     icon: { mock: 'shield', app: 'shield-check' }, states: ['hover'], unordered: true, status: 'active' },
   { id: 'report-panel.download', surface: 'report-panel', widths: DESK, mock: '.panel .p-head [data-menu="rexport"]', app: '.split-panel-head .report-download', checks: ['chrome', 'colour', 'icon'],
     icon: { mock: 'dl', app: 'download' }, states: ['hover'], unordered: true, status: 'active' },
+  { id: 'report-panel.version@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head select[data-ver]', app: '.split-panel-head .report-select[aria-label="Version"]', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
+  { id: 'report-panel.style@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head select[data-cstyle]', app: '.split-panel-head .report-select[aria-label="Citation style"]', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
+  { id: 'report-panel.review@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head [data-act="review"]', app: '.split-panel-head .report-review', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'shield', app: 'shield-check' }, states: [], unordered: true, status: 'active' },
+  { id: 'report-panel.download@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head [data-menu="rexport"]', app: '.split-panel-head .report-download', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'dl', app: 'download' }, states: [], unordered: true, status: 'active' },
   // The document: the serif title, the meta line, the section headings, the claim badges, the references, the check line.
   { id: 'report-panel.h1', surface: 'report-panel', mock: '.report h1', app: '.report-document-head h1', checks: ['type', 'colour'], states: [], status: 'active' },
   { id: 'report-panel.meta', surface: 'report-panel', mock: '.report .meta', app: '.report-document-head .meta', checks: ['type', 'colour'], states: [], status: 'active' },

@@ -51,7 +51,7 @@ type Evidence = {
 }
 type Claim = { id: string; section: string | null; text: string; support_type: string; evidence_basis?: string | null; evidence: Evidence[]; review: { verdict: string; reason: string } | null }
 type Answer = { id: string; status: string; report_version: number | null; created_at: string; claims: Claim[]; unanswered_aspects: string[] }
-type Discovery = { provider: string; status: string }
+type Discovery = { provider: string; status: string; http_status: number | null; error_code: string | null }
 type Source = {
   source_version_id: string; work_id: string; title: string; doi: string | null; version_label: string | null; version_role: string
   selection: { state: string; origin: string }; similarity: number | null; provider_records: string[]
@@ -73,6 +73,11 @@ const valid = (view: View) => view.answers.filter(a => a.status === 'structurall
 const locator = (e: Evidence) => e.kind === 'abstract' ? 'Abstract' : e.physical_page ? `PDF p. ${e.physical_page}` : 'Section'
 const VERSIONS: Record<string, string> = { publishedVersion: 'published version', acceptedVersion: 'accepted manuscript', submittedVersion: 'submitted manuscript' }
 const versionText = (label: string | null) => (label ? VERSIONS[label] ?? label : 'version not stated')
+// A lookup recorded without a request (a missing key or contact setting, the closed OpenAlex budget), as the backend's
+// acquisition.py writes it; computed here from the stored rows, not from the page's code.
+const NOT_SENT_CODES = ['missing_contact_email', 'missing_core_key', 'missing_serpapi_key']
+const notSent = (d: Discovery) => NOT_SENT_CODES.includes(d.error_code ?? '') || (d.error_code === 'quota_exhausted' && d.http_status === null)
+const listed = (names: string[]) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0])
 const PROVIDERS: Record<string, string> = { unpaywall: 'Unpaywall', openalex: 'OpenAlex', crossref: 'Crossref', core: 'CORE', europepmc: 'Europe PMC', web_search: 'Web Search' }
 
 // The cases share one research; each still runs when an earlier one fails, so one run shows every failure.
@@ -94,17 +99,19 @@ test.describe('S12: report, Citation and Source details panels', () => {
     rid = (await created.json()).research.id as string
     expect((await post(api, `/api/researches/${rid}/runs`, { kind: 'discovery' }, { 'Idempotency-Key': `panels-discovery-${rid}` })).ok()).toBe(true)
     await settled(api, rid, view => valid(view).length === 1)
-    // A second answer gives the report two versions (V1, V2), as a person's "Generate a new answer" does.
-    expect((await post(api, `/api/researches/${rid}/runs`, { kind: 'answer' }, { 'Idempotency-Key': `panels-answer-${rid}` })).ok()).toBe(true)
-    await settled(api, rid, view => valid(view).length === 2)
+    // Two more answers give the report three versions (V1, V2, V3), as a person's "Generate a new answer" does.
+    for (const n of [2, 3]) {
+      expect((await post(api, `/api/researches/${rid}/runs`, { kind: 'answer' }, { 'Idempotency-Key': `panels-answer-${n}-${rid}` })).ok()).toBe(true)
+      await settled(api, rid, view => valid(view).length === n)
+    }
     page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   })
   test.afterAll(async () => { await page?.close(); await api?.context.dispose(); await server.stop() })
 
   test('the report panel: its head, its meta line, numbered sections, claim badges and the check line', async () => {
     const view = await viewOf(api, rid)
-    const [latest, earlier] = [...valid(view)].sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))
-    expect([latest.report_version, earlier.report_version]).toEqual([2, 1])
+    const [latest] = [...valid(view)].sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))
+    expect(valid(view).map(a => a.report_version).sort()).toEqual([1, 2, 3])
     // PATCHED VIEW: the fixture has no reviewer model, so one claim review (SYNTHETIC) is added to the view the page
     // receives, to show the verdict badge and its count. Nothing is stored.
     const reviewed = latest.claims.find(c => c.evidence.length)!
@@ -123,12 +130,12 @@ test.describe('S12: report, Citation and Source details panels', () => {
       const head = report.locator('.split-panel-actions .report-toolbar-actions > :not(input)')
       await expect(head).toHaveCount(4)
       expect(await head.evaluateAll(els => els.map(el => el.getAttribute('aria-label')))).toEqual(['Version', 'Citation style', 'Review with another model', 'Download report'])
-      await expect(report.getByRole('combobox', { name: 'Version' })).toHaveText(/^V2/)
+      await expect(report.getByRole('combobox', { name: 'Version' })).toHaveText(/^V3/)
       // P3: the serif title and one meta line from the answer's record: version, date, cited works, the reviews' count.
       const cited = new Set(latest.claims.flatMap(c => c.evidence.map(e => e.work_id))).size
       const meta = report.locator('.report-document-head .meta')
       // The separators are drawn by the layout, so the text is read with one space around each.
-      expect(squash((await meta.textContent())!.replace(/\s*·\s*/g, ' · '))).toBe(`Report · V2 · ${new Date(latest.created_at).toLocaleDateString('en', { dateStyle: 'long' })} · ${cited} sources1 supported`)
+      expect(squash((await meta.textContent())!.replace(/\s*·\s*/g, ' · '))).toBe(`Report · V3 · ${new Date(latest.created_at).toLocaleDateString('en', { dateStyle: 'long' })} · ${cited} sources1 supported`)
       await expect(meta.locator('.badge-s.v-ok')).toHaveText('1 supported')
       expect(await report.locator('.report-document-head h1').evaluate(el => getComputedStyle(el).fontFamily)).toMatch(/Source Serif/)
       // Sections: one numbered heading per headed section, in the answer's order.
@@ -174,18 +181,48 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await review.click()
       await expect(review).toHaveAttribute('aria-pressed', 'false')
       await shot(page, 's12-report-panel')
-      // The version select opens V1 in the same place; its meta line says it is the earlier version.
-      await report.getByRole('combobox', { name: 'Version' }).click()
-      await page.getByRole('option', { name: 'V1' }).click()
-      const first = reportPanel(page)
-      await expect(first.locator('.report-document-head .meta')).toContainText('Report · V1 (earlier version)')
-      await expect(first.getByRole('combobox', { name: 'Version' })).toHaveText(/^V1/)
-      await first.getByRole('combobox', { name: 'Version' }).click()
-      await page.getByRole('option', { name: 'V2' }).click()
-      await expect(reportPanel(page).locator('.report-document-head .meta > span').first()).toHaveText('Report · V2')
       await page.keyboard.press('Escape')
       await expect(page.locator('[data-split-panel]')).toHaveCount(0)
     } finally { await page.unroute(`**/api/researches/${rid}`) }
+  })
+
+  test('the version select shows each of three versions in the same panel, and Back returns to the version shown', async () => {
+    const view = await viewOf(api, rid)
+    const byVersion = new Map(valid(view).map(a => [a.report_version!, a]))
+    await visit(page, research())
+    await page.locator('#research-answer').click()
+    const head = page.locator('[data-split-panel] .split-panel-head')
+    const meta = () => reportPanel(page).locator('.report-document-head .meta > span').first()
+    // One stack entry throughout: no Back button, the report's title stays, the panel never closes.
+    const shows = async (v: number) => {
+      await expect(meta()).toHaveText(`Report · V${v}${v < 3 ? ' (earlier version)' : ''}`)
+      await expect(reportPanel(page).getByRole('combobox', { name: 'Version' })).toHaveText(new RegExp(`^V${v}`))
+      await expect(head.getByRole('button', { name: 'Back', exact: true })).toHaveCount(0)
+      await expect(reportPanel(page).locator('.report-document-head h1')).toBeVisible()
+    }
+    const choose = async (v: number) => {
+      await reportPanel(page).getByRole('combobox', { name: 'Version' }).click()
+      await page.getByRole('option', { name: `V${v}`, exact: true }).click()
+      await shows(v)
+    }
+    await shows(3)
+    // Latest to older, older to older, older to latest, latest to older again.
+    for (const v of [1, 2, 3, 2]) await choose(v)
+    // From V2, a reference opens Source details on top; Back returns to V2's report, not an empty panel.
+    const second = byVersion.get(2)!
+    const cited = second.claims.flatMap(c => c.evidence)[0]
+    await reportPanel(page).locator('.reference-list > li').filter({ hasText: cited.title }).first().getByRole('button').click()
+    await expect(sourcePanel(page)).toBeVisible()
+    await head.getByRole('button', { name: 'Back', exact: true }).click()
+    await shows(2)
+    // Back to the latest, then a reference and Back again: still one report entry, now V3.
+    await choose(3)
+    await reportPanel(page).locator('.reference-list > li').first().getByRole('button').click()
+    await expect(sourcePanel(page)).toBeVisible()
+    await head.getByRole('button', { name: 'Back', exact: true }).click()
+    await shows(3)
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-split-panel]')).toHaveCount(0)
   })
 
   test('a citation chip opens the Citation panel; each entry opens its passage at the located anchor', async () => {
@@ -351,28 +388,122 @@ test.describe('S12: report, Citation and Source details panels', () => {
     await details.getByRole('tab', { name: 'PDF' }).click()
     await expect(details.locator('.source-empty h2')).toHaveText('No PDF yet')
     await shot(page, 's12-source-details-empty')
-    // P15: while the lookup runs, the services it asks first; then what each service it asked answered, from the
-    // lookups it recorded, and whether a file came. The request is held a moment so the running state can be seen.
+    // P15: while the lookup runs no service is named (it is one request); then what each service it asked answered,
+    // from the lookups it recorded, apart from the services it recorded without asking (no key or contact setting in
+    // the fixture), and whether a file came. The request is held a moment so the running state can be seen.
     const before = source!.access.pdf_discoveries.length
     await page.route(`**/sources/${source!.source_version_id}/pdf-discovery`, async route => { await new Promise(r => setTimeout(r, 800)); await route.continue() })
     await details.locator('.source-empty .acts').getByRole('button', { name: 'Find PDF' }).click()
     const block = details.locator('.find-block')
     await expect(block).toContainText('Looking for an open copy…')
-    await expect(block.locator('.pill')).toHaveText(['Unpaywall', 'OpenAlex', 'Crossref'])
+    await expect(block.locator('.pill')).toHaveCount(0)
     await expect(block).not.toContainText('Looking for an open copy…', { timeout: 30_000 })
     await page.unroute(`**/sources/${source!.source_version_id}/pdf-discovery`)
     const after = (await viewOf(api, rid)).sources.find(s => s.source_version_id === source!.source_version_id)!
-    const asked = [...new Set(after.access.pdf_discoveries.slice(before).map(d => d.provider))]
+    const records = after.access.pdf_discoveries.slice(before)
+    const asked = [...new Set(records.filter(d => !notSent(d)).map(d => d.provider))]
+    const skipped = [...new Set(records.filter(d => notSent(d)).map(d => d.provider))].filter(p => !asked.includes(p))
     expect(asked.length).toBeGreaterThan(0)
+    expect(skipped.length, 'the fixture has services without a key or contact setting').toBeGreaterThan(0)
     await expect(block.locator('.pill')).toHaveText(asked.map(p => PROVIDERS[p] ?? p))
+    const notAsked = block.locator('.find-skipped')
+    await expect(notAsked).toContainText('Not asked:')
+    for (const p of skipped) await expect(notAsked).toContainText(PROVIDERS[p] ?? p)
     if (after.access.assets.length) await expect(block).toContainText('Found an open copy.')
     else {
       await expect(block).toContainText('No open copy found.')
-      await expect(block).toContainText(`Checked ${asked.length > 1 ? `${asked.slice(0, -1).map(p => PROVIDERS[p] ?? p).join(', ')} and ${PROVIDERS[asked[asked.length - 1]] ?? asked[asked.length - 1]}` : PROVIDERS[asked[0]] ?? asked[0]}.`)
+      await expect(block).toContainText(`Checked ${listed(asked.map(p => PROVIDERS[p] ?? p))}.`)
+      for (const p of skipped) await expect(block.locator('.notice-body > p').first()).not.toContainText(PROVIDERS[p] ?? p)
       await expect(block.getByRole('button', { name: 'Attach PDF' })).toBeVisible()
     }
     await shot(page, 's12-source-details-find')
     await page.keyboard.press('Escape')
+  })
+
+  test('a file kept without text is not shown as text: the badge and the found sentence follow its extraction', async () => {
+    const view = await viewOf(api, rid)
+    const chosen = view.sources.filter(s => !s.access.assets.length && s.doi && s.access.abstract_passage_id && s.version_role !== 'other_version')
+    // Another work than the previous case's (that one may have a file now).
+    const source = chosen[chosen.length - 1]
+    const kept = { id: 'ast_SYNTHETIC_kept', extraction_status: 'no_text', page_count: 3, origin: 'open_access', byte_size: 1000, original_filename: null }
+    // PATCHED VIEW: after the real lookup, the view the page receives holds a kept file with no text layer for this work
+    // (the fixture's open PDFs all have text). The lookup rows are the stored ones.
+    let found = false
+    await page.route(`**/api/researches/${rid}`, async route => {
+      const response = await route.fetch()
+      const body = await response.json() as View
+      if (found) for (const s of body.sources) if (s.source_version_id === source.source_version_id) s.access.assets = [kept as never]
+      await route.fulfill({ response, json: body })
+    })
+    await page.route(`**/sources/${source.source_version_id}/pdf-discovery`, async route => { const response = await route.fetch(); found = true; await route.fulfill({ response }) })
+    try {
+      await visit(page, research())
+      await openPanel(page, 'sources')
+      const entry = page.locator('.source-row:not(.is-other-version)', { has: page.getByText(source.title, { exact: true }) })
+      await entry.scrollIntoViewIfNeeded()
+      await entry.getByRole('button', { name: 'Read abstract' }).click()
+      const details = sourcePanel(page)
+      await details.locator('.dacts .btn-pri').click()
+      const block = details.locator('.find-block')
+      await expect(block).toContainText('Found an open copy.', { timeout: 30_000 })
+      await expect(block).toContainText('The file is kept, but it has no text layer to extract, so a new answer cannot read it yet.')
+      await expect(block).not.toContainText('a new answer can read it')
+      await expect(block.getByRole('button', { name: 'Read the plain text' })).toHaveCount(0)
+      await expect(details.locator('.dhead .pills .ref-pill').first()).toHaveText('PDF without extracted text')
+      await shot(page, 's12-source-details-kept-no-text')
+      // A failed extraction reads the same way in the badge.
+      kept.extraction_status = 'failed'
+      await page.keyboard.press('Escape')
+      await visit(page, research())
+      await openPanel(page, 'sources')
+      await entry.scrollIntoViewIfNeeded()
+      await entry.getByRole('button', { name: 'Read abstract' }).click()
+      await expect(sourcePanel(page).locator('.dhead .pills .ref-pill').first()).toHaveText('PDF without extracted text')
+      await page.keyboard.press('Escape')
+    } finally {
+      await page.unroute(`**/api/researches/${rid}`)
+      await page.unroute(`**/sources/${source.source_version_id}/pdf-discovery`)
+    }
+  })
+
+  test('Find PDF from the Citation panel starts a lookup each time it is chosen', async () => {
+    const view = await viewOf(api, rid)
+    const latest = [...valid(view)].sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
+    // PATCHED VIEW: the first thread chip's abstract-cited work is shown without its PDF (the fixture fetched one), so
+    // its Citation entry offers Find PDF; each lookup request is counted and answered without a change.
+    const sections: Claim[][] = []
+    for (const claim of latest.claims) {
+      const last = sections[sections.length - 1]
+      if (last && last[0].section === claim.section) last.push(claim); else sections.push([claim])
+    }
+    const claim = sections.slice(0, 2).flat().find(c => c.evidence.length)!
+    const svid = claim.evidence[0].source_version_id
+    expect(claim.evidence[0].kind).toBe('abstract')
+    await page.route(`**/api/researches/${rid}`, async route => {
+      const response = await route.fetch()
+      const body = await response.json() as View
+      for (const s of body.sources) if (s.source_version_id === svid) s.access.assets = []
+      await route.fulfill({ response, json: body })
+    })
+    let lookups = 0
+    await page.route(`**/sources/${svid}/pdf-discovery`, route => { lookups += 1; return route.fulfill({ json: {} }) })
+    try {
+      await visit(page, research())
+      await page.locator('.answer-thread .answer-prose .cite-chip').first().click()
+      const cite = panel(page, 'Citation')
+      const head = page.locator('[data-split-panel] .split-panel-head')
+      for (const n of [1, 2]) {
+        await cite.locator('.cite-entry').first().getByRole('button', { name: 'Find PDF' }).click()
+        await expect.poll(() => lookups).toBe(n)
+        await expect(sourcePanel(page).locator('.find-block')).toBeVisible()
+        await head.getByRole('button', { name: 'Back', exact: true }).click()
+        await expect(cite).toBeVisible()
+      }
+      await page.keyboard.press('Escape')
+    } finally {
+      await page.unroute(`**/api/researches/${rid}`)
+      await page.unroute(`**/sources/${svid}/pdf-discovery`)
+    }
   })
 
   test('at 390 px the Citation panel and Source details are dialogs without a horizontal scroll', async ({ browser }) => {

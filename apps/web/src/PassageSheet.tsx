@@ -3,8 +3,8 @@ import { AlignLeft, Check, ChevronLeft, ChevronRight, Copy, Ellipsis, FileText, 
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, assetUrl, shellApi, type AssetText, type Claim, type Passage, type Source } from './api'
-import { citedText, locatorText, providerName, versionText } from './labels'
+import { api, assetUrl, shellApi, type Asset, type AssetText, type Claim, type Passage, type PdfDiscovery, type Source } from './api'
+import { citedText, locatorText, providerName, serviceErrors, serviceKind, versionText } from './labels'
 import { t, uiLocale } from './i18n'
 import { PassageMathText } from './PassageMathText'
 import { PdfViewer } from './PdfViewer'
@@ -69,7 +69,13 @@ export type SourceActions = {
 type Tab = 'abs' | 'text' | 'pdf'
 // The services the open-copy lookup asks first, in its order (documents/acquisition.py); Europe PMC and Web Search are
 // asked only when these give no file, so they are named only once their answers are recorded.
-const FIRST_LOOKUPS = ['unpaywall', 'openalex', 'crossref']
+// A lookup DEIXIS recorded without sending a request (P15): the service needed a key or contact setting that is not
+// set, or the OpenAlex daily budget was closed. It is named apart from the services that were asked.
+const NOT_SENT = new Set(['missing_contact_email', 'missing_core_key', 'missing_serpapi_key'])
+const notSent = (d: PdfDiscovery) => NOT_SENT.has(d.error_code ?? '') || (d.error_code === 'quota_exhausted' && d.http_status === null)
+// Whether a stored PDF has text a new answer can read, from its extraction state (a kept file can have none).
+const textState = (asset: Asset | null | undefined): 'text' | 'none' | 'pending' | null =>
+  !asset ? null : ['succeeded', 'partial'].includes(asset.extraction_status) ? 'text' : ['no_text', 'failed'].includes(asset.extraction_status) ? 'none' : 'pending'
 
 // The proxy builds the link the browser opens, as the backend's `proxy.link` does: a `{url}` template, or a prefix.
 function proxied(proxy: string, target: string) {
@@ -131,6 +137,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const [tab, setTab] = useState<Tab>(initialView)
   // The open-copy lookup started here (P15): the lookups recorded before it, so its own answers are the ones after them.
   const [find, setFind] = useState<{ before: number; hadPdf: boolean; done: boolean } | null>(null)
+  // The target a lookup asked for on open was started for; cleared when the panel opens something else or closes.
+  const askedFind = useRef<string | null>(null)
   const [proxy, setProxy] = useState<{ address: string; label: string } | null>(null)
   const [style] = useCitationStyle()
   const toast = useToast()
@@ -147,6 +155,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     setAssetText(null)
     setPassageDocument(null)
     setAbstractPassage(null); setExtraText(null); setFind(null)
+    askedFind.current = null
     setCurrentDocument(null); setComparing(false); setLoadingCurrent(false); setComparisonError('')
     comparisonRequest.current += 1
     setError('')
@@ -249,6 +258,11 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   }
 
   const hasPdf = Boolean(pdfAssetId)
+  // The file and its text are told apart (P12): a passage read from the PDF, or its loaded text, says there is text;
+  // otherwise the stored extraction state of the file does. A kept file can have no text (no text layer, a failed read).
+  const fileAsset = pdfAssetId ? row?.access.assets.find(item => item.id === pdfAssetId) ?? null : null
+  const loadedText = (passage && !abstract) ? true : assetText ? assetText.passages.length > 0 : extraText ? extraText.passages.length > 0 : null
+  const pdfText: 'text' | 'none' | 'pending' | null = loadedText === true ? 'text' : loadedText === false ? 'none' : textState(fileAsset) ?? (hasPdf ? 'pending' : null)
   const finding = Boolean(row && actions?.finding === row.source_version_id)
   const canFind = Boolean(row && actions && row.doi && !row.access.assets.length && row.version_role !== 'other_version')
   const startFind = async () => {
@@ -257,10 +271,11 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     const ok = await actions.onFind(row)
     setFind(current => (ok && current ? { ...current, done: true } : null))
   }
-  const askedFind = useRef(false)
+  // Find PDF from the Citation panel: one lookup per opening, for the work of the passage this opening loaded.
+  const findKey = findOnOpen ? `${openPassageId ?? ''}|${openAssetId ?? ''}` : null
   useEffect(() => {
-    if (!findOnOpen || askedFind.current || !canFind) return
-    askedFind.current = true
+    if (!findKey || askedFind.current === findKey || !canFind || (openPassageId && passage?.id !== openPassageId)) return
+    askedFind.current = findKey
     void startFind()
   })  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -289,36 +304,46 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     {row.version_role !== 'other_version' && <Button variant="outline" size="sm" className="ghost" disabled={busy} onClick={() => actions.onAttach(row)}><FileUp size={14} aria-hidden />{t('Attach PDF')}</Button>}
   </div>
 
-  // The open-copy lookup started from this panel (P15): while it runs, the services it asks first; then what each
-  // service answered, from the lookups it recorded, and whether a file was attached.
+  // The open-copy lookup started from this panel (P15). While it runs no service is named: it is one request and its
+  // steps are not reported. After it, the services it asked, each with its recorded answer, apart from the ones it
+  // recorded without asking (a key or contact setting missing, the daily budget closed), and whether a file came; what
+  // the file holds (text a new answer can read, or none) comes from its stored extraction, not from its presence.
   const findBlock = (() => {
     if (!row || (!find && !finding)) return null
     if (finding || !find?.done) return <div className="notice answer-notice is-info find-block" role="status">
       <LoaderCircle size={16} className="pdf-search-spin" aria-hidden />
-      <div className="notice-body"><p><b>{t('Looking for an open copy…')}</b></p>
-        <div className="pills">{FIRST_LOOKUPS.map(id => <span key={id} className="pill">{providerName(id)}</span>)}</div></div>
+      <div className="notice-body"><p><b>{t('Looking for an open copy…')}</b></p></div>
     </div>
-    const asked = row.access.pdf_discoveries.slice(find.before)
-    const providers = [...new Set(asked.map(d => d.provider))]
-    const answered = (provider: string) => asked.filter(d => d.provider === provider).some(d => ['completed', 'zero_results'].includes(d.status))
-    const pills = <div className="pills">{providers.map(id => <span key={id} className={`pill ${answered(id) ? 'ok' : 'warn'}`}>{answered(id) ? <Check size={12} aria-hidden /> : <TriangleAlert size={12} aria-hidden />}{providerName(id)}</span>)}</div>
+    const records = row.access.pdf_discoveries.slice(find.before)
+    const sent = records.filter(d => !notSent(d))
+    const providers = [...new Set(sent.map(d => d.provider))]
+    const skipped = records.filter(d => notSent(d) && !providers.includes(d.provider))
+    const answered = (provider: string) => sent.filter(d => d.provider === provider).some(d => ['completed', 'zero_results'].includes(d.status))
+    const pills = providers.length > 0 && <div className="pills">{providers.map(id => <span key={id} className={`pill ${answered(id) ? 'ok' : 'warn'}`}>{answered(id) ? <Check size={12} aria-hidden /> : <TriangleAlert size={12} aria-hidden />}{providerName(id)}</span>)}</div>
+    const notAsked = skipped.length > 0 && <p className="find-skipped">{t('Not asked:')} {[...new Map(skipped.map(d => [d.provider, d])).values()].map(d => t(serviceErrors[serviceKind(d.error_code, d.http_status)], { service: providerName(d.provider) })).join(' ')}</p>
     const names = providers.map(providerName)
     const list = names.length > 1 ? t('{a} and {b}', { a: names.slice(0, -1).join(', '), b: names[names.length - 1] }) : names[0] ?? ''
     const got = row.access.assets[0]
     if (!find.hadPdf && got) {
       const via = row.access.pdf_candidates.find(c => c.access_status === 'downloaded')
       const facts = [via && providerName(via.provider), versionText(row.version_label), got.page_count ? t(got.page_count === 1 ? '{n} page' : '{n} pages', { n: got.page_count }) : null].filter(Boolean).join(', ')
-      return <div className="notice answer-notice is-info find-block" role="status"><Check size={16} aria-hidden />
-        <div className="notice-body"><p><b>{t('Found an open copy.')}</b> {facts}. {t('Its text was extracted page by page (no OCR); a new answer can read it. Citations name the copy that was read.')}</p>
-          {pills}
-          <div className="notice-actions"><Button variant="outline" size="sm" className="notice-ghost" onClick={() => choose('text')}>{t('Read the plain text')}</Button>
+      const read = textState(got)
+      const status = got.extraction_status === 'partial' ? t('Text was extracted from some of its pages (no OCR); a new answer can read them. Citations name the copy that was read.')
+        : read === 'text' ? t('Its text was extracted page by page (no OCR); a new answer can read it. Citations name the copy that was read.')
+        : got.extraction_status === 'no_text' ? t('The file is kept, but it has no text layer to extract, so a new answer cannot read it yet.')
+        : read === 'none' ? t('The file is kept, but its text could not be extracted, so a new answer cannot read it yet.')
+        : t('The file is kept; its text has not been read yet.')
+      return <div className={`notice answer-notice ${read === 'text' ? 'is-info' : 'is-attention'} find-block`} role="status">{read === 'text' ? <Check size={16} aria-hidden /> : <TriangleAlert size={16} aria-hidden />}
+        <div className="notice-body"><p><b>{t('Found an open copy.')}</b> {facts}. {status}</p>
+          {pills}{notAsked}
+          <div className="notice-actions">{read === 'text' && <Button variant="outline" size="sm" className="notice-ghost" onClick={() => choose('text')}>{t('Read the plain text')}</Button>}
             <Button variant="outline" size="sm" className="notice-ghost" onClick={() => choose('pdf')}>{t('Open the PDF')}</Button></div></div>
       </div>
     }
     const uncertain = row.access.pdf_candidates.filter(c => c.version_status === 'uncertain' && (c.identity_status === 'doi_verified' || c.identity_status === 'title_verified') && c.provider !== 'europepmc').length
     return <div className="notice answer-notice is-attention find-block" role="status"><TriangleAlert size={16} aria-hidden />
-      <div className="notice-body"><p><b>{t('No open copy found.')}</b> {list && t('Checked {services}.', { services: list })} {uncertain > 0 && t(uncertain === 1 ? '{n} file of uncertain version waits for your check in the Sources panel.' : '{n} files of uncertain version wait for your check in the Sources panel.', { n: uncertain })} {proxy && row.doi && t('The publisher copy may open through your institution.')}</p>
-        {pills}
+      <div className="notice-body"><p><b>{t('No open copy found.')}</b> {list ? t('Checked {services}.', { services: list }) : t('No service could be asked.')} {uncertain > 0 && t(uncertain === 1 ? '{n} file of uncertain version waits for your check in the Sources panel.' : '{n} files of uncertain version wait for your check in the Sources panel.', { n: uncertain })} {proxy && row.doi && t('The publisher copy may open through your institution.')}</p>
+        {pills}{notAsked}
         <div className="notice-actions">{proxy && row.doi && <a className="notice-ghost btn-link" href={proxied(proxy.address, `https://doi.org/${row.doi}`)} target="_blank" rel="noreferrer"><LinkIcon size={14} aria-hidden />{t('Open via {proxy}', { proxy: proxy.label })}</a>}
           {actions && <Button variant="outline" size="sm" className="notice-ghost" disabled={busy} onClick={() => actions.onAttach(row)}><FileUp size={14} aria-hidden />{t('Attach PDF')}</Button>}</div></div>
     </div>
@@ -383,9 +408,10 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
               ? <>{source.authors.slice(0, 2).join(', ')}, <button className="author-more" onClick={() => setAllAuthors(true)}>{t('and {n} more', { n: source.authors.length - 2 })}</button></>
               : source.authors.join(', ')}</p>}
             <div className="source-chips pills">
-              {hasPdf || (passage && !abstract) || (assetText && assetText.passages.length)
-                ? <span className="ref-pill pill is-text">{(() => { const doc = shownDocument ?? otherText; const n = doc ? pages(doc) : row?.access.assets[0]?.page_count ?? null; return n ? t('PDF text · {n} pp.', { n }) : t('PDF text') })()}</span>
-                : assetText ? <span className="ref-pill pill is-text">{t('PDF without extracted text')}</span>
+              {pdfText === 'text'
+                ? <span className="ref-pill pill is-text">{(() => { const doc = shownDocument ?? otherText; const n = doc ? pages(doc) : fileAsset?.page_count ?? null; return n ? t('PDF text · {n} pp.', { n }) : t('PDF text') })()}</span>
+                : pdfText === 'none' ? <span className="ref-pill pill is-text">{t('PDF without extracted text')}</span>
+                : pdfText === 'pending' ? <span className="ref-pill pill is-text">{t('PDF, text not read yet')}</span>
                 : abstractId ? <span className="ref-pill pill is-abstract">{t('Abstract only')}</span>
                 : <span className="ref-pill pill">{t('Metadata only')}</span>}
               <span className="ref-pill pill">{source.version_label ? versionText(source.version_label) : t('version not stated by the provider')}</span>

@@ -18,6 +18,9 @@ export type PanelStack = {
   close: () => void
   // A panel its owner closed (its target cleared) leaves the stack without being the one asked for.
   remove: (name: string) => void
+  // The panel `from` shows other content under the name `to` in the same place of the stack (a report's version
+  // select): no entry is added or left behind, and Back still returns to the panel below.
+  replace: (from: string, to: string) => void
   setWide: (wide: boolean) => void
   setSlots: (slots: PanelSlots | null) => void
   // Set once after an open or back: the panel that shows next moves focus to its heading, or after Back to the control that opened the panel above it.
@@ -85,6 +88,11 @@ export function usePanelStack(initial: string | null): PanelStack {
     else if (list[list.length - 1].name === name) pendingFocus.current = true
     commit(next)
   }, [commit])
+  const replace = useCallback((from: string, to: string) => {
+    const list = entriesRef.current
+    if (from === to || !list.some(entry => entry.name === from)) return
+    commit(list.filter(entry => entry.name !== to).map(entry => (entry.name === from ? { ...entry, name: to } : entry)))
+  }, [commit])
   const takeFocus = useCallback(() => {
     const pending = pendingFocus.current
     pendingFocus.current = false
@@ -92,8 +100,8 @@ export function usePanelStack(initial: string | null): PanelStack {
   }, [])
 
   const current = entries.length ? entries[entries.length - 1].name : null
-  return useMemo(() => ({ entries, current, wide, slots, open, back, close, remove, setWide, setSlots, takeFocus }),
-    [entries, current, wide, slots, open, back, close, remove, takeFocus])
+  return useMemo(() => ({ entries, current, wide, slots, open, back, close, remove, replace, setWide, setSlots, takeFocus }),
+    [entries, current, wide, slots, open, back, close, remove, replace, takeFocus])
 }
 
 export const PanelStackContext = createContext<PanelStack | null>(null)

@@ -496,6 +496,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // The report panel's version select lists every valid report of the research (V1, V2 …).
   const reportVersions = reports.map(r => ({ id: r.answer.id, version: r.version })).sort((a, b) => a.version - b.version)
   const citeClaim = answer && citeClaimId ? answer.claims.find(c => c.id === citeClaimId) ?? null : null
+  // The report's version select shows another version in the same panel: its stack entry is renamed in place, so the
+  // stack keeps one report entry and Back still returns to the panel below it.
+  const replacePanel = panels.replace
+  const switchReport = (answerId: string) => {
+    if (openReportId) replacePanel(`report:${openReportId}`, `report:${answerId}`)
+    setOpenReportId(answerId)
+  }
   const openCitation = (target: CitationOpen) => setPassageTarget({ passageId: target.passageId, highlightText: target.anchor, fromCitation: true, view: target.view, find: target.find })
   const answerVersion = answer?.report_version ?? 0
   const answerThread: AnswerThreadContext | undefined = answer ? {
@@ -648,7 +655,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
         latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
-          versions={reportVersions} latestVersion={latestVersion} onVersion={setOpenReportId} />{tableCards}</> : null} />
+          versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} />{tableCards}</> : null} />
       {!answer && tableCards}
       {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
         <span className="report-artifact-preview" aria-hidden="true"><strong>{heading}</strong></span>
@@ -790,7 +797,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {olderReport && <AnswerThread eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
       reviewPending={view.runs.some(r => r.kind === 'answer_review' && ACTIVE.has(r.status) && r.target?.answer_id === olderReport.answer.id)}
       reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf}
-      versions={reportVersions} latestVersion={latestVersion} onVersion={setOpenReportId} />}
+      versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} />}
     {openEvidenceReportId && <ReportView researchId={id} reportId={openEvidenceReportId} view={view} title={heading} dark={dark} onClose={() => setOpenEvidenceReportId(null)}
       onOpenCandidate={candidate => { setOpenEvidenceReportId(null); setCandidateSelection({ ...candidate, id: candidate.card?.id ?? candidate.id }); openPanel('cands') }}
       onOpenCitation={(passageId, highlightText, expectHighlight) => setPassageTarget({ passageId, highlightText, fromCitation: expectHighlight, reportCitation: true })}

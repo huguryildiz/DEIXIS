@@ -4044,4 +4044,12 @@ const tr: Record<string, string> = {
   'The reviewer model’s reading of each claim against its cited passages; it is not independent verification.': 'İnceleyici modelin her iddiayı atıf yapılan pasajlarla karşılaştırarak okuması; bağımsız doğrulama değildir.',
   'Review with another model, {n} review': 'Başka bir modelle incele, {n} inceleme',
   'Review with another model, {n} reviews': 'Başka bir modelle incele, {n} inceleme',
+  // S12 review round 1: services not asked, and a kept file told apart from its text.
+  'Not asked:': 'Sorulmadı:',
+  'No service could be asked.': 'Hiçbir servise sorulamadı.',
+  'Text was extracted from some of its pages (no OCR); a new answer can read them. Citations name the copy that was read.': 'Metin sayfalarının bir kısmından çıkarıldı (OCR yok); yeni bir yanıt bunları okuyabilir. Atıflar okunan kopyayı belirtir.',
+  'The file is kept, but it has no text layer to extract, so a new answer cannot read it yet.': 'Dosya saklandı, ancak çıkarılacak bir metin katmanı yok; bu yüzden yeni bir yanıt onu henüz okuyamaz.',
+  'The file is kept, but its text could not be extracted, so a new answer cannot read it yet.': 'Dosya saklandı, ancak metni çıkarılamadı; bu yüzden yeni bir yanıt onu henüz okuyamaz.',
+  'The file is kept; its text has not been read yet.': 'Dosya saklandı; metni henüz okunmadı.',
+  'PDF, text not read yet': 'PDF, metin henüz okunmadı',
 }

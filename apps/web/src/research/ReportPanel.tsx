@@ -46,7 +46,10 @@ export function ReportPanel({ open, onOpenChange, dark, title, version, latestVe
         </SelectContent>
       </Select>}
       <Select value={style} onValueChange={value => { if (value) onStyle(value as CitationStyle) }}>
-        <SelectTrigger className="report-select" aria-label={t('Citation style')} title={t('How the cited sources are written')}><SelectValue>{(value: string) => t(citationStyles[value as CitationStyle].label)}</SelectValue></SelectTrigger>
+        <SelectTrigger className="report-select" aria-label={t('Citation style')} title={t('How the cited sources are written')}><SelectValue>{(value: string) => <span className="report-select-sizer">
+          {/* As wide as the longest style name, like the mockup's native select: the others hold the width unseen. */}
+          {(Object.keys(citationStyles) as CitationStyle[]).map(k => <span key={k} className={k === value ? undefined : 'is-sizer'} aria-hidden={k === value ? undefined : true}>{t(citationStyles[k].label)}</span>)}
+        </span>}</SelectValue></SelectTrigger>
         <SelectContent className="intake-select-content has-details" align="end" alignItemWithTrigger={false}>
           <div className="intake-select-heading" aria-hidden="true">{t('Citation style')}</div>
           {(Object.keys(citationStyles) as CitationStyle[]).map(k => <SelectItem key={k} value={k}><Option icon={Quote} title={t(citationStyles[k].label)} detail={t(citationStyles[k].detail)} /></SelectItem>)}

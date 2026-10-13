@@ -373,6 +373,16 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
                               "citations": cited.get(c["claim_label"], [])} for c in draft["claims"]],
                   "unanswered_aspects": draft["unanswered_aspects"]}
     validation = json.loads(row["validation_json"]) if row["validation_json"] else None
+    # The turn's live steps (UI parity S22b) from its stored step rows: how many passages the stored selection sends
+    # (the call's allowlist, never an estimate) once that step has succeeded, and the state of the answer's model step.
+    steps = {r["operation_key"]: r for r in store.conn.execute(
+        "SELECT operation_key, status, output_json FROM run_steps WHERE run_id = ? AND operation_key IN (?, ?)",
+        (row["run_id"], SELECTION_KEY, TASK))}
+    selection = steps.get(SELECTION_KEY)
+    chosen = (json.loads(selection["output_json"]) if selection is not None and selection["status"] == "succeeded"
+              and selection["output_json"] else None)
+    progress = {"passages_selected": len(chosen["passage_ids"]) if chosen else None,
+                "answer_step": steps[TASK]["status"] if TASK in steps else None}
     if answer is not None:
         # The validation warnings stored with the answer (math, several sources), as the answer view's `validation`.
         answer["warnings"] = (validation or {}).get("warnings", [])
@@ -382,6 +392,7 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
         "published_at": row["published_at"], "stale_scope": row["scope_revision"] != current,
         "stale_selection": stale_selection,
         "passages_considered": row["passages_considered"], "passages_given": row["passages_given"],
+        "progress": progress,
         "run": {"id": run["id"], "status": run["status"], "stage": run["stage"], "pause_reason": run["pause_reason"],
                 "error": run["error"]},
         "answer": answer,

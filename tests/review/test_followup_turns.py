@@ -79,6 +79,8 @@ def test_a_follow_up_is_answered_from_the_passages_sent_and_cites_located_anchor
         # The allowlist is exactly the passages and sources sent in this call, and it is stored with its StepInput.
         assert payload["allowlist"]["passage_ids"] == sent and payload["allowlist"]["source_ids"] == [svid]
         assert turn["passages_given"] == len(sent) and turn["passages_considered"] >= len(sent)
+        # The live steps read the stored step rows: the selection's count is the call's allowlist (UI parity S22b).
+        assert turn["progress"] == {"passages_selected": len(sent), "answer_step": "succeeded"}
         selection = app.state.store.existing_step(turn["run"]["id"], followup.SELECTION_KEY)["output"]
         assert selection["passage_ids"] == sent and selection["basis"] == "included_works"
         # The page naming the binary variable ranks first: the lexical ranking matched the turn's words.
@@ -184,6 +186,7 @@ def test_a_research_without_passages_answers_no_passages_without_a_model_call(tm
         turn = answered(client, rid)
         assert turn["status"] == "no_passages" and turn["run"]["status"] == "completed"
         assert adapter.calls == [] and turn["passages_considered"] == 0 and turn["answer"] is None
+        assert turn["progress"] == {"passages_selected": None, "answer_step": None}
 
 
 def test_no_search_or_provider_request_is_started(tmp_path):
@@ -229,7 +232,11 @@ def test_pause_during_the_call_publishes_on_resume_without_a_second_call(tmp_pat
         turn = response.json()
         _, run = wait_run(client, rid, turn["run"]["id"])
         assert (run["status"], run["pause_reason"]) == ("paused", "user_requested")
-        assert client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()["status"] == "pending"
+        paused = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()
+        assert paused["status"] == "pending" and paused["passages_given"] is None
+        # While unpublished the turn's steps still say what is stored: the selection and the finished call.
+        sent = step_inputs(app, run["id"])[0]["passages"]
+        assert paused["progress"] == {"passages_selected": len(sent), "answer_step": "succeeded"}
         assert client.post(f"/api/runs/{run['id']}/resume").status_code == 200
         wait_run(client, rid, run["id"])
         turn = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()

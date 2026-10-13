@@ -37,6 +37,11 @@ discovery run stops `paused` in its read stage; resuming finishes it. "[stale-se
 run is active, the research's seed PDF is replaced by SYNTHETIC pages through `Store.replace_asset`, so
 `seed_status` reads `stale` until the person freezes the current text again. `--write-seed-pdf` writes the SYNTHETIC PDF
 these files-based markers upload.
+Follow-up markers (UI parity S22b; written in a follow-up question, which replaces the research question in its
+StepInput): "[fu-not]" (the follow-up answer says the passages do not answer it: outcome `not_answered`, one claim on the
+closest passage and one SYNTHETIC unanswered aspect), "[fu-invalid]" (every follow-up call answers text that is not JSON,
+its repair included, so the turn is an unverified draft), "[fu-hold]" (a follow-up call waits for `followup-release`
+in the fixture data directory, failing after 60 s, so the page can see and pause a live turn).
 "[clarify]" (parity plan S0) is not provided: no backend path stores an answer with status `clarification`, so the
 state cannot be reached without a backend change.
 
@@ -594,6 +599,9 @@ def arxiv_pdf() -> bytes:
     return doc.tobytes()
 
 
+FOLLOWUP_UNANSWERED = "SYNTHETIC: none of the passages given reports this directly."
+
+
 class ScriptedCodex:
     """Registered as the "codex" connection so the unchanged UI can drive it."""
 
@@ -634,6 +642,15 @@ class ScriptedCodex:
                 await asyncio.sleep(0.1)
             else:
                 return ModelStepResult("failed", error="SYNTHETIC answer hold timed out")
+        if task == "followup_answer" and "[fu-hold]" in question:
+            for _ in range(600):
+                if self.data_dir is not None and (self.data_dir / "followup-release").exists():
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                return ModelStepResult("failed", error="SYNTHETIC follow-up hold timed out")
+        if task == "followup_answer" and "[fu-invalid]" in question:
+            return ModelStepResult("completed", raw_text="SYNTHETIC not a follow-up answer", resolved_model=requested_model)
         if task == "owner_review" and "[review-hold]" in question:
             for _ in range(600):
                 if self.data_dir is not None and (self.data_dir / "review-release").exists():
@@ -846,6 +863,10 @@ class ScriptedCodex:
                 elif "visiting hours" in candidate["title"] and "[queue]" in question:
                     # Case J / M's off-topic work (DEIXIS_FIXTURE_AUDIT): both runs leave it out of scope.
                     record.update(label="out_of_scope", rationale="SYNTHETIC: hospital wards are not the question's setting.")
+        elif si["task_type"] == "followup_answer" and "[fu-not]" in question:
+            # SYNTHETIC: the passages do not answer the follow-up; the one claim reports what the closest passage states.
+            output["outcome"] = "not_answered"
+            output["unanswered_aspects"] = [FOLLOWUP_UNANSWERED]
         elif si["task_type"] == "grounded_answer":
             claims = []
             anchors = []

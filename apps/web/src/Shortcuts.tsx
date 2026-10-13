@@ -48,6 +48,8 @@ export const KEY_SECTIONS: { heading: string; rows: KeyRow[] }[] = [
   ] },
   { heading: 'In a text box', rows: [
     { label: 'Start research (home)', keys: [IS_MAC ? '⌘' : 'Ctrl', '↵'] },
+    // The follow-up composer at the foot of a research (R30, S22b).
+    { label: 'Send follow-up', keys: [IS_MAC ? '⌘' : 'Ctrl', '↵'] },
   ] },
 ]
 

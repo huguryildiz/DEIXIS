@@ -1,10 +1,11 @@
 import { type ReactNode } from 'react'
-import { ArrowUp, ArrowUpRight, BadgeCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
+import { ArrowUp, ArrowUpRight, BadgeCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, MessageSquare, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { type Answer, type Claim, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
 import { locatorText, pauseReasonText, verdictLabels, versionText, versionTones } from '../labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../labels'
 import { MathText } from '../MathText'
+import { writeClipboard } from '../clipboard'
 import { ReviewSummary } from '../review/ReviewSummary'
 import type { ReviewSurfaceState } from '../review/useReviewSurface'
 import { useReviewList } from '../review/useReviewList'
@@ -28,19 +29,6 @@ import { downloadReportMarkdown, reportMarkdown, reportParts, verdictTones } fro
 // the action pills and the Next steps box. Every number is the answer's own stored record or the view's count. The full
 // report opens as a side panel (ReportPanel); an older version opens the same panel without the thread part. A claim's
 // citation chip in the thread opens the Citation panel (P11), which lists what the claim cites.
-
-async function writeClipboard(text: string) {
-  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text)
-  const field = document.createElement('textarea')
-  field.value = text
-  field.style.position = 'fixed'
-  field.style.opacity = '0'
-  document.body.appendChild(field)
-  field.select()
-  const copied = document.execCommand('copy')
-  field.remove()
-  if (!copied) throw new Error('copy failed')
-}
 
 const count = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
 // The thread shows the answer's first sections as paragraphs (mockup `.prose`, two of them); the report has every one.
@@ -66,6 +54,8 @@ export type AnswerThreadContext = {
   // The Citation panel of one claim (P11): its chip is on while that claim's citations are open.
   citing: string | null
   onCite: (claim: Claim, opener: HTMLElement) => void
+  // A Next steps row puts a question in the follow-up composer (R28 → R30); the person sends it.
+  onAsk: (text: string) => void
 }
 
 // A notice in the mockup's `.notice` form: an icon, the sentences, then the actions.
@@ -315,6 +305,10 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       <button type="button" className="first" aria-haspopup="dialog" onClick={e => requestReview(e.currentTarget)}><ListChecks size={16} aria-hidden /><span>{t('Review the claims with another model')}</span>{go}</button>
       {ctx.included > 0 && <button type="button" onClick={e => ctx.onPanel('table', e.currentTarget)}><Table2 size={16} aria-hidden />
         <span>{ctx.hasTable ? t('Open the evidence table') : t(ctx.included === 1 ? 'Build an evidence table of the {n} included source' : 'Build an evidence table of the {n} included sources', { n: count(ctx.included) })}</span>{go}</button>}
+      {/* The first aspect the answer says its passages did not cover, as a follow-up question: the row puts it in the
+          composer; nothing is sent until the person sends it. */}
+      {answer.applicability === 'current' && answer.unanswered_aspects.length > 0 && <button type="button" className="follow-ask" title={t('Puts this question in the follow-up box')} onClick={() => ctx.onAsk(answer.unanswered_aspects[0])}>
+        <MessageSquare size={16} aria-hidden /><span><span className="sr-only">{t('Ask as a follow-up:')} </span>{answer.unanswered_aspects[0]}</span>{go}</button>}
       {abstractOnly > 0 && <button type="button" onClick={e => ctx.onPanel('pdfs', e.currentTarget)}><Upload size={16} aria-hidden />
         <span>{t(abstractOnly === 1 ? 'Get full text for the {n} work the answer read from its abstract only' : 'Get full text for the {n} works the answer read from their abstracts only', { n: count(abstractOnly) })}</span>{go}</button>}
     </section>

@@ -156,7 +156,7 @@ test.describe.serial('S3: shortcuts, keys dialog, palette', () => {
     await expect(dialog.locator('.keys-heading > span').first()).toHaveCSS('text-transform', 'uppercase')
     const rows = await dialog.locator('.keys > span:not(.keys-keys)').allTextContents()
     expect(rows).toEqual(['Search and commands', 'Keyboard shortcuts', 'New research', 'Library', 'Show or hide the sidebar', 'Close panel or dialog',
-      'Sources', 'Report', 'Evidence table', 'Search funnel', 'Awaiting your decision', 'Get more full text', 'Start research (home)'])
+      'Sources', 'Report', 'Evidence table', 'Search funnel', 'Awaiting your decision', 'Get more full text', 'Start research (home)', 'Send follow-up'])
     await expect(dialog.getByRole('checkbox', { name: 'Single-key shortcuts' })).toBeChecked()
     await shot(page, 's3-keys-dialog')
     await page.keyboard.press('Escape')

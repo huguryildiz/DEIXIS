@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, PencilLine, Search, Sparkles, Table2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, ApiError, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
+import { api, ApiError, followupApi, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
 import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, seedSkipText, seedUseText } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { TextRecoveryContext } from './TextRecoveryContext'
@@ -47,6 +47,9 @@ import { SourcesPanel, type StateFilter } from './research/SourcesPanel'
 import { SplitPanel, StackPanel } from './research/SplitPanel'
 import { PanelStackContext, panelFromSegment, usePanelStack, usePhone, URL_PANELS } from './research/usePanelStack'
 import { RESEARCH_PANEL_EVENT, type ResearchPanelRequest } from './Shortcuts'
+import { FollowupComposer, type FollowupFill } from './research/FollowupComposer'
+import { FollowupTurnView } from './research/FollowupTurns'
+import { followupClaim, followupClaimId, useFollowupTurns } from './research/followupData'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const TRANSCRIPT_KINDS = new Set<RunKind>(['discovery', 'pdf_collection', 'fulltext_fetch', 'fulltext_adjudication', 'pdf_ocr', 'answer', 'report', 'review'])
@@ -158,6 +161,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [tables, setTables] = useState<TableSummary[] | null>(null)
   const lastEventId = view?.last_event_id
   const followupCount = useFollowUpCount(id, lastEventId)
+  // Follow-up questions of this research (R30/R31, S22b); not the Follow-up panel above, which watches for new works.
+  const followups = useFollowupTurns(id, lastEventId ?? 0)
+  const [asking, setAsking] = useState(false)
+  const [followupFill, setFollowupFill] = useState<FollowupFill | null>(null)
   const followupChanged = useCallback(async () => { await load(); onChanged() }, [load, onChanged])
   useEffect(() => {
     let live = true
@@ -541,13 +548,43 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const origin = document.activeElement
     void act(() => api.controlRun(target.id, action)).then(ok => { if (ok && action === 'resume') toRunStatus(target.id, origin) })
   }
+  // A follow-up question (R30, D11): one `followup_answer` run answers it from the passages this research holds; no search
+  // starts. One request at a time; the turn the server returns is shown at once and the list is read again on its events.
+  // The question revision on screen goes with it, so a newer revision saved elsewhere answers 409 instead of asking under it.
+  const anyActive = view.runs.some(r => ACTIVE.has(r.status))
+  const askFollowup = async (question: string, idempotencyKey: string) => {
+    if (asking) return false
+    setAsking(true)
+    try {
+      followups.accept(await followupApi.ask(id, question, view.research.current_scope_revision, idempotencyKey))
+      onChanged()
+      return true
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) { toast('warning', t('Not applied: {message}. The page now shows the latest state.', { message: e.message })); await load() }
+      else toast('error', t('The follow-up question was not sent: {error}', { error: errorText(e) }))
+      return false
+    } finally { setAsking(false) }
+  }
+  // "Search for new works on this" (R31): saves the turn's question as the next question revision, only on this click. The
+  // revision's English key terms are cleared, since they described the earlier question. No search starts here; the
+  // message names the revision the server saved and says how to start its search.
+  const searchNewWorks = async (question: string) => {
+    let saved: ResearchView | null = null
+    if (await act(async () => { saved = await api.reviseScope(id, question, view.research.version, '') }) && saved) {
+      toast('success', t(view.search_runs.length ? 'Saved as revision {n} of the question. No search has started; start it with Search again.' : 'Saved as revision {n} of the question. No search has started; start it with Search providers.', { n: (saved as ResearchView).research.current_scope_revision }))
+    }
+  }
   // The latest answer in the thread (S10): the run writing its next version, the earlier version of the same question
   // revision, a claim review still running, and the panels its pills and Next steps rows open.
   const answerRun = run && run.kind === 'answer' && active && answer && run.id !== answer.run_id ? run : null
   const latestVersion = reports[0]?.version ?? 0
   // The report panel's version select lists every valid report of the research (V1, V2 …).
   const reportVersions = reports.map(r => ({ id: r.answer.id, version: r.version })).sort((a, b) => a.version - b.version)
-  const citeClaim = answer && citeClaimId ? answer.claims.find(c => c.id === citeClaimId) ?? null : null
+  // The Citation panel shows a claim of the shown answer or of a follow-up turn; a claim that is no longer there closes it.
+  const citeClaim = !citeClaimId ? null : answer?.claims.find(c => c.id === citeClaimId) ?? (() => {
+    for (const turn of followups.turns) for (const c of turn.answer?.claims ?? []) if (followupClaimId(turn, c) === citeClaimId) return followupClaim(turn, c, view.sources)
+    return null
+  })()
   // The report's version select shows another version in the same panel: its stack entry is renamed in place, so the
   // stack keeps one report entry and Back still returns to the panel below it.
   const replacePanel = panels.replace
@@ -573,6 +610,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     onCompare: () => { setChangesShown(true); setOpenReportId(answer.id) },
     citing: citeClaimId,
     onCite: claim => setCiteClaimId(claim.id),
+    onAsk: text => setFollowupFill(previous => ({ text, request: (previous?.request ?? 0) + 1 })),
   } : undefined
   // A notice of the answer offers "Generate a new answer" when its evidence changed or it failed validation; the button
   // under the thread then leaves it to the notice, so the page has one.
@@ -634,7 +672,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) && panel !== 'table' && <button type="button" className="run-chip" title={t('Open the Evidence table panel to control this run')} onClick={() => openPanel('table')}>
             <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
           </button>}
-          {mainRun && <RunChip run={mainRun} hasAnswer={hasAnswer} busy={busy} inThread={TRANSCRIPT_KINDS.has(mainRun.kind)} onControl={action => controlRun(mainRun, action)} />}
+          {mainRun && <RunChip run={mainRun} hasAnswer={hasAnswer} busy={busy} inThread={TRANSCRIPT_KINDS.has(mainRun.kind) || mainRun.kind === 'followup_answer'} onControl={action => controlRun(mainRun, action)} />}
           {queueCount > 0 && <button type="button" className="wait-chip" onClick={showQueue}><Inbox size={16} aria-hidden />{t('{n} waiting for you', { n: queueCount })}</button>}
         </>}
       <Button ref={reviseButton} variant="ghost" size="sm" className="research-topbar-action research-revise" title={t('Revise question')} disabled={active} aria-expanded={Boolean(revising)}
@@ -766,6 +804,16 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
           : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
       </div><UploadedTextNote semantic={view.semantic} /></>}
+      {/* Follow-up questions and their answers, oldest first (R31), then the sticky composer (R30). */}
+      {followups.error && <Notice tone="error">{t('Could not load the follow-up questions: {error}', { error: followups.error })}</Notice>}
+      {followups.turns.length > 0 && <div className="followup-turns">{followups.turns.map(turn => <FollowupTurnView key={turn.id} turn={turn} sources={view.sources}
+        actions={{ busy: busy || asking, locked: anyActive, canSearch: hasAcademic, citing: citeClaimId, onCite: claim => setCiteClaimId(claim.id),
+          // Resume hands focus to the run's chip in the topbar, as a resumed run of the thread does (controlRun).
+          onControl: (runId, action) => { const target = view.runs.find(r => r.id === runId); if (target) controlRun(target, action); else void act(() => api.controlRun(runId, action)) },
+          onAskAgain: question => { void askFollowup(question, crypto.randomUUID()) }, onSearchNew: turn => { void searchNewWorks(turn.question) } }} />)}</div>}
+      <FollowupComposer disabledReason={anyActive ? t('Wait for the current run to finish before asking a follow-up.') : null} sending={asking}
+        depthIcon={EffortIcon} depthLabel={t(effortLabels[view.scope.effort])} fill={followupFill} onSend={askFollowup}
+        onAddPdfs={opener => openPanel('pdfs', { opener })} />
       </div>
     {/* The answer's PDF suggestions attach through the same picker as the Sources panel. */}
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />

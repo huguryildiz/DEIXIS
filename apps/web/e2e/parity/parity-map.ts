@@ -13,7 +13,7 @@ export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zot
   | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty' | 'report-panel' | 'report-changes' | 'cite-panel' | 'detail-panel'
   | 'sources-why' | 'sources-sel' | 'queue-panel' | 'pdfs-panel' | 'funnel-panel' | 'activity-panel'
   | 'table-panel' | 'cell-panel' | 'ereport-panel' | 'ecite-panel'
-  | 'cands-panel' | 'cand-panel' | 'cev-panel' | 'review-dialog' | 'review-panel' | 'watch-panel' | 'schedule-dialog'
+  | 'cands-panel' | 'cand-panel' | 'cev-panel' | 'review-dialog' | 'review-panel' | 'watch-panel' | 'schedule-dialog' | 'followup-turn'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -211,6 +211,11 @@ export const SURFACES: Surface[] = [
       await page.locator('.review-pane .finding').first().waitFor()
     } },
   { id: 'watch-panel', mock: "setScenario('ok'); openPanel('watch', null, false)", app: '#/research/{cand}/watch', ready: '[data-split-panel] .followup-watch' },
+  // S22b: a follow-up turn in the thread (R31). The mockup's own "rounds" turn (its passages do not answer, so it offers
+  // "Search for new works on this"), finished at once: its timers are not started. The app's [parity] research holds one
+  // SYNTHETIC follow-up the fixture's model answers `not_answered` ("[fu-not]").
+  { id: 'followup-turn', mock: "setScenario('ok'); { const later = window.setTimeout; window.setTimeout = () => 0; addTurn('rounds'); window.setTimeout = later } st.turns[0].state = 'done'; render()",
+    app: '#/research/{research}', ready: '.followup-turn .followup-prose' },
   { id: 'schedule-dialog', mock: "setScenario('ok'); openPanel('watch', null, false)", mockAct: "schedDlg('q', false); sdSet('freq', 0)", app: '#/research/{cand}/watch', ready: '[data-split-panel] .followup-watch',
     appAct: async page => { await page.locator('.followup-watch').first().getByRole('button', { name: 'Schedule…' }).click(); await page.locator('.followup-dialog .fmts').first().waitFor() } },
   // S13: the Sources panel with its reason bar (the first row excluded) and with its selection bar (the first row
@@ -577,8 +582,16 @@ export const PAIRS: Pair[] = [
   { id: 'research.methods', surface: 'research', mock: '.thread .methods', app: '.answer-thread .methods', checks: ['content', 'type'], status: 'active' },
   { id: 'research.answer-acts', surface: 'research', mock: '.thread-inner > .acts', app: '.answer-thread .answer-acts', checks: ['content'], status: 'active' },
   { id: 'research.next-steps', surface: 'research', mock: '.thread .follow', app: '.answer-thread .follow', checks: ['content', 'type'], status: 'active' },
-  { id: 'research.followup-composer', surface: 'research', mock: '.mini', app: '.followup-composer', checks: ['content', 'colour'],
-    status: 'pending:S22b', why: 'S22b: sticky follow-up composer' },
+  // S22b (R30): the sticky follow-up composer at the foot of the thread: the field, "+" (Get more full text), the
+  // research's depth as a label (COPY_CHANGES followup-depth-label) and Send.
+  { id: 'research.followup-compose', surface: 'research', mock: '.foot-compose', app: '.followup-compose', checks: ['chrome'], use: 'decorative', status: 'active' },
+  { id: 'research.followup-composer', surface: 'research', mock: '.mini', app: '.followup-composer', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'research.followup-field', surface: 'research', mock: '.mini textarea', app: '.followup-composer textarea', checks: ['chrome', 'type'], status: 'active' },
+  { id: 'research.followup-add', surface: 'research', mock: '.mini .r .ib', app: '.followup-composer .followup-add', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'plus', app: 'plus' }, states: [], status: 'active' },
+  { id: 'research.followup-depth', surface: 'research', mock: '.mini .r .ghost', app: '.followup-composer .followup-depth', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'research.followup-send', surface: 'research', mock: '.mini .r .send', app: '.followup-composer .followup-send', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'up', app: 'arrow-up' }, use: 'icon', states: [], status: 'active' },
   // S11 (RL1-RL7): the artifacts rail. RL8's Usage box is S27's, so the box list is compared up to it (DEFERRED_TARGETS).
   { id: 'research.rail', surface: 'research', mock: '.rail', app: '.rail', checks: ['chrome'], widths: DESK, breakpoint: true, status: 'active' },
   // The boxes' h5 carries a count inside plain text (`Artifacts (2)`), so fixed text is not compared for the box frames;
@@ -597,6 +610,23 @@ export const PAIRS: Pair[] = [
   { id: 'research.rail-funnel', surface: 'research', mock: '.rail .fun button', app: '.rail .fun button', checks: ['chrome', 'type', 'colour'], list: 'fixed', widths: DESK,
     dataText: { mock: ['.tnum'], app: ['.rail-data'] }, states: ['hover'], status: 'active' },
 
+
+  // S22b (R31): one follow-up turn: the Question bubble, its two step lines, the short answer and its actions. The
+  // bubble is as wide as its question (data, GEOMETRY_EXCEPTIONS followup-question-width); the step lines' words carry
+  // the passage count (data), so their text is checked by e2e/followup-turns.spec.ts.
+  { id: 'followup-turn.question', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .q', app: '.followup-turn .followup-q', checks: ['content', 'type', 'colour'], status: 'active' },
+  { id: 'followup-turn.question-label', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .q b', app: '.followup-turn .followup-q > b', checks: ['type', 'colour', 'icon'], text: true,
+    icon: { mock: 'chat', app: 'message-square' }, states: [], status: 'active' },
+  { id: 'followup-turn.steps', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .steps .step', app: '.followup-turn .followup-step', checks: ['content', 'type', 'icon'], list: 'fixed',
+    text: false, icon: [{ mock: 'book', app: 'book-open' }, { mock: 'pen', app: 'pencil-line' }], status: 'active' },
+  { id: 'followup-turn.step-lines', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .steps .step > button', app: '.followup-turn .followup-step-line', checks: ['content', 'type', 'colour'], list: 'fixed',
+    text: false, states: [], status: 'active' },
+  { id: 'followup-turn.prose', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .prose', app: '.followup-turn .followup-prose', checks: ['content', 'type'], status: 'active' },
+  { id: 'followup-turn.acts', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .acts', app: '.followup-turn .followup-acts', checks: ['content'], status: 'active' },
+  { id: 'followup-turn.search', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .acts .ghost', app: '.followup-turn .followup-acts .answer-pill', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'search', app: 'search' }, text: true, states: [], status: 'active' },
+  { id: 'followup-turn.copy', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .acts .ib', app: '.followup-turn .followup-acts .answer-ib', checks: ['chrome', 'icon'],
+    icon: { mock: 'copy', app: 'copy' }, states: [], status: 'active' },
   // S6: the Zotero dialog of Home (H17). The dialog's and the footer's height and y depend on the rows and on how the
   // §2.3 notes wrap, so those two frames are compared as content (x, width, padding, line height); the head row is
   // chrome, and the footer buttons are chrome without y (a declared geometry exception).

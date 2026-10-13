@@ -56,7 +56,7 @@ type Answer = {
   id: string; run_id: string; status: string; report_version: number | null; applicability: string; source_text_changed: boolean
   claims: Claim[]; inputs_given: { depth?: { pdf: number; abstract: number; metadata: number } } | null
   validation: { reason?: string; issues?: { code: string; path: string }[] }; start_snapshot: { included: number } | null
-  review: unknown; clarification: unknown
+  review: unknown; clarification: unknown; unanswered_aspects: string[]
 }
 type Source = { source_version_id: string; work_id: string; title: string; version_role: string; selection: { state: string; version: number }; cited_in_latest_answer: boolean; access: { assets: { id: string }[] } }
 type View = {
@@ -333,13 +333,15 @@ test.describe.serial('S10: the answer in the thread', () => {
     await acts.getByRole('button', { name: 'Download' }).click()
     await expect(page.getByRole('menuitem', { name: /^MD/ }).first()).toBeVisible()
     await page.keyboard.press('Escape')
-    // Next steps (R28): review, a table of the included sources, full text for the works read from abstracts only.
+    // Next steps (R28): review, a table of the included sources, the answer's first unanswered aspect as a follow-up
+    // question (S22b, R30), full text for the works read from abstracts only.
     const next = thread(page).locator('.follow')
     await expect(next.locator('h5')).toHaveText('Next steps')
     const abstractOnly = answer.inputs_given!.depth!.abstract
     await expect(next.getByRole('button')).toHaveText([
       'Review the claims with another model',
       `Build an evidence table of the ${view.counts.included} included sources`,
+      ...answer.unanswered_aspects.slice(0, 1).map(aspect => `Ask as a follow-up: ${aspect}`),
       `Get full text for the ${abstractOnly} works the answer read from their abstracts only`,
     ])
     await next.getByRole('button', { name: /^Get full text for/ }).click()

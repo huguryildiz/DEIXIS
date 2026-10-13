@@ -864,8 +864,8 @@ test.describe('X01-X04: the default button at rest and on hover', () => {
 // the PDF file input (setInputFiles), the source selections made through the API, and the evidence-report setup listed below.
 // At every Tab stop and every key the focused element must be visible, inside the viewport and carry a focus indicator:
 // the app's own 2 px accent outline, Chrome's native ring on portaled controls, or an indicator on the nearest
-// :focus-within container for the four controls that deliberately move it there (composer textarea, quick find input,
-// model palette search, evidence label with :has(input:focus-visible)). Base UI focus guards are listed, not judged.
+// :focus-within container for the five controls that deliberately move it there (composer textarea, follow-up composer
+// textarea (S22b), quick find input, model palette search, evidence label with :has(input:focus-visible)). Base UI focus guards are listed, not judged.
 type FocusStep = { step: string; tag: string; name: string; kind: string; visible: boolean; inViewport: boolean; guard: boolean; detail?: string }
 const focusLog: FocusStep[] = []
 const focusFailures: string[] = []
@@ -974,7 +974,7 @@ async function measureFocus(page: Page): Promise<Omit<FocusStep, 'step'>> {
       let kind = kinds[0] ?? 'none'
       let detail = ''
       if (kind === 'none') {
-        const holder = el.closest('.composer, .quick-find-field, .model-palette-search, label')
+        const holder = el.closest('.composer, .followup-composer, .quick-find-field, .model-palette-search, label')
         if (holder) {
           const container = compare(holder, true)
           kinds = changes(container.on, container.off)

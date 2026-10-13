@@ -25,7 +25,7 @@ export type ColourException = {
 }
 
 // The mockup's text that uses `--faint` (#9aa0a8 / #6f7680). In the app such text uses `--muted` (plan §4.1).
-const FAINT_TEXT = ['.side h6', '.recents p', '.rrow em', '.composer textarea::placeholder', '.hint', '.menu h6',
+const FAINT_TEXT = ['.side h6', '.recents p', '.rrow em', '.composer textarea::placeholder', '.mini textarea::placeholder', '.hint', '.menu h6',
   '.menu button:disabled', '.menu .badge', '.q time', '.revline', '.step-detail .row>span:last-child', '.next',
   '.usage-line', '.box h5', '.box>button.li em', '.tabs button em', '.nr', '.more-row td', '.loc', '.foot-note', '.pgm',
   '.cell small', '.cell.nrc', '.cell .nrc', '.zcols em', '.elist b', '.hist li small', '.detail h4.sub', '.cols-list button em',
@@ -166,6 +166,8 @@ export const PLACEMENTS: Placement[] = [
     container: 'Rail box "How deeply sources were read": a third legend entry "Metadata only" when a source has neither', app: null },
   { id: 'run-controls', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S9',
     container: 'Topbar, beside Pause: Cancel of a live run (the mockup has no way to stop a live run). Resume run and Cancel run of a paused or stopped run are in the notice under its steps (R18)', app: '.run-strip .run-strip-cancel' },
+  { id: 'followup-turn-states', rule: 'D11 / §2.3 (a follow-up the passages do not answer says so; stale and stopped turns are marked)', slice: 'S22b',
+    container: 'Follow-up turn, between the step lines and the actions: "The passages in this research do not answer this." (or "… answer part of this."), "Not answered by these passages" with the stored aspects, "Asked under revision N of the question.", the stale-selection line, and the notices of a paused, failed or cancelled turn, an unverified draft or a research with no passage to give', app: '.followup-turn .followup-outcome, .followup-turn .followup-gaps, .followup-turn .followup-note, .followup-turn .followup-notice' },
   { id: 'revise-phone', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S22b',
     container: 'Topbar at ≤820px: Revise question stays as a 30px icon button (the mockup hides it there and revises through the follow-up composer, R30)', app: null },
   { id: 'key-terms-syntax', rule: '§0 rule 5 (the key-terms syntax is how a person writes the blocks the search reads)', slice: 'S8',
@@ -281,6 +283,11 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'review-loc', rule: '§2.3 (the passage kind and the normalising note come from the stored anchor)', mock: '{source} · abstract · Located quote; whether it supports the target was not checked.', app: '{source} · Located in the passage[ · after normalising…] · Whether it supports the target was not checked.' },
   { id: 'followup-nothing-new', rule: '§2.3 (the list shows stored records; a check that found nothing says so in its own line)', mock: 'Nothing new since the last check.', app: 'No new record is listed.' },
   { id: 'followup-never-on', rule: '§2.3 (a follow-up that was never enabled is not "turned off")', mock: 'This follow-up is turned off.', app: 'This follow-up is not on. (never enabled) / This follow-up is turned off. (disabled)' },
+  { id: 'followup-placeholder', rule: '§2.3 (a follow-up is answered from the passages the research holds; sending it does not revise the question or add PDFs, D11)', mock: 'Ask about anything you see, revise the question, or add PDFs', app: 'Ask about the passages this research has read' },
+  { id: 'followup-depth-label', rule: '§2.3 (a follow-up has no depth of its own: it reads at most the passage limit of the research\'s depth)', mock: 'the composer\'s depth menu button (Quick / Standard / Detailed)', app: 'the research\'s depth as a label, with "A follow-up reads at most the passage limit of this research\'s depth." as its title' },
+  { id: 'followup-search-saved', rule: '§2.3 ("Search for new works on this" saves a question revision; no search is queued until the person starts one, D11)', mock: 'New search queued as revision N', app: 'Saved as revision N of the question. No search has started; start it with Search again. (Search providers before a first search)' },
+  { id: 'followup-next-step-row', rule: '§2.3 / §0 rule 1 (the row\'s question is the answer\'s first stored unanswered aspect; it is put in the composer and sent by the person)', mock: 'Find works that report lifetime in rounds or hours for a fixed k (asked at once)', app: 'the first unanswered aspect of the shown answer, put in the follow-up composer' },
+  { id: 'followup-live-step', rule: '§2.3 (no count before the selection is stored)', mock: 'Looked in the 48 passages from this research (spinning while live)', app: 'Looking in the passages from this research (no count) until the selection is stored; then Looked in the N passages, N = the call\'s allowlist' },
   { id: 'followup-old-scope', rule: '§2.3 (the lock reason names why Check now waits)', mock: '(no reason line under an old-scope follow-up)', app: 'the stored rebind reason under the notice, and "Checks wait until you rebind this follow-up to the current question."' },
   { id: 'candidate-searching', rule: '§2.3 (the providers come from the frozen plan, shown in the plan above)', mock: 'Searching OpenAlex and Semantic Scholar, then assessing the kept works against the card…', app: 'Searching, then assessing the kept works against the card…' },
   { id: 'candidate-searches', rule: '§2.3 (the list is every stored search of the version, each a button)', mock: 'Searches (n) · showing the last 5', app: 'Searches (n)' },
@@ -297,9 +304,13 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     note: 'The setup rows sit under the replaced head sentence, and the proxy row holds the replaced proxy sentence; both wrap differently from the mockup at 390 px. x, width and height are compared.' },
   // S3: the palette and the keys dialog leave out the rows of DEFERRED_TARGETS, and the palette's recent rows are as many
   // as the fixture's researches, so the rows below them sit higher than in the mockup.
-  { id: 's3-rows-y', rule: 'DEFERRED_TARGETS followup-send-key; §0 rule 1 (recent rows are data)',
+  { id: 's3-rows-y', rule: '§0 rule 1 (recent rows are data); the keys dialog rows were left out while S22b was not built',
     pairs: ['palette.headings', 'palette.page-rows', 'palette.page-keys', 'palette.goto-rows', 'palette.goto-keys', 'keys.headings', 'keys.labels', 'keys.keys', 'keys.kbd'], axes: ['y'],
     note: 'Rows after a left-out row, or after the recent research rows, move up; x, width and height are compared.' },
+  { id: 'followup-question-width', rule: '§0 rule 1 (the question is the person\'s, from the records)', pairs: ['followup-turn.question'], axes: ['x', 'width'],
+    note: 'The Question bubble sits at the right and is as wide as its question, which is the fixture\'s, not the mockup\'s example; its type and colour are compared.' },
+  { id: 'followup-acts-y', rule: 'PLACEMENTS followup-turn-states; §0 rule 1 (the answer\'s claims and aspects are stored data)', pairs: ['followup-turn.search', 'followup-turn.copy'], axes: ['y'],
+    note: 'The turn\'s actions follow its stored prose, the outcome line and the unanswered aspects above them; x, width and height are compared.' },
   { id: 'palette-recent-height', rule: '§0 rule 1 (example data is not copied: the row is a research title from the records)',
     pairs: ['palette.recent-rows'], axes: ['height'],
     note: 'A recent research row wraps its title as the mockup\'s does, so its height follows the title\'s length (the fixture\'s title is longer than the mockup\'s example). x and width are compared.' },
@@ -419,6 +430,7 @@ export const APP_ADDITIONS: Array<{ id: string; rule: string; app: string; slice
   { id: 'selected-row-check', rule: 'WCAG 1.4.1 (selection shown by more than a background tint)', app: 'a check mark at the right of the selected row of the scope menu and the depth menu', slice: 'S4' },
   { id: 'diff-mark-cues', rule: 'WCAG 1.4.1 (an addition or removal is not told by its tint alone) / 1.3.1 (screen readers)', app: 'the answer diff\'s `ins` is underlined (the mockup\'s has no underline) and `del` keeps its strike-through; each starts with a visually hidden "Added:" or "Removed:" (citations: "Added citation:", "Removed citation:")', slice: 'S21' },
   { id: 'compare-phone-icon', rule: '§4.1 report-head-phone (the mockup\'s head runs past a phone screen)', app: 'below 520px "Show changes"/"Hide changes" is a 30px eye / eye-off icon button whose name stays for screen readers, and Citation style is as wide as its value, so the report head fits a 390px screen', slice: 'S21' },
+  { id: 'followup-compose-short-window', rule: 'WCAG 1.4.10 / 2.4.11 (a sticky box must not cover the thread it belongs to)', app: 'in a window 560px tall or less the follow-up composer stays in the flow at the end of the thread instead of sticking to its foot (the parity windows are 844 and 900px tall)', slice: 'S22b' },
   { id: 'keys-off-switch', rule: '§2.4 (single-key shortcuts) / WCAG 2.1.4 (character key shortcuts can be turned off)', app: 'the keys dialog\'s foot: one line with the "Single-key shortcuts" checkbox, kept across reloads (.keys-dialog .keys-foot)', slice: 'S3' },
 ]
 
@@ -440,14 +452,10 @@ export const DEFERRED_TARGETS: Array<{ id: string; rule: string; selector: strin
     note: 'Plan step detail and too-broad notice: "Edit plan". The Search plan panel (P42) does not exist yet.' },
   { id: 'rail-usage-box', rule: 'S11 (RL8 is S27: the usage figures need the S16 routes wired)', selector: '.rail .box:last-child', slice: 'S27',
     note: 'Rail box "Usage": model calls against the limit and the OpenAlex budget today.' },
-  { id: 'next-steps-followup-row', rule: 'S10 (never a row that does nothing)', selector: '.follow [data-turn]', slice: 'S22b',
-    note: 'Next steps row that asks a follow-up question (R28 → R30/R31): the follow-up turns do not exist yet.' },
   { id: 'sources-not-read-tab', rule: 'S13 (never a tab that does nothing; P5 C part and P7 are S27)', selector: '.tabs button[data-filter="nr"]', slice: 'S27',
     note: 'Sources filter strip: "Not read" and its "Screen 40 more" notice. The unscreened route (S20) exists; the tab is wired in S27.' },
   { id: 'column-recheck', rule: 'S15a (never a row that does nothing; a column-wide recheck has no route yet)', selector: '.menu [data-act="reccol"]', slice: 'S27',
     note: 'Column head menu: "Recheck this column". The cell recheck (Recheck this cell) is live; a recheck over a whole column waits for its route.' },
   { id: 'ereport-pdf-row', rule: 'S15a (never a row that does nothing; print is wired in S27)', selector: '.menu button.fmt[data-msg^="Evidence report saved as PDF"]', slice: 'S27',
     note: 'Evidence report Download menu: "PDF". The print path is not reachable from the UI yet; MD, TEX and DOCX are live.' },
-  { id: 'followup-send-key', rule: 'S3 (no key or command without a real target)', selector: '.keys > span:nth-of-type(27), .keys > span:nth-of-type(28)', slice: 'S22b',
-    note: 'Keys dialog row "Send follow-up · ⌘ ↵", under IN A TEXT BOX: the follow-up composer (R30) does not exist yet.' },
 ]

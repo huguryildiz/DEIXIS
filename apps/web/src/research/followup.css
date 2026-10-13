@@ -1,0 +1,48 @@
+/* Follow-up questions in the thread (mockup `turnHtml()` and `.foot-compose` / `.mini`, R30/R31, UI parity S22b). The
+   turns use the thread's 18px rhythm; the bubble, the step lines and the prose take the mockup's `.q`, `.step` and
+   `.prose` measures. Class names stay apart from the run steps (`.chat-step`) so the run's lists keep their own counts. */
+.followup-turns{display:grid;gap:36px;margin:18px 0 0}
+.followup-turn{display:grid;gap:18px;font-size:14px;line-height:1.5}
+.followup-q{justify-self:end;max-width:min(540px,100%);padding:12px 14px;border-radius:12px;background:var(--bubble);color:var(--ink);font-size:14.5px;line-height:1.5;overflow-wrap:anywhere}
+.followup-q>b{display:inline-flex;align-items:center;gap:5px;color:var(--accent);font-weight:500}
+.followup-q>span{white-space:pre-wrap}
+.followup-turn .followup-steps{display:grid;gap:2px;list-style:none;margin:0;padding:0;color:inherit}
+.followup-step{list-style:none;margin:0}
+.followup-step-line{display:flex;gap:10px;align-items:flex-start;width:100%;padding:5px 0;color:var(--muted);font-size:13px;line-height:1.45}
+.followup-step.is-attention .followup-step-line{color:var(--tone-uncertain)}
+.followup-step-icon{display:grid;place-items:center;flex:none;width:18px;padding-top:1px}
+.followup-turn .followup-note,.followup-turn .followup-outcome{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.followup-turn .followup-outcome{color:var(--ink-2);font-size:13px}
+.followup-prose{color:var(--ink);font-size:15px;line-height:1.68}
+.followup-turn .followup-prose p{margin:0;color:inherit;line-height:inherit}
+.followup-prose .claim+.claim::before{content:' '}
+.followup-gaps{display:grid;gap:4px;color:var(--muted);font-size:12.5px;line-height:1.5}
+.followup-turn .followup-gaps p{margin:0;color:inherit;font-weight:500;line-height:inherit}
+.followup-gaps ul{margin:0;padding-left:18px;list-style:disc}
+.followup-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.followup-acts [data-slot=button].answer-pill{height:30px;gap:6px;padding-inline:10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:13px;font-weight:400}
+.followup-acts [data-slot=button].answer-pill:hover{background:var(--hover-surface)}
+.followup-turn .chat-note{margin:0}
+
+/* The composer sticks to the foot of the thread; the thread's 56px end space gives way to it, and the thread keeps a
+   focused control above it when scrolling (scroll padding = the composer's height, set by the composer). */
+.followup-compose{position:sticky;bottom:0;z-index:2;padding:16px 0 18px;background:linear-gradient(to bottom,transparent,var(--paper) 22px)}
+.legacy-research .research-body.thread-inner:has(.followup-compose)::after{display:none}
+@media(min-height:561px){.research-thread-col{scroll-padding-bottom:var(--followup-compose-h,0px)}}
+/* In a window too short to share with the thread (zoomed in, a landscape phone) the composer would cover it, so it stays
+   in the flow at the end of the thread (WCAG 1.4.10, 2.4.11). */
+@media(max-height:560px){.followup-compose{position:static;background:none}}
+.followup-composer{font-size:14px;line-height:1.5;border:1px solid var(--strong-line);border-radius:12px;background:var(--paper);box-shadow:var(--shadow-float)}
+.followup-composer:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent),transparent 78%),var(--shadow-float)}
+.followup-composer textarea{display:block;width:100%;min-height:52px;padding:12px 14px 4px;border:0;outline:0;resize:none;background:transparent;color:var(--ink);font:inherit;font-size:14px;line-height:1.5}
+.followup-composer textarea::placeholder{color:var(--muted)}
+.followup-composer-row{display:flex;align-items:center;gap:8px;padding:6px 8px 8px}
+.followup-spacer{flex:1}
+.followup-add{display:grid;place-items:center;flex:none;width:30px;height:30px;padding:0;border:0;border-radius:7px;background:none;color:var(--muted);cursor:pointer}
+.followup-add:hover{background:var(--hover-surface);color:var(--ink)}
+.followup-add:focus-visible,.followup-send:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.followup-depth{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:13px;line-height:1.5;white-space:nowrap}
+.followup-depth svg{flex:none}
+.followup-send{display:grid;place-items:center;width:32px;height:32px;flex:none;padding:0;border:0;border-radius:7px;background:var(--accent);color:var(--paper);cursor:pointer}
+.followup-send:hover:not(:disabled){background:color-mix(in srgb,var(--accent),var(--ink) 14%)}
+.followup-send:disabled{opacity:.45;cursor:default}

@@ -16,6 +16,7 @@ const REPO = path.resolve(process.cwd(), '..', '..')
 const PYTHON = path.join(REPO, '.venv', 'bin', 'python')
 const SERVER = path.join(REPO, 'tests', 'acceptance', 'fixture_server.py')
 const QUESTION = '[parity] How has the relationship between k-connectivity, network lifetime and energy consumption been modeled in SYNTHETIC wireless sensor networks?'
+const FOLLOWUP = '[fu-not] Which works report lifetime in rounds or hours for a fixed k?'
 // The [parity] research reads full text, so retrieval and reading are on (tests/acceptance/fixture_server.py docstring).
 const PARITY_ENV = { DEIXIS_FIXTURE_FULLTEXT: 'on' }
 
@@ -92,6 +93,12 @@ async function parityResearch(base: string): Promise<string> {
   await post(`${path}/fill`, { expected_version: table.table.version })
   await new Promise(resolve => setTimeout(resolve, 300))
   await settle(id, ['answer'])
+  // S22b: one follow-up question, as the composer sends it; the fixture's model says its passages do not answer it
+  // ("[fu-not]"), as the mockup's "rounds" turn does.
+  const revision = ((await (await api.get(`/api/researches/${id}`)).json()) as { research: { current_scope_revision: number } }).research.current_scope_revision
+  await post(`/api/researches/${id}/followup-turns`, { question: FOLLOWUP, expected_scope_revision: revision }, { 'Idempotency-Key': `parity-followup-${id}` })
+  await new Promise(resolve => setTimeout(resolve, 300))
+  await settle(id, ['followup_answer'])
   await api.dispose()
   return id
 }

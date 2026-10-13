@@ -26,6 +26,7 @@ import './research/panels.css'
 import './research/rail.css'
 import './research/sources.css'
 import './research/queue.css'
+import './research/followup.css'
 import './Trash.css'
 
 type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: 'connections' } | { view: 'trash' } | { view: 'library' }

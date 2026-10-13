@@ -49,8 +49,10 @@ test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
 })
 
-// An answer's report is a side panel (its toolbar is in the panel's head); an evidence report is still a sheet.
-const sheet = (page: Page) => reportPanel(page).or(page.locator('.report-sheet').last())
+// An answer's report and an evidence report are side panels (their toolbar is in the panel's head; UI parity S12, S15a).
+const sheet = (page: Page) => reportPanel(page)
+// Both reports name their review toggle "Review with another model" (mockup P2, `erepPanel`), with the count when there are reviews.
+const reviewToggle = (page: Page) => sheet(page).locator('button.report-review')
 const pane = (page: Page) => sheet(page).locator('.review-pane')
 const requestForm = (page: Page) => pane(page).locator('.review-request')
 const finding = (page: Page, kind = 'overstated') => pane(page).locator(`[data-finding-kind="${kind}"]`).first()
@@ -92,8 +94,8 @@ async function reportFixture(page: Page, held = false): Promise<Target> {
   await openPanel(page, 'table')
   await page.getByRole('button', { name: /Add a column/ }).click()
   const editor = page.getByRole('dialog', { name: 'Add column' })
-  await editor.getByLabel('Short name').fill('SYNTHETIC method')
-  await editor.getByLabel('Instruction').fill('Record the method named by the source.')
+  await editor.getByLabel('Name', { exact: true }).fill('SYNTHETIC method')
+  await editor.getByLabel('What should the model look for?').fill('Record the method named by the source.')
   await editor.getByRole('button', { name: 'Add column' }).click()
   await page.getByRole('button', { name: /^Fill empty cells/ }).click()
   await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
@@ -110,8 +112,7 @@ async function reportFixture(page: Page, held = false): Promise<Target> {
   return { rid, kind: 'report', id, readReport }
 }
 async function openReviews(page: Page) {
-  // The answer's report names its toggle "Review with another model" (S12, mockup P2); the evidence report keeps "Reviews".
-  const toggle = sheet(page).getByRole('button', { name: /^Reviews/ }).or(sheet(page).locator('button.report-review'))
+  const toggle = reviewToggle(page)
   if (await toggle.getAttribute('aria-pressed') !== 'true') await toggle.click()
   await expect(pane(page).getByRole('heading', { name: 'Review by another model', exact: true })).toBeFocused()
 }
@@ -262,7 +263,7 @@ test('2 decisions: dismissal, history, stale ordinal and identical Start/decisio
   await button(card, 'Accept').click(); await retry(page, card, decisionReplay)
   await expect.poll(async () => (await readReview(page, f, review.id)).findings.find(r => r.id === row.id)!.decision_history.length).toBe(3)
   await decisionReplay.finish()
-  await sheet(page).getByRole('button', { name: /^Reviews/ }).click()
+  await reviewToggle(page).click()
   await expect(sheet(page).locator('.review-target-line')).toContainText('0 open findings')
   await openReviews(page); await newRequest(page); await preview(page)
   const beforeReviews = (await reviews(page, f)).length
@@ -372,7 +373,7 @@ test('5 active-run and nothing-reviewable refusals retain their codes and rows i
     await page.keyboard.press('Escape')
     if (language === 'tr') await chooseLanguage(page, 'tr')
     await page.getByRole('button', { name: language === 'en' ? 'Open evidence report' : 'Kanıt raporunu aç' }).click()
-    await sheet(page).getByRole('button', { name: language === 'en' ? /^Reviews/ : /^İncelemeler/ }).click()
+    await reviewToggle(page).click()
     await button(pane(page), language === 'en' ? 'Review with another model' : 'Başka bir modelle incele').click()
     await button(requestForm(page), language === 'en' ? 'Preview' : 'Önizleme').click()
     await expect(button(requestForm(page), language === 'en' ? 'Start review' : 'İncelemeyi başlat')).toBeEnabled()
@@ -440,7 +441,7 @@ async function look(page: Page, screen: 'request' | 'detail' | 'editor', root: L
 test('6 request, findings and apply editor: twelve theme/viewport scans and keyboard operation', async ({ page }) => {
   test.setTimeout(300_000)
   const f = await reportFixture(page)
-  const toggle = sheet(page).getByRole('button', { name: /^Reviews/ })
+  const toggle = reviewToggle(page)
   await tabTo(page, toggle); await page.keyboard.press('Space')
   await expect(pane(page).getByRole('heading', { name: 'Review by another model', exact: true })).toBeFocused()
   await tabTo(page, toggle, true); await page.keyboard.press('Enter')
@@ -542,18 +543,19 @@ test('8 report eligibility and missing failure reasons are visible in both langu
     const reason = language === 'en' ? 'A report can be reviewed once its run has finished.' : 'Bir rapor, yazım işlemi bittikten sonra incelenebilir.'
     const openSheet = async () => {
       await page.getByRole('button', { name: language === 'en' ? 'Open evidence report' : 'Kanıt raporunu aç' }).click()
-      await check(sheet(page).locator('.review-entry')).toBeVisible()
+      await check(reviewToggle(page)).toBeVisible()
     }
     const closeSheet = async () => { await page.keyboard.press('Escape'); await check(sheet(page)).toHaveCount(0) }
-    const toggle = () => sheet(page).getByRole('button', { name: language === 'en' ? 'Reviews, 1' : 'İncelemeler, 1', exact: true })
+    const toggle = () => reviewToggle(page)
+    const toggleName = language === 'en' ? 'Review with another model, 1 review' : 'Başka bir modelle incele, 1 inceleme'
     for (const [status, runStatus] of [['in_progress', 'running'], ['valid', 'running'], ['in_progress', 'failed']] as const) {
       const ineligible = { status, run: { ...report.run!, status: runStatus } }
       // The mock is installed before opening; each variant gets a fresh ReportView read.
       eligibility = ineligible
       await openSheet()
-      await check(sheet(page).locator('.review-entry')).toBeDisabled()
-      await check(sheet(page).locator('.report-document-head').getByText(reason, { exact: true })).toBeVisible()
-      await check(toggle().locator('.research-tab-count')).toHaveText('1')
+      await check(sheet(page).locator('.evidence-report-check').getByText(reason, { exact: true })).toBeVisible()
+      await check(toggle()).toHaveAccessibleName(toggleName)
+      await check(toggle().locator('.ib-count')).toHaveText('1')
       await toggle().click()
       await check(button(pane(page), entryName)).toBeDisabled()
       await check(pane(page).getByText(reason, { exact: true })).toBeVisible()
@@ -564,8 +566,8 @@ test('8 report eligibility and missing failure reasons are visible in both langu
       // via a real research event to check the already-open form's Preview guard.
       eligibility = { status: 'valid', run: report.run }
       await openSheet()
-      await check(sheet(page).locator('.review-entry')).toBeEnabled()
-      await sheet(page).locator('.review-entry').click()
+      await toggle().click()
+      await button(pane(page), entryName).click()
       await check(button(requestForm(page), previewName)).toBeEnabled()
       eligibility = ineligible
       await refreshByTitleEvent(page, f, `SYNTHETIC: ${language} eligibility ${status} ${runStatus}`)
@@ -576,9 +578,9 @@ test('8 report eligibility and missing failure reasons are visible in both langu
     }
     eligibility = { status: 'draft', run: report.run }
     await openSheet()
-    await check(sheet(page).locator('.review-entry')).toBeEnabled()
-    await sheet(page).locator('.review-entry').click()
+    await toggle().click()
     await check(button(pane(page), entryName)).toBeEnabled()
+    await button(pane(page), entryName).click()
     await check(button(requestForm(page), previewName)).toBeEnabled()
     await closeSheet()
   }

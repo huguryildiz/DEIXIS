@@ -9,7 +9,7 @@ import { setUiLanguage, t } from '../src/i18n'
 import { nextPort } from './ports'
 import { chooseLanguage } from './language'
 import { switchTheme } from './theme'
-import { backPanel, openPanel, panel, reportPanel, showAnswer, sourcePanel } from './panels'
+import { backPanel, cellPanel, openPanel, panel, reportPanel, showAnswer, sourcePanel } from './panels'
 
 // SYNTHETIC stored inputs and scripted model output. Mocked failures/races do not create backend evidence.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -45,7 +45,7 @@ class ReextractServer {
 const row = (page: Page, title: string) => page.locator('.source-row:not(.is-other-version)').filter({ hasText: title })
 // An answer's citation opens Source details as a side panel; the evidence table and the evidence report still open their own sheet.
 const sheet = (page: Page) => sourcePanel(page).or(page.getByRole('dialog', { name: 'Source details' }))
-const reportSheet = (page: Page) => page.locator('.report-sheet').last()  // the evidence report is still a sheet
+const reportSheet = (page: Page) => page.locator('[data-split-panel]').filter({ has: page.locator('.report-sheet') }).last()  // the evidence report panel (UI parity S15a)
 const sourcesTab = (page: Page) => openPanel(page, 'sources')
 const quiet = async (page: Page) => { for (const button of await page.getByRole('button', { name: 'Dismiss notification' }).all()) await button.click().catch(() => {}) }
 const shot = async (page: Page, name: string, record: unknown) => {
@@ -130,8 +130,8 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     await openPanel(ui, 'table')
     await ui.getByRole('button', { name: /Add a column/ }).click()
     const editor = ui.getByRole('dialog', { name: 'Add column' })
-    await editor.getByLabel('Short name').fill('SYNTHETIC method')
-    await editor.getByLabel('Instruction').fill('Record the method named by the source.')
+    await editor.getByLabel('Name', { exact: true }).fill('SYNTHETIC method')
+    await editor.getByLabel('What should the model look for?').fill('Record the method named by the source.')
     await editor.getByRole('button', { name: 'Add column', exact: true }).click()
     const summaries = await get<TableSummary[]>(client, `${researchPath}/tables`)
     const tableId = summaries[0].id
@@ -314,7 +314,7 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     step('8b: cell panel Open in source')
     await openPanel(ui, 'table')
     await ui.locator('[data-cell="0:0"]').click()
-    await ui.getByRole('dialog', { name: 'SYNTHETIC method', exact: true }).getByRole('button', { name: 'Open in source', exact: true }).first().click()
+    await cellPanel(ui, 'SYNTHETIC method').getByRole('button', { name: 'Open in source', exact: true }).first().click()
     await assertCited(); expect((await passage(cellPassageId)).evidence_status).toBe('text_superseded')
     await ui.keyboard.press('Escape'); await ui.keyboard.press('Escape')
     step('8c/9: report freshness notice and report citation')
@@ -326,7 +326,9 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     await expect(reportSheet(ui)).toContainText('Passage freshness compared:')
     await expect(reportSheet(ui)).toContainText(`${count} ${count === 1 ? 'passage this report used is' : 'passages this report used are'} no longer`)
     await expect(reportSheet(ui)).toContainText('Semantic support not checked.')
-    await reportSheet(ui).getByRole('button', { name: /^Reference \d+:/ }).first().click(); await assertCited()
+    // A report chip opens its stored citation (UI parity S15a); the passage opens from there in Source details.
+    await reportSheet(ui).getByRole('button', { name: /^Reference \d+:/ }).first().click()
+    await panel(ui, 'Citation').getByRole('button', { name: 'Open in Source details' }).click(); await assertCited()
     expect((await passage(reportPassageIds[0])).evidence_status).toBe('text_superseded')
     await ui.keyboard.press('Escape'); await ui.keyboard.press('Escape')
 

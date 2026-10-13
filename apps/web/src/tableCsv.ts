@@ -1,4 +1,4 @@
-import { type CellRevision, type CellState, type CellValue, type Source, type TableColumn, type TableRow, type TableView } from './api'
+import { type CellRevision, type CellState, type CellValue, type ResearchView, type Source, type TableColumn, type TableRow, type TableSummary, type TableView } from './api'
 import { locatorText, versionText } from './labels'
 import { citationStyle, formatReferenceText, type CitationStyle } from './citations'
 import { t, uiLocale } from './i18n'
@@ -58,4 +58,17 @@ export function downloadTableCsv(table: TableView, sources: Source[]) {
   link.download = `${base || 'evidence-table'}-v${table.table.version}.csv`
   link.click()
   URL.revokeObjectURL(url)
+}
+
+// Why a report cannot be written from this table now, or '' when it can. The table panel's "Write a manuscript draft"
+// and the evidence report’s "Write a new version" read the same rule from the table's stored `report_ready`.
+export function reportGate(view: ResearchView, summary: TableSummary | undefined, columns: number, title: string) {
+  const ready = summary?.report_ready
+  const continueWithFailed = !ready?.ready && Boolean(ready?.can_continue_with_failed)
+  const reason = view.runs.some(item => ['queued', 'running', 'pause_requested', 'paused'].includes(item.status))
+    ? t('Available when the active run finishes')
+    : !columns ? t('Add a column and fill its cells before writing a report.')
+    : ready?.cells_total === 0 ? t('A report needs included sources and a filled column.')
+    : !ready?.ready && !continueWithFailed ? t('A report needs a filled evidence table: {n} cells left in “{table}”.', { n: ready?.cells_left ?? 0, table: title }) : ''
+  return { reason, continueWithFailed }
 }

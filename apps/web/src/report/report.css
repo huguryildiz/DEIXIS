@@ -53,12 +53,12 @@
 .candidate-aspects button { height: auto; min-height: 36px; white-space: normal; max-width: 100%; overflow-wrap: anywhere; }
 .candidate-aspects button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .evidence-report-edit-check { margin-top: 18px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--ink); font-family: var(--font-sans); font-size: 13px; line-height: 1.6; }
-.report-document-head .evidence-report-edit-check p { margin: 6px 0; color: inherit; font-size: inherit; font-weight: 400; }
+.evidence-report-check .evidence-report-edit-check p { margin: 6px 0; color: inherit; font-size: inherit; font-weight: 400; }
 .evidence-report-check-sentence, .evidence-report-check-action { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
 .evidence-report-check-sentence > p { flex: 1 1 360px; }
 .evidence-report-check-sentence > span { font-size: 12px; color: var(--muted); }
-.report-document-head .evidence-report-check-action > p { color: var(--muted); font-size: 12px; }
-.report-document-head .evidence-report-edit-check p.evidence-report-fine { color: var(--muted); font-size: 11px; }
+.evidence-report-check .evidence-report-check-action > p { color: var(--muted); font-size: 12px; }
+.evidence-report-check .evidence-report-edit-check p.evidence-report-fine { color: var(--muted); font-size: 11px; }
 .evidence-report-check-items { padding-left: 22px; }
 .evidence-report-check-items li { padding: 8px 0; border-bottom: 1px solid var(--line); }
 .evidence-report-check-severity { display: inline-flex; align-items: center; gap: 5px; }
@@ -84,3 +84,53 @@
 .evidence-report-edit-check button, .evidence-report-edit button, .evidence-report-history button { height: auto; min-height: 32px; white-space: normal; }
 .evidence-report-edit-check :focus-visible, .evidence-report-edit :focus-visible, .evidence-report-history :focus-visible, .evidence-report-removed summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 @media(max-width:760px) { .evidence-report-check-action { align-items: flex-start; flex-direction: column; gap: 4px; } }
+/* UI parity S15a: the evidence report as a panel (mockup `erepPanel`) and its citation panel (mockup `ecitePanel`). */
+
+.erep-panel .notice .acts,.erep-panel .evidence-report-changes .acts,.erep-panel .evidence-report-failed .acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px}
+.erep-panel .notice .acts{margin-top:0;margin-left:auto}
+.erep-panel .notice:has(.acts){flex-wrap:wrap}
+.erep-panel .evidence-report-failed{margin:0 0 12px}
+.erep-panel .evidence-report-failed .notice{margin:0}
+:is(.erep-panel,.ecite-panel) .ghost{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-family:var(--font-sans);font-size:13px;font-weight:400;line-height:1.5;white-space:nowrap}
+:is(.erep-panel,.ecite-panel) .ghost:hover:not(:disabled){background:var(--hover-surface)}
+:is(.erep-panel,.ecite-panel) .ghost:disabled{opacity:.5}
+:is(.erep-panel,.ecite-panel) .ghost svg{flex:none;width:14px;height:14px}
+:is(.erep-panel,.ecite-panel) .ghost:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* Writing (mockup `.art.live`): the card with a page thumbnail while the report is written. */
+.erep-panel .art{display:flex;align-items:center;gap:16px;width:100%;margin:0 0 18px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--paper);text-align:left}
+.erep-panel .art .thumb{flex:none;width:118px;height:76px;padding:8px 9px;overflow:hidden;border:1px solid var(--line);border-radius:6px;background:#fff}
+.erep-panel .art .thumb i{display:block;height:3px;margin-top:4px;border-radius:2px;background:#e3e5e8}
+.erep-panel .art .thumb i:last-child{width:70%}
+.erep-panel .art h3{margin:0;font-family:var(--font-sans);font-size:15.5px;font-weight:500;line-height:1.35;letter-spacing:0}
+.erep-panel .art small{display:block;color:var(--muted);font-size:12.5px}
+/* What was and was not checked (mockup `.check`): one block under a hairline at the end. */
+.erep-panel .check{margin-top:20px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-family:var(--font-sans);font-size:12px;line-height:1.65}
+.erep-panel .check b{color:var(--ink-2);font-weight:600}
+.erep-panel .check .evidence-report-provenance{margin:0;padding:0;border:0;font-size:12px}
+.erep-panel .check .review-target-line{display:inline;margin:0;font-size:12px}
+.erep-panel .check .evidence-report-edit-check{margin-top:8px;padding:8px 0 0;border-bottom:0;font-size:12px;color:var(--muted)}
+.erep-panel .report-content .cite-chip{display:inline;margin:0 1px;padding:1px 5px;border-radius:4px;background:var(--hover-surface);color:var(--muted);font-family:var(--font-sans);font-size:11.5px;white-space:nowrap;vertical-align:1px}
+.erep-panel .report-content .cite-chip:hover:not(:disabled){background:var(--accent-tint);color:var(--accent)}
+.ecite-panel.split-panel-content{padding:0}
+.ecite-detail{display:grid;gap:10px;max-width:720px;padding:16px 20px 32px;font-size:13px;line-height:1.6}
+.ecite-detail>*{margin:0}
+.ecite-detail .dhead{display:grid;gap:4px}
+.split-panel .ecite-detail h1{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:16px;font-weight:600;line-height:1.35;letter-spacing:-.1px;text-wrap:balance;overflow-wrap:anywhere}
+.ecite-detail h4.sub{margin:6px 0 -4px;color:var(--muted);font-family:var(--font-sans);font-size:12px;font-weight:500;line-height:1.5;letter-spacing:0}
+.ecite-detail .quote{margin:0}
+.ecite-detail .foot-note{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+.ecite-detail .notice.warn{display:flex;align-items:flex-start;gap:10px;margin:0;padding:11px 13px;border:0;border-radius:10px;background:var(--warn-surface);color:var(--ink-2);font-size:13px;line-height:1.5}
+.ecite-detail .notice.warn>svg{flex:none;margin-top:2px;color:var(--tone-uncertain)}
+.ecite-detail .notice .nb{display:grid;flex:1;gap:8px;min-width:0}
+.ecite-detail .acts{display:flex;flex-wrap:wrap;gap:6px}
+/* The panel sits inside the research page, whose plain paragraph rule (muted, 20px under) the report text must not take. */
+.erep-panel .report-content p{margin:0 0 12px;color:var(--ink)}
+.erep-panel .report-content .evidence-report-fine{color:var(--muted)}
+.erep-panel .evidence-report-claim-meta p{margin:4px 0;color:var(--muted)}
+.erep-panel .evidence-report-history p{margin:4px 0;color:var(--ink)}
+.erep-panel .notice p{margin:0 0 6px;color:inherit}
+.erep-panel .check>p{margin:0;color:inherit}
+.erep-panel .check .evidence-report-reviews{margin-top:6px}
+.erep-panel .report-document-head>p{margin:-10px 0 18px;color:var(--muted);font-size:12.5px}
+.erep-panel .evidence-report-references{padding-left:0;list-style:none;color:var(--ink)}
+.erep-panel .evidence-report-references button{display:inline}

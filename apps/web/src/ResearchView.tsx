@@ -110,8 +110,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [removal, setRemoval] = useState<{ ids: string[]; versions: number; elsewhere: number | null } | null>(null)
   const [tableStart, setTableStart] = useState<{ ids: string[]; notIncluded: number } | null>(null)
   // The table to show, with a count of requests: asking for the same table again (a card clicked twice) still shows it.
-  const [focusTable, setFocusTable] = useState<{ id: string; request: number } | null>(null)
-  const showTableFirst = (tableId: string) => setFocusTable(previous => ({ id: tableId, request: (previous?.request ?? 0) + 1 }))
+  // `cell`: a cell to open with the table (an evidence report's "Open the current cell"); the table clears it once shown.
+  const [focusTable, setFocusTable] = useState<{ id: string; request: number; cell?: { columnId: string; sourceId: string } | null } | null>(null)
+  const showTableFirst = (tableId: string, cell: { columnId: string; sourceId: string } | null = null) => setFocusTable(previous => ({ id: tableId, request: (previous?.request ?? 0) + 1, cell }))
+  const cellShown = useCallback(() => setFocusTable(previous => (previous?.cell ? { ...previous, cell: null } : previous)), [])
   const fileInput = useRef<HTMLInputElement>(null)
   const sourceFileInput = useRef<HTMLInputElement>(null)
   const replaceFileInput = useRef<HTMLInputElement>(null)
@@ -813,8 +815,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} onShowInSources={showInSources} />
       </details>
     </StackPanel>
-    <StackPanel name="table" title={t('Evidence table')} icon={Table2}>
-      <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable?.id ?? null} tableRequest={focusTable?.request ?? 0} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
+    <StackPanel name="table" title={t('Evidence table')} icon={Table2} className="table-panel-box">
+      <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable?.id ?? null} tableRequest={focusTable?.request ?? 0} cell={focusTable?.cell ?? null} onCellShown={cellShown} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
     </StackPanel>
     <StackPanel name="watch" title={t('Follow-up')} icon={Clock}>
       <FollowUpView researchId={id} view={view} dark={dark} onReload={followupCount.reload} onChanged={followupChanged} />
@@ -849,7 +851,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       reviewPending={view.runs.some(r => r.kind === 'answer_review' && ACTIVE.has(r.status) && r.target?.answer_id === olderReport.answer.id)}
       reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf}
       versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} />}
-    {openEvidenceReportId && <ReportView researchId={id} reportId={openEvidenceReportId} view={view} title={heading} dark={dark} onClose={() => setOpenEvidenceReportId(null)}
+    {openEvidenceReportId && <ReportView key={openEvidenceReportId} researchId={id} reportId={openEvidenceReportId} view={view} tables={tables} title={heading} dark={dark} onClose={() => setOpenEvidenceReportId(null)}
+      onOpenCell={(tableId, cell) => { setOpenEvidenceReportId(null); showTableFirst(tableId, cell); openPanel('table') }}
       onOpenCandidate={candidate => { setOpenEvidenceReportId(null); setCandidateSelection({ ...candidate, id: candidate.card?.id ?? candidate.id }); openPanel('cands') }}
       onOpenCitation={(passageId, highlightText, expectHighlight) => setPassageTarget({ passageId, highlightText, fromCitation: expectHighlight, reportCitation: true })}
       onChanged={async () => { await load(); onChanged() }} />}

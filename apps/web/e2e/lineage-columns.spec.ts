@@ -4,7 +4,21 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
-import { openPanel } from './panels'
+import { openPanel, tableMenu } from './panels'
+
+// A column's own menu (UI parity S15a, mockup `col`): its head opens Edit column and Remove column.
+async function columnMenu(page: Page, name: string, item: string) {
+  await page.locator('.evidence-col-head').filter({ hasText: name }).click()
+  await page.getByRole('menuitem', { name: new RegExp(`^${item}`) }).click()
+}
+// The table's ⋯ menu row "Add development columns": shown while the three development columns are missing.
+const developmentRow = (page: Page) => page.getByRole('menuitem', { name: /^Add development columns/ })
+async function expectDevelopmentRow(page: Page, count: number) {
+  await page.locator('[data-split-panel]').getByRole('button', { name: 'More table actions' }).click()
+  await expect(developmentRow(page)).toHaveCount(count)
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
+}
 
 // Synthetic sources and the fixture's scripted adapter only; no cell-quality measurement.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -41,20 +55,21 @@ async function screenshots(page: Page, state: 'toolbar' | 'added' | 'sheet') {
       await page.reload()
       await openPanel(page, 'table')
       if (state === 'sheet') {
-        await page.locator('.evidence-col-head').filter({ hasText: NAMES[0] }).click()
+        await columnMenu(page, NAMES[0], 'Edit column')
         await expect(page.getByRole('dialog', { name: 'Edit column' })).toContainText(HINT)
       } else if (state === 'toolbar') {
-        await expect(page.getByRole('button', { name: 'Add development columns' })).toBeVisible()
+        await page.locator('[data-split-panel]').getByRole('button', { name: 'More table actions' }).click()
+        await expect(developmentRow(page)).toBeVisible()
       } else {
         await expect(page.locator('.evidence-col-head')).toHaveCount(4)
         await page.locator('.evidence-col-head').filter({ hasText: NAMES[0] }).scrollIntoViewIfNeeded()
       }
       // The page already scrolls sideways on a phone (long fill-button label, wide grid); only the new control must stay inside the viewport.
       if (state === 'toolbar') {
-        await expect.poll(() => page.getByRole('button', { name: 'Add development columns' }).evaluate(el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth })).toBe(true)
+        await expect.poll(() => developmentRow(page).evaluate(el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth })).toBe(true)
       }
       if (state === 'sheet') {
-        await expect.poll(() => page.locator('.evidence-form').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+        await expect.poll(() => page.locator('.column-dialog .dialog-body').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
       }
       await page.screenshot({ path: path.join(OUT, `lineage-${state}-${width}-${theme}.png`), animations: 'disabled' })
     }
@@ -94,35 +109,36 @@ test.describe('explicit development columns', () => {
       await page.reload()
       await openPanel(page, 'table')
       await screenshots(page, 'toolbar')
-      await page.locator('.evidence-toolbar').getByRole('button', { name: 'Add development columns' }).click()
+      await tableMenu(page, /^Add development columns/)
       await expect(page.getByRole('status').filter({ hasText: 'Development columns added.' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Add development columns' })).toHaveCount(0)
+      await expectDevelopmentRow(page, 0)
       await expect(page.locator('.evidence-col-head')).toHaveCount(4)
       for (const name of NAMES) await expect(page.locator('.evidence-col-head').filter({ hasText: name })).toHaveCount(1)
       await screenshots(page, 'added')
       await screenshots(page, 'sheet')
-      await page.locator('.evidence-col-head').filter({ hasText: NAMES[0] }).click()
+      await columnMenu(page, NAMES[0], 'Edit column')
       const editor = page.getByRole('dialog', { name: 'Edit column' })
       await expect(editor.getByRole('radio')).toHaveCount(4)
       for (const radio of await editor.getByRole('radio').all()) await expect(radio).toBeDisabled()
       await expect(editor).toContainText(HINT)
-      await editor.getByLabel('Short name').fill('Renamed problem')
-      await editor.getByLabel('Instruction').fill('Record the problem in the source’s own terms.')
+      await editor.getByLabel('Name', { exact: true }).fill('Renamed problem')
+      await editor.getByLabel('What should the model look for?').fill('Record the problem in the source’s own terms.')
       await editor.getByRole('button', { name: 'Save column' }).click()
       await expect(page.locator('.evidence-col-head').filter({ hasText: 'Renamed problem' })).toBeVisible()
-      await page.locator('.evidence-col-head').filter({ hasText: NAMES[2] }).click()
-      await page.getByRole('dialog', { name: 'Edit column' }).getByRole('button', { name: 'Remove column' }).click()
+      await columnMenu(page, NAMES[2], 'Remove column')
       await page.getByRole('dialog', { name: 'Remove column?' }).getByRole('button', { name: 'Remove column', exact: true }).click()
-      const button = page.getByRole('button', { name: 'Add development columns' })
-      await expect(button).toBeVisible()
       await expect(page.locator('.evidence-col-head')).toHaveCount(3)
-      // Reach the returned action by tabbing from its immediately preceding toolbar action.
-      await page.locator('.evidence-toolbar').getByRole('button', { name: 'Add column', exact: true }).focus()
-      await page.keyboard.press('Tab')
-      await expect(button).toBeFocused()
+      // The returned row is reached by keyboard: the ⋯ button, Enter, ArrowDown to the row, Enter.
+      const more = page.locator('[data-split-panel]').getByRole('button', { name: 'More table actions' })
+      await more.focus()
       await page.keyboard.press('Enter')
-      await expect(button).toHaveCount(0)
+      const devRow = developmentRow(page)
+      await expect(devRow).toBeVisible()
+      for (let i = 0; i < 8 && !(await devRow.evaluate(el => el === document.activeElement)); i++) await page.keyboard.press('ArrowDown')
+      await expect(devRow).toBeFocused()
+      await page.keyboard.press('Enter')
       await expect(page.locator('.evidence-col-head')).toHaveCount(4)
+      await expectDevelopmentRow(page, 0)
       await page.reload()
       await openPanel(page, 'table')
       await expect(page.locator('.evidence-col-head')).toHaveCount(4)
@@ -136,8 +152,9 @@ test.describe('explicit development columns', () => {
       await openPanel(page, 'table')
       await page.getByLabel('Table', { exact: true }).selectOption(emptyTable.table.id)
       await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Add development columns' })).toHaveCount(0)
-      await page.getByRole('button', { name: 'Add development columns' }).click()
-      await expect(page.getByRole('button', { name: 'Add development columns' })).toHaveCount(0)
+      await tableMenu(page, /^Add development columns/)
+      await expect(page.locator('.evidence-col-head')).toHaveCount(3)
+      await expectDevelopmentRow(page, 0)
       await expect(page.locator('.evidence-col-head')).toHaveCount(3)
       for (const name of NAMES) await expect(page.locator('.evidence-col-head').filter({ hasText: name })).toHaveCount(1)
     } finally {

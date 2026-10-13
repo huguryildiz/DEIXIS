@@ -43,8 +43,8 @@
   .sidebar, .sidebar-resizer, .mobilebar, .mobile-scrim, .toast, .research-topbar, .research-facts, .research-tabs-bar,
   .run-strip, .chat-question.is-editing, .revline, .report-toolbar-actions, .reference-tools, .pdf-suggest-actions, .pdf-suggest-info,
   .review-entry, .candidate-aspects,
-  .evidence-table-head-actions, .evidence-toolbar, .evidence-toolbar-note, .evidence-run, .evidence-add-rows, .evidence-hint,
-  .lineage-switch, .evidence-row-menu, [data-slot="sheet-overlay"], [data-slot="sheet-close"] { display: none !important; }
+  .evidence-toolbar, .evidence-toolbar-note, .evidence-run, .evidence-add-rows, .sugg, .th-add-cell,
+  .evidence-row-menu, [data-slot="sheet-overlay"], [data-slot="sheet-close"] { display: none !important; }
   .app, .main-shell, .main-shell > main { display: block !important; width: auto !important; min-height: 0 !important;
     height: auto !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
 
@@ -58,7 +58,7 @@
   .report-toolbar { position: static !important; border: 0 !important; padding-left: 0 !important; padding-right: 0 !important; }
 
   /* The evidence table: every row and column on paper, the header row repeated on each page. */
-  .evidence-panel, .evidence-panel.is-fullscreen { page: evidence-table; position: static !important; inset: auto !important;
+  .table-panel { page: evidence-table; position: static !important; inset: auto !important;
     overflow: visible !important; height: auto !important; max-height: none !important; padding: 0 !important; }
   .evidence-grid-wrap { overflow: visible !important; max-height: none !important; height: auto !important; }
   .evidence-grid { width: 100% !important; min-width: 0 !important; table-layout: fixed !important; font-size: 8.5pt; }

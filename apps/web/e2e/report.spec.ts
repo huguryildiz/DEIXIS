@@ -7,7 +7,7 @@ import { failedSectionReasonText, reportAssemblyDraftText } from '../src/labels'
 import { setUiLanguage } from '../src/i18n'
 import { nextPort } from './ports'
 import { switchTheme } from './theme'
-import { openPanel, showAnswer } from './panels'
+import { backPanel, cellPanel, openPanel, panel, showAnswer, tableMenu } from './panels'
 
 // SYNTHETIC records and a scripted report model exercise the UI, not the quality of a research report.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -40,7 +40,12 @@ class ReportServer {
 }
 
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled' })
-const reportSheet = (page: Page) => page.locator('.report-sheet').last()
+const reportSheet = (page: Page) => page.locator('[data-split-panel]').filter({ has: page.locator('.report-sheet') }).last()
+// The evidence report's download menu (UI parity S15a, mockup `eexport`): MD, TEX and DOCX rows, then Copy.
+const reportMenu = async (page: Page, row: RegExp) => {
+  await reportSheet(page).getByRole('button', { name: 'Download report' }).click()
+  await page.getByRole('menuitem', { name: row }).click()
+}
 const section = (page: Page, number: string) => reportSheet(page).locator('.evidence-report-section', { has: page.getByRole('heading', { name: new RegExp(`^${number}\\.`) }) })
 
 const toastsOff = async (target: Page) => { for (const b of await target.getByRole('button', { name: 'Dismiss notification' }).all()) await b.click().catch(() => {}) }
@@ -59,8 +64,8 @@ const readyResearch = async (page: Page, server: ReportServer, question: string)
   await openPanel(page, 'table')
   await page.getByRole('button', { name: /Add a column/ }).click()
   const editor = page.getByRole('dialog', { name: 'Add column' })
-  await editor.getByLabel('Short name').fill('SYNTHETIC method')
-  await editor.getByLabel('Instruction').fill('Record the method named by the source.')
+  await editor.getByLabel('Name', { exact: true }).fill('SYNTHETIC method')
+  await editor.getByLabel('What should the model look for?').fill('Record the method named by the source.')
   await editor.getByRole('button', { name: 'Add column' }).click()
   await page.getByRole('button', { name: /^Fill empty cells/ }).click()
   await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
@@ -87,8 +92,8 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await openPanel(page, 'table')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
-    await editor.getByLabel('Short name').fill('SYNTHETIC method')
-    await editor.getByLabel('Instruction').fill('Record the method named by the source.')
+    await editor.getByLabel('Name', { exact: true }).fill('SYNTHETIC method')
+    await editor.getByLabel('What should the model look for?').fill('Record the method named by the source.')
     await editor.getByRole('button', { name: 'Add column' }).click()
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
     await expect(page.locator('.evidence-grid tbody tr .evidence-cell').first()).toContainText('Model', { timeout: 60_000 })
@@ -112,10 +117,10 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await expect(sheet).toContainText('TABLE I')
     await expect(sheet.locator('.cite-chip').first()).toContainText('[1]')
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: server.url() })
-    await sheet.getByRole('button', { name: 'Copy Markdown' }).click()
+    await reportMenu(page, /^Copy/)
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('## References')
     const downloaded = page.waitForEvent('download')
-    await sheet.getByRole('button', { name: 'Download .md' }).click()
+    await reportMenu(page, /^MD/)
     const file = await downloaded
     expect(file.suggestedFilename()).toMatch(/^report-.*-v1\.md$/)
     expect(readFileSync(await file.path(), 'utf8')).toMatch(/^# /)
@@ -123,7 +128,7 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     let unexpectedDownloads = 0
     page.on('download', () => { unexpectedDownloads += 1 })
     await page.route(exportPath, route => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'The report is still being written' }) }))
-    await sheet.getByRole('button', { name: 'Download .md' }).click()
+    await reportMenu(page, /^MD/)
     await expect(page.getByText('The report is still being written')).toBeVisible()
     expect(unexpectedDownloads).toBe(0)
     await page.unroute(exportPath)
@@ -133,7 +138,7 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     const latexPath = `**/api/researches/${researchId}/reports/${reportId}/export?format=latex`
     const latexResponse = page.waitForResponse(response => response.url().includes('format=latex'))
     const latexDownload = page.waitForEvent('download')
-    await sheet.getByRole('button', { name: 'Download LaTeX' }).click()
+    await reportMenu(page, /^TEX/)
     const latexFile = await latexDownload
     expect(latexFile.suggestedFilename()).toMatch(/^report-.*-v1-latex\.zip$/)
     expect(readFileSync(await latexFile.path()).subarray(0, 2).toString('latin1')).toBe('PK')
@@ -150,7 +155,7 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
         await route.fulfill({ response, headers: { ...response.headers(), 'x-deixis-export-notes': notes } })
       })
       const counted = page.waitForEvent('download')
-      await sheet.getByRole('button', { name: 'Download LaTeX' }).click()
+      await reportMenu(page, /^TEX/)
       expect((await counted).suggestedFilename()).toMatch(/^report-.*-v1-latex\.zip$/)
       await expect(page.locator('.toast')).toHaveCount(1)
       await expect(page.locator('.toast.is-warning')).toHaveText(text)
@@ -159,7 +164,7 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     }
     const downloadsBefore409 = unexpectedDownloads
     await page.route(latexPath, route => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'The report is still being written' }) }))
-    await sheet.getByRole('button', { name: 'Download LaTeX' }).click()
+    await reportMenu(page, /^TEX/)
     await expect(page.locator('.toast.is-error')).toHaveText('The report is still being written')
     expect(unexpectedDownloads).toBe(downloadsBefore409)
     await page.unroute(latexPath)
@@ -207,10 +212,17 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await page.unroute(`**${reportPath}`)
     await page.getByRole('button', { name: 'Open evidence report' }).click()
     await expect(sheet.locator('.evidence-report-references')).toContainText(report.references[0].title)
+    // A chip opens the stored citation (mockup `ecitePanel`), stacked on the report; its passage opens in Source details.
     await sheet.locator('.cite-chip').first().click()
+    const citation = panel(page, 'Citation')
+    await expect(citation.locator('.venue')).toContainText('as cited in Evidence report V1')
+    await expect(citation.locator('mark').first()).toBeVisible()
+    await citation.getByRole('button', { name: 'Open in Source details' }).click()
     await expect(page.getByRole('dialog', { name: 'Source details' })).toBeVisible()
     await expect(page.getByRole('dialog', { name: 'Source details' }).locator('mark').first()).toBeVisible()
     await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Source details' })).toHaveCount(0)
+    await backPanel(page)
     await toastsOff(page)
     await shot(page, 'report-view-desktop')
     await page.setViewportSize({ width: 390, height: 844 })
@@ -275,7 +287,25 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     const changed = section(page, 'IV')
     await expect(changed).toContainText('This section rests on evidence that changed after this report:')
     await expect(changed).toBeVisible()
-    await changed.getByRole('button', { name: 'Keep as is' }).click()
+    // The changed cell's chip opens its Citation panel with the stored value and the change; "Open the current cell"
+    // opens the live cell on the table (UI parity S15a, mockup `ecitePanel`).
+    const chips = changed.locator('.cite-chip')
+    let flagged = false
+    for (let i = 0; i < await chips.count() && !flagged; i++) {
+      await chips.nth(i).click()
+      await expect(panel(page, 'Citation').locator('.loc')).toBeVisible()
+      flagged = await panel(page, 'Citation').locator('.notice.warn').count() > 0
+      if (!flagged) await backPanel(page)
+    }
+    expect(flagged).toBe(true)
+    const stored = panel(page, 'Citation')
+    await expect(stored.locator('.notice.warn')).toContainText('The report still cites the value and passage above.')
+    await expect(stored.locator('h1')).not.toContainText('SYNTHETIC revised cell')
+    await stored.getByRole('button', { name: 'Open the current cell' }).click()
+    await expect(cellPanel(page, 'SYNTHETIC method').locator('.cell-detail h1')).toContainText('SYNTHETIC revised cell')
+    await page.getByRole('button', { name: 'Open evidence report' }).click()
+    await expect(changed).toContainText('This section rests on evidence that changed after this report:')
+    await changed.getByRole('button', { name: 'Mark as seen' }).click()
     await expect(changed).not.toContainText('This section rests on evidence that changed after this report:')
     await expect(reportSheet(page)).toContainText('Evidence changed after this report:')
     await toastsOff(page)
@@ -283,7 +313,49 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await shot(page, 'report-stale-desktop')
     await page.setViewportSize({ width: 390, height: 844 })
     await shot(page, 'report-stale-390')
+    await page.setViewportSize({ width: 1440, height: 900 })
+    // "Write a new version" starts a new report from the same table; this version stays as it is.
+    const runsBefore = (await (await api.get(`/api/researches/${researchId}`)).json()).reportRuns.length
+    await reportSheet(page).getByRole('button', { name: 'Write a new version' }).first().click()
+    await expect(page.getByText('A new version of the evidence report is being written. This version stays as it is.')).toBeVisible()
+    await expect.poll(async () => (await (await api.get(`/api/researches/${researchId}`)).json()).reportRuns.length).toBe(runsBefore + 1)
   } finally { await api.dispose(); await page.close(); await server.stop() }
+})
+
+test('the table panel lists cell states and reports a partial Remove all columns with its Undo', async ({ browser }) => {
+  const server = new ReportServer()
+  await server.start()
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  try {
+    await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared?')
+    const box = page.locator('[data-split-panel]')
+    await box.getByRole('button', { name: 'Add column', exact: true }).click()
+    const editor = page.getByRole('dialog', { name: 'Add column' })
+    await editor.getByLabel('Name', { exact: true }).fill('SYNTHETIC second')
+    await editor.getByLabel('What should the model look for?').fill('Record a second detail.')
+    await editor.getByRole('button', { name: 'Add column' }).click()
+    await expect(page.locator('.evidence-col-head')).toHaveCount(2)
+    // Cell states (mockup `cellstates`): every stored state with what it means.
+    await box.getByRole('button', { name: 'Cell states' }).click()
+    await expect(page.locator('.table-menu-info')).toHaveCount(7)
+    await expect(page.locator('.table-menu')).toContainText('No passage was linked to it')
+    await page.keyboard.press('Escape')
+    // The second removal is refused: the toast says how many went and why the rest stayed, and Undo brings back only the removed one.
+    let deletes = 0
+    await page.route('**/api/researches/*/tables/*/columns/*', route => {
+      if (route.request().method() !== 'DELETE' || ++deletes < 2) return route.fallback()
+      return route.fulfill({ status: 409, json: { detail: 'SYNTHETIC refusal: the table changed' } })
+    })
+    await tableMenu(page, /^Remove all columns/)
+    await page.getByRole('dialog', { name: 'Remove all columns?' }).getByRole('button', { name: 'Remove all columns' }).click()
+    await expect(page.getByText('Removed 1 of 2 columns; the rest were not removed: SYNTHETIC refusal: the table changed')).toBeVisible()
+    await expect(page.locator('.evidence-col-head')).toHaveCount(1)
+    await expect(page.locator('.evidence-col-head')).toHaveText('SYNTHETIC second')
+    await page.unroute('**/api/researches/*/tables/*/columns/*')
+    await page.getByRole('button', { name: 'Undo' }).click()
+    await expect(page.getByText('Columns restored with their cells.')).toBeVisible()
+    await expect(page.locator('.evidence-col-head')).toHaveCount(2)
+  } finally { await page.close(); await server.stop() }
 })
 
 test('a scripted report review finding appears as a model flag', async ({ browser }) => {
@@ -305,8 +377,8 @@ test('a scripted report review finding appears as a model flag', async ({ browse
     await openPanel(page, 'table')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
-    await editor.getByLabel('Short name').fill('SYNTHETIC method')
-    await editor.getByLabel('Instruction').fill('Record the method named by the source.')
+    await editor.getByLabel('Name', { exact: true }).fill('SYNTHETIC method')
+    await editor.getByLabel('What should the model look for?').fill('Record the method named by the source.')
     await editor.getByRole('button', { name: 'Add column' }).click()
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
     await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
@@ -377,7 +449,7 @@ test('a banned word in a section pauses the report with the section failed and n
     await entry.click()
     const sheet = reportSheet(page)
     const header = sheet.locator('.report-document-head')
-    await expect(header.locator('p').first()).toHaveText('Evidence report · being written')
+    await expect(header.locator('.meta span').first()).toHaveText('Evidence report · being written')
     await expect(header).toContainText('Paused: A section could not be written.')
     await expect(header).not.toContainText(/Evidence report · V\d+/)
     await expect(section(page, 'IV')).toContainText('This section was not validated and must be written again: banned word.')
@@ -445,9 +517,7 @@ test('an empty section pauses the report and can be cancelled', async ({ browser
     const sheet = reportSheet(page)
     await expect(sheet.locator('.report-document-head')).toContainText('Paused: A section could not be written.')
     await expect(section(page, 'IV')).toContainText('This section was not validated and must be written again: the section had no claims or explanation of missing evidence.')
-    await expect(sheet.getByRole('button', { name: 'Copy Markdown' })).toBeDisabled()
-    await expect(sheet.getByRole('button', { name: 'Download .md' })).toBeDisabled()
-    await expect(sheet.getByRole('button', { name: 'Download LaTeX' })).toBeDisabled()
+    await expect(sheet.getByRole('button', { name: 'Download report' })).toBeDisabled()  // Markdown, LaTeX, Word and Copy
     const exportResponse = await api.get(`/api/researches/${researchId}/reports/${reportId}/export?format=markdown`)
     expect(exportResponse.status()).toBe(409)
     await section(page, 'IV').scrollIntoViewIfNeeded()
@@ -547,8 +617,7 @@ test('a bad cell anchor fails after one repair and displays only the stored reas
         const notice = section(page, 'IV').locator('.notice')
         await expect(section(page, 'IV')).toContainText(`This section was not validated and must be written again: ${reason}.`)
         await expect(section(page, 'IV')).not.toContainText(/REALSECRET|missing anchor|cel_|psg_|model-written/)
-        await expect(reportSheet(page).getByRole('button', { name: 'Copy Markdown' })).toBeDisabled()
-        await expect(reportSheet(page).getByRole('button', { name: 'Download .md' })).toBeDisabled()
+        await expect(reportSheet(page).getByRole('button', { name: 'Download report' })).toBeDisabled()
         await notice.scrollIntoViewIfNeeded()
         await shot(page, `report-bad-anchor-sheet-${dark ? 'dark' : 'light'}-${width}`)
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)

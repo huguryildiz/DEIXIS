@@ -320,6 +320,7 @@ def test_report_view_returns_ordered_sections_claims_and_citation_anchors(tmp_pa
                for claim in cited_claims for link in claim["evidence"])
     assert view["run"] == {"id": run["id"], "status": "running", "pause_reason": None}
     assert view["table_i"] is not None
+    assert view["table_id"] == run["target"]["table_id"]
     assert all(row["source_key"] for row in view["table_i"]["rows"])
     assert [ref["number"] for ref in view["references"]] == list(range(1, len(view["references"]) + 1))
     assert {link["ref_number"] for claim in cited_claims for link in claim["evidence"]} == \

@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Copy, Download, FileCode, FileText, Quote } from 'lucide-react'
+import { AlignLeft, ChevronDown, ChevronRight, Copy, Download, FileText, Link, RotateCw, ShieldCheck, Table2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { api, ApiError, type ReportClaim, type ReportDetail, type ReportLink, type ReportSection, type ResearchView, type ReviewFindingRow } from '../api'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
+import { Menu as MenuPrimitive } from '@base-ui/react/menu'
+import { api, ApiError, reportDocxUrl, type Passage, type ReportClaim, type ReportDetail, type ReportLink, type ReportSection, type ResearchView, type ReviewFindingRow, type TableSummary } from '../api'
 import { MathText } from '../MathText'
-import { failedRowReasonText, failedSectionReasonText, pauseReasonText, reportAssemblyDraftText, reportChangeLabels, reportChangeViaLabels, reportSupportLabels } from '../labels'
+import { failedRowReasonText, failedSectionReasonText, locatorText, pauseReasonText, reportAssemblyDraftText, reportChangeLabels, reportChangeViaLabels, reportSupportLabels } from '../labels'
+import { StackPanel } from '../research/SplitPanel'
+import { usePanels } from '../research/usePanelStack'
+import { excerpt } from '../research/excerpt'
+import { HighlightedPassageText } from '../PassageSheet'
+import { reportGate, stateLabels } from '../tableCsv'
 import { Notice } from '../Notice'
 import { PassageFreshnessNotice } from './PassageFreshnessNotice'
 import { t, uiLocale } from '../i18n'
@@ -63,13 +69,22 @@ function valueText(value: Record<string, unknown> | null, options: { id: string;
   return ''
 }
 
-export function ReportView({ researchId, reportId, view, title, dark, onClose, onOpenCitation, onChanged, onOpenCandidate }: {
-  researchId: string; reportId: string; view: ResearchView; title: string; dark: boolean; onClose: () => void
+// The evidence report panel (mockup `erepPanel`, P21-P31 report half), stacked like every research panel. Its head:
+// Evidence view (the cited cells under each claim), Review with another model, and the download menu (Markdown, LaTeX,
+// Word; Copy as the live placement, §2.2; the PDF row is print, S27). A citation chip opens the stored citation in its
+// own panel (mockup `ecitePanel`); from there the passage opens in Source details.
+export function ReportView({ researchId, reportId, view, tables, title, dark, onClose, onOpenCitation, onOpenCell, onChanged, onOpenCandidate }: {
+  researchId: string; reportId: string; view: ResearchView; tables: TableSummary[] | null; title: string; dark: boolean; onClose: () => void
   onOpenCitation: (passageId: string, highlightText: string | null, expectHighlight: boolean) => void
+  onOpenCell: (tableId: string, cell: { columnId: string; sourceId: string }) => void
   onChanged: () => Promise<void>
   onOpenCandidate: (candidate: CandidateSelection) => void
 }) {
   const toast = useToast()
+  const [citing, setCiting] = useState<ReportLink | null>(null)
+  // A panel that leaves the page while it is open also leaves the stack (its owner closed it, e.g. a candidate opened).
+  const removePanel = usePanels()?.remove
+  useEffect(() => () => { removePanel?.('ecite'); removePanel?.('ereport') }, [removePanel])
   const [report, setReport] = useState<ReportDetail | null>(null)
   const [error, setError] = useState('')
   const [evidenceView, setEvidenceView] = useState(false)
@@ -77,16 +92,6 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
   const [requestReview, setRequestReview] = useState(false)
   const reviewList = useReviewList(researchId, 'report', reportId, view.last_event_id)
   const reviewsButton = useRef<HTMLButtonElement>(null), scrollRoot = useRef<HTMLDivElement>(null), documentScroll = useRef(0)
-  // The control that opened the sheet gets focus back on close and is scrolled into view: the thread above it keeps the
-  // latest search and answer open (S9), so the opener can sit below the fold, and a focus stop must be in view.
-  const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null)
-  const returnToOpener = () => {
-    const target = opener.current
-    if (!target?.isConnected) return true
-    target.focus({ preventScroll: true })
-    target.scrollIntoView({ block: 'nearest' })
-    return false
-  }
   const [applying, setApplying] = useState<{ reviewId: string; finding: ReviewFindingRow; claim: ReportClaim } | null>(null)
   const mode = (on: boolean, request = false) => {
     if (on && !reviewMode) documentScroll.current = scrollRoot.current?.scrollTop ?? 0
@@ -291,27 +296,70 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
     const cell = table.cells.find(item => item.source_version_id === row.source_version_id && item.column_id === column.column_id)
     return <td key={column.column_id}>{cell ? cell.state === 'value' ? valueText(cell.value, column.options) : cell.state === 'not_verified' ? t('{value} (not verified: no quote linked)', { value: valueText(cell.value, column.options) }) : t(cell.state.replaceAll('_', ' ')) : '—'}</td>
   })}</tr>)}</tbody></table></div>
-  return <Sheet open onOpenChange={open => { if (!open) onClose() }}><SheetContent finalFocus={returnToOpener} className={`detail-sheet report-sheet ${dark ? 'dark' : ''}`}>
-    <SheetHeader className="report-toolbar"><div className="report-toolbar-title"><FileText size={17} aria-hidden /><SheetTitle>{title}</SheetTitle></div><SheetDescription className="sr-only">{t('Evidence report')}</SheetDescription><div className="report-toolbar-actions"><Button ref={reviewsButton} variant="ghost" size="sm" aria-label={t('Reviews, {n}', { n: reviewList.reviews.length })} aria-pressed={reviewMode} onClick={() => mode(!reviewMode)}>{t('Reviews')} <span className="research-tab-count" aria-hidden>{reviewList.reviews.length}</span></Button><Button variant="ghost" size="sm" aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Quote size={14} aria-hidden /><span className="report-head-label">{t('Evidence view')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Copy Markdown')} onClick={() => void markdown('copy')}><Copy size={14} aria-hidden /><span className="report-export-label">{t('Copy Markdown')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download .md')} onClick={() => void markdown('download')}><Download size={14} aria-hidden /><span className="report-export-label">{t('Download .md')}</span></Button><Button variant="ghost" size="sm" disabled={exportBlocked || exportBusy} title={exportBlocked ? t('A report can be exported once its run has finished.') : undefined} aria-label={t('Download LaTeX')} onClick={() => void latex()}><FileCode size={14} aria-hidden /><span className="report-export-label">{t('Download LaTeX')}</span></Button></div></SheetHeader>
+  // "Write a new version" (mockup `ewrite`): a new report from the same table, under the table panel's own rule.
+  const tableSummary = tables?.find(item => item.id === report?.table_id)
+  const gate = tableSummary ? reportGate(view, tableSummary, tableSummary.columns, tableSummary.title) : { reason: t('The table this report was written from is no longer available.'), continueWithFailed: false }
+  const [writing, setWriting] = useState(false)
+  const writeAgain = async () => {
+    if (!report?.table_id || writing) return
+    setWriting(true)
+    try {
+      await api.startReport(researchId, report.table_id, crypto.randomUUID(), gate.continueWithFailed ? { continueWithFailed: true } : undefined)
+      toast('success', t('A new version of the evidence report is being written. This version stays as it is.'))
+      await onChanged()
+    } catch (e) {
+      toast(e instanceof ApiError && e.status === 409 ? 'warning' : 'error', e instanceof Error ? e.message : String(e))
+    } finally { if (live.current) setWriting(false) }
+  }
+  const writeButton = report?.table_id ? <button type="button" className="ghost report-write" disabled={writing || busy || Boolean(gate.reason)} title={gate.reason || undefined} onClick={() => void writeAgain()}><RotateCw size={14} aria-hidden />{t('Write a new version')}</button> : null
+  const running = !report || !finished.has(report.run?.status ?? '')
+  const panelTitle = !report || report.status === 'in_progress' ? t('Evidence report · being written') : report.status === 'valid' ? t('Evidence report · V{n}', { n: report.report_version ?? '' }) : t('Evidence report · draft')
+  const reviewLabel = reviewList.reviews.length ? t(reviewList.reviews.length === 1 ? 'Review with another model, {n} review' : 'Review with another model, {n} reviews', { n: reviewList.reviews.length }) : t('Review with another model')
+  const exportTitle = exportBlocked ? t('A report can be exported once its run has finished.') : undefined
+  const fmt = (format: string, detail: string) => <><FileTypeIcon format={format} /><b>{format}</b><span>{detail}</span></>
+  const included = table ? table.rows.filter(row => !row.failed).length : 0
+  const actions = report ? <div className="report-toolbar-actions">
+    <button type="button" className="ib report-evidence-view" aria-label={t('Evidence view')} title={t('Evidence view: show the cited cells')} aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Table2 size={15} aria-hidden /></button>
+    <button ref={reviewsButton} type="button" className="ib report-review" aria-label={reviewLabel} title={reviewLabel} aria-pressed={reviewMode} onClick={() => mode(!reviewMode)}>
+      <ShieldCheck size={15} aria-hidden />{reviewList.reviews.length > 0 && <span className="ib-count" aria-hidden>{reviewList.reviews.length}</span>}
+    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<button type="button" className="ib report-download" aria-label={t('Download report')} title={exportTitle ?? t('Download')} disabled={exportBlocked || exportBusy} />}><Download size={15} aria-hidden /></DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={6} className="research-export-menu report-export-menu">
+        <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => void markdown('download')}>{fmt('MD', t('Markdown'))}</DropdownMenuItem>
+        <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => void latex()}>{fmt('TEX', t('LaTeX · .tex and .bib in a zip'))}</DropdownMenuItem>
+        <MenuPrimitive.LinkItem href={reportDocxUrl(researchId, reportId)} download closeOnClick data-slot="dropdown-menu-item" className="research-export-item menu-fmt">{fmt('DOCX', t('Word document'))}</MenuPrimitive.LinkItem>
+        {/* Copying the report as Markdown (live, §2.2) sits with the files it matches. */}
+        <DropdownMenuItem className="research-export-item menu-fmt export-placement" onClick={() => void markdown('copy')}><Copy size={15} aria-hidden /><b>{t('Copy')}</b><span>{t('Markdown to the clipboard')}</span></DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  </div> : undefined
+  return <StackPanel name="ereport" open onClose={onClose} title={panelTitle} icon={AlignLeft} className={`report-panel report-sheet erep-panel${dark ? ' dark' : ''}`} actions={actions}>
+    <p className="sr-only">{t('Evidence report')}</p>
     <div className="report-scroll" ref={scrollRoot}>
     {reviewMode && <ReviewPane researchId={researchId} targetKind="report" targetId={reportId} version={report?.report_version ?? 0} eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} unavailableReason={reviewUnavailable} sources={view.sources} sectionLabel={labels} showRequest={requestReview} open={(id, anchor) => onOpenCitation(id, anchor, true)} changed={async () => { await reviewList.refresh(); await onChanged() }} apply={openApply} />}
     <article ref={documentRoot} hidden={reviewMode} className="report-document evidence-report-document">
       {error && <Notice tone="error">{error}</Notice>}
       {!report ? <p>{t('Loading report…')}</p> : <>
-        <header className="report-document-head"><p>{report.status === 'valid' ? t('Evidence report · V{n}', { n: report.report_version ?? '' }) : report.status === 'draft' ? (report.sections.every(section => section.status === 'valid') && reportAssemblyDraftText(report.run?.error)) || t('DRAFT: {n} sections not validated', { n: report.sections.filter(section => section.status !== 'valid').length }) : t('Evidence report · being written')}</p><h1>{title}</h1><time>{new Date(report.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</time>
-          <ReviewSummary reviews={reviewList.reviews} open={() => mode(true)} /><button type="button" className="review-entry" disabled={Boolean(reviewUnavailable)} aria-describedby={reviewUnavailable ? `report-review-unavailable-${reportId}` : undefined} onClick={() => mode(true, true)}>{t('Review with another model')}</button>
-          {reviewUnavailable && <p id={`report-review-unavailable-${reportId}`}>{reviewUnavailable}</p>}
-          <EditCheckPanel report={report} finished={finished.has(report.run?.status ?? '')} busy={busy} checking={checking} labels={labels} onCheck={() => void check()} />{report.run?.status === 'paused' && <p role="status">{t('Paused: {reason}', { reason: pauseReasonText(report.run.pause_reason) || t('Report paused') })}</p>}</header>
+        <header className="report-document-head"><h1>{title}</h1>
+          <div className="meta">
+            <span>{report.status === 'valid' ? t('Evidence report · V{n}', { n: report.report_version ?? '' }) : report.status === 'draft' ? (report.sections.every(section => section.status === 'valid') && reportAssemblyDraftText(report.run?.error)) || t('DRAFT: {n} sections not validated', { n: report.sections.filter(section => section.status !== 'valid').length }) : t('Evidence report · being written')}</span>
+            <span aria-hidden>·</span><time dateTime={report.created_at}>{new Date(report.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</time>
+            {table && <><span aria-hidden>·</span><span>{t(included === 1 ? '{n} source' : '{n} sources', { n: included })} · {t(table.columns.length === 1 ? '{n} column' : '{n} columns', { n: table.columns.length })}</span></>}
+            {report.missing_rows && report.missing_rows.counts.failed > 0 && <><span aria-hidden>·</span><span>{t(report.missing_rows.counts.failed === 1 ? '{n} row excluded from assessment and denominators' : '{n} rows excluded from assessment and denominators', { n: report.missing_rows.counts.failed })}</span></>}
+          </div>
+          {report.run?.status === 'paused' && <p role="status">{t('Paused: {reason}', { reason: pauseReasonText(report.run.pause_reason) || t('Report paused') })}</p>}</header>
+        {running && report.run?.status !== 'paused' && <div className="art live" role="status"><div className="thumb" aria-hidden><i /><i /><i /></div><div><h3 className="shimmer-text">{t('Writing the evidence report…')}</h3><small>{t('The cited cells are frozen with this version.')}</small></div></div>}
         {report.missing_rows && <Notice tone="attention">
           <p>{t('{n} of {m} sources did not complete the table (missing cells: {cells}). These rows were excluded from the report’s evidence assessment and aggregation denominators.', { n: report.missing_rows.counts.failed, m: report.missing_rows.counts.included, cells: report.missing_rows.counts.cells_missing })}</p>
           <ul>{report.missing_rows.failed_rows.map(row => <li key={row.source_version_id}>{row.source_key || row.title}: {failedRowReasonText(row.reason)}</li>)}</ul>
         </Notice>}
-        {report.evidence_changes.any && <Notice tone="attention">{t('Evidence changed after this report:')} {[
+        {report.evidence_changes.any && <Notice tone="attention"><span>{t('Evidence changed after this report:')} {[
           report.evidence_changes.changed_cells && t(report.evidence_changes.changed_cells === 1 ? '{n} cell changed' : '{n} cells changed', { n: report.evidence_changes.changed_cells }),
           report.evidence_changes.removed_sources && t(report.evidence_changes.removed_sources === 1 ? '{n} source left' : '{n} sources left', { n: report.evidence_changes.removed_sources }),
           report.evidence_changes.added_sources && t(report.evidence_changes.added_sources === 1 ? '{n} source added' : '{n} sources added', { n: report.evidence_changes.added_sources }),
           report.evidence_changes.revised_columns && t(report.evidence_changes.revised_columns === 1 ? '{n} column revised' : '{n} columns revised', { n: report.evidence_changes.revised_columns }),
-        ].filter(Boolean).join(', ')}. {t('The report text was not changed. Passage text was not checked.')}</Notice>}
+        ].filter(Boolean).join(', ')}. {t('The report text was not changed. Passage text was not checked.')}</span>{writeButton && !running && <span className="acts">{writeButton}</span>}</Notice>}
         <PassageFreshnessNotice freshness={report.passage_freshness} />
         <div className="report-content evidence-report-content">{DISPLAY.map(id => {
           const section = report.sections.find(item => item.section_id === id)
@@ -322,9 +370,9 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
           const changes = section.evidence_changes.open
           const reasons = [...new Set(changes.map(change => `${t(reportChangeLabels[change.kind] ?? change.kind)} ${change.via !== 'citation' ? t(reportChangeViaLabels[change.via] ?? change.via) : ''}`.trim()))]
           return <section className="evidence-report-section" key={id}><h2>{labels(id)}</h2>
-            {changes.length > 0 && <div className="evidence-report-changes"><Notice tone="attention">{t('This section rests on evidence that changed after this report:')} {reasons.join('; ')}.</Notice>{evidenceView && <ul>{changes.map(change => <li key={change.key}>{t(reportChangeLabels[change.kind] ?? change.kind)} · {report.references.find(ref => ref.source_version_id === change.source_version_id)?.source_key ?? ''} · {table?.columns.find(column => column.column_id === change.column_id)?.name ?? ''}</li>)}</ul>}<Button size="sm" variant="outline" disabled={busy} onClick={() => void acknowledge(section)}>{t('Keep as is')}</Button></div>}
-            {evidenceView && section.evidence_changes.acknowledged_count > 0 && <small>{t('{n} earlier changes kept as is.', { n: section.evidence_changes.acknowledged_count })}</small>}
-            {(section.status === 'draft' || section.status === 'failed') && <Notice tone="attention">{section.validation?.issues?.[0]?.code ? t('This section was not validated and must be written again: {reason}.', { reason: failedSectionReasonText(section.validation.issues[0].code) }) : t('This section was not validated and must be written again.')}</Notice>}
+            {changes.length > 0 && <div className="evidence-report-changes"><Notice tone="attention">{t('This section rests on evidence that changed after this report:')} {reasons.join('; ')}.</Notice>{evidenceView && <ul>{changes.map(change => <li key={change.key}>{t(reportChangeLabels[change.kind] ?? change.kind)} · {report.references.find(ref => ref.source_version_id === change.source_version_id)?.source_key ?? ''} · {table?.columns.find(column => column.column_id === change.column_id)?.name ?? ''}</li>)}</ul>}<span className="acts"><button type="button" className="ghost" disabled={busy} onClick={() => void acknowledge(section)}>{t('Mark as seen')}</button>{writeButton}</span></div>}
+            {evidenceView && section.evidence_changes.acknowledged_count > 0 && <small>{t('{n} earlier changes marked as seen.', { n: section.evidence_changes.acknowledged_count })}</small>}
+            {(section.status === 'draft' || section.status === 'failed') && <div className="evidence-report-failed"><Notice tone="attention">{section.validation?.issues?.[0]?.code ? t('This section was not validated and must be written again: {reason}.', { reason: failedSectionReasonText(section.validation.issues[0].code) }) : t('This section was not validated and must be written again.')}</Notice>{writeButton && !running && <span className="acts">{writeButton}</span>}</div>}
             {id === 'VI' && <p className="evidence-report-fine">{t('Candidate aspects the model inferred from the evidence table; none was checked by a kill-search.')}</p>}
             {id === 'IV' && !hasTableRef && tableNode}
             {(id === 'II' || id === 'VIII') && section.draft?.text && <p className="evidence-report-paragraph"><MathText text={section.draft.text} /></p>}
@@ -333,7 +381,7 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
               return <span key={claim.id}>{i > 0 && ' '}<MathText text={claim.text} />{claim.equation_ref && <span className="evidence-report-equation">({equationNumbers.get(claim.equation_ref)})</span>}{claim.evidence_basis === 'none' && claim.support_type_note !== null && <span className="evidence-report-no-citation"> {t('(no direct citation)')}</span>}{unique.map((link, j) => {
                 const ref = refs.get(link.ref_number)
                 const possible = Boolean(link.passage_id || table?.cells.some(cell => cell.cell_id === link.cell_id && cell.evidence_passage_ids.length))
-                return <span key={link.ref_number}>{j > 0 && ', '}<button type="button" className="cite-chip" disabled={!possible} title={possible ? undefined : t('No stored evidence passage can be opened for this citation.')} aria-label={t('Reference {n}: {title}', { n: link.ref_number, title: ref?.title ?? '' })} onClick={() => cited(link)}>[{link.ref_number}]</button></span>
+                return <span key={link.ref_number}>{j > 0 && ', '}<button type="button" className="cite-chip" disabled={!possible} title={possible ? undefined : t('No stored evidence passage can be opened for this citation.')} aria-label={t('Reference {n}: {title}', { n: link.ref_number, title: ref?.title ?? '' })} onClick={() => setCiting(link)}>[{link.ref_number}]</button></span>
               })}</span>
             })}</p>{evidenceView && section.claims.filter(claim => claim.paragraph === number).map(claim => {
               const editReason = !finished.has(report.run?.status ?? '') ? t('A report can be edited once its run has finished.') : busy ? t('An operation is in progress.') : ''
@@ -361,9 +409,70 @@ export function ReportView({ researchId, reportId, view, title, dark, onClose, o
             {id === 'VI' && <ReportAspects researchId={researchId} reportId={reportId} eventCursor={view.last_event_id} valid={section.status === 'valid'} onOpen={onOpenCandidate} />}
           </section>
         })}<section className="evidence-report-section"><h2>{labels('references')}</h2><ol className="evidence-report-references">{report.references.map(ref => <li key={ref.number}><span>[{ref.number}] {ref.authors.join(', ')}{ref.authors.length ? ', ' : ''}</span>{ref.open_passage_id ? <button type="button" onClick={() => onOpenCitation(ref.open_passage_id!, null, false)}>{ref.title}</button> : ref.title}{ref.venue ? `, ${ref.venue}` : ''}{ref.year ? `, ${ref.year}` : ''}</li>)}</ol></section></div>
+        {/* What was and was not checked (mockup `.check`): anchors and the automatic claim review, reviews by another model, the check of hand edits. */}
+        <div className="check evidence-report-check">
         <p className="evidence-report-provenance">{anchorNote} {removedClaims > 0 && t(removedClaims === 1 ? '1 claim has no direct citation after citations were removed by hand.' : '{n} claims have no direct citations after citations were removed by hand.', { n: removedClaims })} {t('Claim check (automatic; it can return a rewritten sentence to its original wording):')} {reviewNote}</p>
+          <p className="evidence-report-reviews"><b>{t('Reviews.')}</b> {reviewList.reviews.length ? <ReviewSummary reviews={reviewList.reviews} open={() => mode(true)} /> : t('None requested.')}{reviewUnavailable && <span id={`report-review-unavailable-${reportId}`}> {reviewUnavailable}</span>}</p>
+          <EditCheckPanel report={report} finished={finished.has(report.run?.status ?? '')} busy={busy} checking={checking} labels={labels} onCheck={() => void check()} />
+        </div>
         {review?.status === 'reviewed' && review.findings.length > 0 && <details className="evidence-report-history"><summary><ChevronRight size={14} aria-hidden className="closed" /><ChevronDown size={14} aria-hidden className="opened" />{t('Review findings ({k})', { k: review.findings.length })}</summary><p>{t('Model findings')}</p><ul>{review.findings.map((finding, index) => <li key={index}>{finding.section_id ? labels(finding.section_id) : t('Report')} · {t(reviewCodes[finding.code] ?? 'Other')} · {finding.text}</li>)}</ul></details>}
       </>}
     </article></div>
-  </SheetContent></Sheet>
+    {report && citing && <EvidenceCitePanel key={citing.link_id} researchId={researchId} report={report} link={citing} onClose={() => setCiting(null)}
+      onOpenPassage={() => cited(citing)} onOpenCell={report.table_id ? cell => onOpenCell(report.table_id!, cell) : undefined} />}
+  </StackPanel>
+}
+
+
+// The stored citation of one report chip (mockup `ecitePanel`, P31), stacked on the report: the cell value as frozen
+// with this report, the stored passage around its located anchor, and whether the cell changed since. Nothing is
+// recomputed: the value is the report's TABLE I record and the passage the stored one the citation opens.
+function EvidenceCitePanel({ researchId, report, link, onClose, onOpenPassage, onOpenCell }: {
+  researchId: string; report: ReportDetail; link: ReportLink; onClose: () => void; onOpenPassage: () => void
+  onOpenCell?: (cell: { columnId: string; sourceId: string }) => void
+}) {
+  const table = report.table_i
+  const cell = link.cell_id ? table?.cells.find(item => item.cell_id === link.cell_id) : undefined
+  const column = cell ? table?.columns.find(item => item.column_id === cell.column_id) : undefined
+  const row = table?.rows.find(item => item.source_version_id === link.source_version_id)
+  const ref = report.references.find(item => item.number === link.ref_number)
+  const name = row?.source_key || ref?.source_key || ref?.title || row?.title || t('Source record unavailable')
+  // The passage the chip opens, as the report's own citation rule picks it; the mark only where the anchor was located there.
+  const passageId = link.open_passage_id ?? link.passage_id ?? cell?.evidence_passage_ids[0] ?? null
+  const anchor = link.anchor_match && link.open_passage_id ? link.anchor_text : null
+  const [passage, setPassage] = useState<Passage | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    if (!passageId) return
+    let live = true
+    api.passage(researchId, passageId).then(value => { if (live) setPassage(value) }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false }
+  }, [researchId, passageId])
+  const quote = passage ? excerpt(passage.text, anchor) : null
+  const located = Boolean(anchor && quote?.located)
+  const heading = cell ? cell.state === 'value' ? valueText(cell.value, column?.options ?? null) : cell.state === 'not_verified' ? t('{value} (not verified: no quote linked)', { value: valueText(cell.value, column?.options ?? null) }) : t(stateLabels[cell.state]) : ref?.title ?? name
+  const changes = cell ? report.sections.flatMap(section => section.evidence_changes.open).filter(change => change.source_version_id === cell.source_version_id && (!change.column_id || change.column_id === cell.column_id)) : []
+  const kinds = [...new Set(changes.map(change => t(reportChangeLabels[change.kind] ?? change.kind)))]
+  return <StackPanel name="ecite" open onClose={onClose} title={t('Citation')} icon={Link} className="cite-panel ecite-panel">
+    <div className="pad detail ecite-detail">
+      <div className="dhead">
+        <div className="venue">{[name, column?.name, t('as cited in Evidence report V{n}', { n: report.report_version ?? '' })].filter(Boolean).join(' · ')}</div>
+        <h1>{heading}</h1>
+      </div>
+      <h4 className="sub">{t('Stored citation passage')}</h4>
+      {!passageId ? <p className="foot-note">{t('No stored evidence passage can be opened for this citation.')}</p>
+        : error ? <p className="quote">{error}</p>
+        : quote ? <div className="quote"><HighlightedPassageText passage={{ text: quote.text, kind: passage!.kind }} highlightTexts={located && anchor ? [anchor] : []} scroll={false} /></div>
+        : <p className="quote">{t('Loading passage…')}</p>}
+      {passage && <div className="loc"><span>{name} · {locatorText(passage)}</span><span className="loc-dot" aria-hidden>·</span>
+        {located ? <span className="ok-t">{t('Anchor located in the stored passage; whether it supports the sentence was not checked.')}</span>
+          : <span className="warn-t">{t('The anchor was not located in this passage; it opens without a mark.')}</span>}</div>}
+      {changes.length > 0 && <div className="notice warn"><TriangleAlert size={15} aria-hidden /><div className="nb">
+        <span>{t('Changed after this report: {changes}. The report still cites the value and passage above.', { changes: kinds.join('; ') })}</span>
+        {onOpenCell && cell && <span className="acts"><button type="button" className="ghost" onClick={() => onOpenCell({ columnId: cell.column_id, sourceId: cell.source_version_id })}>{t('Open the current cell')}</button></span>}
+      </div></div>}
+      {passageId && <div className="rowacts"><button type="button" onClick={onOpenPassage}><FileText size={14} aria-hidden />{t('Open in Source details')}</button></div>}
+      <p className="foot-note">{t('This is the value and passage stored with the report. Later edits to the evidence table do not change them.')}</p>
+    </div>
+  </StackPanel>
 }

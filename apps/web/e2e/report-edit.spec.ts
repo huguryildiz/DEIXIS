@@ -39,7 +39,7 @@ const server = new ReportServer()
 test.beforeAll(async () => { await server.start() })
 test.afterAll(async () => { await server.stop() })
 
-const sheet = (page: Page) => page.locator('.report-sheet').last()
+const sheet = (page: Page) => page.locator('[data-split-panel]').filter({ has: page.locator('.report-sheet') }).last()
 const panel = (page: Page) => sheet(page).locator('.evidence-report-edit-check')
 const meta = (page: Page, key: string) => sheet(page).locator(`[data-claim-key="${key}"]`)
 const claimByKey = (report: ReportDetail, key: string) => report.sections.flatMap(s => s.claims).find(c => c.claim_key === key)!
@@ -79,8 +79,8 @@ async function readyResearch(page: Page, question: string) {
   await openPanel(page, 'table')
   await page.getByRole('button', { name: /Add a column/ }).click()
   const editor = page.getByRole('dialog', { name: 'Add column' })
-  await editor.getByLabel('Short name').fill('SYNTHETIC method')
-  await editor.getByLabel('Instruction').fill('Record the method named by the source.')
+  await editor.getByLabel('Name', { exact: true }).fill('SYNTHETIC method')
+  await editor.getByLabel('What should the model look for?').fill('Record the method named by the source.')
   await editor.getByRole('button', { name: 'Add column' }).click()
   await page.getByRole('button', { name: /^Fill empty cells/ }).click()
   await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
@@ -705,13 +705,13 @@ test('check and acknowledge each discard old reads, confirm outcomes, and reads 
       await bumpEvent(page, f); await old.started
       const before = gets
       if (action === 'check') await panel(page).getByRole('button', { name: 'Check edited text', exact: true }).click()
-      else await sheet(page).locator('.evidence-report-section').filter({ has: page.getByRole('heading', { name: 'III. Background and Taxonomy', exact: true }) }).getByRole('button', { name: 'Keep as is' }).click()
+      else await sheet(page).locator('.evidence-report-section').filter({ has: page.getByRole('heading', { name: 'III. Background and Taxonomy', exact: true }) }).getByRole('button', { name: 'Mark as seen' }).click()
       await expect.poll(() => gets).toBe(before + 1)
       if (action === 'check') await expect(panel(page).getByText('Current', { exact: true })).toBeVisible()
-      else await expect(sheet(page).getByRole('button', { name: 'Keep as is' })).toHaveCount(0)
+      else await expect(sheet(page).getByRole('button', { name: 'Mark as seen' })).toHaveCount(0)
       old.release(); await processed(page, token)
       if (action === 'check') await expect(panel(page).getByText('Current', { exact: true })).toBeVisible()
-      else await expect(sheet(page).getByRole('button', { name: 'Keep as is' })).toHaveCount(0)
+      else await expect(sheet(page).getByRole('button', { name: 'Mark as seen' })).toHaveCount(0)
       const quietGets = gets, quietResearch = researchGets
       await page.waitForTimeout(1000)
       expect(gets).toBe(quietGets); expect(researchGets).toBe(quietResearch)

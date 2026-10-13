@@ -259,19 +259,21 @@ test.describe.serial('S7a: thread and side panel', () => {
     await page.goto(`${server.url()}/#/research/${rid}`)
     await page.locator('.research-thread').getByRole('button', { name: 'Open table: SYNTHETIC table A' }).click()
     const table = panel(page, 'Evidence table')
-    await expect(table.locator('#evidence-heading')).toHaveText('SYNTHETIC table A')
+    // The table shown is the one chosen in the toolbar's table select (UI parity S15a; the panel title is "Evidence table").
+    const shown = table.getByRole('combobox', { name: 'Table', exact: true }).locator('option:checked')
+    await expect(shown).toHaveText('SYNTHETIC table A')
     // With the panel open, the other card switches the table shown.
     await page.locator('.research-thread').getByRole('button', { name: 'Open table: SYNTHETIC table B' }).click()
-    await expect(table.locator('#evidence-heading')).toHaveText('SYNTHETIC table B')
+    await expect(shown).toHaveText('SYNTHETIC table B')
     await page.locator('.research-thread').getByRole('button', { name: 'Open table: SYNTHETIC table A' }).click()
-    await expect(table.locator('#evidence-heading')).toHaveText('SYNTHETIC table A')
+    await expect(shown).toHaveText('SYNTHETIC table A')
     await page.keyboard.press('Escape')
     await expect(page.locator('[data-split-panel]')).toHaveCount(0)
 
     // The rail stays mounted while a panel is open, so its button takes focus back.
     const railButton = page.getByRole('complementary', { name: /^Artifacts/ }).getByRole('button', { name: /SYNTHETIC table B/ })
     await railButton.click()
-    await expect(table.locator('#evidence-heading')).toHaveText('SYNTHETIC table B')
+    await expect(shown).toHaveText('SYNTHETIC table B')
     await expect(page.getByRole('complementary', { name: /^Artifacts/ })).toBeHidden()
     await table.getByRole('button', { name: 'Close', exact: true }).click()
     await expect(railButton).toBeFocused()

@@ -12,6 +12,7 @@ export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
 export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog' | 'research-panel' | 'palette' | 'keys'
   | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty' | 'report-panel' | 'cite-panel' | 'detail-panel'
   | 'sources-why' | 'sources-sel' | 'queue-panel' | 'pdfs-panel' | 'funnel-panel' | 'activity-panel'
+  | 'table-panel' | 'cell-panel' | 'ereport-panel' | 'ecite-panel'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -43,7 +44,7 @@ export type Surface = {
   id: SurfaceId
   /** Puts the mockup in this state through its own globals. */
   mock: string
-  /** The app URL hash for this state; `{research}` is the [parity] research id. */
+  /** The app URL hash for this state; `{research}` is the [parity] research id, `{report}` the research with an evidence report. */
   app: string
   /** An app element that shows the state is ready. */
   ready: string
@@ -152,6 +153,21 @@ export const SURFACES: Surface[] = [
     appAct: async page => { await page.locator('.pdfs-panel .pdf-ready-full > summary').click(); await page.locator('.pdfs-panel .pdf-ready-full li.prow').first().waitFor() } },
   { id: 'funnel-panel', mock: "setScenario('ok'); openPanel('funnel', null, false)", app: '#/research/{research}/funnel', ready: '[data-split-panel] .funnel-panel .stage .lost .link' },
   { id: 'activity-panel', mock: "setScenario('ok'); openPanel('activity', null, false)", app: '#/research/{research}/activity', ready: '[data-split-panel] .activity-table tbody tr' },
+  // S15a: the Evidence table panel (P21-P26) and a cell's panel (P27) on the [parity] research's 6 × 4 table; the evidence
+  // report (P28-P30) and its Citation panel (P31) on a second SYNTHETIC research whose table holds every included source,
+  // which a report needs. The app opens the Citation panel from the third chip, the first that cites a table cell, as the
+  // mockup's cob20|req does.
+  { id: 'table-panel', mock: "setScenario('ok'); openPanel('table', null, false)", app: '#/research/{research}/table', ready: '[data-split-panel] .evidence-grid tbody tr' },
+  { id: 'cell-panel', mock: "setScenario('ok'); openPanel('table', null, false); openPanel('cell', 'cob20|req')", app: '#/research/{research}/table', ready: '[data-split-panel] .evidence-grid tbody tr',
+    appAct: async page => { await page.locator('.evidence-grid [data-cell="0:0"]').click(); await page.locator('.cell-detail .dhead h1').waitFor() } },
+  { id: 'ereport-panel', mock: "setScenario('ok'); erepStart(); st.erep.state = 'done'; openPanel('ereport', null, false)", app: '#/research/{report}', ready: '.research-topbar',
+    appAct: async page => { await page.locator('[aria-label="Open evidence report"]').click(); await page.locator('.evidence-report-document .report-document-head h1').waitFor() } },
+  { id: 'ecite-panel', mock: "setScenario('ok'); erepStart(); st.erep.state = 'done'; openPanel('ereport', null, false); openPanel('ecite', 'cob20|req')", app: '#/research/{report}', ready: '.research-topbar',
+    appAct: async page => {
+      await page.locator('[aria-label="Open evidence report"]').click()
+      await page.locator('.evidence-report-document .cite-chip').nth(2).click()
+      await page.locator('.ecite-detail .quote mark').waitFor()
+    } },
   // S13: the Sources panel with its reason bar (the first row excluded) and with its selection bar (the first row
   // chosen). The app's Exclude is answered here, so the fixture's research is never changed: the PATCH gets an empty
   // 200 and the view the page reloads has that row excluded by the person.
@@ -714,6 +730,60 @@ export const PAIRS: Pair[] = [
   { id: 'activity.meta', surface: 'activity-panel', mock: '.panel tbody tr:first-child .src-m', app: '.activity-table tbody tr:first-child .src-m', checks: ['type', 'colour'], states: [], status: 'active' },
   { id: 'activity.status', surface: 'activity-panel', mock: '.panel tbody .status.ok', app: '.activity-table .status.ok', checks: ['type', 'colour'], states: [], status: 'active' },
   { id: 'activity.foot', surface: 'activity-panel', mock: '.panel .p-body > .foot-note', app: '.activity-runs > .foot-note', checks: ['type', 'colour'], states: [], status: 'active' },
+  // S15a Evidence table (P21-P26): the head, the toolbar, the column heads, the first row and its first cell, the foot.
+  // The column names and cell values are the fixture's, so the heads and cells compare type, colour and icon only.
+  { id: 'table.title', surface: 'table-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'table', app: 'table-2' }, text: true, states: [], status: 'active' },
+  { id: 'table.toolbar', surface: 'table-panel', mock: '.panel .p-body > .toolbar > button', app: '.table-panel > .toolbar > button', checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed',
+    icon: [{ mock: 'plus', app: 'plus' }, { mock: 'bulb', app: 'lightbulb' }, { mock: 'doc', app: 'text-align-start' }, { mock: 'info', app: 'info' }, { mock: 'dl', app: 'download' }, { mock: 'more', app: 'ellipsis' }],
+    states: [], status: 'active' },
+  { id: 'table.col-head', surface: 'table-panel', mock: '.panel thead .th-b:not(.th-add)', app: '.evidence-grid thead .th-b.evidence-col-head', checks: ['type', 'colour', 'icon'], list: 'data', expected: () => 4,
+    icon: { mock: 'doc', app: 'text-align-start' }, states: [], status: 'active' },
+  { id: 'table.col-add', surface: 'table-panel', mock: '.panel thead .th-b.th-add', app: '.evidence-grid thead .th-b.th-add', checks: ['type', 'colour', 'icon'], text: true,
+    icon: { mock: 'plus', app: 'plus' }, states: [], status: 'active' },
+  { id: 'table.source', surface: 'table-panel', mock: '.panel tbody tr:first-child .src-t', app: '.evidence-grid tbody tr:first-child .src-t', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'table.source-meta', surface: 'table-panel', mock: '.panel tbody tr:first-child .src-m', app: '.evidence-grid tbody tr:first-child .src-m', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'table.cell', surface: 'table-panel', mock: '.panel tbody tr:first-child .cell', app: '.evidence-grid tbody tr:first-child .cell', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'table.cell-note', surface: 'table-panel', mock: '.panel tbody tr:first-child .cell small', app: '.evidence-grid tbody tr:first-child .cell small', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'table.foot', surface: 'table-panel', mock: '.panel .p-body > p.foot-note', app: '.table-panel > .evidence-footnote', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
+  // S15a a cell's panel (P27): the value, how it was found, Recheck and the source, then Source, Passage, Column
+  // instruction and History (COPY_CHANGES cell-history).
+  { id: 'cell.title', surface: 'cell-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'table', app: 'table-2' }, states: [], status: 'active' },
+  { id: 'cell.back', surface: 'cell-panel', mock: '.panel .p-head [data-act="back"]', app: '.split-panel-head [aria-label="Back"]', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'left', app: 'chevron-left' }, unordered: true, states: [], status: 'active' },
+  { id: 'cell.venue', surface: 'cell-panel', mock: '.detail .dhead .venue', app: '.cell-detail .dhead .venue', checks: ['type', 'colour', 'icon'],
+    icon: { mock: 'doc', app: 'text-align-start' }, states: [], status: 'active' },
+  { id: 'cell.value', surface: 'cell-panel', mock: '.detail .dhead h1', app: '.cell-detail .dhead h1', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'cell.dmeta', surface: 'cell-panel', mock: '.detail .dmeta', app: '.cell-detail .dmeta', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'cell.recheck', surface: 'cell-panel', mock: '.detail .dacts .btn-pri', app: '.cell-detail .dacts .btn-pri', checks: ['type', 'colour', 'icon'],
+    icon: { mock: 'redo', app: 'rotate-cw' }, states: [], status: 'active' },
+  // "Edit value" sits between Recheck and the source button (PLACEMENTS cell-live-parts), so the button is not placed by the mockup's x.
+  { id: 'cell.open-source', surface: 'cell-panel', mock: '.detail .dacts .ib', app: '.cell-detail .dacts .ib', checks: ['colour', 'icon'],
+    icon: { mock: 'file', app: 'file-text' }, unordered: true, states: [], status: 'active' },
+  { id: 'cell.sub', surface: 'cell-panel', mock: '.detail h4.sub', app: '.cell-detail h4.sub', checks: ['type', 'colour'], list: 'fixed', dataText: { app: ['small'] }, states: [], status: 'active' },
+  { id: 'cell.quote', surface: 'cell-panel', mock: '.detail .quote', app: '.cell-detail .quote', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'cell.loc', surface: 'cell-panel', mock: '.detail .loc', app: '.cell-detail .loc', checks: ['type', 'colour'], states: [], status: 'active' },
+  // S15a the evidence report (P28-P30): the head with Evidence view, Review with another model and Download, the title,
+  // the meta line and the check block at the end.
+  { id: 'ereport.title', surface: 'ereport-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['type', 'colour', 'icon'],
+    icon: { mock: 'doc', app: 'text-align-start' }, states: [], status: 'active' },
+  { id: 'ereport.actions', surface: 'ereport-panel', mock: '.panel .p-head .ib:not([data-act="wide"]):not([data-act="close"])', app: '.split-panel-head .report-toolbar-actions .ib', checks: ['colour', 'icon'], list: 'fixed', text: false,
+    icon: [{ mock: 'table', app: 'table-2' }, { mock: 'shield', app: 'shield-check' }, { mock: 'dl', app: 'download' }], unordered: true, states: [], status: 'active' },
+  { id: 'ereport.h1', surface: 'ereport-panel', mock: '.report h1', app: '.evidence-report-document .report-document-head h1', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'ereport.meta', surface: 'ereport-panel', mock: '.report .meta', app: '.evidence-report-document .report-document-head .meta', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'ereport.check', surface: 'ereport-panel', mock: '.report .check', app: '.evidence-report-check', checks: ['type', 'colour'], states: [], status: 'active' },
+  // S15a the Citation panel of the evidence report (P31): the frozen value, the stored passage, where its anchor stands.
+  { id: 'ecite.title', surface: 'ecite-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'link', app: 'link' }, text: true, states: [], status: 'active' },
+  { id: 'ecite.back', surface: 'ecite-panel', mock: '.panel .p-head [data-act="back"]', app: '.split-panel-head [aria-label="Back"]', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'left', app: 'chevron-left' }, unordered: true, states: [], status: 'active' },
+  { id: 'ecite.venue', surface: 'ecite-panel', mock: '.detail .dhead .venue', app: '.ecite-detail .dhead .venue', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'ecite.value', surface: 'ecite-panel', mock: '.detail .dhead h1', app: '.ecite-detail .dhead h1', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'ecite.sub', surface: 'ecite-panel', mock: '.detail h4.sub', app: '.ecite-detail h4.sub', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'ecite.quote', surface: 'ecite-panel', mock: '.detail .quote', app: '.ecite-detail .quote', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'ecite.loc', surface: 'ecite-panel', mock: '.detail .loc', app: '.ecite-detail .loc', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'ecite.foot', surface: 'ecite-panel', mock: '.detail > p.foot-note', app: '.ecite-detail > p.foot-note', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
 ]
 
 /** Pending pairs per slice, for the summary line. */

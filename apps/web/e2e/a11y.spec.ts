@@ -4,7 +4,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { nextPort, readingDone } from './ports'
-import { backPanel, closePanel, openPanel, panel as panelOf, MENU_ROWS, PANEL_TITLES, RAIL_KEYS, type PanelName, reportPanel, showAnswer, sourcePanel } from './panels'
+import { backPanel, cellPanel, closePanel, evidenceReportPanel, openPanel, panel as panelOf, MENU_ROWS, PANEL_TITLES, RAIL_KEYS, type PanelName, reportPanel, showAnswer, sourcePanel, tableMenu } from './panels'
 
 // P9 H6 accessibility audit (plan X01 to X06). Synthetic records and a scripted model: this measures the interface,
 // not research quality. Part 1 scans a frozen screen list with axe in four states (X01 to X04); part 2 walks the A to G
@@ -135,8 +135,8 @@ async function includeSources(page: Page, server: Fixture) {
 async function addColumn(page: Page) {
   await page.getByRole('button', { name: /Add a column/ }).click()
   const editor = page.getByRole('dialog', { name: 'Add column' })
-  await editor.getByLabel('Short name').fill('Sample size')
-  await editor.getByLabel('Instruction').fill('The number of nodes in the evaluated network, as the source states it.')
+  await editor.getByLabel('Name', { exact: true }).fill('Sample size')
+  await editor.getByLabel('What should the model look for?').fill('The number of nodes in the evaluated network, as the source states it.')
   await editor.getByText('Number and unit', { exact: true }).click()
   await editor.getByLabel('Expected unit (optional)').fill('nodes')
   await editor.getByRole('button', { name: 'Add column' }).click()
@@ -567,8 +567,8 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       await openPanel(page, 'table')
       await page.getByRole('button', { name: /Add a column/ }).click()
       const editor = page.getByRole('dialog', { name: 'Add column' })
-      await editor.getByLabel('Short name').fill('SYNTHETIC method')
-      await editor.getByLabel('Instruction').fill('Record the method named by the source.')
+      await editor.getByLabel('Name', { exact: true }).fill('SYNTHETIC method')
+      await editor.getByLabel('What should the model look for?').fill('Record the method named by the source.')
       await editor.getByRole('button', { name: 'Add column' }).click()
       await page.getByRole('button', { name: /^Fill empty cells/ }).click()
       await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
@@ -582,7 +582,7 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       if (!two) throw new Error('marker [report-two-citations] gave no claim with two citations')
       await dismissToasts(page)
       await page.getByRole('button', { name: 'Open evidence report' }).click()
-      const sheet = page.locator('.report-sheet').last()
+      const sheet = page.locator('[data-split-panel]').filter({ has: page.locator('.report-sheet') }).last()
       await expect(sheet.getByRole('heading', { name: 'III. Background and Taxonomy' })).toBeVisible()
       await dismissToasts(page)
       const evidenceView = sheet.getByRole('button', { name: 'Evidence view', exact: true })
@@ -629,7 +629,7 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       await dismissToasts(page)
       await scan(page, '7b evidence panel filled', () => dismissToasts(page))
       await page.locator('[data-cell="0:0"]').click()
-      const panel = page.getByRole('dialog', { name: 'Sample size' })
+      const panel = cellPanel(page, 'Sample size')
       await expect(panel.locator('.evidence-current')).toHaveText('128 byte')
       await scan(page, '7c evidence cell panel', () => dismissToasts(page))
       await page.keyboard.press('Escape')
@@ -1479,7 +1479,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await expectFocusOn(button, 'the Quick find button after choosing the page that is already open')
   })
 
-  test('evidence cell by arrow keys, Enter opens the cell panel, Escape returns focus to the cell', async () => {
+  test('evidence cell by arrow keys, Enter opens the cell panel, Back returns focus to the cell', async () => {
     test.setTimeout(300_000)
     await startByKeyboard(page, keys, 'SYNTHETIC: What sample sizes do molecule release schedules use?')
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
@@ -1489,9 +1489,9 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await tabTo(page, page.getByRole('button', { name: /Add a column/ }), 'Add a column')
     const editor = page.getByRole('dialog', { name: 'Add column' })
     await press(page, 'Enter', 'Add a column', () => expect(editor).toBeVisible())
-    await tabTo(page, editor.getByLabel('Short name'), 'Short name')
+    await tabTo(page, editor.getByLabel('Name', { exact: true }), 'Name')
     await page.keyboard.type('Sample size')
-    await tabTo(page, editor.getByLabel('Instruction'), 'Instruction')
+    await tabTo(page, editor.getByLabel('What should the model look for?'), 'What should the model look for?')
     await page.keyboard.type('The number of nodes in the evaluated network, as the source states it.')
     await tabTo(page, editor.getByRole('button', { name: 'Add column' }), 'Add column button')
     await press(page, 'Enter', 'Add column button', () => expect(editor).toHaveCount(0))
@@ -1507,12 +1507,12 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await press(page, 'Home', 'evidence grid')
     await press(page, 'ArrowUp', 'evidence grid')
     await expectFocusOn(cell, 'cell 0:0 after ArrowUp')
-    const panel = page.getByRole('dialog', { name: 'Sample size' })
+    const panel = cellPanel(page, 'Sample size')
     await press(page, 'Enter', 'evidence cell', () => expect(panel.locator('.evidence-current')).toHaveText('SYNTHETIC fake value'))
     await audit(page, 'cell panel opened')
-    await expectTrapped(page, panel, 'cell panel')
-    await escapeClose(page, panel, 'cell panel')
-    await expectReturn(cell, 'the evidence cell that opened the panel')
+    // The cell panel is stacked on the table (UI parity S15a): a side panel, not a modal; Back returns to the cell.
+    await expectReachable(page, panel, 'cell panel')
+    await keyBack(page, panel, 'cell panel', cell)
     await audit(page, 'focus returned to the cell')
   })
 
@@ -1526,8 +1526,8 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await openPanel(page, 'table')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
-    await editor.getByLabel('Short name').fill('SYNTHETIC method')
-    await editor.getByLabel('Instruction').fill('Record the method named by the source.')
+    await editor.getByLabel('Name', { exact: true }).fill('SYNTHETIC method')
+    await editor.getByLabel('What should the model look for?').fill('Record the method named by the source.')
     await editor.getByRole('button', { name: 'Add column' }).click()
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
     await expect(page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' })).toBeEnabled({ timeout: 60_000 })
@@ -1542,7 +1542,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await expect(page.locator('.run-strip-status')).toHaveCount(0, { timeout: 90_000 })
     await dismissToastsByKeyboard(page)
     await tabTo(page, open, 'Open evidence report')
-    const sheet = page.locator('.report-sheet').last()
+    const sheet = evidenceReportPanel(page)
     await press(page, 'Enter', 'Open evidence report', () => expect(sheet.getByRole('heading', { name: 'III. Background and Taxonomy' })).toBeVisible())
     const region = sheet.locator('.evidence-report-table-scroll')
     await tabTo(page, region, 'evidence report table region', { max: 400 })
@@ -1551,7 +1551,7 @@ test.describe.serial('X05: A to G by keyboard', () => {
     expect(ring.kind, `table region indicator (${ring.detail ?? ''})`).not.toBe('none')
     observations.push(`evidence report table region (.evidence-report-table-scroll), reached by Tab: indicator ${ring.kind}`)
     await photographRing(page, 'focus-report-table')
-    await escapeClose(page, sheet, 'evidence report sheet')
+    await escapeClose(page, sheet, 'evidence report panel')
     await expectReturn(open, 'the Open evidence report button')
   })
 
@@ -1774,9 +1774,9 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
     await page.keyboard.press(key)
     if (key === 'Tab') {
       await expect(line.getByRole('button', { name: 'Pause' })).toBeFocused()
-      await tabTo(page, page.getByRole('button', { name: 'Export CSV' }), 'user moved on to Export CSV')
+      await tabTo(page, page.getByRole('button', { name: 'Download table' }), 'user moved on to Download table')
       // Lose that later focus deliberately: the earlier fill waiter must already be cancelled, even if focus is lost again.
-      await page.getByRole('button', { name: 'Export CSV' }).evaluate(el => (el as HTMLElement).blur())
+      await page.getByRole('button', { name: 'Download table' }).evaluate(el => (el as HTMLElement).blur())
     } else await expect(line).toBeFocused()
     await expect(line).toHaveCount(0, { timeout: 60_000 })
     await expect(page.locator('[data-cell="0:0"]')).toContainText('Model')
@@ -1784,7 +1784,7 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
     else await expect(page.locator('[data-cell][tabindex="0"]')).toBeFocused()
   })
 
-  test('fill response arriving after the person moved to Export CSV does not take the focus or follow it later', async ({ page }) => {
+  test('fill response arriving after the person moved to Download table does not take the focus or follow it later', async ({ page }) => {
     test.setTimeout(240_000)
     await startResearch(page, keys, 'SYNTHETIC [slow-cells] delayed fill: What sample sizes do molecule release schedules use?')
     await openPanel(page, 'table')
@@ -1799,8 +1799,8 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
       await tabTo(page, page.getByRole('button', { name: /^Fill empty cells/ }), 'delayed fill')
       await page.keyboard.press('Enter')
       await pending
-      const exportCsv = page.getByRole('button', { name: 'Export CSV' })
-      await tabTo(page, exportCsv, 'user moved on to Export CSV while the fill request is pending')
+      const exportCsv = page.getByRole('button', { name: 'Download table' })
+      await tabTo(page, exportCsv, 'user moved on to Download table while the fill request is pending')
       release()
       const line = page.locator('.evidence-run')
       await expect(line).toBeVisible()
@@ -1964,12 +1964,12 @@ async function motionScenario(browser: Browser, reduced: boolean, label: string)
     await expect(line).toHaveCount(0, { timeout: 30_000 })
     await dismissToasts(page)
     await page.locator('[data-cell="0:0"]').click()
-    const panel = page.getByRole('dialog', { name: 'Sample size' })
+    const panel = cellPanel(page, 'Sample size')
     await expect(panel).toBeVisible()
     await page.waitForTimeout(400)
-    await measure('cell panel dialog open')
-    await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: 'Save as template' }).click()
+    await measure('cell panel open')
+    await backPanel(page)
+    await tableMenu(page, /^Save as template/)
     await page.getByLabel('Template name').fill(`Motion ${label}`)
     await page.getByRole('button', { name: 'Save template' }).click()
     await expect(page.getByText('Template saved.')).toBeVisible()
@@ -2161,11 +2161,11 @@ test.describe.serial('X06: reduced motion and the 200% layout', () => {
       await page.getByRole('button', { name: /^Fill empty cells/ }).click()
       await expect(page.locator('[data-cell="0:0"]')).toContainText('128 byte', { timeout: 60_000 })
       await dismissToasts(page)
-      await layout(page, log, 'evidence table', { 'cell 0:0': page.locator('[data-cell="0:0"]'), 'row source button': page.locator('.evidence-row-open'), 'Fill empty cells': page.getByRole('button', { name: /Fill empty cells|No empty cells to fill/ }) })
+      await layout(page, log, 'evidence table', { 'cell 0:0': page.locator('[data-cell="0:0"]'), 'row source button': page.locator('.evidence-row-open'), 'Table actions': page.getByRole('button', { name: 'More table actions' }) })
       await page.locator('[data-cell="0:0"]').click()
-      const panel = page.getByRole('dialog', { name: 'Sample size' })
+      const panel = cellPanel(page, 'Sample size')
       await expect(panel.locator('.evidence-current')).toHaveText('128 byte')
-      await layout(page, log, 'evidence cell panel', { Close: panel.getByRole('button', { name: 'Close' }), 'Edit value': panel.getByRole('button', { name: 'Edit value' }), 'Recheck this cell': panel.getByRole('button', { name: 'Recheck this cell' }), 'Open in source': panel.getByRole('button', { name: 'Open in source' }) })
+      await layout(page, log, 'evidence cell panel', { Back: panel.getByRole('button', { name: 'Back', exact: true }), 'Edit value': panel.getByRole('button', { name: 'Edit value' }), 'Recheck this cell': panel.getByRole('button', { name: 'Recheck this cell' }), 'Open in source': panel.getByRole('button', { name: 'Open in source' }) })
       await page.keyboard.press('Escape')
       // human queue (its own sw fixture)
       const rid = await queueResearchId()

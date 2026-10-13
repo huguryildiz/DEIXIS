@@ -5,22 +5,12 @@ import { locatorText, verdictLabels, versionText } from '../labels'
 import { t } from '../i18n'
 import { HighlightedPassageText } from '../PassageSheet'
 import { StackPanel } from './SplitPanel'
+import { excerpt } from './excerpt'
 
 // The Citation panel (mockup `citation()`, P11): what one claim of the answer cites, one entry per cited passage, each
 // with its work, the quote around the backend-located anchor, where it sits and how the claim was reviewed. From an
 // entry the passage opens in Source details at its anchor (the text, or the PDF page); a work without a PDF offers
 // Find PDF there. Nothing here is recomputed: the passage, its anchor and the review are the answer's stored records.
-
-// The passage text around the anchor: a page is long, so the quote shows about two sentences on each side of it.
-const CONTEXT = 240
-function excerpt(text: string, anchor: string | null): { text: string; located: boolean } {
-  const at = anchor ? text.indexOf(anchor) : -1
-  if (at < 0) return { text: text.length > 2 * CONTEXT ? `${text.slice(0, 2 * CONTEXT).trimEnd()}…` : text, located: false }
-  let start = Math.max(0, at - CONTEXT), end = Math.min(text.length, at + anchor!.length + CONTEXT)
-  if (start > 0) { const space = text.indexOf(' ', start); start = space >= 0 && space < at ? space + 1 : at }
-  if (end < text.length) { const space = text.lastIndexOf(' ', end); end = space > at + anchor!.length ? space : at + anchor!.length }
-  return { text: `${start > 0 ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`, located: true }
-}
 
 export type CitationOpen = { passageId: string; anchor: string | null; view: 'text' | 'pdf'; find?: boolean }
 

@@ -82,14 +82,10 @@
 /* A summary of removed sources, and labels on evidence whose source was removed */
 .app .removed-summary{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0 0 14px;color:var(--muted);font-size:12.5px;line-height:1.5}
 .app .removed-summary>svg{flex:none}
-.app .removed-summary a,.app .evidence-trash-link a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.app .removed-summary a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .ref-pill.is-removed{--pill:var(--tone-uncertain)}
 .source-notice.is-removed svg{color:var(--muted)}
 .source-notice .source-notice-action{display:inline-flex;align-items:center;gap:5px;margin-top:4px;padding:0;border:0;background:none;color:var(--accent);font:inherit;font-weight:600;cursor:pointer}
 .source-notice .source-notice-action:hover{text-decoration:underline}
 
 /* Evidence tab: the table menu and the Trash link of an empty tab */
-.app .evidence-table-head-actions{display:flex;flex:none;align-items:center;gap:6px}
-.app .evidence-table-menu{display:inline-grid;place-items:center;width:32px;height:32px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,transparent);color:var(--muted)}
-.app .evidence-table-menu:hover{color:var(--ink)}
-.app .evidence-panel .evidence-trash-link{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:14px 0 0;color:var(--muted);font-size:12.5px}

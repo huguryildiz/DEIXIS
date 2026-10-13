@@ -321,8 +321,12 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
         }
     run = store.conn.execute("SELECT id, status, pause_reason FROM runs WHERE id = ?", (report["run_id"],)).fetchone()
     run = dict(run) if run else None
+    # The table the report was written from, from its run's stored target (the report row does not keep it).
+    table_id = None
     if run:
-        error = store.run(run["id"])["error"]
+        stored_run = store.run(run["id"])
+        table_id = (stored_run.get("target") or {}).get("table_id")
+        error = stored_run["error"]
         if isinstance(error, list) and all(isinstance(item, dict) and isinstance(item.get("rule"), str)
                                           and "section_id" in item and isinstance(item.get("detail"), str)
                                           for item in error):
@@ -335,7 +339,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                          "SELECT 1 FROM report_edit_checks WHERE report_id = ? LIMIT 1", (report_id,),
                      ).fetchone() else None,
                      "references": references, "table_i": table_i, "missing_rows": missing_rows,
-                     "run": run}
+                     "run": run, "table_id": table_id}
 
 
 def research_view(store: Store, research_id: str) -> dict[str, Any]:

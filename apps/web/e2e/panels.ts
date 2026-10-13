@@ -67,6 +67,15 @@ export async function closePanel(page: Page) {
 export const reportPanel = (page: Page) => page.locator('[data-split-panel]').filter({ has: page.locator('.report-document') })
 export const sourcePanel = (page: Page) => panel(page, 'Source details')
 
+// The Evidence table's stacked panels (UI parity S15a): a cell, titled "<source> · <column>", and the evidence report.
+export const cellPanel = (page: Page, column: string) => panel(page, new RegExp(` · ${column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`))
+export const evidenceReportPanel = (page: Page) => page.locator('[data-split-panel]').filter({ has: page.locator('.evidence-report-document') })
+// A row of the table's ⋯ menu (Save as template, Remove all columns, Add rows, Development lines, Move to Trash, …).
+export async function tableMenu(page: Page, item: string | RegExp) {
+  await page.locator('[data-split-panel]').getByRole('button', { name: 'More table actions' }).click()
+  await page.getByRole('menuitem', { name: item }).click()
+}
+
 // Back to the panel below (the report a source was opened from). Escape would end the whole stack.
 export async function backPanel(page: Page) {
   await page.locator('[data-split-panel]').getByRole('button', { name: 'Back', exact: true }).click()

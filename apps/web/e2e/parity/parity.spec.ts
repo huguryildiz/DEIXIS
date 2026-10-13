@@ -96,6 +96,46 @@ async function parityResearch(base: string): Promise<string> {
   return id
 }
 
+/** S15a: a second SYNTHETIC research whose evidence table holds every included source, filled, with one evidence report
+ *  written from it (a report needs every included row filled). The bisection work is included so the table has the
+ *  fixture's two works. */
+async function reportResearch(base: string): Promise<string> {
+  const api = await apiRequest.newContext({ baseURL: base, extraHTTPHeaders: { origin: base } })
+  const token = (await (await api.get('/api/session')).json()).csrf_token as string
+  const headers = (extra: Record<string, string> = {}) => ({ 'x-deixis-csrf': token, ...extra })
+  const post = async (url: string, data: unknown, extra: Record<string, string> = {}) => {
+    const response = await api.post(url, { data, headers: headers(extra) })
+    expect(response.ok(), `${url}: ${await response.text()}`).toBe(true)
+    return response.json()
+  }
+  type Source = { source_version_id: string; version_role: string; title: string; selection: { state: string; version: number } }
+  const view = async (id: string) => (await (await api.get(`/api/researches/${id}`)).json()) as Omit<View, 'sources'> & { sources: Source[] }
+  const settle = (id: string, kind: string) => expect.poll(async () => {
+    const v = await view(id)
+    return v.runs.some(r => r.kind === kind) && !v.runs.some(r => ACTIVE.has(r.status))
+  }, { timeout: 110_000, intervals: [500] }).toBe(true)
+  const id = (await post('/api/researches', { question: 'SYNTHETIC: How are molecule release schedules compared?', model_connection: 'codex', requested_model: 'fixture-model', effort: 'standard' })).research.id as string
+  await post(`/api/researches/${id}/runs`, { kind: 'discovery' }, { 'Idempotency-Key': `parity-report-discovery-${id}` })
+  await settle(id, 'discovery')
+  const bisection = (await view(id)).sources.find(s => s.version_role === 'record' && s.title.includes('bisection'))
+  if (bisection && bisection.selection.state !== 'included') {
+    const response = await api.patch(`/api/researches/${id}/selections/${bisection.source_version_id}`, { data: { state: 'included', expected_version: bisection.selection.version }, headers: headers() })
+    expect(response.ok(), await response.text()).toBe(true)
+  }
+  const rows = (await view(id)).sources.filter(s => s.version_role === 'record' && s.selection.state === 'included').map(s => s.source_version_id)
+  let table = await post(`/api/researches/${id}/tables`, { title: 'SYNTHETIC study table', rows })
+  const path = `/api/researches/${id}/tables/${table.table.id}`
+  table = await post(`${path}/columns`, { name: 'SYNTHETIC method', instruction: 'State the synthetic method the source uses.', answer_format: 'text', expected_version: table.table.version })
+  await post(`${path}/fill`, { expected_version: table.table.version }, { 'Idempotency-Key': `parity-report-fill-${id}` })
+  await new Promise(resolve => setTimeout(resolve, 300))
+  await settle(id, 'table_fill')
+  await post(`/api/researches/${id}/reports`, { table_id: table.table.id }, { 'Idempotency-Key': `parity-report-${id}` })
+  await new Promise(resolve => setTimeout(resolve, 300))
+  await settle(id, 'report')
+  await api.dispose()
+  return id
+}
+
 async function pagesFor(browser: Browser, width: number, theme: Theme) {
   const size = { width, height: width < 768 ? 844 : 900 }
   const mockContext = await browser.newContext({ viewport: size, colorScheme: theme })
@@ -119,14 +159,14 @@ const READER = {
 // The dialog surface opens the equation reader's Install confirm, so there the reader is SYNTHETIC and not installed.
 const READER_OFF = { ...READER, installed: false, models_downloaded: false, reading: null, pdfs: {} }
 
-async function showApp(page: Page, base: string, surface: Surface, research: string) {
+async function showApp(page: Page, base: string, surface: Surface, research: string, report: string) {
   await surface.prepare?.(page)
   await page.route('**/api/equation-reader', route => route.fulfill({ json: surface.reader === 'not-installed' ? READER_OFF : READER }))
   // The mockup always has a current research; the app's "Current research" names the one opened last in this browser,
   // so the [parity] research is opened first.
   await page.goto(`${base}/#/research/${research}`)
   await page.locator('.research-topbar').first().waitFor()
-  await page.goto(`${base}/${surface.app.replace('{research}', research)}`)
+  await page.goto(`${base}/${surface.app.replace('{research}', research).replace('{report}', report)}`)
   await surface.open?.(page)
   await page.locator(surface.ready).first().waitFor()
   await page.evaluate(() => document.fonts.ready)
@@ -165,12 +205,14 @@ test.describe('parity: app against the mockup v24', () => {
   // server and research again.
   const server = new FixtureServer()
   let research = ''
+  let report = ''
   let ctx: FixtureContext = { researches: 0, suggestions: 0 }
 
   test.beforeAll(async () => {
     test.setTimeout(180_000)
     await server.start()
     research = await parityResearch(server.url())
+    report = await reportResearch(server.url())
     ctx = await fixtureContext(server.url())
     const pending = pendingBySlice()
     const total = Object.values(pending).reduce((a, b) => a + b, 0)
@@ -190,7 +232,7 @@ test.describe('parity: app against the mockup v24', () => {
             // The mockup's job and run simulations re-render the sidebar every few seconds; the state is set, so its timers stop.
             await pages.mock.evaluate(() => { const last = window.setTimeout(() => {}, 0); for (let id = 1; id <= last; id++) { clearTimeout(id); clearInterval(id) } })
             if (surface.mockAct) { await pages.mock.evaluate(surface.mockAct); await pages.mock.waitForTimeout(300) }
-            await showApp(pages.app, server.url(), surface, research)
+            await showApp(pages.app, server.url(), surface, research, report)
             const pairs = pairsFor(surface.id, width)
             const failures = await gateSurface(pairs, { width, theme }, pages.mock, pages.app, ctx)
             info.annotations.push({ type: 'parity', description: `${pairs.length} active pairs checked` })
@@ -214,7 +256,7 @@ test.describe('parity: app against the mockup v24', () => {
       const pages = await pagesFor(browser, BREAKPOINT, 'light')
       try {
         await driveMockup(pages.mock, surface.mock)
-        await showApp(pages.app, server.url(), surface, research)
+        await showApp(pages.app, server.url(), surface, research, report)
         for (const pair of pairs) {
           failures.push(...checkBreakpoint(pair, { mock: await measure(pages.mock, pair.mock, MOCK_EXCLUDE, []), app: await measure(pages.app, pair.app, APP_EXCLUDE, []) }))
         }

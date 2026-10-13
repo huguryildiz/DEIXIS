@@ -110,7 +110,14 @@ export const PLACEMENTS: Placement[] = [
   { id: 'run-headings', rule: '§0 rule 5 (runs are separate records: each is paused, resumed, cancelled and timed on its own, and its heading is where focus goes when its chip leaves the topbar)', slice: 'S9',
     container: 'Thread: one 30px heading per run ("Ran search & screening", "Ran answer generation", time, duration) above that run\'s steps; the mockup draws one list for the whole sequence', app: '.chat-turn .chat-toggle' },
   { id: 'audit-sample', rule: '§2.2 (Q1)', slice: 'S14', container: 'Funnel panel, below the stages and the wider-net notice: the flow line and its PRISMA-S report, then "Audit sample" collapsed', app: '.funnel-panel .flow-block, details.funnel-more' },
-  { id: 'development-lines', rule: '§2.2 (Q1)', slice: 'S15a', container: 'Evidence table ⋯ menu', app: null },
+  { id: 'development-lines', rule: '§2.2 (Q1)', slice: 'S15a', container: 'Evidence table ⋯ menu, after Add development columns: "Development lines" opens its panel on the table (Back returns)', app: '.table-menu-placement' },
+  // S15a: every live table, cell and report feature stays (§0 rule 5).
+  { id: 'table-live-parts', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S15a',
+    container: 'Evidence table: the run line, the failed-rows notice, Add rows and the table picker when there is more than one table; the ⋯ menu also holds Save as template, Remove all columns, Add rows, Add development columns and Move to Trash; the foot counts rows, columns, cells and proposals', app: '.table-panel > .table-counts' },
+  { id: 'cell-live-parts', rule: '§0 rule 5 / AGENTS.md (a person\'s edit stays separate from machine proposals)', slice: 'S15a',
+    container: 'Cell panel: "Edit value" beside Recheck, the Details toggle in the meta line, the stored flags, a proposal waiting for review, the edit form and the support note', app: '.cell-detail .dacts .ghost' },
+  { id: 'ecite-source-details', rule: '§0 rule 5 (a report chip opened Source details at the cited passage)', slice: 'S15a',
+    container: 'Evidence report Citation panel, under the anchor line: "Open in Source details"', app: '.ecite-detail .rowacts' },
   { id: 'sources-selbar-live', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S13',
     container: 'Sources selection bar, after Start table and Add to library: the live "Add to table" menu and "Remove from research"', app: '.selbar .selbar-add-table, .selbar .selbar-remove' },
   { id: 'text-recovery', rule: '§2.2 (Q1)', slice: 'S12', container: 'Source details ⋯ menu, after Copy as BibTeX: Extract text again, Read equations again and Read with OCR (S13: the Sources row actions also hold "Retry text extraction", from the same retry path)', app: '.source-more-menu .source-text-tool' },
@@ -247,6 +254,15 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'sources-chosen', rule: '§2.3', mock: 'N sources chosen', app: 'N chosen' },
   { id: 'sources-why-example', rule: '§0 rule 2 (no example text that reads as a stored value)', mock: 'placeholder "e.g. terrestrial network only; no lifetime result"', app: '(no placeholder)' },
   { id: 'sources-proposal', rule: '§2.3 (Q2: built from the stored machine decision of the full-text, else abstract stage)', mock: 'include / passed abstract / uncertain / exclude / not screened + a written reason', app: 'the stored outcome word + its reason code in words + its basis (two full-text reads, or title and abstract); "not read in full" with no basis when the full text is missing, unreadable, waiting to be read or not yet confirmed as the work\'s; "not screened" when no decision exists' },
+  // S15a: the Evidence table, cell and evidence report panels say only what the records hold.
+  { id: 'cell-history', rule: '§2.3 (the list holds earlier values, proposals and the current value, newest first)', mock: 'Earlier values', app: 'History' },
+  { id: 'cell-recheck', rule: '§2.3 (the button rechecks this one cell; the column recheck is DEFERRED_TARGETS column-recheck)', mock: 'Recheck', app: 'Recheck this cell' },
+  { id: 'column-remove', rule: '§2.3 (a removed column\'s cells are kept and come back with Undo)', mock: 'Delete column', app: 'Remove column' },
+  { id: 'suggest-count', rule: '§2.3 (the suggestion step returns up to eight columns, not three)', mock: 'Three proposals; you accept each one', app: 'Up to eight proposals; you accept each one' },
+  { id: 'column-dialog-foot', rule: '§2.3 (the fill shows its call estimate before it starts; the dialog does not fill)', mock: 'Filling reads the text DEIXIS has for each source: up to N calls with gpt-5.6-luna.', app: 'The column starts empty. Fill empty cells reads the text DEIXIS has for each source and shows its calls before it starts.' },
+  { id: 'report-write-again', rule: '§2.3 (the next version number is given when the run writes it)', mock: 'Write V{n+1}', app: 'Write a new version' },
+  { id: 'ecite-foot', rule: '§2.3 (the report stores the cell value and the passage, not text frozen apart from them)', mock: 'This is the text frozen with the report. Later edits to the evidence table do not change it.', app: 'This is the value and passage stored with the report. Later edits to the evidence table do not change them.' },
+  { id: 'ecite-changed', rule: '§2.3 (the notice names the change the report records)', mock: 'The table cell changed after this report. The report still cites the text above.', app: 'the stored evidence-change line of the section, with "Open the current cell"' },
   { id: 'run-chip-panel', rule: '§2.3 (a sentence names only what exists)', mock: 'Open the Candidates / Follow-up / Evidence tab to control this run (live app, no mockup element)', app: 'Open the Candidates / Follow-up / Evidence table panel to control this run' },
 ]
 
@@ -346,6 +362,10 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     note: 'The drop zone holds a "Choose files" button under its note, so a keyboard reaches the file picker; it is taller by that row. x, y (as pdfs-included-part says) and width are compared.' },
   { id: 'funnel-stage-notes', rule: 'COPY_CHANGES funnel-stage-notes, funnel-lost-lines and funnel-wider-net', pairs: ['funnel.stages', 'funnel.notice'], axes: ['y', 'height'],
     note: 'Each stage is as tall as its note and lost line, which are built from the stored counts, and the wider-net notice wraps its longer sentence. x and width are compared, and every stage part\'s type and colour.' },
+  // S15a: the [parity] table holds 6 of the research's included sources, so the report gate's reason stands above the
+  // toolbar (the mockup's table holds every included source and has no reason line).
+  { id: 'table-toolbar-reason', rule: '§0 rule 1 (the reason comes from the stored table summary) and AGENTS.md (a disabled action says why)', pairs: ['table.toolbar'], axes: ['y'],
+    note: 'The toolbar sits under the one-line report reason ("A report needs a filled evidence table: N cells left …"). x, width and height of every button are compared.' },
   { id: 'activity-runs-rows', rule: '§0 rule 1 (a list has as many rows as the data has)', pairs: ['activity.table'], axes: ['height'],
     note: 'The table has one row per run the research recorded. x, y and width are compared.' },
 ]
@@ -392,6 +412,10 @@ export const DEFERRED_TARGETS: Array<{ id: string; rule: string; selector: strin
     note: 'Next steps row that asks a follow-up question (R28 → R30/R31): the follow-up turns do not exist yet.' },
   { id: 'sources-not-read-tab', rule: 'S13 (never a tab that does nothing; P5 C part and P7 are S27)', selector: '.tabs button[data-filter="nr"]', slice: 'S27',
     note: 'Sources filter strip: "Not read" and its "Screen 40 more" notice. The unscreened route (S20) exists; the tab is wired in S27.' },
+  { id: 'column-recheck', rule: 'S15a (never a row that does nothing; a column-wide recheck has no route yet)', selector: '.menu [data-act="reccol"]', slice: 'S27',
+    note: 'Column head menu: "Recheck this column". The cell recheck (Recheck this cell) is live; a recheck over a whole column waits for its route.' },
+  { id: 'ereport-pdf-row', rule: 'S15a (never a row that does nothing; print is wired in S27)', selector: '.menu button.fmt[data-msg^="Evidence report saved as PDF"]', slice: 'S27',
+    note: 'Evidence report Download menu: "PDF". The print path is not reachable from the UI yet; MD, TEX and DOCX are live.' },
   { id: 'followup-send-key', rule: 'S3 (no key or command without a real target)', selector: '.keys > span:nth-of-type(27), .keys > span:nth-of-type(28)', slice: 'S22b',
     note: 'Keys dialog row "Send follow-up · ⌘ ↵", under IN A TEXT BOX: the follow-up composer (R30) does not exist yet.' },
 ]

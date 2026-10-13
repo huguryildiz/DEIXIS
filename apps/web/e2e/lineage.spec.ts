@@ -7,7 +7,7 @@ import type { LineageBaseline, LineageLink, LineagePlan, LineageReason, LineageS
 import { nextPort } from './ports'
 import { chooseLanguage } from './language'
 import { switchTheme } from './theme'
-import { openPanel, chooseTheme } from './panels'
+import { openPanel, chooseTheme, tableMenu } from './panels'
 
 // Synthetic application behavior only. Port from nextPort().
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -86,7 +86,8 @@ async function fixture(page: Page, api: APIRequestContext, marker = '[lineage]',
 }
 async function openLines(page: Page) {
   await openPanel(page, 'table')
-  await page.getByRole('tab', { name: 'Development lines', exact: true }).click()
+  // Development lines open from the table's ⋯ menu, stacked on the table (UI parity S15a, §2.2).
+  await tableMenu(page, /^Development lines/)
   await expect(page.locator('.lineage-status')).toBeVisible()
 }
 const section = (page: Page, name: string) => page.locator('.lineage-section').filter({ has: page.getByRole('heading', { name: new RegExp(`^${name} ·`) }) }).first()
@@ -189,7 +190,8 @@ test.describe('recorded development lines', () => {
     const f = await fixture(page, api)
     await headings(page)
     const find = page.getByRole('button', { name: 'Find development links' })
-    await page.getByRole('tab', { name: 'Development lines', exact: true }).focus()
+    // The last control of the panel head (Close), then Tab: the panel body starts with Find development links.
+    await page.locator('[data-split-panel] .split-panel-head').getByRole('button').last().focus()
     await page.keyboard.press('Tab'); await expect(find).toBeFocused()
     await page.keyboard.press('Enter')
     const plan = page.locator('.lineage-plan')
@@ -316,7 +318,7 @@ test.describe('recorded development lines', () => {
     await expect(page.getByRole('dialog', { name: 'Add development link' })).toBeVisible()
     await page.keyboard.press('Escape'); await expect(action).toBeFocused()
     await chooseLanguage(page, 'tr')
-    await expect(page.getByRole('tab', { name: 'Gelişim çizgileri' })).toBeVisible()
+    await expect(page.locator('[data-split-panel] #split-panel-title')).toHaveText('Gelişim çizgileri')
     await expect(page.locator('.lineage-status')).toContainText('Gelişim durum')
     await expect(page.getByRole('button', { name: 'Gelişim bağlarını bul' })).toBeVisible()
   })

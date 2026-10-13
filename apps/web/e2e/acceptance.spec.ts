@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
 import { nextPort } from './ports'
 import { switchTheme } from './theme'
-import { backPanel, closePanel, openPanel, panel, reportPanel, showAnswer, sourcePanel } from './panels'
+import { backPanel, cellPanel, closePanel, openPanel, panel, reportPanel, showAnswer, sourcePanel, tableMenu } from './panels'
 
 // A–G acceptance cases (the first web slice) in a real browser against the fixture server.
 // Records are SYNTHETIC and the model is scripted: this checks application behavior, not model quality.
@@ -706,8 +706,8 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await shot(page, 'evidence-empty-desktop')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
-    await editor.getByLabel('Short name').fill('Sample size')
-    await editor.getByLabel('Instruction').fill('The number of nodes in the evaluated network, as the source states it.')
+    await editor.getByLabel('Name', { exact: true }).fill('Sample size')
+    await editor.getByLabel('What should the model look for?').fill('The number of nodes in the evaluated network, as the source states it.')
     await editor.getByText('Number and unit', { exact: true }).click()
     await editor.getByLabel('Expected unit (optional)').fill('nodes')
     await editor.getByRole('button', { name: 'Add column' }).click()
@@ -716,7 +716,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await expect(page.locator('.evidence-grid')).not.toContainText('hostile')
 
     await page.getByRole('button', { name: 'Suggest columns', exact: true }).click()
-    const suggestion = page.locator('.evidence-suggestions li', { hasText: 'SYNTHETIC method' })
+    const suggestion = page.locator('.evidence-suggestions .sugg-row', { hasText: 'SYNTHETIC method' })
     await expect(suggestion).toBeVisible({ timeout: 30000 })
     await suggestion.getByRole('button', { name: 'Add', exact: true }).click()
     await expect(page.locator('.evidence-col-head')).toHaveText([/Sample size/, /SYNTHETIC method/])
@@ -727,7 +727,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await expect(page.locator('[data-cell="0:0"]')).toContainText('128 byte', { timeout: 30000 })
     await expect(page.locator('[data-cell="0:0"]')).toContainText('Model · Abstract')
     await expect(page.locator('[data-cell="0:1"]')).toContainText('SYNTHETIC fake value')
-    await expect(page.locator('.evidence-footnote')).toContainText('Semantic support not checked.')
+    await expect(page.locator('.evidence-footnote')).toContainText('Whether a quote supports its value was not checked.')
     await toastsOff(page)
     await shot(page, 'evidence-table-desktop')
 
@@ -752,9 +752,9 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await page.keyboard.press('Home')
     await page.keyboard.press('ArrowUp')
     await expect(page.locator('[data-cell="0:0"]')).toBeFocused()
-    await expect(page.locator('.evidence-hint')).toContainText('The number of nodes in the evaluated network')
+    await expect(page.locator('.evidence-col-head').first()).toHaveAttribute('title', /The number of nodes in the evaluated network/)
     await page.keyboard.press('Enter')
-    const panel = page.getByRole('dialog', { name: 'Sample size' })
+    const panel = cellPanel(page, 'Sample size')
     await expect(panel.locator('.evidence-current')).toHaveText('128 byte')
     await expect(panel).toContainText('Semantic support not checked.')
     await panel.getByRole('button', { name: 'Open in source' }).first().click()
@@ -769,13 +769,13 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
   })
 
   test('an edit keeps the evidence; a recheck waits as a proposal until the user uses it', async () => {
-    const panel = page.getByRole('dialog', { name: 'Sample size' })
+    const panel = cellPanel(page, 'Sample size')
     await panel.getByRole('button', { name: 'Edit value' }).click()
     await panel.getByLabel('Number').fill('130')
     await expect(panel.getByLabel('Keep the evidence of the current value')).toBeChecked()
     await panel.getByRole('button', { name: 'Save value' }).click()
     await expect(panel.locator('.evidence-current')).toHaveText('130 byte')
-    await expect(panel.locator('.evidence-block').first()).toContainText('You ·')
+    await expect(panel.locator('.dmeta')).toContainText('You')
     await expect(panel.getByRole('button', { name: 'Open in source' }).first()).toBeVisible()
 
     await expect(panel).toContainText('Only Synthetic21 · up to 1 passage · fixture-model · 1–2 calls.')
@@ -789,11 +789,10 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await proposal.getByRole('button', { name: 'Use this value' }).click()
     await expect(proposal).toHaveCount(0)
     await expect(panel.locator('.evidence-current')).toHaveText('128 byte')
-    await panel.locator('.evidence-history summary').click()
     await expect(panel.locator('.evidence-history')).toContainText('You used a proposal')
     await expect(panel.locator('.evidence-history')).toContainText('Your edit')
     await expect(panel.locator('.evidence-history')).toContainText('Model filled the empty cell')
-    await page.keyboard.press('Escape')
+    await backPanel(page)
     await expect(page.locator('[data-cell="0:0"]')).toContainText('128 byte')
   })
 
@@ -803,8 +802,8 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
       await other.goto(`${page.url().replace(/\/(evidence|table)$/, '')}/table`)
       await page.locator('[data-cell="1:0"]').click()
       await other.locator('[data-cell="1:0"]').click()
-      const first = page.getByRole('dialog', { name: 'Sample size' })
-      const second = other.getByRole('dialog', { name: 'Sample size' })
+      const first = cellPanel(page, 'Sample size')
+      const second = cellPanel(other, 'Sample size')
       await second.getByRole('button', { name: 'Edit value' }).click()
       await first.getByRole('button', { name: 'Edit value' }).click()
       await first.getByLabel('Number').fill('131')
@@ -817,7 +816,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
       await expect(second.locator('.evidence-current')).toHaveText('131 byte')  // the first tab's value is kept
       await shot(other, 'evidence-409-draft-kept')
     } finally { await other.close() }
-    await page.keyboard.press('Escape')
+    await backPanel(page)
   })
 
   test('narrow and dark layouts keep the table in its own scroller', async () => {
@@ -831,18 +830,18 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     await shot(page, 'evidence-table-mobile')
     await page.locator('[data-cell="0:1"]').click()
-    await expect(page.getByRole('dialog', { name: 'SYNTHETIC method' }).locator('.evidence-current')).toHaveText('SYNTHETIC fake value')
+    await expect(cellPanel(page, 'SYNTHETIC method').locator('.evidence-current')).toHaveText('SYNTHETIC fake value')
     await shot(page, 'evidence-cell-panel-mobile')
-    await page.keyboard.press('Escape')
+    await backPanel(page)
     await page.setViewportSize({ width: 1280, height: 900 })
-    await expect(page.getByRole('button', { name: 'No empty cells to fill' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: /^Fill empty cells/ })).toHaveCount(0)  // no empty cell, so no fill
     await switchTheme(page, 'Switch to dark mode')
     await wrap.scrollIntoViewIfNeeded()
     await shot(page, 'evidence-table-dark')
     await page.locator('[data-cell="0:0"]').click()
-    await expect(page.getByRole('dialog', { name: 'Sample size' }).locator('.evidence-current')).toHaveText('128 byte')
+    await expect(cellPanel(page, 'Sample size').locator('.evidence-current')).toHaveText('128 byte')
     await shot(page, 'evidence-cell-panel-dark')
-    await page.keyboard.press('Escape')
+    await backPanel(page)
     await page.setViewportSize({ width: 390, height: 844 })
     await shot(page, 'evidence-table-mobile-dark')
     await page.setViewportSize({ width: 1280, height: 900 })
@@ -865,8 +864,8 @@ test.describe.serial('Evidence table runs and templates', () => {
     await openPanel(page, 'table')
     await page.getByRole('button', { name: /Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
-    await editor.getByLabel('Short name').fill('Sample size')
-    await editor.getByLabel('Instruction').fill('The number of nodes in the evaluated network, as the source states it.')
+    await editor.getByLabel('Name', { exact: true }).fill('Sample size')
+    await editor.getByLabel('What should the model look for?').fill('The number of nodes in the evaluated network, as the source states it.')
     await editor.getByRole('button', { name: 'Add column' }).click()
     await expect(editor).toHaveCount(0)
 
@@ -912,13 +911,12 @@ test.describe.serial('Evidence table runs and templates', () => {
   })
 
   test('a table without columns takes the columns of a saved template', async () => {
-    await page.getByRole('button', { name: 'Save as template' }).click()
+    await tableMenu(page, /^Save as template/)
     await page.getByLabel('Template name').fill('Packet columns')
     await page.getByRole('button', { name: 'Save template' }).click()
     await expect(page.getByText('Template saved.')).toBeVisible()
     await toastsOff()
-    await page.getByRole('button', { name: 'Actions for table Evidence table' }).click()
-    await page.getByRole('menuitem', { name: 'Move to Trash' }).click()
+    await tableMenu(page, 'Move to Trash')
     await expect(page.getByText('No table yet.')).toBeVisible()
     await toastsOff()
 
@@ -927,10 +925,10 @@ test.describe.serial('Evidence table runs and templates', () => {
     await editor.getByRole('button', { name: 'Cancel' }).click()
     await expect(editor).toHaveCount(0)
     const first = page.locator('.evidence-first')
-    await expect(first).toContainText('Add the first column')
-    await expect(first.locator('.evidence-ghost tbody tr')).toHaveCount(3)
+    await expect(first).toContainText('3 sources, no columns yet')
     await shot(page, 'evidence-first-column')
-    await first.getByRole('button', { name: 'Packet columns' }).click()
+    await first.getByRole('button', { name: /^Start from a template/ }).click()
+    await page.getByRole('menuitem', { name: /^Packet columns/ }).click()
     await expect(page.locator('.evidence-col-head')).toHaveText([/Sample size/])
     await expect(first).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^Fill empty cells · 3 sources/ })).toBeEnabled()
@@ -1020,20 +1018,20 @@ test.describe.serial('Trash, removal from a research and undo (P5 slice 3, D50)'
     await confirm.getByRole('button', { name: 'Start table' }).click()
     await expect(panel(page, 'Evidence table')).toBeVisible()
 
-    await page.getByRole('button', { name: 'Add column', exact: true }).click()
+    await page.getByRole('button', { name: /^Add a column/ }).click()
     const editor = page.getByRole('dialog', { name: 'Add column' })
-    await editor.getByLabel('Short name').fill('Sample size')
-    await editor.getByLabel('Instruction').fill('The number of nodes in the evaluated network, as the source states it.')
+    await editor.getByLabel('Name', { exact: true }).fill('Sample size')
+    await editor.getByLabel('What should the model look for?').fill('The number of nodes in the evaluated network, as the source states it.')
     await editor.getByRole('button', { name: 'Add column' }).click()
-    await expect(page.locator('.evidence-row-title')).toHaveText([new RegExp(hostile), new RegExp(relay)])  // the Sources order, not the order chosen; the row head is the full reference (D59)
+    // The Sources order, not the order chosen; the row head names the source key and carries the full reference (D59).
+    await expect.poll(() => page.locator('.evidence-row-title').evaluateAll(nodes => nodes.map(node => node.getAttribute('title') ?? ''))).toEqual([expect.stringContaining(hostile), expect.stringContaining(relay)])
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
     await expect(page.locator('[data-cell="0:0"]')).toContainText('Model', { timeout: 30000 })
     await expect(page.locator('[data-cell="1:0"]')).toContainText('Model', { timeout: 30000 })
     const cells = await page.locator('.evidence-cell').allTextContents()
 
     await toastsOff()
-    await page.getByRole('button', { name: 'Actions for table Evidence table' }).click()
-    await page.getByRole('menuitem', { name: 'Move to Trash' }).click()
+    await tableMenu(page, 'Move to Trash')
     await expect(page.getByText('No table yet.')).toBeVisible()
     await expect(page.locator('.evidence-trash-link')).toContainText('1 table of this research is in the Trash.')
     await shot(page, 'D50-evidence-empty-with-trash-link')

@@ -63,10 +63,28 @@ const reviewReasons: Record<string, string> = {
 function valueText(value: Record<string, unknown> | null, options: { id: string; label: string }[] | null) {
   if (!value) return ''
   if (typeof value.text === 'string') return value.text
-  if (typeof value.number === 'number') return [value.number, value.unit].filter(Boolean).join(' ')
+  if (typeof value.number === 'number') return typeof value.unit === 'string' && value.unit.trim() ? `${value.number} ${value.unit}` : String(value.number)
   if (value.answer === 'yes' || value.answer === 'no') return t(value.answer === 'yes' ? 'Yes' : 'No')
   if (Array.isArray(value.option_ids)) return value.option_ids.map(id => options?.find(option => option.id === id)?.label ?? id).join(', ')
   return ''
+}
+
+const passageStatusText = {
+  pdf_removed: 'This passage was read from a PDF that has since been removed.',
+  pdf_replaced: 'This passage was read from a PDF that has since been replaced; the current file may differ.',
+  text_superseded: 'This passage comes from an earlier text extraction of its PDF; the current text may differ.',
+} as const
+type FrozenCell = NonNullable<ReportDetail['table_i']>['cells'][number]
+// A cell as frozen with the report: its value, a value with no linked quote, or its state in words.
+function frozenCellText(cell: FrozenCell, options: { id: string; label: string }[] | null) {
+  return cell.state === 'value' ? valueText(cell.value, options)
+    : cell.state === 'not_verified' ? t('{value} (not verified: no quote linked)', { value: valueText(cell.value, options) })
+    : t(stateLabels[cell.state as keyof typeof stateLabels] ?? cell.state)
+}
+// Whether the stored evidence behind a cell or a row differs from the live table, seen or not (`evidence_changes.stale`).
+function staleFor(report: ReportDetail, cellId: string | null | undefined, sourceId: string) {
+  return (report.evidence_changes.stale ?? []).filter(change => (change.kind === 'cell_changed' && cellId && change.cell_id === cellId)
+    || (change.kind === 'source_removed' && change.source_version_id === sourceId))
 }
 
 // The evidence report panel (mockup `erepPanel`, P21-P31 report half), stacked like every research panel. Its head:
@@ -394,6 +412,7 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
                 {claim.warnings.map((warning, i) => <span key={i}>{t(warning.kind === 'math_not_well_formed' ? 'A formula may be malformed: {detail}' : 'The count was not checked again after the edit.', { detail: warning.detail ?? '' })}</span>)}
                 {claim.evidence_basis === 'none' && <p>{t('No direct citation.')}</p>}
                 <div>{claim.evidence.map(link => <button type="button" key={link.link_id} data-link-id={link.link_id} title={link.anchor_text ?? ''} onClick={() => cited(link)}><span data-stored-text>[{link.ref_number}] {refs.get(link.ref_number)?.source_key} · {(link.anchor_text ?? '').slice(0, 120)}{(link.anchor_text?.length ?? 0) > 120 ? '…' : ''}</span></button>)}</div>
+                <EvidenceViewCells report={report} claim={claim} />
                 {claim.removed_links.length > 0 && <details className="evidence-report-removed">
                   <summary><ChevronRight size={14} aria-hidden className="closed" /><ChevronDown size={14} aria-hidden className="opened" />{t('Citations removed by hand ({n} of {m})', { n: claim.removed_links.length, m: claim.original_evidence_count })}</summary>
                   <ul>{claim.removed_links.map(link => <li key={link.link_id} data-stored-text>[{link.source_key || link.title || link.source_version_id}] · {link.anchor_text}</li>)}</ul>
@@ -424,6 +443,23 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
 }
 
 
+// Evidence view (mockup `.evview`, P30): the cells a claim cites, as frozen with the report (source, column, value or
+// state), each marked when the live cell or row differs now, seen or not.
+function EvidenceViewCells({ report, claim }: { report: ReportDetail; claim: ReportClaim }) {
+  const table = report.table_i
+  const cells = claim.evidence.flatMap(link => {
+    const cell = link.cell_id ? table?.cells.find(item => item.cell_id === link.cell_id) : undefined
+    return cell ? [cell] : []
+  }).filter((cell, i, all) => all.findIndex(other => other.cell_id === cell.cell_id) === i)
+  if (!table || !cells.length) return null
+  return <table className="evview"><caption className="sr-only">{t('Cited cells as frozen with this report')}</caption><tbody>{cells.map(cell => {
+    const column = table.columns.find(item => item.column_id === cell.column_id)
+    const row = table.rows.find(item => item.source_version_id === cell.source_version_id)
+    return <tr key={cell.cell_id}><td>{row?.source_key ?? row?.title ?? t('Source record unavailable')}</td><td>{column?.name ?? ''}</td>
+      <td>{frozenCellText(cell, column?.options ?? null)}{staleFor(report, cell.cell_id, cell.source_version_id).length > 0 && <span className="edited">{t('changed since')}</span>}</td></tr>
+  })}</tbody></table>
+}
+
 // The stored citation of one report chip (mockup `ecitePanel`, P31), stacked on the report: the cell value as frozen
 // with this report, the stored passage around its located anchor, and whether the cell changed since. Nothing is
 // recomputed: the value is the report's TABLE I record and the passage the stored one the citation opens.
@@ -450,8 +486,10 @@ function EvidenceCitePanel({ researchId, report, link, onClose, onOpenPassage, o
   }, [researchId, passageId])
   const quote = passage ? excerpt(passage.text, anchor) : null
   const located = Boolean(anchor && quote?.located)
-  const heading = cell ? cell.state === 'value' ? valueText(cell.value, column?.options ?? null) : cell.state === 'not_verified' ? t('{value} (not verified: no quote linked)', { value: valueText(cell.value, column?.options ?? null) }) : t(stateLabels[cell.state]) : ref?.title ?? name
-  const changes = cell ? report.sections.flatMap(section => section.evidence_changes.open).filter(change => change.source_version_id === cell.source_version_id && (!change.column_id || change.column_id === cell.column_id)) : []
+  const heading = cell ? frozenCellText(cell, column?.options ?? null) : ref?.title ?? name
+  // Every change since the report, including one a section marked as seen: seeing a change never makes the evidence current.
+  const changes = staleFor(report, cell?.cell_id, cell?.source_version_id ?? link.source_version_id)
+  const cellChanged = changes.some(change => change.kind === 'cell_changed')
   const kinds = [...new Set(changes.map(change => t(reportChangeLabels[change.kind] ?? change.kind)))]
   return <StackPanel name="ecite" open onClose={onClose} title={t('Citation')} icon={Link} className="cite-panel ecite-panel">
     <div className="pad detail ecite-detail">
@@ -467,9 +505,13 @@ function EvidenceCitePanel({ researchId, report, link, onClose, onOpenPassage, o
       {passage && <div className="loc"><span>{name} · {locatorText(passage)}</span><span className="loc-dot" aria-hidden>·</span>
         {located ? <span className="ok-t">{t('Anchor located in the stored passage; whether it supports the sentence was not checked.')}</span>
           : <span className="warn-t">{t('The anchor was not located in this passage; it opens without a mark.')}</span>}</div>}
+      {passage && (passage.evidence_status !== 'current' || passage.removed_from_research) && <div className="notice warn ecite-passage-status"><TriangleAlert size={15} aria-hidden /><span>{[
+        passage.evidence_status !== 'current' ? t(passageStatusText[passage.evidence_status]) : '',
+        passage.removed_from_research ? t('The source has since been removed from this research.') : '',
+      ].filter(Boolean).join(' ')}</span></div>}
       {changes.length > 0 && <div className="notice warn"><TriangleAlert size={15} aria-hidden /><div className="nb">
         <span>{t('Changed after this report: {changes}. The report still cites the value and passage above.', { changes: kinds.join('; ') })}</span>
-        {onOpenCell && cell && <span className="acts"><button type="button" className="ghost" onClick={() => onOpenCell({ columnId: cell.column_id, sourceId: cell.source_version_id })}>{t('Open the current cell')}</button></span>}
+        {onOpenCell && cell && cellChanged && <span className="acts"><button type="button" className="ghost" onClick={() => onOpenCell({ columnId: cell.column_id, sourceId: cell.source_version_id })}>{t('Open the current cell')}</button></span>}
       </div></div>}
       {passageId && <div className="rowacts"><button type="button" onClick={onOpenPassage}><FileText size={14} aria-hidden />{t('Open in Source details')}</button></div>}
       <p className="foot-note">{t('This is the value and passage stored with the report. Later edits to the evidence table do not change them.')}</p>

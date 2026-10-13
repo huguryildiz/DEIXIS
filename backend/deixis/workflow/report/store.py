@@ -410,8 +410,10 @@ class ReportStore:
             "SELECT section_id FROM report_sections WHERE report_id = ?", (report_id,),
         )]
         empty = {section: {"open": [], "acknowledged_count": 0, "unresolved_refs": 0} for section in sections}
+        # `stale`: every cited cell or row that differs from the snapshot, whether or not a section marked it as seen;
+        # an acknowledgement closes a section's notice, it never makes the stored evidence current again.
         result = {"changed_cells": 0, "removed_sources": 0, "added_sources": 0,
-                  "revised_columns": 0, "any": False, "not_checked": ["passages"], "sections": empty}
+                  "revised_columns": 0, "any": False, "not_checked": ["passages"], "stale": [], "sections": empty}
         saved = self.conn.execute(
             "SELECT table_id, snapshot_json FROM report_snapshot WHERE report_id = ?", (report_id,),
         ).fetchone()
@@ -452,6 +454,7 @@ class ReportStore:
                     "column_id": cell["column_id"],
                 }
         result["changed_cells"] = len(changed_cells)
+        result["stale"] = sorted([*changed_cells.values(), *removed_changes.values()], key=lambda change: change["key"])
         # target_columns checks table visibility; a trashed table still has readable column revisions.
         live_columns = {column["id"]: column["current_revision"] for column in
                         TableStore(self.store)._columns(table_id)}

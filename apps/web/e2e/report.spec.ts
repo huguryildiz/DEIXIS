@@ -308,6 +308,19 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     await changed.getByRole('button', { name: 'Mark as seen' }).click()
     await expect(changed).not.toContainText('This section rests on evidence that changed after this report:')
     await expect(reportSheet(page)).toContainText('Evidence changed after this report:')
+    // Marked as seen closes the section's notice, not the staleness: the cell chip still warns and still offers the
+    // current cell, and Evidence view marks the frozen cell as changed (Sol round 1).
+    let stillWarns = false
+    for (let i = 0; i < await chips.count() && !stillWarns; i++) {
+      await chips.nth(i).click()
+      await expect(panel(page, 'Citation').locator('.loc')).toBeVisible()
+      stillWarns = await panel(page, 'Citation').getByRole('button', { name: 'Open the current cell' }).count() > 0
+      await backPanel(page)
+    }
+    expect(stillWarns).toBe(true)
+    await reportSheet(page).getByRole('button', { name: 'Evidence view' }).click()
+    await expect(changed.locator('.evview').first()).toContainText('changed since')
+    await reportSheet(page).getByRole('button', { name: 'Evidence view' }).click()
     await toastsOff(page)
     await reportSheet(page).locator('.evidence-report-head, header').first().scrollIntoViewIfNeeded()
     await shot(page, 'report-stale-desktop')

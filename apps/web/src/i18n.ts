@@ -4305,4 +4305,10 @@ const tr: Record<string, string> = {
   'Open the current cell': 'Geçerli hücreyi aç',
   'Open in Source details': 'Kaynak ayrıntılarında aç',
   'This is the value and passage stored with the report. Later edits to the evidence table do not change them.': 'Bu, raporla birlikte saklanan değer ve pasajdır. Kanıt tablosundaki sonraki düzenlemeler onları değiştirmez.',
+  'This passage was read from a PDF that has since been removed.': 'Bu pasaj, sonradan kaldırılan bir PDF\'ten okundu.',
+  'This passage was read from a PDF that has since been replaced; the current file may differ.': 'Bu pasaj, sonradan değiştirilen bir PDF\'ten okundu; güncel dosya farklı olabilir.',
+  'This passage comes from an earlier text extraction of its PDF; the current text may differ.': 'Bu pasaj, PDF\'in önceki bir metin çıkarımından geliyor; güncel metin farklı olabilir.',
+  'The source has since been removed from this research.': 'Kaynak sonradan bu araştırmadan çıkarıldı.',
+  'Cited cells as frozen with this report': 'Bu raporla dondurulan atıf yapılmış hücreler',
+  'changed since': 'sonradan değişti',
 }

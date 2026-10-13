@@ -424,6 +424,23 @@ def test_staleness_removed_cell_body_and_gap_refs_restore_and_acknowledgement(re
                for sid in ("III", "abstract", "VI"))
 
 
+def test_marking_a_change_as_seen_keeps_the_cell_stale(report_with_sections):
+    # UI parity S15a (Sol round 1): "Mark as seen" closes a section's notice; the Citation panel still learns from
+    # `stale` that the stored cell differs from the live one.
+    lib = report_with_sections
+    rid = cell_report(lib)
+    change_cell(lib)
+    changes = lib["reports"].evidence_changes(lib["report_id"])
+    assert [(c["kind"], c["cell_id"]) for c in changes["stale"]] == [("cell_changed", lib["cell_id"])]
+    for sid, section in changes["sections"].items():
+        if section["open"]:
+            lib["reports"].acknowledge_changes(rid, lib["report_id"], sid, [c["key"] for c in section["open"]])
+    seen = lib["reports"].evidence_changes(lib["report_id"])
+    assert all(not section["open"] for section in seen["sections"].values())
+    assert seen["stale"] == changes["stale"]
+    assert report_view(lib["store"], rid, lib["report_id"])["evidence_changes"]["stale"] == changes["stale"]
+
+
 def test_gap_basis_cells_ignore_claim_citation_removal(report_with_sections):
     lib = report_with_sections
     cell_report(lib)

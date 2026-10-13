@@ -134,3 +134,9 @@
 .erep-panel .report-document-head>p{margin:-10px 0 18px;color:var(--muted);font-size:12.5px}
 .erep-panel .evidence-report-references{padding-left:0;list-style:none;color:var(--ink)}
 .erep-panel .evidence-report-references button{display:inline}
+.evidence-report-claim-meta .evview{width:100%;margin:6px 0 2px;border-collapse:collapse;table-layout:fixed;font-size:12px;line-height:1.5}
+.evidence-report-claim-meta .evview td{padding:4px 8px 4px 0;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:top;white-space:normal;overflow-wrap:anywhere}
+.evidence-report-claim-meta .evview td:not(:last-child){width:28%}
+.evidence-report-claim-meta .evview td:nth-child(2){color:var(--muted)}
+.evidence-report-claim-meta .evview .edited{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;background:var(--warn-surface);color:var(--warn-ink);font-size:11px}
+.ecite-detail .ecite-passage-status{align-items:flex-start}

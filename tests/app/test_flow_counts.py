@@ -436,3 +436,24 @@ def test_an_abstract_candidate_from_an_earlier_revision_is_stale_and_not_a_candi
     assert funnel_of(lib)["candidates"] == 1
     lib.revise()
     assert funnel_of(lib)["candidates"] == 0
+
+
+def test_the_model_proposal_leaves_out_abstract_decisions_made_under_an_earlier_criterion(store):
+    """UI parity S13: the Sources list's "Model proposal" shows only what stands for the current criterion; the shared
+    selection rules (`work_outcome`) are unchanged."""
+    from test_queue import body
+    lib = Probe(store)
+    kept, closed = lib.keyed("search:0", lib.records(2))
+    lib.ds.record(lib.rid, kept, "runs_agree_candidate")
+    lib.ds.record(lib.rid, closed, "runs_agree_out_of_scope")
+    ctx, _ = context(lib)
+    shown = flow_counts.machine_screening(ctx, lib.work_of(kept))
+    assert (shown["outcome"], shown["stale"], shown["passed_abstract"]) == ("candidate", False, True)
+    # The criterion changes within the same question revision.
+    changed = body(lib.field) | {"inclusion_criterion": "SYNTHETIC the paper states both parts and a measured result."}
+    lib.store.freeze_protocol(lib.rid, 1, changed, reason="SYNTHETIC criterion edit")
+    ctx, _ = context(lib)
+    for svid in (kept, closed):
+        shown = flow_counts.machine_screening(ctx, lib.work_of(svid))
+        assert (shown["stage"], shown["outcome"], shown["stale"], shown["passed_abstract"]) == (None, None, True, False)
+    assert ctx.outcome(lib.work_of(kept))["outcome"] == "candidate"  # the selection rules still read the old decision

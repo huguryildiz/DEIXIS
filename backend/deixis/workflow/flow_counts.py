@@ -157,17 +157,22 @@ def machine_screening(ctx: Any, work_id: str) -> dict[str, Any]:
     The work's outcome by `work_outcome`'s own rules with the person's decisions taken out: a person's choice is the
     selection, shown beside this. So two versions at opposite fresh full-text decisions stay `versions_disagree`, a
     read person's file answers for the work, a stale code decision gives way to the abstract stage, and the version
-    named is the one `work_outcome` names. `passed_abstract` is the funnel's rule, so the list and the funnel count the
-    same works. `stage` is None when nothing was decided."""
+    named is the one `work_outcome` names. Only current machine decisions are merged: `work_outcome` keeps an abstract
+    decision made under an earlier question or criterion (the selection rules rely on that), but this column shows what
+    stands for the current one, and `stale` says that earlier decisions were left out. `passed_abstract` is the funnel's
+    rule, so the list and the funnel count the same works. `stage` is None when nothing current was decided."""
     facts = ctx.facts
     machine = [d for d in facts["decisions"].get(work_id, []) if d["decided_by"] != "human"]
+    current = [d for d in machine if not ctx.decisions.is_stale(d, facts["stale_key"])]
+    stale = len(current) < len(machine)
+    machine = current
     chosen = ctx.decisions.work_outcome(ctx.rid, work_id, {**facts, "decisions": {work_id: machine}}) or {}
     code = chosen.get("reason_code")
     # Where the reason table sends the work next: `waiting_for_pdf` and `reading_queue` say the full text was not read.
     step = "human_queue" if code == queue.VERSIONS_DISAGREE else REASON_CODES[code].next_step if code in REASON_CODES else None
     return {"stage": chosen.get("stage"), "outcome": chosen.get("outcome"), "reason_code": code,
             "decided_by": chosen.get("decided_by"), "source_version_id": chosen.get("source_version_id"),
-            "next_step": step, "passed_abstract": passed_abstract(ctx, work_id)}
+            "next_step": step, "stale": stale, "passed_abstract": passed_abstract(ctx, work_id)}
 
 
 def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:

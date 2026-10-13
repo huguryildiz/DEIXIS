@@ -368,6 +368,23 @@ test('the table panel lists cell states and reports a partial Remove all columns
     await page.getByRole('button', { name: 'Undo' }).click()
     await expect(page.getByText('Columns restored with their cells.')).toBeVisible()
     await expect(page.locator('.evidence-col-head')).toHaveCount(2)
+    // The open cell's column is removed from another tab: the cell panel leaves the stack and the table shows again.
+    await page.locator('.evidence-grid [data-cell="0:1"]').click()
+    await expect(cellPanel(page, 'SYNTHETIC second')).toBeVisible()
+    const api = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
+    try {
+      const csrf = (await (await api.get('/api/session')).json()).csrf_token as string
+      const researchId = page.url().split('/research/')[1].split('/')[0]
+      const tableId = ((await (await api.get(`/api/researches/${researchId}/tables`)).json()) as { id: string }[])[0].id
+      const detail = await (await api.get(`/api/researches/${researchId}/tables/${tableId}`)).json() as { columns: { id: string; name: string; version: number }[] }
+      const second = detail.columns.find(column => column.name === 'SYNTHETIC second')!
+      const removed = await api.delete(`/api/researches/${researchId}/tables/${tableId}/columns/${second.id}?expected_version=${second.version}`, { headers: { 'x-deixis-csrf': csrf } })
+      expect(removed.ok(), await removed.text()).toBe(true)
+    } finally { await api.dispose() }
+    await expect(panel(page, 'Evidence table')).toBeVisible()
+    await expect(page.locator('.evidence-col-head')).toHaveCount(1)
+    await expect(page.locator('[data-split-panel] .cell-detail')).toHaveCount(0)
+    await expect(page.locator('.split-panel-head [aria-label="Back"]')).toHaveCount(0)
   } finally { await page.close(); await server.stop() }
 })
 

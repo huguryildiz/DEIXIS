@@ -446,13 +446,13 @@ export type FixtureContext = { researches: number; suggestions: number }
 async function checkItem(pair: Pair, item: Pair, m: Side, v: Variant, mock: Page, app: Page, index: number, data: boolean, mockIndex = index): Promise<string[]> {
   const out = checkPresence(item, m)
   if (out.length) return out
+  // A declared geometry exception (exceptions.ts) leaves out only its axes, for chrome and content blocks alike.
+  const free = new Set(GEOMETRY_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id)) && (!e.widths || e.widths.includes(v.width))).flatMap(e => e.axes))
   if (pair.checks.includes('chrome')) {
-    // A declared geometry exception (exceptions.ts) leaves out only its axes.
-    const free = new Set(GEOMETRY_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id)) && (!e.widths || e.widths.includes(v.width))).flatMap(e => e.axes))
     const axes = (data ? ['x', 'width', 'height'] as Axis[] : ['x', 'y', 'width', 'height'] as Axis[]).filter(a => !free.has(a))
     out.push(...checkChrome(item, m, axes))
   }
-  if (pair.checks.includes('content')) out.push(...checkContent(item, m))
+  if (pair.checks.includes('content')) out.push(...checkContent(item, m).filter(line => ![...free].some(axis => line.startsWith(`${item.id}: ${axis} `))))
   if (pair.checks.includes('type')) out.push(...checkType(item, m))
   if (pair.checks.includes('colour')) out.push(...checkColour(item, m, v))
   if (pair.checks.includes('icon')) out.push(...checkIcon(pair, m, index).map(l => l.replace(pair.id, item.id)), ...await checkIconBox(pair, mock, app, index, item.id, mockIndex))

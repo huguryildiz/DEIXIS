@@ -364,8 +364,16 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     note: 'Each stage is as tall as its note and lost line, which are built from the stored counts, and the wider-net notice wraps its longer sentence. x and width are compared, and every stage part\'s type and colour.' },
   // S15a: the [parity] table holds 6 of the research's included sources, so the report gate's reason stands above the
   // toolbar (the mockup's table holds every included source and has no reason line).
-  { id: 'table-toolbar-reason', rule: '§0 rule 1 (the reason comes from the stored table summary) and AGENTS.md (a disabled action says why)', pairs: ['table.toolbar'], axes: ['y'],
-    note: 'The toolbar sits under the one-line report reason ("A report needs a filled evidence table: N cells left …"). x, width and height of every button are compared.' },
+  { id: 'table-toolbar-reason', rule: '§0 rule 1 (the reason comes from the stored table summary) and AGENTS.md (a disabled action says why)', pairs: ['table.toolbar', 'table.wrap'], axes: ['y'],
+    note: 'The toolbar and the grid sit under the one-line report reason ("A report needs a filled evidence table: N cells left …"). x, width and height of every button, and x and width of the grid, are compared.' },
+  { id: 'table-grid-rows', rule: '§0 rule 1 (a grid has as many rows as the data has, each as tall as its values)', pairs: ['table.wrap'], axes: ['height'],
+    note: 'The grid holds the fixture\'s six rows with their stored values and the row heads\' meta lines, so its height follows the data. x and width are compared.' },
+  { id: 'table-cell-width', rule: 'S13 sources-table-cells-xy (an auto table layout: a column is as wide as its text)', pairs: ['table.cell-box'], axes: ['width'],
+    note: 'A value column is as wide as its header and values, which are the fixture\'s. x, padding and line height are compared.' },
+  { id: 'cell-recheck-label', rule: 'COPY_CHANGES cell-recheck', pairs: ['cell.recheck'], axes: ['width'],
+    note: 'The button reads "Recheck this cell", so it is wider than the mockup\'s "Recheck". x, y and height are compared.' },
+  { id: 'cell-meta-phone', rule: 'PLACEMENTS cell-live-parts (the meta line also holds the Details toggle)', widths: [390], pairs: ['cell.recheck'], axes: ['y'],
+    note: 'At 390 the meta line (state, author and depth, model, date, Details) wraps to a second line, so the actions sit one line lower. Every axis is compared at 1280.' },
   { id: 'activity-runs-rows', rule: '§0 rule 1 (a list has as many rows as the data has)', pairs: ['activity.table'], axes: ['height'],
     note: 'The table has one row per run the research recorded. x, y and width are compared.' },
 ]

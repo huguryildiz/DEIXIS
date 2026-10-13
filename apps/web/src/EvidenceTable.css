@@ -160,7 +160,7 @@
 /* The cell panel (mockup `cellPanel`, `.pad.detail`): the value as the head, one meta line, the actions, then the
    source, the passage, the column instruction and the history under small headings. */
 .split-panel-content.cell-panel{padding:0}
-.cell-detail{display:grid;gap:10px;max-width:720px;padding:16px 20px 32px;font-size:13px;line-height:1.6}
+.cell-detail{display:grid;gap:10px;max-width:720px;padding:16px 20px 32px;font-size:13px;line-height:21px}
 .split-panel.is-wide .cell-detail{margin-inline:auto}
 .cell-detail>*{margin:0}
 .cell-detail .dhead{display:grid;gap:4px}
@@ -279,7 +279,6 @@
 @media (max-width:440px){.evidence-compare{grid-template-columns:1fr}.evidence-compare>div+div{border-top:1px solid var(--line);border-left:0}}
 @media (prefers-reduced-motion:reduce){.cell-slot i{animation:none}}
 @media (max-width:600px){
-  .evidence-grid .evidence-row-head{min-width:150px}
   .evidence-cell{min-width:150px}
   .evidence-number{grid-template-columns:1fr}
 }

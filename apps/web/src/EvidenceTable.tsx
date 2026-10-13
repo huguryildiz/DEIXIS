@@ -17,6 +17,7 @@ import { t, uiLanguage, uiLocale } from './i18n'
 import { DevelopmentLines } from './lineage/DevelopmentLines'
 import type { PassageTarget } from './lineage/LinkRow'
 import { StackPanel } from './research/SplitPanel'
+import { usePanels } from './research/usePanelStack'
 import './EvidenceTable.css'
 import './lineage/lineage.css'
 import { Notice } from './Notice'
@@ -228,6 +229,16 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
   // "Suggest columns" (mockup `suggest`): the proposals arrive in a box above the table and none joins it until added.
   const suggestNote = t('Up to eight proposals; you accept each one')
   const suggestTitle = t('{model} · 1–2 calls', { model })
+
+  // The open cell's row or column left the table (removed here or in another tab): its panel leaves the stack and the
+  // table is shown again, never an empty panel.
+  const removePanel = usePanels()?.remove
+  const cellGone = Boolean(table && cellTarget && (!chosen || table.table.id === chosen) && (!table.columns.some(c => c.id === cellTarget.columnId) || !table.rows.some(r => r.source_version_id === cellTarget.sourceId)))
+  useEffect(() => {
+    if (!cellGone) return
+    setCellTarget(null)
+    removePanel?.('cell')
+  }, [cellGone, removePanel])
 
   if (error && !tables) return <div className="table-panel"><Notice tone="error">{t('Could not load the evidence table: {error}', { error })}</Notice></div>
   if (!tables) return <div className="table-panel"><p className="empty-inline">{t('Loading the evidence table…')}</p></div>

@@ -479,14 +479,19 @@ test.describe('S12: report, Citation and Source details panels', () => {
   test('Find PDF from the Citation panel starts a lookup each time it is chosen', async () => {
     const view = await viewOf(api, rid)
     const latest = [...valid(view)].sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
-    // PATCHED VIEW: the first thread chip's abstract-cited work is shown without its PDF (the fixture fetched one), so
-    // its Citation entry offers Find PDF; each lookup request is counted and answered without a change.
+    // PATCHED VIEW: the first thread claim whose first citation is an abstract (found in the stored answer, not by the
+    // chip's position) has that work shown without its PDF (the fixture fetched one), so its Citation entry offers Find
+    // PDF; each lookup request is counted and answered without a change.
     const sections: Claim[][] = []
     for (const claim of latest.claims) {
       const last = sections[sections.length - 1]
       if (last && last[0].section === claim.section) last.push(claim); else sections.push([claim])
     }
-    const claim = sections.slice(0, 2).flat().find(c => c.evidence.length)!
+    // The thread shows the first two sections, one chip per claim that cites anything, in the answer's order.
+    const chipped = sections.slice(0, 2).flat().filter(c => c.evidence.length)
+    const chip = chipped.findIndex(c => c.evidence[0].kind === 'abstract')
+    expect(chip, 'a thread claim whose first citation is an abstract').toBeGreaterThanOrEqual(0)
+    const claim = chipped[chip]
     const svid = claim.evidence[0].source_version_id
     expect(claim.evidence[0].kind).toBe('abstract')
     await page.route(`**/api/researches/${rid}`, async route => {
@@ -499,8 +504,10 @@ test.describe('S12: report, Citation and Source details panels', () => {
     await page.route(`**/sources/${svid}/pdf-discovery`, route => { lookups += 1; return route.fulfill({ json: {} }) })
     try {
       await visit(page, research())
-      await page.locator('.answer-thread .answer-prose .cite-chip').first().click()
+      await page.locator('.answer-thread .answer-prose .cite-chip').nth(chip).click()
       const cite = panel(page, 'Citation')
+      // The Citation panel lists that claim's citations in its order: the first entry is the abstract citation.
+      await expect(cite.locator('.cite-entry')).toHaveCount(claim.evidence.length)
       const head = page.locator('[data-split-panel] .split-panel-head')
       for (const n of [1, 2]) {
         await cite.locator('.cite-entry').first().getByRole('button', { name: 'Find PDF' }).click()

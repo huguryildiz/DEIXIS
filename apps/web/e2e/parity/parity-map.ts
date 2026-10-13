@@ -134,8 +134,9 @@ export const SURFACES: Surface[] = [
     // The mockup opens the Sources panel on "Cited in answer", as the answer's "View N cited sources" does (S10).
     appAct: citedTab },
   // S12: the report panel (P2/P3), the Citation panel (P11) and Source details (P12-P20). The mockup's report has two
-  // versions as the fixture's research has. The app opens the Citation panel from the fourth chip of the thread (the
-  // first claim that cites a PDF page, as the mockup's cob22 is a PDF work) and Source details from that entry.
+  // versions as the fixture's research has. The app opens the Citation panel from the thread's first chip whose citation
+  // is a PDF page (found by the chip's locator, "PDF p. N", as the mockup's cob22 is a PDF work) and Source details from
+  // that entry.
   { id: 'report-panel', mock: "setScenario('ok'); st.version = 2; st.viewVer = 2; openPanel('report')", app: '#/research/{research}', ready: '.research-topbar',
     appAct: async page => { await page.locator('#research-answer').click(); await page.locator('.report-document-head h1').waitFor() } },
   // S21: the same report with Show changes on (P4): the head's button reads Hide changes, the "Changes since V1" box sits
@@ -150,10 +151,10 @@ export const SURFACES: Surface[] = [
       await page.locator('.report-panel .changes').waitFor()
     } },
   { id: 'cite-panel', mock: "setScenario('ok'); openPanel('cite', 'cob22')", app: '#/research/{research}', ready: '.research-topbar',
-    appAct: async page => { await page.locator('.answer-thread .answer-prose .cite-chip').nth(3).click(); await page.locator('.cite-entry .quote mark').waitFor() } },
+    appAct: async page => { await page.locator('.answer-thread .answer-prose .cite-chip[title*="PDF p."]').first().click(); await page.locator('.cite-entry .quote mark').waitFor() } },
   { id: 'detail-panel', mock: "setScenario('ok'); openPanel('cite', 'cob22'); openPanel('detail', 'cob22')", app: '#/research/{research}', ready: '.research-topbar',
     appAct: async page => {
-      await page.locator('.answer-thread .answer-prose .cite-chip').nth(3).click()
+      await page.locator('.answer-thread .answer-prose .cite-chip[title*="PDF p."]').first().click()
       await page.locator('.cite-entry .rowacts button').first().click()
       await page.locator('.source-detail .docnav').waitFor()
     } },

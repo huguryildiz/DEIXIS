@@ -226,9 +226,11 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
     : loaded.origin === 'model' ? t('The fast path wrote this plan from your question and ran it without asking.')
     : loaded.origin === 'code' ? t('Code built this plan from the question’s words and ran it without asking.')
     : t('This plan was saved by you.')
-  const where = !plan ? '' : own ? t(loaded.queries_preview ? 'Saved for revision {n}; not searched yet.' : 'Saved for revision {n} and searched.', { n: loaded.scope_revision })
-    : from === loaded.scope_revision ? t('Searched for revision {n}.', { n: from })
-    : t('Searched for revision {b}; revision {n} has not searched yet.', { b: from ?? '?', n: loaded.scope_revision })
+  // A frozen protocol says the plan was fixed for a search, not that its requests were sent or answered: the sentence says
+  // frozen, and the plan step's lines say what the search did.
+  const where = !plan ? '' : own ? t(loaded.queries_preview ? 'Saved for revision {n}; no search has frozen it yet.' : 'Saved for revision {n} and frozen by its search.', { n: loaded.scope_revision })
+    : from === loaded.scope_revision ? t('Plan frozen for revision {n}.', { n: from })
+    : t('Plan frozen for revision {b}; revision {n} has not frozen a plan yet.', { b: from ?? '?', n: loaded.scope_revision })
   const change = plan ? (answerRevision !== null
     ? t('Change anything and search again: saving makes revision {n}; the current answer stays with revision {a}.', { n: nextRevision, a: answerRevision })
     : t('Change anything and search again: saving makes revision {n}.', { n: nextRevision })) : ''
@@ -276,6 +278,8 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
       </div>
       {loaded.queries.map(query => <label key={query.label} className="lbl">{t('Query {n}', { n: query.label.replace(/^Query /, '') })}{' · '}{t(query.origin === 'model' ? 'model' : query.origin === 'user' ? 'your plan' : 'from the question’s words')}
         <textarea className="field mono" rows={2} readOnly value={query.query_text} /></label>)}
+      {/* The English sentence the semantic search sends for this question revision (§2.2), as stored; read only here. */}
+      {view.semantic?.english_question?.text && <div className="lbl plan-english">{t('English question for the semantic search')}<span>{view.semantic.english_question.text}</span></div>}
       <p className="plan-note">{[
         loaded.queries_preview && t('A preview: the query is compiled again from the words when the search starts, and a backup word takes the place of a word OpenAlex counts at zero.'),
         wordsChanged && t('The queries above are the stored ones; the edited words are compiled into a new query when the search starts.'),

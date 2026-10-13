@@ -986,12 +986,12 @@ export const PAIRS: Pair[] = [
   { id: 'plan.chip', surface: 'plan-panel', mock: '.panel .kw span', app: '.plan-panel .kw > span', checks: ['type', 'colour'], states: [], status: 'active' },
   { id: 'plan.chip-remove', surface: 'plan-panel', mock: '.panel .kw button', app: '.plan-panel .kw > span > button', checks: ['icon', 'colour'],
     icon: { mock: 'x', app: 'x' }, states: [], status: 'active' },
-  { id: 'plan.add', surface: 'plan-panel', mock: '#addword', app: '.plan-panel .plan-add input.field', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'plan.add', surface: 'plan-panel', mock: '#addword', app: '.plan-panel .plan-add input.field', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
   { id: 'plan.query', surface: 'plan-panel', mock: '#pq1', app: '.plan-panel textarea.field.mono', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
   { id: 'plan.criterion', surface: 'plan-panel', mock: '#pcrit', app: '.plan-panel textarea.field:not(.mono)', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
   { id: 'plan.provider', surface: 'plan-panel', mock: '.panel .provs label', app: '.plan-panel .provs label', checks: ['content', 'type', 'colour'], list: 'data', expected: () => 4, states: [], status: 'active' },
   { id: 'plan.provider-note', surface: 'plan-panel', mock: '.panel .provs label small', app: '.plan-panel .provs label small', checks: ['type', 'colour'], states: [], status: 'active' },
-  { id: 'plan.buttons', surface: 'plan-panel', mock: '.panel .rowbtns button', app: '.plan-panel .rowbtns button', checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  { id: 'plan.buttons', surface: 'plan-panel', mock: '.panel .rowbtns button', app: '.plan-panel .rowbtns button', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
   { id: 'plan.search', surface: 'plan-panel', mock: '.panel .rowbtns .btn-teal', app: '.plan-panel .rowbtns .btn-teal', checks: ['type', 'colour', 'icon'], icon: { mock: 'search', app: 'search' }, states: [], status: 'active' },
 ]
 

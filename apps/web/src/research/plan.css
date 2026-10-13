@@ -39,3 +39,4 @@
 .plan-panel .btn-teal:disabled{opacity:.45;cursor:default}
 .plan-panel .btn-teal:focus-visible,.plan-panel .ghost:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .plan-panel .btn-teal svg{flex:none;width:16px;height:16px}
+.plan-panel .plan-english>span{color:var(--ink-2);font-size:13px;overflow-wrap:anywhere}

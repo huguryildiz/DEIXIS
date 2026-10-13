@@ -125,7 +125,7 @@ test.describe.serial('S23b: the Search plan panel', () => {
     // Where the plan came from and which revision it belongs to, from the stored view.
     const origin = stored.origin === 'model' ? 'The fast path wrote this plan from your question and ran it without asking.'
       : 'Code built this plan from the question’s words and ran it without asking.'
-    await expect(opened.locator('.plan-panel > p').first()).toHaveText(`${origin} Searched for revision ${stored.based_on!.scope_revision}. Change anything and search again: saving makes revision ${stored.scope_revision + 1}; the current answer stays with revision ${stored.scope_revision}.`)
+    await expect(opened.locator('.plan-panel > p').first()).toHaveText(`${origin} Plan frozen for revision ${stored.based_on!.scope_revision}. Change anything and search again: saving makes revision ${stored.scope_revision + 1}; the current answer stays with revision ${stored.scope_revision}.`)
     // The words of each block, as stored.
     await expect(chips(page, 'setting')).toHaveText(plan.setting.map(row => row.term))
     await expect(chips(page, 'task')).toHaveText(plan.task.map(row => row.term))
@@ -149,6 +149,10 @@ test.describe.serial('S23b: the Search plan panel', () => {
       await expect(opened.locator('.provs label', { hasText: NAMES[provider.provider_id] }).locator('small')).toHaveText(providerNote(provider))
     }
     await expect(opened).toContainText('Crossref is still asked for PDF links when full text is fetched, even when it is unticked here.')
+    // The English sentence the semantic search sends for this revision, when one is stored (§2.2).
+    const english = ((await (await api.context.get(`/api/researches/${rid}`)).json()) as { semantic?: { english_question: { text: string } | null } }).semantic?.english_question?.text
+    if (english) await expect(opened.locator('.plan-english')).toHaveText(`English question for the semantic search${english}`)
+    else await expect(opened.locator('.plan-english')).toHaveCount(0)
     // A rule the stored plan breaks is named before anything is sent.
     if (stored.issues.length) await expect(opened.locator('.plan-issues')).toContainText('This plan breaks a rule, so it cannot be saved until you change it:')
     await shot(page, 's23b-plan-panel')
@@ -239,7 +243,7 @@ test.describe.serial('S23b: the Search plan panel', () => {
     await visit(page, research())
     await expect(page.locator('.chat-step-line', { hasText: 'Planned the searches from your saved plan' })).toBeVisible()
     const reopened = await openPlanPanel(page)
-    await expect(reopened.locator('.plan-panel > p').first()).toContainText(`This plan was saved by you. Saved for revision ${revision} and searched.`)
+    await expect(reopened.locator('.plan-panel > p').first()).toContainText(`This plan was saved by you. Saved for revision ${revision} and frozen by its search.`)
     await expect(reopened.locator('label', { hasText: 'Query 1 · your plan' })).toBeVisible()
     await expect(chips(page, 'setting')).toHaveText(now.plan!.setting.map(row => row.term))
     await expect(reopened.getByRole('checkbox', { name: new RegExp(`^${NAMES[optional.provider_id]} `) })).not.toBeChecked()

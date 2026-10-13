@@ -97,6 +97,14 @@ def test_parity_counts(tmp_path):
         assert boxes["fulltext_read"] == 20  # Standard K
         assert counts["included"] == 17 and counts["queue"] == 3
         assert counts["cited"] == fx.PARITY_CITED
+        # The Sources list's per-work screening (S13): the works that passed the abstract stage are the funnel's
+        # candidates, an included work shows its full-text decision, and other versions carry none.
+        records = [s for s in v["sources"] if s["version_role"] == "record"]
+        assert sum(s["screening"]["passed_abstract"] for s in records) == counts["funnel"]["candidates"]
+        assert all(s["screening"] is None for s in v["sources"] if s["version_role"] == "other_version")
+        assert all(s["screening"]["stage"] == "fulltext" and s["screening"]["outcome"] == "include"
+                   for s in records if s["selection"]["state"] == "included" and s["selection"]["origin"] != "user")
+        assert {s["screening"]["outcome"] for s in records if s["screening"]["stage"] == "abstract"} <= {"candidate", "out_of_scope", "unresolved"}
         rows = client.get(f"/api/researches/{rid}/queue").json()["rows"]
         assert sorted(r["kind"] for r in rows) == ["choose_run", "confirm_quote", "find_part"]
         first = [a for a in v["answers"] if a["status"] == "structurally_valid"]

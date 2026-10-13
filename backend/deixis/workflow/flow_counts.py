@@ -139,12 +139,40 @@ def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, A
     afterwards. `included` is the works whose head record's selection is included, the same count the lists show."""
     box = {row["key"]: row["count"] for row in boxes["boxes"]}
     heads = ctx.facts["heads"]
-    candidates = sum(1 for work_id in heads if any(
-        d["stage"] == "abstract" and d["outcome"] == "candidate" and not ctx.decisions.is_stale(d, ctx.facts["stale_key"])
-        for d in ctx.facts["decisions"].get(work_id, [])))
+    candidates = sum(1 for work_id in heads if passed_abstract(ctx, work_id))
     included = sum(1 for work_id, head in heads.items() if (ctx.selections.get(head) or {}).get("state") == "included")
     return {"retrieved": box["rows_returned"], "chained": len(ctx.chained & set(heads)), "unique": box["works"],
             "abstracts_read": box["abstract_read_by_model"], "candidates": candidates, "included": included}
+
+
+def passed_abstract(ctx: Any, work_id: str) -> bool:
+    """Whether the work has a current, not stale abstract-stage decision `candidate` (the funnel's `candidates`)."""
+    return any(d["stage"] == "abstract" and d["outcome"] == "candidate" and not ctx.decisions.is_stale(d, ctx.facts["stale_key"])
+               for d in ctx.facts["decisions"].get(work_id, []))
+
+
+def machine_screening(ctx: Any, work_id: str) -> dict[str, Any]:
+    """What code and the model runs decided about a work, for the Sources list's "Model proposal" column (UI parity S13).
+
+    A person's decision is left out: it is the selection, shown beside this. Only current (not stale) decisions count.
+    The full-text stage answers when it decided, else the abstract stage, a candidate first as `work_outcome` orders it;
+    within a stage the work's head record is named first, then the newest. `passed_abstract` is the funnel's rule, so the
+    list and the funnel count the same works. `stage` is None when nothing current was decided."""
+    head = ctx.facts["heads"].get(work_id)
+    fresh = [d for d in ctx.facts["decisions"].get(work_id, [])
+             if d["decided_by"] != "human" and not ctx.decisions.is_stale(d, ctx.facts["stale_key"])]
+
+    def pick(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        own = [d for d in rows if d["source_version_id"] == head]
+        return (own or rows)[-1]
+
+    fulltext = [d for d in fresh if d["stage"] == "fulltext"]
+    abstract = [d for d in fresh if d["stage"] == "abstract"]
+    chosen = (pick(fulltext) if fulltext else
+              pick([d for d in abstract if d["outcome"] == "candidate"] or abstract) if abstract else None)
+    return {"stage": chosen["stage"] if chosen else None, "outcome": chosen["outcome"] if chosen else None,
+            "reason_code": chosen["reason_code"] if chosen else None, "decided_by": chosen["decided_by"] if chosen else None,
+            "passed_abstract": passed_abstract(ctx, work_id)}
 
 
 def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:

@@ -112,7 +112,8 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
     await sourcesTab(ui)
     await expect(row(ui, titles[0])).toContainText('PDF could not be read')
     await expect(row(ui, titles[0])).toContainText('Text retry was interrupted; no new extraction was published.')
-    for (const title of titles.slice(0, 2)) await expect(row(ui, title).getByRole('button', { name: 'Retry text extraction' })).toBeVisible()
+    // The retry is one of the row's actions (mockup .rowacts, UI parity S13); its result and history stay in the row.
+    for (const title of titles.slice(0, 2)) await expect(row(ui, title).locator('.rowacts').getByRole('button', { name: 'Retry text extraction' })).toBeVisible()
     await expect(row(ui, titles[2]).getByRole('button', { name: 'Check PDF text again' })).toBeVisible()
     expect(asset(await view(), titles[0]).text_recovery!.latest_operation!.reason).toBe('process_ended')
     await shot(ui, 'reextract-initial-1280-light', await view())

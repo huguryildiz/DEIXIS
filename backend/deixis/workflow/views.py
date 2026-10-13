@@ -764,6 +764,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         # no version of the work at all: its only PDF text is a person's file not read yet (slice 18b, decision 8).
         s["answer_reads_version_id"] = None
         s["answer_reads_nothing"] = False
+        # What code and the model runs decided about the work, for the list's "Model proposal" column (UI parity S13);
+        # other versions follow their record.
+        s["screening"] = flow_rules.machine_screening(ctx, s["work_id"]) if s["version_role"] == "record" else None
         if s["version_role"] == "record":
             reads = reads_version.get(s["source_version_id"], s["source_version_id"])
             if reads is None:

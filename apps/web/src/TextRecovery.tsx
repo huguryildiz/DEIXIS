@@ -1,4 +1,5 @@
 import { useContext, useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, ChevronRight, ScanText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -10,7 +11,9 @@ import { useToast } from './Toast'
 
 import { TextRecoveryContext } from './TextRecoveryContext'
 
-export function TextRecovery({ asset, sourceId }: { asset: Asset; sourceId: string }) {
+// `actionSlot` (the Sources row, UI parity S13): the retry button goes into the row's actions, rendered there through a
+// portal so its state, focus and errors stay with this block; undefined keeps it in the block.
+export function TextRecovery({ asset, sourceId, actionSlot }: { asset: Asset; sourceId: string; actionSlot?: HTMLElement | null }) {
   const context = useContext(TextRecoveryContext)
   const toast = useToast()
   const [requesting, setRequesting] = useState(false)
@@ -79,12 +82,18 @@ export function TextRecovery({ asset, sourceId }: { asset: Asset; sourceId: stri
   ].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)) : []
   return <section className="text-recovery" aria-label={t('PDF text recovery')}>
     <p ref={result} tabIndex={-1} className={`text-recovery-result${capability.reason === 'password_protected' ? ' is-error' : ''}`} role="status">{resultText}</p>
-    {showButton && <div className="text-recovery-action">
+    {showButton && actionSlot === undefined && <div className="text-recovery-action">
       <Tooltip content={blocked ? disabledReason : t('Try reading the stored PDF text once.')}>
         <Button ref={button} size="sm" variant="outline" aria-disabled={blocked || undefined} aria-describedby={blocked ? reasonId : undefined} onClick={() => void retry()}><ScanText size={14} aria-hidden />{t(capability.status === 'no_text' ? 'Check PDF text again' : 'Retry text extraction')}</Button>
       </Tooltip>
       {blocked && <span id={reasonId} className="sr-only">{disabledReason}</span>}
     </div>}
+    {showButton && actionSlot && createPortal(<>
+      <Tooltip content={blocked ? disabledReason : t('Try reading the stored PDF text once.')}>
+        <button ref={button} type="button" className="text-retry-action" aria-disabled={blocked || undefined} aria-describedby={blocked ? reasonId : undefined} onClick={() => void retry()}><ScanText size={14} aria-hidden />{t(capability.status === 'no_text' ? 'Check PDF text again' : 'Retry text extraction')}</button>
+      </Tooltip>
+      {blocked && <span id={reasonId} className="sr-only">{disabledReason}</span>}
+    </>, actionSlot)}
     {error && <Notice tone="error">{error}</Notice>}
     <button type="button" className="text-recovery-disclosure" aria-expanded={open} aria-controls={`${reasonId}-history`} onClick={() => setOpen(value => !value)}>
       {open ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}{t('Text recovery history')}{history && <span> ({entries.length})</span>}

@@ -460,6 +460,9 @@ export type Source = {
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'code_rule' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null; queue_answer: 'include' | 'criterion_not_met' | null }
   cited_in_latest_answer: boolean
   provider_records: string[]
+  // What code and the model runs decided about the work, current decisions only, a person's left out (UI parity S13);
+  // null on other versions. `passed_abstract`: a current abstract-stage `candidate`, the funnel's rule.
+  screening: { stage: 'abstract' | 'fulltext' | null; outcome: string | null; reason_code: string | null; decided_by: 'code' | 'model_agreement' | null; passed_abstract: boolean } | null
 }
 export type Evidence = {
   // work_id: the work the cited version belongs to, kept for a source since removed from the research (it is not in `sources`).

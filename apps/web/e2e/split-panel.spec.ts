@@ -182,7 +182,7 @@ test.describe.serial('S7a: thread and side panel', () => {
     await page.getByRole('option', { name: 'Title A–Z' }).click()
     const row = sources.locator('.source-row').filter({ has: page.getByRole('button', { name: 'Read abstract' }) }).first()
     await row.getByRole('button', { name: 'Exclude', exact: true }).click()
-    const reason = row.getByRole('textbox', { name: 'Reason for excluding this source' })
+    const reason = sources.locator('.why-bar').getByRole('textbox', { name: 'Reason for excluding this source' })
     await reason.fill('SYNTHETIC reason not saved yet')
     await row.getByRole('button', { name: 'Read abstract' }).click()
     await expect(panel(page, 'Source details')).toBeVisible()

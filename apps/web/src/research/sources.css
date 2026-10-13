@@ -38,22 +38,6 @@
 .source-filter-option small{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
 .sort-option small{display:block;margin-top:2px;font-size:11px;line-height:1.35;color:var(--muted-foreground)}
 .source-empty button{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
-.source-list{border-top:0}
-.source-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:start;padding:14px 4px;border-bottom:1px solid var(--line)}
-/* A picked row takes the accent tint (mockup tr.sel); the checkbox sits on the title line. */
-.app .sources-panel .source-row.has-pick{padding-left:34px}
-.app .sources-panel .source-row.is-other-version.has-pick{padding-left:46px}
-.app .sources-panel .source-pick{top:17px;left:10px}
-.app .sources-panel .source-row.is-other-version .source-pick{left:22px}
-.app .sources-panel .source-row.is-picked{background:var(--accent-tint)}
-.source-row.is-excluded .source-main>strong{color:var(--muted)}
-.source-row.is-other-version{margin-left:18px;padding-left:14px;border-left:2px solid var(--line)}
-.source-row.is-other-version .source-main>strong{font-weight:500}
-/* The exclusion reason (mockup .why-bar): a quiet band on the side surface with one field and its button. */
-.reason-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--sidebar-surface)}
-.reason-form input{flex:1;min-width:180px;height:30px;padding:0 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);font-size:13px;color:var(--ink)}
-.reason-form input:focus{border-color:var(--accent)}
-.reason-form input::placeholder{color:var(--muted)}
 .version-note{display:block;margin:0 0 4px;color:var(--muted);font-size:11px;line-height:1.5}
 .source-main>strong,.source-main small{display:block}
 .source-main .source-title{color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.35;font-weight:500;letter-spacing:-.005em;text-wrap:balance}
@@ -93,17 +77,6 @@
 .proposal.ocr-note>svg{flex:none;margin:3px 0 0;color:var(--muted)}
 .pdf-ready-head .ocr-note{margin-top:6px!important}
 .pdf-text-page h4 .ref-pill{margin-left:8px;vertical-align:1px}
-/* Footer: the PDF lookup summary, then the actions. */
-.source-foot{display:grid;justify-items:start;gap:2px;margin-top:8px}
-/* Row actions (mockup .rowacts): accent text actions with small icons; Remove PDF keeps the destructive tone. */
-.source-links{display:flex;flex-wrap:wrap;gap:0 2px;margin-left:-6px;font-size:12px}
-.source-links :is(a,button){display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 6px;border:0;border-radius:6px;color:var(--accent);font-weight:500;text-decoration:none}
-.source-links :is(a,button):hover:not(:disabled){background:var(--hover-surface);text-decoration:underline;text-underline-offset:2px}
-.source-links :is(a,button)>svg{width:13px;height:13px;color:currentColor}
-.source-links .connection-icon{width:13px;height:13px}
-.source-links button:disabled{color:var(--muted);cursor:wait}
-.source-links .source-asset-actions{display:inline-flex;flex-wrap:wrap;gap:0 2px}
-.source-links .is-destructive,.source-links .is-destructive>svg{color:var(--destructive)}
 .pdf-search-status{width:fit-content;max-width:100%;margin-top:10px;padding:6px 12px 6px 10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--raised-surface);display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;color:var(--ink);font-size:12.5px;line-height:1.55}
 .pdf-search-status strong{font-weight:600}
 .pdf-search-spin{flex:none;color:var(--accent);animation:pdf-search-rot .9s linear infinite}
@@ -174,24 +147,8 @@
 .zotero-empty .zotero-empty-icon{display:grid;place-items:center;flex:none;width:34px;height:34px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
 .zotero-empty .connection-icon{width:16px;height:16px}
 .app .zotero-panel [data-slot=select-trigger]{min-width:min(280px,100%);height:32px;color:var(--ink);border-color:var(--line)}
-/* The decision control (mockup .seg): a quiet segmented control; the chosen state takes its tone's notice surface and ink. */
-.selection-toggle{display:inline-flex;flex:none;justify-self:start;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden;background:var(--paper)}
-.selection-toggle button{min-height:26px;padding:3px 9px;font-size:12px;font-weight:500;color:var(--muted);background:transparent}
-.selection-toggle button+button{border-left:1px solid var(--strong-line)}
-.selection-toggle button:not(:disabled):hover{background:var(--hover-surface);color:var(--ink)}
-.app .selection-toggle button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.selection-toggle button[aria-pressed=true]{background:var(--selected-surface);color:var(--ink)}
-.selection-toggle button.is-included[aria-pressed=true]{background:var(--ok-surface);color:var(--ok-ink)}
-.selection-toggle button.is-pending[aria-pressed=true]{background:var(--warn-surface);color:var(--warn-ink)}
-.selection-toggle button.is-excluded[aria-pressed=true]{background:var(--error-surface);color:var(--error-ink)}
-/* The selection bar of the Sources tab (mockup .selbar): the side surface and 13px type; it stays pinned above the list. */
-.app .sources-panel .selection-bar{padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface);box-shadow:var(--shadow-float);font-size:13px}
-.app .sources-panel .selection-bar>strong{font-weight:500}
-.app .sources-panel .selection-bar-actions [data-slot=button]{height:30px;border-radius:7px;font-size:13px}
 @media(max-width:760px){
   .research-facts{gap:6px 16px}
-  .source-row{grid-template-columns:1fr}
-  .source-search{flex:1 1 100%}
   .workspace-pane-head{align-items:flex-start;flex-direction:column}
   .search-summary-list>div{grid-template-columns:1fr;gap:2px}
   .activity-day{grid-template-columns:1fr;gap:8px}
@@ -220,3 +177,100 @@
 .text-recovery-identifiers { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 .text-recovery-identifiers div { margin-block: 6px; }
 .text-recovery-identifiers dd { margin-inline-start: 0; color: var(--ink); }
+/* The Sources panel (UI parity S13, mockup P5-P10): the panel body has no padding; tabs, toolbar, reason bar, table and
+   selection bar run edge to edge as in the mockup, and the live tools of §2.2 follow the table in a padded block. */
+.split-panel-content.sources-panel-box{padding:0;font-size:13px;line-height:1.5}
+.sources-panel-box .sources-panel{margin:0}
+.sources-panel-box .sources-empty{margin:0;padding:18px 16px}
+.sources-panel-box .sources-extras{padding:20px 22px 40px;border-top:1px solid var(--line)}
+.sources-table-block .tabs{display:flex;gap:2px;margin:0;padding:6px 10px 0;border-bottom:1px solid var(--line);overflow-x:auto}
+.sources-table-block .tabs button{display:inline-flex;align-items:baseline;flex:none;gap:0;padding:7px 10px;border-bottom:2px solid transparent;background:none;color:var(--muted);font-size:12.5px;font-weight:400;line-height:1.5;white-space:nowrap}
+.sources-table-block .tabs button:hover{color:var(--ink)}
+.sources-table-block .tabs button.on{border-bottom-color:var(--accent);color:var(--ink)}
+.sources-table-block .tabs button em{margin-left:3px;color:var(--muted);font-style:normal}
+.sources-table-block .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.sources-table-block .search{display:flex;align-items:center;gap:6px;width:170px;min-width:0;padding:4px 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--faint)}
+.sources-table-block .search:focus-within{border-color:var(--accent)}
+.sources-table-block .search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);font-size:13px;line-height:1.5}
+.app .sources-table-block .search input:focus-visible{outline:none}
+.sources-table-block .search input::placeholder{color:var(--muted)}
+.sources-panel-box .ghost,.app .sources-panel-box .ghost[data-slot=select-trigger]{display:inline-flex;align-items:center;gap:6px;width:auto;height:auto;padding:5px 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);box-shadow:none;color:var(--ink-2);font-size:13px;font-weight:400;line-height:1.5;white-space:nowrap}
+.sources-panel-box .ghost:hover:not(:disabled){background:var(--hover-surface)}
+.sources-panel-box .ghost:disabled{opacity:.5}
+.sources-panel-box .ghost.tint,.app .sources-panel-box .ghost.tint[data-slot=select-trigger]{border-color:var(--accent-line);background:var(--accent-tint);color:var(--accent)}
+.sources-panel-box .ghost>svg,.sources-panel-box .ghost [data-slot=select-value]>svg{width:16px;height:16px;flex:none}
+.app .sources-panel-box .ghost[data-slot=select-trigger]>svg:last-child{display:none}
+.source-menu .sort-option small{display:block;margin-top:2px;font-size:11px;line-height:1.35;color:var(--muted)}
+.source-menu [data-slot=select-label]{margin:4px 8px;padding:0;color:var(--muted);font-size:10.5px;font-weight:500;letter-spacing:.7px;text-transform:uppercase}
+/* The exclusion reason (mockup .why-bar): a band on the side surface with one field, Save reason and Skip. */
+.why-bar{padding:10px 12px;border-bottom:1px solid var(--line);background:var(--sidebar-surface)}
+.why-bar b{color:var(--ink);font-weight:600}
+.why-f{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}
+.why-f .lbl{display:grid;flex:1;gap:4px;min-width:200px;color:var(--muted);font-size:12px}
+.why-f .field{width:100%;padding:8px 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--paper);color:var(--ink);font-size:14px;outline:0}
+.why-f .field:focus{border-color:var(--accent)}
+.sources-panel-box .btn-pri{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:7px;background:var(--accent-deep);color:#fff;font-size:13px;font-weight:500;line-height:1.5;white-space:nowrap}
+.sources-panel-box .btn-pri:hover:not(:disabled){background:color-mix(in srgb,var(--accent-deep),#000 14%)}
+.sources-panel-box .btn-pri:disabled{opacity:.5}
+/* The table (mockup table, P9): sticky head on the side surface, hairline cells. */
+.sources-table-block .tbl-wrap{overflow:auto}
+.source-table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.5}
+.source-table th{position:sticky;top:0;z-index:1;padding:9px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink-2);font-size:12.5px;font-weight:500;text-align:left;white-space:nowrap}
+.source-table td{padding:10px 12px;white-space:normal;border-right:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:top}
+.source-table :is(th,td):last-child{border-right:0}
+.source-table :is(th,td).cb{width:36px;padding-right:0;border-right:0}
+.source-table input[type=checkbox]{width:15px;height:15px;margin:0;accent-color:var(--accent)}
+.source-table .th-count{color:var(--muted)}
+.source-table tr.sel td{background:var(--accent-tint)}
+.source-table .source-cell{min-width:260px}
+.source-table .source-title{display:block;color:var(--ink);font-weight:500;line-height:1.35}
+.source-table .source-title .source-key{margin-right:6px}
+.source-table .src-t{color:var(--ink);font:inherit;text-align:left;line-height:1.35}
+.source-table button.src-t:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.source-table .src-m{display:grid;margin-top:3px;color:var(--muted);font-size:12px;line-height:1.45}
+.source-table tr.is-excluded .src-t{color:var(--muted)}
+.source-table tr.is-other-version .source-cell{padding-left:28px}
+.source-table tr.is-other-version .src-t{font-weight:400}
+.source-table .pills{display:flex;flex-wrap:wrap;gap:5px;margin-top:3px}
+.source-table .pills .pill.source-fact{display:inline-flex;align-items:center;gap:4px;min-height:0;max-width:100%;padding:0 6px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:11.5px;line-height:19px;white-space:normal}
+.source-table .pills .pill>svg{width:12px;height:12px}
+.source-table .pills .pill.is-cited{color:var(--accent)}
+.source-table .pills .pill.is-plain::before{display:none}
+/* Each action keeps a 24px target (WCAG 2.5.8) when the actions wrap to several lines; the mockup's are 18px. */
+.source-table .rowacts{display:flex;flex-wrap:wrap;gap:0 10px;margin-top:3px;font-size:12px;line-height:1.5}
+.source-table .rowacts .source-asset-actions,.source-table .rowacts .rowact-slot{display:contents}
+.source-table .rowacts :is(a,button){display:inline-flex;align-items:center;gap:4px;min-height:24px;color:var(--accent);font-weight:500;text-decoration:none}
+.source-table .rowacts :is(a,button):hover:not(:disabled):not([aria-disabled=true]){text-decoration:underline;text-underline-offset:2px}
+.source-table .rowacts :is(a,button)>svg{width:12px;height:12px}
+.source-table .rowacts :is(button:disabled,[aria-disabled=true]){color:var(--muted);cursor:default}
+.source-table .source-provenance{margin-top:4px}
+.source-table .prop-cell{min-width:200px;max-width:300px}
+.source-table .prop{color:var(--ink-2);font-size:12.5px;line-height:1.45}
+.source-table .prop b{font-weight:500}
+.source-table .verdict.is-include{color:var(--tone-include)}
+.source-table .verdict.is-uncertain{color:var(--tone-uncertain)}
+.source-table .verdict.is-exclude{color:var(--tone-exclude)}
+.source-table .verdict.is-passed{color:var(--ink-2)}
+.source-table .verdict.is-none{color:var(--muted)}
+/* The decision control (mockup .seg): the chosen state takes its tone's notice surface and ink. */
+.source-table .seg{display:inline-flex;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden;background:var(--paper)}
+.source-table .seg button{padding:3px 8px;border-left:1px solid var(--strong-line);background:transparent;color:var(--muted);font-size:12px;line-height:1.5;white-space:nowrap}
+.source-table .seg button:first-child{border-left:0}
+.source-table .seg button:not(:disabled):hover{background:var(--hover-surface);color:var(--ink)}
+.app .source-table .seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.source-table .seg button.is-included[aria-pressed=true]{background:var(--ok-surface);color:var(--ok-ink)}
+.source-table .seg button.is-pending[aria-pressed=true]{background:var(--warn-surface);color:var(--warn-ink)}
+.source-table .seg button.is-excluded[aria-pressed=true]{background:var(--error-surface);color:var(--error-ink)}
+.source-table .reason{max-width:220px;margin:6px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.source-table .reason b{color:var(--ink-2);font-weight:500}
+.source-table .reason>svg{display:inline;margin-right:5px;vertical-align:-2px}
+.sources-panel-box .link{color:var(--accent);font-weight:500}
+.sources-panel-box .link:hover:not(:disabled){text-decoration:underline;text-underline-offset:2px}
+.source-table .more-row td{color:var(--muted);font-size:12.5px;text-align:center}
+.source-table .proposal{margin:6px 0 0;font-size:12px;line-height:1.5}
+.sources-table-block>.source-focus{margin:0;padding:8px 12px;border-bottom:1px solid var(--line)}
+/* The selection bar (mockup .selbar): under the table on the side surface, held in view while the table scrolls. */
+.selbar{position:sticky;bottom:0;z-index:2;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--line);background:var(--sidebar-surface);font-size:13px}
+.selbar>b{font-weight:500}
+.selbar .spacer{flex:1}
+.selbar .selection-bar-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}

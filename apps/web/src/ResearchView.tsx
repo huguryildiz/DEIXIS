@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Inbox, Lightbulb, ListMinus, PencilLine, Search, Sparkles, Table2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, ApiError, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
+import { api, ApiError, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
 import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, seedSkipText, seedUseText } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { TextRecoveryContext } from './TextRecoveryContext'
@@ -38,8 +38,7 @@ import { ExportLinks, ExportMenu } from './research/ExportMenu'
 import { RevisionForm } from './research/RevisionForm'
 import { EarlierRevision, QuestionBubble } from './research/QuestionBubble'
 import { RunChip, TitleButton, TitleEditRow } from './research/Topbar'
-import { SelectionBar } from './research/SelectionBar'
-import { SourceList, type StateFilter } from './research/SourceList'
+import { SourcesPanel, type StateFilter } from './research/SourcesPanel'
 import { SplitPanel, StackPanel } from './research/SplitPanel'
 import { PanelStackContext, panelFromSegment, usePanelStack, usePhone, URL_PANELS } from './research/usePanelStack'
 import { RESEARCH_PANEL_EVENT, type ResearchPanelRequest } from './Shortcuts'
@@ -82,7 +81,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean; reportCitation?: boolean; view?: 'text' | 'pdf'; find?: boolean } | null>(null)
   // The claim of the latest answer whose citations the Citation panel shows (P11).
   const [citeClaimId, setCiteClaimId] = useState<string | null>(null)
-  const [pdfTarget, setPdfTarget] = useState<{ assetId: string } | null>(null)
+  // A PDF (opened on its PDF or plain-text tab) or a source opened from its title in the Sources table.
+  const [pdfTarget, setPdfTarget] = useState<{ assetId: string | null; sourceVersionId?: string; view?: 'text' | 'pdf' } | null>(null)
   const [busy, setBusy] = useState(false)
   const [events, setEvents] = useState<ActivityEvent[]>([])
   const [zoteroOpen, setZoteroOpen] = useState(false)
@@ -285,6 +285,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // after a failed late revision cites nothing while V1 is shown). The facts strip, the rail and the Cited tab use it.
   const citedWorkIds = new Set(answer?.claims.flatMap(c => c.evidence.map(e => e.work_id)) ?? [])
   const citedCount = citedWorkIds.size
+  // How many claims of the shown answer cite each work (the Sources rows' "cited in N claims" pill).
+  const citedClaims = new Map<string, number>()
+  answer?.claims.forEach(c => new Set(c.evidence.map(e => e.work_id)).forEach(w => citedClaims.set(w, (citedClaims.get(w) ?? 0) + 1)))
   // What its BibTeX export lists: the cited versions still in this research, counted as works.
   const citedVersions = new Set(answer?.claims.flatMap(c => c.evidence.map(e => e.source_version_id)) ?? [])
   const citedListed = new Set(view.sources.filter(s => citedVersions.has(s.source_version_id)).map(s => s.work_id)).size
@@ -429,6 +432,27 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     showTableFirst(table.id)
     openPanel('table')
   }, t('Rows added to {title}.', { title: table.title }))
+  // Saves source versions to the Library (F14), one request per 500; the message counts what the server reports saved
+  // and already there, and names a failed batch with what it left unsaved.
+  const saveToLibrary = async (ids: string[]) => {
+    const chosen = [...new Set(ids)]
+    let saved = 0, already = 0, done = 0
+    setBusy(true)
+    try {
+      for (let i = 0; i < chosen.length; i += 500) {
+        const batch = chosen.slice(i, i + 500)
+        const result = await libraryApi.saveItems(batch)
+        saved += result.saved.length; already += result.already_saved.length; done += batch.length
+      }
+      toast('success', saved === 0 ? t(already === 1 ? '{n} source was already in the Library.' : '{n} sources were already in the Library.', { n: already })
+        : [t(saved === 1 ? 'Saved {n} source to the Library.' : 'Saved {n} sources to the Library.', { n: saved }),
+          already > 0 && t(already === 1 ? '{n} was already there.' : '{n} were already there.', { n: already })].filter(Boolean).join(' '))
+    } catch (e) {
+      toast('error', [done > 0 && t(saved === 1 ? 'Saved {n} source to the Library.' : 'Saved {n} sources to the Library.', { n: saved }),
+        done > 0 && already > 0 && t(already === 1 ? '{n} was already there.' : '{n} were already there.', { n: already }),
+        t('{n} not saved: {error}', { n: chosen.length - done, error: errorText(e) })].filter(Boolean).join(' '))
+    } finally { setBusy(false) }
+  }
 
   const ScopeIcon = scopeOptions[view.scope.source_scope].icon
   const EffortIcon = effortOptions[view.scope.effort].icon
@@ -727,8 +751,21 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     </div>
 
     {/* Each former tab is a panel; its content is unchanged and renders into the panel frame while it is open. */}
-    <StackPanel name="sources" title={t('Sources')} icon={BookOpen}>
+    <StackPanel name="sources" title={t('Sources')} icon={BookOpen} className="sources-panel-box">
       <section className="sources-panel" aria-labelledby="sources-heading">
+      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourcesPanel sources={view.sources} cited={citedClaims} answerVersion={answer ? answerVersion : null} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
+        onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
+        onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
+        onOpen={source => setPdfTarget({ assetId: null, sourceVersionId: source.source_version_id, view: 'text' })}
+        onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
+        onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
+        onPlainText={(_, assetId) => setPdfTarget({ assetId, view: 'text' })}
+        onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} onRereadEquations={(source, assetId) => { void rereadEquations(source, assetId) }} pdfFinding={pdfFinding}
+        ocr={{ tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } }}
+        bar={{ researchId: id, active, onStartTable: askTableStart, onAddToTable: (table, ids) => { void addToTable(table, ids) }, onRemove: ids => { void askRemoval(ids) }, onSaveToLibrary: saveToLibrary }} /></TextRecoveryContext.Provider>
+      {/* The live tools the mockup panel has no place for (§2.2), under the table: what the list means, adding sources,
+         the English sentence, the flow counts, the search details and the removed sources. */}
+      <div className="sources-extras">
       <div className="workspace-pane-head"><div><h2 id="sources-heading">{t('Sources and access')}</h2><p>{t('Only included sources are used when the answer is written. Undecided and excluded sources are left out.')}</p></div>
         <div className="section-actions">
           {included > 0 && <ExportLinks researchId={id} sources="included" />}
@@ -746,15 +783,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
         {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
         <a href="#/trash">{t('Show in Trash')}</a></p>}
-      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourceList sources={view.sources} cited={citedWorkIds} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
-        onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
-        onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
-        onAbstract={source => source.access.abstract_passage_id && setPassageTarget({ passageId: source.access.abstract_passage_id, highlightText: null, fromCitation: false })}
-        onDiscoverPdf={source => { void discoverPdf(source) }} onAttachPdf={chooseSourcePdf} onAttachCandidate={(source, candidateId) => { void attachPdfCandidate(source, candidateId) }} onOpenPdf={(_, assetId) => setPdfTarget({ assetId })}
-        onRemoveAsset={removeSourcePdf} onReplaceAsset={chooseReplacement} onReextract={(source, assetId) => { void reextract(source, assetId) }} onRereadEquations={(source, assetId) => { void rereadEquations(source, assetId) }} pdfFinding={pdfFinding}
-        ocr={{ tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } }} /></TextRecoveryContext.Provider>
-      {picked.length > 0 && <SelectionBar researchId={id} count={picked.length} busy={busy} active={active} onStartTable={() => askTableStart(picked)} onAddToTable={table => { void addToTable(table, picked) }}
-        onRemove={() => { void askRemoval(picked) }} onClear={() => setPicked([])} />}
+      </div>
       </section>
     </StackPanel>
     <StackPanel name="queue" title={`${t('Awaiting your decision')} (${queueCount})`} icon={Inbox}>
@@ -804,7 +833,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       onOpenCitation={(passageId, highlightText, expectHighlight) => setPassageTarget({ passageId, highlightText, fromCitation: expectHighlight, reportCitation: true })}
       onChanged={async () => { await load(); onChanged() }} />}
     <CitationPanel researchId={id} claim={citeClaim} sources={view.sources} onClose={() => setCiteClaimId(null)} onOpen={openCitation} />
-    <PassageSheet asPanel={!passageTarget?.reportCitation} researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} initialView={pdfTarget ? 'pdf' : passageTarget?.view ?? 'text'}
+    <PassageSheet asPanel={!passageTarget?.reportCitation} researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} sourceVersionId={pdfTarget?.sourceVersionId ?? null} initialView={pdfTarget ? pdfTarget.view ?? 'pdf' : passageTarget?.view ?? 'text'}
       findOnOpen={Boolean(passageTarget?.find)} latestAnswer={answer?.status === 'structurally_valid' ? { version: answerVersion, claims: answer.claims } : null}
       actions={passageTarget?.reportCitation ? undefined : { busy, finding: pdfFinding, onFind: discoverPdf, onAttach: chooseSourcePdf, onReplace: chooseReplacement,
         onRemove: source => { void askRemoval([source.source_version_id]) }, onReextract: (source, assetId) => { void reextract(source, assetId) }, onRereadEquations: (source, assetId) => { void rereadEquations(source, assetId) },

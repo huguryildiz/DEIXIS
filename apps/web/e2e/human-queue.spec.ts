@@ -459,7 +459,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     const focusLine = page.locator('.source-focus')
     const pdfFilter = page.getByRole('combobox', { name: 'Filter sources by PDF availability' })
     await pdfFilter.click()
-    await page.getByRole('option', { name: /No PDF attached/ }).click()
+    await page.getByRole('option', { name: /^No PDF/ }).click()
     await expect(focusLine).toHaveCount(0)
     await expect(page.locator('.source-row', { hasText: OFF_TOPIC })).toHaveCount(2)
     // "Show all sources" clears the search and the PDF filter too, whatever was set before the focus.
@@ -475,7 +475,7 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await focusLine.getByRole('button', { name: 'Show all sources' }).click()
     await expect(focusLine).toHaveCount(0)
     await expect(search).toHaveValue('')
-    await expect(pdfFilter).toContainText('All PDFs')
+    await expect(pdfFilter).toContainText('PDF: All')
     const total = ((await (await api.context.get(`/api/researches/${rid}`)).json()).sources as { version_role: string }[]).length
     await expect(page.locator('.source-row')).toHaveCount(total)
     // Leaving the Sources tab ends the focus: coming back shows the whole list.

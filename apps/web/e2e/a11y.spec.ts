@@ -492,7 +492,7 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       await scan(page, '2a sources panel')
       const hospital = row(page, 'SYNTHETIC optimization of hospital visiting hours')
       await hospital.getByRole('button', { name: 'Exclude' }).click()
-      await expect(hospital.getByLabel('Reason for excluding this source')).toBeVisible()
+      await expect(page.locator('.why-bar').getByLabel('Reason for excluding this source')).toBeVisible()
       await scan(page, '2b sources exclude-reason form')
 
       // The fast path writes the first answer by itself when discovery ends, so the answer tab as it is before any
@@ -1318,11 +1318,11 @@ test.describe.serial('X05: A to G by keyboard', () => {
     await keyPanel(page, 'sources', 'Sources')
     const target = row(page, hospital)
     await tabTo(page, target.getByRole('button', { name: 'Exclude' }), 'Exclude')
-    const reason = target.getByLabel('Reason for excluding this source')
+    const reason = page.locator('.why-bar').getByLabel('Reason for excluding this source')
     await press(page, 'Enter', 'Exclude', () => expect(reason).toBeVisible())
     if (!(await reason.evaluate(el => el === document.activeElement))) await tabTo(page, reason, 'reason field')
     await page.keyboard.type('No optimization model; the title uses the word loosely.')
-    await tabTo(page, target.getByRole('button', { name: 'Save reason' }), 'Save reason')
+    await tabTo(page, page.locator('.why-bar').getByRole('button', { name: 'Save reason' }), 'Save reason')
     await press(page, 'Enter', 'Save reason', () => expect(target.getByText('Your reason: No optimization model; the title uses the word loosely.')).toBeVisible())
 
     const hostile = row(page, 'SYNTHETIC hostile abstract record')
@@ -1837,13 +1837,13 @@ test.describe('X05 regressions: asynchronous focus ownership', () => {
       await tabTo(page, filter, 'Filter sources while Exclude is pending')
       await page.keyboard.type('molecule')
       release()
-      await expect(target.getByLabel('Reason for excluding this source')).toBeVisible()
+      await expect(page.locator('.why-bar').getByLabel('Reason for excluding this source')).toBeVisible()
       await expect(target.getByRole('button', { name: 'Include', exact: true })).toBeEnabled()
       await quiet(page)
       await page.keyboard.type(' release')
       await expect(filter).toHaveValue('molecule release')
       await expect(filter).toBeFocused()
-      await expect(target.getByLabel('Reason for excluding this source')).toHaveValue('')
+      await expect(page.locator('.why-bar').getByLabel('Reason for excluding this source')).toHaveValue('')
     } finally { release(); await page.unrouteAll({ behavior: 'wait' }) }
   })
 

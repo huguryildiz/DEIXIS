@@ -154,24 +154,16 @@ def passed_abstract(ctx: Any, work_id: str) -> bool:
 def machine_screening(ctx: Any, work_id: str) -> dict[str, Any]:
     """What code and the model runs decided about a work, for the Sources list's "Model proposal" column (UI parity S13).
 
-    A person's decision is left out: it is the selection, shown beside this. Only current (not stale) decisions count.
-    The full-text stage answers when it decided, else the abstract stage, a candidate first as `work_outcome` orders it;
-    within a stage the work's head record is named first, then the newest. `passed_abstract` is the funnel's rule, so the
-    list and the funnel count the same works. `stage` is None when nothing current was decided."""
-    head = ctx.facts["heads"].get(work_id)
-    fresh = [d for d in ctx.facts["decisions"].get(work_id, [])
-             if d["decided_by"] != "human" and not ctx.decisions.is_stale(d, ctx.facts["stale_key"])]
-
-    def pick(rows: list[dict[str, Any]]) -> dict[str, Any]:
-        own = [d for d in rows if d["source_version_id"] == head]
-        return (own or rows)[-1]
-
-    fulltext = [d for d in fresh if d["stage"] == "fulltext"]
-    abstract = [d for d in fresh if d["stage"] == "abstract"]
-    chosen = (pick(fulltext) if fulltext else
-              pick([d for d in abstract if d["outcome"] == "candidate"] or abstract) if abstract else None)
-    return {"stage": chosen["stage"] if chosen else None, "outcome": chosen["outcome"] if chosen else None,
-            "reason_code": chosen["reason_code"] if chosen else None, "decided_by": chosen["decided_by"] if chosen else None,
+    The work's outcome by `work_outcome`'s own rules with the person's decisions taken out: a person's choice is the
+    selection, shown beside this. So two versions at opposite fresh full-text decisions stay `versions_disagree`, a
+    read person's file answers for the work, a stale code decision gives way to the abstract stage, and the version
+    named is the one `work_outcome` names. `passed_abstract` is the funnel's rule, so the list and the funnel count the
+    same works. `stage` is None when nothing was decided."""
+    facts = ctx.facts
+    machine = [d for d in facts["decisions"].get(work_id, []) if d["decided_by"] != "human"]
+    chosen = ctx.decisions.work_outcome(ctx.rid, work_id, {**facts, "decisions": {work_id: machine}}) or {}
+    return {"stage": chosen.get("stage"), "outcome": chosen.get("outcome"), "reason_code": chosen.get("reason_code"),
+            "decided_by": chosen.get("decided_by"), "source_version_id": chosen.get("source_version_id"),
             "passed_abstract": passed_abstract(ctx, work_id)}
 
 

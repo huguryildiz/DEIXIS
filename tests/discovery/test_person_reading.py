@@ -637,6 +637,38 @@ def test_a_work_without_a_person_s_file_reads_as_before(research):
     assert r.store.person_files(r.rid) == {}
 
 
+
+# ---- UI parity S13: the Sources list's "Model proposal" reads the same merge rules, without the person's decision ----
+
+def screening(r, svid):
+    from deixis.workflow import flow_counts
+    return flow_counts.machine_screening(queue.context(r.store, r.rid), r.lib.work_of(svid))
+
+
+def test_the_model_proposal_keeps_two_versions_disagreeing_and_leaves_the_person_s_choice_out(research):
+    r = research()
+    published, preprint = two_versions(r)  # the head record reads include from its own file
+    r.file(preprint, r.pages(), origin="download")
+    r.ds.record(r.rid, preprint, "criterion_absent")
+    shown = screening(r, published)
+    assert (shown["stage"], shown["outcome"], shown["reason_code"]) == ("fulltext", "unresolved", "versions_disagree")
+    # A person's include answers the work and closes the head record's code decision; the proposal column never shows
+    # the person's include, only the machine decision still open on the other version.
+    r.ds.record(r.rid, published, "human_include")
+    assert r.outcome(published)["decided_by"] == "human"
+    shown = screening(r, published)
+    assert (shown["outcome"], shown["reason_code"], shown["source_version_id"]) == ("criterion_not_met", "criterion_absent", preprint)
+
+
+def test_the_model_proposal_names_the_read_person_s_file_over_the_head_record(research):
+    r = research()
+    published, preprint = two_versions(r, code="criterion_absent")
+    r.attach(preprint)
+    r.drain()
+    shown = screening(r, published)
+    assert (shown["outcome"], shown["reason_code"], shown["source_version_id"]) == ("include", "all_parts_verified", preprint)
+
+
 def included_work(r, pages=None, origin="download"):
     """A work the person included, with a file of `origin` in use (none when `pages` is empty)."""
     svid = r.work()

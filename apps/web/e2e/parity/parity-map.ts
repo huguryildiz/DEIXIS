@@ -138,9 +138,12 @@ export const SURFACES: Surface[] = [
   // first claim that cites a PDF page, as the mockup's cob22 is a PDF work) and Source details from that entry.
   { id: 'report-panel', mock: "setScenario('ok'); st.version = 2; st.viewVer = 2; openPanel('report')", app: '#/research/{research}', ready: '.research-topbar',
     appAct: async page => { await page.locator('#research-answer').click(); await page.locator('.report-document-head h1').waitFor() } },
-  // S21: the same report with Show changes on (P4): the head's button reads Hide changes and the "Changes since V1" box
-  // sits under the meta line. The box's lines are the fixture's stored differences between its V1 and V2.
-  { id: 'report-changes', mock: "setScenario('ok'); st.version = 2; st.viewVer = 2; st.compare = true; openPanel('report')", app: '#/research/{research}', ready: '.research-topbar',
+  // S21: the same report with Show changes on (P4): the head's button reads Hide changes, the "Changes since V1" box sits
+  // under the meta line and the text carries the marks. The mockup is put in its own late-full-text state (its `late`
+  // action without the wait: akr18's PDF found, V2 written); the fixture's V2 of the [parity] research differs from V1
+  // by the scripted SYNTHETIC revision of fixture_server.parity_revision (a claim's depth, a new claim, the limit).
+  { id: 'report-changes', mock: "setScenario('ok'); S.akr18.acc = 'pdf'; S.akr18.pg = 11; st.pdf.status.akr18 = 'found'; st.version = 2; st.viewVer = 2; st.late = { k: 'akr18', v: 2 }; st.compare = true; openPanel('report')",
+    app: '#/research/{research}', ready: '.research-topbar',
     appAct: async page => {
       await page.locator('#research-answer').click()
       await page.locator('.split-panel-head .report-compare').click()
@@ -695,17 +698,17 @@ export const PAIRS: Pair[] = [
   { id: 'report-panel.badge-abs', surface: 'report-panel', mock: '.report .badge-s.v-abs', app: '.report-content .badge-s.v-abs', checks: ['type', 'colour'], text: true, unordered: true, states: [], status: 'active' },
   { id: 'report-panel.refs', surface: 'report-panel', mock: '.report .refs li', app: '.report-content .refs > li', checks: ['type'], states: [], status: 'active' },
   { id: 'report-panel.check', surface: 'report-panel', mock: '.report .check', app: '.report-content .check', checks: ['type', 'colour'], states: [], status: 'active' },
-  // S21 the answer diff (P4): Hide changes in the head, the box and its heading. The marks in the text (`ins`, `del`) are
-  // pending: the [parity] fixture's V1 and V2 cite the same passages with the same wording, so its report has none to
-  // compare; fast-path-late-revision.spec checks the marks on [late-pdf] against the mockup's --ins/--del colours.
+  // S21 the answer diff (P4): Hide changes in the head, the box and its heading, and the marks: a depth badge struck out
+  // and its replacement (`del.badge-s`, `ins.badge-s`), and the limit removed and added (`del`, `ins` in the text).
   { id: 'report-changes.compare', surface: 'report-changes', widths: DESK, mock: '.panel .p-head [data-act="compare"]', app: '.split-panel-head .report-compare', checks: ['chrome', 'type', 'colour'], text: true, unordered: true, states: [], status: 'active' },
   { id: 'report-changes.compare@390', surface: 'report-changes', widths: PHONE, mock: '.panel .p-head [data-act="compare"]', app: '.split-panel-head .report-compare', checks: ['colour'], unordered: true, states: [], status: 'active' },
   { id: 'report-changes.box', surface: 'report-changes', mock: '.report .changes', app: '.report-panel .changes', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
   { id: 'report-changes.heading', surface: 'report-changes', mock: '.report .changes > b', app: '.report-panel .changes > b', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
-  { id: 'report-changes.ins', surface: 'report-changes', mock: '.report ins', app: '.report-content ins', checks: ['type', 'colour'], states: [], status: 'pending:S28',
-    why: 'The [parity] research\'s V1 and V2 do not differ, so its report has no added text; the [late-pdf] spec checks the marks.' },
-  { id: 'report-changes.del', surface: 'report-changes', mock: '.report del', app: '.report-content del', checks: ['type', 'colour'], states: [], status: 'pending:S28',
-    why: 'The [parity] research\'s V1 and V2 do not differ, so its report has no removed text; the [late-pdf] spec checks the marks.' },
+  { id: 'report-changes.badge-del', surface: 'report-changes', mock: '.report del.badge-s', app: '.report-content del.badge-s', checks: ['type', 'colour'], unordered: true, states: [], status: 'active' },
+  // The added badge's colour is the "Full text" badge's own (S12: accent; the mockup's --pdf), which no report pair compares.
+  { id: 'report-changes.badge-ins', surface: 'report-changes', mock: '.report ins.badge-s', app: '.report-content ins.badge-s', checks: ['type'], unordered: true, states: [], status: 'active' },
+  { id: 'report-changes.del', surface: 'report-changes', mock: '.report p > del:not(.badge-s)', app: '.report-content .plain-list del', checks: ['type', 'colour'], unordered: true, states: [], status: 'active' },
+  { id: 'report-changes.ins', surface: 'report-changes', mock: '.report p > ins:not(.badge-s)', app: '.report-content .plain-list ins', checks: ['type', 'colour'], unordered: true, states: [], status: 'active' },
   // S12 Citation panel (P11): one entry per cited passage.
   { id: 'cite-panel.title', surface: 'cite-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
     icon: { mock: 'link', app: 'link' }, text: true, states: [], status: 'active' },

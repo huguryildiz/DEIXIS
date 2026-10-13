@@ -64,6 +64,17 @@ test.describe('answerDiff (S21)', () => {
     // Two claims of the same text match two, not one.
     const twice = diffAnswers(answer('a5', 1, [claim('k1', 'SYNTHETIC twin.', []), claim('k2', 'SYNTHETIC twin.', [])]), answer('a6', 2, [claim('n1', 'SYNTHETIC twin.', [])]))
     expect([twice.added, twice.removedClaims.map(c => c.id)]).toEqual([0, ['k2']])
+    // Two claims of the same text that only swap places (each keeping its own passages and depth) are not a change;
+    // order alone would pair each with the other's citations and report false citation and depth changes.
+    const pair = [claim('k1', 'SYNTHETIC twin.', [ev('p1', 'w1', 'abstract')], 'abstract'), claim('k2', 'SYNTHETIC twin.', [ev('p2', 'w2', 'pdf_page')], 'full_text')]
+    const swapped = diffAnswers(answer('a8', 1, pair), answer('a9', 2, [
+      claim('n1', 'SYNTHETIC twin.', [ev('p2', 'w2', 'pdf_page')], 'full_text'), claim('n2', 'SYNTHETIC twin.', [ev('p1', 'w1', 'abstract')], 'abstract')]))
+    expect([swapped.claims.size, swapped.citationChanged, swapped.basisChanges, swapped.removedClaims, swapped.empty]).toEqual([0, 0, [], [], true])
+    // When one twin's citations did change, it pairs with the base twin left over after the exact match.
+    const oneMoved = diffAnswers(answer('a10', 1, pair), answer('a11', 2, [
+      claim('n1', 'SYNTHETIC twin.', [ev('p3', 'w3', 'pdf_page')], 'full_text'), claim('n2', 'SYNTHETIC twin.', [ev('p1', 'w1', 'abstract')], 'abstract')]))
+    expect([...oneMoved.claims.keys()]).toEqual(['n1'])
+    expect(oneMoved.claims.get('n1')).toEqual({ added: false, basis: null, addedPassages: new Set(['p3']), removedEvidence: [pair[1].evidence[0]] })
     // Different question revisions are named.
     expect(diffAnswers(base, answer('a7', 2, base.claims, { scope_revision: 2 })).scopes).toEqual({ base: 1, shown: 2 })
   })

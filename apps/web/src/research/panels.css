@@ -378,14 +378,14 @@
 .report-panel .changes ul ul{list-style:circle}
 .report-panel .changes p{margin:0}
 .report-panel .changes .changes-foot{margin-top:6px;color:var(--muted);font-size:12px}
-.report-panel .report-document ins{padding:0 2px;border-radius:2px;background:var(--ins);color:inherit;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.report-panel .report-document ins{padding:0 2px;border-radius:2px;background:var(--ins);color:var(--ink);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
 .report-panel .report-document del{padding:0 2px;border-radius:2px;background:var(--del);color:var(--muted);text-decoration:line-through}
 .report-panel .report-document ins.cite-ins{padding:0;background:none;text-decoration:none}
 .report-panel .report-document ins.cite-ins .cite-chip{background:var(--ins);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
 .report-panel .report-document del.cite-del{display:inline;background:var(--del);color:var(--muted);text-decoration:line-through;cursor:default}
-.report-panel .report-document :is(ins,del).badge-s{padding:1px 5px;border-radius:4px}
-.report-panel .report-document ins.badge-s{background:var(--ins)}
-.report-panel .report-document del.badge-s{background:var(--del);color:var(--muted)}
+/* A depth badge keeps its own surface, as the mockup's `.badge-s` does over `ins`/`del`; the underline or strike-through
+   and the hidden "Added:"/"Removed:" tell the change. */
+.report-panel .report-document :is(ins,del).badge-s{padding:1px 5px;border-radius:4px;background:var(--ui-accent)}
 .report-panel .report-content .gap{margin:0 0 12px;padding:2px 0 2px 12px;border-left:3px solid var(--tone-uncertain);color:var(--ink-2)}
 /* A claim's marks (mockup `.badge-s`): the review's verdict, an interpretation, the reading depth of what it cites. */
 .split-panel .badge-s,.report-sheet .badge-s{display:inline-flex;align-items:center;gap:4px;margin-left:4px;padding:1px 5px;border:0;border-radius:4px;background:var(--ui-accent);color:var(--muted);font-family:var(--font-sans);font-size:10.5px;font-weight:500;line-height:normal;letter-spacing:0;white-space:nowrap;vertical-align:1px}

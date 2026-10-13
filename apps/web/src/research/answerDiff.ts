@@ -2,7 +2,7 @@ import type { Answer, Claim, Evidence, Limitation } from '../api'
 
 // The answer diff (UI parity S21, P4/F11): what differs between two stored answer versions of one research, computed in
 // the browser from the two records the view already holds. Nothing is inferred: claims are matched by their text
-// (whitespace aside), a claim with the same text is compared by the passages it cites and its stored reading depth, and
+// (whitespace aside; among equal texts, first the one citing the same passages), a claim with the same text is compared by the passages it cites and its stored reading depth, and
 // the limits are matched by kind and text. Claim reviews, titles and the other parts are not compared.
 
 export type Basis = NonNullable<Claim['evidence_basis']>
@@ -69,15 +69,37 @@ function matcher<T>(items: T[], key: (item: T) => string) {
   }
 }
 
+// A claim's text with the set of passages it cites: two claims of the same text that only swap places match their own
+// counterparts, so a reordering never reads as changed citations or depth.
+const citedKey = (c: Claim) => `${norm(c.text)}\u0000${[...new Set(c.evidence.map(e => e.passage_id))].sort().join('\u0000')}`
+
+// Pairs each shown claim with a base claim: first one of the same text citing the same passages, then, for the claims
+// left, one of the same text in order. Each base claim is used once.
+function pairClaims(base: Claim[], shown: Claim[]) {
+  const exact = matcher(base, citedKey)
+  const used = new Set<string>()
+  const pairs = new Map<string, Claim>()
+  for (const claim of shown) {
+    const match = exact.take(citedKey(claim))
+    if (match) { pairs.set(claim.id, match); used.add(match.id) }
+  }
+  const byText = matcher(base.filter(c => !used.has(c.id)), c => norm(c.text))
+  for (const claim of shown) {
+    if (pairs.has(claim.id)) continue
+    const match = byText.take(norm(claim.text))
+    if (match) { pairs.set(claim.id, match); used.add(match.id) }
+  }
+  return { pairs, unmatched: base.filter(c => !used.has(c.id)) }
+}
+
 export function diffAnswers(base: Answer, shown: Answer): AnswerDiff {
   const claims = new Map<string, ClaimChange>()
-  const bases = matcher(base.claims, c => norm(c.text))
+  const { pairs, unmatched } = pairClaims(base.claims, shown.claims)
   let added = 0
   let citationChanged = 0
   const transitions = new Map<string, { from: Basis; to: Basis; count: number }>()
-  const removedOrder = new Map(base.claims.map((c, i) => [c.id, i]))
   for (const claim of shown.claims) {
-    const before = bases.take(norm(claim.text))
+    const before = pairs.get(claim.id)
     if (!before) {
       added += 1
       claims.set(claim.id, { added: true, basis: null, addedPassages: new Set(), removedEvidence: [] })
@@ -97,7 +119,7 @@ export function diffAnswers(base: Answer, shown: Answer): AnswerDiff {
     }
     claims.set(claim.id, { added: false, basis, addedPassages, removedEvidence })
   }
-  const removedClaims = bases.rest().sort((a, b) => removedOrder.get(a.id)! - removedOrder.get(b.id)!)
+  const removedClaims = unmatched
 
   // Per work: the passage kinds each answer cites for it.
   const kinds = (answer: Answer) => {

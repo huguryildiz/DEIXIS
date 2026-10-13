@@ -609,6 +609,7 @@ class ScriptedCodex:
         self.parity_labels: dict[str, dict[str, str]] = {}  # "[parity]": each research's abstract label per title
         self.paused: set[str] = set()  # "[pause-at-read]": researches whose pause was asked once
         self.seed_tasks: dict[str, asyncio.Task] = {}  # "[stale-seed]": one file replacement per research
+        self.parity_first_answer: dict[str, str] = {}  # "[parity]": each research's first grounded-answer run (S21)
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         return {"connection": "codex", "ready": True, "reason": None, "installed": True, "signed_in": True,
@@ -866,7 +867,34 @@ class ScriptedCodex:
             if "[parity]" in question:
                 # Two notes of what the passages did not cover, as the mockup's two "Suggested" cards on Home (S5b).
                 output["unanswered_aspects"] = list(PARITY_UNANSWERED)
+                if self.parity_first_answer.setdefault(si["research_id"], si["run_id"]) != si["run_id"]:
+                    self.parity_revision(si, output)
         return output
+
+    @staticmethod
+    def parity_revision(si: dict[str, Any], output: dict[str, Any]) -> None:
+        """"[parity]", every answer after the research's first (UI parity S21, the answer diff): the first claim citing an
+        abstract keeps its wording but cites the first PDF page another claim cites (its depth badge changes from abstract to
+        full text), one new claim cites that abstract (so the cited works stay the same), and the limitation is
+        replaced. SYNTHETIC: a scripted difference between two stored versions, not model behaviour."""
+        kinds = {p["passage_id"]: p["reading_depth"] for p in si["passages"]}
+        claims, anchors = output["claims"], output["citation_anchors"]
+        moved = next((c for c in claims if kinds.get(c["passage_ids"][0]) == "abstract"), None)
+        cited = {pid for c in claims for pid in c["passage_ids"]}
+        page = next((p for p in si["passages"] if p["reading_depth"] != "abstract" and p["passage_id"] in cited), None)
+        if moved is None or page is None:
+            return
+        abstract = next(p for p in si["passages"] if p["passage_id"] == moved["passage_ids"][0])
+        quote = lambda p: " ".join(p["text"].split())[:600]  # noqa: E731
+        moved["passage_ids"] = [page["passage_id"]]
+        for anchor in anchors:
+            if anchor["claim_label"] == moved["claim_label"]:
+                anchor.update(passage_id=page["passage_id"], quote=quote(page))
+        claims.append({"claim_label": "c999", "section": moved["section"], "support_type": "source_stated",
+                       "text": "It has been reported that a SYNTHETIC later version adds this claim.", "passage_ids": [abstract["passage_id"]]})
+        anchors.append({"claim_label": "c999", "passage_id": abstract["passage_id"], "quote": quote(abstract)})
+        output["limitations"] = [{"kind": "scope", "text": "SYNTHETIC: a later answer version states this limit instead.",
+                                  "source_ids": [page["source_id"]]}]
 
     async def replace_seed(self, research_id: str) -> None:
         """"[stale-seed]": once no run of the research is active, put SYNTHETIC replacement pages in place of its seed's

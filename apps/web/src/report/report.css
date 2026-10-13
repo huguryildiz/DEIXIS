@@ -140,3 +140,5 @@
 .evidence-report-claim-meta .evview td:nth-child(2){color:var(--muted)}
 .evidence-report-claim-meta .evview .edited{display:inline-block;margin-left:6px;padding:0 5px;border-radius:4px;background:var(--warn-surface);color:var(--warn-ink);font-size:11px}
 .ecite-detail .ecite-passage-status{align-items:flex-start}
+/* The evidence report keeps the mockup `.report` padding on a phone too (the answer report narrows it at 760px). */
+@media(max-width:760px){.erep-panel .evidence-report-document{padding:26px 30px 60px}}

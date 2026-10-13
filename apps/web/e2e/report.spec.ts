@@ -653,3 +653,55 @@ test('a bad cell anchor fails after one repair and displays only the stored reas
     expect((await (await api.get(researchPath)).json()).runs.find((item: { id: string }) => item.id === run.id).status).toBe('paused')
   } finally { await api.dispose(); await page.close(); await server.stop() }
 })
+
+test('an open Citation panel shows a PDF replaced or a newer text extraction without closing', async ({ browser }) => {
+  // Sol round 2: the passage status is read again on every recorded event and from the report's freshness record; the
+  // frozen value, passage and anchor stay. The changed statuses are answered by route patches on SYNTHETIC records.
+  const server = new ReportServer()
+  await server.start()
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const api: APIRequestContext = await apiRequest.newContext({ baseURL: server.url(), extraHTTPHeaders: { origin: server.url() } })
+  try {
+    const researchId = await readyResearch(page, server, 'SYNTHETIC: How are molecule release schedules compared?')
+    await page.locator('.evidence-toolbar').getByRole('button', { name: 'Write a manuscript draft' }).click()
+    await showAnswer(page)
+    await expect(page.getByRole('button', { name: 'Open evidence report' })).toContainText('Evidence report · V1', { timeout: 60_000 })
+    await page.getByRole('button', { name: 'Open evidence report' }).click()
+    const chips = reportSheet(page).locator('.cite-chip')
+    await expect(chips.first()).toBeVisible()
+    await chips.first().click()
+    const citation = panel(page, 'Citation')
+    await expect(citation.locator('mark').first()).toBeVisible()
+    await expect(citation.locator('.ecite-passage-status')).toHaveCount(0)
+    const heading = await citation.locator('h1').innerText()
+    const quote = await citation.locator('.quote').innerText()
+    const csrf = (await (await api.get('/api/session')).json()).csrf_token as string
+    const touch = async (title: string) => {
+      const research = (await (await api.get(`/api/researches/${researchId}`)).json()).research
+      const response = await api.post(`/api/researches/${researchId}/title`, { data: { title, expected_version: research.version }, headers: { 'x-deixis-csrf': csrf } })
+      expect(response.ok(), await response.text()).toBe(true)
+    }
+    // current → pdf_replaced: the passage read says so.
+    await page.route('**/api/researches/*/passages/*', async route => {
+      const response = await route.fetch()
+      await route.fulfill({ response, json: { ...await response.json(), evidence_status: 'pdf_replaced' } })
+    })
+    await touch('SYNTHETIC release schedules, renamed once')
+    await expect(citation.locator('.ecite-passage-status')).toContainText('This passage was read from a PDF that has since been replaced')
+    await page.unroute('**/api/researches/*/passages/*')
+    // → text_superseded: the report's freshness record says so while the passage read is current again.
+    await page.route(url => /\/api\/researches\/[^/]+\/reports\/[^/]+$/.test(url.pathname), async route => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      const response = await route.fetch()
+      const body = await response.json() as { sections: { claims: { evidence: { passage_id: string | null; open_passage_id: string | null; source_version_id: string }[] }[] }[]; passage_freshness: { affected: unknown[] } }
+      const link = body.sections.flatMap(section => section.claims.flatMap(claim => claim.evidence)).find(item => item.open_passage_id ?? item.passage_id)!
+      body.passage_freshness.affected = [{ passage_id: link.open_passage_id ?? link.passage_id, source_version_id: link.source_version_id, evidence_status: 'text_superseded', passage_extraction_id: null, current_extraction_id: null, used_by: [] }]
+      await route.fulfill({ response, json: body })
+    })
+    await touch('SYNTHETIC release schedules, renamed twice')
+    await expect(citation.locator('.ecite-passage-status')).toContainText('This passage comes from an earlier text extraction of its PDF')
+    await expect(citation.locator('h1')).toHaveText(heading)
+    await expect(citation.locator('.quote')).toHaveText(quote)
+    await expect(citation.locator('mark').first()).toBeVisible()
+  } finally { await api.dispose(); await page.close(); await server.stop() }
+})

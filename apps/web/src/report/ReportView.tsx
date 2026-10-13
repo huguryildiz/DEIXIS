@@ -437,7 +437,7 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
         {review?.status === 'reviewed' && review.findings.length > 0 && <details className="evidence-report-history"><summary><ChevronRight size={14} aria-hidden className="closed" /><ChevronDown size={14} aria-hidden className="opened" />{t('Review findings ({k})', { k: review.findings.length })}</summary><p>{t('Model findings')}</p><ul>{review.findings.map((finding, index) => <li key={index}>{finding.section_id ? labels(finding.section_id) : t('Report')} · {t(reviewCodes[finding.code] ?? 'Other')} · {finding.text}</li>)}</ul></details>}
       </>}
     </article></div>
-    {report && citing && <EvidenceCitePanel key={citing.link_id} researchId={researchId} report={report} link={citing} onClose={() => setCiting(null)}
+    {report && citing && <EvidenceCitePanel key={citing.link_id} researchId={researchId} report={report} link={citing} eventCursor={view.last_event_id} onClose={() => setCiting(null)}
       onOpenPassage={() => cited(citing)} onOpenCell={report.table_id ? cell => onOpenCell(report.table_id!, cell) : undefined} />}
   </StackPanel>
 }
@@ -463,8 +463,8 @@ function EvidenceViewCells({ report, claim }: { report: ReportDetail; claim: Rep
 // The stored citation of one report chip (mockup `ecitePanel`, P31), stacked on the report: the cell value as frozen
 // with this report, the stored passage around its located anchor, and whether the cell changed since. Nothing is
 // recomputed: the value is the report's TABLE I record and the passage the stored one the citation opens.
-function EvidenceCitePanel({ researchId, report, link, onClose, onOpenPassage, onOpenCell }: {
-  researchId: string; report: ReportDetail; link: ReportLink; onClose: () => void; onOpenPassage: () => void
+function EvidenceCitePanel({ researchId, report, link, eventCursor, onClose, onOpenPassage, onOpenCell }: {
+  researchId: string; report: ReportDetail; link: ReportLink; eventCursor: number | null | undefined; onClose: () => void; onOpenPassage: () => void
   onOpenCell?: (cell: { columnId: string; sourceId: string }) => void
 }) {
   const table = report.table_i
@@ -478,12 +478,17 @@ function EvidenceCitePanel({ researchId, report, link, onClose, onOpenPassage, o
   const anchor = link.anchor_match && link.open_passage_id ? link.anchor_text : null
   const [passage, setPassage] = useState<Passage | null>(null)
   const [error, setError] = useState('')
+  // Read again on every recorded event, so a PDF replaced or a text extraction published while the panel is open shows
+  // here; the stored passage text and its anchor stay those of the citation (a passage's text does not change).
   useEffect(() => {
     if (!passageId) return
     let live = true
-    api.passage(researchId, passageId).then(value => { if (live) setPassage(value) }, (e: Error) => { if (live) setError(e.message) })
+    api.passage(researchId, passageId).then(value => { if (live) { setPassage(value); setError('') } }, (e: Error) => { if (live) setError(e.message) })
     return () => { live = false }
-  }, [researchId, passageId])
+  }, [researchId, passageId, eventCursor])
+  // The report's own freshness record (refreshed with the report) and the passage read: a status that is not current wins.
+  const recorded = report.passage_freshness?.affected.find(item => item.passage_id === passageId || item.passage_id === link.passage_id)?.evidence_status
+  const evidenceStatus = recorded && recorded !== 'current' ? recorded : passage?.evidence_status ?? 'current'
   const quote = passage ? excerpt(passage.text, anchor) : null
   const located = Boolean(anchor && quote?.located)
   const heading = cell ? frozenCellText(cell, column?.options ?? null) : ref?.title ?? name
@@ -505,8 +510,8 @@ function EvidenceCitePanel({ researchId, report, link, onClose, onOpenPassage, o
       {passage && <div className="loc"><span>{name} · {locatorText(passage)}</span><span className="loc-dot" aria-hidden>·</span>
         {located ? <span className="ok-t">{t('Anchor located in the stored passage; whether it supports the sentence was not checked.')}</span>
           : <span className="warn-t">{t('The anchor was not located in this passage; it opens without a mark.')}</span>}</div>}
-      {passage && (passage.evidence_status !== 'current' || passage.removed_from_research) && <div className="notice warn ecite-passage-status"><TriangleAlert size={15} aria-hidden /><span>{[
-        passage.evidence_status !== 'current' ? t(passageStatusText[passage.evidence_status]) : '',
+      {passage && (evidenceStatus !== 'current' || passage.removed_from_research) && <div className="notice warn ecite-passage-status"><TriangleAlert size={15} aria-hidden /><span>{[
+        evidenceStatus !== 'current' ? t(passageStatusText[evidenceStatus]) : '',
         passage.removed_from_research ? t('The source has since been removed from this research.') : '',
       ].filter(Boolean).join(' ')}</span></div>}
       {changes.length > 0 && <div className="notice warn"><TriangleAlert size={15} aria-hidden /><div className="nb">

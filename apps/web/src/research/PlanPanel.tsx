@@ -103,8 +103,13 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
   const [saving, setSaving] = useState(false)
   const [word, setWord] = useState('')
   const [block, setBlock] = useState<Block>('task')
+  // Asking to read the plan again after a refresh failed.
+  const [retry, setRetry] = useState(0)
   const request = useRef(0)
   const savingRef = useRef(false)
+  // A start the server refused for a newer revision: that revision stays a conflict until the person chooses, even
+  // though the draft equals the plan just saved.
+  const pinned = useRef(false)
   const state = useRef<{ loaded: SearchPlanView | null; draft: Draft | null }>({ loaded: null, draft: null })
   useEffect(() => { state.current = { loaded, draft } })
   const addField = useRef<HTMLInputElement>(null)
@@ -127,17 +132,17 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
         setLoaded(fresh)
         if (!shown || !edited) setDraft(fresh.plan ? draftOf(fresh.plan) : null)
         setConflict(null)
-      } else if (!edited) {
+      } else if (!edited && !pinned.current) {
         setLoaded(fresh); setDraft(fresh.plan ? draftOf(fresh.plan) : null); setConflict(null); setRefused(null)
       } else setConflict(fresh)
     }, e => { if (ask === request.current) setLoadError(errorText(e)) })
-  }, [researchId, eventCursor, version])
+  }, [researchId, eventCursor, version, retry])
 
   const active = view.runs.some(run => ACTIVE.has(run.status))
   const own = loaded ? ownPlan(loaded) : false
 
-  const rebase = () => { if (conflict) { setLoaded(conflict); setConflict(null) } }
-  const discard = () => { if (conflict) { setLoaded(conflict); setDraft(conflict.plan ? draftOf(conflict.plan) : null); setConflict(null); setRefused(null) } }
+  const rebase = () => { if (conflict) { pinned.current = false; setLoaded(conflict); setConflict(null) } }
+  const discard = () => { if (conflict) { pinned.current = false; setLoaded(conflict); setDraft(conflict.plan ? draftOf(conflict.plan) : null); setConflict(null); setRefused(null) } }
 
   const addWord = () => {
     const text = word.trim()
@@ -162,8 +167,15 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
     const shown = loaded
     if (!shown?.plan || !draft || saving || conflict) return
     setSaving(true); savingRef.current = true; setRefused(null)
-    let revision = shown.scope_revision
+    // The plan view the search is started for: the one shown, or the one the save answered with.
+    let current = shown
     let saved = false
+    // A newer revision read after a refusal: shown as a conflict that keeps the draft, unless the stored plan is the same.
+    const reread = async (pin = false) => {
+      const ask = ++request.current
+      const fresh = await searchPlanApi.get(researchId).catch(() => null)
+      if (fresh && ask === request.current) { if (baseKey(fresh) === baseKey(current)) setLoaded(fresh); else { pinned.current = pin; setConflict(fresh) } }
+    }
     try {
       const plan = planOf(shown.plan, draft)
       if (!(own && same(plan, shown.plan))) {
@@ -171,30 +183,30 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
           const next = await searchPlanApi.save(researchId, shown.expected_version, plan)
           request.current++  // a read sent before the save answers with the earlier revision: drop it
           setLoaded(next); setDraft(next.plan ? draftOf(next.plan) : null)
-          revision = next.scope_revision
+          current = next
           saved = true
         } catch (e) {
           if (e instanceof ApiError && e.status === 422) {
             const issues = (e.details?.issues as Issue[] | undefined) ?? []
             setRefused(issues.length ? issues : [{ code: e.code ?? 'refused', path: '/', message: e.message }])
           } else if (e instanceof ApiError && e.status === 409) {
-            const ask = ++request.current
-            const fresh = await searchPlanApi.get(researchId).catch(() => null)
-            // A newer version with the same stored plan (a rename) only moves the version the next save sends.
-            if (fresh && ask === request.current) { if (baseKey(fresh) === baseKey(shown)) setLoaded(fresh); else setConflict(fresh) }
+            await reread()
             toast('warning', t('Not saved: the research changed after this plan was read. Your draft is kept.'))
           } else toast('error', t('The plan was not saved: {error}', { error: errorText(e) }))
           return
         }
       }
       try {
-        const run = await api.startRun(researchId, 'discovery', crypto.randomUUID())
+        // Bound to the revision that holds this plan (D14): if another window saved a newer one meanwhile, the server
+        // refuses and creates no run, so a different plan is never searched under this message.
+        const run = await api.startRun(researchId, 'discovery', crypto.randomUUID(), current.scope_revision)
         onAnnounced(run.id)
-        toast('success', saved ? t('Plan saved as revision {n} of the question. The search started.', { n: revision })
-          : t('The search started with the plan saved for revision {n}.', { n: revision }))
+        toast('success', saved ? t('Plan saved as revision {n} of the question. The search started.', { n: run.scope_revision })
+          : t('The search started with the plan saved for revision {n}.', { n: run.scope_revision }))
         onClose()
       } catch (e) {
-        toast(saved ? 'warning' : 'error', saved ? t('Plan saved as revision {n} of the question. The search did not start: {error}', { n: revision, error: errorText(e) })
+        if (e instanceof ApiError && e.status === 409) await reread(true)
+        toast(saved ? 'warning' : 'error', saved ? t('Plan saved as revision {n} of the question. The search did not start: {error}', { n: current.scope_revision, error: errorText(e) })
           : t('The search did not start: {error}', { error: errorText(e) }))
       }
     } finally {
@@ -231,6 +243,10 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
 
   return <div className="plan-panel mk pad">
     <p>{[origin, where, change].filter(Boolean).join(' ')}</p>
+    {loadError && <div className="notice bad plan-refresh" role="alert"><TriangleAlert aria-hidden /><div className="nb">
+      <span>{t('Could not read the search plan again: {error}. The plan shown is the one last read; your draft is kept.', { error: loadError })}</span>
+      <div className="acts"><button type="button" className="ghost" onClick={() => setRetry(n => n + 1)}>{t('Try again')}</button></div>
+    </div></div>}
     {conflict && <div className="notice warn" role="alert"><TriangleAlert aria-hidden /><div className="nb">
       <span>{conflict.scope_revision !== loaded.scope_revision
         ? t('Revision {n} of this research was saved while you edited, in another window or by choosing PDFs. Your draft is kept.', { n: conflict.scope_revision })

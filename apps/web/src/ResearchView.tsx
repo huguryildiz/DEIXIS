@@ -399,8 +399,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <Notice tone="attention">{t('Some PDF pages have no extracted text; the search uses only the readable passages.')}</Notice>}
     {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
   </> : null
-  // The thread's line about them, while something waits on the person or before the first search.
-  const seedLine = view.scope.source_scope === 'attached_and_academic' && (view.scope.seed_status !== 'ready' || !view.runs.some(r => r.kind === 'discovery'))
+  // The thread's line about them, while something waits on the person or while the current question revision has not
+  // searched yet (a new revision, e.g. after accepting a changed PDF's text, has no plan step to open the panel from).
+  const seedLine = view.scope.source_scope === 'attached_and_academic'
+    && (view.scope.seed_status !== 'ready' || !view.runs.some(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision))
   const startTitle = () => act(() => api.startRun(id, 'research_title', crypto.randomUUID()))
   const upload = (list: FileList | null) => list && act(async () => { for (const file of Array.from(list)) {
     const next = await api.upload(id, file)
@@ -747,8 +749,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
                   <FileText size={15} aria-hidden /><span>{t('Evidence report')}{item.report_version ? ` · V${item.report_version}` : ''}</span>
                 </DropdownMenuItem>)}
             </>}
-            {(hasAcademic && view.search_runs.length > 0) || answer ? <DropdownMenuSeparator /> : null}
+            {hasAcademic || answer ? <DropdownMenuSeparator /> : null}
             {hasAcademic && view.search_runs.length > 0 && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !seedSearchReady} onClick={() => { void startDiscovery() }}><Search size={15} aria-hidden /><span>{t('Search again')}</span></DropdownMenuItem>}
+            {/* The Search plan panel (S23b) from anywhere: its plan step exists only once the current revision searched. */}
+            {hasAcademic && <DropdownMenuItem className="research-menu-placement" onClick={() => { rowChosen.current = true; openPanel('plan', { opener: moreButton.current }) }}><PencilLine size={15} aria-hidden /><span>{t('Search plan')}</span></DropdownMenuItem>}
             {answer && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !(included || answersWithoutInclude)} onClick={() => { void startAnswer() }}><Sparkles size={15} aria-hidden /><span>{t('Generate a new answer')}</span></DropdownMenuItem>}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" disabled={busy || active} onClick={() => { void moveToTrash() }}><Trash2 size={15} aria-hidden />{t('Move to Trash')}</DropdownMenuItem>

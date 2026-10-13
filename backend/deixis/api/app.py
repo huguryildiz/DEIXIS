@@ -221,6 +221,9 @@ class EnglishQuestion(BaseModel):
 
 class StartRun(BaseModel):
     kind: Literal["discovery", "answer", "pdf_collection", "research_title", "fulltext_fetch", "fulltext_adjudication"]
+    # The question revision the person's screen showed (UI parity S23b, D14): the run is created only while it is still
+    # the current one, checked in the same transaction; another one answers 409 and creates nothing. Optional.
+    expected_scope_revision: int | None = Field(default=None, strict=True, ge=1)
 
 
 class ReviewPreviewRequest(BaseModel):
@@ -1472,7 +1475,7 @@ def create_app(
             from deixis.workflow.fast_answer import answer_run_budget
             budget = answer_run_budget(store, research_id, scope)
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
-        run = store.create_run(research_id, body.kind, budget, key)
+        run = store.create_run(research_id, body.kind, budget, key, expected_scope_revision=body.expected_scope_revision)
         request.app.state.worker.wake()
         return run
 

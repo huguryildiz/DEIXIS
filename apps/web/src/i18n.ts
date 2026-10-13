@@ -4502,4 +4502,5 @@ const tr: Record<string, string> = {
   'The search started with the plan saved for revision {n}.': 'Arama, {n}. revizyon için kaydedilen planla başladı.',
   'Plan saved as revision {n} of the question. The search did not start: {error}': 'Plan sorunun {n}. revizyonu olarak kaydedildi. Arama başlamadı: {error}',
   'The search did not start: {error}': 'Arama başlamadı: {error}',
+  'Could not read the search plan again: {error}. The plan shown is the one last read; your draft is kept.': 'Arama planı yeniden okunamadı: {error}. Gösterilen plan son okunan plandır; taslağınız korunuyor.',
 }

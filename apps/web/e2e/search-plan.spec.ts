@@ -266,6 +266,69 @@ test.describe.serial('S23b: the Search plan panel', () => {
     expect((await viewOf(api, rid)).research.current_scope_revision).toBe(next)
   })
 
+  test('a revision saved between the save and the start: the server refuses the start, the conflict shows and the draft stays', async () => {
+    await visit(page, research())
+    // The ⋯ menu's "Search plan" row opens the panel whatever the plan step shows.
+    await page.getByRole('button', { name: 'Research actions' }).click()
+    await page.getByRole('menuitem', { name: 'Search plan' }).click()
+    const opened = planPanel(page)
+    await expect(opened).toBeVisible()
+    await addWord(page, 'What is looked for', 'raced word')
+    const discoveries = (await viewOf(api, rid)).runs.filter(r => r.kind === 'discovery').length
+    // Another window saves a plan after this panel's save and before its start request reaches the server.
+    let other = 0
+    await page.route(`**/api/researches/${rid}/runs`, async route => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      const shown = await planOf(api, rid)
+      const saved = await post(api, `/api/researches/${rid}/search-plan`, { expected_version: shown.expected_version, plan: { ...shown.plan, criterion: { ...shown.plan!.criterion, text: `${shown.plan!.criterion!.text} Raced.` } } })
+      expect(saved.ok(), await saved.text()).toBe(true)
+      other = ((await saved.json()) as PlanView).scope_revision
+      await route.continue()
+    })
+    const saved = page.waitForResponse(r => r.url().endsWith('/search-plan') && r.request().method() === 'POST')
+    const start = page.waitForResponse(r => r.url().endsWith(`/api/researches/${rid}/runs`) && r.request().method() === 'POST')
+    await searchButton(page).click()
+    const mine = ((await (await saved).json()) as PlanView).scope_revision
+    expect((await start).status()).toBe(409)
+    await page.unroute(`**/api/researches/${rid}/runs`)
+    expect(other).toBe(mine + 1)
+    await expect(page.locator('.toast', { hasText: `Plan saved as revision ${mine} of the question. The search did not start:` })).toBeVisible()
+    await expect(opened.locator('.notice', { hasText: `Revision ${other} of this research was saved while you edited` })).toBeVisible()
+    await expect(chips(page, 'task').last()).toHaveText('raced word')
+    await expect(searchButton(page)).toBeDisabled()
+    // No run was created for either revision.
+    expect((await viewOf(api, rid)).runs.filter(r => r.kind === 'discovery')).toHaveLength(discoveries)
+    // The other window's plan (it started from the plan this panel saved, with its own criterion) replaces the draft on request.
+    await opened.getByRole('button', { name: `Show the plan of revision ${other}` }).click()
+    await expect(opened.locator('.notice', { hasText: 'was saved while you edited' })).toHaveCount(0)
+    await expect(opened.getByRole('textbox', { name: 'Inclusion criterion' })).toHaveValue(/ Raced\.$/)
+    await closePanel(page)
+  })
+
+  test('a read of the plan that fails after the first one is shown with Try again, and the draft stays', async () => {
+    // The current revision was saved by another window and has not searched: the ⋯ menu opens the panel.
+    await page.getByRole('button', { name: 'Research actions' }).click()
+    await page.getByRole('menuitem', { name: 'Search plan' }).click()
+    const opened = planPanel(page)
+    await expect(opened).toBeVisible()
+    await addWord(page, 'What is looked for', 'kept word')
+    let fail = true
+    await page.route(`**/api/researches/${rid}/search-plan`, route => (route.request().method() === 'GET' && fail
+      ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ detail: 'SYNTHETIC outage' }) }) : route.fallback()))
+    // A rename in another window moves the research's version, so the panel reads its plan again.
+    const view = await viewOf(api, rid)
+    expect((await post(api, `/api/researches/${rid}/title`, { title: 'SYNTHETIC renamed research', expected_version: view.research.version })).ok()).toBe(true)
+    const notice = opened.locator('.plan-refresh')
+    await expect(notice).toContainText('Could not read the search plan again: SYNTHETIC outage. The plan shown is the one last read; your draft is kept.')
+    await expect(chips(page, 'task').last()).toHaveText('kept word')
+    fail = false
+    await notice.getByRole('button', { name: 'Try again' }).click()
+    await expect(opened.locator('.plan-refresh')).toHaveCount(0)
+    await expect(chips(page, 'task').last()).toHaveText('kept word')
+    await page.unroute(`**/api/researches/${rid}/search-plan`)
+    await planPanel(page).getByRole('button', { name: 'Cancel', exact: true }).click()
+  })
+
   test('a changed seed PDF is accepted from the thread and makes a new revision; the PDFs are chosen in the panel', async () => {
     const seed = path.join(server.dataDir, 'seed.pdf')
     expect(spawnSync(PYTHON, [SERVER, '--data-dir', server.dataDir, '--port', '0', '--write-seed-pdf', seed], { cwd: REPO, env: { ...process.env, PYTHONPATH: path.join(REPO, 'backend') } }).status).toBe(0)
@@ -279,6 +342,11 @@ test.describe.serial('S23b: the Search plan panel', () => {
     await settled(api, sid, ['discovery', 'answer'])
     // [stale-seed] replaces the seed's file once the answer is written.
     await expect.poll(async () => (await viewOf(api, sid)).scope.seed_status, { timeout: 60_000 }).toBe('stale')
+    // A second readable PDF, so the choice can change after the changed text is accepted.
+    const second = path.join(server.dataDir, 'second.pdf')
+    expect(spawnSync(PYTHON, [SERVER, '--data-dir', server.dataDir, '--port', '0', '--write-replacement-pdf', second], { cwd: REPO, env: { ...process.env, PYTHONPATH: path.join(REPO, 'backend') } }).status).toBe(0)
+    const added = await api.context.post(`/api/researches/${sid}/uploads`, { multipart: { file: { name: 'SYNTHETIC second.pdf', mimeType: 'application/pdf', buffer: readFileSync(second) } }, headers: { 'x-deixis-csrf': api.token } })
+    expect(added.ok(), await added.text()).toBe(true)
     const before = (await viewOf(api, sid)).research.current_scope_revision
     await visit(page, research(sid))
     const line = page.locator('.research-seed')
@@ -295,8 +363,23 @@ test.describe.serial('S23b: the Search plan panel', () => {
     await line.getByRole('button', { name: 'Use current PDF text' }).click()
     expect((await accepted).ok()).toBe(true)
     await expect.poll(async () => { const v = await viewOf(api, sid); return [v.research.current_scope_revision, v.scope.seed_status] }).toEqual([before + 1, 'ready'])
-    // With the current text accepted and a search run behind it, nothing waits on the person: the line leaves the thread.
-    await expect(page.locator('.research-seed')).toHaveCount(0)
+    // The new revision has not searched, so it has no plan step: the line stays, without the notice, and still opens the
+    // panel, where the choice of PDFs can change before the next search.
+    await expect(line.locator('.notice')).toHaveCount(0)
+    await expect(line.getByRole('button', { name: 'Use current PDF text' })).toHaveCount(0)
+    await line.getByRole('button', { name: 'Choose PDFs' }).click()
+    const choice = planPanel(page).locator('.plan-seeds')
+    const candidates = choice.getByRole('checkbox')
+    await expect(candidates).toHaveCount(2)
+    const unticked = choice.locator('label', { has: page.locator('input:not(:checked)') })
+    await expect(unticked).toHaveCount(1)
+    await unticked.getByRole('checkbox').check()
+    const chosen2 = page.waitForResponse(r => r.url().endsWith(`/api/researches/${sid}/seed`) && r.request().method() === 'POST')
+    await choice.getByRole('button', { name: 'Use selected PDFs' }).click()
+    expect((await chosen2).ok()).toBe(true)
+    await expect.poll(async () => { const v = await viewOf(api, sid); return [v.research.current_scope_revision, v.scope.seeds.length] }).toEqual([before + 2, 2])
+    await expect(choice.getByRole('checkbox', { checked: true })).toHaveCount(2)
+    await closePanel(page)
   })
 
   test('at 390 px the panel is a dialog and fits the screen', async () => {

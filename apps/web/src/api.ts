@@ -1227,8 +1227,9 @@ export const api = {
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-discovery`, { method: 'POST' }),
   attachPdfCandidate: (id: string, sourceId: string, candidateId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-candidates/${candidateId}/attach`, { method: 'POST' }),
-  startRun: (id: string, kind: 'discovery' | 'answer' | 'pdf_collection' | 'research_title', idempotencyKey: string) =>
-    request<Run>(`/api/researches/${id}/runs`, json('POST', { kind }, { 'Idempotency-Key': idempotencyKey })),
+  // `expectedScopeRevision` (D14): the run is created only while that question revision is current; a newer one answers 409.
+  startRun: (id: string, kind: 'discovery' | 'answer' | 'pdf_collection' | 'research_title', idempotencyKey: string, expectedScopeRevision?: number) =>
+    request<Run>(`/api/researches/${id}/runs`, json('POST', expectedScopeRevision === undefined ? { kind } : { kind, expected_scope_revision: expectedScopeRevision }, { 'Idempotency-Key': idempotencyKey })),
   controlRun: (runId: string, action: 'pause' | 'resume' | 'cancel' | 'retry_failed') => request<Run>(`/api/runs/${runId}/${action}`, { method: 'POST' }),
   select: (id: string, sourceId: string, state: Source['selection']['state'], expectedVersion: number, reason?: string) =>
     request<unknown>(`/api/researches/${id}/selections/${sourceId}`, json('PATCH', { state, expected_version: expectedVersion, reason })),

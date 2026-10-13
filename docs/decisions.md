@@ -4,6 +4,15 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D14 — A run can be bound to the question revision the screen showed
+Status: accepted (decided with Sol over S23b's review, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
+Context: The Search plan panel (D12, slice S23b) saves a plan as a new question revision and then asks for its search. Another window can save a newer revision between those two requests; a run made then would search that other plan while the panel says its own plan is being searched.
+Decision:
+- `POST /api/researches/{id}/runs` takes an optional `expected_scope_revision`. The run is created only while that revision is still the current one, checked in the transaction that creates the run; otherwise the route answers 409 and writes nothing.
+- A request without the field behaves as before and takes the current revision. A repeated idempotency key returns the run it created, whatever the revision is now.
+- The Search plan panel always sends the revision that holds the plan it searches, reports the revision of the run the server returns, and on a 409 shows the newer revision as a conflict that keeps the draft.
+Limits: Only the Search plan panel sends the field so far; the other ways to start a run still take whatever revision is current. Tested in pytest (tests/app/test_start_run_revision.py) and on SYNTHETIC fixture records (e2e/search-plan.spec.ts).
+
 ## D13 — "Search for new works on this" saves the follow-up question as a new revision without the old English key terms
 Status: accepted (decided with Sol over S22b's review, 13 Oct 2026) · Date: 2026-10-13 · Writer: Claude
 Context: A follow-up the passages do not answer (D11; R31, slice S22b) offers "Search for new works on this". It saves the turn's question as the next question revision, which the person then searches. A revision left without key terms keeps the previous revision's, and key terms go into the search ahead of the question, so the new question would be searched with blocks written for the old one.

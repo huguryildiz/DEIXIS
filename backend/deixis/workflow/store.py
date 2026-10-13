@@ -991,14 +991,21 @@ class Store:
 
     # ---- runs -------------------------------------------------------------------------
     def create_run(self, research_id: str, kind: str, budget: dict[str, Any], idempotency_key: str | None,
-                   target: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Queue a run. Evidence table runs carry their target (table, columns, planned sources or cell)."""
+                   target: dict[str, Any] | None = None, *, expected_scope_revision: int | None = None) -> dict[str, Any]:
+        """Queue a run. Evidence table runs carry their target (table, columns, planned sources or cell).
+
+        With `expected_scope_revision` (D14) the run is created only while that question revision is still the current
+        one; a newer revision raises RevisionConflict and nothing is written. A repeated idempotency key returns the run
+        it created before, whatever the revision is now."""
         with transaction(self.conn):
             research = self.research(research_id)
             if idempotency_key:
                 existing = self.conn.execute("SELECT * FROM runs WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
                 if existing:
                     return self.run(existing["id"])
+            if expected_scope_revision is not None and expected_scope_revision != research["current_scope_revision"]:
+                raise RevisionConflict(f"The research is at question revision {research['current_scope_revision']},"
+                                       f" not {expected_scope_revision}")
             active = self.conn.execute(
                 f"SELECT id FROM runs WHERE research_id = ? AND status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))})",
                 (research_id, *ACTIVE_RUN_STATUSES),

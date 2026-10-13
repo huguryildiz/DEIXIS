@@ -206,6 +206,10 @@ test('R4 synthetic recovery receipts, history and exact cited occurrences', asyn
         const target = row(ui, titles[1]).getByRole('button', { name: t('Retry text extraction'), exact: true })
         // Let the view's own reads finish before the key press: a late refresh replaces the row and drops its focus.
         await ui.waitForLoadState('networkidle')
+        // The report run ends with its review step just before this, and the page reloads after events on a throttle timer
+        // (up to 1.5 s, no request open meanwhile): until that reload the row still shows the run as active and the retry
+        // is blocked. The server already allows it (`beforeMocks`), so the press waits for the row to say so too.
+        await expect(target).not.toHaveAttribute('aria-disabled', 'true')
         await target.focus(); await expect(target).toBeFocused(); await ui.keyboard.press('Enter')
         const message = failure.detail === 'File missing' ? t('The stored PDF is missing; upload it again to restore it.') : t(failure.detail)
         await expect(row(ui, titles[1]).getByRole('alert')).toContainText(message)

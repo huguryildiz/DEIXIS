@@ -207,12 +207,36 @@ test.describe.serial('S22b: follow-up questions in the thread', () => {
     await page.unroute('**/api/researches/*/followup-turns')
   })
 
+  test('a POST response that arrives after the answer never hides it', async () => {
+    const question = 'SYNTHETIC: which schedule did the late response ask about?'
+    await visit(page, research())
+    // The queued turn's response is held until the stored turn is answered, then delivered as it was sent (pending).
+    await page.route('**/api/researches/*/followup-turns', async route => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      const response = await route.fetch()
+      const body = await response.json() as Turn
+      expect(body.status).toBe('pending')
+      await expect.poll(async () => (await turnFor(api, rid, question))?.status, { timeout: 30_000 }).toBe('answered')
+      await new Promise(resolve => setTimeout(resolve, 2500))
+      await route.fulfill({ response, json: body })
+    })
+    await ask(page, question)
+    const turn = turnOn(page, question)
+    await expect(turn.locator('.followup-prose')).toBeVisible({ timeout: 30_000 })
+    await expect(composer(page)).toHaveValue('', { timeout: 10_000 })
+    // After the late response the answer is still shown (no reload, no new event).
+    await page.waitForTimeout(1500)
+    await expect(turn.locator('.followup-prose')).toBeVisible()
+    await expect(turn.locator('.followup-notice')).toHaveCount(0)
+    await page.unroute('**/api/researches/*/followup-turns')
+  })
+
   test('an invalid output is an unverified draft: its issues, no claim and no citation', async () => {
     const question = '[fu-invalid] What did the SYNTHETIC schedules optimise?'
     await visit(page, research())
     await ask(page, question)
     const turn = turnOn(page, question)
-    await expect(turn.locator('.followup-notice')).toContainText('failed validation after one repair attempt', { timeout: 30_000 })
+    await expect(turn.locator('.followup-notice')).toContainText('The model output did not pass validation, so it is not shown as a cited answer.', { timeout: 30_000 })
     const stored = await turnFor(api, rid, question)
     expect(stored?.status).toBe('unverified_draft')
     await expect(turn.locator('.followup-step').nth(1)).toHaveText('The short answer failed validation')

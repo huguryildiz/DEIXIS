@@ -6,7 +6,7 @@ import { followupApi, type Claim, type Evidence, type FollowupClaim, type Follow
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 // The turns of a research, read again whenever the research records an event. A list that was asked for before a newer
-// one (or before a turn this page just queued) is dropped when it arrives, so an older answer never replaces a newer one.
+// one is dropped when it arrives, so an older answer never replaces a newer one.
 export function useFollowupTurns(researchId: string, eventCursor: number) {
   const [turns, setTurns] = useState<FollowupTurn[]>([])
   const [error, setError] = useState('')
@@ -19,11 +19,13 @@ export function useFollowupTurns(researchId: string, eventCursor: number) {
     } catch (e) { if (n === asked.current) setError(errorText(e)) }
   }, [researchId])
   useEffect(() => { void load() }, [load, eventCursor])
-  // A turn the server just returned for this page's own request.
+  // A turn the server just queued for this page's own request: shown at once when the list does not hold it yet, never
+  // in place of a copy the list already holds (a list read after the POST may already carry its answer), and the list is
+  // read again, so a late POST response can neither hide an answer nor drop a newer list.
   const accept = useCallback((turn: FollowupTurn) => {
-    asked.current++
-    setTurns(list => (list.some(item => item.id === turn.id) ? list.map(item => (item.id === turn.id ? turn : item)) : [...list, turn]))
-  }, [])
+    setTurns(list => (list.some(item => item.id === turn.id) ? list : [...list, turn]))
+    void load()
+  }, [load])
   return { turns, error, reload: load, accept }
 }
 

@@ -11,4 +11,3 @@ export async function writeClipboard(text: string) {
   field.remove()
   if (!copied) throw new Error('copy failed')
 }
-

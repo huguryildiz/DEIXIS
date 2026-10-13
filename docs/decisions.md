@@ -4,6 +4,15 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D13 — "Search for new works on this" saves the follow-up question as a new revision without the old English key terms
+Status: accepted (decided with Sol over S22b's review, 13 Oct 2026) · Date: 2026-10-13 · Writer: Claude
+Context: A follow-up the passages do not answer (D11; R31, slice S22b) offers "Search for new works on this". It saves the turn's question as the next question revision, which the person then searches. A revision left without key terms keeps the previous revision's, and key terms go into the search ahead of the question, so the new question would be searched with blocks written for the old one.
+Decision:
+- The new revision's question is the turn's question as asked, saved only when the person presses the button; no run starts, and the message names the saved revision and says no search has started.
+- Its English key terms are cleared (sent as an empty value), so the next search reads the new question alone. A question that needs key terms (one not read as English) stops that search with `key_terms_needed`, as a newly typed question does, and the person gives them in the revise form.
+- The turn that asked it is kept and marked as asked under the earlier revision; it no longer offers the button.
+Limits: Key terms the person would have wanted to keep are not carried over; they type them again. Tested on SYNTHETIC records in the fixture server only (e2e/followup-turns.spec.ts); whether follow-up questions make better searches is not measured.
+
 ## D12 — A person can edit the search plan; a saved plan replaces the three planning calls for its revision
 Status: accepted (decided with Sol over S23a's review rounds, 12 Oct 2026) · Date: 2026-10-12 · Writer: Claude
 Context: The mockup's Search plan panel (P42, F18, slice S23a) lets a person change the search words, the criterion and the optional providers, then search again.

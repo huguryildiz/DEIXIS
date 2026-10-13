@@ -4442,4 +4442,5 @@ const tr: Record<string, string> = {
   'Follow-up answer copied to clipboard.': 'Takip cevabı panoya kopyalandı.',
   'Puts this question in the follow-up box': 'Bu soruyu takip sorusu kutusuna koyar',
   'Ask as a follow-up:': 'Takip sorusu olarak sor:',
+  'The model output did not pass validation, so it is not shown as a cited answer.': 'Model çıktısı doğrulamadan geçmedi, bu yüzden atıflı bir cevap olarak gösterilmiyor.',
 }

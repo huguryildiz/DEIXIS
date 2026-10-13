@@ -113,7 +113,7 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
     </div>}
     {turn.status === 'unverified_draft' && <div className="chat-note notice followup-notice is-error"><TriangleAlert size={16} aria-hidden />
       <div className="notice-body">
-        <p>{t('The model output failed validation after one repair attempt, so it is not shown as a cited answer.')}</p>
+        <p>{t('The model output did not pass validation, so it is not shown as a cited answer.')}</p>
         {turn.issues.length > 0 && <ul className="answer-notice-issues">{turn.issues.map(i => <li key={`${i.code}${i.path}`}>{t('{code} at {path}', { code: i.code, path: i.path })}</li>)}</ul>}
       </div>
     </div>}

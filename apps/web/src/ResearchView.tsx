@@ -565,7 +565,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       return false
     } finally { setAsking(false) }
   }
-  // "Search for new works on this" (R31): saves the turn's question as the next question revision, only on this click. The
+  // "Search for new works on this" (R31, D13): saves the turn's question as the next question revision, only on this click. The
   // revision's English key terms are cleared, since they described the earlier question. No search starts here; the
   // message names the revision the server saved and says how to start its search.
   const searchNewWorks = async (question: string) => {

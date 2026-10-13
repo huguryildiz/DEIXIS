@@ -954,6 +954,7 @@ export type ReviewDetail = ReviewCard & {
   focus: ReviewFocus; owner_note: string | null; skill_package_hash: string | null; assessment_notice: string
   snapshot: {
     id: string; target_kind: ReviewTargetKind; target_id: string; content_sha256: string; created_at: string; scope_revision: number
+    report_version?: number | null  // the answer's or report's version the snapshot was taken from
     elements?: { element_ref: string; position: number; kind: string }[]
     candidate_version?: number; candidate_id?: string; kill_search_id?: string
     matrix_sources?: { source_id: string; rank_key: number }[]

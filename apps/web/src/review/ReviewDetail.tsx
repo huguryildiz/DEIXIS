@@ -43,7 +43,11 @@ export function ReviewDetail({ researchId, review, sources, sectionLabel, open, 
     return review.snapshot.claims.length * 2 + row.finding.group_index
   }
   const findings = [...review.findings].sort((a, b) => rank(a) - rank(b) || a.ordinal - b.ordinal)
-  const target = kind === 'candidate' ? t('Candidate · Version {n}', { n: review.snapshot.candidate_version ?? '' }) : kind === 'answer' ? t('Answer') : t('Evidence report')
+  // The answer's or report's version comes from the stored snapshot, not from what is current now.
+  const reportVersion = review.snapshot.report_version
+  const target = kind === 'candidate' ? t('Candidate · Version {n}', { n: review.snapshot.candidate_version ?? '' })
+    : kind === 'answer' ? (reportVersion ? `${t('Answer')} · V${reportVersion}` : t('Answer'))
+    : reportVersion ? t('Evidence report · V{n}', { n: reportVersion }) : t('Evidence report')
   const finished = ['completed', 'partial'].includes(review.state)
   const live = ['queued', 'running', 'pause_requested', 'paused'].includes(review.state)
   const models = [...new Set(review.models_that_answered.map(m => modelText(m.resolved_model ?? m.requested_model)))].join(', ')

@@ -30,7 +30,9 @@ import { FunnelPanel } from './FlowReport'
 import { AuditSample } from './AuditSample'
 import { WaitingForPdf } from './WaitingForPdf'
 import { EnglishQuestion, UploadedTextNote } from './SemanticNotes'
-import { AnswerThread, type AnswerThreadContext } from './research/AnswerThread'
+import { AnswerThread, type AnswerReviewControl, type AnswerThreadContext } from './research/AnswerThread'
+import { ReviewSurface } from './review/ReviewSurface'
+import { useReviewSurface } from './review/useReviewSurface'
 import { CitationPanel, type CitationOpen } from './research/CitationPanel'
 import { ActivityPanel } from './research/ActivityPanel'
 import { TableCard } from './research/ArtifactsTab'
@@ -102,6 +104,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [replacePick, setReplacePick] = useState<{ source: Source; assetId: string } | null>(null)
   const [replaceTarget, setReplaceTarget] = useState<{ source: Source; assetId: string; file: File; impact: AssetImpact } | null>(null)
   const [openReportId, setOpenReportId] = useState<string | null>(null)
+  // The answer's review dialog and panel (P32/P33) live here, not in the answer thread: when a newer answer replaces the
+  // thread, an open review stays on the answer version it was opened for and says it is stale.
+  const answerReviews = useReviewSurface()
+  const [answerReviewTarget, setAnswerReviewTarget] = useState<{ id: string; version: number } | null>(null)
+  const [answerReviewRevision, setAnswerReviewRevision] = useState(0)
+  const answerReview: AnswerReviewControl = { surface: answerReviews, revision: answerReviewRevision, target: (answerId, version) => setAnswerReviewTarget({ id: answerId, version }) }
   const [openEvidenceReportId, setOpenEvidenceReportId] = useState<string | null>(null)
   // Sources chosen for a table or for removal (D50). Kept only while the Sources tab is open.
   const [picked, setPicked] = useState<string[]>([])
@@ -687,7 +695,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')} onOpenFunnel={() => openPanel('funnel')}
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
-        latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
+        latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} review={answerReview} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
           versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} />{tableCards}</> : null} />
       {!answer && tableCards}
       {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
@@ -821,6 +829,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <StackPanel name="watch" title={t('Follow-up')} icon={Clock}>
       <FollowUpView researchId={id} view={view} dark={dark} onReload={followupCount.reload} onChanged={followupChanged} />
     </StackPanel>
+    {answerReviewTarget && <ReviewSurface surface={answerReviews} researchId={id} targetKind="answer" targetId={answerReviewTarget.id} version={answerReviewTarget.version} eventCursor={view.last_event_id}
+      runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} sources={view.sources} sectionLabel={ref => ref} dark={dark} open={openPassage}
+      changed={async () => { setAnswerReviewRevision(n => n + 1) }} />}
     <StackPanel name="cands" title={t('Candidates')} icon={Lightbulb} keepMounted>
       <CandidatesView researchId={id} view={view} dark={dark} modelText={modelText} selection={candidateSelection} onCount={setCandidateCount} onRunChanged={() => { void load(); onChanged() }}
         onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} />
@@ -848,7 +859,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       description={replaceTarget ? `${t('{file} will be read in later answers and cells instead of the current file. The current file is not deleted: evidence that cites it keeps opening it.', { file: replaceTarget.file.name })} ${t(replaceTarget.impact.researches.length === 1 ? 'The source is used in {n} research;' : 'The source is used in {n} researches;', { n: replaceTarget.impact.researches.length })} ${t('{cells} evidence table cells and {quotes} answer quotes cite the current file.', { cells: replaceTarget.impact.cells, quotes: replaceTarget.impact.quotes })}` : ''}
       context={replaceTarget?.source.title} confirmLabel={t('Replace PDF')} cancelLabel={t('Cancel')} busy={busy}
       onConfirm={confirmReplacement} onOpenChange={open => { if (!open) setReplaceTarget(null) }} />
-    {olderReport && <AnswerThread eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
+    {olderReport && <AnswerThread eventCursor={view.last_event_id} review={answerReview} researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
       reviewPending={view.runs.some(r => r.kind === 'answer_review' && ACTIVE.has(r.status) && r.target?.answer_id === olderReport.answer.id)}
       reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf}
       versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} />}

@@ -13,7 +13,8 @@ import { RetryNotice } from './RetryNotice'
 import { NotReviewed } from './NotReviewed'
 
 // The review request inside the "Review with another model" dialog (mockup `reviewDlg`): the focus, the model, an
-// optional note, then Preview, which shows exactly what will be sent (mockup `.sendbox`). Start review is enabled only
+// optional note, then Preview, which shows what will be sent as counts (claims or elements, passages, characters, estimated tokens),
+// the groups and the send limits, and what is left out (mockup `.sendbox`); it does not show the full claim or passage text. Start review is enabled only
 // after that preview was shown; any change asks for a new preview.
 export function ReviewRequest({ researchId, targetKind, targetId, version, runActive, unavailableReason = '', sectionLabel, sourceName, started, cancel }: {
   researchId: string; targetKind: ReviewTargetKind; targetId: string; version: number; runActive: boolean

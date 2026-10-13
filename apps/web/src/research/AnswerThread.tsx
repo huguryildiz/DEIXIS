@@ -6,8 +6,7 @@ import { locatorText, pauseReasonText, verdictLabels, versionText, versionTones 
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../labels'
 import { MathText } from '../MathText'
 import { ReviewSummary } from '../review/ReviewSummary'
-import { ReviewSurface } from '../review/ReviewSurface'
-import { useReviewSurface } from '../review/useReviewSurface'
+import type { ReviewSurfaceState } from '../review/useReviewSurface'
 import { useReviewList } from '../review/useReviewList'
 import { useToast } from '../Toast'
 import { ModelName } from '../ModelName'
@@ -91,12 +90,17 @@ function citedWorks(answer: Answer) {
 
 // versions: the question's valid reports, newest first, for the report panel's version select; latestVersion marks an
 // earlier version in the report's meta line.
-export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, runActive, thread, reviewPending = false, versions = [], latestVersion = version, onVersion }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; runActive: boolean; thread?: AnswerThreadContext; reviewPending?: boolean; versions?: ReportVersion[]; latestVersion?: number; onVersion?: (answerId: string) => void }) {
+// The answer's review dialog and panel live on the research (ResearchView), so an open review stays on the answer
+// version it was opened for when a newer answer replaces this thread; this thread only names that target.
+export type AnswerReviewControl = { surface: ReviewSurfaceState; revision: number; target: (answerId: string, version: number) => void }
+export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, thread, review, reviewPending = false, versions = [], latestVersion = version, onVersion }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; thread?: AnswerThreadContext; review: AnswerReviewControl; reviewPending?: boolean; versions?: ReportVersion[]; latestVersion?: number; onVersion?: (answerId: string) => void }) {
   const modelText = useModelText()
   const [style, chooseStyle] = useCitationStyle()
   const toast = useToast()
-  const reviewList = useReviewList(researchId, 'answer', answer.id, eventCursor, answer.status === 'structurally_valid')
-  const reviews = useReviewSurface()
+  // `review.revision` counts review writes (a decision makes no research event), so the summary reads them too.
+  const reviewList = useReviewList(researchId, 'answer', answer.id, eventCursor + review.revision, answer.status === 'structurally_valid')
+  const openReviews = () => { review.target(answer.id, version); review.surface.openPanel() }
+  const requestReview = (opener: HTMLElement) => { review.target(answer.id, version); review.surface.openDialog(opener) }
   const ctx = showCard ? thread : undefined
   const latePending = ctx && answer.late_revision_status && ['waiting_fetch', 'reading', 'answering'].includes(answer.late_revision_status.status)
     ? <p className="foot-note answer-late-pending" role="status">{t(LATE_REVISION_PENDING)}</p> : null
@@ -206,7 +210,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       {refs.size > 0 && <> <ExportLinks researchId={researchId} sources="cited" answerId={answer.id} /></>}</p>
     <AnswerFlowNote answer={answer} />
     <ReviewNote review={answer.review} />
-    <ReviewSummary reviews={reviewList.reviews} open={() => reviews.openPanel()} />
+    <ReviewSummary reviews={reviewList.reviews} open={openReviews} />
     <ChecksNote warnings={answer.validation.warnings} />
     {suggestion && <PdfSuggestions notes={suggestion.notes} sources={suggestion.sources} busy={busy} onAttachPdf={onAttachPdf} />}
   </div>
@@ -271,10 +275,10 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       <Button variant="ghost" size="icon-sm" className="answer-ib" aria-label={t('Copy answer')} title={t('Copy answer')} onClick={() => { void copyReport() }}><Copy size={16} aria-hidden /></Button>
       {ctx.downloadMenu}
     </div>
-    <ReviewSummary reviews={reviewList.reviews} open={() => reviews.openPanel()} />
+    <ReviewSummary reviews={reviewList.reviews} open={openReviews} />
     <section className="follow" aria-labelledby={`next-steps-${answer.id}`}>
       <h5 id={`next-steps-${answer.id}`}>{t('Next steps')}</h5>
-      <button type="button" className="first" aria-haspopup="dialog" onClick={e => reviews.openDialog(e.currentTarget)}><ListChecks size={16} aria-hidden /><span>{t('Review the claims with another model')}</span>{go}</button>
+      <button type="button" className="first" aria-haspopup="dialog" onClick={e => requestReview(e.currentTarget)}><ListChecks size={16} aria-hidden /><span>{t('Review the claims with another model')}</span>{go}</button>
       {ctx.included > 0 && <button type="button" onClick={e => ctx.onPanel('table', e.currentTarget)}><Table2 size={16} aria-hidden />
         <span>{ctx.hasTable ? t('Open the evidence table') : t(ctx.included === 1 ? 'Build an evidence table of the {n} included source' : 'Build an evidence table of the {n} included sources', { n: count(ctx.included) })}</span>{go}</button>}
       {abstractOnly > 0 && <button type="button" onClick={e => ctx.onPanel('pdfs', e.currentTarget)}><Upload size={16} aria-hidden />
@@ -285,11 +289,9 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {threadPart}
     <ReportPanel open={reportOpen} onOpenChange={onReportOpenChange} dark={dark} title={title} version={version} latestVersion={latestVersion}
       versions={versions} onVersion={id => onVersion?.(id)} researchId={researchId} answer={answer} style={style} onStyle={chooseStyle}
-      onReview={opener => reviews.openDialog(opener)} onCopy={() => { void copyReport() }} onDownload={downloadReport}>
+      onReview={requestReview} onCopy={() => { void copyReport() }} onDownload={downloadReport}>
       {report}
     </ReportPanel>
-    {answer.status === 'structurally_valid' && <ReviewSurface surface={reviews} researchId={researchId} targetKind="answer" targetId={answer.id} version={version} eventCursor={eventCursor} runActive={runActive}
-      sources={sources} sectionLabel={ref => ref} dark={dark} open={onOpen} changed={async () => { await reviewList.refresh() }} />}
   </>
 }
 

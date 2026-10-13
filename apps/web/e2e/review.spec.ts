@@ -211,7 +211,8 @@ test('1 report review: disclosure, held progress, timeline and exact located evi
   await requestForm(page).getByRole('radio', { name: /^Assumptions and consistency/ }).check()
   await requestForm(page).getByLabel('Note (optional)').fill('SYNTHETIC owner instruction.')
   await preview(page)
-  // Exactly what will be sent (mockup `.sendbox`): the counts, the token estimate, the groups, no cost estimate.
+  // What will be sent (mockup `.sendbox`): the counts, the token estimate, the groups and limits, no cost estimate;
+  // not the full claim or passage text.
   await expect(requestForm(page).locator('.sendbox')).toContainText(/Claims \d+ · Passages \d+ · Characters [\d,]+/)
   await expect(requestForm(page).locator('.sendbox')).toContainText(/Estimated input tokens: [\d,]+ \(estimated, four characters per token\)/)
   await expect(requestForm(page).locator('.sendbox')).toContainText(/Sent in \d+ groups?\. Cost is not estimated\. The model reads the stored review copy\./)
@@ -366,6 +367,18 @@ test('4 source-linked answer review records acceptance without an editor', async
   const line = page.locator('.review-target-line').filter({ hasText: 'Reviewed by another model:' })
   await expect(line).toBeVisible()
   await line.first().click(); await expect(pane(page)).toBeVisible()
+  // The review's head names the answer version from its stored snapshot.
+  await expect(pane(page).locator('.review-detail .dmeta')).toContainText(`Answer · V${answer.report_version}`)
+  // Regression (Sol S15b round 1): a newer answer replaces the thread, but the open review stays open on V1 and says
+  // it is stale; the review state lives on the research, not in the answer thread.
+  const started = await page.request.post(`${server.url}/api/researches/${rid}/runs`, { headers: { ...await headers(page), 'Idempotency-Key': crypto.randomUUID() }, data: { kind: 'answer' } })
+  expect(started.status()).toBe(202)
+  await expect.poll(async () => (await view(page, rid)).answers.length, { timeout: 60_000 }).toBeGreaterThan(1)
+  await expect(pane(page)).toBeVisible()
+  await expect(page.locator('#split-panel-title')).toHaveText('Review with another model')
+  await expect(pane(page).locator('.review-stale')).toContainText('Written against an earlier answer:', { timeout: 30_000 })
+  await expect(pane(page).locator('.review-stale')).toContainText('a newer answer exists')
+  await expect(pane(page).locator('.review-detail .dmeta')).toContainText(`Answer · V${answer.report_version}`)
 })
 
 test('5 active-run and nothing-reviewable refusals retain their codes and rows in English and Turkish', async ({ page }) => {

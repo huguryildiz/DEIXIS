@@ -325,7 +325,7 @@ def review_read_model(review, snapshot, run, steps, inputs, sessions, findings, 
                             "reasoning_effort": review["requested_effort"]}, "models_that_answered": answered,
         "focus": review["focus"], "owner_note": review["owner_note"], "created_at": review["created_at"],
         "snapshot": {k: snapshot[k] for k in ("id", "target_kind", "target_id", "content_sha256", "created_at")} | {
-            "scope_revision": content["scope_revision"],
+            "scope_revision": content["scope_revision"], "report_version": content.get("report_version"),
             "claims": [{k: c[k] for k in ("claim_ref", "section_ref")} for c in content["claims"]],
             "sources": [{k: s[k] for k in ("source_id", "title", "year", "version_label", "reading_depth")}
                         for s in content["sources"]],

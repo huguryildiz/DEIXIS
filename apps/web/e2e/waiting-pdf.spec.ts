@@ -270,8 +270,9 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
     await expect(again).toBeEnabled()
     await shot(page, 'L-your-files-unread-1440')
 
-    // The person includes the work: the PDF readiness panel says its PDF is theirs and not read yet, that the answer
-    // leaves it out until then, and offers no upload for it (its version already holds the file).
+    // The person includes the work: the included-sources part of the Get more full text panel (S14) says its PDF is
+    // theirs and not read yet, that the answer leaves it out until then, and offers no upload for it (its version
+    // already holds the file).
     const api = await apiRequest.newContext({ baseURL: FAIL_URL, extraHTTPHeaders: { origin: FAIL_URL } })
     const token = (await (await api.get('/api/session')).json()).csrf_token as string
     const view = await (await api.get(`/api/researches/${failing}`)).json()
@@ -280,8 +281,8 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
       { data: { state: 'included', expected_version: record.selection.version, reason: 'SYNTHETIC included by the person' }, headers: { 'x-deixis-csrf': token } })
     expect(included.ok()).toBe(true)
     await api.dispose()
-    // The readiness panel is shown before a research's first answer. The fast path writes that answer by itself when
-    // discovery ends, so the panel is read from this research's view served without its answers (SYNTHETIC API state).
+    // The panel is read from this research's view served without its answers, so the answer button names the first
+    // answer (SYNTHETIC API state).
     const withoutAnswers = (p: Page, change: (view: any) => void = () => {}) => p.route(`**/api/researches/${failing}`, async route => {
       const response = await route.fetch()
       const body = await response.json()
@@ -292,14 +293,16 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
     const unreadInPanel = async (p: Page, name: string) => {
       await p.unroute(`**/api/researches/${failing}`)
       await withoutAnswers(p)
-      await p.goto(`${FAIL_URL}/#/research/${failing}/answer`)
+      await p.goto('about:blank')
+      await p.goto(`${FAIL_URL}/#/research/${failing}/waiting`)
       const listed = p.getByRole('list', { name: 'Your PDF, not read yet' }).getByRole('listitem').filter({ hasText: WAITING_TITLE })
       await expect(listed).toContainText('Your PDF is attached and not read yet: the answer leaves this work out until the model reads it.')
-      await expect(p.getByRole('link', { name: 'See it in Your files' })).toHaveAttribute('href', `#/research/${failing}/waiting`)
-      const panel = p.locator('section.pdf-ready')
+      // The link goes to "Your files" further down the same panel.
+      await expect(p.getByRole('link', { name: 'See it in Your files' })).toHaveAttribute('href', '#person-files-title')
       // Listed once, in its own group: not among the works that need a PDF, with no upload and no abstract fallback.
-      await expect(panel.getByRole('listitem').filter({ hasText: WAITING_TITLE })).toHaveCount(1)
-      await expect(panel.getByRole('listitem').filter({ hasText: WAITING_TITLE }).getByRole('button', { name: 'Upload PDF' })).toHaveCount(0)
+      await expect(listed).toHaveCount(1)
+      await expect(listed.getByRole('button', { name: 'Upload PDF' })).toHaveCount(0)
+      await expect(p.locator('section[aria-labelledby="pdf-needs-title"]').getByRole('listitem').filter({ hasText: WAITING_TITLE })).toHaveCount(0)
       await shot(p, name)
       expect(await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
     }
@@ -308,13 +311,14 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
     try { await unreadInPanel(narrow, 'L-pdf-readiness-unread-390') } finally { await narrow.close() }
 
     // The panel's other two states, from this research's view with one change each, served to the page: before a
-    // collection with a work still missing its PDF (four counters on one row at desktop width, stacked at phone
-    // width), and during a collection (the unread work counted apart, and a running step for it shown first).
+    // collection with a work still missing its PDF (the four depth boxes on one row at desktop width, two rows of two at phone
+    // width, the last one counting the person's unread file), and during a collection (the unread work counted apart,
+    // and a running step for it shown first).
     const served = async (p: Page, change: (view: any) => void) => {
       await p.unroute(`**/api/researches/${failing}`)
       await withoutAnswers(p, change)
       await p.goto('about:blank')
-      await p.goto(`${FAIL_URL}/#/research/${failing}/answer`)
+      await p.goto(`${FAIL_URL}/#/research/${failing}/waiting`)
     }
     const other = view.sources.find((s: { version_role: string; selection: { state: string }; has_pdf_text: boolean; title: string }) =>
       s.version_role === 'record' && s.selection.state === 'included' && s.has_pdf_text && s.title !== WAITING_TITLE).source_version_id
@@ -323,11 +327,12 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
       const p = width === 1440 ? page : await browser.newPage({ viewport: { width, height: 844 } })
       try {
         await served(p, missingOne)
-        const cells = p.locator('.pdf-ready-depth > div')
+        const cells = p.locator('.pdfs-panel .depth > div')
         await expect(cells).toHaveCount(4)
-        await expect(cells.nth(3)).toContainText('your PDF, not read yet')
+        await expect(cells.nth(3)).toHaveText('1Your PDFs, not read')
+        await expect(p.locator('section[aria-labelledby="pdf-needs-title"]').getByRole('button', { name: 'Upload PDF' }).first()).toBeVisible()
         const tops = await cells.evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().top)))
-        expect(new Set(tops).size).toBe(width === 1440 ? 1 : 4)  // one row at desktop width, stacked at phone width
+        expect(new Set(tops).size).toBe(width === 1440 ? 1 : 2)  // one row at desktop width, two rows of two at phone width
         await shot(p, `L-pdf-readiness-counters-${width}`)
         expect(await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
       } finally { if (p !== page) await p.close() }
@@ -343,14 +348,13 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
     const collectionRow = () => page.locator('section.pdf-ready').getByRole('listitem').filter({ hasText: WAITING_TITLE })
     await served(page, collecting(false))
     await expect(page.getByRole('heading', { name: 'Collecting open-access PDFs' })).toBeVisible()
-    await expect(page.locator('.pdf-ready-depth > div')).toHaveCount(4)
-    await expect(page.locator('.pdf-ready-depth > div').nth(3)).toContainText('1your PDF, not read yet')
+    await expect(page.locator('section.pdf-ready h4')).toContainText('1 your PDF, not read yet')
     await expect(collectionRow()).toContainText('Not read yet')
     await shot(page, 'L-pdf-collection-unread-1440')
     await served(page, collecting(true))
     await expect(collectionRow()).toContainText('Checking')
     await expect(collectionRow()).not.toContainText('Not read yet')
-    await expect(page.locator('.pdf-ready-depth > div')).toHaveCount(3)  // it is still to check, counted there
+    await expect(page.locator('section.pdf-ready h4')).not.toContainText('your PDF, not read yet')  // it is still to check, counted there
     await page.unroute(`**/api/researches/${failing}`)
     await page.goto(`${FAIL_URL}/#/research/${failing}/waiting`)
     await expect(row).toContainText('Not read.')

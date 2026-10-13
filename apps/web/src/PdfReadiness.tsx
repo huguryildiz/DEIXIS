@@ -1,40 +1,33 @@
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
-import { Download, Pause, Play, ScanText, Sparkles } from 'lucide-react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Download, Pause, Play, ScanText, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, type OcrTool, type PdfMatch, type ResearchView, type Source, type ZoteroSource } from './api'
+import { api, type OcrTool, type ResearchView, type Source, type ZoteroSource } from './api'
 import { ConnectionIcon } from './connectionIcons'
-import { fetchReasonText, fileRestoreNote, fileRestoreTone, pdfFailureText } from './labels'
+import { fetchReasonText, pdfFailureText } from './labels'
 import { OCR_LABEL, ocrOffer } from './ocr'
 import { OcrNote } from './OcrNote'
 import { t } from './i18n'
 import { useToast } from './Toast'
-import { UploadedTextNote } from './SemanticNotes'
+import { includedReading } from './includedReading'
 
-// Between screening and the answer (D49): how many included works an answer can read in full, a run that collects their
-// open PDFs, and ways to add the rest (a PDF per row, several dropped at once, or the user's Zotero library).
-// Three states: before collecting, while collecting (or paused), and after.
+// Between screening and the answer (D49), inside the "Get more full text" panel (UI parity S14, P40): a run that
+// collects the open PDFs of the included works, its progress while it runs (or is paused), and the included works that
+// still have no PDF, each with its own upload, OCR and the person's Zotero library. The panel around it holds the depth
+// boxes, the waiting list, the drop zone and the answer button.
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
-type Proposal = { file: File; match: PdfMatch; target: string; hasPdf: boolean }
 
 const durationText = (seconds: number) => (seconds < 60 ? t('{s} s', { s: seconds }) : t('{m} min {s} s', { m: Math.floor(seconds / 60), s: seconds % 60 }))
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 
-export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearchAgain, onAnswer, onUpload, ocrTool, onReadWithOcr, onDropFiles }: {
-  researchId: string; view: ResearchView; busy: boolean; hasAcademic: boolean
+export function PdfReadiness({ researchId, view, busy, act, onUpload, ocrTool, onReadWithOcr }: {
+  researchId: string; view: ResearchView; busy: boolean
   act: (action: () => Promise<unknown>, success?: string) => Promise<void>
-  onSearchAgain: () => void; onAnswer: () => void; onUpload: (source: Source) => void
+  onUpload: (source: Source) => void
   ocrTool: OcrTool | null; onReadWithOcr: (source: Source, assetId: string) => void
-  // An sw research hands dropped files to its waiting view, where the person picks the version (slice 18a); legacy matches here.
-  onDropFiles?: (files: File[]) => void
 }) {
-  const byId = new Map(view.sources.map(s => [s.source_version_id, s]))
-  const records = view.sources.filter(s => s.version_role === 'record' && s.selection.state === 'included')
+  const { records, reading, full, missing, unread } = includedReading(view)
   const versionsOf = (record: Source) => view.sources.filter(s => s.work_id === record.work_id && s.source_version_id !== record.source_version_id)
-  // The version an answer reads: the record, or another version with PDF text (D48).
-  const reading = (record: Source) => (record.answer_reads_version_id ? byId.get(record.answer_reads_version_id) ?? record : record)
-  // A work whose only PDF text is a person's file the model has not read yet gives an answer nothing (slice 18b).
-  const full = (record: Source) => !record.answer_reads_nothing && reading(record).has_pdf_text
   const pagesOf = (record: Source) => reading(record).access.assets[0]?.page_count ?? 0
   // A PDF with pages without text can be read with OCR (D51); its row names what OCR would read and offers the action.
   const ocrOf = (record: Source) => {
@@ -44,7 +37,7 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
   }
   const ocrAction = (record: Source) => {
     const ocr = ocrOf(record)
-    return ocr && ocr.offer.kind !== 'reading' && <Button variant="outline" size="sm" disabled={busy || ocr.offer.kind === 'off' || ocr.offer.blocked} title={ocr.offer.kind === 'off' ? ocr.offer.reason : ocr.offer.blocked ? t('Available when the current run ends') : undefined} onClick={() => onReadWithOcr(ocr.source, ocr.asset.id)}><ScanText size={13} />{t('Read with OCR')}</Button>
+    return ocr && ocr.offer.kind !== 'reading' && <Button variant="outline" size="sm" className="ghost" disabled={busy || ocr.offer.kind === 'off' || ocr.offer.blocked} title={ocr.offer.kind === 'off' ? ocr.offer.reason : ocr.offer.blocked ? t('Available when the current run ends') : undefined} onClick={() => onReadWithOcr(ocr.source, ocr.asset.id)}><ScanText size={13} />{t('Read with OCR')}</Button>
   }
   const ocrNote = (record: Source) => { const ocr = ocrOf(record); return ocr && <OcrNote offer={ocr.offer} /> }
 
@@ -63,28 +56,17 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
   // Rows the user added a PDF to from this panel stay listed, marked as uploaded.
   const [touched, setTouched] = useState<Set<string>>(new Set())
   const touch = (ids: string[]) => setTouched(prev => new Set([...prev, ...ids]))
-  const [proposals, setProposals] = useState<Proposal[] | null>(null)
-  const [matching, setMatching] = useState(false)
-  const [dragging, setDragging] = useState(false)
   const [zoteroSource, setZoteroSource] = useState<ZoteroSource>('local')
   const toast = useToast()
-  const fileInput = useRef<HTMLInputElement>(null)
 
   const total = records.length
-  const inHand = records.filter(full).length
-  // A work whose PDF is the person's and not read yet: the answer leaves it out until the model reads it, and another
-  // file cannot be added to its version (slice 18b). It is neither in hand nor missing; "Your files" says the rest.
-  const unread = records.filter(r => r.answer_reads_nothing)
-  const missing = records.filter(r => !full(r) && !r.answer_reads_nothing)
-  const yourFiles = `#/research/${researchId}/waiting`
-  const pages = records.filter(full).reduce((sum, r) => sum + pagesOf(r), 0)
-
   const collect = () => act(() => api.startRun(researchId, 'pdf_collection', crypto.randomUUID()))
   const control = (action: 'pause' | 'resume') => current && act(() => api.controlRun(current.id, action))
+  const hint = <span className="foot-note">{t('Tries each source’s open links, then looks once for another open copy. Nothing is downloaded from paywalled sites.')}</span>
 
   if (!total) return null
 
-  // ---- state 2: collecting ----------------------------------------------------------
+  // ---- while collecting (or paused) ------------------------------------------------------
   if (current && collecting) {
     const steps = current.steps ?? []
     const stepsOf = (record: Source) => {
@@ -107,83 +89,33 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
       const ok = stepsOf(record).find(s => s.status === 'succeeded')
       return ok?.started_at && ok.finished_at ? Math.round((Date.parse(ok.finished_at) - Date.parse(ok.started_at)) / 1000) : null
     }
-    const pct = (n: number) => `${total ? (100 * n) / total : 0}%`
-    return <section className="pdf-ready" aria-labelledby="pdf-ready-title">
-      <h2 id="pdf-ready-title">{t(current.status === 'paused' ? 'PDF collection paused' : 'Collecting open-access PDFs')}</h2>
-      <Depth cells={[[inHand, t('PDFs in hand')], [count('none'), t('checked, none open')], [count('queued') + count('checking'), t('still to check')], ...(count('unread') ? [[count('unread'), t('your PDF, not read yet')] as [number, string]] : [])]} />
-      <div className="pdf-ready-bar" aria-hidden><i className="is-pdf" style={{ width: pct(inHand) }} /><i className="is-run" style={{ width: pct(count('none')) }} /></div>
+    return <section className="plist pdf-ready" aria-labelledby="pdf-ready-title">
+      <h4><span id="pdf-ready-title">{t(current.status === 'paused' ? 'PDF collection paused' : 'Collecting open-access PDFs')}</span>
+        <span className="tnum">{t('{inHand} in hand · {none} checked, none open · {left} still to check', { inHand: records.filter(full).length, none: count('none'), left: count('queued') + count('checking') })}{count('unread') ? ` · ${t('{n} your PDF, not read yet', { n: count('unread') })}` : ''}</span></h4>
       <ul className="pdf-ready-rows">
-        {states.map(([record, state]) => <li key={record.source_version_id}>
+        {states.map(([record, state]) => <li key={record.source_version_id} className="prow">
           <RowHead record={record} facts={[state === 'checking' ? t(stepsOf(record).some(s => s.kind === 'pdf_other_copy' && s.status === 'running') ? 'looking for another open copy' : 'downloading') : state === 'queued' ? t('waiting') : state === 'done' && pagesOf(record) ? plural(pagesOf(record), '{n} page', '{n} pages') : state === 'none' ? { text: missingReason(record, versionsOf(record)), tone: 'abstract' } : state === 'unread' ? { text: t(UNREAD_FACT), tone: 'abstract' } : '']} />
           <span className="pdf-ready-side">
-            {state === 'done' && <span className="pdf-pill is-ok">{doneSeconds(record) === null ? t('PDF') : t('PDF · {time}', { time: durationText(doneSeconds(record)!) })}</span>}
-            {state === 'checking' && <span className="pdf-pill is-run"><span className="pdf-spin" aria-hidden />{t('Checking')}</span>}
-            {state === 'none' && <span className="pdf-pill is-warn">{t('None open')}</span>}
-            {state === 'queued' && <span className="pdf-pill">{t('Queued')}</span>}
-            {state === 'unread' && <span className="pdf-pill is-warn">{t('Not read yet')}</span>}
+            {state === 'done' && <span className="pill ok">{doneSeconds(record) === null ? t('PDF') : t('PDF · {time}', { time: durationText(doneSeconds(record)!) })}</span>}
+            {state === 'checking' && <span className="pill"><span className="pdf-spin" aria-hidden />{t('Checking')}</span>}
+            {state === 'none' && <span className="pill warn">{t('None open')}</span>}
+            {state === 'queued' && <span className="pill">{t('Queued')}</span>}
+            {state === 'unread' && <span className="pill warn">{t('Not read yet')}</span>}
           </span>
         </li>)}
       </ul>
-      <div className="pdf-ready-actions">
+      <div className="prow pdf-ready-actions">
         {current.status === 'paused'
-          ? <Button variant="outline" size="sm" disabled={busy} onClick={() => control('resume')}><Play size={13} />{t('Resume')}</Button>
-          : <Button variant="outline" size="sm" disabled={busy || current.status === 'pause_requested'} onClick={() => control('pause')}><Pause size={13} />{t('Pause')}</Button>}
-        <span className="pdf-ready-hint">{t('{time} so far', { time: durationText(seconds) })}</span>
+          ? <Button variant="outline" size="sm" className="ghost" disabled={busy} onClick={() => control('resume')}><Play size={13} />{t('Resume')}</Button>
+          : <Button variant="outline" size="sm" className="ghost" disabled={busy || current.status === 'pause_requested'} onClick={() => control('pause')}><Pause size={13} />{t('Pause')}</Button>}
+        <span className="foot-note">{t('{time} so far', { time: durationText(seconds) })}</span>
       </div>
     </section>
   }
 
-  // ---- state 1: before collecting -----------------------------------------------------
-  if (!current && missing.length) {
-    return <section className="pdf-ready" aria-labelledby="pdf-ready-title">
-      <h2 id="pdf-ready-title">{t('Before the answer: how deeply can it read?')}</h2>
-      <p className="pdf-ready-lede">{t('Screening read titles and abstracts. The answer can cite only what it reads, so a source without a PDF is cited from its abstract alone.')}</p>
-      <Depth cells={[[total, t('included sources')], [inHand, t('PDF already in hand')], [missing.length, t('abstract only for now')], ...(unread.length ? [[unread.length, t('your PDF, not read yet')] as [number, string]] : [])]} />
-      <div className="pdf-ready-bar" aria-hidden><i className="is-pdf" style={{ width: `${(100 * inHand) / total}%` }} /></div>
-      {unread.length > 0 && <UnreadNote n={unread.length} href={yourFiles} />}
-      <div className="pdf-ready-actions">
-        <Button disabled={busy} onClick={() => void collect()}><Download size={15} />{t('Collect open-access PDFs')}</Button>
-        <button type="button" className="pdf-ready-link" disabled={busy} onClick={onAnswer}>{t('Generate answer now')}</button>
-        {hasAcademic && <button type="button" className="pdf-ready-link" disabled={busy} onClick={onSearchAgain}>{t('Search again')}</button>}
-      </div>
-      <p className="pdf-ready-hint">{t('Tries each source’s open links, then looks once for another open copy. Nothing is downloaded from paywalled sites.')}</p>
-      <UploadedTextNote semantic={view.semantic} />
-    </section>
-  }
-
-  // ---- state 3: after collecting, or nothing is missing ---------------------------------
   const needs = records.filter(r => !r.answer_reads_nothing && (!full(r) || touched.has(r.source_version_id)))
-  const stillMissing = missing.length
   const readFull = records.filter(full)
-
-  const matchFiles = async (files: File[]) => {
-    const pdfs = files.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
-    if (!pdfs.length) return
-    if (onDropFiles) { onDropFiles(pdfs); return }
-    setMatching(true)
-    try {
-      const { matches } = await api.matchUploads(researchId, pdfs)
-      // A match to another version of a work is proposed on that work's row.
-      const recordOf = (svid: string | null) => (svid ? records.find(r => r.source_version_id === svid || versionsOf(r).some(v => v.source_version_id === svid)) : undefined)
-      setProposals(matches.map((match, i) => {
-        const record = recordOf(match.source_version_id)
-        return { file: pdfs[i], match, target: record && missing.includes(record) ? record.source_version_id : '', hasPdf: Boolean(record && !missing.includes(record)) }
-      }))
-    } catch (e) {
-      toast('error', e instanceof Error ? e.message : String(e))
-    } finally { setMatching(false) }
-  }
-  const attachProposals = () => {
-    const chosen = (proposals ?? []).filter(p => p.target)
-    if (!chosen.length) return
-    setProposals(null)
-    void act(async () => {
-      for (const p of chosen) {
-        const next = await api.uploadToSource(researchId, p.target, p.file); touch([p.target])
-        toast(next.file_restore ? fileRestoreTone(next.file_restore) : 'success', [t('PDF attached to this source. Its text was extracted page by page (no OCR).'), fileRestoreNote(next.file_restore)].filter(Boolean).join(' '))
-      }
-    })
-  }
+  const pages = readFull.reduce((sum, r) => sum + pagesOf(r), 0)
   const fromZotero = () => {
     const before = new Set(missing.map(r => r.source_version_id))
     void act(async () => {
@@ -193,84 +125,45 @@ export function PdfReadiness({ researchId, view, busy, hasAcademic, act, onSearc
       toast(added < checked || notes.length ? 'warning' : 'success', [t('Zotero: {added} of {checked} PDFs added.', { added, checked }), ...notes.map(n => `${n.title}: ${t(n.note, n.vars)}.`)].join(' '))
     })
   }
-  const onDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    setDragging(false)
-    void matchFiles(Array.from(event.dataTransfer.files))
-  }
 
-  return <section className="pdf-ready" aria-labelledby="pdf-ready-title">
-    <h2 id="pdf-ready-title">{stillMissing || unread.length ? t('{full} of {total} sources will be read in full', { full: inHand, total }) : plural(total, 'The {n} source will be read in full', 'All {n} sources will be read in full')}</h2>
-    {stillMissing > 0 && <p className="pdf-ready-lede">{plural(stillMissing, '{n} source still has no PDF. Add it if you have access, or generate the answer and it is cited from its abstract.', '{n} sources still have no PDF. Add the ones you have access to, or generate the answer and those {n} are cited from their abstracts.')}</p>}
-    <div className="pdf-ready-bar" aria-hidden><i className="is-pdf" style={{ width: `${(100 * inHand) / total}%` }} /></div>
-
-    {unread.length > 0 && <>
-      <div className="pdf-ready-group"><h3>{t('Your PDF, not read yet')}</h3><small>{unread.length}</small></div>
-      <UnreadNote n={unread.length} href={yourFiles} />
+  return <>
+    <div className="acts">
+      <Button className="btn-teal" disabled={busy || Boolean(current && collecting) || !missing.length} title={!missing.length ? t('Every included source has its PDF') : undefined} onClick={() => void collect()}><Download size={15} />{t('Collect open-access PDFs')}</Button>
+      {hint}
+    </div>
+    {unread.length > 0 && <section className="plist" aria-labelledby="pdf-unread-title">
+      <h4><span id="pdf-unread-title">{t('Your PDF, not read yet')}</span><span className="tnum">{unread.length}</span></h4>
+      <UnreadNote n={unread.length} />
       <ul className="pdf-ready-rows" aria-label={t('Your PDF, not read yet')}>
-        {unread.map(record => <li key={record.source_version_id}>
-          <RowHead record={record} facts={[{ text: t(UNREAD_FACT), tone: 'abstract' }]} />
-        </li>)}
+        {unread.map(record => <li key={record.source_version_id} className="prow"><RowHead record={record} facts={[{ text: t(UNREAD_FACT), tone: 'abstract' }]} /></li>)}
       </ul>
-    </>}
-
-    {needs.length > 0 && <>
-      <div className="pdf-ready-group"><h3>{t('Needs your PDF')}</h3><small>{stillMissing}</small></div>
+    </section>}
+    {needs.length > 0 && <section className="plist" aria-labelledby="pdf-needs-title">
+      <h4><span id="pdf-needs-title">{t('Included, no PDF yet')}</span><span className="tnum">{missing.length}</span></h4>
       <ul className="pdf-ready-rows">
-        {needs.map(record => <li key={record.source_version_id}>
+        {needs.map(record => <li key={record.source_version_id} className="prow">
           <RowHead record={record} facts={[!full(record) && { text: missingReason(record, versionsOf(record)), tone: 'abstract' }]} note={ocrNote(record)} />
           <span className="pdf-ready-side">{ocrAction(record)}{full(record)
-            ? <span className="pdf-pill is-ok">{t('Uploaded · {pages}', { pages: plural(pagesOf(record), '{n} page', '{n} pages') })}</span>
-            : <Button variant="outline" size="sm" disabled={busy} onClick={() => { touch([record.source_version_id]); onUpload(record) }}>{t('Upload PDF')}</Button>}</span>
+            ? <span className="pill ok">{t('Uploaded · {pages}', { pages: plural(pagesOf(record), '{n} page', '{n} pages') })}</span>
+            : <Button variant="outline" size="sm" className="ghost" disabled={busy} onClick={() => { touch([record.source_version_id]); onUpload(record) }}><Upload size={13} aria-hidden />{t('Upload PDF')}</Button>}</span>
         </li>)}
       </ul>
-
-      {proposals
-        ? <div className="pdf-ready-matches">
-          <p>{t('Check where each file goes. Nothing is attached until you confirm.')}</p>
-          <ul>{proposals.map((p, i) => <li key={`${p.file.name}-${i}`}>
-            <span className="pdf-ready-file">{p.file.name}<small>{t(p.hasPdf ? 'matches a source that already has its PDF' : p.match.basis === 'doi' ? 'matched by DOI' : p.match.basis === 'title' ? 'matched by title' : 'no match found')}</small></span>
-            <select value={p.target} aria-label={t('Source for {file}', { file: p.file.name })} onChange={e => setProposals(proposals.map((q, j) => (j === i ? { ...q, target: e.target.value } : q)))}>
-              <option value="">{t('Do not attach')}</option>
-              {missing.map(r => <option key={r.source_version_id} value={r.source_version_id}>{r.title}</option>)}
-            </select>
-          </li>)}</ul>
-          <div className="pdf-ready-actions">
-            <Button size="sm" disabled={busy || !proposals.some(p => p.target)} onClick={attachProposals}>{plural(proposals.filter(p => p.target).length, 'Attach {n} PDF', 'Attach {n} PDFs')}</Button>
-            <button type="button" className="pdf-ready-link" onClick={() => setProposals(null)}>{t('Cancel')}</button>
-          </div>
-        </div>
-        : stillMissing > 0 && <div className={`pdf-ready-drop${dragging ? ' is-over' : ''}`} onDragOver={e => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
-          <span>{t(matching ? 'Reading the files…' : 'Drop several PDFs here; each is matched to a source by DOI or title, and you confirm the matches.')}</span>
-          <span className="pdf-ready-drop-actions">
-            <Button variant="outline" size="sm" disabled={busy || matching} onClick={() => fileInput.current?.click()}>{t('Choose files')}</Button>
-            <span className="pdf-ready-zotero">
-              <Button variant="outline" size="sm" disabled={busy || matching} onClick={fromZotero}><ConnectionIcon id="zotero" />{t('Add from Zotero')}</Button>
-              <select value={zoteroSource} aria-label={t('Zotero library')} onChange={e => setZoteroSource(e.target.value as ZoteroSource)}>
-                <option value="local">{t('this computer')}</option>
-                <option value="web">zotero.org</option>
-              </select>
-            </span>
-          </span>
-          <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void matchFiles(Array.from(e.target.files ?? [])); e.target.value = '' }} />
-        </div>}
-    </>}
-
-    {readFull.length > 0 && <details className="pdf-ready-full">
-      <summary className="pdf-ready-group"><h3>{t('Read in full')}</h3><small>{t('{n} · {pages}', { n: readFull.length, pages: plural(pages, '{n} page', '{n} pages') })}</small></summary>
-      <ul className="pdf-ready-rows">{readFull.map(record => <li key={record.source_version_id}>
+      {missing.length > 0 && <div className="prow pdf-ready-zotero">
+        <Button variant="outline" size="sm" className="ghost" disabled={busy} onClick={fromZotero}><ConnectionIcon id="zotero" />{t('Add from Zotero')}</Button>
+        <select value={zoteroSource} aria-label={t('Zotero library')} onChange={e => setZoteroSource(e.target.value as ZoteroSource)}>
+          <option value="local">{t('this computer')}</option>
+          <option value="web">zotero.org</option>
+        </select>
+      </div>}
+    </section>}
+    {readFull.length > 0 && <details className="plist pdf-ready-full">
+      <summary><h4>{t('PDF text in hand')}</h4><small>{t('{n} · {pages}', { n: readFull.length, pages: plural(pages, '{n} page', '{n} pages') })}</small></summary>
+      <ul className="pdf-ready-rows">{readFull.map(record => <li key={record.source_version_id} className="prow">
         <RowHead record={record} facts={[pagesOf(record) > 0 && { text: plural(pagesOf(record), '{n} page', '{n} pages'), tone: 'text' }, reading(record).has_ocr_text && { text: t(OCR_LABEL), tone: 'ocr' }]} note={ocrNote(record)} />
         {ocrAction(record) && <span className="pdf-ready-side">{ocrAction(record)}</span>}
       </li>)}</ul>
     </details>}
-
-    <div className="pdf-ready-actions">
-      <Button disabled={busy} onClick={onAnswer}><Sparkles size={15} />{t('Generate source-linked answer')}</Button>
-      {stillMissing > 0 && <span className="pdf-ready-hint is-warn">{plural(stillMissing, '{n} source from abstract only', '{n} sources from abstract only')}</span>}
-      {hasAcademic && <button type="button" className="pdf-ready-link" disabled={busy} onClick={onSearchAgain}>{t('Search again')}</button>}
-    </div>
-    <UploadedTextNote semantic={view.semantic} />
-  </section>
+  </>
 }
 
 // A row head in the Sources list style: title, authors · year, the venue in italics, then dotted facts.
@@ -290,16 +183,12 @@ function RowHead({ record, facts, note }: { record: Source; facts: Fact[]; note?
 
 const UNREAD_FACT = 'Your PDF is attached and not read yet: the answer leaves this work out until the model reads it.'
 
-// Where a person's unread file is followed: "Your files" on the Waiting for your PDF tab, which also offers Read again.
-function UnreadNote({ n, href }: { n: number; href: string }) {
-  return <p className="pdf-ready-lede">
+// Where a person's unread file is followed: "Your files", further down this panel, which also offers Read again.
+function UnreadNote({ n }: { n: number }) {
+  return <p className="prow pdf-ready-lede">
     {plural(n, '{n} source has your PDF, not read yet. The answer leaves it out until the model reads it.', '{n} sources have your PDF, not read yet. The answer leaves them out until the model reads them.')}{' '}
-    <a href={href}>{t('See it in Your files')}</a>
+    <a href="#person-files-title" onClick={e => { e.preventDefault(); document.getElementById('person-files-title')?.scrollIntoView({ block: 'start' }) }}>{t('See it in Your files')}</a>
   </p>
-}
-
-export function Depth({ cells }: { cells: [number, string][] }) {
-  return <div className="pdf-ready-depth">{cells.map(([n, label]) => <div key={label}><strong>{n}</strong><span>{label}</span></div>)}</div>
 }
 
 // Whether a collection run has anything to try for this work: an open link of the record's own version, or of another version.

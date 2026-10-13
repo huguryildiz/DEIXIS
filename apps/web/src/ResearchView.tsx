@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Inbox, Lightbulb, ListMinus, PencilLine, Search, Sparkles, Table2, Trash2 } from 'lucide-react'
+import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, PencilLine, Search, Sparkles, Table2, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
@@ -9,6 +9,7 @@ import { TextRecoveryContext } from './TextRecoveryContext'
 import { EvidenceTab, TABLE_RUN_KINDS } from './EvidenceTable'
 import { Transcript } from './Transcript'
 import { PdfReadiness } from './PdfReadiness'
+import { includedReading } from './includedReading'
 import { ReportView } from './report/ReportView'
 import { FollowUpView } from './followup/FollowUpView'
 import { useFollowUpCount } from './followup/useFollowUp'
@@ -25,12 +26,13 @@ import { focusWhenLost } from './focus'
 import { scrollBehavior } from './motion'
 import { Notice } from './Notice'
 import { HumanQueue } from './HumanQueue'
-import { FlowBlock } from './FlowReport'
+import { FunnelPanel } from './FlowReport'
+import { AuditSample } from './AuditSample'
 import { WaitingForPdf } from './WaitingForPdf'
 import { EnglishQuestion, UploadedTextNote } from './SemanticNotes'
 import { AnswerThread, type AnswerThreadContext } from './research/AnswerThread'
 import { CitationPanel, type CitationOpen } from './research/CitationPanel'
-import { ActivityLog } from './research/ActivityLog'
+import { ActivityPanel } from './research/ActivityPanel'
 import { TableCard } from './research/ArtifactsTab'
 import { Rail } from './research/Rail'
 import { useRailWide } from './research/railData'
@@ -94,8 +96,6 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const openPanel = panels.open
   // The works whose open-copy lookup is running; each lookup removes only its own entry when it ends.
   const [pdfFinding, setPdfFinding] = useState<string[]>([])
-  const [waitingFiles, setWaitingFiles] = useState<File[] | null>(null)
-  const takeWaitingFiles = useCallback(() => setWaitingFiles(null), [])
   const [attachTarget, setAttachTarget] = useState<string | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ source: Source; assetId: string } | null>(null)
   // Replacing a PDF: the file is chosen first, then the confirmation names what still cites the old file (D45).
@@ -305,6 +305,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const tickedSeeds = seedPick ?? storedSeedIds
   const seedTitle = (sourceId: string) => view.sources.find(source => source.source_version_id === sourceId)?.title ?? sourceId
   const included = view.counts.included
+  // Included sources an answer could read only from their abstract: the thread names them before the first answer.
+  const missingPdfs = includedReading(view).missing.length
 
   // Only the run returned by this successful request can receive its focus handoff.
   const toRunStatus = (runId: string, origin: Element | null) => { focusWhenLost(() => {
@@ -492,9 +494,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const answersWithoutInclude = view.scope.discovery_completed === true
   const queueCount = (view.counts.queue ?? 0) + (view.counts.look_again ?? 0)
   const showQueue = () => openPanel('queue')
-  // Files dropped on the PDF panel of an sw research go to the waiting view's version-checked match (slice 18a).
+  // The works waiting for the person's PDF (slice 18a), counted in the ⋯ menu's row for the PDFs panel.
   const waitingCount = view.counts.waiting_for_pdf ?? 0
-  const dropForWaiting = (files: File[]) => { setWaitingFiles(files); openPanel('pdfs') }
   // Revise question turns the question bubble into the revise form (R7); Cancel and Save give focus back to the button.
   // A form that is already open keeps the revision it started from (only "Base my draft on revision N" moves it); asking
   // again only moves focus to the requested field.
@@ -543,8 +544,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     canNewAnswer: !busy && !active && Boolean(included || answersWithoutInclude),
     downloadMenu: answer.status === 'structurally_valid' ? <ExportMenu icon researchId={id} report={{ answer, title: answer.report_title ?? heading, version: answerVersion }}
       sources={view.sources} tables={tables} included={included} cited={citedListed} prisma={Boolean(view.counts.flow)} /> : null,
-    // Until the Funnel panel exists (S14) the funnel opens the Sources panel, which holds the flow counts (as the rail does).
-    onPanel: (name, opener) => openPanel(name === 'funnel' ? 'sources' : name, { opener }),
+    onPanel: (name, opener) => openPanel(name, { opener }),
     onShowSources: (filter, opener) => { setSourceFocus(null); setSourceFilter(filter); openPanel('sources', { opener }) },
     onRevise: () => reviseQuestion(),
     onNewAnswer: () => { void startAnswer() },
@@ -633,6 +633,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
               {panelRow('queue', 'Awaiting your decision', Inbox, queueCount)}
               {panelRow('pdfs', 'Get more full text', FileText, waitingCount)}
               {panelRow('table', 'Evidence table', Table2, tables?.length ?? null)}
+              {panelRow('funnel', 'Search funnel', Funnel, null)}
               {reports.filter(r => r.answer.id !== answer?.id).map(({ answer: older, version }) =>
                 <DropdownMenuItem key={older.id} className="research-menu-placement" onClick={() => { rowChosen.current = true; setOpenReportId(older.id) }}>
                   <FileText size={15} aria-hidden /><span>{t('Report')} · V{version}</span>
@@ -681,7 +682,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
         onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
         onGiveKeyTerms={() => reviseQuestion('terms')}
-        queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')}
+        queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')} onOpenFunnel={() => openPanel('funnel')}
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
         latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
@@ -729,11 +730,14 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           <Notice tone="attention">{t('Some PDF pages have no extracted text; the search uses only the readable passages.')}</Notice>}
         {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
       </div>}
-      {/* Before the first answer, the next step is getting the included sources' PDFs (D49); the panel carries the answer button. */}
-      {!answer && included > 0 && !(active && run?.kind !== 'pdf_collection' && run?.kind !== 'pdf_ocr') && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') ? <PdfReadiness researchId={id} view={view} busy={busy} hasAcademic={hasAcademic && seedSearchReady} act={async (action, success) => { await act(action, success) }} onSearchAgain={startDiscovery} onAnswer={startAnswer} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} onDropFiles={dropForWaiting} /> :
-      /* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
-         While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */
-      active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
+      {/* Before the first answer, the included sources without a PDF are named and the panel that gets them is one click
+         away (D49); collecting, uploads and OCR live in that panel (UI parity S14, P40). */}
+      {!answer && missingPdfs > 0 && !active && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') && <p className="pdf-ready-lede thread-pdf-note">
+        {t(missingPdfs === 1 ? '{n} included source has no PDF yet; an answer cites it from its abstract.' : '{n} included sources have no PDF yet; an answer cites them from their abstracts.', { n: missingPdfs })}{' '}
+        <button type="button" className="link" onClick={e => openPanel('pdfs', { opener: e.currentTarget })}>{t('Get more full text')}</button></p>}
+      {/* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
+         While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */}
+      {      active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
         {!answerOffersNew && <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>}
         {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
         {hasAcademic && (view.search_runs.length
@@ -769,7 +773,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         ocr={{ tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } }}
         bar={{ researchId: id, active, onStartTable: askTableStart, onAddToTable: (table, ids) => { void addToTable(table, ids) }, onRemove: ids => { void askRemoval(ids) }, onSaveToLibrary: saveToLibrary }} /></TextRecoveryContext.Provider>
       {/* The live tools the mockup panel has no place for (§2.2), under the table: what the list means, adding sources,
-         the English sentence, the flow counts, the search details and the removed sources. */}
+         the English sentence, the search details and the removed sources. The flow counts are in the Search funnel panel. */}
       <div className="sources-extras">
       <div className="workspace-pane-head"><div><h2 id="sources-heading">{t('Sources and access')}</h2><p>{t('Only included sources are used when the answer is written. Undecided and excluded sources are left out.')}</p></div>
         <div className="section-actions">
@@ -783,7 +787,6 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         </div></div>
       {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
       <EnglishQuestion researchId={id} view={view} busy={busy} onSaved={next => { setView(next); toast('success', t('English sentence saved for this question revision.')) }} />
-      <FlowBlock researchId={id} counts={view.counts} />
       {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {['completed', 'zero_results'].includes(s.status) ? t(s.status.replace('_', ' ')) : serviceErrorSentence({ kind: serviceKind(s.error?.service_kind ?? s.error?.error_kind ?? s.status, s.error?.http_status), service: providerName(s.provider), resetAt: s.error?.reset_at, effect: view.runs.find(r => r.id === s.run_id)?.status === 'completed' ? 'continued' : undefined })} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
       {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
         {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
@@ -792,10 +795,23 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       </section>
     </StackPanel>
     <StackPanel name="queue" title={`${t('Awaiting your decision')} (${queueCount})`} icon={Inbox}>
-      <HumanQueue researchId={id} view={view} dark={dark} onChanged={async () => { await load(); onChanged() }} onShowInSources={showInSources} />
+      <HumanQueue researchId={id} view={view} dark={dark} onChanged={async () => { await load(); onChanged() }} />
     </StackPanel>
     <StackPanel name="pdfs" title={t('Get more full text')} icon={FileText}>
-      <WaitingForPdf researchId={id} view={view} busy={busy} incoming={waitingFiles} onIncomingTaken={takeWaitingFiles} onChanged={async (announced?: string) => { if (announced) announcedRuns.current.add(announced); await load(); onChanged() }} />
+      <WaitingForPdf researchId={id} view={view} busy={busy} onChanged={async (announced?: string) => { if (announced) announcedRuns.current.add(announced); await load(); onChanged() }}
+        included={<PdfReadiness researchId={id} view={view} busy={busy} act={async (action, success) => { await act(action, success) }} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} />}
+        answerAction={{ label: answer ? t('Generate a new answer (V{n})', { n: latestVersion + 1 }) : t('Generate source-linked answer'), disabled: busy || active || !(included || answersWithoutInclude), onClick: () => { void startAnswer() } }}
+        onSearchAgain={hasAcademic && seedSearchReady ? startDiscovery : null} />
+    </StackPanel>
+    <StackPanel name="funnel" title={t('Search funnel')} icon={Funnel}>
+      <FunnelPanel researchId={id} view={view} answer={answer ?? null} cited={citedCount} queueCount={queueCount} busy={busy} active={active}
+        onPanel={(name, opener) => openPanel(name, { opener })} onShowSources={(filter, opener) => { setSourceFocus(null); setSourceFilter(filter); openPanel('sources', { opener }) }}
+        onChanged={async () => { await load(); onChanged() }} />
+      {/* The audit sample (slice 20) sits below the stages, collapsed (§2.2). */}
+      <details className="funnel-more queue-panel"><summary><ChevronRight size={14} aria-hidden className="queue-decided-chevron" />{t('Audit sample')}</summary>
+        <AuditSample researchId={id} lastEvent={view.last_event_id} onChanged={async () => { await load(); onChanged() }}
+          onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} onShowInSources={showInSources} />
+      </details>
     </StackPanel>
     <StackPanel name="table" title={t('Evidence table')} icon={Table2}>
       <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable?.id ?? null} tableRequest={focusTable?.request ?? 0} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
@@ -807,7 +823,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <CandidatesView researchId={id} view={view} dark={dark} modelText={modelText} selection={candidateSelection} onCount={setCandidateCount} onRunChanged={() => { void load(); onChanged() }} />
     </StackPanel>
     <StackPanel name="activity" title={t('Activity')} icon={Clock}>
-      <ActivityLog events={events} />
+      <ActivityPanel researchId={id} eventCursor={view.last_event_id} events={events} />
     </StackPanel>
     <ConfirmDialog open={Boolean(removeTarget)} dark={dark} title={t('Remove PDF?')}
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}

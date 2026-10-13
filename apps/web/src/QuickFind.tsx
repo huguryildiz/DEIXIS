@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 import { Dialog } from '@base-ui/react/dialog'
-import { AlignLeft, BookOpen, Check, FileText, Inbox, Keyboard, Languages, LibraryBig, Moon, Plus, Search, SlidersHorizontal, VectorSquare, type LucideIcon } from 'lucide-react'
+import { AlignLeft, BookOpen, Check, FileText, Funnel, Inbox, Keyboard, Languages, LibraryBig, Moon, Plus, Search, SlidersHorizontal, VectorSquare, type LucideIcon } from 'lucide-react'
 import { api, type QuickFindResult, type ResearchSummary } from './api'
 import { versionText } from './labels'
 import { t, type UiLanguage } from './i18n'
@@ -51,6 +51,7 @@ export function QuickFind({ open, onOpenChange, recent, dark, returnFocus, langu
     ...(research ? [
       { key: 'cmd-sources', group: 'Page' as const, label: t('Open sources'), icon: BookOpen, command: 'sources' as const, hint: key('S') },
       ...(research.answer ? [{ key: 'cmd-report', group: 'Page' as const, label: t('Open report'), icon: AlignLeft, command: 'report' as const, hint: key('R') }] : []),
+      { key: 'cmd-funnel', group: 'Page' as const, label: t('Open search funnel'), icon: Funnel, command: 'funnel' as const, hint: key('F') },
       { key: 'cmd-queue', group: 'Page' as const, label: t('Awaiting your decision'), icon: Inbox, command: 'queue' as const, hint: key('Q') },
       // Mockup "Read more in full": the panel reads selected pages, so it carries the live title (plan §2.3).
       { key: 'cmd-pdfs', group: 'Page' as const, label: t('Get more full text'), icon: FileText, command: 'pdfs' as const, hint: key('P') },

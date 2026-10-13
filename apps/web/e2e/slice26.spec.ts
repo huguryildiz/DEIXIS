@@ -59,15 +59,14 @@ const post = (api: Api, url: string, data: unknown) => api.context.post(url, { d
 type Row = { source_version_id: string; kind: string; reason_code: string; title: string; question: unknown }
 
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled', fullPage: true })
-const list = (page: Page) => page.getByRole('listbox', { name: 'Rows awaiting your decision' })
-const option = (page: Page, title: string) => list(page).getByRole('option', { name: new RegExp(`^${title}`) })
-const detail = (page: Page) => page.locator('.queue-detail')
+// The queue is stacked cards (UI parity S14): a list item named by its work's title.
+const card = (page: Page, title: string) => page.locator('.queue-panel').getByRole('listitem', { name: new RegExp(`^${title}`) })
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
 
 async function openQueue(page: Page, server: Slice26Server, rid: string) {
   await page.goto('about:blank')
   await page.goto(`${server.url()}/#/research/${rid}/queue`)
-  await expect(list(page)).toBeVisible()
+  await expect(page.getByRole('list', { name: 'Rows awaiting your decision' })).toBeVisible()
 }
 
 test.describe.serial('R: a work whose title names a study protocol is a queue row, not an include', () => {
@@ -98,13 +97,13 @@ test.describe.serial('R: a work whose title names a study protocol is a queue ro
     try {
       await openQueue(page, server, rid)
       await expect(page.locator('.queue-panel').getByRole('button', { name: /^Confirm the results/ })).toBeVisible()
-      await option(page, PROTOCOL).click()
-      await expect(detail(page).getByRole('heading', { name: PROTOCOL })).toBeVisible()
-      await expect(detail(page).locator('.queue-detail-meta')).toContainText('Confirm the results')
-      await expect(detail(page)).toContainText(ASKED)
-      await expect(detail(page)).toContainText(REASON)
-      await expect(detail(page)).not.toContainText('You decided this work under an earlier question')
-      await expect(detail(page).locator('.queue-run')).toHaveCount(2)
+      const one = card(page, PROTOCOL)
+      await expect(one.getByRole('heading', { name: PROTOCOL })).toBeVisible()
+      await expect(one.locator('header b')).toHaveText('Protocol')
+      await expect(one).toContainText(ASKED)
+      await expect(one).toContainText(REASON)
+      await expect(one).not.toContainText('You decided this work under an earlier question')
+      await expect(one.locator('.queue-run')).toHaveCount(2)
       await shot(page, 'R-queue-protocol-title-1440')
     } finally { await page.close() }
   })
@@ -113,14 +112,13 @@ test.describe.serial('R: a work whose title names a study protocol is a queue ro
     const narrow = await browser.newPage({ viewport: { width: 390, height: 844 } })
     try {
       await openQueue(narrow, server, rid)
-      await option(narrow, PROTOCOL).click()
-      await expect(list(narrow)).toBeHidden()
-      await expect(detail(narrow).getByRole('heading', { name: PROTOCOL })).toBeVisible()
-      await expect(detail(narrow)).toContainText(ASKED)
-      await expect(detail(narrow)).toContainText(REASON)
+      const one = card(narrow, PROTOCOL)
+      await expect(one.getByRole('heading', { name: PROTOCOL })).toBeVisible()
+      await expect(one).toContainText(ASKED)
+      await expect(one).toContainText(REASON)
       expect(await noSideScroll(narrow)).toBe(true)
       await shot(narrow, 'R-queue-protocol-title-390')
-      await detail(narrow).getByRole('button', { name: 'Yes', exact: true }).click()
+      await one.getByRole('button', { name: 'Yes', exact: true }).click()
       await expect.poll(async () => ((await (await api.context.get(`/api/researches/${rid}/queue`)).json()).rows as Row[])
         .some(r => r.title.startsWith(PROTOCOL))).toBe(false)
     } finally { await narrow.close() }

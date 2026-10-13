@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
-import { ArrowLeft, ChevronRight, ExternalLink, FileText, NotebookPen, RotateCcw } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, ChevronRight, CircleCheck, ExternalLink, Eye, Info, NotebookPen, RotateCcw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api, ApiError, type QueueAnswer, type QueueDecided, type QueueDetail, type QueueKind, type QueuePart, type QueueRow, type QueueRowView, type QueueRun, type QueueView, type ResearchView } from './api'
@@ -8,11 +8,9 @@ import { PassageSheet } from './PassageSheet'
 import type { CitationLabels } from './PdfTextDocument'
 import { ConnectionIcon } from './connectionIcons'
 import { Notice } from './Notice'
-import { AuditSample } from './AuditSample'
 import { OverridesLine } from './FlowReport'
 import { useToast } from './Toast'
 import { t, uiLocale } from './i18n'
-import { scrollBehavior } from './motion'
 
 // The human queue of an sw research (SW11.6, slice 17, D97): a list of the works that wait for a person, one row's
 // question and what the two reading runs said, and five answers. Everything shown is what the backend read; the screen
@@ -69,18 +67,6 @@ function labelsFor(kind: PageChoice['kind'], page: number, rendition?: boolean):
   return { marked: text, unmarked: text, mark }
 }
 
-function useNarrow() {
-  const query = '(max-width: 760px)'
-  const [narrow, setNarrow] = useState(() => window.matchMedia(query).matches)
-  useEffect(() => {
-    const list = window.matchMedia(query)
-    const change = () => setNarrow(list.matches)
-    list.addEventListener('change', change)
-    return () => list.removeEventListener('change', change)
-  }, [])
-  return narrow
-}
-
 const keyOf = (row: QueueRow) => `${row.source_version_id}:${row.row_token}`
 const MARK_NAME = 'The model’s quote, as found in the page text'
 // A look_again row names the earlier answer beside its label (decision 5): the person sees it without opening the row.
@@ -90,30 +76,51 @@ const kindText = (row: QueueRow) => {
   return earlier ? `${t('Decided under an earlier question')} · ${t(queueAnsweredText[earlier])}` : t('Decided under an earlier question')
 }
 const dateText = (iso: string) => new Date(iso).toLocaleString(uiLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+// Each card's head (mockup `.qcard header`): a short name of the kind and what came up. The words name the step that
+// raised the row: these rows come from the full-text reading, not from abstract screening.
+const CARD_HEADS: Record<QueueKind, [string, string]> = {
+  confirm_quote: ['Quote check', 'a quote was not found on its page'],
+  choose_run: ['Reading', 'the two reading runs disagreed'],
+  choose_version: ['Version', 'two versions of this work; they are different sources, not interchangeable'],
+  confirm_pdf: ['PDF check', 'is this the right file?'],
+  confirm_absent: ['Missing part', 'both runs read a required part as absent'],
+  find_part: ['Missing part', 'the runs did not find this part'],
+  confirm_results: ['Protocol', 'results, or only a plan?'],
+  look_again: ['Look again', 'you decided this under an earlier question'],
+}
+// What each answer does, under its label (mockup `.qopts small`), in the words of the toast it leads to.
+const ANSWER_NOTES: Partial<Record<QueueAnswer, string>> = {
+  include: 'Recorded as your own selection in the sources',
+  not_sure: 'Leaves it awaiting a decision; it does not come back by itself',
+  pdf_wrong: 'The work moves to those waiting for a PDF',
+  pdf_confirmed: 'The next reading run reads this work; no run starts by itself',
+}
+const ANSWER_ICONS: Record<QueueAnswer, typeof Check> = { include: Check, criterion_not_met: X, not_sure: Info, pdf_wrong: X, pdf_confirmed: Check }
+const PAGE = 20  // cards shown at once; the rest come with "Show more"
+const IN_FLIGHT = 2  // row details read at a time
 
-export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources }: { researchId: string; view: ResearchView; dark: boolean; onChanged: () => Promise<void>; onShowInSources: (workId: string) => void }) {
+type Note = { text: string; open: boolean }
+
+export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: string; view: ResearchView; dark: boolean; onChanged: () => Promise<void> }) {
   const toast = useToast()
-  const narrow = useNarrow()
   const [queue, setQueue] = useState<QueueView | null>(null)
   const [error, setError] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)  // a work id: its version may change under it
   // Details by row and token. The token also moves with the file's text (a new extraction or OCR), so a detail kept
   // under the list's token shows the passages that token was computed from.
   const [details, setDetails] = useState<Record<string, QueueRowView>>({})
-  const [unsettled, setUnsettled] = useState<string | null>(null)  // a row whose detail kept disagreeing with the list
-  const [detailError, setDetailError] = useState('')
+  const [detailErrors, setDetailErrors] = useState<Record<string, string>>({})
+  const [unsettled, setUnsettled] = useState<Set<string>>(new Set())  // rows whose detail kept disagreeing with the list
   const [kindFilter, setKindFilter] = useState<'all' | QueueKind>('all')
   const [reasonFilter, setReasonFilter] = useState('all')
-  const [showDetail, setShowDetail] = useState(false)  // at 760 px and below the detail takes the list's place
-  const [note, setNote] = useState<{ work: string | null; text: string; open: boolean }>({ work: null, text: '', open: false })
+  const [limit, setLimit] = useState(PAGE)
+  // A note belongs to the work it was written for and stays with it across refreshes.
+  const [notes, setNotes] = useState<Record<string, Note>>({})
   const [busy, setBusy] = useState(false)
-  const [actionError, setActionError] = useState('')
+  const [actionError, setActionError] = useState<{ work: string; text: string } | null>(null)
   // A 409: whether the row left the queue, and the note that was being written for it, which is kept.
   const [conflict, setConflict] = useState<{ work: string; gone: boolean; title: string; note: string } | null>(null)
   const [sheet, setSheet] = useState<SheetTarget | null>(null)
-  const listRef = useRef<HTMLDivElement>(null)
-  const titleRef = useRef<HTMLHeadingElement>(null)
-  const openWhenLoaded = useRef<string | null>(null)  // the row (and token) Enter was pressed on while it loaded
+  const sheetOpener = useRef<HTMLElement | null>(null)
   const listRequest = useRef(0)
   const latest = useRef<Promise<QueueView | null>>(Promise.resolve(null))
   const mismatches = useRef(new Map<string, number>())
@@ -144,22 +151,12 @@ export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources 
   const lookAgain = rows.filter(r => r.kind === 'look_again')
   const shownOpen = open.filter(r => (kindFilter === 'all' || r.kind === kindFilter) && (reasonFilter === 'all' || r.reason_code === reasonFilter))
   const ordered = [...shownOpen, ...(kindFilter === 'all' && reasonFilter === 'all' ? lookAgain : [])]
-  // Until a row is chosen the first one is, except at 760 px and below, where the list comes first.
-  const selectedWork = selected ?? (narrow ? null : ordered[0]?.work_id ?? null)
-  const current = rows.find(r => r.work_id === selectedWork) ?? null
-  const currentView = current ? details[keyOf(current)] : undefined
-  const detail = currentView?.detail
-  // An answer is sent only on a detail whose row and token are the ones the list shows.
-  const answerable = Boolean(current && currentView?.row?.row_token === current.row_token)
-  const gone = Boolean(selected && queue && !current)
-  // The active row stays in view while the arrow keys move through a long list.
-  useEffect(() => {
-    if (selectedWork) document.getElementById(`queue-row-${selectedWork}`)?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() })
-  }, [selectedWork])
+  const shown = ordered.slice(0, limit)
+  const shownOpenCards = shown.filter(r => r.kind !== 'look_again')
+  const shownLookAgain = shown.filter(r => r.kind === 'look_again')
 
-  // The selected row's detail, then the next row's in the background: one row ahead, so the next answer does not wait.
+  // The details of the cards on screen, two at a time, in card order.
   const inflight = useRef(new Set<string>())
-  const drop = (key: string) => setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key)))
   const fetchDetail = useCallback(async (row: QueueRow) => {
     const key = keyOf(row)
     if (inflight.current.has(key)) return
@@ -167,48 +164,34 @@ export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources 
     try {
       const value = await api.queueRow(researchId, row.source_version_id)
       setDetails(prev => ({ ...prev, [key]: value }))
+      setDetailErrors(prev => { const { [key]: _, ...rest } = prev; return rest })
       if (value.row?.row_token === row.row_token) { mismatches.current.delete(key); return }
       // The row moved between the list and its detail: the list is read again and the detail with it, twice at most;
       // a row that still disagrees says so and waits for the person to read it again.
       const tries = (mismatches.current.get(key) ?? 0) + 1
       mismatches.current.set(key, tries)
-      if (tries > 2) { setUnsettled(key); return }
+      if (tries > 2) { setUnsettled(prev => new Set(prev).add(key)); return }
       await load()
       setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key)))
+    } catch (e) {
+      setDetailErrors(prev => ({ ...prev, [key]: e instanceof Error ? e.message : String(e) }))
     } finally { inflight.current.delete(key) }
   }, [researchId, load])
-  const currentKey = current ? keyOf(current) : null
-  const nextRow = current ? ordered[ordered.findIndex(r => r.work_id === current.work_id) + 1] : undefined
-  const nextKey = nextRow ? keyOf(nextRow) : null
+  const shownKeys = shown.map(keyOf).join('|')
   useEffect(() => {
-    if (!current || !currentKey) return
-    if (!details[currentKey]) fetchDetail(current).catch(e => setDetailError(e instanceof Error ? e.message : String(e)))
-    else if (nextRow && nextKey && !details[nextKey]) void fetchDetail(nextRow).catch(() => undefined)
-  }, [currentKey, nextKey, details, fetchDetail])  // eslint-disable-line react-hooks/exhaustive-deps
+    const waiting = shown.filter(r => !details[keyOf(r)] && !detailErrors[keyOf(r)] && !unsettled.has(keyOf(r)) && !inflight.current.has(keyOf(r)))
+    waiting.slice(0, Math.max(0, IN_FLIGHT - inflight.current.size)).forEach(row => { void fetchDetail(row) })
+  }, [shownKeys, details, detailErrors, unsettled, fetchDetail])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const choose = (work: string | null) => {
-    setSelected(work)
-    setActionError('')
-    setDetailError('')
-    if (conflict && !conflict.gone && conflict.work !== work) setConflict(null)  // a kept note stays until the next answer
-    // A note belongs to the work it was written for; it is kept while that work stays selected, across refreshes.
-    setNote(prev => (prev.work === work ? prev : { work, text: '', open: false }))
-  }
-
-  const openPage = useCallback((row: QueueRow, found: QueueDetail, view: 'text' | 'pdf') => {
+  const openPage = (row: QueueRow, found: QueueDetail, opener: HTMLElement) => {
     const choice = rowPage(row, found)
     if (!choice) return
-    setSheet({ passageId: choice.passageId, assetId: choice.passageId ? null : found.asset_id, page: choice.page, view,
+    sheetOpener.current = opener
+    setSheet({ passageId: choice.passageId, assetId: choice.passageId ? null : found.asset_id, page: choice.page, view: 'pdf',
       anchor: choice.anchor, expect: choice.kind !== 'cue' && choice.kind !== 'page', labels: labelsFor(choice.kind, choice.page, choice.rendition) })
-  }, [])
-  // Enter on a row whose detail is still loading opens that row's page once its detail arrives, and no other row's.
-  useEffect(() => {
-    if (!openWhenLoaded.current || openWhenLoaded.current !== currentKey || !current || !detail || !answerable) return
-    openWhenLoaded.current = null
-    openPage(current, detail, 'pdf')
-  }, [currentKey, current, detail, answerable, openPage])
-
-  const openPart = (part: QueuePart) => {
+  }
+  const openPart = (part: QueuePart, opener: HTMLElement) => {
+    sheetOpener.current = opener
     if (part.quote_verified && part.page !== null && part.passage_id) {
       setSheet({ passageId: part.passage_id, assetId: null, page: part.page, view: 'text', anchor: part.anchor_text, expect: true, labels: labelsFor('quote', part.page, part.rendition) })
     } else if (part.closest?.passage_id) {
@@ -218,46 +201,45 @@ export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources 
       setSheet({ passageId: part.passage_id, assetId: null, page: 1, view: 'text', anchor: null, expect: true, labels: { marked: text, unmarked: text, mark: t(MARK_NAME) } })
     }
   }
-
-  const focusList = () => requestAnimationFrame(() => listRef.current?.focus({ preventScroll: false }))
+  const openSource = (sourceVersionId: string, opener: HTMLElement) => { sheetOpener.current = opener; setSheet({ source: sourceVersionId }) }
 
   async function reloadAll() {
     const [next] = await Promise.all([load(), onChanged()])
     return next
   }
+  // After an answer, focus goes to the title of the card that took the answered one's place, else to the panel heading.
+  const focusCard = (workId: string | null) => requestAnimationFrame(() => {
+    const target = (workId && document.querySelector<HTMLElement>(`#queue-row-${CSS.escape(workId)} .qcard-title`)) || document.getElementById('split-panel-title')
+    target?.focus({ preventScroll: false })
+  })
 
   async function answer(row: QueueRow, choice: QueueAnswer) {
-    if (!answerable) return
+    const rowView = details[keyOf(row)]
+    // An answer is sent only on a detail whose row and token are the ones the list shows.
+    if (rowView?.row?.row_token !== row.row_token) return
     const token = row.row_token
-    const written = note.work === row.work_id ? note.text : ''
+    const written = notes[row.work_id]?.text ?? ''
     const index = ordered.findIndex(r => r.work_id === row.work_id)
     const after = ordered[index + 1] ?? ordered[index - 1] ?? null
     setBusy(true)
-    setActionError('')
+    setActionError(null)
     try {
       const result = await api.answerQueueRow(researchId, row.source_version_id, choice, token, written.trim() || null)
       const next = await reloadAll()
-      const target = next?.rows.find(r => r.work_id === after?.work_id) ?? next?.rows[0] ?? null
       setConflict(null)
-      setNote({ work: target?.work_id ?? null, text: '', open: false })
-      setSelected(target?.work_id ?? null)
-      if (!target && narrow) setShowDetail(false)
+      setNotes(prev => { const { [row.work_id]: _, ...rest } = prev; return rest })
+      const target = next?.rows.find(r => r.work_id === after?.work_id) ?? null
       toast('success', t(toastText[choice]), { label: t('Undo'), run: () => { void undo(row.source_version_id, result.undo_token) } })
-      if (narrow && target) requestAnimationFrame(() => titleRef.current?.focus())
-      else focusList()
+      focusCard(target?.work_id ?? null)
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         // The row moved between showing and answering: the queue, its detail and the research view are read again.
         const next = await reloadAll()
         const still = next?.rows.some(r => r.work_id === row.work_id) ?? false
+        // The note stays with its work: under its card while the card is there, in the notice when it left.
         setConflict({ work: row.work_id, gone: !still, title: row.title, note: written.trim() })
-        if (!still) {
-          // The selection moves on; the note stays with its work, shown in the notice rather than under another row.
-          const target = (next?.rows.find(r => r.work_id === after?.work_id) ?? next?.rows[0])?.work_id ?? null
-          setSelected(target)
-          setNote({ work: target, text: '', open: false })
-        }
-      } else setActionError(e instanceof Error ? e.message : String(e))
+        if (!still) setNotes(prev => { const { [row.work_id]: _, ...rest } = prev; return rest })
+      } else setActionError({ work: row.work_id, text: e instanceof Error ? e.message : String(e) })
     } finally { setBusy(false) }
   }
 
@@ -277,28 +259,6 @@ export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources 
     } finally { setBusy(false) }
   }
 
-  const onListKey = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!ordered.length) return
-    const index = Math.max(0, ordered.findIndex(r => r.work_id === selectedWork))
-    const move = (to: number) => { event.preventDefault(); choose(ordered[Math.min(ordered.length - 1, Math.max(0, to))].work_id) }
-    if (event.key === 'ArrowDown') move(selectedWork === null ? 0 : index + 1)
-    else if (event.key === 'ArrowUp') move(index - 1)
-    else if (event.key === 'Home') move(0)
-    else if (event.key === 'End') move(ordered.length - 1)
-    else if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      if (!current) { choose(ordered[index].work_id); return }
-      if (narrow) { setShowDetail(true); requestAnimationFrame(() => titleRef.current?.focus()); return }
-      if (detail && answerable) openPage(current, detail, 'pdf')
-      else openWhenLoaded.current = currentKey
-    }
-  }
-  const onRowClick = (row: QueueRow) => {
-    choose(row.work_id)
-    if (narrow) { setShowDetail(true); requestAnimationFrame(() => titleRef.current?.focus()) }
-  }
-  const backToList = () => { setShowDetail(false); focusList() }
-
   if (error && !queue) return <Notice tone="error">{t('Could not load the queue: {error}', { error })}</Notice>
   if (!queue) return <p className="empty-inline" role="status">{t('Loading the queue…')}</p>
 
@@ -308,108 +268,75 @@ export function HumanQueue({ researchId, view, dark, onChanged, onShowInSources 
   const reasons = Object.keys(counts.by_reason)
   const emptyFacts = [decidedCount > 0 && t(decidedCount === 1 ? 'You decided {n} work' : 'You decided {n} works', { n: decidedCount }),
     counts.user_selected > 0 && t(counts.user_selected === 1 ? 'you chose {n} work from the sources' : 'you chose {n} works from the sources', { n: counts.user_selected })].filter(Boolean)
-  const option = (row: QueueRow) => {
-    const kind = kindText(row)
-    return <div key={row.work_id} id={`queue-row-${row.work_id}`} role="option" aria-selected={row.work_id === selectedWork}
-      aria-label={`${row.title}. ${kind}. ${t('Awaiting a decision')}`}
-      className={`queue-row${row.work_id === selectedWork ? ' is-selected' : ''}`} onClick={() => onRowClick(row)}>
-      <span className="queue-row-place" aria-hidden>{row.place ?? '–'}</span>
-      <span className="queue-row-main" aria-hidden>
-        <span className="queue-row-title">{row.title}</span>
-        <span className="queue-row-facts">
-          <span className={`ref-pill is-${versionTones[row.version_label ?? ''] ?? 'unstated'}`}>{versionText(row.version_label)}</span>
-          <span>{kind}</span>
-          {row.arm === 'chain' && <span className="queue-row-chain">{t('from the citation chain')}</span>}
-        </span>
-      </span>
-    </div>
+  const card = (row: QueueRow) => {
+    const key = keyOf(row)
+    return <QueueCard key={row.work_id} row={row} rowView={details[key]} detailError={detailErrors[key] ?? ''} unsettled={unsettled.has(key)} busy={busy}
+      note={notes[row.work_id] ?? { text: '', open: false }} onNote={note => setNotes(prev => ({ ...prev, [row.work_id]: note }))}
+      conflict={conflict && conflict.work === row.work_id && !conflict.gone} actionError={actionError?.work === row.work_id ? actionError.text : ''}
+      onReadAgain={() => { mismatches.current.delete(key); setUnsettled(prev => { const next = new Set(prev); next.delete(key); return next }); setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key))) }}
+      onAnswer={choice => void answer(row, choice)} onOpenPage={opener => { const d = details[key]?.detail; if (d) openPage(row, d, opener) }}
+      onOpenPart={openPart} onOpenSource={opener => openSource(row.source_version_id, opener)}
+      onOpenCue={(passageId, page, rendition, opener) => { sheetOpener.current = opener; setSheet({ passageId, assetId: null, page, view: 'text', anchor: null, expect: false, labels: labelsFor('cue', page, rendition) }) }} />
   }
 
-  return <section className="queue-panel" aria-labelledby="queue-heading">
-    <div className="workspace-pane-head"><div><h2 id="queue-heading">{t('Awaiting your decision')}</h2>
-      <p>{t('Works the reading could not settle. Each row asks one question; your answer is recorded as your decision and can be taken back.')}</p></div></div>
+  return <div className="mock-pad queue-panel">
+    {rows.length > 0 && <p>{t('These came up while DEIXIS worked. Your answer is recorded as your decision and can be taken back; nothing here was decided for you.')}</p>}
     <OverridesLine overrides={view.counts.overrides} />
     {error && <Notice tone="error">{t('Could not load the queue: {error}', { error })}</Notice>}
-    {!rows.length ? <div className="queue-empty">
-      <p className="empty-inline">{t('No rows in the queue.')}</p>
-      {emptyFacts.length > 0 && <p className="empty-inline">{`${emptyFacts.join('; ')}.`}</p>}
-    </div> : <div className={`queue-layout${narrow && showDetail ? ' is-detail' : ''}`}>
-      <div className="queue-list-pane">
-        <div className="queue-filters">
-          <div className="queue-chips" role="group" aria-label={t('Show rows')}>
-            <button type="button" aria-pressed={kindFilter === 'all'} onClick={() => setKindFilter('all')}>{t('All')}<span>{open.length}</span></button>
-            {KIND_ORDER.filter(kind => kindCount(kind) > 0).map(kind => <button key={kind} type="button" aria-pressed={kindFilter === kind} onClick={() => setKindFilter(kind)}>{t(queueKindLabels[kind])}<span>{kindCount(kind)}</span></button>)}
-          </div>
-          {reasons.length > 1 && <Select value={reasonFilter} onValueChange={value => { if (value) setReasonFilter(String(value)) }}>
-            <SelectTrigger className="queue-reason-filter" aria-label={t('Filter rows by why they are here')}><SelectValue>{(value: string) => value === 'all' ? t('Every reason') : queueReasonText(value)}</SelectValue></SelectTrigger>
-            <SelectContent className="intake-select-content" align="start" alignItemWithTrigger={false}>
-              <SelectItem value="all">{t('Every reason')}</SelectItem>
-              {reasons.map(code => <SelectItem key={code} value={code}><span className="source-filter-option"><span>{queueReasonText(code)}</span><small>{counts.by_reason[code]}</small></span></SelectItem>)}
-            </SelectContent>
-          </Select>}
+    {conflict && conflict.gone && <Notice tone="attention">{t('The row you answered left the queue after it was shown. Your answer was not saved.')}
+      {conflict.note && <p className="queue-kept-note">{t('Your note for “{title}” is kept here:', { title: conflict.title })} <q>{conflict.note}</q></p>}</Notice>}
+    {!rows.length ? <div className="empty queue-empty"><div>
+      <CircleCheck size={22} aria-hidden />
+      <h2>{t('Nothing is waiting for you')}</h2>
+      <p>{t('No row waits for your decision. Your answers are kept with this research.')}</p>
+      {emptyFacts.length > 0 && <p>{`${emptyFacts.join('; ')}.`}</p>}
+    </div></div> : <>
+      {(KIND_ORDER.filter(kind => kindCount(kind) > 0).length > 1 || reasons.length > 1) && <div className="queue-filters">
+        <div className="queue-chips" role="group" aria-label={t('Show rows')}>
+          <button type="button" aria-pressed={kindFilter === 'all'} onClick={() => setKindFilter('all')}>{t('All')}<span>{open.length}</span></button>
+          {KIND_ORDER.filter(kind => kindCount(kind) > 0).map(kind => <button key={kind} type="button" aria-pressed={kindFilter === kind} onClick={() => setKindFilter(kind)}>{t(queueKindLabels[kind])}<span>{kindCount(kind)}</span></button>)}
         </div>
-        <div ref={listRef} className="queue-list" role="listbox" tabIndex={0} aria-label={t('Rows awaiting your decision')}
-          aria-activedescendant={current && ordered.includes(current) ? `queue-row-${current.work_id}` : undefined} onKeyDown={onListKey}>
-          {shownOpen.length > 0 && <div role="group" aria-label={t('Awaiting your decision')}>{shownOpen.map(option)}</div>}
-          {!shownOpen.length && <p className="empty-inline queue-filter-empty">{t('No row matches this filter.')}</p>}
-          {kindFilter === 'all' && reasonFilter === 'all' && lookAgain.length > 0 && <div role="group" aria-labelledby="queue-look-again">
-            <p id="queue-look-again" className="queue-group-head">{t('Decided under an earlier question; look again')}</p>
-            {lookAgain.map(option)}
-          </div>}
-        </div>
-        <p className="queue-keys" aria-hidden>{t('↑↓ choose a row · Enter opens its page in the PDF')}</p>
-      </div>
+        {reasons.length > 1 && <Select value={reasonFilter} onValueChange={value => { if (value) setReasonFilter(String(value)) }}>
+          <SelectTrigger className="queue-reason-filter" aria-label={t('Filter rows by why they are here')}><SelectValue>{(value: string) => value === 'all' ? t('Every reason') : queueReasonText(value)}</SelectValue></SelectTrigger>
+          <SelectContent className="intake-select-content" align="start" alignItemWithTrigger={false}>
+            <SelectItem value="all">{t('Every reason')}</SelectItem>
+            {reasons.map(code => <SelectItem key={code} value={code}><span className="source-filter-option"><span>{queueReasonText(code)}</span><small>{counts.by_reason[code]}</small></span></SelectItem>)}
+          </SelectContent>
+        </Select>}
+      </div>}
+      {shownOpenCards.length > 0 ? <div className="queue-cards" role="list" aria-label={t('Rows awaiting your decision')}>{shownOpenCards.map(card)}</div>
+        : !shownLookAgain.length && <p className="empty-inline queue-filter-empty">{t('No row matches this filter.')}</p>}
+      {shownLookAgain.length > 0 && <section className="queue-cards" aria-labelledby="queue-look-again">
+        <h3 id="queue-look-again" className="queue-group-head">{t('Decided under an earlier question; look again')}</h3>
+        <div role="list" className="queue-cards">{shownLookAgain.map(card)}</div>
+      </section>}
+      {ordered.length > shown.length && <button type="button" className="ghost queue-more" onClick={() => setLimit(n => n + PAGE)}>{t('Show {n} more', { n: Math.min(PAGE, ordered.length - shown.length) })}</button>}
+      <p className="foot-note">{t('Semantic support not checked. Your answer is recorded as your decision; DEIXIS does not say whether it is right.')}</p>
+    </>}
 
-      <div className="queue-detail" aria-labelledby={current ? 'queue-detail-title' : undefined}>
-        {narrow && <button type="button" className="queue-back" onClick={backToList}><ArrowLeft size={15} aria-hidden />{t('Back to the list')}</button>}
-        {conflict && conflict.work === selectedWork && !conflict.gone && <Notice tone="attention">{t('This row changed after it was shown; its current state is loaded. Your answer was not saved.')}</Notice>}
-        {conflict && conflict.gone && <Notice tone="attention">{t('The row you answered left the queue after it was shown. Your answer was not saved.')}
-          {conflict.note && <p className="queue-kept-note">{t('Your note for “{title}” is kept here:', { title: conflict.title })} <q>{conflict.note}</q></p>}</Notice>}
-        {gone && !conflict && <Notice tone="attention">{t('This work is no longer in the queue. Nothing was saved; your note is kept below.')}</Notice>}
-        {current && currentView && !answerable && !detailError && (unsettled === currentKey
-          ? <Notice tone="attention">{t('This row kept changing while it was read, so it cannot be answered yet.')}{' '}
-            <button type="button" className="queue-link" onClick={() => { mismatches.current.delete(currentKey!); setUnsettled(null); drop(currentKey!) }}>{t('Read it again')}</button></Notice>
-          : <p className="queue-muted" role="status">{t('Reading this row again…')}</p>)}
-        {current ? <RowDetail row={current} rowView={currentView} detailError={detailError} titleRef={titleRef}
-          onOpenPage={() => detail && openPage(current, detail, 'pdf')} onOpenPart={openPart}
-          onOpenSource={() => setSheet({ source: current.source_version_id })}
-          onOpenCue={(passageId, page, rendition) => setSheet({ passageId, assetId: null, page, view: 'text', anchor: null, expect: false, labels: labelsFor('cue', page, rendition) })} />
-          : !gone && <p className="empty-inline">{t('Choose a row to see its question.')}</p>}
-        {(current || (gone && note.text)) && <footer className="queue-foot">
-          {actionError && <Notice tone="error">{actionError}</Notice>}
-          {note.open || note.text ? <label className="queue-note"><span>{t('Note')}<small>{t('{n} of 1000 characters', { n: note.text.length })}</small></span>
-            <textarea value={note.text} maxLength={1000} rows={2} onChange={e => setNote({ work: selectedWork, text: e.target.value, open: true })} /></label>
-            : <button type="button" className="queue-note-toggle" onClick={() => setNote({ work: selectedWork, text: '', open: true })}><NotebookPen size={14} aria-hidden />{t('Add a note')}</button>}
-          {current && <div className="queue-answers" role="group" aria-label={t(current.kind === 'confirm_pdf' ? 'Is this PDF the work named here?' : 'Is this paper a source for the question?')}>
-            {(current.kind === 'confirm_pdf' ? ['pdf_confirmed' as const, ...ANSWERS] : ANSWERS).map(choice =>
-              <Button key={choice} variant={choice === 'pdf_confirmed' ? 'default' : 'outline'} disabled={busy || !answerable} onClick={() => void answer(current, choice)}>{t((current.kind === 'confirm_pdf' ? queueAnswerLabels : answerWords)[choice])}</Button>)}
-          </div>}
-          <p className="queue-foot-note">{t('Semantic support not checked. Your answer is recorded as your decision; DEIXIS does not say whether it is right.')}</p>
-        </footer>}
-      </div>
-    </div>}
-
-    {queue.decided.length > 0 && <Decided entries={queue.decided} busy={busy} onUndo={entry => { if (entry.undo_token) void undo(entry.source_version_id, entry.undo_token) }} onOpen={svid => setSheet({ source: svid })} />}
-
-    <AuditSample researchId={researchId} lastEvent={view.last_event_id} onChanged={onChanged} onOpenSource={svid => setSheet({ source: svid })} onShowInSources={onShowInSources} />
+    {queue.decided.length > 0 && <Decided entries={queue.decided} busy={busy} onUndo={entry => { if (entry.undo_token) void undo(entry.source_version_id, entry.undo_token) }} onOpen={(svid, opener) => openSource(svid, opener)} />}
 
     {sheet && <PassageSheet researchId={researchId} dark={dark} sources={view.sources}
       passageId={'source' in sheet ? null : sheet.passageId} assetId={'source' in sheet ? null : sheet.assetId}
       sourceVersionId={'source' in sheet ? sheet.source : null} initialView={'source' in sheet ? 'text' : sheet.view}
       initialPage={'source' in sheet ? 1 : sheet.page} highlightTexts={'source' in sheet || !sheet.anchor ? [] : [sheet.anchor]}
       expectHighlight={'source' in sheet ? false : sheet.expect} citationLabels={'source' in sheet ? undefined : sheet.labels}
-      onClose={() => { setSheet(null); if (!narrow) focusList() }} />}
-  </section>
+      onClose={() => { setSheet(null); const opener = sheetOpener.current; requestAnimationFrame(() => { if (opener?.isConnected) opener.focus() }) }} />}
+  </div>
 }
 
-function RowDetail({ row, rowView, detailError, titleRef, onOpenPage, onOpenPart, onOpenSource, onOpenCue }: {
-  row: QueueRow; rowView: QueueRowView | undefined; detailError: string; titleRef: RefObject<HTMLHeadingElement | null>
-  onOpenPage: () => void; onOpenPart: (part: QueuePart) => void; onOpenSource: () => void; onOpenCue: (passageId: string, page: number, rendition?: boolean) => void
+function QueueCard({ row, rowView, detailError, unsettled, busy, note, onNote, conflict, actionError, onReadAgain, onAnswer, onOpenPage, onOpenPart, onOpenSource, onOpenCue }: {
+  row: QueueRow; rowView: QueueRowView | undefined; detailError: string; unsettled: boolean; busy: boolean
+  note: Note; onNote: (note: Note) => void; conflict: boolean | null; actionError: string; onReadAgain: () => void
+  onAnswer: (choice: QueueAnswer) => void; onOpenPage: (opener: HTMLElement) => void; onOpenPart: (part: QueuePart, opener: HTMLElement) => void
+  onOpenSource: (opener: HTMLElement) => void; onOpenCue: (passageId: string, page: number, rendition: boolean | undefined, opener: HTMLElement) => void
 }) {
   const detail = rowView?.detail
+  const answerable = rowView?.row?.row_token === row.row_token
   const choice = detail ? rowPage(row, detail) : null
-  const kind = kindText(row)
   const part = row.question?.part
+  const [head, about] = CARD_HEADS[row.kind]
+  const earlier = row.kind === 'look_again' ? queueAnswerOfCode[row.reason_code] : undefined
   // One question for every paper; the part, the protocol title or the versions the reading stopped at come second.
   const question = row.kind === 'confirm_pdf' ? t('Is this PDF the work named here?') : t('Is this paper a source for the question?')
   const context = row.question
@@ -420,82 +347,103 @@ function RowDetail({ row, rowView, detailError, titleRef, onOpenPage, onOpenPart
     : null
   const unverified = detail ? detail.runs.flatMap(run => run.parts.filter(p => p.part === part && p.label === 'present' && p.quote_verified === false && p.quote)
     .map(p => ({ run: run.run_no, part: p }))) : []
-  return <>
-    <div className="queue-detail-head">
-      <p className="queue-detail-meta">{[row.place !== null && t('No. {n} in the order', { n: row.place }), t('Awaiting a decision'), kind, row.arm === 'chain' && t('from the citation chain')].filter(Boolean).join(' · ')}</p>
-      <h3 id="queue-detail-title" ref={titleRef} tabIndex={-1} className="queue-detail-title"><button type="button" onClick={onOpenSource}>{row.title}</button></h3>
-      <div className="source-chips">
+  const answers = row.kind === 'confirm_pdf' ? ['pdf_confirmed' as const, ...ANSWERS] : ANSWERS
+  const words = row.kind === 'confirm_pdf' ? queueAnswerLabels : answerWords
+  const titleId = `queue-title-${row.work_id}`
+  return <article id={`queue-row-${row.work_id}`} className="qcard" role="listitem" aria-labelledby={titleId}>
+    <header><b>{t(head)}</b><span>· {t(about)}{earlier ? ` · ${t(queueAnsweredText[earlier])}` : ''}</span></header>
+    <div className="qb">
+      <h4 id={titleId}><button type="button" className="qcard-title" onClick={e => onOpenSource(e.currentTarget)}>{row.title}</button></h4>
+      <div className="au">
         <span className={`ref-pill is-${versionTones[row.version_label ?? ''] ?? 'unstated'}`}>{versionText(row.version_label)}</span>
-        {row.year && <span className="ref-pill">{row.year}</span>}
+        {[row.year, row.place !== null && t('No. {n} in the order', { n: row.place }), row.arm === 'chain' && t('from the citation chain'), kindText(row)].filter(Boolean).map((fact, i) => <span key={i}>{fact}</span>)}
         {row.doi && <a className="source-link-chip" href={`https://doi.org/${row.doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" /><span>{row.doi}</span><ExternalLink size={12} aria-hidden /></a>}
       </div>
-      {choice && <Button variant="outline" size="sm" className="queue-open-page" onClick={onOpenPage}><FileText size={14} aria-hidden />{t('Open page {page} in the PDF', { page: choice.page })}</Button>}
+      {conflict && <Notice tone="attention">{t('This row changed after it was shown; its current state is loaded. Your answer was not saved.')}</Notice>}
+      {rowView && !answerable && !detailError && (unsettled
+        ? <Notice tone="attention">{t('This row kept changing while it was read, so it cannot be answered yet.')}{' '}
+          <button type="button" className="queue-link" onClick={onReadAgain}>{t('Read it again')}</button></Notice>
+        : <p className="queue-muted" role="status">{t('Reading this row again…')}</p>)}
+      {detailError ? <Notice tone="error">{t('Could not load this row: {error}', { error: detailError })}</Notice>
+        : !rowView ? <p className="queue-muted" role="status">{t('Loading this row…')}</p>
+        : !detail ? <Notice tone="attention">{t('This row changed while it was loading; the queue is being read again.')}</Notice>
+        : <>
+          {detail.identity && <section className="queue-identity" aria-label={t('The PDF and the work')}>
+            <div><h5>{t('First page of the PDF')}</h5><div className="queue-first-page">{detail.identity.first_page ?? t('No text was extracted from the first page.')}</div></div>
+            <div><h5>{t('The work this PDF was fetched for')}</h5><p className="queue-serif">{detail.identity.work_title}</p>
+              {detail.identity.work_doi && <a className="source-link-chip" href={`https://doi.org/${detail.identity.work_doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" /><span>{detail.identity.work_doi}</span><ExternalLink size={12} aria-hidden /></a>}</div>
+          </section>}
+          {detail.versions ? <section className="queue-runs is-versions" aria-label={t('What each version was read as')}>
+            {detail.versions.map(version => <div key={version.source_version_id} className="queue-run">
+              <b><span className={`ref-pill is-${versionTones[version.version_label ?? ''] ?? 'unstated'}`}>{versionText(version.version_label)}</span> {t(version.decision.outcome === 'include' ? 'read as included' : version.decision.outcome === 'criterion_not_met' ? 'read as not meeting the criterion' : 'read as unresolved')}</b>
+              {version.runs.map(run => <RunParts key={run.run_no} run={run} part={part} onOpenPart={onOpenPart} />)}
+            </div>)}
+          </section> : detail.runs.length > 0 && <section className="reads queue-runs" aria-label={t('What the two runs said')}>
+            {detail.runs.map(run => <div key={run.run_no} className="queue-run"><RunParts run={run} part={part} onOpenPart={onOpenPart} /></div>)}
+          </section>}
+          {unverified.length > 0 && <section className="queue-closest" aria-label={t('The closest text')}>
+            {unverified.map(({ run, part: p }) => <div key={run}>
+              <Notice tone="attention">{p.closest
+                ? t('Run {run}: the model’s quote was not found in the text. The closest text is beside it; match ratio {ratio}.', { run, ratio: p.closest.ratio.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })
+                : t('Run {run}: the model’s quote was not found in the text, and the pages this run was shown hold no close text.', { run })}</Notice>
+              {p.closest && <div className="queue-pair">
+                <div><h5>{t('The model’s quote')}</h5><blockquote className="queue-quote">{p.quote}</blockquote></div>
+                <div><h5>{t('The closest text · {locator}', { locator: pageLocator(p.closest.page, p.closest.rendition) })}</h5><blockquote className="queue-quote">{p.closest.text}</blockquote></div>
+              </div>}
+            </div>)}
+          </section>}
+          {row.question && <section className="queue-cues">
+            <h5>{t('Sentences with this part’s phrases')}</h5>
+            {detail.cues.sentences.length ? <>
+              <ul>{detail.cues.sentences.map((cue, i) => <li key={i}><p className="queue-serif">{cue.sentence}</p>
+                {cue.passage_id && <button type="button" className="queue-page-link" onClick={e => onOpenCue(cue.passage_id!, cue.page, cue.rendition, e.currentTarget)}>{pageLocator(cue.page, cue.rendition)}<ChevronRight size={13} aria-hidden /></button>}</li>)}</ul>
+              {detail.cues.total > detail.cues.sentences.length && <p className="queue-muted">{t('{shown} of {total} sentences shown', { shown: detail.cues.sentences.length, total: detail.cues.total })}</p>}
+            </> : <p className="queue-muted">{t('This part’s phrases do not occur in the text.')}</p>}
+          </section>}
+        </>}
+      <div className="lbl queue-question">
+        <span className="queue-question-text">{question}</span>
+        {context && <span>{context}</span>}
+        {row.question?.definition && <span className="queue-question-definition">{row.question.definition}</span>}
+        <span className="queue-why">{t('Why it is here:')} {queueReasonText(row.reason_code)} <code>{row.reason_code}</code></span>
+      </div>
+      {choice && <button type="button" className="ghost queue-open-page" onClick={e => onOpenPage(e.currentTarget)}><Eye size={14} aria-hidden />{t('Open page {page} in the PDF', { page: choice.page })}</button>}
+      {actionError && <Notice tone="error">{actionError}</Notice>}
+      <div className="qopts" role="group" aria-label={question}>
+        {answers.map(choice => {
+          const Icon = ANSWER_ICONS[choice]
+          const label = t(words[choice])
+          return <button key={choice} type="button" aria-label={label} disabled={busy || !answerable} onClick={() => onAnswer(choice)}>
+            <Icon size={16} aria-hidden /><span>{label}{ANSWER_NOTES[choice] && <small>{t(ANSWER_NOTES[choice]!)}</small>}</span>
+          </button>
+        })}
+      </div>
+      {note.open || note.text ? <label className="queue-note"><span>{t('Note')}<small>{t('{n} of 1000 characters', { n: note.text.length })}</small></span>
+        <textarea value={note.text} maxLength={1000} rows={2} onChange={e => onNote({ text: e.target.value, open: true })} /></label>
+        : <button type="button" className="queue-note-toggle" onClick={() => onNote({ text: '', open: true })}><NotebookPen size={14} aria-hidden />{t('Add a note')}</button>}
     </div>
-    <section className="queue-question">
-      <p className="queue-question-text">{question}</p>
-      {context && <p className="queue-question-context">{context}</p>}
-      {row.question?.definition && <p className="queue-question-definition">{row.question.definition}</p>}
-      <p className="queue-why"><span>{t('Why it is here:')}</span> {queueReasonText(row.reason_code)} <code>{row.reason_code}</code></p>
-    </section>
-    {detailError ? <Notice tone="error">{t('Could not load this row: {error}', { error: detailError })}</Notice>
-      : !rowView ? <p className="empty-inline" role="status">{t('Loading this row…')}</p>
-      : !detail ? <Notice tone="attention">{t('This row changed while it was loading; the queue is being read again.')}</Notice>
-      : <>
-        {detail.identity && <section className="queue-identity" aria-label={t('The PDF and the work')}>
-          <div><h4>{t('First page of the PDF')}</h4><div className="queue-first-page">{detail.identity.first_page ?? t('No text was extracted from the first page.')}</div></div>
-          <div><h4>{t('The work this PDF was fetched for')}</h4><p className="queue-serif">{detail.identity.work_title}</p>
-            {detail.identity.work_doi && <a className="source-link-chip" href={`https://doi.org/${detail.identity.work_doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" /><span>{detail.identity.work_doi}</span><ExternalLink size={12} aria-hidden /></a>}</div>
-        </section>}
-        {detail.versions ? <section className="queue-runs" aria-label={t('What each version was read as')}>
-          {detail.versions.map(version => <div key={version.source_version_id} className="queue-run">
-            <h4><span className={`ref-pill is-${versionTones[version.version_label ?? ''] ?? 'unstated'}`}>{versionText(version.version_label)}</span> {t(version.decision.outcome === 'include' ? 'read as included' : version.decision.outcome === 'criterion_not_met' ? 'read as not meeting the criterion' : 'read as unresolved')}</h4>
-            {version.runs.map(run => <RunParts key={run.run_no} run={run} part={part} onOpenPart={onOpenPart} />)}
-          </div>)}
-        </section> : detail.runs.length > 0 && <section className="queue-runs" aria-label={t('What the two runs said')}>
-          {detail.runs.map(run => <div key={run.run_no} className="queue-run"><RunParts run={run} part={part} onOpenPart={onOpenPart} /></div>)}
-        </section>}
-        {unverified.length > 0 && <section className="queue-closest" aria-label={t('The closest text')}>
-          {unverified.map(({ run, part: p }) => <div key={run}>
-            <Notice tone="attention">{p.closest
-              ? t('Run {run}: the model’s quote was not found in the text. The closest text is beside it; match ratio {ratio}.', { run, ratio: p.closest.ratio.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })
-              : t('Run {run}: the model’s quote was not found in the text, and the pages this run was shown hold no close text.', { run })}</Notice>
-            {p.closest && <div className="queue-pair">
-              <div><h5>{t('The model’s quote')}</h5><blockquote className="queue-quote">{p.quote}</blockquote></div>
-              <div><h5>{t('The closest text · {locator}', { locator: pageLocator(p.closest.page, p.closest.rendition) })}</h5><blockquote className="queue-quote">{p.closest.text}</blockquote></div>
-            </div>}
-          </div>)}
-        </section>}
-        {row.question && <section className="queue-cues">
-          <h4>{t('Sentences with this part’s phrases')}</h4>
-          {detail.cues.sentences.length ? <>
-            <ul>{detail.cues.sentences.map((cue, i) => <li key={i}><p className="queue-serif">{cue.sentence}</p>
-              {cue.passage_id && <button type="button" className="queue-page-link" onClick={() => onOpenCue(cue.passage_id!, cue.page, cue.rendition)}>{pageLocator(cue.page, cue.rendition)}<ChevronRight size={13} aria-hidden /></button>}</li>)}</ul>
-            {detail.cues.total > detail.cues.sentences.length && <p className="queue-muted">{t('{shown} of {total} sentences shown', { shown: detail.cues.sentences.length, total: detail.cues.total })}</p>}
-          </> : <p className="queue-muted">{t('This part’s phrases do not occur in the text.')}</p>}
-        </section>}
-      </>}
-  </>
+  </article>
 }
 
-function RunParts({ run, part, onOpenPart }: { run: QueueRun; part: string | undefined; onOpenPart: (part: QueuePart) => void }) {
+function RunParts({ run, part, onOpenPart }: { run: QueueRun; part: string | undefined; onOpenPart: (part: QueuePart, opener: HTMLElement) => void }) {
   return <>
     <h5 className="queue-run-head">{t('Run {n}', { n: run.run_no })}<small>{run.shown_pages.length ? t('pages shown: {pages}', { pages: run.shown_pages.join(', ') }) : t('no pages shown')}</small></h5>
     {run.parts.map(p => <div key={p.part} className={`queue-part${p.part === part ? ' is-question' : ''}`}>
       <p className="queue-part-head"><span>{p.part}</span><span className="ref-pill">{partLabelText(p.label)}</span>{p.part === part && <small className="queue-part-asked">{t('this row’s question')}</small>}</p>
       {p.quote && <blockquote className="queue-quote">{p.quote}</blockquote>}
       {p.label === 'present' && <p className="queue-part-note">{p.quote_verified ? t('Found on the page.') : t('Not found in the text.')}
-        {(p.passage_id || p.closest?.passage_id) && <button type="button" className="queue-page-link" onClick={() => onOpenPart(p)}>{p.quote_verified && p.page !== null ? pageLocator(p.page, p.rendition) : t('Open the page')}<ChevronRight size={13} aria-hidden /></button>}</p>}
+        {(p.passage_id || p.closest?.passage_id) && <button type="button" className="queue-page-link" onClick={e => onOpenPart(p, e.currentTarget)}>{p.quote_verified && p.page !== null ? pageLocator(p.page, p.rendition) : t('Open the page')}<ChevronRight size={13} aria-hidden /></button>}</p>}
       {p.rationale && <p className="queue-rationale">{p.rationale}</p>}
     </div>)}
   </>
 }
 
-function Decided({ entries, busy, onUndo, onOpen }: { entries: QueueDecided[]; busy: boolean; onUndo: (entry: QueueDecided) => void; onOpen: (sourceVersionId: string) => void }) {
+function Decided({ entries, busy, onUndo, onOpen }: { entries: QueueDecided[]; busy: boolean; onUndo: (entry: QueueDecided) => void; onOpen: (sourceVersionId: string, opener: HTMLElement) => void }) {
   return <details className="queue-decided">
     <summary><ChevronRight size={14} aria-hidden className="queue-decided-chevron" />{t('Your decisions ({n})', { n: entries.length })}</summary>
     <ul>{entries.map(entry => <li key={entry.work_id}>
       <div>
-        <button type="button" className="queue-decided-title" onClick={() => onOpen(entry.source_version_id)}>{entry.title}</button>
+        <button type="button" className="queue-decided-title" onClick={e => onOpen(entry.source_version_id, e.currentTarget)}>{entry.title}</button>
         <p className="queue-muted">{[queueStateOf(entry.answer), t(queueAnsweredText[entry.answer]), dateText(entry.created_at)].join(' · ')}</p>
         {entry.note && <p className="queue-decided-note">{entry.note}</p>}
       </div>

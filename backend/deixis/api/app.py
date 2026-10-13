@@ -983,6 +983,7 @@ def create_app(
     from deixis.api.followup_turns_routes import register_followup_turns_routes; register_followup_turns_routes(app)
     from deixis.api.search_plan_routes import register_search_plan_routes; register_search_plan_routes(app)
     from deixis.api.scope_routes import register_scope_routes; register_scope_routes(app)
+    from deixis.api.activity_routes import register_activity_routes; register_activity_routes(app)
 
     @app.exception_handler(WatchRefusal)
     async def watch_refusal(_: Request, exc: WatchRefusal):

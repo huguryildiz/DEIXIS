@@ -220,88 +220,44 @@
 .connection-models small{font-size:11px;color:var(--muted)}
 .connection-model-copy{display:grid;gap:3px;min-width:0}.connection-model-copy strong{font-weight:600}.connection-model-copy code{font-size:10px;color:var(--muted);overflow-wrap:anywhere}.connection-model-meta{display:grid;justify-items:end;gap:5px;flex-shrink:0}.reasoning-levels{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:4px;max-width:210px}.reasoning-levels span{padding:2px 6px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:10px;line-height:1.3}.connection-catalog-refresh{display:flex;align-items:center;gap:7px}
 .connection-sheet .connection-recheck{margin-top:22px}
-/* PDF readiness between screening and the answer (D49): a quiet document block, not a card. */
-.pdf-ready{display:grid;gap:14px;max-width:1040px;margin:30px 0 8px;color:var(--ink)}
-.legacy-research .pdf-ready h2{margin:0;font-family:var(--font-sans);font-size:16px;font-weight:600;line-height:1.35;letter-spacing:-.005em;text-wrap:balance}
-.legacy-research .pdf-ready p{margin:0}
+/* "Get more full text" (UI parity S14, P40): the lists sit in mockup .plist boxes (research/queue.css); these rules
+   cover the row parts. The thread keeps one note line (.pdf-ready-lede) that links to the panel. */
 .pdf-ready-lede{max-width:78ch;color:var(--muted);font-size:13px;line-height:1.6}
 .pdf-ready-lede a{color:var(--accent);text-underline-offset:3px}
-/* As many equal columns as cells: three, or four with the person's unread PDFs (slice 18b). Cells on hairline gaps (mockup .depth). */
-.pdf-ready-depth{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:1px;border:1px solid var(--line);border-radius:10px;background:var(--line);overflow:hidden}
-.pdf-ready-depth div{padding:9px 12px;background:var(--paper)}
-.pdf-ready-depth strong{display:block;font-family:var(--font-sans);font-size:18px;font-weight:500;line-height:1.3;font-variant-numeric:tabular-nums}
-.pdf-ready-depth span{display:block;margin-top:1px;color:var(--muted);font-size:11.5px}
-.pdf-ready-bar{display:flex;height:6px;overflow:hidden;border-radius:3px;background:color-mix(in srgb,var(--line),transparent 30%)}
-.pdf-ready-bar i{display:block;height:100%;transition:width .3s ease}
-.pdf-ready-bar .is-pdf{background:var(--tone-include)}
-.pdf-ready-bar .is-run{background:color-mix(in srgb,var(--accent),transparent 45%)}
-.pdf-ready-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
-.pdf-ready-actions [data-variant=default]{background:var(--accent);color:var(--paper)}
-.pdf-ready-link{padding:0 0 2px;border:0;border-bottom:1px solid var(--strong-line);background:none;color:var(--muted);font:inherit;font-size:13.5px;cursor:pointer}
+.pdf-ready-link{padding:0 0 2px;border:0;border-bottom:1px solid var(--strong-line);background:none;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
 .pdf-ready-link:hover:not(:disabled){color:var(--ink)}
 .pdf-ready-link:disabled{opacity:.5;cursor:default}
 .pdf-ready-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .pdf-ready-hint{color:var(--muted);font-size:12.5px}
 .pdf-ready-hint.is-warn{color:var(--tone-uncertain)}
-/* A list of works (mockup .plist / .prow): one bordered box, rows on hairlines. */
-.pdf-ready-rows{margin:0;padding:0;list-style:none;border:1px solid var(--line);border-radius:10px}
-.pdf-ready-rows li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;align-items:center;padding:10px 12px;border-top:1px solid var(--line)}
-.pdf-ready-rows li:first-child{border-top:0}
+.pdf-ready-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.pdf-ready-rows{margin:0;padding:0;list-style:none}
+.pdf-ready-rows>.prow:first-child{border-top:0}
 .pdf-ready-head{display:grid;min-width:0}
-.pdf-ready-title{font-family:var(--font-sans);font-size:14px;line-height:1.35;font-weight:500;text-wrap:balance}
-.pdf-ready-head .source-status{margin-top:6px}
-.pdf-ready-side{grid-column:2;display:flex;align-items:center;gap:8px}
-/* A row's PDF state (mockup .pill): a hairline pill, its tone in the text. */
-.pdf-pill{display:inline-flex;align-items:center;gap:5px;padding:0 7px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:11.5px;line-height:19px;white-space:nowrap}
-.pdf-pill.is-ok{color:var(--tone-include)}
-.pdf-pill.is-warn{color:var(--tone-uncertain)}
-.pdf-pill.is-run{color:var(--accent)}
+.pdf-ready-title{font-size:13px;line-height:1.35;font-weight:500;text-wrap:balance}
+.pdf-ready-head .source-byline{font-size:12px}
+.pdf-ready-head .source-status{margin-top:4px}
+.pdf-ready-side{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
 .pdf-spin{width:11px;height:11px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:pdf-spin .9s linear infinite}
 @keyframes pdf-spin{to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion:reduce){.pdf-spin{animation:none}.pdf-ready-bar i{transition:none}}
-.pdf-ready-group{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:6px 0 -6px;padding:0 2px}
-.legacy-research .pdf-ready-group h3{margin:0;font-size:12.5px;font-weight:600}
-.pdf-ready-group small{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
-.pdf-ready-full{display:grid;gap:14px}
-.pdf-ready-full summary{list-style:none;cursor:pointer;margin:6px 0 0}
-.pdf-ready-full summary::-webkit-details-marker{display:none}
-.pdf-ready-full[open] summary{margin-bottom:8px}
-/* The drop zone (mockup .drop): a dashed box, its sentence and buttons centred; accent while a file is over it. */
-.pdf-ready-drop{display:grid;justify-items:center;gap:10px;padding:18px;border:1.5px dashed var(--strong-line);border-radius:10px;color:var(--muted);font-size:13px;line-height:1.5;text-align:center}
-.pdf-ready-drop.is-over{border-color:var(--accent);background:var(--accent-tint)}
-.pdf-ready-drop-actions,.pdf-ready-zotero{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.pdf-ready-drop-actions{justify-content:center}
+@media (prefers-reduced-motion:reduce){.pdf-spin{animation:none}}
+.pdf-ready-full>summary{display:flex;justify-content:space-between;gap:8px;padding:9px 12px;border-radius:10px;background:var(--sidebar-surface);list-style:none;cursor:pointer}
+.pdf-ready-full>summary::-webkit-details-marker{display:none}
+.pdf-ready-full[open]>summary{border-bottom:1px solid var(--line);border-radius:10px 10px 0 0}
 .pdf-ready-zotero .connection-icon{display:inline-flex}
 .pdf-ready-zotero .connection-icon svg{width:13px;height:13px}
-.pdf-ready select{height:30px;max-width:100%;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,var(--paper));color:var(--ink);font:inherit;font-size:12.5px}
-.pdf-ready-matches{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px}
-.pdf-ready-matches p{color:var(--muted);font-size:13px}
-.pdf-ready-matches ul{display:grid;gap:8px;margin:0;padding:0;list-style:none}
-.pdf-ready-matches li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:6px 14px;align-items:center}
-.pdf-ready-file{display:grid;font-size:13px;overflow-wrap:anywhere}
-.pdf-ready-file small{color:var(--muted);font-size:11.5px}
-/* The works of an sw research waiting for the person's PDF (slice 18a): the PDF panel's rows with their place in the reading order */
-.waiting-pdf{margin-top:18px}
-.legacy-research .waiting-pdf h2{margin:0;font-size:16px;font-weight:600;text-wrap:balance}
-.waiting-pdf .pdf-ready-hint a{color:var(--accent);text-underline-offset:3px}
-.waiting-pdf .waiting-rows{padding:0;list-style:none;color:inherit}
-.waiting-rows li{grid-template-columns:24px minmax(0,1fr) auto;padding:8px 12px}
-.waiting-rows .waiting-place{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
-.waiting-rows .pdf-ready-title{font-size:13.5px}
-.waiting-rows .source-byline{font-size:12px}
-.waiting-rows .source-status{margin-top:4px}
+.pdfs-panel select{height:28px;max-width:100%;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,var(--paper));color:var(--ink);font:inherit;font-size:12.5px}
+.waiting-rows .waiting-place{align-self:flex-start;min-width:18px;padding-top:1px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
 .waiting-rows .source-status .source-fact{min-height:19px}
-.waiting-rows .pdf-ready-side{grid-column:3}
-.waiting-place{align-self:start;padding-top:3px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
-.waiting-doi{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;overflow-wrap:anywhere}
-.waiting-actions{flex-wrap:wrap;justify-content:flex-end}
+.waiting-actions{justify-content:flex-end}
 .waiting-link{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-.waiting-match{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--raised-surface)}
+.waiting-match{display:grid;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}
+.waiting-matches>h4+.waiting-match,.waiting-matches>h4+p+.waiting-match{border-top:0}
 .waiting-match p{margin:0}
 .waiting-file{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:13px;overflow-wrap:anywhere}
 .waiting-file small{color:var(--muted);font-size:12px}
 .waiting-basis{color:var(--muted);font-size:13px}
-.waiting-work{font-family:var(--font-sans);font-size:14px;font-weight:500;line-height:1.35;text-wrap:balance}
+.waiting-work{font-size:13.5px;font-weight:500;line-height:1.35;text-wrap:balance}
 .waiting-versions{display:grid;gap:4px;margin:0;padding:0;border:0}
 .waiting-versions legend{margin-bottom:6px;padding:0;font-size:13px;font-weight:600}
 .waiting-versions label{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:7px 8px;border-radius:7px;font-size:13px;cursor:pointer}
@@ -334,8 +290,6 @@
 .person-file-quotes blockquote::before{content:'“'}
 .person-file-quotes blockquote::after{content:'”'}
 .person-file-quotes small{color:var(--muted);font-size:12px}
-@media (max-width:650px){.pdf-ready-depth{grid-auto-flow:row;grid-template-columns:1fr}.pdf-ready-rows li,.pdf-ready-matches li{grid-template-columns:1fr}.pdf-ready-side{grid-row:auto;grid-column:1}}
-@media (max-width:650px){.waiting-rows li{grid-template-columns:24px minmax(0,1fr)}.waiting-rows .pdf-ready-side{grid-column:2;justify-content:flex-start}}
 /* Split research page (S7a, mockup R10/P1): the topbar, then the thread beside either the artifacts rail or one side
    panel. The page fills the window and its parts scroll on their own, so the topbar and the panel head stay put. */
 .main-shell .research-view.legacy-research{display:flex;flex-direction:column;height:100svh}
@@ -496,3 +450,7 @@
 .source-detail .source-empty p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.55}
 .source-detail .source-empty .acts{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
 .source-detail .source-empty .acts [data-slot=button]{height:30px;gap:6px;padding-inline:10px;border-color:var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:13px;font-weight:400}
+.plist p.prow{margin:0}
+.waiting-rows .waiting-actions{margin-left:auto}
+.research-view .mock-pad p{margin-bottom:0}
+.prow .t .source-byline{display:grid}

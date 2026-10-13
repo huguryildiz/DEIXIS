@@ -8,9 +8,9 @@ import { panel, reportPanel, sourcePanel } from './panels'
 import { chooseLanguage } from './language'
 
 // UI parity S3: the shortcut layer (mockup keydown handler, O3), the keys dialog (O2) and the search palette (O1).
-// Single keys S R T Q P open a research page's panels, N and L go to New research and the Library, `[` shows or hides
+// Single keys S R T F Q P open a research page's panels, N and L go to New research and the Library, `[` shows or hides
 // the sidebar, `?` opens the keys dialog, Esc closes the open panel. They are off inside text fields, and the keys
-// dialog's switch turns them off across reloads (WCAG 2.1.4). The mockup's F (search funnel) has no target yet.
+// dialog's switch turns them off across reloads (WCAG 2.1.4). F opens the Search funnel panel (S14).
 //
 // Its own fixture server with the queue fixture, so the research has sources, queue rows and an answer. Every record is
 // SYNTHETIC; a passing case shows how the page behaves, not the quality of a search or an answer.
@@ -81,12 +81,13 @@ test.describe.serial('S3: shortcuts, keys dialog, palette', () => {
   })
   test.afterAll(async () => { await page?.close(); await api?.context.dispose(); await server.stop() })
 
-  test('S R T Q P open the research panels and the report; Esc closes the panel from the thread', async () => {
+  test('S R T F Q P open the research panels and the report; Esc closes the panel from the thread', async () => {
     await page.goto(research())
     await expect(page.locator('.research-thread')).toBeVisible()
     await expect(page.locator('[data-split-panel]')).toHaveCount(0)
     const cases: [string, string | RegExp, string][] = [
       ['s', 'Sources', 'sources'], ['q', /^Awaiting your decision \(\d+\)$/, 'queue'], ['p', 'Get more full text', 'pdfs'], ['t', 'Evidence table', 'table'],
+      ['f', 'Search funnel', 'funnel'],
     ]
     for (const [key, title, segment] of cases) {
       await page.keyboard.press(key)
@@ -155,7 +156,7 @@ test.describe.serial('S3: shortcuts, keys dialog, palette', () => {
     await expect(dialog.locator('.keys-heading > span').first()).toHaveCSS('text-transform', 'uppercase')
     const rows = await dialog.locator('.keys > span:not(.keys-keys)').allTextContents()
     expect(rows).toEqual(['Search and commands', 'Keyboard shortcuts', 'New research', 'Library', 'Show or hide the sidebar', 'Close panel or dialog',
-      'Sources', 'Report', 'Evidence table', 'Awaiting your decision', 'Get more full text', 'Start research (home)'])
+      'Sources', 'Report', 'Evidence table', 'Search funnel', 'Awaiting your decision', 'Get more full text', 'Start research (home)'])
     await expect(dialog.getByRole('checkbox', { name: 'Single-key shortcuts' })).toBeChecked()
     await shot(page, 's3-keys-dialog')
     await page.keyboard.press('Escape')
@@ -251,8 +252,8 @@ test.describe.serial('S3: shortcuts, keys dialog, palette', () => {
     await expect(groups).toHaveText(['On this page', 'Recent research', 'Go to'])
     await expect(groups.first().locator('span')).toHaveCSS('text-transform', 'uppercase')
     const options = (group: string) => dialog.locator(`[role=group][aria-labelledby="qf-group-${group}"] [role=option]`)
-    await expect(options('Page').locator('strong')).toHaveText(['Open sources', 'Open report', 'Awaiting your decision', 'Get more full text', 'Toggle dark mode'])
-    await expect(options('Page').locator('em')).toHaveText(['S', 'R', 'Q', 'P'])
+    await expect(options('Page').locator('strong')).toHaveText(['Open sources', 'Open report', 'Open search funnel', 'Awaiting your decision', 'Get more full text', 'Toggle dark mode'])
+    await expect(options('Page').locator('em')).toHaveText(['S', 'R', 'F', 'Q', 'P'])
     await expect(options('Research').locator('em').first()).toHaveText('Research')
     await expect(options('Pages').locator('strong')).toHaveText(['New research', 'Library', 'Settings', 'Keyboard shortcuts'])
     await expect(options('Pages').locator('em')).toHaveText(['N', 'L', '?'])

@@ -12,13 +12,14 @@ export const PANEL_TITLES = {
   watch: 'Follow-up',
   cands: 'Candidates',
   activity: 'Activity',
+  funnel: 'Search funnel',
 } as const
 export type PanelName = keyof typeof PANEL_TITLES
 
 // The menu row that opens each panel (its name ends with the panel's count, when it has one).
 export const MENU_ROWS: Record<PanelName, RegExp> = {
   sources: /^Sources\b/, queue: /^Awaiting your decision\b/, pdfs: /^Get more full text\b/, table: /^Evidence table\b/,
-  watch: /^Follow-up\b/, cands: /^Candidates\b/, activity: /^Activity\b/,
+  watch: /^Follow-up\b/, cands: /^Candidates\b/, activity: /^Activity\b/, funnel: /^Search funnel\b/,
 }
 
 // The open panel with this title: a labelled region beside the thread on a desktop, a modal dialog at 820px and below.
@@ -30,8 +31,8 @@ export function panel(page: Page, title: string | RegExp): Locator {
 
 // From 1100px the rail and the single-key shortcuts open the Sources, queue, PDF and table panels; the menu keeps those
 // rows only below 1100px (S11). A page in the 1100px range or wider presses the panel's key, the way a person does with
-// no pointer: S Sources, Q queue, P PDFs, T table (shortcuts.spec.ts covers the keys themselves).
-export const RAIL_KEYS: Partial<Record<PanelName, string>> = { sources: 's', queue: 'q', pdfs: 'p', table: 't' }
+// no pointer: S Sources, Q queue, P PDFs, T table, F Search funnel (shortcuts.spec.ts covers the keys themselves).
+export const RAIL_KEYS: Partial<Record<PanelName, string>> = { sources: 's', queue: 'q', pdfs: 'p', table: 't', funnel: 'f' }
 const wide = (page: Page) => (page.viewportSize()?.width ?? 1280) >= 1100
 
 // Opens a panel the way a person does, from the topbar's Research actions menu (or by its key, see above), and returns it
@@ -106,7 +107,7 @@ export async function expectMenuCount(page: Page, name: PanelName, count: number
     // With the panel open its own heading states the count; without it the rail's row does.
     if (await panel(page, PANEL_TITLES.pdfs).count()) {
       const n = Number(count)
-      await expect(panel(page, PANEL_TITLES.pdfs).getByRole('heading', { name: n === 0 ? 'No work waits for your PDF' : n === 1 ? '1 work waits for your PDF' : `${n} works wait for your PDF` })).toBeVisible()
+      await expect(panel(page, PANEL_TITLES.pdfs).getByRole('heading', { exact: true, name: n === 0 ? 'No work waits for your PDF' : n === 1 ? '1 work waits for your PDF' : `${n} works wait for your PDF` })).toBeVisible()
       return
     }
     const row = page.locator('.rail').getByRole('button', { name: /waiting for a PDF/ })
@@ -130,4 +131,18 @@ export async function chooseTheme(page: Page, theme: 'light' | 'dark') {
   const name = dark ? 'Switch to light mode' : 'Switch to dark mode'
   if (await page.locator('[data-split-panel][role="dialog"]').count()) await page.locator(`button[aria-label="${name}"]`).evaluate(el => (el as HTMLElement).click())
   else await switchTheme(page, name)
+}
+
+// A card of the human queue (UI parity S14, P39): a list item named by its work's title.
+export const queueCards = (page: Page) => page.getByRole('list', { name: 'Rows awaiting your decision' })
+export const queueCard = (page: Page, title: string) => page.locator('.queue-panel').getByRole('listitem', { name: title, exact: true })
+
+// The audit sample sits in the Search funnel panel, collapsed under the stages (S14, §2.2). Opens it and returns it.
+export async function openAudit(page: Page): Promise<Locator> {
+  const opened = await openPanel(page, 'funnel')
+  const more = opened.locator('details.funnel-more')
+  if (!(await more.evaluate(el => (el as HTMLDetailsElement).open))) await more.locator(':scope > summary').click()
+  const audit = opened.locator('.audit-panel')
+  await expect(audit).toBeVisible()
+  return audit
 }

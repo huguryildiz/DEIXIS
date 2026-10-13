@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
-import { BookOpen, CircleCheck, CircleDashed, CircleMinus, ExternalLink, FileSearch, Info, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { BookOpen, CircleCheck, CircleDashed, CircleMinus, ExternalLink, FileSearch, Info, RotateCw, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, ApiError, type AttachOutcome, type PersonFile, type PersonFiles, type ResearchView, type WaitingMatch, type WaitingRow, type WaitingView, type WaitingWork } from './api'
 import { fileRestoreNote, fileRestoreTone, pageLocator, personFileStateText, personUnreadText, queueAnswerLabels, queueAnswerOfCode, versionText, versionTones, waitingReasonText } from './labels'
 import { Notice } from './Notice'
+import { UploadedTextNote } from './SemanticNotes'
 import { useToast } from './Toast'
 import { t } from './i18n'
 
@@ -23,12 +24,15 @@ const plural = (n: number, one: string, many: string) => t(n === 1 ? one : many,
 // Authors (the first two, then how many more) and the year, as the Sources list writes a byline.
 const byline = (row: WaitingRow) => [row.authors.slice(0, 2).join(', ') + (row.authors.length > 2 ? ` ${t('and {n} more', { n: row.authors.length - 2 })}` : ''), row.year].filter(Boolean).join(' · ')
 
-export function WaitingForPdf({ researchId, view, busy, incoming, onIncomingTaken, onChanged }: {
+export function WaitingForPdf({ researchId, view, busy, onChanged, included, answerAction, onSearchAgain }: {
   researchId: string; view: ResearchView; busy: boolean
-  // Files dropped on the PDF panel above the answer; an sw research matches them here (decision 6).
-  incoming: File[] | null; onIncomingTaken: () => void
   // `announced` names a run this view's own toast already announced, so the research does not announce it again.
   onChanged: (announced?: string) => Promise<void>
+  // The included sources' part of the panel (PdfReadiness: collect, progress, uploads, OCR, Zotero), rendered by the page.
+  included: ReactNode
+  // The answer button under the panel: "Generate a new answer (Vn+1)", or the first answer's label, as the page decides.
+  answerAction: { label: string; disabled: boolean; onClick: () => void }
+  onSearchAgain: (() => void) | null
 }) {
   const [list, setList] = useState<WaitingView | null>(null)
   const [error, setError] = useState('')
@@ -51,27 +55,25 @@ export function WaitingForPdf({ researchId, view, busy, incoming, onIncomingTake
   useEffect(() => { void load() }, [load, view.last_event_id])
 
   // Each file comes back with the work it points at (or none); the person still picks the version.
-  const requestMatch = useCallback((pdfs: File[]) => api.matchWaiting(researchId, pdfs).then(({ matches }) => {
+  // `forWork`: the row whose "Upload PDF" chose the file; it is proposed when the file's own pages name no work.
+  const requestMatch = useCallback((pdfs: File[], forWork?: string) => api.matchWaiting(researchId, pdfs).then(({ matches }) => {
     setProposals(old => [...old, ...matches.map((match, i) => ({
-      key: `${match.sha256}-${Date.now()}-${i}`, file: pdfs[i], match, workId: match.work?.work_id ?? '', version: '', busy: false, refused: null,
+      key: `${match.sha256}-${Date.now()}-${i}`, file: pdfs[i], match, version: '', busy: false, refused: null,
+      workId: match.work?.work_id ?? (forWork && match.candidates?.some(w => w.work_id === forWork) ? forWork : ''),
     }))])
   }, e => { toast('error', e instanceof Error ? e.message : String(e)) }), [researchId, toast])
 
-  const matchFiles = (files: File[]) => {
+  const matchFiles = (files: File[], forWork?: string) => {
     const pdfs = files.filter(isPdf)
     if (!pdfs.length) { if (files.length) toast('warning', t('Only PDF files can be added.')); return }
     setMatching(true)
-    void requestMatch(pdfs).finally(() => setMatching(false))
+    void requestMatch(pdfs, forWork).finally(() => setMatching(false))
   }
+  const rowFile = useRef<HTMLInputElement>(null)
+  const rowWork = useRef<string | undefined>(undefined)
+  const uploadFor = (row: WaitingRow) => { rowWork.current = row.work_id; rowFile.current?.click() }
 
-  // Files dropped on the PDF panel arrive once; they are taken when their match comes back.
-  const taken = useRef<File[] | null>(null)
-  useEffect(() => {
-    if (!incoming?.length || taken.current === incoming) return
-    taken.current = incoming
-    void requestMatch(incoming.filter(isPdf)).finally(onIncomingTaken)
-  }, [incoming, onIncomingTaken, requestMatch])
-  const reading = matching || Boolean(incoming?.length)
+  const reading = matching
 
   const update = (key: string, change: Partial<Proposal>) => setProposals(old => old.map(p => (p.key === key ? { ...p, ...change } : p)))
   const drop = (key: string) => setProposals(old => old.filter(p => p.key !== key))
@@ -124,56 +126,83 @@ export function WaitingForPdf({ researchId, view, busy, incoming, onIncomingTake
   if (error) return <Notice tone="error">{error}</Notice>
   if (!list) return <p className="legacy-mini-note" role="status">{t('Loading the works waiting for a PDF…')}</p>
   const rows = list.rows
+  // The four boxes (mockup `.depth`): works that passed the abstract stage and, of them, those with PDF text in hand, both
+  // from the same source list and rule as the Sources panel's "Passed abstract" (the funnel's); the works this panel
+  // lists as waiting; and the files you added that no reading has read, as "Your files" lists them.
+  const passed = view.sources.filter(s => s.version_role === 'record' && s.screening?.passed_abstract)
+  const inHand = passed.filter(record => view.sources.some(s => s.work_id === record.work_id && s.has_pdf_text)).length
+  const notRead = list.files.rows.filter(f => ['waiting', 'unread', 'changed', 'model_off', 'not_eligible', 'decision_stands'].includes(f.state)).length
+  const answerNote = notRead ? plural(notRead, '{n} file you added is not read yet; an answer leaves out a work whose only text it is.', '{n} files you added are not read yet; an answer leaves out a work whose only text they are.')
+    : rows.length ? plural(rows.length, '{n} work still waits for a PDF.', '{n} works still wait for a PDF.') : ''
 
-  return <section className="pdf-ready waiting-pdf" aria-labelledby="waiting-title">
-    <h2 id="waiting-title">{rows.length ? plural(rows.length, '{n} work waits for your PDF', '{n} works wait for your PDF') : t('No work waits for your PDF')}</h2>
-    <p className="pdf-ready-lede">{rows.length
-      ? t('No open copy of these works was found. If you can reach one through your library, open its link, save the PDF and drop it here. Nothing is attached until you choose the version and confirm.')
-      : list.has_plan ? t('Every work the full-text retrieval tried has its text, or is decided another way.') : t('The full-text retrieval has not run for this question yet.')}</p>
-    {rows.length > 0 && <p className="pdf-ready-hint">{list.via_proxy
-      ? t('Links open through your institution’s proxy in your browser; DEIXIS sends nothing through it.')
-      : <>{t('Links open directly.')} <a href="#/settings/connections">{t('Set your institution’s proxy address')}</a></>}</p>}
+  return <div className="mock-pad pdfs-panel waiting-pdf">
+    <h3>{t('How deeply can the next answer read?')}</h3>
+    <div className="depth">
+      <div><b className="tnum">{passed.length}</b><span>{t('Passed abstract stage')}</span></div>
+      <div><b className="tnum">{inHand}</b><span>{t('PDF in hand')}</span></div>
+      <div><b className="tnum">{rows.length}</b><span>{t('Waiting for your PDF')}</span></div>
+      <div><b className="tnum">{notRead}</b><span>{t('Your PDFs, not read')}</span></div>
+    </div>
+    {included}
 
-    {proposals.map(p => <MatchPanel key={p.key} proposal={p} rows={rows} work={workOf(p)} busy={busy}
-      onWork={workId => update(p.key, { workId, version: '', refused: null })} onVersion={version => update(p.key, { version, refused: null })}
-      onConfirm={() => { void confirm(p) }} onSkip={() => drop(p.key)} onRematch={() => rematch(p)} />)}
+    <section className="plist" aria-labelledby="waiting-title">
+      <h4><span id="waiting-title">{rows.length ? plural(rows.length, '{n} work waits for your PDF', '{n} works wait for your PDF') : t('No work waits for your PDF')}</span><span className="tnum" aria-hidden>{rows.length}</span></h4>
+      <p className="prow pdf-ready-lede">{rows.length
+        ? t('Passed the abstract stage, and no open copy was found. If you can reach one through your library, open its link, save the PDF and add it here. Nothing is attached until you choose the version and confirm.')
+        : list.has_plan ? t('Every work the full-text retrieval tried has its text, or is decided another way.') : t('The full-text retrieval has not run for this question yet.')}</p>
+      {rows.length > 0 && <p className="prow foot-note">{list.via_proxy
+        ? t('Links open through your institution’s proxy in your browser; DEIXIS sends nothing through it.')
+        : <>{t('Links open directly.')} <a href="#/settings/connections">{t('Set your institution’s proxy address')}</a></>}</p>}
+      {rows.length > 0 && <ol className="pdf-ready-rows waiting-rows" aria-label={t('Works waiting for your PDF, in reading order')}>
+        {rows.map(row => <li key={row.work_id} className="prow">
+          <span className="waiting-place" title={t('Place in the reading order')}>{row.place}</span>
+          <span className="t pdf-ready-head">
+            <strong className="pdf-ready-title">{row.title}</strong>
+            {(byline(row) || row.venue) && <small className="source-byline">
+              {byline(row) && <span>{byline(row)}</span>}
+              {row.venue && <span><em>{row.venue}</em></span>}
+            </small>}
+          </span>
+          <span className="pill warn">{waitingReasonText(row.reason_code)}</span>
+          <span className="pdf-ready-side waiting-actions">
+            {row.links.doi && <a className="pdf-ready-link waiting-link" href={row.links.doi} target="_blank" rel="noopener noreferrer">{t('DOI')}<ExternalLink size={12} aria-hidden /><span className="sr-only">{t('(opens in a new tab)')}</span></a>}
+            {row.links.landing && <a className="pdf-ready-link waiting-link" href={row.links.landing} target="_blank" rel="noopener noreferrer">{t('Publisher page')}<ExternalLink size={12} aria-hidden /><span className="sr-only">{t('(opens in a new tab)')}</span></a>}
+            <Button variant="outline" size="sm" className="ghost" disabled={busy || finding !== null || !row.find_pdf_source_version_id}
+              title={row.find_pdf_source_version_id ? undefined : t('Find PDF needs a DOI')} onClick={() => { void findPdf(row) }}>
+              <FileSearch size={14} aria-hidden />{t(finding === row.work_id ? 'Finding…' : 'Find PDF')}
+            </Button>
+            {list.has_plan && <Button variant="outline" size="sm" className="ghost" disabled={busy || reading} aria-label={t('Upload PDF for {title}', { title: row.title })} onClick={() => uploadFor(row)}><Upload size={14} aria-hidden />{t('Upload PDF')}</Button>}
+          </span>
+        </li>)}
+      </ol>}
+      <input ref={rowFile} type="file" accept=".pdf,application/pdf" hidden aria-label={t('Choose a PDF for this work')} onChange={e => { matchFiles(Array.from(e.target.files ?? []), rowWork.current); rowWork.current = undefined; e.target.value = '' }} />
+    </section>
 
-    {list.has_plan && <div className={`pdf-ready-drop${dragging ? ' is-over' : ''}`} data-testid="waiting-drop"
+    {list.has_plan && <div className={`drop pdf-ready-drop${dragging ? ' over is-over' : ''}`} data-testid="waiting-drop"
       onDragOver={e => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
-      <span role="status">{t(reading ? 'Reading the files…' : 'Drop PDFs here. Each is matched to a work by the DOI or title on its first pages; you choose the version and confirm.')}</span>
-      <span className="pdf-ready-drop-actions">
-        <Button variant="outline" size="sm" disabled={busy || reading} onClick={() => fileInput.current?.click()}><Upload size={14} aria-hidden />{t('Choose files')}</Button>
-      </span>
+      <Upload size={16} aria-hidden />
+      <span role="status">{reading ? t('Reading the files…') : <><b>{t('Drop PDFs here')}</b> {t('or choose files')}</>}</span>
+      <span className="foot-note">{t('Each is matched to a work by the DOI or title on its first pages; you choose the version and confirm before anything is attached.')}</span>
+      <Button variant="outline" size="sm" className="ghost" disabled={busy || reading} onClick={() => fileInput.current?.click()}>{t('Choose files')}</Button>
       <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden aria-label={t('Choose PDF files')} onChange={e => { matchFiles(Array.from(e.target.files ?? [])); e.target.value = '' }} />
     </div>}
 
-    {rows.length > 0 && <ol className="pdf-ready-rows waiting-rows" aria-label={t('Works waiting for your PDF, in reading order')}>
-      {rows.map(row => <li key={row.work_id}>
-        <span className="waiting-place" title={t('Place in the reading order')}>{row.place}</span>
-        <span className="pdf-ready-head">
-          <strong className="pdf-ready-title">{row.title}</strong>
-          {(byline(row) || row.venue) && <span className="source-byline">
-            {byline(row) && <span>{byline(row)}</span>}
-            {row.venue && <span><em>{row.venue}</em></span>}
-          </span>}
-          <span className="source-status">
-            <span className="source-fact is-abstract">{waitingReasonText(row.reason_code)}</span>
-            {row.doi && <span className="source-fact is-plain waiting-doi">{row.doi}</span>}
-          </span>
-        </span>
-        <span className="pdf-ready-side waiting-actions">
-          {row.links.doi && <a className="pdf-ready-link waiting-link" href={row.links.doi} target="_blank" rel="noopener noreferrer">{t('DOI')}<ExternalLink size={12} aria-hidden /><span className="sr-only">{t('(opens in a new tab)')}</span></a>}
-          {row.links.landing && <a className="pdf-ready-link waiting-link" href={row.links.landing} target="_blank" rel="noopener noreferrer">{t('Publisher page')}<ExternalLink size={12} aria-hidden /><span className="sr-only">{t('(opens in a new tab)')}</span></a>}
-          <Button variant="outline" size="sm" disabled={busy || finding !== null || !row.find_pdf_source_version_id}
-            title={row.find_pdf_source_version_id ? undefined : t('Find PDF needs a DOI')} onClick={() => { void findPdf(row) }}>
-            <FileSearch size={14} aria-hidden />{t(finding === row.work_id ? 'Finding…' : 'Find PDF')}
-          </Button>
-        </span>
-      </li>)}
-    </ol>}
+    {proposals.length > 0 && <section className="plist waiting-matches" aria-labelledby="waiting-matches-title">
+      <h4><span id="waiting-matches-title">{t('Check where each file goes')}</span><span className="tnum">{proposals.length}</span></h4>
+      {proposals.map(p => <MatchPanel key={p.key} proposal={p} rows={rows} work={workOf(p)} busy={busy}
+        onWork={workId => update(p.key, { workId, version: '', refused: null })} onVersion={version => update(p.key, { version, refused: null })}
+        onConfirm={() => { void confirm(p) }} onSkip={() => drop(p.key)} onRematch={() => rematch(p)} />)}
+    </section>}
 
     {list.files.rows.length > 0 && <YourFiles researchId={researchId} files={list.files} busy={busy} onChanged={async announced => { await Promise.all([load(), onChanged(announced)]) }} />}
-  </section>
+
+    <div className="acts pdfs-answer">
+      <Button className="btn-teal" disabled={answerAction.disabled} onClick={answerAction.onClick}><RotateCw size={15} aria-hidden />{answerAction.label}</Button>
+      {answerNote && <span className="foot-note">{answerNote}</span>}
+      {onSearchAgain && <button type="button" className="link" disabled={busy} onClick={onSearchAgain}>{t('Search again')}</button>}
+    </div>
+    <UploadedTextNote semantic={view.semantic} />
+  </div>
 }
 
 // What the toast adds once a file is attached: what happens to it next (slice 18b).

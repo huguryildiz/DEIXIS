@@ -77,10 +77,10 @@ def effort_limits() -> dict[str, Any]:
     """What each research depth gives a run, read from MODES at the moment of asking: Home's depth text says these
     numbers, so a changed mode cannot leave the text behind. `minutes` is the stage bases summed and rounded, the
     stages' soft deadlines rather than a promise of how long a run takes; `papers` is N, the top of the ranking a run
-    reads.
+    reads; `fulltext` is K, the most works a run reads in their full text (selected pages, UI parity S14's funnel).
     """
-    return {"efforts": {effort: {"minutes": round(sum(bases) / 60), "papers": n}
-                        for effort, (bases, n, *_) in MODES.items()}}
+    return {"efforts": {effort: {"minutes": round(sum(bases) / 60), "papers": n, "fulltext": k}
+                        for effort, (bases, n, k, *_) in MODES.items()}}
 
 
 def enabled(budget: dict[str, Any]) -> bool:

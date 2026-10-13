@@ -290,9 +290,10 @@ def test_effort_limits_come_from_the_fast_path_modes_and_follow_a_changed_mode(t
         changed = client.get("/api/effort-limits").json()
     finally:
         client.__exit__(None, None, None)
-    assert first == {"efforts": {"quick": {"minutes": 3, "papers": 25}, "standard": {"minutes": 5, "papers": 50},
-                                 "detailed": {"minutes": 10, "papers": 100}}}
-    assert changed["efforts"]["quick"] == {"minutes": 3, "papers": 123}
+    assert first == {"efforts": {"quick": {"minutes": 3, "papers": 25, "fulltext": 10},
+                                 "standard": {"minutes": 5, "papers": 50, "fulltext": 20},
+                                 "detailed": {"minutes": 10, "papers": 100, "fulltext": 40}}}
+    assert changed["efforts"]["quick"] == {"minutes": 3, "papers": 123, "fulltext": 10}
 
 
 # ---- what the frozen protocol planned against what was sent -------------------------------------------------------

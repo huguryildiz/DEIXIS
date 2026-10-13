@@ -1,11 +1,35 @@
 /* Research page, human queue, flow block and audit sample. Split from workspace.css (S0b). */
-/* ---- the human queue of an sw research (slice 17, D97) ---- */
-.queue-panel{margin-top:2px}
+/* ---- mockup panel bodies (UI parity S14): queue, PDFs, funnel and activity share the mockup `.pad` column ---- */
+.split-panel-content .mock-pad{display:grid;gap:14px;max-width:720px;color:var(--ink);font-size:14px;line-height:1.5}
+.mock-pad>p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+.mock-pad h3{margin:0;color:var(--ink);font-size:14px;font-weight:600}
+.mock-pad .foot-note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.mock-pad .acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.mock-pad .link{padding:0;border:0;background:none;color:var(--accent);font:inherit;font-weight:500;cursor:pointer}
+.mock-pad .link:hover:not(:disabled){text-decoration:underline;text-underline-offset:2px}
+.mock-pad .link:disabled{color:var(--muted);cursor:default}
+.mock-pad .ghost,.mock-pad [data-slot=button].ghost{display:inline-flex;align-items:center;gap:6px;width:auto;height:auto;padding:5px 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:13px;font-weight:400;line-height:1.5;white-space:nowrap}
+.mock-pad .ghost:hover:not(:disabled){background:var(--hover-surface);color:var(--ink)}
+.mock-pad .ghost:disabled{opacity:.5}
+.mock-pad .ghost svg{flex:none;width:14px;height:14px}
+.mock-pad [data-slot=button].btn-teal{display:inline-flex;align-items:center;gap:6px;height:auto;padding:6px 12px;border:0;border-radius:7px;background:var(--accent);color:var(--paper);font-size:13px;font-weight:500;line-height:1.5;white-space:nowrap}
+.mock-pad [data-slot=button].btn-teal:hover:not(:disabled){background:color-mix(in srgb,var(--accent),#000 12%)}
+.mock-pad .pill{display:inline-flex;align-items:center;gap:4px;padding:0 6px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:11.5px;line-height:19px;white-space:nowrap}
+.mock-pad .pill.ok{color:var(--tone-include)}
+.mock-pad .pill.warn{color:var(--tone-uncertain)}
+.mock-pad .kv{display:flex;justify-content:space-between;gap:8px;color:var(--ink-2);font-size:12.5px}
+.mock-pad .kv span:last-child{color:var(--muted)}
+.mock-pad .src-m{color:var(--muted);font-size:12px;line-height:1.45}
+.mock-pad .notice{margin:0;line-height:1.5}
+.mock-pad .empty{display:grid;place-items:center;padding:40px 24px;text-align:center}
+.mock-pad .empty>div{display:grid;justify-items:center;gap:8px;max-width:380px}
+.mock-pad .empty svg{color:var(--muted)}
+.mock-pad .empty h2{margin:0;color:var(--ink);font-size:16px;font-weight:600}
+.mock-pad .empty p{margin:0;color:var(--muted);font-size:13.5px}
+
+/* ---- the human queue (slice 17, D97) as stacked cards (mockup `.qcard`, P39) ---- */
 .queue-panel p{margin:0}
-.queue-panel .queue-empty{display:grid;gap:4px}
-.queue-panel .queue-layout{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);align-items:start}
-.queue-panel .queue-list-pane{position:sticky;top:0;display:flex;flex-direction:column;gap:10px;max-height:100vh;min-width:0;padding-right:22px}
-.queue-panel .queue-filters{display:grid;gap:8px}
+.queue-panel .queue-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .queue-panel .queue-chips{display:flex;flex-wrap:wrap;gap:6px}
 .queue-panel .queue-chips button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12.5px;white-space:nowrap;cursor:pointer}
 .queue-panel .queue-chips button span{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
@@ -14,100 +38,80 @@
 .queue-panel .queue-chips button[aria-pressed=true]{border-color:var(--accent-line);background:var(--accent-tint);color:var(--accent);font-weight:500}
 .queue-panel .queue-chips button[aria-pressed=true] span{color:var(--accent)}
 .queue-panel .queue-reason-filter{max-width:100%}
-.queue-panel .queue-list{min-height:0;overflow:auto;border-top:1px solid var(--line);outline:none}
-.queue-panel .queue-list:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
-.queue-panel .queue-row{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;padding:11px 8px;border-bottom:1px solid var(--line);cursor:pointer}
-.queue-panel .queue-row:hover{background:var(--hover-surface)}
-.queue-panel .queue-row.is-selected{background:var(--selected-surface)}
-.queue-panel .queue-row.is-selected :is(.queue-row-facts,.queue-row-place){color:color-mix(in srgb,var(--muted),var(--ink) 25%)}
+.queue-panel .queue-cards{display:grid;gap:14px}
+.queue-panel .queue-group-head{margin:0;color:var(--muted);font-size:12px;font-weight:600}
+.queue-panel .queue-more{justify-self:start}
 /* Queue pills are neutral like the Sources and Library pills: grey text on a hairline, the version's tone only as a dot. */
 .queue-panel .ref-pill{gap:5px;padding:0 6px;border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);font-size:11.5px;font-weight:400;line-height:19px}
 .queue-panel .ref-pill>svg{display:none}
 .queue-panel .ref-pill:is(.is-abstract,.is-text,.is-ocr,.is-published,.is-accepted,.is-submitted,.is-removed,.is-cited,.is-similarity)::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pill)}
-.queue-panel .queue-row.is-selected .ref-pill{color:color-mix(in srgb,var(--muted),var(--ink) 25%)}
-.queue-panel .queue-list:focus-visible .queue-row.is-selected{outline:2px solid var(--accent);outline-offset:-2px}
-.queue-panel .queue-row-place{padding-top:2px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
-.queue-panel .queue-row-main{display:grid;gap:5px;min-width:0}
-.queue-panel .queue-row-title{display:-webkit-box;overflow:hidden;color:var(--ink);font-family:var(--font-sans);font-size:13.5px;font-weight:500;line-height:1.35;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
-.queue-panel .queue-row-facts{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;color:var(--muted);font-size:11.5px}
-.queue-panel .queue-row-chain{font-style:italic}
-.queue-panel .queue-group-head{margin:14px 0 0;padding:0 8px 6px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:600}
-.queue-panel .queue-filter-empty{padding:14px 8px}
-.queue-panel .queue-keys{margin:0;color:var(--muted);font-size:11px}
-@media (hover:none){.queue-panel .queue-keys{display:none}}
-/* The open row as a card (mockup .qcard): its meta line is the header band on the side surface; the answers sit in the card foot. */
-.queue-panel .queue-detail{min-width:0;padding:0 18px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
-.queue-panel .queue-detail>.notice{margin-top:14px}
-.queue-panel .queue-detail-head{display:grid;gap:8px;justify-items:start;padding-bottom:14px;border-bottom:1px solid var(--line)}
-.queue-panel .queue-detail-meta{justify-self:stretch;margin:0 -18px 4px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--muted);font-size:12px}
-.queue-panel .queue-detail>.queue-detail-head:first-child .queue-detail-meta{border-radius:11px 11px 0 0}
-.queue-panel .queue-detail-title{margin:0;outline:none}
-.queue-panel .queue-detail-title button{color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:500;line-height:1.4;letter-spacing:-.005em;text-align:left;text-wrap:pretty;cursor:pointer}
-.queue-panel .queue-detail-title button:hover{text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent),transparent 50%);text-underline-offset:3px}
-.queue-panel .queue-detail-title:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:3px}
-.queue-panel .queue-detail-head .source-chips{margin-top:0}
-.queue-panel .queue-open-page{margin-top:4px}
-.queue-panel .queue-question{display:grid;gap:6px;padding:16px 0;border-bottom:1px solid var(--line)}
-.queue-panel .queue-question p{margin:0}
-.queue-panel .queue-question-text{color:var(--ink);font-size:15px;font-weight:600;line-height:1.45}
-.queue-panel .queue-question-context{color:var(--muted);font-size:13px;line-height:1.5}
-.queue-panel .queue-question-definition{max-width:76ch;color:var(--muted);font-family:var(--font-sans);font-size:14px;line-height:1.55}
-.queue-panel .queue-why{color:var(--muted);font-size:12.5px;line-height:1.55}
-.queue-panel .queue-why span{color:var(--ink);font-weight:550}
-.queue-panel .queue-why code{margin-left:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--muted)}
+.qcard{min-width:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.qcard header{height:auto;justify-content:flex-start;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--muted);font-size:12px}
+.qcard header b{color:var(--tone-uncertain);font-weight:600}
+.qcard .qb{display:grid;gap:8px;padding:12px 14px;font-size:13px}
+.qcard .qb h4{margin:0;font-size:14px;font-weight:500}
+.qcard .qcard-title{color:var(--ink);font:inherit;line-height:1.4;text-align:left;cursor:pointer}
+.qcard .qcard-title:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.qcard .au{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;color:var(--muted);font-size:12.5px}
+.qcard .au .source-link-chip{margin:0}
+.qcard .lbl{display:grid;gap:4px;color:var(--muted);font-size:12px}
+.qcard .queue-question-text{color:var(--ink);font-size:13px;font-weight:500}
+.qcard .queue-question-definition{max-width:76ch;color:var(--ink-2)}
+.qcard .queue-why code{margin-left:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--muted)}
+.qcard .queue-open-page{justify-self:start}
 /* The two reads side by side (mockup .reads): one bordered box each. */
-.queue-panel .queue-runs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:14px 0;border-bottom:1px solid var(--line)}
-.queue-panel .queue-run{min-width:0;padding:0 12px 4px;border:1px solid var(--line);border-radius:8px}
-.queue-panel .queue-run>h4{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:12px 0 0;color:var(--ink);font-size:13px;font-weight:600}
-.queue-panel .queue-run-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin:12px 0 4px;color:var(--ink);font-size:13px;font-weight:600}
-.queue-panel .queue-run-head small{color:var(--muted);font-size:11.5px;font-weight:400}
-.queue-panel .queue-part{padding:10px 0;border-top:1px solid var(--line)}
-.queue-panel .queue-part-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0;color:var(--ink);font-size:13px;font-weight:550}
-.queue-panel .queue-part-asked{color:var(--accent);font-size:11.5px;font-weight:500}
-.queue-panel .queue-quote{position:relative;margin:8px 0 6px;padding:0 0 0 16px;color:var(--ink);font-family:var(--font-sans);font-size:15px;line-height:1.6;overflow-wrap:anywhere}
-.queue-panel .queue-quote::before{content:'“';position:absolute;top:-4px;left:0;color:color-mix(in srgb,var(--muted),transparent 35%);font-family:var(--font-sans);font-size:24px;line-height:1}
-.queue-panel .queue-part-note{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:0;color:var(--muted);font-size:12px}
-.queue-panel .queue-page-link{display:inline-flex;align-items:center;gap:2px;color:var(--accent);font-size:12px;font-weight:500;cursor:pointer}
-.queue-panel .queue-page-link:hover{text-decoration:underline;text-underline-offset:3px}
-.queue-panel .queue-rationale{margin:6px 0 0;color:var(--muted);font-family:var(--font-sans);font-size:14px;line-height:1.55}
-.queue-panel .queue-closest{display:grid;gap:12px;padding:16px 0;border-bottom:1px solid var(--line)}
-.queue-panel .queue-closest .notice{margin:0 0 8px}
-.queue-panel .queue-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
-.queue-panel .queue-pair h5,.queue-panel .queue-identity h4,.queue-panel .queue-cues h4{margin:0 0 6px;color:var(--ink);font-size:12.5px;font-weight:600}
-.queue-panel .queue-identity{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;padding:16px 0;border-bottom:1px solid var(--line)}
-.queue-panel .queue-first-page{max-height:280px;overflow:auto;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--page-surface);color:var(--page-ink);font-family:var(--font-serif);font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
-.queue-panel .queue-serif{margin:0 0 8px;color:var(--ink);font-family:var(--font-sans);font-size:15px;line-height:1.55;overflow-wrap:anywhere}
-.queue-panel .queue-cues{padding:16px 0}
-.queue-panel .queue-cues ul{display:grid;gap:10px;margin:0;padding:0;list-style:none}
-.queue-panel .queue-cues li{display:grid;gap:2px}
-.queue-panel .queue-cues li .queue-serif{margin:0}
+.qcard .queue-runs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.qcard .queue-run{min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px}
+.qcard .queue-run>b{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:2px;font-size:11.5px;font-weight:500}
+.qcard .queue-run-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin:0 0 2px;color:var(--ink);font-size:11.5px;font-weight:500}
+.qcard .queue-run-head small{color:var(--muted);font-size:11px;font-weight:400}
+.qcard .queue-part{padding:6px 0;border-top:1px solid var(--line)}
+.qcard .queue-run-head+.queue-part{border-top:0}
+.qcard .queue-part-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;color:var(--ink);font-size:12.5px;font-weight:500}
+.qcard .queue-part-asked{color:var(--accent);font-size:11px;font-weight:500}
+.qcard .queue-quote{margin:4px 0;padding:0 0 0 10px;border-left:2px solid var(--strong-line);color:var(--ink);font-size:12.5px;line-height:1.5;overflow-wrap:anywhere}
+.qcard .queue-part-note{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin:0;color:var(--muted);font-size:12px}
+.qcard .queue-page-link{display:inline-flex;align-items:center;gap:2px;color:var(--accent);font-size:12px;font-weight:500;cursor:pointer}
+.qcard .queue-page-link:hover{text-decoration:underline;text-underline-offset:3px}
+.qcard .queue-rationale{margin:4px 0 0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.qcard .queue-closest{display:grid;gap:8px}
+.qcard .queue-closest .notice{margin:0 0 6px}
+.qcard .queue-pair,.qcard .queue-identity{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.qcard :is(.queue-pair,.queue-identity,.queue-cues) h5{margin:0 0 4px;color:var(--ink);font-size:12px;font-weight:600}
+.qcard .queue-first-page{max-height:220px;overflow:auto;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--page-surface);color:var(--page-ink);font-family:var(--font-serif);font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.qcard .queue-serif{margin:0 0 4px;color:var(--ink);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+.qcard .queue-cues ul{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.qcard .queue-cues li{display:grid;gap:2px}
 .queue-panel .queue-muted{margin:0;color:var(--muted);font-size:12.5px;line-height:1.55}
 .queue-panel .queue-kept-note{margin-top:6px;overflow-wrap:anywhere}
 .queue-panel .queue-kept-note q{font-style:italic}
 .queue-panel .queue-link{color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
-.queue-panel .queue-foot{position:sticky;bottom:0;z-index:3;display:grid;justify-content:stretch;gap:10px;margin:8px -18px 0;padding:12px 18px 14px;border-top:1px solid var(--line);border-radius:0 0 11px 11px;background:var(--paper);color:var(--ink);font-size:13px}
-.queue-panel .queue-foot .notice{margin:0}
-/* The answers (mockup .qopts): bordered choices; the one filled button stays the PDF confirmation. */
+/* The answers (mockup .qopts): bordered choices with what each does under its label. */
+/* The audit sample's answers (Funnel panel) keep the old button stack. */
 .queue-panel .queue-answers{display:grid;gap:4px}
 .queue-panel .queue-answers [data-slot=button]{justify-content:flex-start;width:100%;height:auto;min-height:36px;padding:7px 12px;border-radius:8px;font-size:13px;text-align:left;white-space:normal}
 .queue-panel .queue-answers [data-slot=button]:not(.bg-primary):hover:not(:disabled){border-color:var(--accent-line)}
-.queue-panel .queue-note{display:grid;gap:4px;color:var(--ink);font-size:12.5px;font-weight:550}
+.qopts{display:grid;gap:6px}
+.qopts button{display:flex;gap:9px;align-items:flex-start;padding:8px 10px;border:1px solid var(--strong-line);border-radius:8px;background:transparent;color:var(--ink);font-size:13px;text-align:left;cursor:pointer}
+.qopts button>svg{flex:none;margin-top:1px}
+.qopts button:hover:not(:disabled){border-color:var(--accent-line);background:var(--hover-surface)}
+.qopts button:disabled{opacity:.5;cursor:default}
+.qopts button small{display:block;color:var(--muted);font-size:12px}
+.queue-panel .queue-note{display:grid;gap:4px;color:var(--ink);font-size:12.5px;font-weight:500}
 .queue-panel .queue-note>span{display:flex;justify-content:space-between;gap:10px}
 .queue-panel .queue-note small{color:var(--muted);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums}
 .queue-panel .queue-note textarea{width:100%;min-height:52px;padding:8px 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--ink);font:inherit;font-size:13px;font-weight:400;line-height:1.5;resize:vertical}
 .queue-panel .queue-note textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .queue-panel .queue-note-toggle{display:inline-flex;align-items:center;gap:6px;justify-self:start;color:var(--muted);font-size:12.5px;cursor:pointer}
 .queue-panel .queue-note-toggle:hover{color:var(--ink)}
-.queue-panel .queue-foot-note{margin:0;color:var(--muted);font-size:11px;line-height:1.5}
-.queue-panel .queue-back{display:inline-flex;align-items:center;gap:6px;margin:12px 0;color:var(--accent);font-size:13px;font-weight:500;cursor:pointer}
-.queue-panel .queue-decided{margin-top:28px;border-top:1px solid var(--line)}
-.queue-panel .queue-decided summary{display:flex;align-items:center;gap:6px;padding:14px 0 10px;color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;list-style:none}
-.queue-panel .queue-decided summary::-webkit-details-marker{display:none}
-.queue-panel .queue-decided[open] .queue-decided-chevron{transform:rotate(90deg)}
-.queue-panel .queue-decided-chevron{transition:transform .16s ease}
+.queue-panel .queue-decided{border-top:1px solid var(--line)}
+.queue-panel .queue-decided summary,.funnel-more>summary{display:flex;align-items:center;gap:6px;padding:14px 0 10px;color:var(--ink);font-size:14px;font-weight:600;cursor:pointer;list-style:none}
+.queue-panel .queue-decided summary::-webkit-details-marker,.funnel-more>summary::-webkit-details-marker{display:none}
+.queue-panel .queue-decided[open] .queue-decided-chevron,.funnel-more[open]>summary .queue-decided-chevron{transform:rotate(90deg)}
+.queue-decided-chevron{transition:transform .16s ease}
 .queue-panel .queue-decided ul{margin:0;padding:0;list-style:none}
 .queue-panel .queue-decided li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:start;padding:11px 0;border-top:1px solid var(--line)}
-.queue-panel .queue-decided-title{color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:500;line-height:1.35;text-align:left;cursor:pointer}
+.queue-panel .queue-decided-title{color:var(--ink);font-family:var(--font-sans);font-size:14px;font-weight:500;line-height:1.35;text-align:left;cursor:pointer}
 .queue-panel .queue-decided-title:hover{text-decoration:underline;text-underline-offset:3px}
 .queue-panel .queue-decided-note{margin:4px 0 0;color:var(--ink);font-size:12.5px;line-height:1.5}
 .research-view .chat-queue-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0 0;color:var(--ink);font-size:13px}
@@ -115,21 +119,74 @@
 .research-view .chat-queue-line>span[aria-hidden]{color:var(--muted)}
 .research-view .chat-queue-line button{color:var(--accent);font-weight:550;cursor:pointer}
 .research-view .chat-queue-line button:hover{text-decoration:underline;text-underline-offset:3px}
-@media (max-width:1050px){.queue-panel .queue-layout{grid-template-columns:minmax(0,300px) minmax(0,1fr)}.queue-panel .queue-runs,.queue-panel .queue-pair,.queue-panel .queue-identity{grid-template-columns:minmax(0,1fr)}}
-@media (max-width:760px){
-  .queue-panel .queue-layout{display:block}
-  .queue-panel .queue-layout.is-detail .queue-list-pane,.queue-panel .queue-layout:not(.is-detail) .queue-detail{display:none}
-  .queue-panel .queue-list-pane{position:static;max-height:none;padding-right:0}
-  .queue-panel .queue-list{overflow:visible}
-  .queue-panel .queue-detail{padding:0 14px}
-  .queue-panel .queue-detail-meta{margin-inline:-14px;padding-inline:14px}
-  .queue-panel .queue-foot{margin-inline:-14px;padding-inline:14px}
-  .queue-panel .queue-detail-title button{font-size:15px}
-  .queue-panel .queue-answers{flex-direction:column}
-  .queue-panel .queue-answers>button{width:100%}
-}
-/* Stacked answers make the pinned bar about half of a short viewport (54% of 450 px at 200% zoom): it covers the row title and the controls the keyboard focuses, so there it scrolls with the page (WCAG 2.4.11). */
-@media (max-width:760px) and (max-height:700px){.queue-panel .queue-foot{position:static}}
+@media (max-width:760px){.qcard .queue-runs,.qcard .queue-pair,.qcard .queue-identity{grid-template-columns:minmax(0,1fr)}}
+
+/* ---- "Get more full text" (mockup `pdfs()`, P40): depth boxes, lists, drop zone ---- */
+.depth{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;border:1px solid var(--line);border-radius:10px;background:var(--line);overflow:hidden}
+.depth>div{padding:9px 12px;background:var(--paper)}
+.depth b{display:block;font-size:18px;font-weight:500}
+.depth span{color:var(--muted);font-size:11.5px}
+.plist{border:1px solid var(--line);border-radius:10px}
+.plist>h4{display:flex;justify-content:space-between;gap:8px;margin:0;padding:9px 12px;border-bottom:1px solid var(--line);border-radius:10px 10px 0 0;background:var(--sidebar-surface);font-size:12.5px;font-weight:600}
+.plist>h4>span+span{color:var(--muted);font-weight:400}
+.plist ol,.plist ul{margin:0;padding:0;list-style:none}
+.prow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:9px 12px;border-top:1px solid var(--line);color:var(--ink);font-size:13px;line-height:1.5}
+.plist>h4+.prow,.plist>h4+ol>.prow:first-child,.plist>h4+ul>.prow:first-child{border-top:0}
+.prow .t{flex:1;min-width:200px}
+.prow .t small{display:block;color:var(--muted);font-size:12px}
+.prow.pdf-ready-lede,.prow.foot-note{display:block;color:var(--muted);font-size:12.5px}
+.pdfs-panel .pdf-ready-head{flex:1;min-width:200px}
+.pdfs-panel .pdf-ready-side{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px}
+.pdfs-panel .waiting-place{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.pdfs-panel .waiting-matches .waiting-match{padding:10px 12px;border-top:1px solid var(--line)}
+.pdfs-panel .waiting-matches>h4+.waiting-match{border-top:0}
+.pdfs-panel .pdf-ready-zotero select{height:28px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12.5px}
+.pdfs-panel .pdf-ready-full>summary{display:flex;align-items:baseline;justify-content:space-between;gap:8px;cursor:pointer}
+.pdfs-panel .pdf-ready-full>summary h4{margin:0;font-size:12.5px;font-weight:600}
+.pdfs-panel .pdf-ready-full>summary small{color:var(--muted);font-size:12px}
+.drop{display:grid;justify-items:center;gap:6px;padding:18px;border:1.5px dashed var(--strong-line);border-radius:10px;color:var(--muted);font-size:13px;text-align:center;cursor:pointer}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-tint)}
+.drop b{color:var(--ink);font-weight:600}
+.thread-pdf-note .link{padding:0;border:0;background:none;color:var(--accent);font:inherit;font-weight:500;cursor:pointer}
+.thread-pdf-note .link:hover{text-decoration:underline;text-underline-offset:2px}
+@media (max-width:760px){.depth{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ---- Search funnel (mockup `funnel()`, P41): six stages with a share of the first, a bar and what was lost ---- */
+.stage{display:grid;grid-template-columns:150px minmax(0,1fr);gap:4px 14px;padding:12px 0;border-top:1px solid var(--line)}
+.stage:first-child{border-top:0}
+.stage h4{margin:0;font-size:13px;font-weight:500;line-height:1.5}
+.stage h4 small{display:block;margin-top:2px;color:var(--muted);font-size:12px;font-weight:400}
+.stage .sb{display:grid;align-content:start;gap:6px}
+.stage .stage-n{color:var(--ink);font-weight:500}
+.stage .track{height:12px;border-radius:3px;background:var(--ui-accent);overflow:hidden}
+.stage .track i{display:block;height:100%;background:var(--accent)}
+.stage .lost{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;color:var(--ink-2);font-size:12.5px}
+.stage .lost b{color:var(--tone-uncertain);font-weight:600}
+.funnel-panel .unscreened{display:grid;gap:6px}
+.funnel-panel .unscreened ol{display:grid;gap:6px;margin:0;padding:0 0 0 18px;font-size:12.5px}
+.funnel-panel .unscreened li .src-t{display:block;color:var(--ink);font-weight:500;line-height:1.35}
+.funnel-panel .unscreened .link{justify-self:start;font-size:12.5px}
+.funnel-more{max-width:720px;border-top:1px solid var(--line)}
+@media (max-width:760px){.stage{grid-template-columns:minmax(0,1fr)}}
+
+/* ---- Activity (mockup `activity()`, P34): the runs table above the recorded events ---- */
+.activity-runs .tbl-wrap{overflow:auto}
+.activity-table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.5}
+.activity-table th{position:sticky;top:0;z-index:1;padding:9px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink-2);font-size:12.5px;font-weight:500;text-align:left;white-space:nowrap}
+.activity-table td{padding:10px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:top}
+.activity-table :is(th,td):last-child{border-right:0}
+.activity-table .activity-run{min-width:180px}
+.activity-table .activity-run b{font-weight:500}
+.activity-table .src-m{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.45}
+.activity-table .activity-started{color:var(--muted);white-space:nowrap}
+.activity-runs>.foot-note{margin:0;padding:10px 14px;color:var(--muted);font-size:12px;line-height:1.5}
+.activity-runs .status{padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:500;white-space:nowrap}
+.activity-runs .status.ok{background:var(--ok-surface);color:var(--ok-ink)}
+.activity-runs .status.run{background:var(--accent-tint);color:var(--accent)}
+.activity-runs .status.warn{background:var(--warn-surface);color:var(--warn-ink)}
+.activity-runs .status.no{background:var(--ui-accent);color:var(--muted)}
+.split-panel-content:has(>.activity-runs){padding:0}
+.activity-runs>.activity-panel{padding:18px 22px 40px}
 
 /* The flow of an sw research (slice 20): the Sources tab's flow block, the line under an answer, the override count and
    the audit sample. Counts only, set as quiet interface text; nothing here is styled as success. */

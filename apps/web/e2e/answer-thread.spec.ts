@@ -299,9 +299,9 @@ test.describe.serial('S10: the answer in the thread', () => {
     // "Full method" holds every count and the answer's boundary (§2.2).
     await methods.locator('summary', { hasText: 'Full method' }).click()
     await expect(methods.getByRole('group', { name: 'Flow at the start of this answer' })).toContainText('When the answer started:')
-    // "see what was not read" opens the funnel's place (the Sources panel until S14).
+    // "see what was not read" opens the Search funnel panel (S14).
     await text.getByRole('button', { name: 'see what was not read' }).click()
-    await expect(panel(page, PANEL_TITLES.sources)).toBeVisible()
+    await expect(panel(page, PANEL_TITLES.funnel)).toBeVisible()
     await page.keyboard.press('Escape')
   })
 
@@ -325,7 +325,7 @@ test.describe.serial('S10: the answer in the thread', () => {
     await expect(panel(page, PANEL_TITLES.table)).toBeVisible()
     await page.keyboard.press('Escape')
     await acts.getByRole('button', { name: 'Search funnel' }).click()
-    await expect(panel(page, PANEL_TITLES.sources)).toBeVisible()
+    await expect(panel(page, PANEL_TITLES.funnel)).toBeVisible()
     await page.keyboard.press('Escape')
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
     await acts.getByRole('button', { name: 'Copy answer' }).click()

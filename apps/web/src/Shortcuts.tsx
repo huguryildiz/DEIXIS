@@ -1,22 +1,22 @@
 import { useEffect, useRef } from 'react'
 
 // The shortcut layer (mockup keydown handler, UI parity S3): ⌘K / Ctrl K opens the search palette; the single keys
-// S R T Q P open a research page's panels, N and L go to New research and the Library, `[` shows or hides the sidebar,
+// S R T F Q P open a research page's panels, N and L go to New research and the Library, `[` shows or hides the sidebar,
 // `?` opens the keys dialog, Esc closes the open panel. Single keys are off inside text fields and while a dialog or menu
 // is open, and the keys dialog has an off switch for them (WCAG 2.1.4); ⌘K and Esc are not single character keys.
-// The mockup's F (search funnel) and "Send follow-up" are left out until those exist.
+// The mockup's "Send follow-up" key is left out until that exists.
 
 export const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent)
 
-// A research page answers these requests (S R T Q P and the palette's "On this page" rows); `null` closes its open panel.
-export type ResearchPanelName = 'sources' | 'report' | 'table' | 'queue' | 'pdfs'
+// A research page answers these requests (S R T F Q P and the palette's "On this page" rows); `null` closes its open panel.
+export type ResearchPanelName = 'sources' | 'report' | 'table' | 'funnel' | 'queue' | 'pdfs'
 export type ResearchPanelRequest = { name: ResearchPanelName | null; opener?: HTMLElement | null }
 export const RESEARCH_PANEL_EVENT = 'deixis:research-panel'
 export function requestResearchPanel(request: ResearchPanelRequest) {
   window.dispatchEvent(new CustomEvent<ResearchPanelRequest>(RESEARCH_PANEL_EVENT, { detail: request }))
 }
 
-const RESEARCH_KEYS: Record<string, ResearchPanelName> = { s: 'sources', r: 'report', t: 'table', q: 'queue', p: 'pdfs' }
+const RESEARCH_KEYS: Record<string, ResearchPanelName> = { s: 'sources', r: 'report', t: 'table', f: 'funnel', q: 'queue', p: 'pdfs' }
 
 const STORAGE_KEY = 'deixis-single-keys'
 export function readSingleKeys(): boolean {
@@ -41,6 +41,7 @@ export const KEY_SECTIONS: { heading: string; rows: KeyRow[] }[] = [
     { label: 'Sources', keys: ['S'], single: true },
     { label: 'Report', keys: ['R'], single: true },
     { label: 'Evidence table', keys: ['T'], single: true },
+    { label: 'Search funnel', keys: ['F'], single: true },
     { label: 'Awaiting your decision', keys: ['Q'], single: true },
     // Mockup "Read more in full": the panel reads selected pages, so it carries the live title (plan §2.3).
     { label: 'Get more full text', keys: ['P'], single: true },

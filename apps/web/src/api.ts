@@ -569,7 +569,7 @@ export type AuditRowView = { row: AuditRow | AuditAbstractRow | null; detail: Qu
 export type AuditResult = { row: AuditRow | null; selection: QueueAnswerResult['selection']; undo_token: string | null }
 // What each depth gives a run, from the fast path's modes: about how many minutes (the stage deadlines summed) and how
 // many papers at the top of the ranking it reads.
-export type EffortLimits = { efforts: Record<'quick' | 'standard' | 'detailed', { minutes: number; papers: number }> }
+export type EffortLimits = { efforts: Record<'quick' | 'standard' | 'detailed', { minutes: number; papers: number; fulltext?: number }> }
 // The human queue of an sw research (slice 16, D96). Rows are derived from stored decisions each time they are read.
 export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'confirm_absent' | 'find_part' | 'confirm_results' | 'look_again'
 export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong' | 'pdf_confirmed'
@@ -1242,6 +1242,7 @@ export const api = {
   undoAuditDecision: (id: string, sourceId: string, auditToken: string) =>
     request<AuditResult>(`/api/researches/${id}/audit/${sourceId}/undo`, json('POST', { audit_token: auditToken })),
   effortLimits: () => request<EffortLimits>('/api/effort-limits'),
+  activityRuns: (id: string) => request<ActivityRuns>(`/api/researches/${encodeURIComponent(id)}/activity-runs`),
   reviseScope: (id: string, question: string, expectedVersion: number, keyTerms?: string | null) =>
     request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion, key_terms: keyTerms ?? null })),
   skipEquations: (runId: string) => request<Run>(`/api/runs/${runId}/skip-equations`, { method: 'POST' }),
@@ -1592,6 +1593,16 @@ export const libraryImportsApi = {
       '/api/library/reference-imports', { method: 'POST', body: form })
   },
 }
+
+// Every run of a research for the Activity panel (UI parity S14; api/activity_routes.py): `started_at` is the run's first
+// `run_started` event and `finished_at` the event that ended it, each null when no such event is stored (a run cancelled
+// before it started, a paused or running run); `model_calls` counts its stored model sessions. `mode` is the fast path's
+// frozen depth ('deep' is Detailed); `report_version` the report an answer run saved.
+export type ActivityRun = {
+  id: string; kind: RunKind; status: RunStatus; scope_revision: number; created_at: string
+  started_at: string | null; finished_at: string | null; model_calls: number; mode: string | null; report_version: number | null
+}
+export type ActivityRuns = { research_id: string; runs: ActivityRun[] }
 
 // The not-read list and the "Screen more" run (S20; api/screen_more_routes.py). `unscreened` pages through the works of
 // the latest completed discovery's frozen list that were never screened, in list order; `signals.rank` (place in that

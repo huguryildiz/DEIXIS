@@ -116,15 +116,16 @@ const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unk
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onControlRun, onRewrite, busy = false }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onControlRun, onRewrite, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
   onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
   // The too-broad notice (R21): the rewritten question is saved as a new revision, which then searches.
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
-  // The reading step's "Get more full text" link opens the PDFs panel.
+  // The reading step's "Get more full text" link opens the PDFs panel; the screening step's "N not read" the Search funnel.
   onOpenPdfs?: () => void
+  onOpenFunnel?: () => void
   busy?: boolean
   // The way out of a `key_terms_needed` stop: the revision form in the question bubble, on its key-terms field.
   onGiveKeyTerms?: () => void
@@ -163,7 +164,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
     {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} keepOpen={run.id === latestAnswerRun || run.id === latestDiscovery}
       modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
-      onControlRun={onControlRun} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} busy={busy}
+      onControlRun={onControlRun} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} busy={busy}
       queueLine={run.id === (latestDiscovery ?? lastReading) && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
@@ -174,7 +175,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onRewrite, onOpenPdfs, busy, queueLine = null, children }: {
+function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onRewrite, onOpenPdfs, onOpenFunnel, busy, queueLine = null, children }: {
   run: Run; view: ResearchView; now: number; latest: boolean; keepOpen: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   onGiveKeyTerms?: () => void
@@ -182,6 +183,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
   onOpenPdfs?: () => void
+  onOpenFunnel?: () => void
   busy: boolean
   queueLine?: { count: number; open: () => void } | null; children: ReactNode
 }) {
@@ -823,7 +825,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       if (readTwice) parts.push(<div key="twice">{t('Each batch is read twice by the literature model. An abstract alone never includes a work.')}</div>)
       if (funnel) {
         const top = t(similarityScored ? 'Ranked by similarity, top {n} read' : 'Top {n} of the ranking read', { n: funnel.abstracts_read.toLocaleString(uiLocale()) })
-        parts.push(row(top, notScreened === null ? '' : t('{n} not read', { n: notScreened.toLocaleString(uiLocale()) }), 'top'))
+        const notReadText = notScreened === null ? '' : t('{n} not read', { n: notScreened.toLocaleString(uiLocale()) })
+        parts.push(row(top, notScreened && onOpenFunnel ? <button type="button" className="step-link" onClick={onOpenFunnel}>{notReadText}</button> : notReadText, 'top'))
         parts.push(row(t('Passed the abstract stage'), funnel.candidates.toLocaleString(uiLocale()), 'passed'))
       }
     }

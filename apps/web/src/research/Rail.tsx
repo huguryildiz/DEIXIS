@@ -10,8 +10,8 @@ import { useRailWide } from './railData'
 // page hides it, it stays mounted so the button that opened a panel takes focus back). Every number comes from the view
 // the page already holds, or from the queue list for the amber box. RL8 (the Usage box) is S27's.
 
-// Until the Funnel panel exists (S14) the funnel box opens the Sources panel, which holds the flow counts and the search report.
-const FUNNEL_PANEL = 'sources'
+// The funnel box and its bars open the Search funnel panel (S14, P41).
+const FUNNEL_PANEL = 'funnel'
 // The queue rows listed in the amber box; the rest are one click away in the panel.
 const QUEUE_ROWS = 8
 

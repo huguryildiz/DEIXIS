@@ -511,7 +511,7 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       })
       await page.reload()
       await showAnswer(page)
-      await expect(page.getByRole('button', { name: 'Generate answer now' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Generate source-linked answer' })).toBeVisible()
       await scan(page, '3a answer thread before an answer')
       await page.unroute(viewUrl)
       await page.reload()
@@ -706,14 +706,15 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       const rid = await queueResearchId()
       await page.goto('about:blank')
       await page.goto(`${queue.url()}#/research/${rid}/queue`)
-      const list = page.getByRole('listbox', { name: 'Rows awaiting your decision' })
+      // The queue is stacked cards (UI parity S14): 10a is the cards as they load, 10b the second card with its note
+      // field open, a different state at every width.
+      const list = page.getByRole('list', { name: 'Rows awaiting your decision' })
       await expect(list).toBeVisible()
+      await expect.poll(() => list.locator(':scope > .qcard').count(), { message: 'the queue has at least two rows' }).toBeGreaterThanOrEqual(2)
       await scan(page, '10a human queue list')
-      // HumanQueue selects the first row on its own above 760 px (`selectedWork`), so 10a at 1280 already shows row 1's detail. 10b chooses row 2, a different state at every width.
-      await expect.poll(() => list.getByRole('option').count(), { message: 'the queue has at least two rows' }).toBeGreaterThanOrEqual(2)
-      await list.getByRole('option').nth(1).click()
-      await expect(list.getByRole('option').nth(1)).toHaveAttribute('aria-selected', 'true')
-      await expect(page.locator('.queue-detail')).toBeVisible()
+      const second = list.locator(':scope > .qcard').nth(1)
+      await second.getByRole('button', { name: 'Add a note' }).click()
+      await expect(second.getByRole('textbox')).toBeVisible()
       await scan(page, '10b human queue open row')
     })
   })
@@ -2170,11 +2171,11 @@ test.describe.serial('X06: reduced motion and the 200% layout', () => {
       const rid = await queueResearchId()
       await page.goto('about:blank')
       await page.goto(`${queue.url()}#/research/${rid}/queue`)
-      const list = page.getByRole('listbox', { name: 'Rows awaiting your decision' })
+      const list = page.getByRole('list', { name: 'Rows awaiting your decision' })
       await expect(list).toBeVisible()
-      await layout(page, log, 'human queue list', { 'first row': list.getByRole('option').first() })
-      await list.getByRole('option').first().click()
-      await layout(page, log, 'human queue open row', { 'row detail heading': page.locator('.queue-detail-title'), 'row detail action': page.locator('.queue-detail').getByRole('button').first() })
+      const first = list.locator(':scope > .qcard').first()
+      await layout(page, log, 'human queue list', { 'first card title': first.locator('.qcard-title') })
+      await layout(page, log, 'human queue open row', { 'card answer': first.locator('.qopts button').first(), 'card note': first.getByRole('button', { name: 'Add a note' }) })
     } finally { await context.close() }
   }
 

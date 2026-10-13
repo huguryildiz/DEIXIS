@@ -170,8 +170,8 @@ test.describe.serial('S11: the artifacts rail', () => {
       ['Candidates', () => rail(page).getByRole('button', { name: /^Candidates/ }), PANEL_TITLES.cands],
       ['Follow-up', () => rail(page).getByRole('button', { name: /^Follow-up/ }), PANEL_TITLES.watch],
       ['queue', () => rail(page).getByRole('button', { name: 'Open Waiting for your decision' }), PANEL_TITLES.queue],
-      ['the funnel', () => rail(page).getByRole('button', { name: 'Open From search to answer' }), 'Sources'],
-      ['a funnel bar', () => rail(page).locator('.fun button').first(), 'Sources'],
+      ['the funnel', () => rail(page).getByRole('button', { name: 'Open From search to answer' }), PANEL_TITLES.funnel],
+      ['a funnel bar', () => rail(page).locator('.fun button').first(), PANEL_TITLES.funnel],
       ['depth', () => rail(page).getByRole('button', { name: 'Open How deeply sources were read' }), 'Get more full text'],
       ['the table', () => rail(page).getByRole('button', { name: /^Evidence table · / }), 'Evidence table'],
     ]
@@ -263,7 +263,7 @@ test.describe.serial('S11: the artifacts rail', () => {
     // full-text decision, the reading's or the person's. One label each (S11 follow-up).
     const view = await viewOf(api, rid) as View & { counts: { flow_boxes?: { boxes: { key: string; count: number | null }[] } } }
     const box = view.counts.flow_boxes!.boxes.find(b => b.key === 'fulltext_read')!
-    await page.goto(`${research()}/sources`)
+    await page.goto(`${research()}/funnel`)
     const flow = page.locator('details.flow-block')
     await flow.locator('summary').click()
     const row = flow.locator('.flow-list li', { hasText: 'Works with a current full-text decision (reading or yours)' })

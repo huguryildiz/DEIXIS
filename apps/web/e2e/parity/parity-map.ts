@@ -11,7 +11,7 @@ export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
 export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog' | 'research-panel' | 'palette' | 'keys'
   | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty' | 'report-panel' | 'cite-panel' | 'detail-panel'
-  | 'sources-why' | 'sources-sel'
+  | 'sources-why' | 'sources-sel' | 'queue-panel' | 'pdfs-panel' | 'funnel-panel' | 'activity-panel'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -143,6 +143,15 @@ export const SURFACES: Surface[] = [
       await page.locator('.cite-entry .rowacts button').first().click()
       await page.locator('.source-detail .docnav').waitFor()
     } },
+  // S14: the queue (P39), Get more full text (P40), Search funnel (P41) and Activity (P34) panels, each opened fresh. The
+  // queue is ready once its last card's detail is read (its answers turn on); the funnel once its unscreened page is in.
+  { id: 'queue-panel', mock: "setScenario('ok'); openPanel('queue', null, false)", app: '#/research/{research}/queue',
+    ready: '[data-split-panel] .queue-cards > .qcard:last-child .qopts button:not([disabled])' },
+  { id: 'pdfs-panel', mock: "setScenario('ok'); openPanel('pdfs', null, false)", app: '#/research/{research}/pdfs', ready: '[data-split-panel] .pdfs-panel .pdfs-answer',
+    // The fixture's works all have their PDF text, so the one list with rows is "PDF text in hand", opened here.
+    appAct: async page => { await page.locator('.pdfs-panel .pdf-ready-full > summary').click(); await page.locator('.pdfs-panel .pdf-ready-full li.prow').first().waitFor() } },
+  { id: 'funnel-panel', mock: "setScenario('ok'); openPanel('funnel', null, false)", app: '#/research/{research}/funnel', ready: '[data-split-panel] .funnel-panel .stage .lost .link' },
+  { id: 'activity-panel', mock: "setScenario('ok'); openPanel('activity', null, false)", app: '#/research/{research}/activity', ready: '[data-split-panel] .activity-table tbody tr' },
   // S13: the Sources panel with its reason bar (the first row excluded) and with its selection bar (the first row
   // chosen). The app's Exclude is answered here, so the fixture's research is never changed: the PATCH gets an empty
   // 200 and the view the page reloads has that row excluded by the person.
@@ -302,7 +311,7 @@ const states: Pair[] = [
   { id: 'dialog.footer', surface: 'dialog', mock: '.pal.dlg .dlg-f', app: '.dialog-footer', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
 ]
 
-// O1 (S3): the search palette over the research page. The page's rows leave out the funnel row (DEFERRED_TARGETS); the
+// O1 (S3): the search palette over the research page. The page's rows hold the funnel row since S14; the
 // recent rows are the fixture's researches; the letter keys are compared as their own lists (dataText leaves them out
 // of the row text, so "Read more in full" meets its copy change).
 const PAL_PAGE = '#palList button:is([data-pal^="panel:"], [data-pal="theme"])'
@@ -318,7 +327,7 @@ const palette: Pair[] = [
   { id: 'palette.headings', surface: 'palette', mock: '.pal-list h6', app: '.quick-find-group', checks: ['chrome', 'type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
   { id: 'palette.page-rows', surface: 'palette', mock: PAL_PAGE, app: APP_GROUP('Page'), checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed',
     dataText: { mock: ['em'], app: ['em'] },
-    icon: [{ mock: 'book', app: 'book-open' }, { mock: 'doc', app: 'text-align-start' }, { mock: 'inbox', app: 'inbox' }, { mock: 'file', app: 'file-text' }, { mock: 'moon', app: 'moon' }],
+    icon: [{ mock: 'book', app: 'book-open' }, { mock: 'doc', app: 'text-align-start' }, { mock: 'funnel', app: 'funnel' }, { mock: 'inbox', app: 'inbox' }, { mock: 'file', app: 'file-text' }, { mock: 'moon', app: 'moon' }],
     unordered: true, states: [], status: 'active' },
   { id: 'palette.page-keys', surface: 'palette', mock: `${PAL_PAGE} em`, app: `${APP_GROUP('Page')} em`, checks: ['chrome', 'type', 'colour'], list: 'fixed', unordered: true, states: [], status: 'active' },
   { id: 'palette.recent-rows', surface: 'palette', mock: '#palList button[data-pal="go:research"]', app: APP_GROUP('Research'), checks: ['chrome', 'type', 'icon'], list: 'data',
@@ -655,6 +664,56 @@ export const PAIRS: Pair[] = [
   { id: 'detail-panel.tabs', surface: 'detail-panel', mock: '.detail .tabs button', app: '.source-detail [role=tablist] [role=tab]', checks: ['chrome', 'type'], list: 'fixed', states: [], status: 'active' },
   { id: 'detail-panel.docnav', surface: 'detail-panel', mock: '.detail .docnav', app: '.source-detail .docnav', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
   { id: 'detail-panel.foot', surface: 'detail-panel', mock: '.detail > p.foot-note:last-child', app: '.source-detail .source-sheet-foot', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
+  // S14 queue panel (P39): the intro, then one card per row (the fixture's three), each with its head, title and answers.
+  { id: 'queue.title', surface: 'queue-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'inbox', app: 'inbox' }, text: true, states: [], status: 'active' },
+  { id: 'queue.intro', surface: 'queue-panel', mock: '.panel .pad > p', app: '.queue-panel > p', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'queue.cards', surface: 'queue-panel', mock: '.panel .qcard', app: '.queue-panel .qcard', checks: ['chrome', 'colour'], use: 'decorative', list: 'data', expected: () => 3, states: [], status: 'active' },
+  { id: 'queue.head', surface: 'queue-panel', mock: '.panel .qcard header', app: '.queue-panel .qcard header', checks: ['chrome', 'type', 'colour'], list: 'data', expected: () => 3, states: [], status: 'active' },
+  { id: 'queue.kind', surface: 'queue-panel', mock: '.panel .qcard header b', app: '.queue-panel .qcard header b', checks: ['type', 'colour'], use: 'icon', states: [], status: 'active' },
+  { id: 'queue.work', surface: 'queue-panel', mock: '.panel .qcard .qb h4', app: '.queue-panel .qcard .qb h4', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'queue.answer', surface: 'queue-panel', mock: '.panel .qcard .qopts button', app: '.queue-panel .qcard .qopts button', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'check', app: 'check' }, states: ['hover'], status: 'active' },
+  { id: 'queue.answer-note', surface: 'queue-panel', mock: '.panel .qcard .qopts button small', app: '.queue-panel .qcard .qopts button small', checks: ['type', 'colour'], states: [], status: 'active' },
+  // S14 Get more full text (P40): the depth boxes, Collect, the first list's head, the drop zone and the answer button.
+  { id: 'pdfs.title', surface: 'pdfs-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'file', app: 'file-text' }, states: [], status: 'active' },
+  { id: 'pdfs.heading', surface: 'pdfs-panel', mock: '.panel .pad > h3', app: '.pdfs-panel > h3', checks: ['chrome', 'type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'pdfs.depth', surface: 'pdfs-panel', mock: '.panel .depth', app: '.pdfs-panel .depth', checks: ['chrome', 'colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'pdfs.depth-cells', surface: 'pdfs-panel', mock: '.panel .depth > div', app: '.pdfs-panel .depth > div', checks: ['chrome', 'colour'], use: 'decorative', list: 'data', expected: () => 4, states: [], status: 'active' },
+  { id: 'pdfs.depth-n', surface: 'pdfs-panel', mock: '.panel .depth b', app: '.pdfs-panel .depth b', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'pdfs.depth-label', surface: 'pdfs-panel', mock: '.panel .depth span', app: '.pdfs-panel .depth span', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'pdfs.collect', surface: 'pdfs-panel', mock: '.panel .acts [data-act="collect"]', app: '.pdfs-panel .acts .btn-teal', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'dl', app: 'download' }, text: true, states: [], status: 'active' },
+  { id: 'pdfs.list-head', surface: 'pdfs-panel', mock: '.panel .plist > h4', app: '.pdfs-panel .plist > h4', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'pdfs.row', surface: 'pdfs-panel', mock: '.panel .plist .prow', app: '.pdfs-panel .plist li.prow', checks: ['type', 'colour'], unordered: true, states: [], status: 'active' },
+  { id: 'pdfs.drop', surface: 'pdfs-panel', mock: '.panel .drop', app: '.pdfs-panel .drop', checks: ['chrome', 'type', 'colour', 'icon'], icon: { mock: 'ul', app: 'upload' }, states: [], status: 'active' },
+  { id: 'pdfs.answer', surface: 'pdfs-panel', mock: '.panel .acts [data-act="genv2"]', app: '.pdfs-panel .pdfs-answer .btn-teal', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'redo', app: 'rotate-cw' }, states: [], status: 'active' },
+  // S14 Search funnel (P41): the lede, six stages with their share and bar, what was lost, and the wider-net notice.
+  { id: 'funnel.title', surface: 'funnel-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'funnel', app: 'funnel' }, text: true, states: [], status: 'active' },
+  { id: 'funnel.lede', surface: 'funnel-panel', mock: '.panel .pad > p', app: '.funnel-panel > p', checks: ['chrome', 'type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'funnel.stages', surface: 'funnel-panel', mock: '.panel .stage', app: '.funnel-panel .stage', checks: ['chrome', 'colour'], use: 'decorative', list: 'data', expected: () => 6, states: [], status: 'active' },
+  { id: 'funnel.label', surface: 'funnel-panel', mock: '.panel .stage h4', app: '.funnel-panel .stage h4', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'funnel.note', surface: 'funnel-panel', mock: '.panel .stage h4 small', app: '.funnel-panel .stage h4 small', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'funnel.count', surface: 'funnel-panel', mock: '.panel .stage .kv span:first-child', app: '.funnel-panel .stage .kv span:first-child', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'funnel.share', surface: 'funnel-panel', mock: '.panel .stage .kv span:last-child', app: '.funnel-panel .stage .kv span:last-child', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'funnel.track', surface: 'funnel-panel', mock: '.panel .stage .track', app: '.funnel-panel .stage .track', checks: ['chrome', 'colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'funnel.bar', surface: 'funnel-panel', mock: '.panel .stage .track i', app: '.funnel-panel .stage .track i', checks: ['chrome', 'colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'funnel.lost', surface: 'funnel-panel', mock: '.panel .stage .lost', app: '.funnel-panel .stage .lost', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'funnel.lost-n', surface: 'funnel-panel', mock: '.panel .stage .lost b', app: '.funnel-panel .stage .lost b', checks: ['type', 'colour'], use: 'icon', states: [], status: 'active' },
+  { id: 'funnel.link', surface: 'funnel-panel', mock: '.panel .stage .lost .link', app: '.funnel-panel .stage .lost .link', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'funnel.notice', surface: 'funnel-panel', mock: '.panel .pad > .notice', app: '.funnel-panel > .notice', checks: ['chrome', 'type', 'colour', 'icon'], icon: { mock: 'info', app: 'info' }, states: [], status: 'active' },
+  // S14 Activity (P34): the runs table, its status pill and the foot note; the recorded events follow (PLACEMENTS activity-events).
+  { id: 'activity.title', surface: 'activity-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'clock', app: 'clock' }, text: true, states: [], status: 'active' },
+  { id: 'activity.table', surface: 'activity-panel', mock: '.panel .p-body > .tbl-wrap', app: '.activity-runs > .tbl-wrap', checks: ['chrome', 'colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'activity.th', surface: 'activity-panel', mock: '.panel .tbl-wrap thead th', app: '.activity-table thead th', checks: ['type', 'colour'], list: 'fixed', states: [], status: 'active' },
+  { id: 'activity.run', surface: 'activity-panel', mock: '.panel tbody tr:first-child td:first-child b', app: '.activity-table tbody tr:first-child td:first-child b', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'activity.meta', surface: 'activity-panel', mock: '.panel tbody tr:first-child .src-m', app: '.activity-table tbody tr:first-child .src-m', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'activity.status', surface: 'activity-panel', mock: '.panel tbody .status.ok', app: '.activity-table .status.ok', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'activity.foot', surface: 'activity-panel', mock: '.panel .p-body > .foot-note', app: '.activity-runs > .foot-note', checks: ['type', 'colour'], states: [], status: 'active' },
 ]
 
 /** Pending pairs per slice, for the summary line. */

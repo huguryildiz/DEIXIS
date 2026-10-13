@@ -4,8 +4,10 @@ import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort, readingDone } from './ports'
+import { PANEL_TITLES, panel } from './panels'
 
-// Case M: where every work of an sw research stands (slice 20, D102). The Sources tab's flow line, the PRISMA-S search
+// Case M: where every work of an sw research stands (slice 20, D102). The Search funnel panel's six stages and flow line
+// (UI parity S14, P41), the PRISMA-S search
 // report in both formats, the line under an answer that says where the flow stood when the answer started, and the
 // Home screen's depth text read from the server's limits.
 //
@@ -80,8 +82,8 @@ test.describe.serial('M: the flow of an sw research and its search report', () =
   })
   test.afterAll(async () => { await page?.close(); await api?.context.dispose(); await server.stop() })
 
-  test('the Sources panel shows the five counts in one line and every bucket when opened', async () => {
-    await page.goto(`${server.url()}/#/research/${rid}/sources`)
+  test('the Search funnel panel shows the five counts in one line and every bucket when opened', async () => {
+    await page.goto(`${server.url()}/#/research/${rid}/funnel`)
     const block = page.locator('details.flow-block')
     await expect(block.locator('summary')).toContainText('1 included (two agreeing runs 1, you confirmed 0) · 4 in your queue, not looked at · 0 waiting for a PDF')
     await block.locator('summary').click()
@@ -128,6 +130,36 @@ test.describe.serial('M: the flow of an sw research and its search report', () =
     await shot(page, 'M-answer-flow-1440')
   })
 
+  test('the funnel stages read the stored counts, each with its share of the found works, and the lost lines lead on', async () => {
+    const view = await viewOf(api, rid)
+    const funnel = view.counts.funnel
+    const answer = view.answers[0]
+    const limits = await (await api.context.get('/api/effort-limits')).json()
+    await page.goto('about:blank')
+    await page.goto(`${server.url()}/#/research/${rid}/funnel`)
+    const stages = page.locator('.funnel-panel .stage')
+    await expect(stages).toHaveCount(6)
+    await expect(stages.locator('h4')).toContainText(['Found by search and citations', 'Abstract read', 'Passed the abstract stage', 'Full text read', 'Given to the answer', 'Cited'])
+    const count = (i: number) => stages.nth(i).locator('.stage-n')
+    await expect(count(0)).toHaveText(String(funnel.unique))
+    await expect(count(1)).toHaveText(String(funnel.abstracts_read))
+    await expect(count(2)).toHaveText(String(funnel.candidates))
+    await expect(count(3)).toHaveText(String(view.counts.fulltext_read_works))
+    await expect(count(4)).toHaveText(String(new Set(answer.inputs_given.source_ids).size))
+    await expect(stages.nth(0)).toContainText('100% of found')
+    await expect(stages.nth(2)).toContainText(`${Math.round(funnel.candidates / funnel.unique * 100)}% of found`)
+    // Reading depth is named as selected pages, never as the whole text.
+    await expect(stages.nth(3)).toContainText('Each pass reads selected pages of the PDF, not the whole text.')
+    await expect(stages.nth(3).locator('.kv').nth(1)).toContainText(`Included ${view.counts.included}`)
+    // The fast path read at Quick depth, so the panel offers Detailed with the server's numbers.
+    await expect(page.locator('.funnel-panel .notice')).toContainText(`Detailed depth screens up to ${limits.efforts.detailed.papers} abstracts and reads up to ${limits.efforts.detailed.fulltext} works in their full text (selected pages)`)
+    await shot(page, 'M-funnel-1440')
+    const lost = stages.nth(3).locator('.lost')
+    await expect(lost).toContainText('4 waiting for your decision')
+    await lost.getByRole('button', { name: 'Decide' }).click()
+    await expect(panel(page, PANEL_TITLES.queue)).toBeVisible()
+  })
+
   test('the Home screen gives the depth of an sw search in the numbers the server reads', async () => {
     const limits = await (await api.context.get('/api/effort-limits')).json()
     // The fast path's modes (`fast_path.MODES`, slice 5a): the stage deadlines summed, and the ranking top a run reads.
@@ -146,7 +178,7 @@ test.describe.serial('M: the flow of an sw research and its search report', () =
     for (const scheme of ['light', 'dark'] as const) {
       const narrow = await browser.newPage({ viewport: { width: 390, height: 844 }, colorScheme: scheme })
       try {
-        await narrow.goto(`${server.url()}/#/research/${rid}/sources`)
+        await narrow.goto(`${server.url()}/#/research/${rid}/funnel`)
         await narrow.locator('details.flow-block summary').click()
         await expect(narrow.locator('.flow-detail')).toBeVisible()
         expect(await narrow.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)

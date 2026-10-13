@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort, readingDone } from './ports'
-import { reportPanel } from './panels'
+import { openAudit, reportPanel } from './panels'
 
 // Case P (slice 25, SW21, D106): works whose own PDF is withheld get their text from Europe PMC's open-access XML,
 // drawn as a PDF by DEIXIS. Every surface that names one of its pages says "Europe PMC text, rendered p. n", never
@@ -76,9 +76,8 @@ async function createResearch(api: Api, question: string) {
 }
 
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled', fullPage: true })
-const list = (page: Page) => page.getByRole('listbox', { name: 'Rows awaiting your decision' })
-const option = (page: Page, title: string) => list(page).getByRole('option', { name: new RegExp(`^${title}`) })
-const detail = (page: Page) => page.locator('.queue-detail')
+// The queue is stacked cards (UI parity S14): a list item named by its work's title.
+const card = (page: Page, title: string) => page.locator('.queue-panel').getByRole('listitem', { name: new RegExp(`^${title}`) })
 const sheet = (page: Page) => page.locator('.source-sheet')
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
 
@@ -109,10 +108,10 @@ test.describe.serial('P: pages of Europe PMC’s drawn text say "rendered" on ev
 
   test('the queue strip, the part link, the plain text and the PDF viewer name a rendered page', async () => {
     await page.goto(`${server.url()}/#/research/${rid}/queue`)
-    await option(page, TITLES.choose_run).click()
-    await expect(detail(page).locator('.queue-page-link').first()).toHaveText(RENDERED)
-    await expect(detail(page)).not.toContainText('PDF p.')
-    await detail(page).locator('.queue-page-link').first().click()
+    const one = card(page, TITLES.choose_run)
+    await expect(one.locator('.queue-page-link').first()).toHaveText(RENDERED)
+    await expect(one).not.toContainText('PDF p.')
+    await one.locator('.queue-page-link').first().click()
     await expect(sheet(page).locator('.pdf-text-citation')).toContainText(`The model’s quote, found in the text of ${RENDERED}.`)
     await expect(sheet(page)).toContainText('This PDF was drawn by DEIXIS from Europe PMC’s open-access text. Its pages are not the publisher’s pages.')
     await expect(sheet(page).locator('.pdf-text-page h4').first()).toHaveText(RENDERED)
@@ -125,15 +124,16 @@ test.describe.serial('P: pages of Europe PMC’s drawn text say "rendered" on ev
   })
 
   test('the closest text of an unverified quote and its strip name a rendered page', async () => {
-    await option(page, TITLES.confirm_quote).click()
-    await expect(detail(page).locator('.queue-pair h5').nth(1)).toHaveText(`The closest text · ${RENDERED}`)
-    await detail(page).getByRole('button', { name: 'Open page 1 in the PDF' }).click()
+    const one = card(page, TITLES.confirm_quote)
+    await expect(one.locator('.queue-pair h5').nth(1)).toHaveText(`The closest text · ${RENDERED}`)
+    await one.getByRole('button', { name: 'Open page 1 in the PDF' }).click()
     await sheet(page).getByRole('tab', { name: 'Plain text' }).click()
     await expect(sheet(page).locator('.pdf-text-citation')).toContainText(`nothing on ${RENDERED} is marked`)
     await page.keyboard.press('Escape')
   })
 
   test('the audit sample names the rendered page of each quote', async () => {
+    await openAudit(page)
     const row = page.locator('.audit-panel .audit-group').first().locator('.audit-row', { hasText: AGREED })
     await row.getByRole('button', { name: 'Show what the runs said' }).click()
     await expect(row.locator('.audit-runs')).toContainText(`(${RENDERED})`)

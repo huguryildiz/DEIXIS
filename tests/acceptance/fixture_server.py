@@ -902,6 +902,40 @@ class ScriptedCodex:
         pass
 
 
+LATE_CLAIM_KEPT = "It has been reported that the first passage supports this fake claim."
+LATE_CLAIM_UPGRADED = "It has been reported that the SYNTHETIC exercise study states this claim."
+LATE_CLAIM_DROPPED = "It has been reported that only the first version makes this SYNTHETIC claim."
+LATE_CLAIM_NEW = "It has been reported that the late full text adds a SYNTHETIC second finding."
+LATE_LIMIT_V1 = "It is beyond the scope of this answer to examine the fake scope."
+LATE_LIMIT_V2 = "SYNTHETIC: the late full text was read on selected pages only."
+
+
+def late_pdf_answer(si: dict[str, Any]) -> str:
+    """`DEIXIS_FIXTURE_LATE_REVISION` ([late-pdf], UI parity S21): the base answer and its late revision differ in each
+    way the answer diff names. V1 (abstracts only) cites the first abstract twice (one claim V2 drops) and the late
+    PDF's work through its abstract. V2 keeps the first claim as it was, cites that work's late PDF page under the same
+    wording, adds one claim on the page and replaces the limitation. SYNTHETIC: says nothing about model behaviour."""
+    output = json.loads(valid_response(si))
+    if si["task_type"] != "grounded_answer":
+        return json.dumps(output)
+    first = si["passages"][0]
+    pages = [p for p in si["passages"] if p["locator"]["kind"] == "pdf_page"]
+    other = next((p for p in si["passages"] if p["source_id"] != first["source_id"]), None)
+    quote = lambda p: " ".join(p["text"].split())[:600]  # noqa: E731
+    claims: list[tuple[str, dict[str, Any]]] = [(LATE_CLAIM_KEPT, first)]
+    if pages:
+        claims += [(LATE_CLAIM_UPGRADED, pages[0]), (LATE_CLAIM_NEW, pages[0])]
+        limitation = {"kind": "scope", "text": LATE_LIMIT_V2, "source_ids": [pages[0]["source_id"]]}
+    else:
+        claims += [(LATE_CLAIM_DROPPED, first)] + ([(LATE_CLAIM_UPGRADED, other)] if other else [])
+        limitation = {"kind": "scope", "text": LATE_LIMIT_V1, "source_ids": [first["source_id"]]}
+    output["claims"] = [{"claim_label": f"c{n}", "section": "Overview", "text": text, "support_type": "source_stated", "passage_ids": [p["passage_id"]]}
+                        for n, (text, p) in enumerate(claims, start=1)]
+    output["citation_anchors"] = [{"claim_label": f"c{n}", "passage_id": p["passage_id"], "quote": quote(p)} for n, (_, p) in enumerate(claims, start=1)]
+    output["limitations"] = [limitation]
+    return json.dumps(output)
+
+
 def fake_builtin(data_dir: Path):
     """Case N (slice 21): a fake uv on PATH, SYNTHETIC model files behind the pinned revision's address, the fake
     runner, and Gemini's embedding endpoint; every other request goes to the OpenAlex mock."""
@@ -1079,6 +1113,8 @@ def main() -> None:
     if os.environ.get("DEIXIS_FIXTURE_LATE_REVISION") == "on":
         # Reuse the deterministic D255 fixture; all calls finish before the server starts.
         sys.path[:0] = [str(p) for p in (REPO / 'tests').iterdir() if p.is_dir()]
+        import test_fast_path_answer
+        test_fast_path_answer.valid_response = late_pdf_answer  # read when prepared() builds its FakeAdapter
         from test_fast_path_late_revision import prepared, read_late, drain
         from deixis.workflow import late_revision
         lib = prepared(args.data_dir)

@@ -31,6 +31,7 @@ import { AuditSample } from './AuditSample'
 import { WaitingForPdf } from './WaitingForPdf'
 import { EnglishQuestion, UploadedTextNote } from './SemanticNotes'
 import { AnswerThread, type AnswerReviewControl, type AnswerThreadContext } from './research/AnswerThread'
+import { comparisonBase } from './research/answerDiff'
 import { ReviewSurface } from './review/ReviewSurface'
 import { useReviewSurface } from './review/useReviewSurface'
 import { CitationPanel, type CitationOpen } from './research/CitationPanel'
@@ -104,6 +105,16 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [replacePick, setReplacePick] = useState<{ source: Source; assetId: string } | null>(null)
   const [replaceTarget, setReplaceTarget] = useState<{ source: Source; assetId: string; file: File; impact: AssetImpact } | null>(null)
   const [openReportId, setOpenReportId] = useState<string | null>(null)
+  // The report's answer diff (P4, S21): on while the report panel stays open, whichever version it shows; closing the
+  // panel turns it off. The comparison itself is derived from the stored answers at each render, so a version switch or
+  // a newer view never shows an earlier comparison.
+  const [changesShown, setChangesShown] = useState(false)
+  const [changesReport, setChangesReport] = useState(openReportId)
+  if (changesReport !== openReportId) {
+    setChangesReport(openReportId)
+    if (!openReportId) setChangesShown(false)
+  }
+  const reportChanges = (shown: Answer) => ({ on: changesShown, base: comparisonBase(shown, view?.answers ?? []), onToggle: () => setChangesShown(on => !on) })
   // The answer's review dialog and panel (P32/P33) live here, not in the answer thread: when a newer answer replaces the
   // thread, an open review stays on the answer version it was opened for and says it is stale.
   const answerReviews = useReviewSurface()
@@ -559,6 +570,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     onRevise: () => reviseQuestion(),
     onNewAnswer: () => { void startAnswer() },
     onOpenReport: setOpenReportId,
+    onCompare: () => { setChangesShown(true); setOpenReportId(answer.id) },
     citing: citeClaimId,
     onCite: claim => setCiteClaimId(claim.id),
   } : undefined
@@ -696,7 +708,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
         latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} review={answerReview} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
-          versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} />{tableCards}</> : null} />
+          versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} changes={answer.status === 'structurally_valid' ? reportChanges(answer) : undefined} />{tableCards}</> : null} />
       {!answer && tableCards}
       {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
         <span className="report-artifact-preview" aria-hidden="true"><strong>{heading}</strong></span>
@@ -862,7 +874,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {olderReport && <AnswerThread eventCursor={view.last_event_id} review={answerReview} researchId={id} title={olderReport.title} version={olderReport.version} answer={olderReport.answer} sources={view.sources} busy={busy} dark={dark} showCard={false}
       reviewPending={view.runs.some(r => r.kind === 'answer_review' && ACTIVE.has(r.status) && r.target?.answer_id === olderReport.answer.id)}
       reportOpen onReportOpenChange={open => { if (!open) setOpenReportId(null) }} onOpen={openPassage} onAttachPdf={chooseSourcePdf}
-      versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} />}
+      versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} changes={reportChanges(olderReport.answer)} />}
     {openEvidenceReportId && <ReportView key={openEvidenceReportId} researchId={id} reportId={openEvidenceReportId} view={view} tables={tables} title={heading} dark={dark} onClose={() => setOpenEvidenceReportId(null)}
       onOpenCell={(tableId, cell) => { setOpenEvidenceReportId(null); showTableFirst(tableId, cell); openPanel('table') }}
       onOpenCandidate={candidate => { setOpenEvidenceReportId(null); setCandidateSelection({ ...candidate, id: candidate.card?.id ?? candidate.id }); openPanel('cands') }}

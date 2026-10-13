@@ -507,8 +507,13 @@ test.describe.serial('S10: the answer in the thread', () => {
     const v1 = answers.find(a => a.report_version === 1)!
     const v1Method = await (await api.context.get(`/api/researches/${held}/answers/${v1.id}/method`)).json() as { selection: { works_found: number | null; abstract_read: number } }
     const methodRequest = page.waitForRequest(r => /\/answers\/[^/]+\/method$/.test(new URL(r.url()).pathname) && r.url().includes(v1.id))
-    await latest.getByRole('button', { name: 'Open V1' }).click()
+    // "Compare with V1" (S21) opens V2's report with its changes since V1; V1's own report is one version choice away.
+    await latest.getByRole('button', { name: 'Compare with V1' }).click()
     const report = reportPanel(page)
+    await expect(report.locator('.report-document-head')).toContainText('Report · V2')
+    await expect(report.locator('.changes > b')).toHaveText('Changes since V1')
+    await report.getByRole('combobox', { name: 'Version' }).click()
+    await page.getByRole('option', { name: 'V1', exact: true }).click()
     await expect(report.locator('.report-document-head')).toContainText('Report · V1')
     await methodRequest
     const methods = report.locator('.methods')

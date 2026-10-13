@@ -114,6 +114,9 @@
     --bubble: #f2f4f6;
     /* The located citation anchor (mark.citation-highlight): the mockup's yellow (D8). */
     --mark: #fdf1b8;
+    /* The answer diff's added and removed text (mockup `ins`/`del`, P4). */
+    --ins: #dff3e6;
+    --del: #fbe3e0;
     --strong-line: #d9dce1;
     --tone-include: #2d7a4d;
     --tone-uncertain: #985f0b;
@@ -198,6 +201,8 @@
     --hover-surface: #252930;
     --bubble: #23272d;
     --mark: #5a4d17;
+    --ins: #1d3326;
+    --del: #3b211e;
     --strong-line: #363b42;
     --tone-include: #6cc48f;
     --tone-uncertain: #e2a54c;

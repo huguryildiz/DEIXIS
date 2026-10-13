@@ -135,10 +135,11 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await page.locator('#research-answer').click()
       const report = reportPanel(page)
       await expect(report).toBeVisible()
-      // P2: Version, Citation style, Review with another model and Download, in the mockup's order.
+      // P2: Version, Show changes (S21, P4), Citation style, Review with another model and Download, in the mockup's order.
       const head = report.locator('.split-panel-actions .report-toolbar-actions > :not(input)')
-      await expect(head).toHaveCount(4)
-      expect(await head.evaluateAll(els => els.map(el => el.getAttribute('aria-label')))).toEqual(['Version', 'Citation style', 'Review with another model', 'Download report'])
+      await expect(head).toHaveCount(5)
+      expect(await head.evaluateAll(els => els.map(el => el.getAttribute('aria-label') ?? el.textContent)))
+        .toEqual(['Version', 'Show changes', 'Citation style', 'Review with another model', 'Download report'])
       await expect(report.getByRole('combobox', { name: 'Version' })).toHaveText(/^V3/)
       // P3: the serif title and one meta line from the answer's record: version, date, cited works, the reviews' count.
       const cited = new Set(latest.claims.flatMap(c => c.evidence.map(e => e.work_id))).size

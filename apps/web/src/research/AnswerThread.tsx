@@ -19,7 +19,8 @@ import { Notice } from '../Notice'
 import { AnswerFlowNote } from '../FlowReport'
 import { MethodBox } from '../MethodBox'
 import { ExportLinks } from './ExportMenu'
-import { ReportPanel, type ReportVersion } from './ReportPanel'
+import { ChangesBox, ReportPanel, type ReportVersion } from './ReportPanel'
+import { BASIS_BADGES, diffAnswers, type ComparisonBase } from './answerDiff'
 import { downloadReportMarkdown, reportMarkdown, reportParts, verdictTones } from './reportMarkdown'
 
 // The latest answer in the thread (mockup `answerBlock()`, R22-R29): the notices of its state, the report card (or the
@@ -60,6 +61,8 @@ export type AnswerThreadContext = {
   onRevise: () => void
   onNewAnswer: () => void
   onOpenReport: (answerId: string) => void
+  // "Compare with Vn" (R29): opens this answer's report with its changes since that version shown (P4).
+  onCompare: () => void
   // The Citation panel of one claim (P11): its chip is on while that claim's citations are open.
   citing: string | null
   onCite: (claim: Claim, opener: HTMLElement) => void
@@ -93,7 +96,10 @@ function citedWorks(answer: Answer) {
 // The answer's review dialog and panel live on the research (ResearchView), so an open review stays on the answer
 // version it was opened for when a newer answer replaces this thread; this thread only names that target.
 export type AnswerReviewControl = { surface: ReviewSurfaceState; revision: number; target: (answerId: string, version: number) => void }
-export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, thread, review, reviewPending = false, versions = [], latestVersion = version, onVersion }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; thread?: AnswerThreadContext; review: AnswerReviewControl; reviewPending?: boolean; versions?: ReportVersion[]; latestVersion?: number; onVersion?: (answerId: string) => void }) {
+// changes: the answer diff of this version's report (P4, S21): whether it is shown, the stored version it is compared
+// with (answerDiff.comparisonBase) and the head's Show/Hide changes.
+export type AnswerChanges = { on: boolean; base: ComparisonBase; onToggle: () => void }
+export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, thread, review, reviewPending = false, versions = [], latestVersion = version, onVersion, changes }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; thread?: AnswerThreadContext; review: AnswerReviewControl; reviewPending?: boolean; versions?: ReportVersion[]; latestVersion?: number; onVersion?: (answerId: string) => void; changes?: AnswerChanges }) {
   const modelText = useModelText()
   const [style, chooseStyle] = useCitationStyle()
   const toast = useToast()
@@ -156,12 +162,27 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   const downloadReport = () => downloadReportMarkdown(answer, sources, title, version, style)
   // A claim's marks after its citations (mockup `.badge-s`, P3): the claim review's verdict, an interpretation, and the
   // reading depth of the passages it cites (From abstract, Full text; both when it cites both).
+  // With changes shown (P4), the answer diff against the stored version the box names: a claim's text, citations and
+  // reading-depth badges are marked where they differ (mockup `ins`/`del`); each mark also says so to a screen reader.
+  const diff = changes?.on && changes.base.kind === 'ok' ? diffAnswers(changes.base.answer, answer) : null
+  const depthBadge = (kind: 'abstract' | 'full_text', mark?: 'ins' | 'del') => {
+    const className = `badge-s support-badge ${kind === 'abstract' ? 'v-abs' : 'v-full'}`
+    const inner = <>{mark && <span className="sr-only">{t(mark === 'ins' ? 'Added:' : 'Removed:')} </span>}{kind === 'full_text' && <FileText size={11} aria-hidden />}{t(kind === 'abstract' ? 'From abstract' : 'Full text')}</>
+    return mark === 'ins' ? <ins key={`${kind}-ins`} className={className}>{inner}</ins> : mark === 'del' ? <del key={`${kind}-del`} className={className}>{inner}</del> : <span key={kind} className={className}>{inner}</span>
+  }
+  const depthBadges = (claim: Claim) => {
+    const change = diff?.claims.get(claim.id)?.basis
+    if (!claim.evidence_basis) return null
+    if (!change) return BASIS_BADGES[claim.evidence_basis].map(k => depthBadge(k))
+    const was = BASIS_BADGES[change.from], now = BASIS_BADGES[change.to]
+    return [...was.filter(k => !now.includes(k)).map(k => depthBadge(k, 'del')), ...now.map(k => depthBadge(k, was.includes(k) ? undefined : 'ins'))]
+  }
   const badges = (claim: Claim) => <>
     {claim.review && <span className={`badge-s review-badge v-${verdictTones[claim.review.verdict]}`} title={t('Reviewer: {reason}', { reason: claim.review.reason })}>{t(verdictLabels[claim.review.verdict])}</span>}
     {claim.support_type === 'analyst_inference' && <span className="badge-s support-badge v-part">{t('interpretation')}</span>}
-    {(claim.evidence_basis === 'abstract' || claim.evidence_basis === 'mixed') && <span className="badge-s support-badge v-abs">{t('From abstract')}</span>}
-    {(claim.evidence_basis === 'full_text' || claim.evidence_basis === 'mixed') && <span className="badge-s support-badge v-full"><FileText size={11} aria-hidden />{t('Full text')}</span>}
+    {depthBadges(claim)}
   </>
+  const limitAdded = new Set(diff?.limitsAdded ?? [])
   let headed = 0
   const report = <div className="legacy-answer report-content">
     {(answer.applicability !== 'current' || answer.late_revision) && <div className="section-label">{t('Source-linked answer')}{answer.applicability === 'stale_scope' ? ` · ${t('earlier question revision')}` : answer.applicability === 'stale_selection' ? ` · ${t('earlier source selection')}` : ''}</div>}
@@ -173,16 +194,25 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {/* A section is one paragraph (D230) under its numbered heading (mockup `.report h2`); its label names a topic. */}
     {sections.map(({ heading, claims }, index) => <section className="answer-section" key={index}>
       {heading && <h2>{++headed}. {heading}</h2>}
-      <p className="answer-paragraph">{claims.map(claim => <span className="claim" key={claim.id}>
-        <MathText text={claim.text} />
-        {claim.evidence.map(e => <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{e.source_key && !numeric ? citeLabel(claim, e) : `[${refs.get(e.passage_id)?.n}]`}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>)}
+      <p className="answer-paragraph">{claims.map(claim => { const change = diff?.claims.get(claim.id); return <span className="claim" key={claim.id}>
+        {change?.added ? <ins><span className="sr-only">{t('Added:')} </span><MathText text={claim.text} /></ins> : <MathText text={claim.text} />}
+        {claim.evidence.map(e => {
+          const chipButton = <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{e.source_key && !numeric ? citeLabel(claim, e) : `[${refs.get(e.passage_id)?.n}]`}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>
+          return change?.addedPassages.has(e.passage_id) ? <ins key={e.passage_id} className="cite-ins"><span className="sr-only">{t('Added citation:')} </span>{chipButton}</ins> : chipButton
+        })}
+        {/* A passage the earlier version's claim of the same text cited and this one does not: named, not opened. */}
+        {change?.removedEvidence.map(e => <del key={`del-${e.passage_id}`} className="cite-chip cite-del" title={[e.title, versionText(e.version_label), locatorText(e)].filter(Boolean).join(' · ')}><span className="sr-only">{t('Removed citation:')} </span>{e.source_key ?? e.title}, {locatorText(e)}</del>)}
         {badges(claim)}
         {claim.review && claim.review.verdict !== 'supported' && <small className="review-reason">{t('Reviewer: {reason}', { reason: claim.review.reason })}</small>}
-      </span>)}</p>
+      </span> })}</p>
     </section>)}
     {!answer.claims.length && <p>{t('No claim could be linked to the passages given to the model.')}</p>}
     {answer.unanswered_aspects.length > 0 && <><h2>{t('Not answered by the inspected passages')}</h2>{answer.unanswered_aspects.map(a => <p className="gap" key={a}><MathText text={a} /></p>)}</>}
-    {limits.length > 0 && <><h2>{t('Limits')}</h2><ul className="plain-list">{limits.map((l, i) => <li key={i}><em>{t(l.kind.replace('_', ' '))}:</em> <MathText text={l.text} /></li>)}</ul></>}
+    {(limits.length > 0 || (diff?.limitsRemoved.length ?? 0) > 0) && <><h2>{t('Limits')}</h2><ul className="plain-list">
+      {limits.map((l, i) => { const body = <><em>{t(l.kind.replace('_', ' '))}:</em> <MathText text={l.text} /></>
+        return <li key={i}>{limitAdded.has(l) ? <ins><span className="sr-only">{t('Added:')} </span>{body}</ins> : body}</li> })}
+      {diff?.limitsRemoved.map((l, i) => <li key={`del-${i}`}><del><span className="sr-only">{t('Removed:')} </span><em>{t(l.kind.replace('_', ' '))}:</em> <MathText text={l.text} /></del></li>)}
+    </ul></>}
     {refs.size > 0 && <>
       <h2>{t('Cited passages')}</h2>
       <ol className={`reference-list refs${numeric ? ' ieee' : ''}`}>{[...refs.values()].map(({ n, e }) => {
@@ -231,6 +261,9 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   const stale = answer.applicability === 'stale_selection'
   const late = answer.late_revision && answer.late_revision.base_report_version !== null ? answer.late_revision : null
   const go = <span className="go" aria-hidden><ArrowUp size={14} /></span>
+  const compareOrOpen = (earlierId: string, earlierVersion: number) => ctx && (changes?.base.kind === 'ok' && changes.base.answer.id === earlierId
+    ? <Button variant="outline" size="sm" className="notice-ghost" onClick={ctx.onCompare}><Eye size={14} aria-hidden />{t('Compare with V{n}', { n: earlierVersion })}</Button>
+    : <Button variant="outline" size="sm" className="notice-ghost" onClick={() => ctx.onOpenReport(earlierId)}><Eye size={14} aria-hidden />{t('Open V{n}', { n: earlierVersion })}</Button>)
   const threadPart = ctx && answer.status === 'structurally_valid' && <div className="answer-thread">
     {answer.applicability === 'stale_scope' && <AnswerNotice tone="attention"><p>{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</p></AnswerNotice>}
     {answer.source_text_changed && <AnswerNotice tone="attention" icon={FileText} actions={newAnswer}>
@@ -240,12 +273,13 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       <Button variant="outline" size="sm" className="notice-ghost" onClick={e => ctx.onShowSources('included', e.currentTarget)}>{t('Review the selection')}</Button></>}>
       <p><b>{t('This answer is out of date.')}</b> {t('Your source selection changed after it was written; the answer still uses the old selection.')}</p>
     </AnswerNotice>}
-    {/* "Compare with Vn" needs the answer diff (P4, S21); until then the earlier version opens on its own. */}
+    {/* "Compare with Vn" opens this report with its changes since Vn (P4, S21), when Vn is the stored version the diff
+        compares with; otherwise the earlier version opens on its own. */}
     {!ctx.writing && !stale && (late
-      ? <AnswerNotice tone="info" icon={FileText} actions={<Button variant="outline" size="sm" className="notice-ghost" onClick={() => ctx.onOpenReport(late.base_answer_id)}><Eye size={14} aria-hidden />{t('Open V{n}', { n: late.base_report_version! })}</Button>}>
+      ? <AnswerNotice tone="info" icon={FileText} actions={compareOrOpen(late.base_answer_id, late.base_report_version!)}>
         <p><b>{t('A late full text produced answer V{v}.', { v: version })}</b> {t(late.upgraded_sources === 1 ? 'Full text for {n} source arrived after V{base} was written; V{v} reads it (selected pages). This happens once per answer. V{base} is kept.' : 'Full text for {n} sources arrived after V{base} was written; V{v} reads them (selected pages). This happens once per answer. V{base} is kept.', { n: count(late.upgraded_sources), base: late.base_report_version!, v: version })}</p>
       </AnswerNotice>
-      : ctx.previous && <AnswerNotice tone="info" actions={<Button variant="outline" size="sm" className="notice-ghost" onClick={() => ctx.onOpenReport(ctx.previous!.id)}><Eye size={14} aria-hidden />{t('Open V{n}', { n: ctx.previous.version })}</Button>}>
+      : ctx.previous && <AnswerNotice tone="info" actions={compareOrOpen(ctx.previous.id, ctx.previous.version)}>
         <p><b>{t('Answer V{v} is the latest.', { v: version })}</b> {t('V{n} is kept.', { n: ctx.previous.version })}</p>
       </AnswerNotice>)}
     {latePending}
@@ -289,7 +323,8 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {threadPart}
     <ReportPanel open={reportOpen} onOpenChange={onReportOpenChange} dark={dark} title={title} version={version} latestVersion={latestVersion}
       versions={versions} onVersion={id => onVersion?.(id)} researchId={researchId} answer={answer} style={style} onStyle={chooseStyle}
-      onReview={requestReview} onCopy={() => { void copyReport() }} onDownload={downloadReport}>
+      onReview={requestReview} onCopy={() => { void copyReport() }} onDownload={downloadReport}
+      compare={changes && { on: changes.on, onToggle: changes.onToggle }} changes={changes?.on ? <ChangesBox version={version} base={changes.base} diff={diff} /> : null}>
       {report}
     </ReportPanel>
   </>

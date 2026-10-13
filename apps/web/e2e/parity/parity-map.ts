@@ -10,7 +10,7 @@ import type { FixtureContext } from './gates'
 export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
 export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog' | 'research-panel' | 'palette' | 'keys'
-  | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty' | 'report-panel' | 'cite-panel' | 'detail-panel'
+  | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty' | 'report-panel' | 'report-changes' | 'cite-panel' | 'detail-panel'
   | 'sources-why' | 'sources-sel' | 'queue-panel' | 'pdfs-panel' | 'funnel-panel' | 'activity-panel'
   | 'table-panel' | 'cell-panel' | 'ereport-panel' | 'ecite-panel'
   | 'cands-panel' | 'cand-panel' | 'cev-panel' | 'review-dialog' | 'review-panel' | 'watch-panel' | 'schedule-dialog'
@@ -138,6 +138,14 @@ export const SURFACES: Surface[] = [
   // first claim that cites a PDF page, as the mockup's cob22 is a PDF work) and Source details from that entry.
   { id: 'report-panel', mock: "setScenario('ok'); st.version = 2; st.viewVer = 2; openPanel('report')", app: '#/research/{research}', ready: '.research-topbar',
     appAct: async page => { await page.locator('#research-answer').click(); await page.locator('.report-document-head h1').waitFor() } },
+  // S21: the same report with Show changes on (P4): the head's button reads Hide changes and the "Changes since V1" box
+  // sits under the meta line. The box's lines are the fixture's stored differences between its V1 and V2.
+  { id: 'report-changes', mock: "setScenario('ok'); st.version = 2; st.viewVer = 2; st.compare = true; openPanel('report')", app: '#/research/{research}', ready: '.research-topbar',
+    appAct: async page => {
+      await page.locator('#research-answer').click()
+      await page.locator('.split-panel-head .report-compare').click()
+      await page.locator('.report-panel .changes').waitFor()
+    } },
   { id: 'cite-panel', mock: "setScenario('ok'); openPanel('cite', 'cob22')", app: '#/research/{research}', ready: '.research-topbar',
     appAct: async page => { await page.locator('.answer-thread .answer-prose .cite-chip').nth(3).click(); await page.locator('.cite-entry .quote mark').waitFor() } },
   { id: 'detail-panel', mock: "setScenario('ok'); openPanel('cite', 'cob22'); openPanel('detail', 'cob22')", app: '#/research/{research}', ready: '.research-topbar',
@@ -670,6 +678,10 @@ export const PAIRS: Pair[] = [
     icon: { mock: 'shield', app: 'shield-check' }, states: ['hover'], unordered: true, status: 'active' },
   { id: 'report-panel.download', surface: 'report-panel', widths: DESK, mock: '.panel .p-head [data-menu="rexport"]', app: '.split-panel-head .report-download', checks: ['chrome', 'colour', 'icon'],
     icon: { mock: 'dl', app: 'download' }, states: ['hover'], unordered: true, status: 'active' },
+  // S21: Show changes (P4), between Version and Citation style. At 390 the app draws it as a 30px eye icon with its name
+  // kept for screen readers (the mockup's text button runs off the screen there), so only its colours are compared.
+  { id: 'report-panel.compare', surface: 'report-panel', widths: DESK, mock: '.panel .p-head [data-act="compare"]', app: '.split-panel-head .report-compare', checks: ['chrome', 'type', 'colour'], text: true, unordered: true, states: ['hover'], status: 'active' },
+  { id: 'report-panel.compare@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head [data-act="compare"]', app: '.split-panel-head .report-compare', checks: ['colour'], unordered: true, states: [], status: 'active' },
   { id: 'report-panel.version@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head select[data-ver]', app: '.split-panel-head .report-select[aria-label="Version"]', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
   { id: 'report-panel.style@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head select[data-cstyle]', app: '.split-panel-head .report-select[aria-label="Citation style"]', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
   { id: 'report-panel.review@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head [data-act="review"]', app: '.split-panel-head .report-review', checks: ['chrome', 'colour', 'icon'],
@@ -683,6 +695,17 @@ export const PAIRS: Pair[] = [
   { id: 'report-panel.badge-abs', surface: 'report-panel', mock: '.report .badge-s.v-abs', app: '.report-content .badge-s.v-abs', checks: ['type', 'colour'], text: true, unordered: true, states: [], status: 'active' },
   { id: 'report-panel.refs', surface: 'report-panel', mock: '.report .refs li', app: '.report-content .refs > li', checks: ['type'], states: [], status: 'active' },
   { id: 'report-panel.check', surface: 'report-panel', mock: '.report .check', app: '.report-content .check', checks: ['type', 'colour'], states: [], status: 'active' },
+  // S21 the answer diff (P4): Hide changes in the head, the box and its heading. The marks in the text (`ins`, `del`) are
+  // pending: the [parity] fixture's V1 and V2 cite the same passages with the same wording, so its report has none to
+  // compare; fast-path-late-revision.spec checks the marks on [late-pdf] against the mockup's --ins/--del colours.
+  { id: 'report-changes.compare', surface: 'report-changes', widths: DESK, mock: '.panel .p-head [data-act="compare"]', app: '.split-panel-head .report-compare', checks: ['chrome', 'type', 'colour'], text: true, unordered: true, states: [], status: 'active' },
+  { id: 'report-changes.compare@390', surface: 'report-changes', widths: PHONE, mock: '.panel .p-head [data-act="compare"]', app: '.split-panel-head .report-compare', checks: ['colour'], unordered: true, states: [], status: 'active' },
+  { id: 'report-changes.box', surface: 'report-changes', mock: '.report .changes', app: '.report-panel .changes', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'report-changes.heading', surface: 'report-changes', mock: '.report .changes > b', app: '.report-panel .changes > b', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'report-changes.ins', surface: 'report-changes', mock: '.report ins', app: '.report-content ins', checks: ['type', 'colour'], states: [], status: 'pending:S28',
+    why: 'The [parity] research\'s V1 and V2 do not differ, so its report has no added text; the [late-pdf] spec checks the marks.' },
+  { id: 'report-changes.del', surface: 'report-changes', mock: '.report del', app: '.report-content del', checks: ['type', 'colour'], states: [], status: 'pending:S28',
+    why: 'The [parity] research\'s V1 and V2 do not differ, so its report has no removed text; the [late-pdf] spec checks the marks.' },
   // S12 Citation panel (P11): one entry per cited passage.
   { id: 'cite-panel.title', surface: 'cite-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
     icon: { mock: 'link', app: 'link' }, text: true, states: [], status: 'active' },

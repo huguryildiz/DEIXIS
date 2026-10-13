@@ -243,7 +243,12 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'funnel-wider-net', rule: '§2.3 (Q2; the numbers are the server\'s Detailed limits, and the bulk query runs only when Semantic Scholar is searched)', mock: 'Want a wider net? Detailed depth screens up to 100 abstracts and reads up to 40 full texts; it also adds one Semantic Scholar bulk query.', app: 'Want a wider net? Detailed depth screens up to N abstracts and reads up to K works in their full text (selected pages); it also adds one Semantic Scholar bulk query when that source is searched.' },
   { id: 'activity-foot', rule: '§2.3 (Took is the wall time from the first start, pauses included; a time with no event behind it reads not started or not finished)', mock: 'Every step is stored. A paused or interrupted run resumes without repeating model calls that already finished.', app: 'Every step is stored. A paused or interrupted run resumes without repeating model calls that already finished. Took runs from a run’s first start to its end, pauses included.' },
   // S10: the answer in the thread (R22-R29, R32).
-  { id: 'answer-compare', rule: '§2.3 (no comparison is drawn until the answer diff, P4, exists: S21)', mock: 'Compare with V1', app: 'Open V1 (opens the earlier version\'s report)' },
+  { id: 'answer-compare', rule: '§2.3 (S21: the button opens V2\'s report with its changes since V1; when V1 is not the stored version V2 is compared with, the notice shows "Open V1" instead, never a comparison with another record)', mock: 'Compare with V1', app: 'Compare with V1' },
+  // S21: the answer diff (P4). Each line names a stored difference between the two versions; a kind that did not change has no line.
+  { id: 'changes-full-text', rule: '§2.3 (read-in-full; the diff compares the passages each version cites)', mock: 'Read in full now: <titles>', app: 'Cited from full text in V{v}, only from abstracts in V{b}: <source keys>' },
+  { id: 'changes-badges', rule: '§2.3 (the count and both badges come from the two stored answers)', mock: 'Badges on those claims changed from “From abstract” to “Full text”', app: 'Badge(s) on N claim(s) changed from “{from}” to “{to}”' },
+  { id: 'changes-left-out', rule: '§2.3 (the diff compares the answers, not the selection; a dropped source shows as changed citations or claims)', mock: 'N cited source left out after your decision', app: '(no line; "N claims keep their wording but cite different passages", "N claims added", "N claims of V{b} are not in this version:" with the removed claims)' },
+  { id: 'changes-limits', rule: '§2.3 (said only when the limits differ)', mock: 'Limits updated (always)', app: 'Limits updated (only when a limit was added or removed); "No differences in claim wording, cited passages, reading depth or limits." when nothing differs; foot line naming what was compared' },
   { id: 'answer-latest', rule: '§2.3 (the records do not say which cited sources V2 read in full that V1 had as abstracts)', mock: 'Answer V2 is the latest. It read N cited sources in full that V1 had only as abstracts. V1 is kept.', app: 'Answer V2 is the latest. V1 is kept.' },
   { id: 'answer-late', rule: '§2.3 (Q2, read-in-full; the records count the sources, not their titles)', mock: 'A late full text produced answer V2. <title> arrived after V1 was written; V2 reads it in full. This happens once per answer. V1 is kept.', app: 'A late full text produced answer V2. Full text for N sources arrived after V1 was written; V2 reads them (selected pages). This happens once per answer. V1 is kept.; "Open the new full text" left out (the view does not name the late file)' },
   { id: 'answer-out-of-date', rule: '§2.3 (no stored count of the changed decisions)', mock: 'This answer is out of date. You changed N source decisions after it was written; the answer still uses the old selection.', app: 'This answer is out of date. Your source selection changed after it was written; the answer still uses the old selection.' },
@@ -328,12 +333,9 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     note: '"PDF text · N pp." is as wide as its page count (2 in the fixture, 10 in the mockup), and the version pill after it moves by as much. y and height are compared.' },
   { id: 'detail-foot-y', rule: '§0 rule 1 (the text view holds the stored text, not the mockup\'s placeholder document)', pairs: ['detail-panel.foot'], axes: ['y'],
     note: 'The foot line sits under the text view, which is as long as the stored text. x, width and height are compared.' },
-  { id: 'report-head-show-changes-x', rule: 'DEFERRED_TARGETS report-show-changes (the answer diff is S21)', widths: [1280],
-    pairs: ['report-panel.version'], axes: ['x'],
-    note: 'The mockup\'s head has "Show changes" between Version and Citation style; until S21 the app leaves it out, so Version sits that much further right. y, width and height are compared.' },
-  { id: 'report-head-show-changes-title', rule: 'DEFERRED_TARGETS report-show-changes (the answer diff is S21)', widths: [1280],
-    pairs: ['report-panel.title'], axes: ['width'],
-    note: 'The head\'s title takes the width left by its controls; without "Show changes" it is wider than the mockup\'s. x, y and height are compared.' },
+  { id: 'changes-box-phone', rule: '§4.1 (the box spans the report document, whose phone padding is the S12 report\'s, not the mockup\'s)', widths: [390],
+    pairs: ['report-changes.box'], axes: ['x', 'width'],
+    note: 'At 390 the app\'s report document has 18px side padding (S12) and the box fills its width, as the mockup\'s box fills its report\'s; the mockup\'s box starts at x 31 and is 329px wide, the app\'s at x 18 and 354px wide. Its padding, border, radius, colours and type are compared, and every axis at 1280.' },
   { id: 'report-head-phone', rule: '§4.1 (the mockup has no phone layout for this head: at 390 it runs past the screen\'s edge)', widths: [390],
     pairs: ['report-panel.version@390', 'report-panel.style@390', 'report-panel.review@390', 'report-panel.download@390'], axes: ['x', 'y', 'width', 'height'],
     note: 'At 390 the mockup\'s report head keeps Version, Show changes, Citation style and its buttons in one row wider than the screen, so its title has no width and its controls sit off-screen. The app fits the head in the screen; type, colour and icons are compared, geometry is not, and the title is compared at 1280 only. a11y.spec checks the app\'s head controls at 390.' },
@@ -415,6 +417,8 @@ export const CHECK_ROWS: Array<{ id: string; rule: string; mock: string; app: st
  *  a background colour alone). The pairs compare the mockup's elements; these extras are not measured. */
 export const APP_ADDITIONS: Array<{ id: string; rule: string; app: string; slice: string }> = [
   { id: 'selected-row-check', rule: 'WCAG 1.4.1 (selection shown by more than a background tint)', app: 'a check mark at the right of the selected row of the scope menu and the depth menu', slice: 'S4' },
+  { id: 'diff-mark-cues', rule: 'WCAG 1.4.1 (an addition or removal is not told by its tint alone) / 1.3.1 (screen readers)', app: 'the answer diff\'s `ins` is underlined (the mockup\'s has no underline) and `del` keeps its strike-through; each starts with a visually hidden "Added:" or "Removed:" (citations: "Added citation:", "Removed citation:")', slice: 'S21' },
+  { id: 'compare-phone-icon', rule: '§4.1 report-head-phone (the mockup\'s head runs past a phone screen)', app: 'below 520px "Show changes"/"Hide changes" is a 30px eye / eye-off icon button whose name stays for screen readers, and Citation style is as wide as its value, so the report head fits a 390px screen', slice: 'S21' },
   { id: 'keys-off-switch', rule: '§2.4 (single-key shortcuts) / WCAG 2.1.4 (character key shortcuts can be turned off)', app: 'the keys dialog\'s foot: one line with the "Single-key shortcuts" checkbox, kept across reloads (.keys-dialog .keys-foot)', slice: 'S3' },
 ]
 
@@ -432,8 +436,6 @@ export const STYLE_EXCEPTIONS: Array<{ id: string; rule: string; pairs: string[]
 export const DEFERRED_TARGETS: Array<{ id: string; rule: string; selector: string; slice: string; note: string }> = [
   { id: 'export-pdf-row', rule: 'S8 (never a row that does nothing; print is wired in S27)', selector: '.menu button.fmt[data-msg^="Report saved as PDF"]', slice: 'S27',
     note: 'Export menu, REPORT group, and the report panel\'s Download menu: "PDF · Portable document". The print path (print.css + window.print) is not reachable from the UI yet.' },
-  { id: 'report-show-changes', rule: 'S12 (never a control that does nothing; the answer diff P4 is S21)', selector: '.panel .p-head [data-act="compare"]', slice: 'S21',
-    note: 'Report panel head, after the version select: "Show changes". The answer diff does not exist yet.' },
   { id: 'edit-plan-step', rule: 'S9 (never a link that does nothing)', selector: '.step-detail [data-panel="plan"], .notice [data-panel="plan"]', slice: 'S23b',
     note: 'Plan step detail and too-broad notice: "Edit plan". The Search plan panel (P42) does not exist yet.' },
   { id: 'rail-usage-box', rule: 'S11 (RL8 is S27: the usage figures need the S16 routes wired)', selector: '.rail .box:last-child', slice: 'S27',

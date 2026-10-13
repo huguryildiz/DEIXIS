@@ -358,6 +358,34 @@
 .report-panel .report-content .refs>li{font-size:13px;line-height:1.5}
 .report-panel .report-content .check{line-height:1.65}
 .report-panel .report-content .answer-section:first-of-type h2{margin-top:0}
+/* UI parity S21: the answer diff (mockup `.changes`, `ins`, `del`, P4). Show/Hide changes is a `.ghost` button in the head.
+   An addition is underlined and a removal struck through, so neither is told by its tint alone (WCAG 1.4.1); each also
+   carries a visually hidden "Added:"/"Removed:" for screen readers. */
+.report-toolbar-actions .ghost.report-compare{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-family:var(--font-sans);font-size:13px;font-weight:400;line-height:1.5;white-space:nowrap;cursor:pointer}
+.report-toolbar-actions .ghost.report-compare:hover{background:var(--hover-surface)}
+.report-toolbar-actions .ghost.report-compare:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.report-toolbar-actions .report-compare-icon{display:none}
+/* Phones: the eye icon in a 30px button (its name stays for screen readers), and the citation style as wide as its value. */
+@media(max-width:520px){
+  .report-toolbar-actions .ghost.report-compare{position:relative;display:grid;place-items:center;width:30px;height:30px;padding:0}
+  .report-toolbar-actions .report-compare-icon{display:block}
+  .report-toolbar-actions .report-compare-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .report-toolbar-actions .report-select-sizer>.is-sizer{display:none}
+}
+.report-panel .changes{margin:0 0 16px;padding:10px 14px;border:1px solid var(--accent-line);border-radius:10px;background:var(--accent-tint);color:var(--ink);font-family:var(--font-sans);font-size:13px;line-height:1.65}
+.report-panel .changes b{display:block;margin-bottom:4px;font-weight:700}
+.report-panel .changes ul{margin:0;padding-left:18px;list-style:disc}
+.report-panel .changes ul ul{list-style:circle}
+.report-panel .changes p{margin:0}
+.report-panel .changes .changes-foot{margin-top:6px;color:var(--muted);font-size:12px}
+.report-panel .report-document ins{padding:0 2px;border-radius:2px;background:var(--ins);color:inherit;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.report-panel .report-document del{padding:0 2px;border-radius:2px;background:var(--del);color:var(--muted);text-decoration:line-through}
+.report-panel .report-document ins.cite-ins{padding:0;background:none;text-decoration:none}
+.report-panel .report-document ins.cite-ins .cite-chip{background:var(--ins);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px}
+.report-panel .report-document del.cite-del{display:inline;background:var(--del);color:var(--muted);text-decoration:line-through;cursor:default}
+.report-panel .report-document :is(ins,del).badge-s{padding:1px 5px;border-radius:4px}
+.report-panel .report-document ins.badge-s{background:var(--ins)}
+.report-panel .report-document del.badge-s{background:var(--del);color:var(--muted)}
 .report-panel .report-content .gap{margin:0 0 12px;padding:2px 0 2px 12px;border-left:3px solid var(--tone-uncertain);color:var(--ink-2)}
 /* A claim's marks (mockup `.badge-s`): the review's verdict, an interpretation, the reading depth of what it cites. */
 .split-panel .badge-s,.report-sheet .badge-s{display:inline-flex;align-items:center;gap:4px;margin-left:4px;padding:1px 5px;border:0;border-radius:4px;background:var(--ui-accent);color:var(--muted);font-family:var(--font-sans);font-size:10.5px;font-weight:500;line-height:normal;letter-spacing:0;white-space:nowrap;vertical-align:1px}

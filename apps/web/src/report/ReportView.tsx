@@ -102,7 +102,8 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
   const toast = useToast()
   const [citing, setCiting] = useState<ReportLink | null>(null)
   // A panel that leaves the page while it is open also leaves the stack (its owner closed it, e.g. a candidate opened).
-  const removePanel = usePanels()?.remove
+  const panels = usePanels()
+  const removePanel = panels?.remove
   useEffect(() => () => { removePanel?.('ecite'); removePanel?.('ereport') }, [removePanel])
   const [report, setReport] = useState<ReportDetail | null>(null)
   const [error, setError] = useState('')
@@ -120,6 +121,15 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
   const current = useRef<ReportDetail | null>(null)
   const mutating = useRef(false)
   const documentRoot = useRef<HTMLElement>(null)
+  // "Open in editor" from a review finding: the claim field takes focus once the review panel has left the stack, after
+  // the stack has moved focus to the panel below (its layout effect runs before this passive effect).
+  const applyFocus = useRef(false)
+  const stackTop = panels?.current ?? null
+  useEffect(() => {
+    if (!applyFocus.current || stackTop?.startsWith('review:')) return
+    applyFocus.current = false
+    documentRoot.current?.querySelector<HTMLTextAreaElement>('.evidence-report-edit textarea')?.focus({ preventScroll: true })
+  }, [stackTop, editing])
   const claimFocus = useReturnFocus()
   useEffect(() => { live.current = true; return () => { live.current = false } }, [])
   const refresh = useCallback(() => {
@@ -155,12 +165,11 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
     const finding = review.findings.find(f => f.id === findingId)
     const claim = next.sections.flatMap(s => s.claims).find(c => c.id === finding?.finding.target.record_id)
     if (!finding?.dependency_fingerprint || !claim) throw new Error(t('The claim is no longer available in this report.'))
+    applyFocus.current = true
     applyMutation(next); setEvidenceView(true); setEditing(claim.id); setApplying({ reviewId, finding, claim }); reviews.closePanel()
     requestAnimationFrame(() => {
       documentRoot.current?.querySelector(`[data-claim-key="${CSS.escape(claim.claim_key)}"]`)?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })
       rememberClaim(claim.id)
-      // A frame later: the closed review panel hands focus back to the report first.
-      requestAnimationFrame(() => documentRoot.current?.querySelector<HTMLTextAreaElement>('.evidence-report-edit textarea')?.focus({ preventScroll: true }))
     })
   }
   const markdown = async (action: 'copy' | 'download') => {

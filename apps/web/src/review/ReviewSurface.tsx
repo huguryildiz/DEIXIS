@@ -48,7 +48,9 @@ export function ReviewSurface({ surface, researchId, targetKind, targetId, versi
           sectionLabel={sectionLabel} sourceName={sourceName} started={onStarted} cancel={close} />
       </DialogContent>
     </Dialog>}
-    <StackPanel name={name} open={Boolean(surface.panel)} onClose={surface.closePanel} title={t('Review with another model')} icon={ShieldCheck} className={`mk-detail-box review-panel-box${dark ? ' dark' : ''}`}>
+    {/* Keyed by its target: another answer version or candidate version mounts a new panel instead of renaming this one,
+        which the stack would read as this panel closing. */}
+    <StackPanel key={`${name}:${version}`} name={name} open={Boolean(surface.panel)} onClose={surface.closePanel} title={t('Review with another model')} icon={ShieldCheck} className={`mk-detail-box review-panel-box${dark ? ' dark' : ''}`}>
       {surface.panel && <ReviewPane key={surface.panel.id ?? 'latest'} researchId={researchId} targetKind={targetKind} targetId={targetId} eventCursor={eventCursor} initial={surface.panel.id}
         sources={sources} sectionLabel={sectionLabel} open={open} changed={changed} apply={apply} />}
     </StackPanel>

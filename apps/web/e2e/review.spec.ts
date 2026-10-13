@@ -379,6 +379,19 @@ test('4 source-linked answer review records acceptance without an editor', async
   await expect(pane(page).locator('.review-stale')).toContainText('Written against an earlier answer:', { timeout: 30_000 })
   await expect(pane(page).locator('.review-stale')).toContainText('a newer answer exists')
   await expect(pane(page).locator('.review-detail .dmeta')).toContainText(`Answer · V${answer.report_version}`)
+  // Regression (Sol S15b round 2): with the V1 review open, the newer answer's summary line switches the panel to its
+  // review; the panel stays open and shows that version, not the stale V1 review.
+  const newer = (await view(page, rid)).answers.find(a => a.id !== answer.id && a.status === 'structurally_valid')!
+  const f2: Target = { ...f, id: newer.id }
+  const second = await apiStart(page, f2)
+  await expect.poll(async () => (await readReview(page, f2, second.review.id)).state, { timeout: 60_000 }).toMatch(/^(completed|partial)$/)
+  const newerLine = page.locator('.answer-thread .review-target-line').filter({ hasText: 'Reviewed by another model:' }).first()
+  await expect(newerLine).toBeVisible({ timeout: 30_000 })
+  await newerLine.click()
+  await expect(pane(page)).toBeVisible()
+  await expect(page.locator('#split-panel-title')).toHaveText('Review with another model')
+  await expect(pane(page).locator('.review-detail .dmeta')).toContainText(`Answer · V${newer.report_version}`)
+  await expect(pane(page).locator('.review-stale')).toHaveCount(0)
 })
 
 test('5 active-run and nothing-reviewable refusals retain their codes and rows in English and Turkish', async ({ page }) => {

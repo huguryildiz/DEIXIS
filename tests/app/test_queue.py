@@ -279,6 +279,9 @@ def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, f
     assert len({row["work_id"] for row in found["rows"]}) == len(found["rows"])
     assert found["counts"]["open"] == 9 and found["counts"]["decided"] == {"human_include": 1}
     assert found["order"] == "fused_rank"
+    # The criterion line reads the frozen protocol the rows are current under, not the newest runs (Sol S14 round 2).
+    protocol = store.current_protocol(lib.rid, store.research(lib.rid)["current_scope_revision"])
+    assert protocol is not None and found["criterion"] and found["criterion"] == protocol["body"]["inclusion_criterion"]
 
 
 def test_a_work_whose_selection_the_user_set_is_not_in_the_queue(store):

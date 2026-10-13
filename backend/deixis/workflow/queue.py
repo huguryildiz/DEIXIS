@@ -370,7 +370,11 @@ def queue_rows(store: Store, research_id: str) -> dict[str, Any]:
         decided = sorted((_decided(ctx, work_id, state) for work_id, state in answered),
                          key=lambda entry: entry["created_at"], reverse=True)
     counts["by_kind"] = dict(sorted(Counter(row["kind"] for row in rows if row["kind"] != LOOK_AGAIN).items()))
-    return {"rows": rows, "counts": counts, "order": "fused_rank", "decided": decided}
+    # The inclusion criterion of the frozen protocol the open rows are current under (the staleness key's criterion),
+    # read from the protocol record, not from the newest runs the research view lists.
+    protocol = store.current_protocol(research_id, store.research(research_id)["current_scope_revision"])
+    criterion = (protocol["body"].get("inclusion_criterion") or None) if protocol else None
+    return {"rows": rows, "counts": counts, "order": "fused_rank", "decided": decided, "criterion": criterion}
 
 
 def context(store: Store, research_id: str) -> _Context:

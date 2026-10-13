@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronRight, Download, Info, Workflow } from 'lucide-react'
 import { api, ApiError, prismaSUrl, screenMoreApi, type Answer, type Counts, type EffortLimits, type FlowBucket, type FlowCounts, type Overrides, type ResearchView, type UnscreenedPage } from './api'
 import { flowBoxLabels, flowBucketLabels } from './labels'
@@ -122,9 +122,24 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
   const [listOpen, setListOpen] = useState(false)
   const [items, setItems] = useState<UnscreenedPage['items']>([])
   const [screening, setScreening] = useState(false)
-  const loadPage = useCallback(() => screenMoreApi.unscreened(researchId, 0, 20).then(next => { setPage(next); setItems(next.items) }, () => { setPage(null); setItems([]) }), [researchId])
+  // Each read of the list gets a number: a first page read again (an event) makes every older read stale, so a page that
+  // arrives after it is dropped, and "Show more" is locked while its own read runs, so one page is never added twice.
+  const listRead = useRef(0)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const loadPage = useCallback(() => {
+    const read = ++listRead.current
+    return screenMoreApi.unscreened(researchId, 0, 20).then(next => { if (read === listRead.current) { setPage(next); setItems(next.items) } },
+      () => { if (read === listRead.current) { setPage(null); setItems([]) } })
+  }, [researchId])
   useEffect(() => { void loadPage() }, [loadPage, view.last_event_id])
-  const more = () => { if (page) void screenMoreApi.unscreened(researchId, items.length, 20).then(next => setItems(prev => [...prev, ...next.items])) }
+  const more = () => {
+    if (!page || loadingMore) return
+    const read = listRead.current
+    setLoadingMore(true)
+    void screenMoreApi.unscreened(researchId, items.length, 20).then(next => {
+      if (read === listRead.current) setItems(prev => [...prev, ...next.items])
+    }, () => {}).finally(() => setLoadingMore(false))
+  }
 
   if (!funnel) return <p className="empty-inline">{t('The funnel appears when a search of this question has run.')}</p>
 
@@ -177,7 +192,7 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
         {page && page.total > 0 && link(listOpen ? 'Hide them' : 'Show them', () => setListOpen(open => !open))}
         {page && nextBatch > 0 && <button type="button" className="link" disabled={busy || active || screening} title={active ? t('Available when the current run ends') : undefined} onClick={() => { void screenMore() }}>{t('Screen {n} more', { n: nextBatch })}</button>}
       </> : undefined,
-      extra: listOpen && page ? <UnscreenedList page={page} items={items} notScreened={notScreened} onMore={more} /> : undefined },
+      extra: listOpen && page ? <UnscreenedList page={page} items={items} notScreened={notScreened} loading={loadingMore} onMore={more} /> : undefined },
     { label: 'Passed the abstract stage', n: funnel.candidates,
       about: t('Works whose current abstract-stage decision is that they may meet the criterion. An abstract alone never includes a work.'),
       lost: outOfScope.length ? <>{outOfScope}</> : undefined },
@@ -213,7 +228,7 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
 
 // "Show them" (F12): the never-screened works of the ranked list, in its order. Rank and similarity are the signals the
 // list was ordered by, not relevance; the header's count is this list's own.
-function UnscreenedList({ page, items, notScreened, onMore }: { page: UnscreenedPage; items: UnscreenedPage['items']; notScreened: number | null; onMore: () => void }) {
+function UnscreenedList({ page, items, notScreened, loading, onMore }: { page: UnscreenedPage; items: UnscreenedPage['items']; notScreened: number | null; loading: boolean; onMore: () => void }) {
   const off = notScreened !== null ? notScreened - page.total : 0
   return <div className="unscreened">
     <p className="src-m">{t('{total} on the ranked list were never screened, in its order; {screenable} of them have an abstract to read. Rank and similarity are signals the list was ordered by, not relevance.', { total: page.total.toLocaleString(uiLocale()), screenable: page.screenable.toLocaleString(uiLocale()) })}
@@ -223,6 +238,6 @@ function UnscreenedList({ page, items, notScreened, onMore }: { page: Unscreened
       <span className="src-m">{[item.year, item.venue, t('rank {n}', { n: item.signals.rank }), item.signals.similarity === null ? null : t('similarity {s}', { s: item.signals.similarity.toLocaleString(uiLocale(), { maximumFractionDigits: 2 }) }),
         !item.screenable && t(item.not_screenable_reason === 'no_abstract' ? 'no abstract to read' : item.not_screenable_reason === 'screen_more_could_not_read' ? 'Screen more could not read it' : 'its abstract is not on a searched version')].filter(Boolean).join(' · ')}</span>
     </li>)}</ol>
-    {items.length < page.total && <button type="button" className="link" onClick={onMore}>{t('Show {n} more', { n: Math.min(20, page.total - items.length) })}</button>}
+    {items.length < page.total && <button type="button" className="link" disabled={loading} aria-busy={loading} onClick={onMore}>{t('Show {n} more', { n: Math.min(20, page.total - items.length) })}</button>}
   </div>
 }

@@ -37,6 +37,8 @@ export function ActivityPanel({ researchId, eventCursor, events }: { researchId:
     {error && !runs ? <p className="empty-inline" role="alert">{t('Could not load the runs: {error}', { error })}</p>
       : !runs ? <p className="empty-inline" role="status">{t('Loading the runs…')}</p>
       : <>
+        {/* A refresh that failed after the table loaded: the table stays, marked as the last one read. */}
+        {error && <p className="activity-refresh-error" role="alert">{t('Could not refresh the runs: {error}. The table shows them as last read.', { error })}</p>}
         <div className="tbl-wrap"><table className="activity-table">
           <thead><tr><th>{t('Run')}</th><th>{t('Status')}</th><th>{t('Took')}</th><th>{t('Model calls')}</th><th>{t('Started')}</th></tr></thead>
           <tbody>{runs.map(run => {

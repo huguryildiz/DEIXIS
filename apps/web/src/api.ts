@@ -590,7 +590,7 @@ export type QueueDecided = {
   // No token when the undo would be refused: a PDF confirmation whose reading has begun.
   undo_token: string | null; undo_blocked: 'reading_started' | null
 }
-export type QueueView = { rows: QueueRow[]; counts: QueueCounts; order: 'fused_rank'; decided: QueueDecided[] }
+export type QueueView = { rows: QueueRow[]; counts: QueueCounts; order: 'fused_rank'; decided: QueueDecided[]; criterion: string | null }
 export type QueuePart = {
   inclusion_role?: 'core' | 'aspect'
   part: string; label: 'present' | 'absent' | 'unclear'; quote: string | null; quote_verified: boolean | null

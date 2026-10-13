@@ -270,10 +270,9 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   if (!queue) return <p className="empty-inline" role="status">{t('Loading the queue…')}</p>
 
   const counts = queue.counts
-  // The inclusion criterion of the current question (P39's criterion line): the one its newest search was approved with.
-  // A look-again row was decided under an earlier criterion, so it does not show this one.
-  const criterion = view.runs.find(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision
-    && r.approval?.approved?.criterion?.criterion)?.approval?.approved?.criterion?.criterion ?? null
+  // The inclusion criterion the open rows are current under (P39's criterion line), from the frozen protocol record the
+  // queue route reads. A look-again row was decided under an earlier criterion, so it does not show this one.
+  const criterion = queue.criterion ?? null
   const decidedCount = Object.values(counts.decided).reduce((sum, n) => sum + n, 0)
   const kindCount = (kind: QueueKind) => counts.by_kind[kind] ?? 0
   const reasons = Object.keys(counts.by_reason)

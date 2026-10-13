@@ -187,6 +187,7 @@
 .activity-runs .status.no{background:var(--ui-accent);color:var(--muted)}
 .split-panel-content:has(>.activity-runs){padding:0}
 .activity-runs>.activity-panel{padding:18px 22px 40px}
+.activity-runs>.activity-refresh-error{margin:0;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--warn-surface);color:var(--warn-ink);font-size:12.5px;line-height:1.5}
 
 /* The flow of an sw research (slice 20): the Sources tab's flow block, the line under an answer, the override count and
    the audit sample. Counts only, set as quiet interface text; nothing here is styled as success. */

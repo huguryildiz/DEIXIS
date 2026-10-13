@@ -4220,4 +4220,6 @@ const tr: Record<string, string> = {
   'Every step is stored. A paused or interrupted run resumes without repeating model calls that already finished. Took runs from a run’s first start to its end, pauses included.': 'Her adım saklanır. Duraklatılmış ya da kesilmiş bir koşu, bitmiş model çağrılarını tekrarlamadan sürer. Süre, koşunun ilk başlangıcından bitişine kadardır; duraklamalar dahildir.',
   // UI parity S14, Sol round 1: the waiting list's lede names no reason the rows do not share.
   'These works have no PDF text the model can read; each row says why. If you can reach a copy through your library, open its link, save the PDF and add it here. Nothing is attached until you choose the version and confirm.': 'Bu eserlerin modelin okuyabileceği PDF metni yok; her satır nedenini söylüyor. Kütüphaneniz üzerinden bir kopyaya erişebiliyorsanız bağlantısını açın, PDF\'yi kaydedip buraya ekleyin. Sürümü seçip onaylayana kadar hiçbir şey eklenmez.',
+  // UI parity S14, Sol round 2: a failed refresh of the Activity runs table.
+  'Could not refresh the runs: {error}. The table shows them as last read.': 'Koşular yenilenemedi: {error}. Tablo onları son okunduğu hâliyle gösteriyor.',
 }

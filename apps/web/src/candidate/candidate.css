@@ -1,59 +1,79 @@
-.candidates-view { width: 100%; min-width: 0; max-width: 100%; color: var(--ink); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
-/* Reset shared table/chip whitespace locally; stored text below keeps wrapping line breaks. */
-:is(.candidates-view, .candidate-editor, .candidate-evidence),
-:is(.candidates-view, .candidate-editor, .candidate-evidence) * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
-.candidates-view h2 { font-size: 24px; margin: 12px 0; text-wrap: balance; }
-.candidates-view h3, .candidate-evidence h3 { font-size: 17px; font-weight: 600; margin: 14px 0 8px; text-wrap: balance; }
-.candidates-view h4, .candidate-editor h3 { font-size: 14px; font-weight: 600; margin: 14px 0 6px; text-wrap: balance; }
-.candidates-view p { margin: 8px 0; }
-.candidates-view ul, .candidates-view ol, .candidate-editor ol, .candidate-evidence ol { padding-left: 22px; margin: 10px 0; min-width: 0; }
-.candidates-view li { padding: 6px 0; min-width: 0; }
-.candidate-section, .candidate-version, .candidate-run { border-top: 1px solid var(--line); padding: 18px 0; }
-.candidate-head { display: block; height: auto; padding: 0; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
-.candidate-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; min-width: 0; }
-.candidate-actions button, .candidates-view button, .candidate-editor button { max-width: 100%; white-space: normal; height: auto; min-height: 36px; overflow-wrap: anywhere; }
-.candidate-fine { color: var(--muted); font-size: 12px; }
-.candidate-claim, .candidate-passage, .candidate-evidence blockquote { font-family: var(--font-sans); font-size: 18px; line-height: 1.6; font-weight: 450; white-space: pre-wrap; }
-.candidate-evidence h3.candidate-claim { font-family: var(--font-sans); }
-.candidate-list { list-style: none; padding: 0 !important; }
-.candidate-list > li { border-bottom: 1px solid var(--line); }
-.candidate-list-row { display: flex; flex-direction: column; gap: 8px; width: 100%; text-align: left; padding: 16px 0; cursor: pointer; color: var(--ink); }
-.candidate-list-row:hover { color: var(--accent); }
+/* Candidates (UI parity S15b, mockup `candList`, `candDetail`, `candEvPanel`): the shared parts come from kit.css under
+   `.mk`; these are the candidate cards, the status pills, the sentence, the plan and the claim matrix. */
+.candidates-view { min-width: 0; overflow-wrap: anywhere; }
+.candidates-view [data-stored-text] { white-space: pre-wrap; }
+.candidates-view h5 { margin: 0; color: var(--ink-2); font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; line-height: 1.5; letter-spacing: 0; }
+.candidates-view ul:not(.elist):not(.candidate-list), .candidates-view ol:not(.elist) { display: grid; gap: 4px; margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2); }
+.candidates-view .mk-more p, .candidates-view .mk-more section { font-size: 12.5px; color: var(--ink-2); }
+.candidates-view .mk-more section { display: grid; gap: 6px; }
+.candidate-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.mk .ccard { display: grid; gap: 6px; width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); text-align: left; cursor: pointer; }
+.mk .ccard:hover { border-color: var(--strong-line); box-shadow: 0 1px 3px rgb(0 0 0 / .06); }
+.mk .ccard.is-trashed { cursor: default; opacity: .7; }
+.mk .ccard.is-trashed:hover { border-color: var(--line); box-shadow: none; }
+.mk .ccard p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.5; }
+.mk .ccard .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.mk .ccard .meta .spin { width: 10px; height: 10px; vertical-align: -1px; }
 .candidate-list-claim { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.candidate-detail [data-stored-text], .candidate-evidence [data-stored-text], .candidate-aspects [data-stored-text] { white-space: pre-wrap; overflow-wrap: anywhere; }
-.candidate-form { min-width: 0; margin-top: 16px; }
-.candidate-form textarea, .candidate-form select { width: 100%; min-width: 0; max-width: 100%; }
-.candidate-plan { border-top: 1px solid var(--line); padding: 16px 0; margin-top: 16px; }
-.candidate-status-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
-.candidate-status-columns > section { min-width: 0; }
+.mk .cst { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--selected-surface); color: var(--muted); font-size: 11.5px; font-weight: 500; line-height: 1.5; white-space: nowrap; }
+.mk .cst.narrowed { background: var(--warn-surface); color: var(--warn-ink); }
+.mk .cst.closed { background: var(--ok-surface); color: var(--ok-ink); }
+.mk .cst.open { background: var(--accent-tint); color: var(--accent); }
+.mk .cst.undecided { color: var(--ink-2); }
+.mk .cst.yours { border: 1px dashed var(--strong-line); background: transparent; color: var(--ink-2); }
+.mk .sentence { padding: 4px 0 4px 12px; border-left: 3px solid var(--accent-line); color: var(--ink); font-size: 15px; line-height: 1.5; }
+.candidate-detail .venue .ib { margin: -6px -6px -6px 0; }
+.candidate-version { display: grid; gap: 10px; }
+.candidate-version h5 { margin-top: 4px; }
+.candidate-earlier-version { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.candidate-why { display: block; color: var(--muted); font-size: 11.5px; }
+.candidate-plan { display: grid; gap: 10px; }
+.candidate-plan-list { list-style: none; padding: 0 !important; }
+.candidate-plan-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.candidate-searches { display: grid; gap: 6px; margin-top: 2px; }
+.candidate-searches .elist li > b { color: var(--accent); }
+.candidate-searches .link { font-size: 13px; font-weight: 400; color: var(--ink); text-align: left; }
+.candidate-searches .link[aria-pressed="true"] { font-weight: 500; }
+.candidate-searches .link:hover { color: var(--accent); }
+.candidate-status { display: grid; gap: 10px; }
+.candidate-status-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12.5px; }
+.candidate-reason { color: var(--ink-2); }
+.candidate-status .acts .review-target-line { margin: 0; }
+.candidate-review-reason { flex-basis: 100%; }
 .candidate-attention { color: var(--warn-ink); }
-.candidate-attention svg { display: inline-block; margin-right: 6px; }
-.candidate-matrix { width: 100%; table-layout: fixed; border-collapse: collapse; margin: 16px 0; }
-.candidate-matrix caption { text-align: left; color: var(--muted); padding: 12px 0; }
-.candidate-matrix th, .candidate-matrix td { padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; font-weight: 400; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
-.candidate-matrix thead th { font-weight: 600; }
-.candidate-matrix th:first-child { width: 30%; }
-.candidate-work-title { font-family: var(--font-sans); font-size: 17px; font-weight: 500; color: var(--accent); text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; overflow-wrap: anywhere; }
-.candidate-mobile-element { display: none; }
-.candidate-queries .connection-icon, .candidate-plan .connection-icon, .candidate-evidence .connection-icon { width: 14px; height: 14px; margin-right: 6px; }
-:is(.candidates-view, .candidate-editor, .candidate-evidence) :is(.model-name, .source-key) { min-width: 0; white-space: normal; }
-.candidates-view .model-name > span { min-width: 0; }
-.candidates-view .model-name .connection-icon { flex-shrink: 0; }
-.candidate-editor, .candidate-evidence { overflow-wrap: anywhere; }
-.candidate-evidence blockquote { margin: 16px 0; padding: 0 12px; border-left: 1px solid var(--line); }
-.candidate-passage { padding-block: 12px; border-block: 1px solid var(--line); font-size: 16px; }
-.candidate-evidence li { margin-bottom: 16px; }
-.candidates-view summary { cursor: pointer; padding: 8px 0; }
-.candidates-view button:focus-visible, .candidates-view summary:focus-visible, .candidate-editor button:focus-visible, .candidate-evidence button:focus-visible, .candidate-evidence a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-/* Same yellow as the source sheet's located-text mark (--mark, D8). */
-.candidate-passage .citation-highlight { margin: 0 -.04em; padding: .06em .08em; border-radius: 3px; background: var(--mark); color: var(--ink); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-@media (max-width: 760px) {
-  .candidate-matrix caption { display: block; width: 100%; }
-  .candidates-view { max-width: calc(100vw - 40px); }
-  .candidate-status-columns { grid-template-columns: minmax(0, 1fr); gap: 16px; }
-  .candidate-matrix, .candidate-matrix tbody, .candidate-matrix tr, .candidate-matrix th, .candidate-matrix td { display: block; width: 100%; }
-  .candidate-matrix thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .candidate-matrix tr { border-top: 1px solid var(--strong-line); margin-top: 18px; }
-  .candidate-matrix th:first-child { width: 100%; }
-  .candidate-mobile-element { display: block; font-weight: 600; margin-bottom: 8px; }
-}
+.candidate-matrix-section { display: grid; gap: 10px; }
+.mk .tbl-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+.mk .tbl-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mk .mx { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mk .mx th, .mk .mx td { padding: 7px 9px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; font-size: 12px; line-height: 1.5; white-space: normal; overflow-wrap: break-word; }
+.mk .mx thead th { background: var(--sidebar-surface); color: var(--ink-2); font-weight: 500; min-width: 150px; }
+.mk .mx thead th:first-child, .mk .mx tbody th { min-width: 170px; }
+.mk .mx tbody th { font-weight: 400; }
+.mk .mx tbody tr:last-child > * { border-bottom: 0; }
+.mk .mx .src-t { font-size: 12px; }
+.mk .rel { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border-radius: 5px; background: var(--selected-surface); color: var(--muted); font-size: 11.5px; line-height: 19px; }
+.mk .rel.stated { background: var(--ok-surface); color: var(--ok-ink); }
+.mk .rel.inferred { background: var(--accent-tint); color: var(--accent); }
+.mk .rel.partly, .mk .rel.uncertain { background: var(--warn-surface); color: var(--warn-ink); }
+.candidate-queries { list-style: none; padding: 0 !important; }
+.candidate-queries p { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 0; }
+.candidates-view .connection-icon { width: 14px; height: 14px; }
+.candidates-view :is(.model-name, .source-key) { min-width: 0; white-space: normal; }
+.candidate-run { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-2); outline: 0; }
+.candidate-run .candidate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.candidate-run p { margin: 0; }
+.candidate-timeline { list-style: decimal; }
+/* The frozen passage of an evidence panel or a review copy, with the located quote marked (--mark, D8). */
+.candidate-passage .citation-highlight, .candidate-evidence .quote .citation-highlight { margin: 0; padding: 0 1px; border-radius: 2px; background: var(--mark); color: inherit; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.candidate-evidence .quote { white-space: pre-wrap; }
+.split-panel .mk.detail.candidate-evidence h1 { font-size: 16px; }
+.candidate-evidence .rowacts a { color: var(--accent); }
+/* The card editor and a review copy's passage stay sheets. */
+.candidate-editor, .candidate-evidence-sheet { overflow-wrap: anywhere; }
+.candidate-editor h3 { font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
+.detail-sheet .candidate-passage { padding-block: 12px; border-block: 1px solid var(--line); font-family: var(--font-sans); font-size: 16px; line-height: 1.6; white-space: pre-wrap; }
+.candidate-editor button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.candidate-editor .candidate-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; min-width: 0; }
+.candidate-editor .candidate-form textarea, .candidate-editor .candidate-form select { width: 100%; min-width: 0; max-width: 100%; }
+.candidate-editor button { max-width: 100%; white-space: normal; height: auto; min-height: 36px; }
+.candidate-aspects [data-stored-text] { white-space: pre-wrap; overflow-wrap: anywhere; }

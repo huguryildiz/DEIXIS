@@ -97,7 +97,7 @@ export const PLACEMENTS: Placement[] = [
   { id: 'method-full', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S10',
     container: 'Methods box, after its paragraph: a "Full method" disclosure with the live method sections (approach, search strategy, study selection, extraction, limitations, evidence base and what is not measured)', app: '.methods .method-more' },
   { id: 'answer-review-summary', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S10',
-    container: 'Answer thread, between the action pills and Next steps: "Reviewed by another model: N reviews, M open findings" once a review exists', app: '.answer-thread .review-target-line' },
+    container: 'Answer thread, between the action pills and Next steps, and the report\'s check lines (S15b): "Reviewed by another model: N reviews, M open findings" once a review exists; it opens the review panel', app: '.answer-thread .review-target-line, .report-document .review-target-line' },
   { id: 'answer-live-notices', rule: '§0 rule 5 / AGENTS.md (stale scope and pending late full text are marked explicitly)', slice: 'S10',
     container: 'Answer thread notices: "This answer was produced for revision N …" (stale scope) and the status line "Full text that arrived later is being read; an updated version may follow."', app: '.answer-thread .answer-notice, .answer-late-pending' },
   { id: 'sources-cited-tab', rule: '§0 rule 5 (the answer\'s "View N cited sources" opens the Sources panel on its cited works)', slice: 'S10',
@@ -118,6 +118,13 @@ export const PLACEMENTS: Placement[] = [
     container: 'Cell panel: "Edit value" beside Recheck, the Details toggle in the meta line, the stored flags, a proposal waiting for review, the edit form and the support note', app: '.cell-detail .dacts .ghost' },
   { id: 'ecite-source-details', rule: '§0 rule 5 (a report chip opened Source details at the cited passage)', slice: 'S15a',
     container: 'Evidence report Citation panel, under the anchor line: "Open in Source details"', app: '.ecite-detail .rowacts' },
+  // S15b: every live candidate, review and follow-up feature stays (§0 rule 5).
+  { id: 'cands-live-parts', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S15b',
+    container: 'Candidates list: Refresh beside Add candidate, the character count in the add form, "In the Trash" cards; one candidate: Refresh in the venue line, the origin notice and "What it was opened from", "Earlier versions", the search list as buttons, the full status disclosure, Provider searches, the search terms, Candidate runs and the card editor', app: '.candidates-list > .acts .ghost + .ghost, .candidate-detail .venue .ib, .candidate-detail details' },
+  { id: 'review-live-parts', rule: '§0 rule 5 / AGENTS.md (findings stay proposals; the stored review copy is what was sent)', slice: 'S15b',
+    container: 'Review dialog: the target line, the model picker with its connection, the logical steps and per-group token lines and the Not reviewed list in What will be sent; review panel: the list of earlier reviews, Pause/Resume/Cancel, the Not reviewed and Details disclosures, the finding\'s group refs, the text at review time, impact/fix/uncertainty, Apply through the editor and the decision history', app: '.review-dialog .review-model, .review-pane .review-list-row, .review-detail details, .finding .kv2, .finding .review-history' },
+  { id: 'followup-live-parts', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S15b',
+    container: 'Follow-up panel: Refresh beside the intro, the citing-works box when it is on, the check details disclosure, the missed-check notices after the records, and the Notices, Dismissed and Turned off disclosures; Schedule dialog: the units it reads in a disclosure', app: '.followup-view .followup-intro .ib, .followup-view details, .followup-dialog details' },
   { id: 'sources-selbar-live', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S13',
     container: 'Sources selection bar, after Start table and Add to library: the live "Add to table" menu and "Remove from research"', app: '.selbar .selbar-add-table, .selbar .selbar-remove' },
   { id: 'text-recovery', rule: '§2.2 (Q1)', slice: 'S12', container: 'Source details ⋯ menu, after Copy as BibTeX: Extract text again, Read equations again and Read with OCR (S13: the Sources row actions also hold "Retry text extraction", from the same retry path)', app: '.source-more-menu .source-text-tool' },
@@ -263,6 +270,15 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'report-write-again', rule: '§2.3 (the next version number is given when the run writes it)', mock: 'Write V{n+1}', app: 'Write a new version' },
   { id: 'ecite-foot', rule: '§2.3 (the report stores the cell value and the passage, not text frozen apart from them)', mock: 'This is the text frozen with the report. Later edits to the evidence table do not change it.', app: 'This is the value and passage stored with the report. Later edits to the evidence table do not change them.' },
   { id: 'ecite-changed', rule: '§2.3 (the notice names the change the report records)', mock: 'The table cell changed after this report. The report still cites the text above.', app: 'the stored evidence-change line of the section, with "Open the current cell"' },
+  // S15b: the review, Candidates and Follow-up panels say only what the records hold.
+  { id: 'review-stale', rule: '§2.3 (the notice names the stored target kind and its recorded reasons)', mock: 'Written against an earlier text: {reasons}. The findings are kept as they were.', app: 'Written against an earlier {report|answer|candidate}: {reasons}. The findings are kept as they were.' },
+  { id: 'review-accepted', rule: '§2.3 / AGENTS.md (an accepted finding changes nothing by itself; the wording names the target)', mock: 'Accepted. Recorded. No text was changed.', app: 'Accepted. Recorded. No text was changed. (report) / No change was made to the answer. / No change was made to the candidate.' },
+  { id: 'review-loc', rule: '§2.3 (the passage kind and the normalising note come from the stored anchor)', mock: '{source} · abstract · Located quote; whether it supports the target was not checked.', app: '{source} · Located in the passage[ · after normalising…] · Whether it supports the target was not checked.' },
+  { id: 'followup-nothing-new', rule: '§2.3 (the list shows stored records; a check that found nothing says so in its own line)', mock: 'Nothing new since the last check.', app: 'No new record is listed.' },
+  { id: 'followup-never-on', rule: '§2.3 (a follow-up that was never enabled is not "turned off")', mock: 'This follow-up is turned off.', app: 'This follow-up is not on. (never enabled) / This follow-up is turned off. (disabled)' },
+  { id: 'followup-old-scope', rule: '§2.3 (the lock reason names why Check now waits)', mock: '(no reason line under an old-scope follow-up)', app: 'the stored rebind reason under the notice, and "Checks wait until you rebind this follow-up to the current question."' },
+  { id: 'candidate-searching', rule: '§2.3 (the providers come from the frozen plan, shown in the plan above)', mock: 'Searching OpenAlex and Semantic Scholar, then assessing the kept works against the card…', app: 'Searching, then assessing the kept works against the card…' },
+  { id: 'candidate-searches', rule: '§2.3 (the list is every stored search of the version, each a button)', mock: 'Searches (n) · showing the last 5', app: 'Searches (n)' },
   { id: 'run-chip-panel', rule: '§2.3 (a sentence names only what exists)', mock: 'Open the Candidates / Follow-up / Evidence tab to control this run (live app, no mockup element)', app: 'Open the Candidates / Follow-up / Evidence table panel to control this run' },
 ]
 
@@ -362,6 +378,12 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     note: 'The drop zone holds a "Choose files" button under its note, so a keyboard reaches the file picker; it is taller by that row. x, y (as pdfs-included-part says) and width are compared.' },
   { id: 'funnel-stage-notes', rule: 'COPY_CHANGES funnel-stage-notes, funnel-lost-lines and funnel-wider-net', pairs: ['funnel.stages', 'funnel.notice'], axes: ['y', 'height'],
     note: 'Each stage is as tall as its note and lost line, which are built from the stored counts, and the wider-net notice wraps its longer sentence. x and width are compared, and every stage part\'s type and colour.' },
+  // S15b: these rows sit under record content and the live parts kept by PLACEMENTS review-live-parts and
+  // followup-live-parts (the target line and model picker, the stored check lines, a finding's group refs, claim text
+  // and impact/fix/uncertainty, the units the follow-up reads), so their y follows the records.
+  { id: 's15b-rows-under-records-y', rule: '§0 rule 1 (the text above is the record\'s) and §0 rule 5 (live parts above)',
+    pairs: ['watch.acts', 'rvpanel.acts', 'rvdlg.buttons', 'sched.buttons'], axes: ['y'],
+    note: 'Check now / Schedule… / Turn off, a finding\'s Accept / Dismiss / Defer and the dialog footers follow the stored content above them. x, width and height are compared.' },
   // S15a: the [parity] table holds 6 of the research's included sources, so the report gate's reason stands above the
   // toolbar (the mockup's table holds every included source and has no reason line).
   { id: 'table-toolbar-reason', rule: '§0 rule 1 (the reason comes from the stored table summary) and AGENTS.md (a disabled action says why)', pairs: ['table.toolbar', 'table.wrap'], axes: ['y'],

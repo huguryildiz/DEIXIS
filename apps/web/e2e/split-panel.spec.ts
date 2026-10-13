@@ -238,10 +238,11 @@ test.describe.serial('S7a: thread and side panel', () => {
     await panel(page, 'Candidates').getByRole('button', { name: 'Add candidate' }).click()
     await panel(page, 'Candidates').getByLabel('Your sentence').fill(draft)
     await panel(page, 'Candidates').getByRole('button', { name: 'Save', exact: true }).click()
-    await expect(panel(page, 'Candidates').getByRole('heading', { name: 'Candidate card' })).toBeVisible()
+    // The saved candidate opens stacked on the list (UI parity S15b, P35).
+    await expect(panel(page, 'Candidates · Your sentence').getByRole('heading', { name: 'Candidate card' })).toBeVisible()
     await openPanel(page, 'activity')
     await panel(page, 'Activity').getByRole('button', { name: 'Back' }).click()
-    await expect(panel(page, 'Candidates').getByRole('heading', { name: 'Candidate card' })).toBeVisible()
+    await expect(panel(page, 'Candidates · Your sentence').getByRole('heading', { name: 'Candidate card' })).toBeVisible()
   })
 
   test('Escape in a field that does not use it closes the panel', async () => {

@@ -13,6 +13,7 @@ export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zot
   | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty' | 'report-panel' | 'cite-panel' | 'detail-panel'
   | 'sources-why' | 'sources-sel' | 'queue-panel' | 'pdfs-panel' | 'funnel-panel' | 'activity-panel'
   | 'table-panel' | 'cell-panel' | 'ereport-panel' | 'ecite-panel'
+  | 'cands-panel' | 'cand-panel' | 'cev-panel' | 'review-dialog' | 'review-panel' | 'watch-panel' | 'schedule-dialog'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -44,7 +45,8 @@ export type Surface = {
   id: SurfaceId
   /** Puts the mockup in this state through its own globals. */
   mock: string
-  /** The app URL hash for this state; `{research}` is the [parity] research id, `{report}` the research with an evidence report. */
+  /** The app URL hash for this state; `{research}` is the [parity] research id, `{report}` the research with an evidence report,
+   *  `{cand}` the S15b research with a searched candidate, its review and a follow-up. */
   app: string
   /** An app element that shows the state is ready. */
   ready: string
@@ -168,6 +170,37 @@ export const SURFACES: Surface[] = [
       await page.locator('.evidence-report-document .cite-chip').nth(2).click()
       await page.locator('.ecite-detail .quote mark').waitFor()
     } },
+  // S15b: the Candidates list (P35), one candidate stacked on it (P35), a kept work's evidence (P36), the review request
+  // dialog after Preview and the review panel (P32/P33), the Follow-up panel (P37) and its Schedule dialog (P38), on the
+  // {cand} research. The mockup's own candidate c1 (set to Narrowed, the status the fixture's search computes) and its
+  // "Search queries of this research" follow-up (set to Manual, as the fixture's follow-up is) are the pair.
+  { id: 'cands-panel', mock: "setScenario('ok'); openPanel('cands', null, false)", app: '#/research/{cand}/cands', ready: '[data-split-panel] .candidate-list .ccard' },
+  { id: 'cand-panel', mock: "setScenario('ok'); cands_()[0].status = 'narrowed'; openPanel('cands', null, false); openPanel('cand', 'c1')", app: '#/research/{cand}/cands', ready: '[data-split-panel] .candidate-list .ccard',
+    appAct: async page => { await page.locator('.candidate-list-row').first().click(); await page.locator('.candidate-detail .candidate-matrix').waitFor() } },
+  { id: 'cev-panel', mock: "setScenario('ok'); openPanel('cands', null, false); openPanel('cand', 'c1'); openPanel('cev', 'c1|cob22')", app: '#/research/{cand}/cands', ready: '[data-split-panel] .candidate-list .ccard',
+    appAct: async page => {
+      await page.locator('.candidate-list-row').first().click()
+      await page.locator('.candidate-detail .candidate-work-title').first().click()
+      await page.locator('.candidate-evidence .candidate-passage').first().waitFor()
+    } },
+  { id: 'review-dialog', mock: "setScenario('ok'); openPanel('cands', null, false); openPanel('cand', 'c1')", mockAct: "reviewDlg('cand', 'c1'); document.querySelector('[data-act=\"rvpreview\"]').click()",
+    app: '#/research/{cand}/cands', ready: '[data-split-panel] .candidate-list .ccard',
+    appAct: async page => {
+      await page.locator('.candidate-list-row').first().click()
+      await page.locator('.candidate-detail .candidate-review-open').first().click()
+      await page.locator('.review-dialog').getByRole('button', { name: 'Preview', exact: true }).click()
+      await page.locator('.review-dialog .sendbox').waitFor()
+    } },
+  { id: 'review-panel', mock: "setScenario('ok'); openPanel('cands', null, false); openPanel('cand', 'c1'); st.rv = { target: 'cand', focus: 'Source support', model: 'deepseek-flash', note: '', state: 'done', g: 2, dec: {}, why: {}, applied: {}, snap: rvSnap('cand', 'c1') }; openPanel('review', null, true)",
+    app: '#/research/{cand}/cands', ready: '[data-split-panel] .candidate-list .ccard',
+    appAct: async page => {
+      await page.locator('.candidate-list-row').first().click()
+      await page.locator('.candidate-detail .review-target-line').first().click()
+      await page.locator('.review-pane .finding').first().waitFor()
+    } },
+  { id: 'watch-panel', mock: "setScenario('ok'); openPanel('watch', null, false)", app: '#/research/{cand}/watch', ready: '[data-split-panel] .followup-watch' },
+  { id: 'schedule-dialog', mock: "setScenario('ok'); openPanel('watch', null, false)", mockAct: "schedDlg('q', false); sdSet('freq', 0)", app: '#/research/{cand}/watch', ready: '[data-split-panel] .followup-watch',
+    appAct: async page => { await page.locator('.followup-watch').first().getByRole('button', { name: 'Schedule…' }).click(); await page.locator('.followup-dialog .fmts').first().waitFor() } },
   // S13: the Sources panel with its reason bar (the first row excluded) and with its selection bar (the first row
   // chosen). The app's Exclude is answered here, so the fixture's research is never changed: the PATCH gets an empty
   // 200 and the view the page reloads has that row excluded by the person.
@@ -790,6 +823,88 @@ export const PAIRS: Pair[] = [
   { id: 'ecite.quote', surface: 'ecite-panel', mock: '.detail .quote', app: '.ecite-detail .quote', checks: ['type', 'colour'], states: [], status: 'active' },
   { id: 'ecite.loc', surface: 'ecite-panel', mock: '.detail .loc', app: '.ecite-detail .loc', checks: ['type', 'colour'], states: [], status: 'active' },
   { id: 'ecite.foot', surface: 'ecite-panel', mock: '.detail > p.foot-note', app: '.ecite-detail > p.foot-note', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
+  // S15b the Candidates list (P35): the head, the intro, Add candidate and the first card (its meta line and claim).
+  { id: 'cands.title', surface: 'cands-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'bulb', app: 'lightbulb' }, text: true, states: [], status: 'active' },
+  { id: 'cands.intro', surface: 'cands-panel', mock: '.panel .pad > p:first-child', app: '.candidates-list > p:first-child', checks: ['chrome', 'content', 'type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'cands.add', surface: 'cands-panel', mock: '.panel .pad > .acts .ghost', app: '.candidates-list > .acts .ghost:first-child', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'plus', app: 'plus' }, text: true, states: [], status: 'active' },
+  { id: 'cands.card', surface: 'cands-panel', mock: '.panel .ccard', app: '.candidate-list .ccard', checks: ['content', 'colour'], list: 'data', expected: () => 1, use: 'decorative', states: [], status: 'active' },
+  { id: 'cands.card-meta', surface: 'cands-panel', mock: '.panel .ccard:first-of-type .meta', app: '.candidate-list li:first-child .ccard .meta', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'cands.card-claim', surface: 'cands-panel', mock: '.panel .ccard:first-of-type p', app: '.candidate-list li:first-child .ccard p', checks: ['type', 'colour'], states: [], status: 'active' },
+  // S15b one candidate (P35): the head with Back, the venue and the sentence, the section heads, the card's element list,
+  // the status line, the claim matrix and its relation cells.
+  { id: 'cand.title', surface: 'cand-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'bulb', app: 'lightbulb' }, text: true, states: [], status: 'active' },
+  { id: 'cand.back', surface: 'cand-panel', mock: '.panel .p-head [data-act="back"]', app: '.split-panel-head [aria-label="Back"]', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'left', app: 'chevron-left' }, unordered: true, states: [], status: 'active' },
+  { id: 'cand.detail', surface: 'cand-panel', mock: '.panel .pad.detail', app: '.candidate-detail', checks: ['content'], use: 'decorative', states: [], status: 'active' },
+  { id: 'cand.venue', surface: 'cand-panel', mock: '.detail .dhead .venue', app: '.candidate-detail .dhead .venue', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'cand.sentence', surface: 'cand-panel', mock: '.detail .dhead .sentence', app: '.candidate-detail .dhead .sentence', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'cand.sub', surface: 'cand-panel', mock: '.detail > h4.sub', app: '.candidate-detail h4.sub', checks: ['content', 'type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'cand.element', surface: 'cand-panel', mock: '.detail > .elist li:first-child', app: '.candidate-detail .candidate-version .elist li:first-child', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'cand.status', surface: 'cand-panel', mock: '.detail .cst', app: '.candidate-detail .candidate-status-line .cst:not(.yours)', checks: ['type', 'colour'], unordered: true, states: [], status: 'active' },
+  { id: 'cand.matrix', surface: 'cand-panel', mock: '.detail .tbl-wrap', app: '.candidate-detail .candidate-matrix-wrap', checks: ['content', 'colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'cand.matrix-th', surface: 'cand-panel', mock: '.detail table.mx thead th:first-child', app: '.candidate-detail table.mx thead th:first-child', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'cand.work', surface: 'cand-panel', mock: '.detail table.mx tbody tr:first-child .src-t', app: '.candidate-detail table.mx tbody tr:first-child .src-t', checks: ['type', 'colour'], states: [], status: 'active' },
+  // S15b a kept work's evidence (P36): the head, the frozen passage with its mark and the closing note with Open the source.
+  { id: 'cev.title', surface: 'cev-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'bulb', app: 'file-search' }, text: true, states: [], status: 'active' },
+  { id: 'cev.back', surface: 'cev-panel', mock: '.panel .p-head [data-act="back"]', app: '.split-panel-head [aria-label="Back"]', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'left', app: 'chevron-left' }, unordered: true, states: [], status: 'active' },
+  { id: 'cev.venue', surface: 'cev-panel', mock: '.detail .dhead .venue', app: '.candidate-evidence .dhead .venue', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'cev.h1', surface: 'cev-panel', mock: '.detail .dhead h1', app: '.candidate-evidence .dhead h1', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'cev.quote', surface: 'cev-panel', mock: '.detail .quote', app: '.candidate-evidence .quote', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'cev.mark', surface: 'cev-panel', mock: '.detail .quote mark', app: '.candidate-evidence .quote mark', checks: ['colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'cev.foot', surface: 'cev-panel', mock: '.detail > p.foot-note:last-child', app: '.candidate-evidence > p.foot-note:last-child', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  // S15b the review request dialog after Preview (P32): the shared dialog chrome, the focus options, the note field, the
+  // "What will be sent" box and the footer.
+  { id: 'rvdlg.scrim', surface: 'review-dialog', mock: '.scrim', app: '.dialog-scrim', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'rvdlg.dialog', surface: 'review-dialog', mock: '.pal.dlg', app: '.review-dialog', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'rvdlg.head', surface: 'review-dialog', mock: '.pal.dlg .pal-in', app: '.review-dialog .dialog-head', checks: ['chrome', 'colour', 'icon'], use: 'decorative',
+    icon: { mock: 'shield', app: 'shield-check' }, unordered: true, status: 'active' },
+  { id: 'rvdlg.title', surface: 'review-dialog', mock: '.pal.dlg .pal-in b', app: '.review-dialog .dialog-title', checks: ['type'], text: true, unordered: true, status: 'active' },
+  { id: 'rvdlg.close', surface: 'review-dialog', mock: '.pal.dlg .pal-in .ib', app: '.review-dialog .dialog-close', checks: ['chrome', 'icon'], icon: { mock: 'x', app: 'x' }, unordered: true, status: 'active' },
+  { id: 'rvdlg.option', surface: 'review-dialog', mock: '.pal.dlg .opts label', app: '.review-dialog .opts label', checks: ['content', 'type', 'colour'], list: 'fixed', text: true, unordered: true, states: [], status: 'active' },
+  // The note's text colour is the person's own text (--ink); the mockup's textarea inherits the label's muted colour.
+  { id: 'rvdlg.note', surface: 'review-dialog', mock: '.pal.dlg #rvNote', app: '.review-dialog textarea.field', checks: ['content', 'type'], unordered: true, states: [], status: 'active' },
+  { id: 'rvdlg.sendbox', surface: 'review-dialog', mock: '.pal.dlg .sendbox', app: '.review-dialog .sendbox', checks: ['content', 'colour'], use: 'decorative', unordered: true, states: [], status: 'active' },
+  { id: 'rvdlg.sendbox-head', surface: 'review-dialog', mock: '.pal.dlg .sendbox > b', app: '.review-dialog .sendbox h3', checks: ['type', 'colour'], text: true, unordered: true, states: [], status: 'active' },
+  { id: 'rvdlg.footer', surface: 'review-dialog', mock: '.pal.dlg .dlg-f', app: '.review-dialog .dialog-footer', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'rvdlg.buttons', surface: 'review-dialog', mock: '.pal.dlg .dlg-f button', app: '.review-dialog .dialog-footer button', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, unordered: true, states: [], status: 'active' },
+  // S15b the review panel (P33): the head, the meta line, the first finding with its kind, its located quote and the
+  // Accept / Dismiss / Defer row, and the closing summary line.
+  { id: 'rvpanel.title', surface: 'review-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'shield', app: 'shield-check' }, text: true, states: [], status: 'active' },
+  { id: 'rvpanel.back', surface: 'review-panel', mock: '.panel .p-head [data-act="back"]', app: '.split-panel-head [aria-label="Back"]', checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'left', app: 'chevron-left' }, unordered: true, states: [], status: 'active' },
+  { id: 'rvpanel.dmeta', surface: 'review-panel', mock: '.detail > .dmeta', app: '.review-detail > .dmeta', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'rvpanel.finding', surface: 'review-panel', mock: '.detail .finding', app: '.review-detail .finding', checks: ['content', 'colour'], list: 'data', expected: () => 2, use: 'decorative', states: [], status: 'active' },
+  { id: 'rvpanel.kind', surface: 'review-panel', mock: '.detail .finding:first-of-type header b', app: '.review-detail .finding:first-of-type header h4', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'rvpanel.quote', surface: 'review-panel', mock: '.detail .finding:first-of-type .quote', app: '.review-detail .finding:first-of-type .quote', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'rvpanel.loc', surface: 'review-panel', mock: '.detail .finding:first-of-type .loc', app: '.review-detail .finding:first-of-type .loc', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'rvpanel.acts', surface: 'review-panel', mock: '.detail .finding:first-of-type .acts .ghost', app: '.review-detail .finding:first-of-type .acts .ghost', checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', text: true,
+    icon: [{ mock: 'check', app: 'check' }, { mock: 'x', app: 'x' }], states: [], status: 'active' },
+  { id: 'rvpanel.summary', surface: 'review-panel', mock: '.detail > p.foot-note:last-child', app: '.review-detail > p.foot-note.review-foot', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  // S15b the Follow-up panel (P37): the head, the intro, the search-queries box with its name, mode line and actions, the
+  // records heading and the closing note.
+  { id: 'watch.title', surface: 'watch-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'clock', app: 'clock' }, text: true, states: [], status: 'active' },
+  { id: 'watch.intro', surface: 'watch-panel', mock: '.panel .pad > p:first-child', app: '.followup-view .followup-intro > p', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'watch.box', surface: 'watch-panel', mock: '.panel .watch:first-of-type', app: '.followup-view .watch:first-of-type', checks: ['content', 'colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'watch.name', surface: 'watch-panel', mock: '.panel .watch:first-of-type h4', app: '.followup-view .watch:first-of-type h4', checks: ['content', 'type', 'colour', 'icon'],
+    icon: { mock: 'search', app: 'search' }, text: true, states: [], status: 'active' },
+  { id: 'watch.mode', surface: 'watch-panel', mock: '.panel .watch:first-of-type > small:first-of-type', app: '.followup-view .watch:first-of-type > small:first-of-type', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'watch.acts', surface: 'watch-panel', mock: '.panel .watch:first-of-type > .acts:last-child .ghost', app: '.followup-view .watch:first-of-type > .acts:last-of-type .ghost', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  { id: 'watch.records', surface: 'watch-panel', mock: '.panel .pad > h3', app: '.followup-view > h3', checks: ['type', 'colour'], states: [], status: 'active' },
+  // S15b the Schedule dialog (P38): the shared dialog chrome, the frequency choices and the footer.
+  { id: 'sched.dialog', surface: 'schedule-dialog', mock: '.pal.dlg', app: '.followup-dialog', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'sched.head', surface: 'schedule-dialog', mock: '.pal.dlg .pal-in', app: '.followup-dialog .dialog-head', checks: ['chrome', 'colour', 'icon'], use: 'decorative',
+    icon: { mock: 'clock', app: 'clock' }, unordered: true, status: 'active' },
+  { id: 'sched.title', surface: 'schedule-dialog', mock: '.pal.dlg .pal-in b', app: '.followup-dialog .dialog-title', checks: ['type'], text: true, unordered: true, status: 'active' },
+  { id: 'sched.frequency', surface: 'schedule-dialog', mock: '.pal.dlg .fmts:has(input[name="wfreq"]) label', app: '.followup-dialog .fmts label', checks: ['type', 'colour'], list: 'fixed', text: true, unordered: true, states: [], status: 'active' },
+  { id: 'sched.footer', surface: 'schedule-dialog', mock: '.pal.dlg .dlg-f', app: '.followup-dialog .dialog-footer', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'sched.buttons', surface: 'schedule-dialog', mock: '.pal.dlg .dlg-f button', app: '.followup-dialog .dialog-footer button', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, unordered: true, states: [], status: 'active' },
 ]
 
 /** Pending pairs per slice, for the summary line. */

@@ -822,7 +822,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <FollowUpView researchId={id} view={view} dark={dark} onReload={followupCount.reload} onChanged={followupChanged} />
     </StackPanel>
     <StackPanel name="cands" title={t('Candidates')} icon={Lightbulb} keepMounted>
-      <CandidatesView researchId={id} view={view} dark={dark} modelText={modelText} selection={candidateSelection} onCount={setCandidateCount} onRunChanged={() => { void load(); onChanged() }} />
+      <CandidatesView researchId={id} view={view} dark={dark} modelText={modelText} selection={candidateSelection} onCount={setCandidateCount} onRunChanged={() => { void load(); onChanged() }}
+        onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} />
     </StackPanel>
     <StackPanel name="activity" title={t('Activity')} icon={Clock}>
       <ActivityPanel researchId={id} eventCursor={view.last_event_id} events={events} />

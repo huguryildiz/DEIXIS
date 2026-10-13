@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { CircleX, Lightbulb, Plus, RotateCw } from 'lucide-react'
 import { api, type CandidateCard, type CandidateListItem, type ResearchView } from '../api'
-import { Notice } from '../Notice'
 import type { ModelText } from '../modelText'
+import { StackPanel } from '../research/SplitPanel'
 import { t } from '../i18n'
 import { CandidateDetail } from './CandidateDetail'
 import { errorText, kindLabels, label, statusLabels } from './labels'
 import { useReturnFocus } from './focus'
+import '../research/kit.css'
 import './candidate.css'
 
 export type CandidateSelection = { id: string; card?: CandidateCard }
-export function CandidatesView({ researchId, view, dark, modelText, selection, onCount, onRunChanged }: {
+
+// The Candidates panel (mockup `candList`, P35): one card per claim the person wants to test, with where it came from,
+// its version, the status code computed and the person's own decision. A card opens its candidate stacked on this list.
+export function CandidatesView({ researchId, view, dark, modelText, selection, onCount, onRunChanged, onOpenSource }: {
   researchId: string; view: ResearchView; dark: boolean; modelText: ModelText; selection: CandidateSelection | null
-  onCount: (n: number) => void; onRunChanged: () => void
+  onCount: (n: number) => void; onRunChanged: () => void; onOpenSource?: (sourceVersionId: string) => void
 }) {
   const [items, setItems] = useState<CandidateListItem[] | null>(null)
   const [origins, setOrigins] = useState<Record<string, string>>({})
@@ -25,8 +29,6 @@ export function CandidatesView({ researchId, view, dark, modelText, selection, o
   const [fieldError, setFieldError] = useState('')
   const [busy, setBusy] = useState(false)
   const generation = useRef(0)
-  const rows = useRef(new Map<string, HTMLButtonElement>())
-  const invokingRow = useRef<string | null>(null)
   const addControl = useRef<HTMLButtonElement>(null)
   const addFocus = useReturnFocus()
   const closeAdd = () => { setAdding(false); addFocus.restoreFocus() }
@@ -58,28 +60,37 @@ export function CandidatesView({ researchId, view, dark, modelText, selection, o
   async function save() {
     if (!text.length || busy) return
     generation.current++; setBusy(true); setFieldError('')
-    try { const card = await api.openCandidate(researchId, { origin: 'owner_text', text }); applyCard(card); setAdding(false); setText(''); invokingRow.current = null; setSelected({ id: card.id, card }) }
+    try { const card = await api.openCandidate(researchId, { origin: 'owner_text', text }); applyCard(card); setAdding(false); setText(''); setSelected({ id: card.id, card }) }
     catch (e) { setFieldError(errorText(e)) }
     finally { setBusy(false) }
   }
-  const back = () => { const id = invokingRow.current; setSelected(null); requestAnimationFrame(() => (id ? rows.current.get(id) : addControl.current)?.focus()) }
-  return <div className="candidates-view">
-    {selected ? <CandidateDetail key={selected.id} researchId={researchId} candidateId={selected.id} initialCard={selected.card} view={view} dark={dark} modelText={modelText} onBack={back} onCard={applyCard} onRefreshList={load} onRunChanged={onRunChanged} /> : <>
-      <h2>{t('Candidates')}</h2><p>{t('A candidate is one claim you want to test against the literature. Nothing is searched until you start a search on a card.')}</p>
-      <div className="candidate-actions"><Button ref={addControl} onClick={e => { addFocus.rememberFocus(e.currentTarget, () => addControl.current); setAdding(true) }}>{t('Add candidate')}</Button><Button variant="ghost" onClick={() => void load()}>{t('Refresh')}</Button></div>
-      {adding && <form className="candidate-form candidate-add" onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); closeAdd() } }} onSubmit={e => { e.preventDefault(); void save() }}><label className="evidence-field"><span>{t('Your sentence')}</span><small>{t('{n}/{max} characters', { n: text.length, max: 2000 })}</small><textarea required autoFocus rows={4} maxLength={2000} value={text} onChange={e => setText(e.target.value)} /></label>
-        <p>{t('Your sentence is stored with surrounding whitespace removed. It is your proposal, not a finding from the literature.')}</p>{fieldError && <Notice tone="error">{fieldError}</Notice>}
-        <div className="candidate-actions"><Button type="submit" disabled={busy || !text.length} aria-describedby="candidate-add-reason">{t('Save')}</Button><Button type="button" variant="outline" onClick={closeAdd}>{t('Cancel')}</Button></div>{(busy || !text.length) && <p id="candidate-add-reason">{t(busy ? 'Saving…' : 'Enter a sentence to save.')}</p>}
-      </form>}
-      {error && <Notice tone="error">{error}<Button variant="ghost" onClick={() => void load()}>{t('Retry')}</Button></Notice>}
-      {!items ? !error && <p role="status">{t('Loading candidates…')}</p> : !items.length ? <p className="candidate-fine">{t('No candidates yet. Use Add candidate to store a claim you want to test.')}</p> : <ul className="candidate-list">{items.map(item => <li key={item.id}>
-        {item.trashed_at ? <><p className="candidate-claim" data-stored-text>{item.claim_statement ?? origins[item.id]}</p><p>{t('In the Trash')}</p></> : <button type="button" className="candidate-list-row" ref={el => { if (el) rows.current.set(item.id, el); else rows.current.delete(item.id) }} onClick={() => { invokingRow.current = item.id; setSelected({ id: item.id }) }}>
-          <span className="candidate-claim candidate-list-claim" data-stored-text>{item.claim_statement ?? origins[item.id] ?? t('Loading…')}</span>
-          <span>{item.origin === 'owner_text' ? t('Your proposal') : t('From a report row: {kind}', { kind: label(kindLabels, item.gap_kind ?? '') })}</span>
-          <span>{item.current_version ? t('Version {n}', { n: item.current_version }) : t('No card yet')} · {label(statusLabels, item.status?.status ?? 'not_run')}{item.owner && <> · {t('You: {status}', { status: label(statusLabels, item.owner.status).toLocaleLowerCase() })}</>}</span>
-          {item.active_run_id && <span>{t('Search running')}</span>}
-        </button>}
-      </li>)}</ul>}
-    </>}
+  // Back (or Close) clears the candidate; the panel stack hands focus back to the card that opened it.
+  const closeDetail = useCallback(() => setSelected(null), [])
+  const origin = selected ? selected.card?.origin ?? items?.find(i => i.id === selected.id)?.origin : undefined
+  const detailTitle = origin === 'report_gap' ? t('Candidates · From a report row') : origin === 'owner_text' ? t('Candidates · Your sentence') : t('Candidate')
+  return <div className="candidates-view candidates-list mk pad">
+    <p>{t('A candidate is one claim you want to test against the literature. Nothing is searched until you start a search on a card.')}</p>
+    {adding ? <form className="ceditor candidate-form candidate-add" onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAdd() } }} onSubmit={e => { e.preventDefault(); void save() }}>
+      <label className="lbl">{t('Your sentence')}<textarea className="field" required autoFocus rows={2} maxLength={2000} value={text} placeholder={t('One claim you want to test, in your own words.')} aria-describedby="candidate-add-count" onChange={e => setText(e.target.value)} /><small id="candidate-add-count">{t('{n}/{max} characters', { n: text.length, max: 2000 })}</small></label>
+      <p className="foot-note">{t('Your sentence is stored with surrounding whitespace removed. It is your proposal, not a finding from the literature.')}</p>
+      {fieldError && <div className="notice bad" role="alert"><CircleX aria-hidden /><span>{fieldError}</span></div>}
+      <div className="acts"><button type="submit" className="btn-pri" disabled={busy || !text.length} aria-describedby={busy || !text.length ? 'candidate-add-reason' : undefined}>{t('Save')}</button><button type="button" className="ghost" onClick={closeAdd}>{t('Cancel')}</button>{(busy || !text.length) && <span id="candidate-add-reason" className="foot-note">{t(busy ? 'Saving…' : 'Enter a sentence to save.')}</span>}</div>
+    </form> : <div className="acts">
+      <button ref={addControl} type="button" className="ghost" onClick={e => { addFocus.rememberFocus(e.currentTarget, () => addControl.current); setAdding(true) }}><Plus aria-hidden />{t('Add candidate')}</button>
+      <button type="button" className="ghost" onClick={() => void load()}><RotateCw aria-hidden />{t('Refresh')}</button>
+    </div>}
+    {error && <div className="notice bad" role="alert"><CircleX aria-hidden /><div className="nb"><span>{error}</span><div className="acts"><button type="button" className="ghost" onClick={() => void load()}>{t('Retry')}</button></div></div></div>}
+    {!items ? !error && <p role="status" className="foot-note">{t('Loading candidates…')}</p> : !items.length ? <p className="foot-note">{t('No candidates yet. Use Add candidate to store a claim you want to test.')}</p>
+      : <ul className="candidate-list" aria-label={t('Candidates')}>{items.map(item => {
+        const meta = <span className="meta">{item.origin === 'owner_text' ? t('Your sentence') : t('From a report row: {kind}', { kind: label(kindLabels, item.gap_kind ?? '') })}{item.current_version ? <> · {t('Version {n}', { n: item.current_version })}</> : null}<span className="spacer" />
+          <span className={`cst ${item.status?.status ?? 'not_run'}`}>{label(statusLabels, item.status?.status ?? 'not_run')}</span>{item.owner && <span className={`cst yours ${item.owner.status}`}>{t('You: {status}', { status: label(statusLabels, item.owner.status) })}</span>}</span>
+        const claim = <p className="candidate-list-claim" data-stored-text>{item.claim_statement ?? origins[item.id] ?? t('Loading…')}</p>
+        return <li key={item.id}>{item.trashed_at ? <div className="ccard is-trashed">{meta}{claim}<span className="meta">{t('In the Trash')}</span></div>
+          : <button type="button" className="ccard candidate-list-row" onClick={() => setSelected({ id: item.id })}>{meta}{claim}
+            <span className="meta">{item.current_version ? t('Card written') : t('No card yet')}{item.active_run_id && <> · <span className="spin" aria-hidden /> {t('Search running')}</>}</span></button>}</li>
+      })}</ul>}
+    {selected && <StackPanel name="cand" open onClose={closeDetail} title={detailTitle} icon={Lightbulb} className={`mk-detail-box cand-panel-box${dark ? ' dark' : ''}`}>
+      <CandidateDetail key={selected.id} researchId={researchId} candidateId={selected.id} initialCard={selected.card} view={view} dark={dark} modelText={modelText} onCard={applyCard} onRefreshList={load} onRunChanged={onRunChanged} onOpenSource={onOpenSource} />
+    </StackPanel>}
   </div>
 }

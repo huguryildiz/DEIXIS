@@ -136,6 +136,50 @@ async function reportResearch(base: string): Promise<string> {
   return id
 }
 
+/** S15b: a third SYNTHETIC research for the Candidates, review and Follow-up panels. Its question carries the fixture's
+ *  "[candidate]" and "[review-finding]" markers: one candidate sentence broken into a card and searched, one review of
+ *  that candidate version by another model (a finding with a located quote), and one manual follow-up of the search
+ *  queries. Each step goes through the API the UI's own buttons call. */
+async function candidateResearch(base: string): Promise<string> {
+  const api = await apiRequest.newContext({ baseURL: base, extraHTTPHeaders: { origin: base } })
+  const token = (await (await api.get('/api/session')).json()).csrf_token as string
+  const headers = (key = true) => ({ 'x-deixis-csrf': token, ...(key ? { 'Idempotency-Key': crypto.randomUUID() } : {}) })
+  const post = async (url: string, data?: unknown, key = true) => {
+    const response = await api.post(url, { ...(data === undefined ? {} : { data }), headers: headers(key) })
+    expect(response.ok(), `${url}: ${await response.text()}`).toBe(true)
+    return response.json()
+  }
+  const get = async (url: string) => (await api.get(url)).json()
+  const settle = (id: string, kind: string) => expect.poll(async () => {
+    const v = (await get(`/api/researches/${id}`)) as View
+    return v.runs.some(r => r.kind === kind) && !v.runs.some(r => ACTIVE.has(r.status))
+  }, { timeout: 110_000, intervals: [500] }).toBe(true)
+  const id = (await post('/api/researches', { question: 'SYNTHETIC bounded scheduling [candidate] [review-finding]', model_connection: 'codex', requested_model: 'fixture-model', effort: 'standard' }, false)).research.id as string
+  await post(`/api/researches/${id}/runs`, { kind: 'discovery' })
+  await settle(id, 'discovery')
+  const base_ = `/api/researches/${id}/candidates`
+  const cid = (await post(base_, { origin: 'owner_text', text: 'SYNTHETIC bounded scheduling reduces delay under bounded arrivals.' })).id as string
+  await post(`${base_}/${cid}/decompose`)
+  await settle(id, 'claim_decomposition')
+  const plan = await get(`${base_}/${cid}/kill-search/plan`)
+  await post(`${base_}/${cid}/kill-search`, { preview_fingerprint: plan.preview_fingerprint })
+  await settle(id, 'kill_search')
+  const vid = (await get(`${base_}/${cid}`)).current_version_id as string
+  const connections = await get('/api/connections')
+  const model = connections.models.codex.models[0]
+  const request = { target_kind: 'candidate', target_id: vid, focus: 'source_support', owner_note: null, connection: 'codex', model: model.id, reasoning_effort: model.default_reasoning_effort ?? null }
+  const shown = await post(`/api/researches/${id}/reviews/preview`, request, false)
+  await post(`/api/researches/${id}/reviews`, { ...request, snapshot_sha256: shown.snapshot_sha256, preview_fingerprint: shown.preview_fingerprint })
+  await expect.poll(async () => ((await get(`/api/researches/${id}/reviews?target_kind=candidate&target_id=${vid}`)) as Array<{ state: string }>)[0]?.state, { timeout: 110_000, intervals: [500] }).toBe('completed')
+  await post(`/api/researches/${id}/watches/preview`, { kind: 'protocol_queries' }, false)
+  const scope = ((await get(`/api/researches/${id}`)) as { research: { current_scope_revision: number } }).research.current_scope_revision
+  await post(`/api/researches/${id}/watches`, { mode: 'manual', interval_days: null, catch_up: null, kind: 'protocol_queries', expected_scope_revision: scope })
+  await new Promise(resolve => setTimeout(resolve, 300))
+  await expect.poll(async () => !((await get(`/api/researches/${id}`)) as View).runs.some(r => ACTIVE.has(r.status)), { timeout: 110_000, intervals: [500] }).toBe(true)
+  await api.dispose()
+  return id
+}
+
 async function pagesFor(browser: Browser, width: number, theme: Theme) {
   const size = { width, height: width < 768 ? 844 : 900 }
   const mockContext = await browser.newContext({ viewport: size, colorScheme: theme })
@@ -159,14 +203,14 @@ const READER = {
 // The dialog surface opens the equation reader's Install confirm, so there the reader is SYNTHETIC and not installed.
 const READER_OFF = { ...READER, installed: false, models_downloaded: false, reading: null, pdfs: {} }
 
-async function showApp(page: Page, base: string, surface: Surface, research: string, report: string) {
+async function showApp(page: Page, base: string, surface: Surface, research: string, report: string, cand: string) {
   await surface.prepare?.(page)
   await page.route('**/api/equation-reader', route => route.fulfill({ json: surface.reader === 'not-installed' ? READER_OFF : READER }))
   // The mockup always has a current research; the app's "Current research" names the one opened last in this browser,
   // so the [parity] research is opened first.
   await page.goto(`${base}/#/research/${research}`)
   await page.locator('.research-topbar').first().waitFor()
-  await page.goto(`${base}/${surface.app.replace('{research}', research).replace('{report}', report)}`)
+  await page.goto(`${base}/${surface.app.replace('{research}', research).replace('{report}', report).replace('{cand}', cand)}`)
   await surface.open?.(page)
   await page.locator(surface.ready).first().waitFor()
   await page.evaluate(() => document.fonts.ready)
@@ -206,13 +250,15 @@ test.describe('parity: app against the mockup v24', () => {
   const server = new FixtureServer()
   let research = ''
   let report = ''
+  let cand = ''
   let ctx: FixtureContext = { researches: 0, suggestions: 0 }
 
   test.beforeAll(async () => {
-    test.setTimeout(180_000)
+    test.setTimeout(300_000)
     await server.start()
     research = await parityResearch(server.url())
     report = await reportResearch(server.url())
+    cand = await candidateResearch(server.url())
     ctx = await fixtureContext(server.url())
     const pending = pendingBySlice()
     const total = Object.values(pending).reduce((a, b) => a + b, 0)
@@ -232,7 +278,7 @@ test.describe('parity: app against the mockup v24', () => {
             // The mockup's job and run simulations re-render the sidebar every few seconds; the state is set, so its timers stop.
             await pages.mock.evaluate(() => { const last = window.setTimeout(() => {}, 0); for (let id = 1; id <= last; id++) { clearTimeout(id); clearInterval(id) } })
             if (surface.mockAct) { await pages.mock.evaluate(surface.mockAct); await pages.mock.waitForTimeout(300) }
-            await showApp(pages.app, server.url(), surface, research, report)
+            await showApp(pages.app, server.url(), surface, research, report, cand)
             const pairs = pairsFor(surface.id, width)
             const failures = await gateSurface(pairs, { width, theme }, pages.mock, pages.app, ctx)
             info.annotations.push({ type: 'parity', description: `${pairs.length} active pairs checked` })
@@ -256,7 +302,7 @@ test.describe('parity: app against the mockup v24', () => {
       const pages = await pagesFor(browser, BREAKPOINT, 'light')
       try {
         await driveMockup(pages.mock, surface.mock)
-        await showApp(pages.app, server.url(), surface, research, report)
+        await showApp(pages.app, server.url(), surface, research, report, cand)
         for (const pair of pairs) {
           failures.push(...checkBreakpoint(pair, { mock: await measure(pages.mock, pair.mock, MOCK_EXCLUDE, []), app: await measure(pages.app, pair.app, APP_EXCLUDE, []) }))
         }

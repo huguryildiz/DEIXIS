@@ -51,3 +51,5 @@ export const label = (map: Record<string, string>, code: string) => map[code] ? 
 export const reasonText = (computed: CandidateComputed, code = computed.reason) => reasonLabels[code] ? t(reasonLabels[code], { assessed: computed.facts.assessed, found: computed.facts.found, unread: computed.facts.unread }) : code
 export const dateText = (date: string) => new Date(date).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' })
 export const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
+// The matrix cell pill (mockup `.rel`): stated, inferred, partly matched, no match, uncertain.
+export const relationTones: Record<string, string> = { explicit_support: 'stated', reasoned_inference: 'inferred', partial_match: 'partly', no_match_in_supplied_text: 'none', uncertain: 'uncertain' }

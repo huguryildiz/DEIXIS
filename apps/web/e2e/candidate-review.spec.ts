@@ -63,9 +63,10 @@ test.beforeEach(async ({ page }) => {
 })
 type Fixture = { rid: string; cid: string; vid: string }
 const candidates = (page: Page) => page.locator('.candidate-detail')
-const sheet = (page: Page) => page.getByRole('dialog', { name: 'Review by another model', exact: true })
-const pane = (page: Page) => sheet(page).locator('.review-pane')
-const form = (page: Page) => pane(page).locator('.review-request')
+// The request is a dialog and a review opens in the review panel stacked on the candidate (UI parity S15b, P32/P33).
+const sheet = (page: Page) => page.locator('.review-dialog')
+const pane = (page: Page) => page.locator('[data-split-panel] .review-pane')
+const form = (page: Page) => page.locator('.review-dialog .review-request')
 const button = (root: Locator, name: string) => root.getByRole('button', { name, exact: true })
 const reviewBase = (f: Fixture) => `${server.url}/api/researches/${f.rid}/reviews`
 const candidateBase = (f: Fixture) => `${server.url}/api/researches/${f.rid}/candidates/${f.cid}`
@@ -132,12 +133,12 @@ async function tabTo(page: Page, control: Locator) {
   for (let i = 0; i < 80 && !await control.evaluate(el => el === document.activeElement); i++) await page.keyboard.press('Tab')
   await expect(control).toBeFocused()
 }
+// Escape closes the request dialog; Back leaves the review panel for the candidate below it.
 async function close(page: Page) {
-  // Escape in a dismiss form cancels the field; wait until it can close the sheet.
-  await expect(sheet(page).locator('.review-dismiss')).toHaveCount(0)
-  await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('.review-dismiss')))).toBe(false)
-  await page.keyboard.press('Escape')
-  await expect(sheet(page)).toHaveCount(0)
+  if (await form(page).count()) { await page.keyboard.press('Escape'); await expect(sheet(page)).toHaveCount(0); return }
+  await expect(pane(page).locator('.review-dismiss')).toHaveCount(0)
+  await page.locator('[data-split-panel] .split-panel-head').getByRole('button').first().click()
+  await expect(pane(page)).toHaveCount(0)
 }
 
 test('end to end: finished search, disclosure, held progress, frozen anchor and decisions', async ({ page }) => {
@@ -147,7 +148,8 @@ test('end to end: finished search, disclosure, held progress, frozen anchor and 
   await expect(entry).toHaveAttribute('aria-describedby', /candidate-review-reason/)
   await expect(candidates(page)).toContainText('A review reads a finished search of this version. Run the search first.')
   await search(page, f); await openRequest(page); await preview(page)
-  for (const label of ['Elements', 'Sources with matrix rows', 'Passages', 'Characters', 'Cost is not estimated.']) await expect(form(page).getByText(label, { exact: true })).toBeVisible()
+  await expect(form(page).locator('.sendbox')).toContainText(/Elements \d+ · Sources with matrix rows \d+ · Passages \d+ · Characters [\d,]+/)
+  await expect(form(page).locator('.sendbox')).toContainText('Cost is not estimated.')
   await expect(form(page).locator('.review-connection')).toHaveText('Codex')
   await expect(form(page)).toContainText(/logical steps?/)
   await expect(form(page)).toContainText(/at most \d+ model calls?/)
@@ -157,7 +159,7 @@ test('end to end: finished search, disclosure, held progress, frozen anchor and 
   const row = detail.findings.find(r => r.finding.kind === 'partially_supported')!
   const finding = pane(page).locator('[data-finding-kind="partially_supported"]')
   await expect(finding.locator('.review-claim')).toHaveText(row.finding.target.text_at_snapshot!)
-  await expect(pane(page).getByRole('heading', { name: /^Element e\d+ ·/ })).toBeVisible()
+  await expect(finding.locator('header')).toContainText(/· Element e\d+ ·/)
   await expect(finding).toContainText('Located in the passage')
   await expect(pane(page).locator('[data-finding-kind="assumption_unstated"]')).toContainText('Reviewer inference · no located evidence')
   const passageRequests: string[] = []
@@ -173,7 +175,7 @@ test('end to end: finished search, disclosure, held progress, frozen anchor and 
   expect(passageRequests).toEqual([])
   await button(finding, 'Accept').click()
   await expect(page.locator('.toast').filter({ hasText: 'Recorded. No change was made to the candidate.' })).toBeVisible()
-  await expect(finding.locator('.review-current')).toHaveText('Accepted')
+  await expect(finding.locator('.review-current')).toHaveText('Accepted. Recorded. No change was made to the candidate.')
   await expect(pane(page).getByRole('button', { name: 'Open in editor with this text' })).toHaveCount(0)
   const whole = pane(page).locator('[data-finding-kind="assumption_unstated"]')
   await button(whole, 'Dismiss').click(); await expect(button(whole, 'Save dismissal')).toBeDisabled()
@@ -230,16 +232,16 @@ test('stale version and reviewed-version owner status; earlier version remains r
     elements: v.elements.map(e => ({ text: e.text, kind: e.kind })), critical_assumption: v.critical_assumption,
     nearest_simple_explanation: v.nearest_simple_explanation, validation_plan: v.validation_plan, expected_version: 1 }
   expect((await page.request.post(candidateBase(f) + '/versions', { headers: await headers(page), data: body })).ok()).toBe(true)
-  await expect(pane(page)).toContainText('The candidate changed after this review:')
+  await expect(pane(page)).toContainText('Written against an earlier candidate:')
   await expect(pane(page)).toContainText('a newer candidate version exists · Version 2')
   expect((await page.request.post(`${candidateBase(f)}/versions/${f.vid}/owner-decision`, { headers: await headers(page), data: { status: 'undecided', reason: 'SYNTHETIC reviewed version decision.' } })).ok()).toBe(true)
   await expect(pane(page)).toContainText('the owner status changed')
   expect((await latest(page, f)).snapshot).toEqual(before.snapshot)
-  await expect(pane(page).locator('.review-finding')).toHaveCount(2)
+  await expect(pane(page).locator('.finding')).toHaveCount(2)
   await close(page)
   await candidates(page).getByText('Earlier versions (1)', { exact: true }).click()
   await candidates(page).locator('details').filter({ has: page.getByText('Earlier versions (1)', { exact: true }) }).getByRole('button', { name: /^Reviewed by another model:/ }).click()
-  await expect(sheet(page)).toBeVisible()
+  await expect(pane(page)).toBeVisible()
   await expect(pane(page).getByRole('button', { name: 'Review with another model' })).toHaveCount(0)
   await expect(pane(page).getByRole('button', { name: 'Accept' }).first()).toBeEnabled()
   await close(page)
@@ -263,9 +265,11 @@ test('held review disables a second prepared request; Turkish title and active-r
   await expect(button(form(page), 'Start review')).toBeDisabled()
   await close(page)
   await chooseLanguage(page, 'tr')
+  await expect(button(candidates(page), 'Başka bir modelle incele')).toBeDisabled()
+  await expect(candidates(page).locator('.candidate-review-reason')).toHaveText('Bu araştırmada başka bir işlem sürüyor.')
   await candidates(page).getByRole('button', { name: /^Başka bir model tarafından incelendi:/ }).click()
-  await expect(page.getByRole('dialog', { name: 'Başka bir modelin incelemesi' })).toBeVisible()
-  await expect(page.getByRole('dialog', { name: 'Başka bir modelin incelemesi' })).toContainText('Bu araştırmada başka bir işlem sürüyor.')
+  await expect(pane(page)).toBeVisible()
+  await expect(page.locator('#split-panel-title')).toHaveText('Başka bir modelle incele')
 })
 
 test('request and detail: keyboard, axe, reduced motion, themes and narrow screenshots', async ({ page }) => {
@@ -283,11 +287,12 @@ test('request and detail: keyboard, axe, reduced motion, themes and narrow scree
       if (dark !== (theme === 'dark')) await switchTheme(page, dark ? 'Switch to light mode' : 'Switch to dark mode')
       if (screen === 'request') { await openRequest(page); await preview(page) }
       else await candidates(page).getByRole('button', { name: /^Reviewed by another model:/ }).click()
-      await expect(sheet(page)).toBeVisible()
+      const root = screen === 'request' ? sheet(page) : pane(page)
+      await expect(root).toBeVisible()
       const axe = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze()
       expect(axe.violations).toEqual([])
-      if (width === 390) expect(await sheet(page).evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
-      const chrome = await pane(page).evaluate(el => { const clone = el.cloneNode(true) as HTMLElement; clone.querySelectorAll('[data-stored-text],textarea,input').forEach(n => n.remove()); return clone.textContent ?? '' })
+      if (width === 390) expect(await root.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+      const chrome = await root.evaluate(el => { const clone = el.cloneNode(true) as HTMLElement; clone.querySelectorAll('[data-stored-text],textarea,input').forEach(n => n.remove()); return clone.textContent ?? '' })
       expect(chrome).not.toMatch(/\b(verified|approved|validated|novel|novelty|score)\b|no prior work/i)
       await page.screenshot({ path: path.join(OUT, `candidate-review-${screen}-${theme}-${width}.png`), fullPage: true, animations: 'disabled' })
       await close(page)

@@ -7,7 +7,7 @@ import path from 'node:path'
 import type { Connections, ReportDetail, ResearchView, ReviewCard, ReviewDetail, ReviewPreview, ReviewRequest } from '../src/api'
 import { nextPort } from './ports'
 import { chooseLanguage } from './language'
-import { openPanel, reportPanel, showAnswer } from './panels'
+import { backPanel, openPanel, reportPanel, showAnswer } from './panels'
 
 // SYNTHETIC records and the scripted model only. No live providers, models or library; own process.
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -51,10 +51,11 @@ test.beforeEach(async ({ page }) => {
 
 // An answer's report and an evidence report are side panels (their toolbar is in the panel's head; UI parity S12, S15a).
 const sheet = (page: Page) => reportPanel(page)
-// Both reports name their review toggle "Review with another model" (mockup P2, `erepPanel`), with the count when there are reviews.
+// Both reports' shield, "Review with another model" (mockup P2, `erepPanel`), opens the request dialog (UI parity S15b, P32);
+// a review opens in the review panel stacked on the report (P33).
 const reviewToggle = (page: Page) => sheet(page).locator('button.report-review')
-const pane = (page: Page) => sheet(page).locator('.review-pane')
-const requestForm = (page: Page) => pane(page).locator('.review-request')
+const pane = (page: Page) => page.locator('[data-split-panel] .review-pane')
+const requestForm = (page: Page) => page.locator('.review-dialog .review-request')
 const finding = (page: Page, kind = 'overstated') => pane(page).locator(`[data-finding-kind="${kind}"]`).first()
 const button = (root: Locator, name: string) => root.getByRole('button', { name, exact: true })
 const view = async (page: Page, rid: string): Promise<ResearchView> => (await page.request.get(`${server.url}/api/researches/${rid}`)).json()
@@ -111,13 +112,14 @@ async function reportFixture(page: Page, held = false): Promise<Target> {
   await dismissToasts(page)
   return { rid, kind: 'report', id, readReport }
 }
+// The report's "Reviewed by another model" line opens the review panel on top of the report.
 async function openReviews(page: Page) {
-  const toggle = reviewToggle(page)
-  if (await toggle.getAttribute('aria-pressed') !== 'true') await toggle.click()
-  await expect(pane(page).getByRole('heading', { name: 'Review by another model', exact: true })).toBeFocused()
+  await sheet(page).locator('.review-target-line').first().click()
+  await expect(pane(page)).toBeVisible()
+  await expect(page.locator('#split-panel-title')).toHaveText('Review with another model')
 }
 async function newRequest(page: Page) {
-  await button(pane(page), 'Review with another model').click()
+  await reviewToggle(page).click()
   await expect(requestForm(page)).toBeVisible()
   await expect(requestForm(page).getByRole('button', { name: 'Review model' })).toBeVisible()
 }
@@ -129,7 +131,8 @@ async function preview(page: Page) {
 async function start(page: Page, held = false) {
   if (held) server.hold()
   await button(requestForm(page), 'Start review').click()
-  await expect(pane(page).getByRole('heading', { name: 'Additional model review' })).toBeVisible()
+  await expect(requestForm(page)).toHaveCount(0)
+  await expect(pane(page).locator('.review-detail')).toBeVisible()
 }
 async function completed(page: Page, f: Target, id?: string) {
   await expect.poll(async () => (id ? await readReview(page, f, id) : await latest(page, f)).state, { timeout: 60_000 }).toMatch(/^(completed|partial)$/)
@@ -138,7 +141,7 @@ async function completed(page: Page, f: Target, id?: string) {
 }
 async function reviewFixture(page: Page) {
   const f = await reportFixture(page)
-  await openReviews(page); await newRequest(page); await preview(page); await start(page)
+  await newRequest(page); await preview(page); await start(page)
   return { f, review: await completed(page, f) }
 }
 async function apiRequest(page: Page, f: Target): Promise<ReviewRequest> {
@@ -202,18 +205,22 @@ async function paneChrome(page: Page) {
 
 test('1 report review: disclosure, held progress, timeline and exact located evidence', async ({ page }) => {
   const f = await reportFixture(page, true)
-  await openReviews(page); await newRequest(page)
+  await newRequest(page)
   await expect(button(requestForm(page), 'Start review')).toBeDisabled()
-  await expect(requestForm(page).getByText('Preview the review first.')).toBeVisible()
-  await requestForm(page).getByRole('radio', { name: /^Assumptions and consistency:/ }).check()
+  await expect(requestForm(page).getByText('Preview what will be sent first.')).toBeVisible()
+  await requestForm(page).getByRole('radio', { name: /^Assumptions and consistency/ }).check()
   await requestForm(page).getByLabel('Note (optional)').fill('SYNTHETIC owner instruction.')
   await preview(page)
-  for (const label of ['Claims', 'Passages', 'Characters', 'Cost is not estimated.']) await expect(requestForm(page).getByText(label, { exact: true })).toBeVisible()
+  // Exactly what will be sent (mockup `.sendbox`): the counts, the token estimate, the groups, no cost estimate.
+  await expect(requestForm(page).locator('.sendbox')).toContainText(/Claims \d+ · Passages \d+ · Characters [\d,]+/)
+  await expect(requestForm(page).locator('.sendbox')).toContainText(/Estimated input tokens: [\d,]+ \(estimated, four characters per token\)/)
+  await expect(requestForm(page).locator('.sendbox')).toContainText(/Sent in \d+ groups?\. Cost is not estimated\. The model reads the stored review copy\./)
   await expect(requestForm(page).locator('.review-connection')).toHaveText('Codex')
   await expect(requestForm(page).getByText(/at most \d+ model calls?/)).toBeVisible()
   await expect(requestForm(page).getByText(/logical steps?/)).toBeVisible()
   await requestForm(page).getByLabel('Note (optional)').fill('SYNTHETIC changed instruction.')
   await expect(button(requestForm(page), 'Start review')).toBeDisabled()
+  await expect(requestForm(page).getByText('Settings changed; preview again.')).toBeVisible()
   await preview(page); await start(page, true)
   await expect(pane(page).getByRole('status').filter({ hasText: /Reviewing group 1 of/ })).toBeVisible()
   const running = await latest(page, f)
@@ -245,27 +252,30 @@ test('2 decisions: dismissal, history, stale ordinal and identical Start/decisio
   await card.getByLabel('Reason for dismissal').fill('SYNTHETIC reason retained.')
   await button(card, 'Save dismissal').click()
   await expect(card.getByText('Dismissed: SYNTHETIC reason retained.', { exact: true })).toBeVisible()
-  await button(card, 'Defer').click(); await expect(card.locator('.review-current')).toHaveText('Deferred')
+  // A decided finding shows the decision and Change (mockup `reviewPanel`); its buttons come back only on Change.
+  await expect(button(card, 'Defer')).toHaveCount(0)
+  await button(card, 'Change').click(); await button(card, 'Defer').click(); await expect(card.locator('.review-current')).toHaveText('Deferred.')
   await card.locator('summary').click()
   await expect(card.locator('.review-history li')).toHaveCount(2)
   await expect(card.locator('.review-history li').nth(0)).toContainText('Dismissed')
   await expect(card.locator('.review-history li').nth(1)).toContainText('Deferred')
   const whole = review.findings.find(r => r.finding.kind === 'assumption_unstated')!
-  await expect(finding(page, 'assumption_unstated').locator('.review-current')).toHaveText('Open')
+  await expect(finding(page, 'assumption_unstated').locator('.review-current')).toHaveCount(0)
+  await expect(button(finding(page, 'assumption_unstated'), 'Accept')).toBeVisible()
   const apiDecision = await page.request.post(`${base(f)}/${review.id}/findings/${whole.id}/decisions`, {
     headers: { ...await headers(page), 'Idempotency-Key': crypto.randomUUID() }, data: { decision: 'accepted', reason: null, expected_ordinal: 0 },
   })
   expect(apiDecision.ok()).toBe(true)
   await button(finding(page, 'assumption_unstated'), 'Defer').click()
   await expect(page.getByText("The finding's decision changed. Read it again before deciding.").first()).toBeVisible()
-  await expect(finding(page, 'assumption_unstated').locator('.review-current')).toHaveText('Accepted')
+  await expect(finding(page, 'assumption_unstated').locator('.review-current')).toHaveText('Accepted. Recorded. No text was changed.')
   const decisionReplay = await loseFirstResponse(page, `${base(f)}/${review.id}/findings/${row.id}/decisions`)
-  await button(card, 'Accept').click(); await retry(page, card, decisionReplay)
+  await button(card, 'Change').click(); await button(card, 'Accept').click(); await retry(page, card, decisionReplay)
   await expect.poll(async () => (await readReview(page, f, review.id)).findings.find(r => r.id === row.id)!.decision_history.length).toBe(3)
   await decisionReplay.finish()
-  await reviewToggle(page).click()
+  await backPanel(page)
   await expect(sheet(page).locator('.review-target-line')).toContainText('0 open findings')
-  await openReviews(page); await newRequest(page); await preview(page)
+  await newRequest(page); await preview(page)
   const beforeReviews = (await reviews(page, f)).length
   const beforeRuns = (await view(page, f.rid)).runs.filter(r => r.kind === 'review').length
   const startReplay = await loseFirstResponse(page, base(f))
@@ -305,8 +315,8 @@ test('3 apply: checked editor save, dependency recovery and identical retry with
   await meta.locator('.evidence-report-history summary').click()
   await expect(meta.getByText('Your edit', { exact: false }).first()).toBeVisible()
   await openReviews(page)
-  await expect(pane(page).getByText('The report changed after this review:')).toBeVisible()
-  await expect(pane(page).getByText(new RegExp(`claim edited.*${row.finding.target_ref.ref!.replace('.', '\\.')}`))).toBeVisible()
+  await expect(pane(page).locator('.review-stale')).toContainText(/^Written against an earlier report: .*\. The findings are kept as they were\.$/)
+  await expect(pane(page).locator('.review-stale')).toContainText(new RegExp(`claim edited.*${row.finding.target_ref.ref!.replace('.', '\\.')}`))
   await expect(finding(page).getByText('Written against an earlier text')).toBeVisible()
   await finding(page).locator('summary').click()
   await expect(finding(page).getByText('Accepted and saved through the editor', { exact: true })).toBeVisible()
@@ -346,24 +356,25 @@ test('4 source-linked answer review records acceptance without an editor', async
   expect(answer.claims.some(c => c.evidence.length > 0)).toBe(true)
   const f: Target = { rid, kind: 'answer', id: answer.id, readReport: async () => { throw new Error('answer has no report editor') } }
   await page.getByRole('button', { name: /Open report:/ }).click()
-  await openReviews(page); await newRequest(page); await preview(page); await start(page)
+  await newRequest(page); await preview(page); await start(page)
   await completed(page, f)
   await button(finding(page), 'Accept').click()
-  await expect(page.getByText('Recorded. No change was made to the answer.')).toBeVisible()
+  await expect(page.locator('.toast').filter({ hasText: 'Recorded. No change was made to the answer.' })).toBeVisible()
+  await expect(finding(page).locator('.review-current')).toHaveText('Accepted. Recorded. No change was made to the answer.')
   await expect(button(finding(page), 'Open in editor with this text')).toHaveCount(0)
   await page.keyboard.press('Escape')
   const line = page.locator('.review-target-line').filter({ hasText: 'Reviewed by another model:' })
   await expect(line).toBeVisible()
-  await line.click(); await expect(pane(page)).toBeVisible()
+  await line.first().click(); await expect(pane(page)).toBeVisible()
 })
 
 test('5 active-run and nothing-reviewable refusals retain their codes and rows in English and Turkish', async ({ page }) => {
   test.setTimeout(240_000)
   const f = await reportFixture(page, true)
-  await openReviews(page); await newRequest(page); await preview(page); await start(page, true)
+  await newRequest(page); await preview(page); await start(page, true)
   await expect(pane(page).getByRole('status').filter({ hasText: /Reviewing group/ })).toBeVisible()
   const first = await latest(page, f)
-  await newRequest(page)
+  await backPanel(page); await newRequest(page)
   await button(requestForm(page), 'Preview').click()
   await expect(requestForm(page).getByText('Another run is active in this research.')).toBeVisible()
   await expect(button(requestForm(page), 'Start review')).toBeDisabled()
@@ -374,7 +385,6 @@ test('5 active-run and nothing-reviewable refusals retain their codes and rows i
     if (language === 'tr') await chooseLanguage(page, 'tr')
     await page.getByRole('button', { name: language === 'en' ? 'Open evidence report' : 'Kanıt raporunu aç' }).click()
     await reviewToggle(page).click()
-    await button(pane(page), language === 'en' ? 'Review with another model' : 'Başka bir modelle incele').click()
     await button(requestForm(page), language === 'en' ? 'Preview' : 'Önizleme').click()
     await expect(button(requestForm(page), language === 'en' ? 'Start review' : 'İncelemeyi başlat')).toBeEnabled()
     const frozen = await view(page, f.rid)
@@ -416,16 +426,15 @@ async function look(page: Page, screen: 'request' | 'detail' | 'editor', root: L
     await dismissToasts(page)
     await root.evaluate(el => el.scrollIntoView({ block: 'start', behavior: 'instant' }))
     if (screen === 'detail') {
-      const heading = await root.getByRole('heading', { name: 'Additional model review', exact: true }).boundingBox()
-      const state = await root.locator('header > [role="status"]').boundingBox()
-      const coverage = await root.getByText(/^Not reviewed \(/).boundingBox()
-      expect(heading).not.toBeNull(); expect(state).not.toBeNull(); expect(coverage).not.toBeNull()
-      expect(heading!.width, `detail heading width at ${width}`).toBeGreaterThan(200)
-      expect(heading!.y + heading!.height, 'heading is above the state line').toBeLessThanOrEqual(state!.y)
-      expect(state!.y + state!.height, 'state is above Not reviewed').toBeLessThanOrEqual(coverage!.y)
-      const group = root.getByRole('heading', { name: 'Claims sent in group 1 of 1', exact: true }).locator('..')
+      // One meta line (target · focus · model · time · state), then the findings (mockup `reviewPanel`).
+      const meta = await root.locator('.dmeta').boundingBox()
+      const first = await root.locator('[data-finding-kind]').first().boundingBox()
+      expect(meta).not.toBeNull(); expect(first).not.toBeNull()
+      expect(meta!.y + meta!.height, 'meta line is above the findings').toBeLessThanOrEqual(first!.y)
+      await expect(root.locator('.dmeta [role="status"]')).toBeVisible()
+      const group = root.locator('[data-finding-kind]').filter({ hasText: 'Claims sent in group 1 of 1' }).first()
       await expect(group.locator('.review-group-refs')).toContainText('III.1 · III. Background and Taxonomy')
-      await expect(group.locator('.review-group-refs')).toHaveCSS('font-size', '13px')
+      await expect(group.locator('.review-group-refs')).toHaveCSS('font-size', '12px')
       await expect(group.locator('.review-group-refs')).toHaveCSS('font-weight', '400')
     }
     const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze()
@@ -442,14 +451,15 @@ test('6 request, findings and apply editor: twelve theme/viewport scans and keyb
   test.setTimeout(300_000)
   const f = await reportFixture(page)
   const toggle = reviewToggle(page)
+  // The shield opens the dialog; Escape closes it and returns focus to the shield.
   await tabTo(page, toggle); await page.keyboard.press('Space')
-  await expect(pane(page).getByRole('heading', { name: 'Review by another model', exact: true })).toBeFocused()
-  await tabTo(page, toggle, true); await page.keyboard.press('Enter')
+  await expect(requestForm(page)).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(requestForm(page)).toHaveCount(0)
   await expect(toggle).toBeFocused()
-  await page.keyboard.press('Space')
-  const entry = button(pane(page), 'Review with another model')
-  await tabTo(page, entry); await page.keyboard.press('Enter')
-  const radio = requestForm(page).getByRole('radio', { name: /^Source support:/ })
+  await page.keyboard.press('Enter')
+  await expect(requestForm(page)).toBeVisible()
+  const radio = requestForm(page).getByRole('radio', { name: /^Source support/ })
   await tabTo(page, radio); await page.keyboard.press('Space')
   const model = requestForm(page).getByRole('button', { name: 'Review model' })
   await expect(model).toHaveCSS('min-height', '38px')
@@ -545,42 +555,44 @@ test('8 report eligibility and missing failure reasons are visible in both langu
       await page.getByRole('button', { name: language === 'en' ? 'Open evidence report' : 'Kanıt raporunu aç' }).click()
       await check(reviewToggle(page)).toBeVisible()
     }
-    const closeSheet = async () => { await page.keyboard.press('Escape'); await check(sheet(page)).toHaveCount(0) }
+    // Escape closes the dialog first, then the panel stack.
+    const closeSheet = async () => {
+      if (await requestForm(page).count()) { await page.keyboard.press('Escape'); await check(requestForm(page)).toHaveCount(0) }
+      await page.keyboard.press('Escape'); await check(page.locator('[data-split-panel]')).toHaveCount(0)
+    }
     const toggle = () => reviewToggle(page)
-    const toggleName = language === 'en' ? 'Review with another model, 1 review' : 'Başka bir modelle incele, 1 inceleme'
     for (const [status, runStatus] of [['in_progress', 'running'], ['valid', 'running'], ['in_progress', 'failed']] as const) {
       const ineligible = { status, run: { ...report.run!, status: runStatus } }
       // The mock is installed before opening; each variant gets a fresh ReportView read.
       eligibility = ineligible
       await openSheet()
       await check(sheet(page).locator('.evidence-report-check').getByText(reason, { exact: true })).toBeVisible()
-      await check(toggle()).toHaveAccessibleName(toggleName)
-      await check(toggle().locator('.ib-count')).toHaveText('1')
-      await toggle().click()
-      await check(button(pane(page), entryName)).toBeDisabled()
-      await check(pane(page).getByText(reason, { exact: true })).toBeVisible()
+      await check(toggle()).toHaveAccessibleName(entryName)
+      // The failed review's panel names the failure even when the run did not record a reason.
+      await sheet(page).locator('.review-target-line').first().click()
       await check(pane(page).locator('.review-detail [role="alert"]')).toContainText(language === 'en' ? 'The run failed.' : 'İşlem başarısız oldu.')
+      // Back, in either language: the first button of the panel head.
+      await page.locator('[data-split-panel] .split-panel-head').getByRole('button').first().click()
+      // The dialog opens, but Preview stays off and says why.
+      await toggle().click()
+      await check(button(requestForm(page), previewName)).toBeDisabled()
+      await check(requestForm(page).getByText(reason, { exact: true })).toBeVisible()
       await closeSheet()
 
-      // A disabled entry cannot open a form. Open while eligible, then change eligibility
-      // via a real research event to check the already-open form's Preview guard.
+      // Open while eligible, then change eligibility via a real research event to check the already-open form's Preview guard.
       eligibility = { status: 'valid', run: report.run }
       await openSheet()
       await toggle().click()
-      await button(pane(page), entryName).click()
       await check(button(requestForm(page), previewName)).toBeEnabled()
       eligibility = ineligible
       await refreshByTitleEvent(page, f, `SYNTHETIC: ${language} eligibility ${status} ${runStatus}`)
       await check(button(requestForm(page), previewName)).toBeDisabled()
       await check(requestForm(page).getByText(reason, { exact: true })).toBeVisible()
-      await check(button(pane(page), entryName)).toBeDisabled()
       await closeSheet()
     }
     eligibility = { status: 'draft', run: report.run }
     await openSheet()
     await toggle().click()
-    await check(button(pane(page), entryName)).toBeEnabled()
-    await button(pane(page), entryName).click()
     await check(button(requestForm(page), previewName)).toBeEnabled()
     await closeSheet()
   }

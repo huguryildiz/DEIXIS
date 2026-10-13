@@ -24,7 +24,8 @@ import { ClaimHistory } from './ClaimHistory'
 import { EditCheckPanel } from './EditCheckPanel'
 import { checkCounts } from './editLabels'
 import { REPORT_HEADINGS as HEADINGS } from '../review/reportHeadings'
-import { ReviewPane } from '../review/ReviewPane'
+import { ReviewSurface } from '../review/ReviewSurface'
+import { useReviewSurface } from '../review/useReviewSurface'
 import { ReviewSummary } from '../review/ReviewSummary'
 import { useReviewList } from '../review/useReviewList'
 import { ApplyEditor } from '../review/ApplyEditor'
@@ -106,19 +107,9 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
   const [report, setReport] = useState<ReportDetail | null>(null)
   const [error, setError] = useState('')
   const [evidenceView, setEvidenceView] = useState(false)
-  const [reviewMode, setReviewMode] = useState(false)
-  const [requestReview, setRequestReview] = useState(false)
   const reviewList = useReviewList(researchId, 'report', reportId, view.last_event_id)
-  const reviewsButton = useRef<HTMLButtonElement>(null), scrollRoot = useRef<HTMLDivElement>(null), documentScroll = useRef(0)
+  const reviews = useReviewSurface()
   const [applying, setApplying] = useState<{ reviewId: string; finding: ReviewFindingRow; claim: ReportClaim } | null>(null)
-  const mode = (on: boolean, request = false) => {
-    if (on && !reviewMode) documentScroll.current = scrollRoot.current?.scrollTop ?? 0
-    setRequestReview(request); setReviewMode(on)
-    requestAnimationFrame(() => {
-      if (scrollRoot.current) scrollRoot.current.scrollTop = on ? 0 : documentScroll.current
-      if (!on) reviewsButton.current?.focus({ preventScroll: true })
-    })
-  }
   const [editing, setEditing] = useState<string | null>(null)
   const [editError, setEditError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -164,11 +155,12 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
     const finding = review.findings.find(f => f.id === findingId)
     const claim = next.sections.flatMap(s => s.claims).find(c => c.id === finding?.finding.target.record_id)
     if (!finding?.dependency_fingerprint || !claim) throw new Error(t('The claim is no longer available in this report.'))
-    applyMutation(next); setEvidenceView(true); setEditing(claim.id); setApplying({ reviewId, finding, claim }); mode(false)
+    applyMutation(next); setEvidenceView(true); setEditing(claim.id); setApplying({ reviewId, finding, claim }); reviews.closePanel()
     requestAnimationFrame(() => {
       documentRoot.current?.querySelector(`[data-claim-key="${CSS.escape(claim.claim_key)}"]`)?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })
       rememberClaim(claim.id)
-      documentRoot.current?.querySelector<HTMLTextAreaElement>('.evidence-report-edit textarea')?.focus({ preventScroll: true })
+      // A frame later: the closed review panel hands focus back to the report first.
+      requestAnimationFrame(() => documentRoot.current?.querySelector<HTMLTextAreaElement>('.evidence-report-edit textarea')?.focus({ preventScroll: true }))
     })
   }
   const markdown = async (action: 'copy' | 'download') => {
@@ -332,14 +324,14 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
   const writeButton = report?.table_id ? <button type="button" className="ghost report-write" disabled={writing || busy || Boolean(gate.reason)} title={gate.reason || undefined} onClick={() => void writeAgain()}><RotateCw size={14} aria-hidden />{t('Write a new version')}</button> : null
   const running = !report || !finished.has(report.run?.status ?? '')
   const panelTitle = !report || report.status === 'in_progress' ? t('Evidence report · being written') : report.status === 'valid' ? t('Evidence report · V{n}', { n: report.report_version ?? '' }) : t('Evidence report · draft')
-  const reviewLabel = reviewList.reviews.length ? t(reviewList.reviews.length === 1 ? 'Review with another model, {n} review' : 'Review with another model, {n} reviews', { n: reviewList.reviews.length }) : t('Review with another model')
+  const reviewLabel = t('Review with another model')
   const exportTitle = exportBlocked ? t('A report can be exported once its run has finished.') : undefined
   const fmt = (format: string, detail: string) => <><FileTypeIcon format={format} /><b>{format}</b><span>{detail}</span></>
   const included = table ? table.rows.filter(row => !row.failed).length : 0
   const actions = report ? <div className="report-toolbar-actions">
     <button type="button" className="ib report-evidence-view" aria-label={t('Evidence view')} title={t('Evidence view: show the cited cells')} aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Table2 size={15} aria-hidden /></button>
-    <button ref={reviewsButton} type="button" className="ib report-review" aria-label={reviewLabel} title={reviewLabel} aria-pressed={reviewMode} onClick={() => mode(!reviewMode)}>
-      <ShieldCheck size={15} aria-hidden />{reviewList.reviews.length > 0 && <span className="ib-count" aria-hidden>{reviewList.reviews.length}</span>}
+    <button type="button" className="ib report-review" aria-label={reviewLabel} title={reviewLabel} aria-haspopup="dialog" onClick={e => reviews.openDialog(e.currentTarget)}>
+      <ShieldCheck size={15} aria-hidden />
     </button>
     <DropdownMenu>
       <DropdownMenuTrigger render={<button type="button" className="ib report-download" aria-label={t('Download report')} title={exportTitle ?? t('Download')} disabled={exportBlocked || exportBusy} />}><Download size={15} aria-hidden /></DropdownMenuTrigger>
@@ -352,11 +344,11 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
       </DropdownMenuContent>
     </DropdownMenu>
   </div> : undefined
-  return <StackPanel name="ereport" open onClose={onClose} title={panelTitle} icon={AlignLeft} className={`report-panel report-sheet erep-panel${dark ? ' dark' : ''}`} actions={actions}>
+  const runActive = view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))
+  return <><StackPanel name="ereport" open onClose={onClose} title={panelTitle} icon={AlignLeft} className={`report-panel report-sheet erep-panel${dark ? ' dark' : ''}`} actions={actions}>
     <p className="sr-only">{t('Evidence report')}</p>
-    <div className="report-scroll" ref={scrollRoot}>
-    {reviewMode && <ReviewPane researchId={researchId} targetKind="report" targetId={reportId} version={report?.report_version ?? 0} eventCursor={view.last_event_id} runActive={view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))} unavailableReason={reviewUnavailable} sources={view.sources} sectionLabel={labels} showRequest={requestReview} open={(id, anchor) => onOpenCitation(id, anchor, true)} changed={async () => { await reviewList.refresh(); await onChanged() }} apply={openApply} />}
-    <article ref={documentRoot} hidden={reviewMode} className="report-document evidence-report-document">
+    <div className="report-scroll">
+    <article ref={documentRoot} className="report-document evidence-report-document">
       {error && <Notice tone="error">{error}</Notice>}
       {!report ? <p>{t('Loading report…')}</p> : <>
         <header className="report-document-head"><h1>{title}</h1>
@@ -431,7 +423,7 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
         {/* What was and was not checked (mockup `.check`): anchors and the automatic claim review, reviews by another model, the check of hand edits. */}
         <div className="check evidence-report-check">
         <p className="evidence-report-provenance">{anchorNote} {removedClaims > 0 && t(removedClaims === 1 ? '1 claim has no direct citation after citations were removed by hand.' : '{n} claims have no direct citations after citations were removed by hand.', { n: removedClaims })} {t('Claim check (automatic; it can return a rewritten sentence to its original wording):')} {reviewNote}</p>
-          <p className="evidence-report-reviews"><b>{t('Reviews.')}</b> {reviewList.reviews.length ? <ReviewSummary reviews={reviewList.reviews} open={() => mode(true)} /> : t('None requested.')}{reviewUnavailable && <span id={`report-review-unavailable-${reportId}`}> {reviewUnavailable}</span>}</p>
+          <p className="evidence-report-reviews"><b>{t('Reviews.')}</b> {reviewList.reviews.length ? <ReviewSummary reviews={reviewList.reviews} open={() => reviews.openPanel()} /> : t('None requested.')}{reviewUnavailable && <span id={`report-review-unavailable-${reportId}`}> {reviewUnavailable}</span>}</p>
           <EditCheckPanel report={report} finished={finished.has(report.run?.status ?? '')} busy={busy} checking={checking} labels={labels} onCheck={() => void check()} />
         </div>
         {review?.status === 'reviewed' && review.findings.length > 0 && <details className="evidence-report-history"><summary><ChevronRight size={14} aria-hidden className="closed" /><ChevronDown size={14} aria-hidden className="opened" />{t('Review findings ({k})', { k: review.findings.length })}</summary><p>{t('Model findings')}</p><ul>{review.findings.map((finding, index) => <li key={index}>{finding.section_id ? labels(finding.section_id) : t('Report')} · {t(reviewCodes[finding.code] ?? 'Other')} · {finding.text}</li>)}</ul></details>}
@@ -440,6 +432,8 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
     {report && citing && <EvidenceCitePanel key={citing.link_id} researchId={researchId} report={report} link={citing} eventCursor={view.last_event_id} onClose={() => setCiting(null)}
       onOpenPassage={() => cited(citing)} onOpenCell={report.table_id ? cell => onOpenCell(report.table_id!, cell) : undefined} />}
   </StackPanel>
+  <ReviewSurface surface={reviews} researchId={researchId} targetKind="report" targetId={reportId} version={report?.report_version ?? 0} eventCursor={view.last_event_id} runActive={runActive} unavailableReason={reviewUnavailable}
+    sources={view.sources} sectionLabel={labels} dark={dark} open={(id, anchor) => onOpenCitation(id, anchor, true)} changed={async () => { await reviewList.refresh(); await onChanged() }} apply={openApply} /></>
 }
 
 

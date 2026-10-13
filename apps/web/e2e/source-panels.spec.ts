@@ -182,13 +182,13 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await expect(rows.locator('span:not([aria-hidden])').filter({ hasText: /\w/ }).last()).toHaveText('Markdown to the clipboard')
       await expect(rows.nth(1)).toHaveAttribute('href', new RegExp(`/answers/${latest.id}/export/docx\\?lang=en&style=apa$`))
       await page.keyboard.press('Escape')
-      // Review with another model shows this answer's claim reviews and the request form in the panel.
+      // Review with another model opens the request dialog over the panel (UI parity S15b, P32); Escape closes only the dialog.
       const review = report.locator('.split-panel-actions').getByRole('button', { name: 'Review with another model' })
       await review.click()
-      await expect(review).toHaveAttribute('aria-pressed', 'true')
-      await expect(report.locator('.review-pane')).toBeVisible()
-      await review.click()
-      await expect(review).toHaveAttribute('aria-pressed', 'false')
+      await expect(page.locator('.review-dialog .review-request')).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(page.locator('.review-dialog')).toHaveCount(0)
+      await expect(report).toBeVisible()
       await shot(page, 's12-report-panel')
       await page.keyboard.press('Escape')
       await expect(page.locator('[data-split-panel]')).toHaveCount(0)

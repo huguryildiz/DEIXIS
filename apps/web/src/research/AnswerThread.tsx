@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { ArrowUp, ArrowUpRight, BadgeCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { type Answer, type Claim, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
@@ -6,6 +6,8 @@ import { locatorText, pauseReasonText, verdictLabels, versionText, versionTones 
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../labels'
 import { MathText } from '../MathText'
 import { ReviewSummary } from '../review/ReviewSummary'
+import { ReviewSurface } from '../review/ReviewSurface'
+import { useReviewSurface } from '../review/useReviewSurface'
 import { useReviewList } from '../review/useReviewList'
 import { useToast } from '../Toast'
 import { ModelName } from '../ModelName'
@@ -93,19 +95,8 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   const modelText = useModelText()
   const [style, chooseStyle] = useCitationStyle()
   const toast = useToast()
-  const [reviewMode, setReviewMode] = useState(false)
-  const [requestReview, setRequestReview] = useState(false)
   const reviewList = useReviewList(researchId, 'answer', answer.id, eventCursor, answer.status === 'structurally_valid')
-  const reviewsButton = useRef<HTMLButtonElement>(null), scrollRoot = useRef<HTMLDivElement>(null), documentScroll = useRef(0)
-  const mode = (on: boolean, request = false) => {
-    if (on && !reviewMode) documentScroll.current = scrollRoot.current?.scrollTop ?? 0
-    setReviewMode(on); setRequestReview(request)
-    requestAnimationFrame(() => {
-      if (scrollRoot.current) scrollRoot.current.scrollTop = on ? 0 : documentScroll.current
-      if (!on) reviewsButton.current?.focus({ preventScroll: true })
-    })
-  }
-  const openReviews = (request = false) => { mode(true, request); onReportOpenChange(true) }
+  const reviews = useReviewSurface()
   const ctx = showCard ? thread : undefined
   const latePending = ctx && answer.late_revision_status && ['waiting_fetch', 'reading', 'answering'].includes(answer.late_revision_status.status)
     ? <p className="foot-note answer-late-pending" role="status">{t(LATE_REVISION_PENDING)}</p> : null
@@ -215,6 +206,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       {refs.size > 0 && <> <ExportLinks researchId={researchId} sources="cited" answerId={answer.id} /></>}</p>
     <AnswerFlowNote answer={answer} />
     <ReviewNote review={answer.review} />
+    <ReviewSummary reviews={reviewList.reviews} open={() => reviews.openPanel()} />
     <ChecksNote warnings={answer.validation.warnings} />
     {suggestion && <PdfSuggestions notes={suggestion.notes} sources={suggestion.sources} busy={busy} onAttachPdf={onAttachPdf} />}
   </div>
@@ -279,10 +271,10 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       <Button variant="ghost" size="icon-sm" className="answer-ib" aria-label={t('Copy answer')} title={t('Copy answer')} onClick={() => { void copyReport() }}><Copy size={16} aria-hidden /></Button>
       {ctx.downloadMenu}
     </div>
-    <ReviewSummary reviews={reviewList.reviews} open={() => openReviews()} />
+    <ReviewSummary reviews={reviewList.reviews} open={() => reviews.openPanel()} />
     <section className="follow" aria-labelledby={`next-steps-${answer.id}`}>
       <h5 id={`next-steps-${answer.id}`}>{t('Next steps')}</h5>
-      <button type="button" className="first" onClick={() => openReviews(true)}><ListChecks size={16} aria-hidden /><span>{t('Review the claims with another model')}</span>{go}</button>
+      <button type="button" className="first" aria-haspopup="dialog" onClick={e => reviews.openDialog(e.currentTarget)}><ListChecks size={16} aria-hidden /><span>{t('Review the claims with another model')}</span>{go}</button>
       {ctx.included > 0 && <button type="button" onClick={e => ctx.onPanel('table', e.currentTarget)}><Table2 size={16} aria-hidden />
         <span>{ctx.hasTable ? t('Open the evidence table') : t(ctx.included === 1 ? 'Build an evidence table of the {n} included source' : 'Build an evidence table of the {n} included sources', { n: count(ctx.included) })}</span>{go}</button>}
       {abstractOnly > 0 && <button type="button" onClick={e => ctx.onPanel('pdfs', e.currentTarget)}><Upload size={16} aria-hidden />
@@ -291,12 +283,13 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   </div>
   return <>
     {threadPart}
-    <ReportPanel open={reportOpen} onOpenChange={open => { onReportOpenChange(open); if (!open) { setReviewMode(false); setRequestReview(false) } }} dark={dark} title={title} version={version} latestVersion={latestVersion}
-      versions={versions} onVersion={id => onVersion?.(id)} researchId={researchId} answer={answer} sources={sources} style={style} onStyle={chooseStyle}
-      eventCursor={eventCursor} runActive={runActive} reviewMode={reviewMode} requestReview={requestReview} reviewCount={reviewList.reviews.length} reviewsButton={reviewsButton} scrollRoot={scrollRoot}
-      onToggleReviews={() => mode(!reviewMode)} onCopy={() => { void copyReport() }} onDownload={downloadReport} onOpenPassage={onOpen} onReviewsChanged={async () => { await reviewList.refresh() }}>
+    <ReportPanel open={reportOpen} onOpenChange={onReportOpenChange} dark={dark} title={title} version={version} latestVersion={latestVersion}
+      versions={versions} onVersion={id => onVersion?.(id)} researchId={researchId} answer={answer} style={style} onStyle={chooseStyle}
+      onReview={opener => reviews.openDialog(opener)} onCopy={() => { void copyReport() }} onDownload={downloadReport}>
       {report}
     </ReportPanel>
+    {answer.status === 'structurally_valid' && <ReviewSurface surface={reviews} researchId={researchId} targetKind="answer" targetId={answer.id} version={version} eventCursor={eventCursor} runActive={runActive}
+      sources={sources} sectionLabel={ref => ref} dark={dark} open={onOpen} changed={async () => { await reviewList.refresh() }} />}
   </>
 }
 

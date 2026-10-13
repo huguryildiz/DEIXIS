@@ -8,6 +8,10 @@ const inFlight = new Set<string>()
 const listeners = new Map<string, Set<() => void>>()
 const notify = (identity: string) => listeners.get(identity)?.forEach(listener => listener())
 export const pendingCommand = (identity: string) => unresolved.get(identity)
+// A request still waiting for its HTTP answer: the dialog that sent it stays open until it has one.
+// The one review request a target can have on its way (dialog Start review).
+export const reviewIdentity = (researchId: string, targetKind: string, targetId: string) => `${researchId}:${targetKind}:${targetId}:start`
+export const commandInFlight = (identity: string) => inFlight.has(identity)
 export const newCommand = (body: unknown, key: string = crypto.randomUUID()): WriteCommand => ({ key, body: JSON.stringify(body) })
 
 export function useWriteCommand<T>(identity: string, request: (command: WriteCommand) => Promise<T>, success: (result: T) => void | Promise<void>, refused: (error: ApiError) => void | Promise<void>) {

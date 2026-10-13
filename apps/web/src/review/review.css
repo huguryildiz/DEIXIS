@@ -1,58 +1,69 @@
-.review-pane { padding: 28px clamp(18px, 3vw, 42px); color: var(--ink); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
-.review-pane header { display: block; height: auto; padding: 0; }
-.review-pane h2 { font-family: var(--font-sans); font-size: 18px; font-weight: 600; }
-.review-pane h3 { font-family: var(--font-sans); font-size: 17px; font-weight: 600; margin: 16px 0 8px; }
-.review-pane h4 { font-size: 15px; font-weight: 600; margin: 12px 0 6px; }
-.review-pane p { margin: 8px 0; }
-.review-pane dt { margin-top: 0; }
-.review-muted, .review-coverage, .review-history { color: var(--muted); font-size: 13px; }
-.review-group-refs { color: var(--muted); font-size: 13px; font-weight: 400; overflow-wrap: normal; }
-.review-list { display: grid; margin: 16px 0; border-top: 1px solid var(--line); }
-.review-list-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; text-align: left; padding: 12px 6px; border-bottom: 1px solid var(--line); }
+/* Reviews by another model (UI parity S15b, mockup `reviewDlg`, `reviewPanel`, `.finding`, `.sendbox`). The shared
+   parts (`.pad.detail`, notices, buttons, fields, quotes) come from kit.css under `.mk`. */
+.review-target-line, .review-entry { display: block; margin: 8px 0; color: var(--accent); font-size: 13px; font-weight: 500; text-align: left; }
+.review-target-line:hover, .review-entry:hover { text-decoration: underline; text-underline-offset: 2px; }
+.review-entry:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+.review-target-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The request dialog: the mockup's `.dlg-b` rows. */
+.review-dialog .review-request { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.review-dialog .dialog-body { flex: 1; min-height: 0; }
+.review-dialog .opts { margin-top: 4px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.review-dialog .review-preview-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.review-dialog .review-lock { color: var(--ink-2); }
+.review-dialog fieldset:disabled { opacity: .7; }
+.mk .sendbox { display: grid; gap: 3px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--sidebar-surface); color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+.mk .sendbox h3 { color: var(--ink-2); font-size: 12.5px; font-weight: 600; outline: 0; }
+.mk .sendbox h3:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mk .sendbox b { font-weight: 600; margin-top: 4px; }
+.mk .review-connection { display: flex; align-items: center; gap: 6px; }
+.mk .review-coverage { display: grid; gap: 3px; margin: 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+.review-model .model-role { flex-wrap: wrap; }
+.review-model .model-picker-trigger, .review-model [data-slot="select-trigger"] { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; max-width: 100%; border: 1px solid var(--strong-line); border-radius: 7px; background: var(--paper); color: var(--ink); padding: 0 12px; font-size: 12px; box-shadow: none; }
+.review-model .model-role-name { display: none; }
+/* The model palette and the effort list open over the dialog. */
+body:has(.review-dialog) .model-palette-positioner { z-index: 70; }
+body:has(.review-dialog) .model-palette-backdrop { z-index: 69; }
+body:has(.review-dialog) div:has(> [data-slot="select-content"]) { z-index: 70; }
+
+/* The review panel. */
+.review-pane { overflow-wrap: anywhere; }
+.review-pane .review-state { color: var(--ink-2); }
+.review-list { display: grid; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.review-list-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; padding: 9px 12px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 12.5px; text-align: left; }
+.review-list-row:first-child { border-top: 0; }
+.review-list-row b { color: var(--ink); font-weight: 500; }
+.review-list-row time { color: var(--muted); }
 .review-list-row:hover { background: var(--hover-surface); }
 .review-list-row[aria-pressed="true"] { background: var(--selected-surface); }
-.review-list-row time { font-size: 12px; color: var(--muted); }
-.review-list-row[aria-pressed="true"] time { color: var(--ink); }
-.review-target-line, .review-entry, .review-source-link { display: block; color: var(--accent); font-size: 13px; text-align: left; margin: 8px 0; }
-.review-target-line:hover, .review-entry:hover, .review-source-link:hover { text-decoration: underline; }
-.review-entry:disabled { color: var(--muted); cursor: default; text-decoration: none; }
-.report-toolbar .research-tab-count { color: var(--ink); }
-.review-request, .review-detail { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 12px; }
-.review-request fieldset { margin: 14px 0; min-width: 0; }
-.review-request legend { font-weight: 550; margin-bottom: 6px; }
-.review-request label { display: flex; align-items: baseline; gap: 8px; margin: 8px 0; }
-.review-request input[type="radio"] { flex-shrink: 0; accent-color: var(--accent); }
-.review-request textarea, .review-dismiss textarea { width: 100%; min-height: 86px; border: 1px solid var(--strong-line); border-radius: 6px; background: var(--field-surface); padding: 10px; color: var(--ink); }
-.review-request fieldset:disabled { opacity: .7; }
-.review-model .model-role { flex-wrap: wrap; }
-.review-model .model-picker-trigger, .review-model [data-slot="select-trigger"] { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; max-width: 100%; border: 1px solid var(--strong-line); border-radius: 7px; background: var(--field-surface); color: var(--ink); padding: 0 12px; font-size: 12px; box-shadow: none; }
-.review-model .model-role-name { display: none; }
-.review-disclosure { margin: 18px 0; border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
-.review-disclosure dl { display: flex; flex-wrap: wrap; gap: 16px; }
-.review-disclosure dt { color: var(--muted); font-size: 12px; }
-.review-disclosure dd { font-size: 16px; }
-.review-connection { display: flex; align-items: center; gap: 6px; }
-.review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-.review-finding { border-top: 1px solid var(--line); padding: 14px 0 18px; }
-.review-claim, .review-evidence blockquote { font-family: var(--font-sans); font-size: 18px; line-height: 1.68; max-width: 70ch; }
-.review-evidence { margin: 16px 0; }
-.review-evidence blockquote { margin: 12px 0 6px; padding-left: 12px; border-left: 1px solid var(--line); }
-.review-evidence p { color: var(--muted); font-size: 12px; }
-.review-earlier { color: var(--warn-ink); }
-.review-explanation dt { font-size: 12px; color: var(--muted); margin-top: 12px; }
-.review-explanation dd { max-width: 76ch; }
-.review-identity { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 12px 0; font-size: 12px; }
-.review-history { padding-left: 20px; }
+.review-list-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mk .finding { display: grid; gap: 7px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; }
+.mk .finding.done { opacity: .75; }
+.mk .finding.done:focus-within { opacity: 1; }
+.mk .finding > header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.mk .finding > header h4 { color: var(--ink); font-family: var(--font-sans); font-size: 13px; font-weight: 600; line-height: 1.5; letter-spacing: 0; }
+.mk .finding > p:not(.foot-note) { color: var(--ink); font-size: 13.5px; line-height: 1.55; }
+.mk .finding .quote { margin: 0; }
+.mk .finding .rowacts { margin-top: 2px; }
+.mk .review-earlier { display: flex; align-items: center; gap: 5px; color: var(--warn-ink); }
+.mk .review-group-refs { color: var(--muted); font-size: 12px; font-weight: 400; overflow-wrap: normal; }
+.mk .review-explanation { font-size: 12.5px; }
+.mk .review-explanation:empty { display: none; }
+.mk .kv2 .kv2-row { display: contents; }
+.mk .review-decided .link { font-size: 12px; }
+.mk .review-history { display: grid; gap: 3px; padding-left: 18px; color: var(--muted); font-size: 12px; }
+.mk .review-point { display: grid; gap: 4px; }
+.mk .review-point b { color: var(--ink-2); font-size: 12.5px; font-weight: 500; }
+.mk .review-identity dd { overflow-wrap: anywhere; }
+
+/* The report's apply editor (unchanged by S15b). */
 .evidence-report-edit > .review-editor-context { display: block; width: 100%; min-width: 0; overflow-wrap: anywhere; }
 .review-editor-context h4 { font-size: 13px; color: var(--muted); margin-top: 12px; }
+.review-editor-context .review-claim { font-family: var(--font-sans); font-size: 18px; line-height: 1.68; max-width: 70ch; }
 .review-apply-editor { min-width: 0; }
 .report-document .evidence-report-claim-meta > .review-apply-editor { display: block; width: 100%; }
-.review-pane details { margin: 12px 0; }
-.review-pane summary { cursor: pointer; font-weight: 550; }
-.review-pane :is(button, input, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 @media (max-width: 760px) {
   .review-actions { flex-direction: column; align-items: stretch; }
-  .review-disclosure dl { flex-direction: column; gap: 8px; }
-  .review-identity { grid-template-columns: minmax(0, 1fr); }
-  .review-list-row { flex-direction: column; align-items: flex-start; }
+  .mk .review-identity { grid-template-columns: minmax(0, 1fr); }
 }

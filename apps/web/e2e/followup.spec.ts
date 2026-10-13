@@ -60,7 +60,8 @@ const pageErrors = new WeakMap<Page, Error[]>()
 const panel = (page: Page) => page.locator('.followup-view')
 const watchSection = (page: Page, wid = queryId) => panel(page).locator(`.followup-watch[data-watch-id="${wid}"]`)
 const button = (root: Locator, name: string) => root.getByRole('button', { name, exact: true })
-const dialog = (page: Page, schedule = false) => page.getByRole('dialog', { name: schedule ? 'Schedule follow-up' : 'Enable follow-up', exact: true })
+// The dialog's title names the follow-up it sets (mockup `schedDlg`: "Enable follow-up · Search queries of this research").
+const dialog = (page: Page, schedule = false) => page.getByRole('dialog', { name: schedule ? /^Schedule follow-up · / : /^Enable follow-up · / })
 const base = () => `${server.url}/api/researches/${rid}`
 const readView = async (page: Page): Promise<ResearchView> => (await page.request.get(base())).json()
 const watches = async (page: Page): Promise<Watch[]> => (await page.request.get(base() + '/watches')).json()
@@ -74,7 +75,7 @@ async function headers(page: Page) {
 }
 async function openPanel(page: Page) {
   await page.goto(`${server.url}/#/research/${rid}/followup`)
-  await expect(panel(page).getByRole('heading', { name: 'Follow-up', exact: true })).toBeVisible()
+  await expect(page.locator('#split-panel-title')).toHaveText('Follow-up')
   await expect(panel(page).getByText('Loading follow-up…', { exact: true })).toHaveCount(0)
 }
 async function refresh(page: Page) {
@@ -222,7 +223,7 @@ test('02 new records, notices, identity and publication/local dates stay separat
   const dated = records.find(item => item.doi === '10.9999/synthetic.followup.new')!
   const row = panel(page).locator(`[data-item-id="${dated.id}"]`)
   await expect(row).toContainText('Published Oct 3, 2026')
-  await expect(row).toContainText('First seen here')
+  await expect(row).toContainText('first seen here')
   await expect(row.getByRole('link', { name: 'Open at publisher', exact: true })).toHaveAttribute('href', dated.landing_url!)
   const native = records.find(item => !item.doi)!
   expect(native.identity_uncertain).toBe(true)
@@ -244,7 +245,7 @@ test('03 dismissal records its reason and repeat reads do not reannounce it', as
   dismissedId = dated.id
   const row = panel(page).locator(`[data-item-id="${dismissedId}"]`)
   await button(row, 'Dismiss').click(); await row.getByLabel('Reason (optional)').fill('SYNTHETIC outside my followup scope')
-  await button(row, 'Confirm').click()
+  await button(row, 'Dismiss').click()
   await expect(row).toHaveCount(0); await counts(page, originalCount - 1)
   await panel(page).getByText('Dismissed', { exact: true }).click()
   await expect(panel(page).locator(`[data-item-id="${dismissedId}"]`)).toContainText('SYNTHETIC outside my followup scope')
@@ -420,7 +421,7 @@ test('12 an earlier-scope follow-up refuses Rebind until discovery freezes a cur
   const response = await page.request.post(base() + '/scope', { headers: await headers(page), data: { question: 'SYNTHETIC revised molecule release scheduling with bisection', expected_version: research.research.version } })
   expect(response.ok()).toBe(true)
   await refresh(page)
-  await expect(watchSection(page)).toContainText('This follow-up follows an earlier question or protocol.')
+  await expect(watchSection(page)).toContainText('This follow-up still follows an earlier revision of the question. Checks are stopped until you rebind it to the current question and protocol.')
   await expect(watchSection(page)).toContainText('The question was revised.')
   await expect(button(watchSection(page), 'Check now')).toBeDisabled()
   await button(watchSection(page), 'Rebind').click()
@@ -476,16 +477,16 @@ test('14 English and Turkish panel and dialogs keep the coverage limits and copy
   // The single init script supplies a default only; avoid relying on ordering of multiple init scripts.
   await page.evaluate(() => localStorage.setItem('deixis-ui-language', 'tr'))
   await page.reload()
-  await expect(panel(page).getByRole('heading', { name: 'Takip', exact: true })).toBeVisible()
+  await expect(page.locator('#split-panel-title')).toHaveText('Takip')
   await expect(panel(page)).toContainText('DEIXIS yalnızca çalışırken kontrol yapar.')
   await expect(panel(page)).toContainText('Bir kontrol sınırlı sayıda sayfa okur.')
   await expect(panel(page).getByRole('heading', { name: /^Bu araştırma için yeni \(/ })).toBeVisible()
   await copyGuard(panel(page))
   await panel(page).locator('.followup-enable-entry').getByRole('button', { name: 'Takip et…', exact: true }).click()
-  const enableTr = page.getByRole('dialog', { name: 'Takibi aç', exact: true })
+  const enableTr = page.getByRole('dialog', { name: /^Takibi aç · / })
   await expect(enableTr).toContainText('DEIXIS yalnızca çalışırken kontrol yapar.'); await copyGuard(enableTr); await page.keyboard.press('Escape')
   await watchSection(page).getByRole('button', { name: 'Zamanlama…', exact: true }).click()
-  const scheduleTr = page.getByRole('dialog', { name: 'Takip zamanlaması', exact: true })
+  const scheduleTr = page.getByRole('dialog', { name: /^Takip zamanlaması · / })
   await copyGuard(scheduleTr); await page.keyboard.press('Escape')
 })
 
@@ -536,8 +537,9 @@ with sqlite3.connect(sys.argv[1]) as conn:
   await page.keyboard.press('Escape')
   await expect(button(panel(page).locator('.followup-enable-entry'), 'Follow…')).toBeFocused()
   await tabTo(page, button(watchSection(page), 'Check now'))
-  await tabTo(page, button(panel(page), 'Acknowledge'))
+  // The found records come before the notices of missed checks (mockup `watchPanel`).
   await tabTo(page, panel(page).locator('.followup-items').first().getByRole('button', { name: 'Dismiss', exact: true }).first())
+  await tabTo(page, button(panel(page), 'Acknowledge'))
   await button(watchSection(page), 'Schedule…').click(); await tabTo(page, button(dialog(page, true), 'Save'))
   await page.keyboard.press('Escape'); await expect(button(watchSection(page), 'Schedule…')).toBeFocused()
 })

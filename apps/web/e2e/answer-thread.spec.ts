@@ -345,9 +345,11 @@ test.describe.serial('S10: the answer in the thread', () => {
     await next.getByRole('button', { name: /^Get full text for/ }).click()
     await expect(panel(page, PANEL_TITLES.pdfs)).toBeVisible()
     await page.keyboard.press('Escape')
+    // It opens the review request dialog (UI parity S15b, P32); Escape closes it.
     await next.getByRole('button', { name: 'Review the claims with another model' }).click()
-    await expect(reportPanel(page).locator('.review-pane')).toBeVisible()
+    await expect(page.locator('.review-dialog .review-request')).toBeVisible()
     await page.keyboard.press('Escape')
+    await expect(page.locator('.review-dialog')).toHaveCount(0)
     await shot(page, 's10-answer-next-steps')
   })
 

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
 import { nextPort } from './ports'
 import { switchTheme } from './theme'
-import { backPanel, cellPanel, closePanel, openPanel, panel, reportPanel, showAnswer, sourcePanel, tableMenu } from './panels'
+import { backPanel, cellPanel, chooseTheme, closePanel, openPanel, openPlanPanel, panel, reportPanel, showAnswer, sourcePanel, tableMenu } from './panels'
 
 // A–G acceptance cases (the first web slice) in a real browser against the fixture server.
 // Records are SYNTHETIC and the model is scripted: this checks application behavior, not model quality.
@@ -383,26 +383,30 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   test('setup: a question starts search and screening through the composer', async () => {
     await startResearch(page, server, 'SYNTHETIC: How is molecule release scheduling optimized?', 'Files + academic search')
     await expect(page.getByText('Ran search & screening')).toBeVisible()
-    // Past tense once the search ran; only the uses the stored steps report as true are named.
-    await expect(page.locator('.research-seed')).toContainText('Not found in OpenAlex; used for')
-    await expect(page.locator('.research-seed')).toContainText('the similar-paper search')
-    // The page lists the PDFs the backend offers as guides, with the saved one ticked.
-    await expect(page.locator('.research-seed').getByRole('checkbox')).toHaveCount(1)
-    await expect(page.locator('.research-seed').getByRole('checkbox')).toBeChecked()
     for (const fact of ['Files + academic search', 'Standard depth']) await expect(page.locator('.research-facts')).toContainText(fact)
     // The answer the fast path starts after discovery is the latest run, so the finished discovery run is folded: open it.
     const discovery = page.locator('.chat-toggle', { hasText: 'Ran search & screening' })
     if (await discovery.getAttribute('aria-expanded') !== 'true') await discovery.click()
     for (const model of ['Codex', 'fixture-model']) await expect(page.locator('.chat-run-models').first()).toContainText(model)
     await shot(page, '00-search-completed')
+    // Once a search ran with a readable PDF, the PDFs guiding the search are chosen in the Search plan panel (S23b, §2.2).
+    // Past tense once the search ran; only the uses the stored steps report as true are named.
+    await expect(page.locator('.research-seed')).toHaveCount(0)
+    const seeds = (await openPlanPanel(page)).locator('.plan-seeds')
+    await expect(seeds).toContainText('Not found in OpenAlex; used for')
+    await expect(seeds).toContainText('the similar-paper search')
+    // The panel lists the PDFs the backend offers as guides, with the saved one ticked.
+    await expect(seeds.getByRole('checkbox')).toHaveCount(1)
+    await expect(seeds.getByRole('checkbox')).toBeChecked()
     await page.setViewportSize({ width: 390, height: 844 })
-    await expect(page.locator('.research-seed')).toBeVisible()
-    await page.locator('.research-seed').scrollIntoViewIfNeeded()
+    await expect(seeds).toBeVisible()
+    await seeds.scrollIntoViewIfNeeded()
     await shot(page, '00-seed-mobile-light')
-    await switchTheme(page, 'Switch to dark mode')
-    await page.locator('.research-seed').scrollIntoViewIfNeeded()
+    await chooseTheme(page, 'dark')
+    await seeds.scrollIntoViewIfNeeded()
     await shot(page, '00-seed-mobile-dark')
-    await switchTheme(page, 'Switch to light mode')
+    await chooseTheme(page, 'light')
+    await closePanel(page)
     await page.setViewportSize({ width: 1280, height: 900 })
   })
 

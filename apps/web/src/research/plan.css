@@ -1,0 +1,41 @@
+/* The Search plan panel (UI parity S23b, mockup `plan()`): word chips, the read-only queries, the criterion, the sources
+   and the two buttons. Fields, notices and the ghost button come from kit.css under `.mk`. */
+.plan-panel .kw{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.plan-panel .kw>small,.plan-panel .kw>em{color:var(--muted);font-size:11.5px;font-style:normal}
+.plan-panel .kw>small{flex-basis:100%}
+.plan-panel .kw span{display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 7px;border-radius:5px;background:var(--selected-surface);color:var(--ink-2);font:12px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+.plan-panel .kw button{display:grid;padding:0;border:0;background:none;color:var(--muted);cursor:pointer}
+.plan-panel .kw button:hover:not(:disabled){color:var(--ink)}
+.plan-panel .kw button:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:3px}
+.plan-panel .kw svg{width:12px;height:12px}
+.plan-panel .plan-backups{display:block}
+.plan-panel .plan-add{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}
+.plan-panel .plan-add>.lbl:first-child{flex:1;min-width:200px}
+.plan-panel .plan-add select.field{width:auto;padding:8px 10px}
+.plan-panel .field.mono{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+.plan-panel .field{color:var(--muted)}
+.plan-panel textarea.field[readonly]{background:var(--sidebar-surface)}
+.plan-panel .plan-note:empty{display:none}
+.plan-panel>.plan-note{font-size:12px}
+.plan-panel .provs{display:grid;gap:6px}
+.plan-panel .provs label{display:flex;flex-wrap:wrap;align-items:center;gap:0 8px;color:var(--ink);font-size:13px;line-height:1.5}
+.plan-panel .provs label>span{white-space:nowrap}
+.plan-panel .provs label small{flex:1 1 180px;min-width:0;color:var(--muted);font-size:smaller}
+.plan-panel .provs input{flex:none;margin:0;accent-color:var(--accent)}
+.plan-panel .plan-crossref{display:flex;align-items:flex-start;gap:6px;margin-top:6px}
+.plan-panel .plan-crossref svg{flex:none;width:13px;height:13px;margin-top:2px;color:var(--accent)}
+.plan-panel .plan-issues ul{display:grid;gap:2px;margin:0;padding-left:18px}
+.plan-panel .plan-seeds{gap:6px}
+.plan-panel .plan-seeds .research-seed-uses li span{display:block;color:var(--ink);font-size:13px;font-weight:550}
+.plan-panel .plan-seeds .research-seed-uses{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.plan-panel .plan-seeds .research-seed-pick{display:grid;gap:6px;margin:0;padding:0;border:0;min-width:0}
+.plan-panel .plan-seeds .research-seed-pick label{display:flex;align-items:flex-start;gap:8px;color:var(--ink);font-size:13px;overflow-wrap:anywhere;cursor:pointer}
+.plan-panel .plan-seeds .research-seed-pick input{flex:none;margin-top:3px;accent-color:var(--accent)}
+.plan-panel .plan-seeds .research-seed-pick-foot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.plan-panel .rowbtns{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
+.plan-panel .plan-wait{margin-right:auto;color:var(--muted);font-size:12px}
+.plan-panel .btn-teal{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:0;border-radius:7px;background:var(--accent);color:var(--paper);font-size:13px;font-weight:500;line-height:1.5;white-space:nowrap;cursor:pointer}
+.plan-panel .btn-teal:hover:not(:disabled){background:color-mix(in srgb,var(--accent),#000 12%)}
+.plan-panel .btn-teal:disabled{opacity:.45;cursor:default}
+.plan-panel .btn-teal:focus-visible,.plan-panel .ghost:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.plan-panel .btn-teal svg{flex:none;width:16px;height:16px}

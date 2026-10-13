@@ -30,9 +30,9 @@ export type PanelStack = {
 // The URL names a panel with the mockup's names; the research tabs' old segments stay as aliases (plan §2.1).
 export const PANEL_ALIASES: Record<string, string | null> = {
   sources: 'sources', queue: 'queue', pdfs: 'pdfs', waiting: 'pdfs', table: 'table', evidence: 'table', funnel: 'funnel',
-  watch: 'watch', followup: 'watch', cands: 'cands', candidates: 'cands', activity: 'activity', artifacts: null, answer: null,
+  watch: 'watch', followup: 'watch', cands: 'cands', candidates: 'cands', activity: 'activity', plan: 'plan', artifacts: null, answer: null,
 }
-export const URL_PANELS = new Set(['sources', 'queue', 'pdfs', 'funnel', 'table', 'watch', 'cands', 'activity'])
+export const URL_PANELS = new Set(['sources', 'queue', 'pdfs', 'funnel', 'table', 'watch', 'cands', 'activity', 'plan'])
 export const panelFromSegment = (segment: string | undefined) => (segment ? PANEL_ALIASES[segment] ?? null : null)
 
 const outsidePanel = (el: Element | null): HTMLElement | null =>

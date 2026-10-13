@@ -13,7 +13,7 @@ export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zot
   | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty' | 'report-panel' | 'report-changes' | 'cite-panel' | 'detail-panel'
   | 'sources-why' | 'sources-sel' | 'queue-panel' | 'pdfs-panel' | 'funnel-panel' | 'activity-panel'
   | 'table-panel' | 'cell-panel' | 'ereport-panel' | 'ecite-panel'
-  | 'cands-panel' | 'cand-panel' | 'cev-panel' | 'review-dialog' | 'review-panel' | 'watch-panel' | 'schedule-dialog' | 'followup-turn'
+  | 'cands-panel' | 'cand-panel' | 'cev-panel' | 'review-dialog' | 'review-panel' | 'watch-panel' | 'schedule-dialog' | 'followup-turn' | 'plan-panel'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -222,6 +222,8 @@ export const SURFACES: Surface[] = [
       await page.locator('.review-pane .finding').first().waitFor()
     } },
   { id: 'watch-panel', mock: "setScenario('ok'); openPanel('watch', null, false)", app: '#/research/{cand}/watch', ready: '[data-split-panel] .followup-watch' },
+  // S23b: the Search plan panel (P42) of the [parity] research, opened fresh; ready once its buttons are drawn.
+  { id: 'plan-panel', mock: "setScenario('ok'); openPanel('plan', null, false)", app: '#/research/{research}/plan', ready: '[data-split-panel] .plan-panel .rowbtns .btn-teal' },
   // S22b: a follow-up turn in the thread (R31). The mockup's own "rounds" turn (its passages do not answer, so it offers
   // "Search for new works on this"), finished at once: its timers are not started. The app's [parity] research holds one
   // SYNTHETIC follow-up the fixture's model answers `not_answered` ("[fu-not]").
@@ -973,6 +975,24 @@ export const PAIRS: Pair[] = [
   { id: 'sched.frequency', surface: 'schedule-dialog', mock: '.pal.dlg .fmts:has(input[name="wfreq"]) label', app: '.followup-dialog .fmts label', checks: ['type', 'colour'], list: 'fixed', text: true, unordered: true, states: [], status: 'active' },
   { id: 'sched.footer', surface: 'schedule-dialog', mock: '.pal.dlg .dlg-f', app: '.followup-dialog .dialog-footer', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
   { id: 'sched.buttons', surface: 'schedule-dialog', mock: '.pal.dlg .dlg-f button', app: '.followup-dialog .dialog-footer button', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, unordered: true, states: [], status: 'active' },
+  // S23b the Search plan panel (P42): the head, the lede, the words and their chips, the add field, the stored query, the
+  // criterion, the sources and the two buttons. The live parts the mockup has no place for (the stored plan's rule notice,
+  // the block labels and the block choice, the notes under the queries, Crossref's note, the PDFs guiding the search) are
+  // PLACEMENTS plan-live-parts; the rows below them are compared for x, width, type and colour, not y.
+  { id: 'plan.title', surface: 'plan-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'pen', app: 'pencil-line' }, text: true, states: [], status: 'active' },
+  { id: 'plan.lede', surface: 'plan-panel', mock: '.panel .pad > p:first-child', app: '.plan-panel > p:first-child', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'plan.words', surface: 'plan-panel', mock: '.panel .pad > .lbl:has(.kw)', app: '.plan-panel > .lbl:has(.kw)', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'plan.chip', surface: 'plan-panel', mock: '.panel .kw span', app: '.plan-panel .kw > span', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'plan.chip-remove', surface: 'plan-panel', mock: '.panel .kw button', app: '.plan-panel .kw > span > button', checks: ['icon', 'colour'],
+    icon: { mock: 'x', app: 'x' }, states: [], status: 'active' },
+  { id: 'plan.add', surface: 'plan-panel', mock: '#addword', app: '.plan-panel .plan-add input.field', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'plan.query', surface: 'plan-panel', mock: '#pq1', app: '.plan-panel textarea.field.mono', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'plan.criterion', surface: 'plan-panel', mock: '#pcrit', app: '.plan-panel textarea.field:not(.mono)', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'plan.provider', surface: 'plan-panel', mock: '.panel .provs label', app: '.plan-panel .provs label', checks: ['content', 'type', 'colour'], list: 'data', expected: () => 4, states: [], status: 'active' },
+  { id: 'plan.provider-note', surface: 'plan-panel', mock: '.panel .provs label small', app: '.plan-panel .provs label small', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'plan.buttons', surface: 'plan-panel', mock: '.panel .rowbtns button', app: '.plan-panel .rowbtns button', checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  { id: 'plan.search', surface: 'plan-panel', mock: '.panel .rowbtns .btn-teal', app: '.plan-panel .rowbtns .btn-teal', checks: ['type', 'colour', 'icon'], icon: { mock: 'search', app: 'search' }, states: [], status: 'active' },
 ]
 
 /** Pending pairs per slice, for the summary line. */

@@ -155,3 +155,21 @@ export async function openAudit(page: Page): Promise<Locator> {
   await expect(audit).toBeVisible()
   return audit
 }
+
+// The Search plan panel (UI parity S23b, P42) opens from "Edit plan" in the plan step of the current question's latest
+// search, the way a person reaches it. Unfolds that run and its plan step when they are closed; returns the panel.
+export const planPanel = (page: Page) => panel(page, 'Search plan')
+export async function openPlanPanel(page: Page): Promise<Locator> {
+  const opened = planPanel(page)
+  if (await opened.count()) { await expect(opened).toBeVisible(); return opened }
+  if (await page.locator('[data-split-panel][role="dialog"]').count()) await closePanel(page)
+  const editPlan = page.locator('.chat-step-detail').getByRole('button', { name: 'Edit plan', exact: true })
+  if (!(await editPlan.count())) {
+    const turn = page.locator('.chat-toggle', { hasText: 'Ran search & screening' }).filter({ hasNotText: 'for question revision' }).last()
+    if (await turn.getAttribute('aria-expanded') !== 'true') await turn.click()
+    await page.locator('.chat-step-line', { hasText: 'Planned the searches' }).last().click()
+  }
+  await editPlan.click()
+  await expect(opened).toBeVisible()
+  return opened
+}

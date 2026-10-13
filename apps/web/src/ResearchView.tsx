@@ -36,6 +36,7 @@ import { ReviewSurface } from './review/ReviewSurface'
 import { useReviewSurface } from './review/useReviewSurface'
 import { CitationPanel, type CitationOpen } from './research/CitationPanel'
 import { ActivityPanel } from './research/ActivityPanel'
+import { PlanPanel } from './research/PlanPanel'
 import { TableCard } from './research/ArtifactsTab'
 import { Rail } from './research/Rail'
 import { useRailWide } from './research/railData'
@@ -205,6 +206,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     window.addEventListener(RESEARCH_PANEL_EVENT, onRequest)
     return () => window.removeEventListener(RESEARCH_PANEL_EVENT, onRequest)
   }, [view, openPanel, closePanels])
+  // A research over attached files only has no search plan: its panel (opened from a URL) leaves the stack.
+  const removePanel = panels.remove
+  const searches = view ? view.scope.source_scope !== 'attached' : true
+  useEffect(() => { if (!searches) removePanel('plan') }, [searches, removePanel])
   // Leaving the Sources panel ends the audit sample's focus and the chosen rows: coming back shows the whole list.
   const sourcesOpen = panels.entries.some(entry => entry.name === 'sources')
   const [sourcesWereOpen, setSourcesWereOpen] = useState(sourcesOpen)
@@ -357,6 +362,45 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const orderedIds = keepOrder ? ids : seedCandidates.map(c => c.source_version_id).filter(sourceId => ids.includes(sourceId))
     if (await act(() => api.setSeeds(id, { source_version_ids: orderedIds }, view.research.version), t('PDFs selected for the next search.'))) setSeedPick(null)
   }
+  // The PDFs that guide the search and their choice (D3), shown in the Search plan panel (§2.2, S23b): what each stored PDF
+  // was used for, the PDFs the backend offers with the saved ones ticked, accepting a changed PDF's current text, and the notes.
+  const seedChoice = view.scope.source_scope === 'attached_and_academic' ? <>
+    {view.scope.seed_status === 'ready' || (view.scope.seed_status === 'stale' && view.scope.seeds.length)
+      ? <ul className="research-seed-uses">{view.scope.seeds.map(seed =>
+          <li key={seed.source_version_id}><span>{seed.title}</span>{seedUseText(seed.use)}</li>)}</ul>
+      : <small>{view.scope.seed_status === 'question_only'
+          ? t('This earlier research searches from the question. Choose PDFs to guide a later search.')
+          : t('Choose readable PDFs before searching scholarly providers.')}</small>}
+    {seedCandidates.length > 0 && <fieldset className="research-seed-pick" disabled={busy || active}>
+      <legend className="sr-only">{t('Choose the PDFs that guide the search')}</legend>
+      {seedCandidates.map(candidate => {
+        const checked = tickedSeeds.includes(candidate.source_version_id)
+        return <label key={candidate.source_version_id}>
+          <input type="checkbox" checked={checked} disabled={!checked && tickedSeeds.length >= MAX_SEED_PDFS}
+            onChange={e => setSeedPick(e.target.checked ? [...tickedSeeds, candidate.source_version_id] : tickedSeeds.filter(sourceId => sourceId !== candidate.source_version_id))} />
+          <span>{candidate.title}</span>
+        </label>
+      })}
+      <div className="research-seed-pick-foot">
+        <button type="button" className="ghost" disabled={busy || active || !tickedSeeds.length} onClick={() => void saveSeeds(tickedSeeds)}>{t('Use selected PDFs')}</button>
+        <small>{t('{n} of {max} chosen', { n: tickedSeeds.length, max: MAX_SEED_PDFS })}
+          {tickedSeeds.length >= MAX_SEED_PDFS && seedCandidates.length > MAX_SEED_PDFS ? ` · ${t('untick one to choose another')}` : ''}
+          {active ? ` · ${t('available when the run ends')}` : ''}</small>
+      </div>
+    </fieldset>}
+    {view.scope.seed_status === 'stale' && storedSeedIds.length > 0 &&
+      <div><button type="button" className="ghost" disabled={busy || active} onClick={() => void saveSeeds(view.scope.seeds.map(seed => seed.source_version_id), true)}>{t('Use current PDF text')}</button></div>}
+    {view.scope.seed_status === 'stale' && <Notice tone="attention">{t('A selected PDF changed or was removed. Select the current PDFs again before searching.')}</Notice>}
+    {view.scope.seed_not_selected.length > 0 &&
+      <Notice tone="info">{t('Only {max} PDFs can guide a search. Left out: {titles}.', { max: MAX_SEED_PDFS, titles: view.scope.seed_not_selected.map(item => item.title).join('; ') })}</Notice>}
+    {view.scope.seed_skipped.length > 0 &&
+      <Notice tone="attention">{t('Not used: {items}.', { items: view.scope.seed_skipped.map(item => `${seedTitle(item.source_version_id)} (${seedSkipText(item.reason)})`).join('; ') })}</Notice>}
+    {view.scope.seed_status === 'ready' && view.scope.seeds.some(seed => seed.page_count != null && seed.text_pages < seed.page_count) &&
+      <Notice tone="attention">{t('Some PDF pages have no extracted text; the search uses only the readable passages.')}</Notice>}
+    {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
+  </> : null
+  // The thread's line about them, while something waits on the person or before the first search.
+  const seedLine = view.scope.source_scope === 'attached_and_academic' && (view.scope.seed_status !== 'ready' || !view.runs.some(r => r.kind === 'discovery'))
   const startTitle = () => act(() => api.startRun(id, 'research_title', crypto.randomUUID()))
   const upload = (list: FileList | null) => list && act(async () => { for (const file of Array.from(list)) {
     const next = await api.upload(id, file)
@@ -744,6 +788,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onGiveKeyTerms={() => reviseQuestion('terms')}
         queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')} onOpenFunnel={() => openPanel('funnel')}
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
+        onEditPlan={hasAcademic ? opener => openPanel('plan', { opener }) : undefined}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
         latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} review={answerReview} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
           versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} changes={answer.status === 'structurally_valid' ? reportChanges(answer) : undefined} />{tableCards}</> : null} />
@@ -753,42 +798,21 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         <span className="report-artifact-copy"><span className="report-artifact-meta"><FileText size={13} aria-hidden />{view.reportRuns[0].status === 'valid' ? t('Evidence report · V{n}', { n: view.reportRuns[0].report_version ?? '' }) : view.reportRuns[0].status === 'draft' ? t('Evidence report · draft') : t('Evidence report · being written')}</span><strong>{heading}</strong>{view.reportRuns[0].status === 'in_progress' && <small role="status">{t(latestEvidenceReportRun?.status === 'paused' ? 'Report paused' : 'The report is being written.')}</small>}</span>
         <span className="report-artifact-open" aria-hidden="true"><ArrowUpRight size={16} /></span>
       </button>}
-      {view.scope.source_scope === 'attached_and_academic' && <div className="research-seed">
+      {/* The PDFs guiding the search are chosen in the Search plan panel (§2.2, S23b). The thread keeps one line while
+         something waits on the person: no readable PDF chosen yet, a chosen PDF that changed (accept its current text),
+         or no search run yet. */}
+      {seedLine && <div className="research-seed">
         <div><strong>{t('PDFs guiding the search')}</strong>
           {view.scope.seed_status === 'ready' || (view.scope.seed_status === 'stale' && view.scope.seeds.length)
-            ? <ul className="research-seed-uses">{view.scope.seeds.map(seed =>
-                <li key={seed.source_version_id}><span>{seed.title}</span>{seedUseText(seed.use)}</li>)}</ul>
+            ? <p>{view.scope.seeds.map(seed => seed.title).join(' · ')}</p>
             : <p>{view.scope.seed_status === 'question_only'
                 ? t('This earlier research searches from the question. Choose PDFs to guide a later search.')
                 : t('Choose readable PDFs before searching scholarly providers.')}</p>}
         </div>
-        {seedCandidates.length > 0 && <fieldset className="research-seed-pick" disabled={busy || active}>
-          <legend className="sr-only">{t('Choose the PDFs that guide the search')}</legend>
-          {seedCandidates.map(candidate => {
-            const checked = tickedSeeds.includes(candidate.source_version_id)
-            return <label key={candidate.source_version_id}>
-              <input type="checkbox" checked={checked} disabled={!checked && tickedSeeds.length >= MAX_SEED_PDFS}
-                onChange={e => setSeedPick(e.target.checked ? [...tickedSeeds, candidate.source_version_id] : tickedSeeds.filter(sourceId => sourceId !== candidate.source_version_id))} />
-              <span>{candidate.title}</span>
-            </label>
-          })}
-          <div className="research-seed-pick-foot">
-            <Button variant="outline" size="sm" disabled={busy || active || !tickedSeeds.length} onClick={() => void saveSeeds(tickedSeeds)}>{t('Use selected PDFs')}</Button>
-            <small>{t('{n} of {max} chosen', { n: tickedSeeds.length, max: MAX_SEED_PDFS })}
-              {tickedSeeds.length >= MAX_SEED_PDFS && seedCandidates.length > MAX_SEED_PDFS ? ` · ${t('untick one to choose another')}` : ''}
-              {active ? ` · ${t('available when the run ends')}` : ''}</small>
-          </div>
-        </fieldset>}
         {view.scope.seed_status === 'stale' && storedSeedIds.length > 0 &&
           <Button variant="outline" size="sm" disabled={busy || active} onClick={() => void saveSeeds(view.scope.seeds.map(seed => seed.source_version_id), true)}>{t('Use current PDF text')}</Button>}
+        <Button variant="ghost" size="sm" className="quiet-action" onClick={e => openPanel('plan', { opener: e.currentTarget })}>{t('Choose PDFs')}</Button>
         {view.scope.seed_status === 'stale' && <Notice tone="attention">{t('A selected PDF changed or was removed. Select the current PDFs again before searching.')}</Notice>}
-        {view.scope.seed_not_selected.length > 0 &&
-          <Notice tone="info">{t('Only {max} PDFs can guide a search. Left out: {titles}.', { max: MAX_SEED_PDFS, titles: view.scope.seed_not_selected.map(item => item.title).join('; ') })}</Notice>}
-        {view.scope.seed_skipped.length > 0 &&
-          <Notice tone="attention">{t('Not used: {items}.', { items: view.scope.seed_skipped.map(item => `${seedTitle(item.source_version_id)} (${seedSkipText(item.reason)})`).join('; ') })}</Notice>}
-        {view.scope.seed_status === 'ready' && view.scope.seeds.some(seed => seed.page_count != null && seed.text_pages < seed.page_count) &&
-          <Notice tone="attention">{t('Some PDF pages have no extracted text; the search uses only the readable passages.')}</Notice>}
-        {!seedCandidates.length && <Notice tone="attention">{t('Attach a PDF with readable text, or read scanned pages with OCR, to guide the search.')}</Notice>}
       </div>}
       {/* Before the first answer, the included sources without a PDF are named and the panel that gets them is one click
          away (D49); collecting, uploads and OCR live in that panel (UI parity S14, P40). */}
@@ -898,6 +922,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     </StackPanel>
     <StackPanel name="activity" title={t('Activity')} icon={Clock}>
       <ActivityPanel researchId={id} eventCursor={view.last_event_id} events={events} />
+    </StackPanel>
+    {/* The Search plan panel (P42, S23b; D12): the stored plan of the revision it names, edited and searched again. */}
+    <StackPanel name="plan" title={t('Search plan')} icon={PencilLine}>
+      <PlanPanel researchId={id} view={view} busy={busy} searchReady={seedSearchReady} answerRevision={answer ? answer.scope_revision : null}
+        seeds={seedChoice} onAnnounced={runId => announcedRuns.current.add(runId)} onChanged={async () => { await load(); onChanged() }} onClose={closePanels} />
     </StackPanel>
     <ConfirmDialog open={Boolean(removeTarget)} dark={dark} title={t('Remove PDF?')}
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}

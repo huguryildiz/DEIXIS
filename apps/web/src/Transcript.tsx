@@ -116,7 +116,7 @@ const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unk
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onControlRun, onRewrite, busy = false }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onRewrite, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
@@ -126,6 +126,8 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   // The reading step's "Get more full text" link opens the PDFs panel; the screening step's "N not read" the Search funnel.
   onOpenPdfs?: () => void
   onOpenFunnel?: () => void
+  // The current question's plan step: "Edit plan" opens the Search plan panel (S23b).
+  onEditPlan?: (opener: HTMLElement) => void
   busy?: boolean
   // The way out of a `key_terms_needed` stop: the revision form in the question bubble, on its key-terms field.
   onGiveKeyTerms?: () => void
@@ -164,7 +166,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
     {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} keepOpen={run.id === latestAnswerRun || run.id === latestDiscovery}
       modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
-      onControlRun={onControlRun} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} busy={busy}
+      onControlRun={onControlRun} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} onEditPlan={onEditPlan} busy={busy}
       queueLine={run.id === (latestDiscovery ?? lastReading) && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
@@ -175,7 +177,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onRewrite, onOpenPdfs, onOpenFunnel, busy, queueLine = null, children }: {
+function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, busy, queueLine = null, children }: {
   run: Run; view: ResearchView; now: number; latest: boolean; keepOpen: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   onGiveKeyTerms?: () => void
@@ -184,6 +186,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
   onOpenPdfs?: () => void
   onOpenFunnel?: () => void
+  onEditPlan?: (opener: HTMLElement) => void
   busy: boolean
   queueLine?: { count: number; open: () => void } | null; children: ReactNode
 }) {
@@ -798,7 +801,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       if (latestDiscovery && view.semantic?.english_question?.text) parts.push(<div key="english" className="step-row"><span>{t('English question for the semantic search')}</span><span className="step-row-text">{view.semantic.english_question.text}</span></div>)
       if (latestDiscovery && view.scope.seeds.length) parts.push(<div key="seeds" className="step-seeds"><span>{t('PDFs guiding the search')}</span>
         {view.scope.seeds.map(seed => row(seed.title, seedUseText(seed.use), seed.source_version_id))}</div>)
-      if (run.approval?.approved_by) parts.push(<div key="approved">{approvedByText(run.approval.approved_by)}</div>)
+      // "Edit plan" (mockup step detail) on the current question's latest search only: the panel shows that revision's plan.
+      const editPlan = latestDiscovery && onEditPlan ? <button type="button" className="step-link" onClick={e => onEditPlan(e.currentTarget)}>{t('Edit plan')}</button> : null
+      if (run.approval?.approved_by) parts.push(<div key="approved">{approvedByText(run.approval.approved_by)}{editPlan && <> {editPlan}</>}</div>)
+      else if (editPlan && run.approval?.approved) parts.push(<div key="edit-plan">{editPlan}</div>)
       const attempt = detail(key, state, group)
       if (attempt) parts.push(<div key="attempt">{attempt}</div>)
     }
@@ -972,8 +978,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
 }
 
 // The way on from a question whose words cannot be searched (R21): a field holding the question to rewrite, and Search
-// again, which saves the rewritten question as a new revision and searches it. Editing the plan itself waits for the
-// Search plan panel (S23b).
+// again, which saves the rewritten question as a new revision and searches it. The mockup's "Edit plan" is not offered
+// here: such a run stops before its plan is frozen, so the Search plan panel would have nothing of it to edit (S23b).
 function RewriteField({ question, keyTerms, busy, onRewrite }: {
   question: string; keyTerms: string | null; busy: boolean; onRewrite: (question: string, keyTerms: string | null) => Promise<void>
 }) {

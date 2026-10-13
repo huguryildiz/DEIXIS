@@ -172,7 +172,18 @@ export const SURFACES: Surface[] = [
   // which a report needs. The app opens the Citation panel from the third chip, the first that cites a table cell, as the
   // mockup's cob20|req does.
   { id: 'table-panel', mock: "setScenario('ok'); openPanel('table', null, false)", app: '#/research/{research}/table', ready: '[data-split-panel] .evidence-grid tbody tr' },
+  // The cell's meta line ends in its fill time, which the fixture stamps with the clock: from 10:00 to 12:59 the hour has
+  // two digits and the line wraps at 1280, moving Recheck down one line. The time is pinned to 9:05 local so the
+  // measurement does not depend on when the run happens.
   { id: 'cell-panel', mock: "setScenario('ok'); openPanel('table', null, false); openPanel('cell', 'cob20|req')", app: '#/research/{research}/table', ready: '[data-split-panel] .evidence-grid tbody tr',
+    prepare: page => page.route('**/api/researches/*/tables/*/cells/**', async route => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      const response = await route.fetch()
+      const cell = await response.json() as { current: { created_at: string } | null; revisions: Array<{ created_at: string }> }
+      const at = new Date(2026, 9, 13, 9, 5).toISOString()
+      for (const rev of [cell.current, ...cell.revisions]) if (rev) rev.created_at = at
+      return route.fulfill({ response, json: cell })
+    }),
     appAct: async page => { await page.locator('.evidence-grid [data-cell="0:0"]').click(); await page.locator('.cell-detail .dhead h1').waitFor() } },
   { id: 'ereport-panel', mock: "setScenario('ok'); erepStart(); st.erep.state = 'done'; openPanel('ereport', null, false)", app: '#/research/{report}', ready: '.research-topbar',
     appAct: async page => { await page.locator('[aria-label="Open evidence report"]').click(); await page.locator('.evidence-report-document .report-document-head h1').waitFor() } },

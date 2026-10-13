@@ -682,6 +682,13 @@ test('409 recovery is not overwritten by an older GET and keeps the draft versio
 })
 
 test('check and acknowledge each discard old reads, confirm outcomes, and reads do not make a GET loop', async ({ page }) => {
+  // The last event each research view the page read carries, from the first page load on.
+  const pageEvents = new Map<string, number>()
+  page.on('response', async res => {
+    if (res.request().method() !== 'GET' || !/\/api\/researches\/[^/]+$/.test(res.url()) || !res.ok()) return
+    const view = await res.json().catch(() => null) as ResearchView | null
+    if (view) pageEvents.set(res.url(), Math.max(pageEvents.get(res.url()) ?? -1, view.last_event_id))
+  })
   const f = await fixture(page), base = await f.read()
   await responseMarkers(page)
   let current = structuredClone(base), gets = 0, researchGets = 0
@@ -698,6 +705,13 @@ test('check and acknowledge each discard old reads, confirm outcomes, and reads 
     return route.fulfill({ json: current })
   })
   await reopen(page); await openEvidence(page)
+  // Settle before an old read is staged: the page reloads the research at most every 1.5 s, so it can learn the last
+  // event of the report run after the report opened. If delayedRead held that catch-up read, the read bumpEvent causes
+  // would be counted after `before`. So wait until the page has read the research's current last event.
+  await expect.poll(async () => {
+    const view: ResearchView = await (await page.request.get(`${server.url()}/api/researches/${f.rid}`)).json()
+    return pageEvents.get(`${server.url()}/api/researches/${f.rid}`) === view.last_event_id
+  }).toBe(true)
   await page.waitForTimeout(700)
   for (const action of ['check', 'acknowledge']) {
     const token = `old-${action}`, old = await delayedRead(page, f, structuredClone(current), token)

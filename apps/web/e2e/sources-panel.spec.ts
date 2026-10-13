@@ -56,7 +56,7 @@ type Source = {
 type View = {
   runs: Array<{ kind: string; status: string }>
   counts: { included: number; excluded: number; pending: number }
-  answers: Array<{ status: string; report_version: number | null; claims: Array<{ evidence: Array<{ work_id: string }> }> }>
+  answers: Array<{ status: string; report_version: number | null; claims: Array<{ evidence: Array<{ work_id: string; source_version_id: string }> }> }>
   sources: Source[]
 }
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
@@ -225,6 +225,40 @@ test.describe.serial('S13: the Sources panel', () => {
     const stored = (await viewOf(api, rid)).sources.find(s => s.title === title && s.version_role === 'record')!
     expect(stored.selection).toMatchObject({ state: 'excluded', origin: 'user', user_reason: 'SYNTHETIC terrestrial only' })
     await shot(page, 'S13-sources-reason')
+  })
+
+  test('a citation pill names only the version the answer cites; a formula-like title is written to the CSV as text', async () => {
+    // The view as the server sends it, with two SYNTHETIC changes: an uncited copy of a cited record as another version
+    // of the same work, and a title that starts like a spreadsheet formula.
+    const view = await viewOf(api, rid)
+    const answer = view.answers.filter(a => a.status === 'structurally_valid').sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
+    const citedVersions = new Set(answer.claims.flatMap(c => c.evidence.map(e => e.source_version_id)))
+    const cited = view.sources.find(s => s.version_role === 'record' && citedVersions.has(s.source_version_id))!
+    const formula = '=HYPERLINK("https://example.invalid","SYNTHETIC")'
+    await page.route(url => url.pathname === `/api/researches/${rid}`, async route => {
+      const body = await (await route.fetch()).json() as View & { sources: Array<Record<string, unknown>> }
+      const at = body.sources.findIndex(s => s.source_version_id === cited.source_version_id)
+      const copy = { ...body.sources[at], source_version_id: 'sv_synthetic_uncited_copy', version_role: 'other_version', version_label: 'preprint', screening: null, title: `${cited.title} (SYNTHETIC uncited copy)` }
+      body.sources.splice(at + 1, 0, copy)
+      const included = body.sources.find(s => s.version_role === 'record' && (s.selection as { state: string }).state === 'included' && s.source_version_id !== cited.source_version_id)!
+      included.title = formula
+      await route.fulfill({ json: body })
+    })
+    try {
+      await page.goto(sourcesUrl())
+      await tab('All').click()
+      const own = records().filter({ hasText: cited.title }).first()
+      await expect(own.locator('.pill.is-cited')).toHaveText(/^cited in \d+ claims? of V\d+$/)
+      const copyRow = sources().locator('tr.source-row.is-other-version').filter({ hasText: 'SYNTHETIC uncited copy' })
+      await expect(copyRow).toHaveCount(1)
+      await expect(copyRow.locator('.pill.is-cited')).toHaveCount(0)
+      await tab('Included').click()
+      const download = page.waitForEvent('download')
+      await sources().getByRole('button', { name: 'Download', exact: true }).click()
+      const csv = readFileSync(await (await download).path(), 'utf8')
+      expect(csv).toContain(`"'=HYPERLINK(""https://example.invalid"",""SYNTHETIC"")"`)
+      expect(csv).not.toMatch(/(^|,)"?=HYPERLINK/m)
+    } finally { await page.unrouteAll({ behavior: 'wait' }) }
   })
 
   test('the selection bar: N chosen, Start table, Add to table, Add to library (the server’s count), Remove, Clear', async () => {

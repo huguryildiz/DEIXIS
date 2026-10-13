@@ -538,6 +538,7 @@ const queueReasons: Record<string, string> = {
   human_not_sure: 'You were not sure about this work under an earlier question or criterion.',
   human_pdf_wrong: 'You marked this PDF as wrong under an earlier question or criterion.',
 }
+export const hasQueueReason = (code: string) => code in queueReasons
 export const queueReasonText = (code: string) => t(queueReasons[code] ?? 'This work needs a person’s decision.')
 // Why a work waits for the person's PDF (slice 18a), by the reason code the backend stored.
 const waitingReasons: Record<string, string> = {

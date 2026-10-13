@@ -162,9 +162,12 @@ def machine_screening(ctx: Any, work_id: str) -> dict[str, Any]:
     facts = ctx.facts
     machine = [d for d in facts["decisions"].get(work_id, []) if d["decided_by"] != "human"]
     chosen = ctx.decisions.work_outcome(ctx.rid, work_id, {**facts, "decisions": {work_id: machine}}) or {}
-    return {"stage": chosen.get("stage"), "outcome": chosen.get("outcome"), "reason_code": chosen.get("reason_code"),
+    code = chosen.get("reason_code")
+    # Where the reason table sends the work next: `waiting_for_pdf` and `reading_queue` say the full text was not read.
+    step = "human_queue" if code == queue.VERSIONS_DISAGREE else REASON_CODES[code].next_step if code in REASON_CODES else None
+    return {"stage": chosen.get("stage"), "outcome": chosen.get("outcome"), "reason_code": code,
             "decided_by": chosen.get("decided_by"), "source_version_id": chosen.get("source_version_id"),
-            "passed_abstract": passed_abstract(ctx, work_id)}
+            "next_step": step, "passed_abstract": passed_abstract(ctx, work_id)}
 
 
 def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:

@@ -285,9 +285,14 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // after a failed late revision cites nothing while V1 is shown). The facts strip, the rail and the Cited tab use it.
   const citedWorkIds = new Set(answer?.claims.flatMap(c => c.evidence.map(e => e.work_id)) ?? [])
   const citedCount = citedWorkIds.size
-  // How many claims of the shown answer cite each work (the Sources rows' "cited in N claims" pill).
+  // How many claims of the shown answer cite each work (the Cited tab) and each version (a Sources row's "cited in N
+  // claims" pill: an uncited version of a cited work gets none).
   const citedClaims = new Map<string, number>()
-  answer?.claims.forEach(c => new Set(c.evidence.map(e => e.work_id)).forEach(w => citedClaims.set(w, (citedClaims.get(w) ?? 0) + 1)))
+  const citedVersionClaims = new Map<string, number>()
+  answer?.claims.forEach(c => {
+    new Set(c.evidence.map(e => e.work_id)).forEach(w => citedClaims.set(w, (citedClaims.get(w) ?? 0) + 1))
+    new Set(c.evidence.map(e => e.source_version_id)).forEach(v => citedVersionClaims.set(v, (citedVersionClaims.get(v) ?? 0) + 1))
+  })
   // What its BibTeX export lists: the cited versions still in this research, counted as works.
   const citedVersions = new Set(answer?.claims.flatMap(c => c.evidence.map(e => e.source_version_id)) ?? [])
   const citedListed = new Set(view.sources.filter(s => citedVersions.has(s.source_version_id)).map(s => s.work_id)).size
@@ -753,7 +758,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {/* Each former tab is a panel; its content is unchanged and renders into the panel frame while it is open. */}
     <StackPanel name="sources" title={t('Sources')} icon={BookOpen} className="sources-panel-box">
       <section className="sources-panel" aria-labelledby="sources-heading">
-      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourcesPanel sources={view.sources} cited={citedClaims} answerVersion={answer ? answerVersion : null} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
+      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourcesPanel sources={view.sources} cited={citedClaims} citedVersions={citedVersionClaims} answerVersion={answer ? answerVersion : null} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
         onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
         onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
         onOpen={source => setPdfTarget({ assetId: null, sourceVersionId: source.source_version_id, view: 'text' })}

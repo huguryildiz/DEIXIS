@@ -1,5 +1,5 @@
 import { type Source } from '../api'
-import { queueReasonText } from '../labels'
+import { hasQueueReason, queueReasonText, waitingReasonText } from '../labels'
 import { t } from '../i18n'
 
 // The "Model proposal" column (mockup P9): what code and the model runs decided about the work, from the view's
@@ -25,11 +25,17 @@ const NOT_READ = new Set(['no_abstract', 'abstract_not_found', 'abstract_not_rea
 export function proposalOf(source: Source): Proposal | null {
   const sc = source.screening
   if (sc?.stage === 'fulltext') {
-    const two = sc.decided_by === 'model_agreement'
-    const basis = t(two ? 'basis: full text (selected pages) · two reads' : 'basis: full text · code rule')
-    if (sc.outcome === 'include') return { tone: 'include', word: t('include'), reason: t(two ? 'Both full-text reads found every part of the criterion.' : 'Included at the full-text stage.'), basis }
+    const code = sc.reason_code ?? ''
+    // Not read in full: no readable PDF yet, text in hand that waits to be read, or a file not yet confirmed as this
+    // work's. None of these is a reading, so none has a basis line.
+    if (sc.next_step === 'waiting_for_pdf') return { tone: 'none', word: t('not read in full'), reason: waitingReasonText(code), basis: '' }
+    if (sc.next_step === 'reading_queue') return { tone: 'none', word: t('not read in full'), reason: t('The full text is in hand and waits to be read.'), basis: '' }
+    if (code === 'pdf_identity_unconfirmed') return { tone: 'none', word: t('not read in full'), reason: queueReasonText(code), basis: '' }
+    // A reading happened: two model runs read the selected pages (the agreement or the rule applied to it decides).
+    const basis = t('basis: full text (selected pages) · two reads')
+    if (sc.outcome === 'include') return { tone: 'include', word: t('include'), reason: t('Both full-text reads found every part of the criterion.'), basis }
     if (sc.outcome === 'criterion_not_met') return { tone: 'exclude', word: t('exclude'), reason: t('The parts of the criterion were not found in the passages read.'), basis }
-    return { tone: 'uncertain', word: t('uncertain'), reason: queueReasonText(sc.reason_code ?? ''), basis }
+    return { tone: 'uncertain', word: t('uncertain'), reason: hasQueueReason(code) ? queueReasonText(code) : t('Left open at the full-text stage.'), basis }
   }
   if (sc?.stage === 'abstract') {
     const code = sc.reason_code ?? ''

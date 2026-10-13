@@ -44,7 +44,8 @@ const tabOf = (s: Source): Exclude<StateFilter, 'cited' | 'all'> => passedAbstra
 export type SourceActions = { onRemoveFromResearch: (source: Source) => void; onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => Promise<boolean>; onOpen: (source: Source) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onPlainText: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; onReplaceAsset: (source: Source, assetId: string) => void; onReextract: (source: Source, assetId: string) => void; onRereadEquations: (source: Source, assetId: string) => void; pdfFinding: string[]; ocr: OcrContext }
 type BarActions = { researchId: string; active: boolean; onStartTable: (ids: string[]) => void; onAddToTable: (table: TableSummary, ids: string[]) => void; onRemove: (ids: string[]) => void; onSaveToLibrary: (ids: string[]) => Promise<void> }
 
-const csvQuote = (v: string | number | null | undefined) => { const text = v == null ? '' : String(v); return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text }
+// A text cell that starts like a formula (= + - @ tab CR) gets a leading ' so a spreadsheet shows it as text, never runs it.
+const csvQuote = (v: string | number | null | undefined) => { const text = v == null ? '' : typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? `'${v}` : String(v); return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text }
 const stateWords: Record<Source['selection']['state'], string> = { included: 'Included', pending: 'Undecided', excluded: 'Excluded' }
 // The rows shown, as a CSV a spreadsheet opens (BOM for UTF-8): one line per row, versions on their own lines.
 function downloadCsv(rows: Source[]) {
@@ -59,7 +60,7 @@ function downloadCsv(rows: Source[]) {
   URL.revokeObjectURL(url)
 }
 
-export function SourcesPanel({ sources, cited, answerVersion, busy, filter, onFilter, focus, onFocus, picked, onPick, bar, ...a }: { sources: Source[]; cited: ReadonlyMap<string, number>; answerVersion: number | null; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; focus: string | null; onFocus: (workId: string | null) => void; picked: string[]; onPick: (ids: string[]) => void; bar: BarActions } & SourceActions) {
+export function SourcesPanel({ sources, cited, citedVersions, answerVersion, busy, filter, onFilter, focus, onFocus, picked, onPick, bar, ...a }: { sources: Source[]; cited: ReadonlyMap<string, number>; citedVersions: ReadonlyMap<string, number>; answerVersion: number | null; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; focus: string | null; onFocus: (workId: string | null) => void; picked: string[]; onPick: (ids: string[]) => void; bar: BarActions } & SourceActions) {
   const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('relevant')
@@ -169,7 +170,7 @@ export function SourcesPanel({ sources, cited, answerVersion, busy, filter, onFi
         {shownRows.map(source => <SourceRow key={source.source_version_id} source={source} busy={busy} asking={asking?.id === source.source_version_id}
           picked={picked.includes(source.source_version_id)} onPick={on => togglePick(source.source_version_id, on)}
           readsVersion={sources.find(s => s.source_version_id === source.answer_reads_version_id)}
-          citedClaims={cited.get(source.work_id) ?? 0} answerVersion={answerVersion} finding={a.pdfFinding.includes(source.source_version_id)} ocr={a.ocr}
+          citedClaims={citedVersions.get(source.source_version_id) ?? 0} answerVersion={answerVersion} finding={a.pdfFinding.includes(source.source_version_id)} ocr={a.ocr}
           onRemoveFromResearch={() => a.onRemoveFromResearch(source)} onSelect={state => select(source, state, document.activeElement as HTMLElement)}
           onAskReason={() => setAsking({ id: source.source_version_id, text: source.selection.user_reason ?? '', opener: document.activeElement as HTMLElement })}
           onOpen={() => a.onOpen(source)} onAbstract={() => a.onAbstract(source)} onDiscoverPdf={() => a.onDiscoverPdf(source)} onAttachPdf={() => a.onAttachPdf(source)}
@@ -195,11 +196,11 @@ function SelectionBar({ ids, busy, researchId, active, onStartTable, onAddToTabl
     <div className="selection-bar-actions">
       <button type="button" className="ghost" disabled={busy} onClick={() => onStartTable(ids)}><Table2 size={14} aria-hidden />{t('Start table')}</button>
       <DropdownMenu>
-        <DropdownMenuTrigger disabled={busy || !tables?.length} render={<button type="button" className="ghost" />} title={tables && !tables.length ? t('This research has no table yet') : undefined}><ListPlus size={14} aria-hidden />{t('Add to table')}</DropdownMenuTrigger>
+        <DropdownMenuTrigger disabled={busy || !tables?.length} render={<button type="button" className="ghost selbar-add-table" />} title={tables && !tables.length ? t('This research has no table yet') : undefined}><ListPlus size={14} aria-hidden />{t('Add to table')}</DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-auto">{(tables ?? []).map(table => <DropdownMenuItem key={table.id} onClick={() => onAddToTable(table, ids)}><Table2 size={15} />{table.title}</DropdownMenuItem>)}</DropdownMenuContent>
       </DropdownMenu>
       <button type="button" className="ghost" disabled={busy} onClick={() => { void onSaveToLibrary(ids) }}><LibraryBig size={14} aria-hidden />{t('Add to library')}</button>
-      <button type="button" className="ghost" disabled={busy || active} title={active ? t('Available when the active run finishes') : undefined} onClick={() => onRemove(ids)}><ListMinus size={14} aria-hidden />{t('Remove from research')}</button>
+      <button type="button" className="ghost selbar-remove" disabled={busy || active} title={active ? t('Available when the active run finishes') : undefined} onClick={() => onRemove(ids)}><ListMinus size={14} aria-hidden />{t('Remove from research')}</button>
       <button type="button" className="ghost" onClick={onClear}>{t('Clear')}</button>
     </div>
   </div>

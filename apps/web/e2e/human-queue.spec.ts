@@ -173,6 +173,20 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await page.unroute('**/queue/SYNTHETIC-*')
   })
 
+  test('a kind filter whose last row is answered falls back to every row instead of an empty filter', async () => {
+    await openQueue(page, server, rid)
+    const chips = page.locator('.queue-chips')
+    await chips.getByRole('button', { name: /^Confirm the PDF/ }).click()
+    await expect(cards(page).locator(':scope > .qcard')).toHaveCount(1)
+    await card(page, TITLES.confirm_pdf).getByRole('button', { name: 'Not sure' }).click()
+    await expect(card(page, TITLES.confirm_pdf)).toHaveCount(0)
+    await expect(cards(page).locator(':scope > .qcard')).toHaveCount(3)
+    await expect(page.getByText('No row matches this filter.')).toHaveCount(0)
+    await expect(chips.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true')
+    await page.locator('.toast').getByRole('button', { name: 'Undo' }).click()
+    await expect(cards(page).locator(':scope > .qcard')).toHaveCount(4)
+  })
+
   test('a card shows both runs, and its page button opens the PDF at full width with the anchor marked in the text', async () => {
     await openQueue(page, server, rid)
     const one = card(page, TITLES.choose_run)

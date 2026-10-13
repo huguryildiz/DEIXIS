@@ -129,6 +129,22 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
     await shot(page, 'K-waiting-list-1440')
   })
 
+  test('with no reading plan yet, the drop zone opens while a file has a work to go to (SYNTHETIC API state)', async () => {
+    // Sol S14 round 1: the zone follows the backend's attach candidates, not the plan alone.
+    for (const [candidates, zones] of [[1, 1], [0, 0]] as const) {
+      await page.route(`**/api/researches/${rid}/waiting`, async route => {
+        const response = await route.fetch()
+        const body = await response.json()
+        await route.fulfill({ response, json: { ...body, rows: [], count: 0, has_plan: false, attach_candidates: candidates } })
+      })
+      await page.goto('about:blank')
+      await page.goto(`${URL}/#/research/${rid}/waiting`)
+      await expect(page.getByRole('heading', { name: 'No work waits for your PDF' })).toBeVisible()
+      await expect(page.getByTestId('waiting-drop')).toHaveCount(zones)
+      await page.unroute(`**/api/researches/${rid}/waiting`)
+    }
+  })
+
   test('at 390 px the row and a dropped file’s version choice fit the width', async ({ browser }) => {
     const narrow = await browser.newPage({ viewport: { width: 390, height: 844 } })
     try {

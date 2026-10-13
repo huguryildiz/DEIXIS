@@ -134,6 +134,13 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
       setError('')
       const live = new Set(next.rows.map(keyOf))
       setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => live.has(key))))
+      // A detail that failed to load is tried again with the next list read, not held back by its old error.
+      setDetailErrors({})
+      // A kind or reason filter whose rows are all gone falls back to every row, so no filter is left with nothing to
+      // show and no control to clear it (the chips hide when one kind is left).
+      const open = next.rows.filter(r => r.kind !== 'look_again')
+      setKindFilter(kind => kind === 'all' || open.some(r => r.kind === kind) ? kind : 'all')
+      setReasonFilter(code => code === 'all' || open.some(r => r.reason_code === code) ? code : 'all')
       return next
     }, e => {
       if (request !== listRequest.current) return latest.current
@@ -263,6 +270,10 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   if (!queue) return <p className="empty-inline" role="status">{t('Loading the queue…')}</p>
 
   const counts = queue.counts
+  // The inclusion criterion of the current question (P39's criterion line): the one its newest search was approved with.
+  // A look-again row was decided under an earlier criterion, so it does not show this one.
+  const criterion = view.runs.find(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision
+    && r.approval?.approved?.criterion?.criterion)?.approval?.approved?.criterion?.criterion ?? null
   const decidedCount = Object.values(counts.decided).reduce((sum, n) => sum + n, 0)
   const kindCount = (kind: QueueKind) => counts.by_kind[kind] ?? 0
   const reasons = Object.keys(counts.by_reason)
@@ -270,10 +281,10 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
     counts.user_selected > 0 && t(counts.user_selected === 1 ? 'you chose {n} work from the sources' : 'you chose {n} works from the sources', { n: counts.user_selected })].filter(Boolean)
   const card = (row: QueueRow) => {
     const key = keyOf(row)
-    return <QueueCard key={row.work_id} row={row} rowView={details[key]} detailError={detailErrors[key] ?? ''} unsettled={unsettled.has(key)} busy={busy}
+    return <QueueCard key={row.work_id} row={row} criterion={criterion} rowView={details[key]} detailError={detailErrors[key] ?? ''} unsettled={unsettled.has(key)} busy={busy}
       note={notes[row.work_id] ?? { text: '', open: false }} onNote={note => setNotes(prev => ({ ...prev, [row.work_id]: note }))}
       conflict={conflict && conflict.work === row.work_id && !conflict.gone} actionError={actionError?.work === row.work_id ? actionError.text : ''}
-      onReadAgain={() => { mismatches.current.delete(key); setUnsettled(prev => { const next = new Set(prev); next.delete(key); return next }); setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key))) }}
+      onReadAgain={() => { mismatches.current.delete(key); setUnsettled(prev => { const next = new Set(prev); next.delete(key); return next }); setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key))); setDetailErrors(prev => { const { [key]: _, ...rest } = prev; return rest }) }}
       onAnswer={choice => void answer(row, choice)} onOpenPage={opener => { const d = details[key]?.detail; if (d) openPage(row, d, opener) }}
       onOpenPart={openPart} onOpenSource={opener => openSource(row.source_version_id, opener)}
       onOpenCue={(passageId, page, rendition, opener) => { sheetOpener.current = opener; setSheet({ passageId, assetId: null, page, view: 'text', anchor: null, expect: false, labels: labelsFor('cue', page, rendition) }) }} />
@@ -291,12 +302,12 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
       <p>{t('No row waits for your decision. Your answers are kept with this research.')}</p>
       {emptyFacts.length > 0 && <p>{`${emptyFacts.join('; ')}.`}</p>}
     </div></div> : <>
-      {(KIND_ORDER.filter(kind => kindCount(kind) > 0).length > 1 || reasons.length > 1) && <div className="queue-filters">
+      {(KIND_ORDER.filter(kind => kindCount(kind) > 0).length > 1 || reasons.length > 1 || kindFilter !== 'all' || reasonFilter !== 'all') && <div className="queue-filters">
         <div className="queue-chips" role="group" aria-label={t('Show rows')}>
           <button type="button" aria-pressed={kindFilter === 'all'} onClick={() => setKindFilter('all')}>{t('All')}<span>{open.length}</span></button>
           {KIND_ORDER.filter(kind => kindCount(kind) > 0).map(kind => <button key={kind} type="button" aria-pressed={kindFilter === kind} onClick={() => setKindFilter(kind)}>{t(queueKindLabels[kind])}<span>{kindCount(kind)}</span></button>)}
         </div>
-        {reasons.length > 1 && <Select value={reasonFilter} onValueChange={value => { if (value) setReasonFilter(String(value)) }}>
+        {(reasons.length > 1 || reasonFilter !== 'all') && <Select value={reasonFilter} onValueChange={value => { if (value) setReasonFilter(String(value)) }}>
           <SelectTrigger className="queue-reason-filter" aria-label={t('Filter rows by why they are here')}><SelectValue>{(value: string) => value === 'all' ? t('Every reason') : queueReasonText(value)}</SelectValue></SelectTrigger>
           <SelectContent className="intake-select-content" align="start" alignItemWithTrigger={false}>
             <SelectItem value="all">{t('Every reason')}</SelectItem>
@@ -325,8 +336,8 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   </div>
 }
 
-function QueueCard({ row, rowView, detailError, unsettled, busy, note, onNote, conflict, actionError, onReadAgain, onAnswer, onOpenPage, onOpenPart, onOpenSource, onOpenCue }: {
-  row: QueueRow; rowView: QueueRowView | undefined; detailError: string; unsettled: boolean; busy: boolean
+function QueueCard({ row, criterion, rowView, detailError, unsettled, busy, note, onNote, conflict, actionError, onReadAgain, onAnswer, onOpenPage, onOpenPart, onOpenSource, onOpenCue }: {
+  row: QueueRow; criterion: string | null; rowView: QueueRowView | undefined; detailError: string; unsettled: boolean; busy: boolean
   note: Note; onNote: (note: Note) => void; conflict: boolean | null; actionError: string; onReadAgain: () => void
   onAnswer: (choice: QueueAnswer) => void; onOpenPage: (opener: HTMLElement) => void; onOpenPart: (part: QueuePart, opener: HTMLElement) => void
   onOpenSource: (opener: HTMLElement) => void; onOpenCue: (passageId: string, page: number, rendition: boolean | undefined, opener: HTMLElement) => void
@@ -364,7 +375,8 @@ function QueueCard({ row, rowView, detailError, unsettled, busy, note, onNote, c
         ? <Notice tone="attention">{t('This row kept changing while it was read, so it cannot be answered yet.')}{' '}
           <button type="button" className="queue-link" onClick={onReadAgain}>{t('Read it again')}</button></Notice>
         : <p className="queue-muted" role="status">{t('Reading this row again…')}</p>)}
-      {detailError ? <Notice tone="error">{t('Could not load this row: {error}', { error: detailError })}</Notice>
+      {detailError ? <Notice tone="error">{t('Could not load this row: {error}', { error: detailError })}{' '}
+          <button type="button" className="queue-link" onClick={onReadAgain}>{t('Read it again')}</button></Notice>
         : !rowView ? <p className="queue-muted" role="status">{t('Loading this row…')}</p>
         : !detail ? <Notice tone="attention">{t('This row changed while it was loading; the queue is being read again.')}</Notice>
         : <>
@@ -405,6 +417,7 @@ function QueueCard({ row, rowView, detailError, unsettled, busy, note, onNote, c
         <span className="queue-question-text">{question}</span>
         {context && <span>{context}</span>}
         {row.question?.definition && <span className="queue-question-definition">{row.question.definition}</span>}
+        {criterion && row.kind !== 'look_again' && <span className="queue-criterion">{t('Criterion: {text}', { text: criterion })}</span>}
         <span className="queue-why">{t('Why it is here:')} {queueReasonText(row.reason_code)} <code>{row.reason_code}</code></span>
       </div>
       {choice && <button type="button" className="ghost queue-open-page" onClick={e => onOpenPage(e.currentTarget)}><Eye size={14} aria-hidden />{t('Open page {page} in the PDF', { page: choice.page })}</button>}

@@ -181,6 +181,9 @@ def waiting_view(store: Store, research_id: str) -> dict[str, Any]:
             "find_pdf_source_version_id": next((s["id"] for s in sources if s["doi"]), None),
             "versions": view["versions"], "versions_digest": view["versions_digest"]})
     return {"rows": rows, "count": len(rows), "scope_revision": revision, "has_plan": bool(plans),
+            # How many works a dropped file may be attached to (`candidate_works`): with no plan yet these are the
+            # works the person included, so the panel opens its drop zone on this, not on `has_plan` alone.
+            "attach_candidates": len(candidate_works(store, research_id)),
             "via_proxy": bool(address), "order": plans[0]["order"] if plans else "fulltext_plan"}
 
 

@@ -314,6 +314,18 @@ def test_the_candidates_are_the_plan_s_works_the_list_and_the_works_included_aft
     assert lib.work_of(other) in waiting.candidate_works(store, lib.rid)
 
 
+def test_with_no_plan_yet_the_view_counts_the_works_the_person_included_as_attach_candidates(store):
+    # Sol S14 round 1: the panel opens its drop zone on this count, so files reach included works before any plan.
+    lib = Lib(store, "irrigation")
+    included, other = lib.work(), lib.work()
+    view = waiting.waiting_view(store, lib.rid)
+    assert not view["has_plan"] and view["rows"] == [] and view["attach_candidates"] == 0
+    lib.list_edit(included, "included")
+    view = waiting.waiting_view(store, lib.rid)
+    assert not view["has_plan"] and view["rows"] == [] and view["attach_candidates"] == 1
+    assert set(waiting.candidate_works(store, lib.rid)) == {lib.work_of(included)} != {lib.work_of(other)}
+
+
 def test_a_version_included_after_the_plan_and_then_removed_does_not_make_its_work_a_candidate(store):
     lib = Lib(store, "channels")
     planned = lib.work()

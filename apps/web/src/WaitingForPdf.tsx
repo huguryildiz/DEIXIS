@@ -131,7 +131,13 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
   // lists as waiting; and the files you added that no reading has read, as "Your files" lists them.
   const passed = view.sources.filter(s => s.version_role === 'record' && s.screening?.passed_abstract)
   const inHand = passed.filter(record => view.sources.some(s => s.work_id === record.work_id && s.has_pdf_text)).length
-  const notRead = list.files.rows.filter(f => ['waiting', 'unread', 'changed', 'model_off', 'not_eligible', 'decision_stands'].includes(f.state)).length
+  // Only states whose record proves the model has not read the file's current pages: waiting for its reading, a reading
+  // that decided nothing, pages changed since the reading, or reading off. "Your decision stands" and "not in the
+  // reading order" say nothing about whether a reading happened, so they are not counted as unread.
+  const notRead = list.files.rows.filter(f => ['waiting', 'unread', 'changed', 'model_off'].includes(f.state)).length
+  // A dropped file can go to any candidate work the backend accepts, which with no reading plan yet are the works the
+  // person included; the drop zone and the row uploads follow that, not the plan alone.
+  const canAttach = list.has_plan || list.attach_candidates > 0
   const answerNote = notRead ? plural(notRead, '{n} file you added is not read yet; an answer leaves out a work whose only text it is.', '{n} files you added are not read yet; an answer leaves out a work whose only text they are.')
     : rows.length ? plural(rows.length, '{n} work still waits for a PDF.', '{n} works still wait for a PDF.') : ''
 
@@ -148,7 +154,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
     <section className="plist" aria-labelledby="waiting-title">
       <h4><span id="waiting-title">{rows.length ? plural(rows.length, '{n} work waits for your PDF', '{n} works wait for your PDF') : t('No work waits for your PDF')}</span><span className="tnum" aria-hidden>{rows.length}</span></h4>
       <p className="prow pdf-ready-lede">{rows.length
-        ? t('Passed the abstract stage, and no open copy was found. If you can reach one through your library, open its link, save the PDF and add it here. Nothing is attached until you choose the version and confirm.')
+        ? t('These works have no PDF text the model can read; each row says why. If you can reach a copy through your library, open its link, save the PDF and add it here. Nothing is attached until you choose the version and confirm.')
         : list.has_plan ? t('Every work the full-text retrieval tried has its text, or is decided another way.') : t('The full-text retrieval has not run for this question yet.')}</p>
       {rows.length > 0 && <p className="prow foot-note">{list.via_proxy
         ? t('Links open through your institution’s proxy in your browser; DEIXIS sends nothing through it.')
@@ -171,14 +177,14 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
               title={row.find_pdf_source_version_id ? undefined : t('Find PDF needs a DOI')} onClick={() => { void findPdf(row) }}>
               <FileSearch size={14} aria-hidden />{t(finding === row.work_id ? 'Finding…' : 'Find PDF')}
             </Button>
-            {list.has_plan && <Button variant="outline" size="sm" className="ghost" disabled={busy || reading} aria-label={t('Upload PDF for {title}', { title: row.title })} onClick={() => uploadFor(row)}><Upload size={14} aria-hidden />{t('Upload PDF')}</Button>}
+            {canAttach && <Button variant="outline" size="sm" className="ghost" disabled={busy || reading} aria-label={t('Upload PDF for {title}', { title: row.title })} onClick={() => uploadFor(row)}><Upload size={14} aria-hidden />{t('Upload PDF')}</Button>}
           </span>
         </li>)}
       </ol>}
       <input ref={rowFile} type="file" accept=".pdf,application/pdf" hidden aria-label={t('Choose a PDF for this work')} onChange={e => { matchFiles(Array.from(e.target.files ?? []), rowWork.current); rowWork.current = undefined; e.target.value = '' }} />
     </section>
 
-    {list.has_plan && <div className={`drop pdf-ready-drop${dragging ? ' over is-over' : ''}`} data-testid="waiting-drop"
+    {canAttach && <div className={`drop pdf-ready-drop${dragging ? ' over is-over' : ''}`} data-testid="waiting-drop"
       onDragOver={e => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
       <Upload size={16} aria-hidden />
       <span role="status">{reading ? t('Reading the files…') : <><b>{t('Drop PDFs here')}</b> {t('or choose files')}</>}</span>

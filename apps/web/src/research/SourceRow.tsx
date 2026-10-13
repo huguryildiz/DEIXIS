@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { BookOpenText, ChevronRight, FileText, FileUp, Link2, ListMinus, LoaderCircle, Replace, ScanText, Search, Sigma, Trash2, UserPen } from 'lucide-react'
+import { BookOpenText, ChevronRight, FileText, FileUp, Link2, LoaderCircle, Replace, ScanText, Search, Sigma, Trash2, UserPen } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { type Source } from '../api'
 import { serviceErrorSentence, serviceKind, accessParts, citedText, providerName, queueAnsweredText, versionText, versionTones } from '../labels'
@@ -33,7 +33,7 @@ export type RowActions = { onRemoveFromResearch: () => void; onSelect: (state: S
 
 // One line of the Sources table (mockup P9): checkbox, the source cell (title, meta, pills, notes, row actions), the
 // model's proposal and the person's decision. Another version of a work follows its record's line and has no proposal or
-// decision of its own. `citedClaims`: how many claims of the shown answer (V`answerVersion`) cite the work.
+// decision of its own. `citedClaims`: how many claims of the shown answer (V`answerVersion`) cite this version.
 export function SourceRow({ source, busy, picked, onPick, readsVersion, citedClaims, answerVersion, finding, ocr, asking, ...a }: { source: Source; busy: boolean; picked: boolean; onPick: (on: boolean) => void; readsVersion?: Source; citedClaims: number; answerVersion: number | null; finding: boolean; ocr: OcrContext; asking: boolean } & RowActions) {
   const s = source.selection
   const other = source.version_role === 'other_version'
@@ -102,7 +102,7 @@ export function SourceRow({ source, busy, picked, onPick, readsVersion, citedCla
         {source.access.abstract_passage_id && <button type="button" onClick={a.onAbstract}><BookOpenText size={14} aria-hidden />{t('Read abstract')}</button>}
         {source.doi && <a href={`https://doi.org/${source.doi}`} target="_blank" rel="noreferrer"><Link2 size={14} aria-hidden />DOI</a>}
         {source.access.assets.length > 0 && source.doi && <button type="button" disabled={busy || finding} onClick={a.onDiscoverPdf}><Search size={14} aria-hidden />{finding ? <span className="shimmer-text">{t('Web Search is running…')}</span> : t('Refresh metadata')}</button>}
-        <button type="button" disabled={busy} onClick={a.onRemoveFromResearch} aria-label={t('Remove from research')} title={t('Take this source out of this research; the library record, its PDF and earlier quotes stay')}><ListMinus size={14} aria-hidden />{t('Remove')}</button>
+        <button type="button" disabled={busy} onClick={a.onRemoveFromResearch} aria-label={t('Remove from research')} title={t('Take this source out of this research; the library record, its PDF and earlier quotes stay')}><Trash2 size={14} aria-hidden />{t('Remove')}</button>
       </div>
     </td>
     <td className="prop-cell">{proposal ? <div className={`prop is-${proposal.tone}`}>

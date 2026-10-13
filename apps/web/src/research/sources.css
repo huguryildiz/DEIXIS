@@ -18,7 +18,6 @@
 .search-summary-list span{min-width:0;overflow:hidden;color:var(--ink);text-overflow:ellipsis;white-space:nowrap}
 .search-summary-list small{color:var(--muted);font-size:11px}
 /* Sources (mockup .tabs over .toolbar): the state filters as an underline strip with counts, then one row of search, pick-all and filters. */
-.source-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 6px;padding:0 0 10px;border-bottom:1px solid var(--line)}
 .source-filters{display:flex;flex:1 1 100%;gap:2px;margin-bottom:2px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
 .source-filters::-webkit-scrollbar{display:none}
 .source-filters button{display:inline-flex;flex:none;align-items:baseline;gap:4px;padding:7px 10px;border-bottom:2px solid transparent;background:none;color:var(--muted);font-size:12.5px;font-weight:500;white-space:nowrap;transition:color .16s ease,border-color .16s ease}
@@ -27,13 +26,6 @@
 .source-filters button[aria-pressed=true]{border-bottom-color:var(--accent);color:var(--ink)}
 .app .source-filters button:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;border-radius:5px}
 @media (prefers-reduced-motion:reduce){.source-filters button{transition:none}}
-.source-search{flex:0 1 260px;min-width:170px;display:flex;align-items:center;gap:6px;height:30px;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--muted)}
-.source-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
-.app .source-search input:focus-visible{outline:none}
-.source-search input{flex:1;min-width:0;height:100%;background:transparent;border:0;outline:none;font-size:13px;color:var(--ink)}
-.app .source-toolbar [data-slot=select-trigger]{height:30px;gap:6px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);box-shadow:none;color:var(--ink-2);font-size:13px}
-.app .source-toolbar [data-slot=select-trigger]:hover{background:var(--hover-surface);color:var(--ink)}
-.app .source-toolbar .source-pdf-filter{min-width:132px}
 .source-filter-option{display:flex;align-items:center;justify-content:space-between;gap:22px;width:100%}
 .source-filter-option small{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
 .sort-option small{display:block;margin-top:2px;font-size:11px;line-height:1.35;color:var(--muted-foreground)}
@@ -189,7 +181,8 @@
 .sources-table-block .tabs button.on{border-bottom-color:var(--accent);color:var(--ink)}
 .sources-table-block .tabs button em{margin-left:3px;color:var(--muted);font-style:normal}
 .sources-table-block .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
-.sources-table-block .search{display:flex;align-items:center;gap:6px;width:170px;min-width:0;padding:4px 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--faint)}
+.sources-table-block .search{display:flex;align-items:center;gap:6px;width:170px;min-width:0;padding:4px 8px;border:1px solid var(--strong-line);border-radius:7px;color:var(--faint);font-size:14px;line-height:1.5}
+.sources-table-block .search>svg{width:16px;height:16px;flex:none}
 .sources-table-block .search:focus-within{border-color:var(--accent)}
 .sources-table-block .search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);font-size:13px;line-height:1.5}
 .app .sources-table-block .search input:focus-visible{outline:none}
@@ -207,13 +200,13 @@
 .why-bar b{color:var(--ink);font-weight:600}
 .why-f{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}
 .why-f .lbl{display:grid;flex:1;gap:4px;min-width:200px;color:var(--muted);font-size:12px}
-.why-f .field{width:100%;padding:8px 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--paper);color:var(--ink);font-size:14px;outline:0}
+.why-f .field{width:100%;padding:8px 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--paper);color:inherit;font-size:14px;outline:0}
 .why-f .field:focus{border-color:var(--accent)}
 .sources-panel-box .btn-pri{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:7px;background:var(--accent-deep);color:#fff;font-size:13px;font-weight:500;line-height:1.5;white-space:nowrap}
 .sources-panel-box .btn-pri:hover:not(:disabled){background:color-mix(in srgb,var(--accent-deep),#000 14%)}
 .sources-panel-box .btn-pri:disabled{opacity:.5}
 /* The table (mockup table, P9): sticky head on the side surface, hairline cells. */
-.sources-table-block .tbl-wrap{overflow:auto}
+.sources-table-block .tbl-wrap{overflow:auto;font-size:14px;line-height:1.5}
 .source-table{width:100%;border-collapse:collapse;font-size:13px;line-height:1.5}
 .source-table th{position:sticky;top:0;z-index:1;padding:9px 12px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink-2);font-size:12.5px;font-weight:500;text-align:left;white-space:nowrap}
 .source-table td{padding:10px 12px;white-space:normal;border-right:1px solid var(--line);border-bottom:1px solid var(--line);vertical-align:top}
@@ -253,7 +246,7 @@
 .source-table .verdict.is-passed{color:var(--ink-2)}
 .source-table .verdict.is-none{color:var(--muted)}
 /* The decision control (mockup .seg): the chosen state takes its tone's notice surface and ink. */
-.source-table .seg{display:inline-flex;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden;background:var(--paper)}
+.source-table .seg{display:inline-flex;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden}
 .source-table .seg button{padding:3px 8px;border-left:1px solid var(--strong-line);background:transparent;color:var(--muted);font-size:12px;line-height:1.5;white-space:nowrap}
 .source-table .seg button:first-child{border-left:0}
 .source-table .seg button:not(:disabled):hover{background:var(--hover-surface);color:var(--ink)}

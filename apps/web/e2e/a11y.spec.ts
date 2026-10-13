@@ -231,7 +231,8 @@ async function manualContrast(page: Page, nodes: { target: unknown; reason: stri
     const BACKDROP = '[data-slot="sheet-overlay"], .quick-find-backdrop, .confirm-dialog-backdrop'
     // Scroll positions as they are now, restored at the end: the next scan state starts from the same page.
     const saved: [Element | Window, number, number][] = [[window, scrollX, scrollY]]
-    for (const el of document.querySelectorAll('*')) if (el.scrollTop > 0 || el.scrollLeft > 0) saved.push([el, el.scrollLeft, el.scrollTop])
+    // Every scroller, also one still at 0: scrolling a node into view moves scrollers that had not moved yet.
+    for (const el of document.querySelectorAll('*')) if (el.scrollTop > 0 || el.scrollLeft > 0 || el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) saved.push([el, el.scrollLeft, el.scrollTop])
     const results = list.map(({ target, reason }): { selector: string; reason: string; ratio?: number; size?: string; why?: string; kind?: string; approx?: boolean; ownTextOnly?: boolean } => {
       const fail = (selector: string, why: string, kind?: string) => ({ selector: selector.slice(0, 120), reason, why, kind })
       if (typeof target !== 'string') return fail(String(target), 'target is not a plain selector (shadow DOM or frame)')

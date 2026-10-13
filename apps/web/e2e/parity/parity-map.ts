@@ -11,6 +11,7 @@ export type Theme = 'light' | 'dark'
 export type Check = 'chrome' | 'content' | 'type' | 'colour' | 'icon'
 export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zotero' | 'collapsed' | 'drawer' | 'jobs-sheet' | 'toast' | 'menu' | 'dialog' | 'research-panel' | 'palette' | 'keys'
   | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty' | 'report-panel' | 'cite-panel' | 'detail-panel'
+  | 'sources-why' | 'sources-sel'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -108,6 +109,12 @@ async function trashRows(page: Page) {
   } }))
 }
 
+/** S13: the Sources panel on "Cited in answer", where the mockup opens it. */
+async function citedTab(page: Page) {
+  await page.locator('.source-filters button').filter({ hasText: 'Cited in answer' }).click()
+  await page.locator('.source-filters button.on').filter({ hasText: 'Cited in answer' }).waitFor()
+}
+
 /** S5b: two SYNTHETIC PDFs attached in a mixed search, so the composer shows its guide rows (Q3). */
 export const GUIDE_PDFS = ['SYNTHETIC-guide-first.pdf', 'SYNTHETIC-guide-second.pdf']
 
@@ -120,7 +127,9 @@ export const SURFACES: Surface[] = [
     open: page => page.locator('input[type=file]').first().setInputFiles(GUIDE_PDFS.map(name => ({ name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') }))) },
   { id: 'research', mock: "setScenario('ok')", app: '#/research/{research}', ready: '.research-topbar' },
   // The research page with one side panel open (S7a, R10/P1): the Sources panel, opened fresh.
-  { id: 'research-panel', mock: "setScenario('ok'); openPanel('sources', 'cited', false)", app: '#/research/{research}/sources', ready: '[data-split-panel] #split-panel-title' },
+  { id: 'research-panel', mock: "setScenario('ok'); openPanel('sources', 'cited', false)", app: '#/research/{research}/sources', ready: '[data-split-panel] #split-panel-title',
+    // The mockup opens the Sources panel on "Cited in answer", as the answer's "View N cited sources" does (S10).
+    appAct: citedTab },
   // S12: the report panel (P2/P3), the Citation panel (P11) and Source details (P12-P20). The mockup's report has two
   // versions as the fixture's research has. The app opens the Citation panel from the fourth chip of the thread (the
   // first claim that cites a PDF page, as the mockup's cob22 is a PDF work) and Source details from that entry.
@@ -134,6 +143,30 @@ export const SURFACES: Surface[] = [
       await page.locator('.cite-entry .rowacts button').first().click()
       await page.locator('.source-detail .docnav').waitFor()
     } },
+  // S13: the Sources panel with its reason bar (the first row excluded) and with its selection bar (the first row
+  // chosen). The app's Exclude is answered here, so the fixture's research is never changed: the PATCH gets an empty
+  // 200 and the view the page reloads has that row excluded by the person.
+  { id: 'sources-why', mock: "setScenario('ok'); openPanel('sources', 'cited', false)", app: '#/research/{research}/sources', ready: '[data-split-panel] .source-table',
+    mockAct: "document.querySelector('.panel tbody tr .seg button.exc').click()",
+    appAct: async page => {
+      await citedTab(page)
+      const row = page.locator('.source-table tr.source-row').first()
+      const title = (await row.locator('.src-t').innerText()).trim()
+      await page.route('**/api/researches/*/selections/*', route => route.request().method() === 'PATCH' ? route.fulfill({ json: {} }) : route.fallback())
+      await page.route(url => /^\/api\/researches\/[^/]+$/.test(url.pathname), async route => {
+        if (route.request().method() !== 'GET') return route.fallback()
+        const response = await route.fetch()
+        const body = await response.json() as { sources: Array<{ title: string; version_role: string; selection: Record<string, unknown> }> }
+        const source = body.sources.find(s => s.version_role === 'record' && s.title === title)
+        if (source) source.selection = { ...source.selection, state: 'excluded', origin: 'user', user_reason: null }
+        await route.fulfill({ response, json: body })
+      })
+      await row.getByRole('button', { name: 'Exclude' }).click()
+      await page.locator('.why-bar').waitFor()
+    } },
+  { id: 'sources-sel', mock: "setScenario('ok'); openPanel('sources', 'cited', false)", app: '#/research/{research}/sources', ready: '[data-split-panel] .source-table',
+    mockAct: "document.querySelector('.panel tbody input[data-sel]').click()",
+    appAct: async page => { await citedTab(page); await page.locator('.source-table tr.source-row td.cb input').first().check(); await page.locator('.selbar').waitFor() } },
   { id: 'zotero', mock: "setScenario('ok'); go('home'); zoteroDlg('home')", app: '#/', ready: '.zotero-dialog .zotero-cols label',
     prepare: page => page.route('**/api/zotero/collections**', route => route.fulfill({ json: { source: 'local', collections: ZOTERO_COLLECTIONS } })),
     open: async page => {
@@ -532,6 +565,41 @@ export const PAIRS: Pair[] = [
   { id: 'panel.thread', surface: 'research-panel', mock: '.thread-inner', app: '.thread-inner', checks: ['content'], widths: DESK, status: 'active' },
   { id: 'panel.thread@1024', surface: 'research-panel', mock: '.thread-inner', app: '.thread-inner', checks: [], widths: [], breakpoint: true,
     status: 'pending:S1', why: 'S1: sidebar 256px at 1024 (app 224px), then the thread beside the panel is 338px as in the mockup' },
+  // S13 Sources panel body (P5, P6, P8-P10): the filter tabs, the toolbar, the table head and the first row's parts.
+  // Column widths follow the rows' text (an auto table layout), so cells inside the table compare type and colour, and
+  // their controls compare width and height with x and y left out (GEOMETRY_EXCEPTIONS sources-table-cells-xy).
+  { id: 'sources.tabs', surface: 'research-panel', mock: '.panel .tabs button', app: '.sources-panel-box .tabs.source-filters button', checks: ['chrome', 'type', 'colour'], list: 'fixed',
+    dataText: { mock: ['em'], app: ['em'] }, states: ['selected'], selected: { mock: '.panel .tabs button.on', app: '.sources-panel-box .tabs.source-filters button.on' }, status: 'active' },
+  { id: 'sources.tab-count', surface: 'research-panel', mock: '.panel .tabs button em', app: '.sources-panel-box .tabs.source-filters button em', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'sources.toolbar', surface: 'research-panel', mock: '.panel .toolbar', app: '.sources-panel-box .toolbar.source-toolbar', checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'sources.search', surface: 'research-panel', mock: '.panel .toolbar .search', app: '.sources-panel-box .toolbar .search', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'search', app: 'search' }, use: 'icon', states: [], status: 'active' },
+  { id: 'sources.tools', surface: 'research-panel', mock: '.panel .toolbar > button', app: '.sources-panel-box .toolbar > button', checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed',
+    icon: [{ mock: 'sort', app: 'arrow-up-down' }, { mock: 'filter', app: 'funnel' }, { mock: 'dl', app: 'download' }, { mock: 'lib', app: 'library-big' }], states: [], status: 'active' },
+  { id: 'sources.table', surface: 'research-panel', mock: '.panel .tbl-wrap', app: '.sources-panel-box .tbl-wrap', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'sources.th', surface: 'research-panel', mock: '.panel .tbl-wrap thead th', app: '.sources-panel-box .source-table thead th', checks: ['type', 'colour'], list: 'fixed',
+    dataText: { mock: ['span'], app: ['.th-count'] }, states: [], status: 'active' },
+  { id: 'sources.title', surface: 'research-panel', mock: '.panel tbody tr:first-child .src-t', app: '.source-table tbody tr.source-row:first-child .src-t', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'sources.meta', surface: 'research-panel', mock: '.panel tbody tr:first-child .src-m', app: '.source-table tbody tr.source-row:first-child .src-m', checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'sources.pill', surface: 'research-panel', mock: '.panel tbody tr:first-child .pills .pill', app: '.source-table tbody tr.source-row:first-child .pills .pill', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'link', app: 'link-2' }, states: [], status: 'active' },
+  { id: 'sources.rowact', surface: 'research-panel', mock: '.panel tbody tr:first-child .rowacts button[data-remove]', app: '.source-table tbody tr.source-row:first-child .rowacts button[aria-label="Remove from research"]', checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'trash', app: 'trash' }, states: [], status: 'active' },
+  { id: 'sources.prop', surface: 'research-panel', mock: '.panel tbody tr:first-child .prop', app: '.source-table tbody tr.source-row:first-child .prop', checks: ['type', 'colour'], states: [], status: 'active' },
+  // The verdict and the chosen segment of an included work (the first row's state is the fixture's data).
+  { id: 'sources.verdict', surface: 'research-panel', mock: '.panel tbody .prop b.inc', app: '.source-table tbody .prop b.verdict.is-include', checks: ['type', 'colour'], use: 'icon', unordered: true, states: [], status: 'active' },
+  { id: 'sources.seg', surface: 'research-panel', mock: '.panel tbody tr:first-child .seg', app: '.source-table tbody tr.source-row:first-child .seg', checks: ['chrome', 'colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'sources.seg-buttons', surface: 'research-panel', mock: '.panel tbody tr:first-child .seg button', app: '.source-table tbody tr.source-row:first-child .seg button', checks: ['chrome', 'type'], list: 'fixed', states: [], status: 'active' },
+  { id: 'sources.seg-on', surface: 'research-panel', mock: '.panel tbody .seg button.on.inc', app: '.source-table tbody .seg button.is-included[aria-pressed=true]', checks: ['type', 'colour'], unordered: true, states: [], status: 'active' },
+  // The reason bar above the table (P10) and the selection bar at the panel's foot (P8).
+  { id: 'sources.why-bar', surface: 'sources-why', mock: '.panel .why-bar', app: '.sources-panel-box .why-bar', checks: ['chrome', 'colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'sources.why-label', surface: 'sources-why', mock: '.panel .why-bar .lbl > span', app: '.sources-panel-box .why-bar .lbl > span', checks: ['type', 'colour'], dataText: { mock: ['b'], app: ['b'] }, text: true, states: [], status: 'active' },
+  { id: 'sources.why-field', surface: 'sources-why', mock: '.panel .why-bar .field', app: '.sources-panel-box .why-bar .field', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'sources.why-buttons', surface: 'sources-why', mock: '.panel .why-bar .why-f > button', app: '.sources-panel-box .why-bar .why-f > button', checks: ['chrome', 'type', 'colour'], list: 'fixed', states: [], status: 'active' },
+  { id: 'sources.selbar', surface: 'sources-sel', mock: '.panel .selbar', app: '.sources-panel-box .selbar', checks: ['chrome', 'colour'], use: 'decorative', states: [], status: 'active' },
+  { id: 'sources.selbar-count', surface: 'sources-sel', mock: '.panel .selbar > b', app: '.sources-panel-box .selbar > b', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'sources.selbar-buttons', surface: 'sources-sel', mock: '.panel .selbar > button', app: '.sources-panel-box .selbar .selection-bar-actions > button', checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed',
+    icon: [{ mock: 'table', app: 'table-2' }, { mock: 'lib', app: 'library-big' }], states: [], status: 'active' },
   // S12 report panel (P2/P3). The head: the title, Version, Citation style, Review with another model, Download. At 1280
   // every check runs. At 390 the mockup's head runs past the screen's edge (its controls are not hidden there and its
   // title shrinks to no width), so the phone pairs compare type, colour and icons and leave out geometry by the declared

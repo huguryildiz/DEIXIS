@@ -19,7 +19,23 @@ const ABSTRACT_REASONS: Record<string, string> = {
   no_abstract: 'No abstract was found, so the model did not read it.',
   abstract_not_found: 'No abstract was found, so the model did not read it.',
   abstract_not_read: 'Below the read limit of the run; the model was not asked.',
-  abstract_not_proposed: 'Below the read limit of the run; the model was not asked.',
+  abstract_not_proposed: 'No valid model proposal was recorded for its abstract.',
+  survey_title_word: 'The title names a survey or review, so it went to the seed pool instead of screening.',
+}
+// The basis of an abstract-stage decision, from what its reason code read: the title alone, the record's metadata, the
+// title and abstract by a code rule, or two model reads of them. A code with no reading (no abstract, not read, no valid
+// proposal) has no basis line.
+const ABSTRACT_BASIS: Record<string, string> = {
+  blocks_in_title: 'basis: title · code rule',
+  survey_title_word: 'basis: title · code rule',
+  notice_record: 'basis: record metadata · code rule',
+  artifact_of_paper: 'basis: record metadata · code rule',
+  both_blocks_missing: 'basis: title and abstract · code rule',
+  runs_agree_candidate: 'basis: title and abstract · two reads',
+  runs_agree_out_of_scope: 'basis: title and abstract · two reads',
+  runs_agree_unresolved: 'basis: title and abstract · two reads',
+  runs_disagree_kept_as_candidate: 'basis: title and abstract · two reads',
+  quote_not_found_kept_as_candidate: 'basis: title and abstract · two reads',
 }
 const NOT_READ = new Set(['no_abstract', 'abstract_not_found', 'abstract_not_read', 'abstract_not_proposed'])
 export function proposalOf(source: Source): Proposal | null {
@@ -40,12 +56,14 @@ export function proposalOf(source: Source): Proposal | null {
   if (sc?.stage === 'abstract') {
     const code = sc.reason_code ?? ''
     const reason = ABSTRACT_REASONS[code]
-    const basis = NOT_READ.has(code) ? '' : t(sc.decided_by === 'model_agreement' || code === 'runs_disagree_kept_as_candidate' ? 'basis: title and abstract · two reads' : 'basis: title and abstract · code rule')
+    const basis = ABSTRACT_BASIS[code] ? t(ABSTRACT_BASIS[code]) : ''
     if (sc.outcome === 'candidate') return { tone: 'passed', word: t('passed abstract'), reason: t(reason ?? 'Kept for the full text.'), basis }
     if (sc.outcome === 'out_of_scope') return { tone: 'exclude', word: t('exclude'), reason: t(reason ?? 'Out of scope at the abstract stage.'), basis }
     if (NOT_READ.has(code)) return { tone: 'none', word: t('not screened'), reason: t(reason), basis }
     return { tone: 'uncertain', word: t('uncertain'), reason: t(reason ?? 'Left open at the abstract stage.'), basis }
   }
+  // Decisions made under an earlier question or criterion are left out by the backend; none stands for the current one.
+  if (sc?.stale) return { tone: 'none', word: t('not screened'), reason: t('Screened under an earlier question or criterion; not screened for the current one yet.'), basis: '' }
   const s = source.selection
   if (s.proposal) return { tone: s.proposal === 'include' ? 'include' : s.proposal === 'exclude' ? 'exclude' : 'uncertain', word: t(s.proposal), reason: s.proposal_reason ?? '', basis: s.proposal_basis ? t('basis: {basis}', { basis: t(s.proposal_basis.replaceAll('_', ' ')) }) : '' }
   return null

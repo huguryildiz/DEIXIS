@@ -587,7 +587,7 @@ export const PAIRS: Pair[] = [
     icon: { mock: 'trash', app: 'trash' }, states: [], status: 'active' },
   { id: 'sources.prop', surface: 'research-panel', mock: '.panel tbody tr:first-child .prop', app: '.source-table tbody tr.source-row:first-child .prop', checks: ['type', 'colour'], states: [], status: 'active' },
   // The verdict and the chosen segment of an included work (the first row's state is the fixture's data).
-  { id: 'sources.verdict', surface: 'research-panel', mock: '.panel tbody .prop b.inc', app: '.source-table tbody .prop b.verdict.is-include', checks: ['type', 'colour'], use: 'icon', unordered: true, states: [], status: 'active' },
+  { id: 'sources.verdict', surface: 'research-panel', mock: '.panel tbody .prop b.inc', app: '.source-table tbody .prop b.verdict.is-include', checks: ['type', 'colour'], unordered: true, states: [], status: 'active' },
   { id: 'sources.seg', surface: 'research-panel', mock: '.panel tbody tr:first-child .seg', app: '.source-table tbody tr.source-row:first-child .seg', checks: ['chrome', 'colour'], use: 'decorative', states: [], status: 'active' },
   { id: 'sources.seg-buttons', surface: 'research-panel', mock: '.panel tbody tr:first-child .seg button', app: '.source-table tbody tr.source-row:first-child .seg button', checks: ['chrome', 'type'], list: 'fixed', states: [], status: 'active' },
   { id: 'sources.seg-on', surface: 'research-panel', mock: '.panel tbody .seg button.on.inc', app: '.source-table tbody .seg button.is-included[aria-pressed=true]', checks: ['type', 'colour'], unordered: true, states: [], status: 'active' },

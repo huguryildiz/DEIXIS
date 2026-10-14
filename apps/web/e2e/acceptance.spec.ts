@@ -813,6 +813,8 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
       await first.getByLabel('Number').fill('131')
       await first.getByRole('button', { name: 'Save value' }).click()
       await expect(first.locator('.evidence-current')).toHaveText('131 byte')
+      // The second tab reloads the cell under its open form; the edit still rests on the version it started from.
+      await expect(second.locator('.evidence-current')).toHaveText('131 byte')
       await second.getByLabel('Number').fill('132')
       await second.getByRole('button', { name: 'Save value' }).click()
       await expect(other.getByRole('status')).toContainText('Not applied: expected version 1, stored version 2.')

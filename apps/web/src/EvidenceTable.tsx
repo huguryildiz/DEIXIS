@@ -712,12 +712,15 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState<Draft | null>(null)
+  // The cell version the open edit was started from: a newer write from another tab, which reloads the cell under the
+  // form, is refused with 409 instead of being overwritten silently. After a refusal the draft rests on the version shown.
+  const [draftBase, setDraftBase] = useState<number | null>(null)
   const [problem, setProblem] = useState('')
   const [evidence, setEvidence] = useState<CellEvidence[] | null>(null)
   const [details, setDetails] = useState(false)
   const sv = row.source_version_id
 
-  const load = useCallback(() => api.cell(researchId, tableId, column.id, sv).then(c => { setCell(c); setError('') }, e => setError(errorText(e))), [researchId, tableId, column.id, sv])
+  const load = useCallback(() => api.cell(researchId, tableId, column.id, sv).then(c => { setCell(c); setError(''); return c }, e => { setError(errorText(e)); return null }), [researchId, tableId, column.id, sv])
   useEffect(() => {
     let live = true
     api.cell(researchId, tableId, column.id, sv).then(c => { if (live) { setCell(c); setError('') } }, e => { if (live) setError(errorText(e)) })
@@ -729,7 +732,12 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
     setBusy(true)
     try { await action(); toast('success', success); after?.(); await load(); onChanged() }
     catch (e) {
-      if (conflict(e)) { toast('warning', t(draft ? 'Not applied: {message}. The cell now shows the latest state; your draft is kept.' : 'Not applied: {message}. The page now shows the latest state.', { message: errorText(e) })); await load(); onChanged() }
+      if (conflict(e)) {
+        toast('warning', t(draft ? 'Not applied: {message}. The cell now shows the latest state; your draft is kept.' : 'Not applied: {message}. The page now shows the latest state.', { message: errorText(e) }))
+        const fresh = await load()
+        if (draft && fresh) setDraftBase(fresh.version)
+        onChanged()
+      }
       else toast('error', errorText(e))
     } finally { setBusy(false) }
   }
@@ -743,7 +751,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
   const showEvidence = (items: CellEvidence[]) => setEvidence(items)
   const save = () => {
     if (!cell || !draft) return
-    const body = editBody(column, draft, current, cell.version)
+    const body = editBody(column, draft, current, draftBase ?? cell.version)
     if (typeof body === 'string') return setProblem(body)
     setProblem('')
     void mutate(() => api.editCell(researchId, tableId, column.id, sv, body, newKey()), t('Value saved.'), () => setDraft(null))
@@ -781,7 +789,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
         </dl>}
         {!draft && <div className="dacts">
           <button type="button" className="btn-pri" disabled={recheckLocked} onClick={() => mutate(() => api.recheckCell(researchId, tableId, column.id, sv, cell.version, newKey()), t('Recheck started. Its result will wait as a proposal.'), onRunStarted)}><RotateCw size={14} aria-hidden />{t('Recheck this cell')}</button>
-          <button type="button" className="ghost" disabled={busy} onClick={() => { setProblem(''); setDraft(draftFrom(column, current)) }}><PencilLine size={14} aria-hidden />{t('Edit value')}</button>
+          <button type="button" className="ghost" disabled={busy} onClick={() => { setProblem(''); setDraft(draftFrom(column, current)); setDraftBase(cell?.version ?? null) }}><PencilLine size={14} aria-hidden />{t('Edit value')}</button>
           {source && <button type="button" className="ib" aria-label={t('Open the source')} title={t('Open the source')} onClick={onOpenSource}><FileText size={16} aria-hidden /></button>}
         </div>}
         {!draft && <p className="foot-note cell-scope">{!available ? t('This source has no stored text, so a recheck has nothing to read.')

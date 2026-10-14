@@ -1,8 +1,8 @@
 import type { Page } from '@playwright/test'
 import { execSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { COLOUR_EXCEPTIONS, COPY_CHANGES, DEFERRED_TARGETS, EXCLUDED_MOCK_CONTROLS, GEOMETRY_EXCEPTIONS, PLACEMENTS, STYLE_EXCEPTIONS, type ColourException, type Use } from './exceptions'
+import { CHECK_ROWS, COLOUR_EXCEPTIONS, COPY_CHANGES, DEFERRED_TARGETS, EXCLUDED_MOCK_CONTROLS, GEOMETRY_EXCEPTIONS, PLACEMENTS, SINGLE_CHOICE, STYLE_EXCEPTIONS, type ColourException, type Use } from './exceptions'
 import type { Pair, Theme } from './parity-map'
 
 // The parity gate of plan §4.1 as reusable helpers. A slice runs them for its screens through parity.spec.ts; each
@@ -23,6 +23,14 @@ function mainCheckout(): string {
 export const MOCKUP = process.env.DEIXIS_PARITY_MOCKUP ?? path.join(mainCheckout(), '.local', 'design', 'elicit-style-mockup', 'index.html')
 // Pixel diffs are a review aid only (plan §4.1); they never fail the check.
 export const PARITY_OUT = process.env.DEIXIS_PARITY_OUT ?? path.join(mainCheckout(), '.local', 'parity')
+// Exception audit (S28): with DEIXIS_PARITY_AUDIT set to a file, every use of an entry of exceptions.ts is appended to
+// it as one JSON line: a geometry or style exception records whether the difference it allows was there, a colour
+// exception or copy change that it was applied, a placement or excluded control how many elements its selector found.
+// `e2e/parity/audit-summary.mjs <file>` lists the entries that never applied. Off by default; never a gate.
+const AUDIT = process.env.DEIXIS_PARITY_AUDIT
+export function audit(record: Record<string, unknown>): void {
+  if (AUDIT) appendFileSync(AUDIT, JSON.stringify(record) + '\n')
+}
 
 // ---- the mockup page --------------------------------------------------------------------------------------------
 
@@ -304,6 +312,10 @@ export function normaliseFamily(family: string): string {
 }
 const px = (v: string) => (v === 'normal' ? 'normal' : /^-?[\d.]+px$/.test(v) ? `${Math.round(parseFloat(v) * 100) / 100}px` : v)
 
+function auditStyle(pair: Pair, property: string, differs: boolean) {
+  for (const e of STYLE_EXCEPTIONS) if (e.pairs.includes(baseId(pair.id)) && e.properties.includes(property)) audit({ kind: 'style', id: e.id, pair: pair.id, property, needed: differs })
+}
+
 /** Typography: family (normalised), size, weight, line height, letter spacing and text transform equal. */
 export function checkType(pair: Pair, m: Side): string[] {
   if (!m.mock || !m.app) return []
@@ -312,7 +324,7 @@ export function checkType(pair: Pair, m: Side): string[] {
   if (fm !== fa) out.push(`${pair.id}: font-family mockup ${fm} app ${fa}`)
   const freeStyle = new Set(STYLE_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id))).flatMap(e => e.properties))
   for (const k of ['font-size', 'font-weight', 'line-height', 'text-transform']) {
-    if (freeStyle.has(k)) continue
+    if (freeStyle.has(k)) { auditStyle(pair, k, px(m.mock.style[k]) !== px(m.app.style[k])); continue }
     if (px(m.mock.style[k]) !== px(m.app.style[k])) out.push(`${pair.id}: ${k} mockup ${m.mock.style[k]} app ${m.app.style[k]}`)
   }
   const ls = (v: string) => (v === 'normal' ? '0px' : px(v))
@@ -328,6 +340,7 @@ const norm = (t: string) => t.replace(/\s+/g, ' ').trim()
 export function checkText(pair: Pair, m: Side): string[] {
   if (!m.mock || !m.app) return []
   const change = COPY_CHANGES.find(c => norm(c.mock) === norm(m.mock!.text))
+  if (change) audit({ kind: 'copy', id: change.id, pair: pair.id })
   const expected = change ? change.app : m.mock.text
   if (norm(expected) === norm(m.app.text)) return []
   return [`${pair.id}: text mockup "${norm(m.mock.text)}"${change ? ` (copy change ${change.id} → "${change.app}")` : ''}, app "${norm(m.app.text)}"`]
@@ -335,10 +348,12 @@ export function checkText(pair: Pair, m: Side): string[] {
 
 /** The colour exceptions that cover this mockup element, property and theme. */
 export function exceptionFor(pair: Pair, property: string, theme: Theme, mock: Measured): ColourException | undefined {
-  return COLOUR_EXCEPTIONS.find(e => e.property === property
+  const found = COLOUR_EXCEPTIONS.find(e => e.property === property
     && (e.pairs?.includes(baseId(pair.id)) || e.selectors.some(sel => mock.matches.includes(sel)))
     && e.use === (pair.use ?? 'text')
     && deltaE2000(flatten(mock.colours[property], mock.background), hexToRgba(e.mock[theme])) <= 1)
+  if (found) audit({ kind: 'colour', id: found.id, pair: pair.id, property, theme })
+  return found
 }
 
 /** Contrast of an element by use, on what it actually sits on (alpha composited). */
@@ -393,7 +408,8 @@ export function checkColour(pair: Pair, m: Side, v: Variant): string[] {
   const shadow = (s: string) => s.replace(/rgba?\([^)]*\)/g, c => c.replace(/\s+/g, '')).replace(/\s+/g, ' ').trim()
   // A declared style exception (exceptions.ts) leaves out only its properties.
   const freeStyle = new Set(STYLE_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id))).flatMap(e => e.properties))
-  if (!freeStyle.has('box-shadow') && shadow(m.mock.style['box-shadow']) !== shadow(m.app.style['box-shadow'])) {
+  if (freeStyle.has('box-shadow')) auditStyle(pair, 'box-shadow', shadow(m.mock.style['box-shadow']) !== shadow(m.app.style['box-shadow']))
+  else if (shadow(m.mock.style['box-shadow']) !== shadow(m.app.style['box-shadow'])) {
     out.push(`${pair.id}: box-shadow mockup ${m.mock.style['box-shadow']} app ${m.app.style['box-shadow']}`)
   }
   return out
@@ -447,7 +463,16 @@ async function checkItem(pair: Pair, item: Pair, m: Side, v: Variant, mock: Page
   const out = checkPresence(item, m)
   if (out.length) return out
   // A declared geometry exception (exceptions.ts) leaves out only its axes, for chrome and content blocks alike.
-  const free = new Set(GEOMETRY_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id)) && (!e.widths || e.widths.includes(v.width))).flatMap(e => e.axes))
+  const applying = GEOMETRY_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id)) && (!e.widths || e.widths.includes(v.width)))
+  const free = new Set(applying.flatMap(e => e.axes))
+  if (AUDIT && applying.length) {
+    // Which freed axes would have failed: chrome compares every axis (a data row no y), content x and width.
+    const compared = new Set<Axis>([...(pair.checks.includes('chrome') ? (data ? ['x', 'width', 'height'] : ['x', 'y', 'width', 'height']) as Axis[] : []),
+      ...(pair.checks.includes('content') ? ['x', 'width'] as Axis[] : [])])
+    const failing = new Set(checkChrome(item, m, [...compared]).map(line => line.slice(item.id.length + 2).split(' ')[0]))
+    for (const e of applying) audit({ kind: 'geometry', id: e.id, pair: item.id, width: v.width, theme: v.theme,
+      compared: e.axes.filter(a => compared.has(a)), needed: e.axes.filter(a => failing.has(a)) })
+  }
   if (pair.checks.includes('chrome')) {
     const axes = (data ? ['x', 'width', 'height'] as Axis[] : ['x', 'y', 'width', 'height'] as Axis[]).filter(a => !free.has(a))
     out.push(...checkChrome(item, m, axes))
@@ -551,6 +576,18 @@ export async function checkColourStates(pair: Pair, v: Variant, mock: Page, app:
     }
   }
   return out
+}
+
+/** Exception audit of the selectors exceptions.ts names, on one surface: how many elements each finds on its side. */
+export async function auditSelectors(mock: Page, app: Page, surface: string, v: Variant): Promise<void> {
+  if (!AUDIT) return
+  const count = (page: Page, selector: string) => page.evaluate(sel => { try { return document.querySelectorAll(sel).length } catch { return -1 } }, selector)
+  for (const p of PLACEMENTS) if (p.app) audit({ kind: 'placement', id: p.id, surface, width: v.width, theme: v.theme, count: await count(app, p.app) })
+  for (const c of [...EXCLUDED_MOCK_CONTROLS, ...DEFERRED_TARGETS]) audit({ kind: 'excluded', id: c.id, surface, width: v.width, theme: v.theme, count: await count(mock, c.selector) })
+  for (const c of [...CHECK_ROWS, ...SINGLE_CHOICE]) {
+    audit({ kind: 'choice-mock', id: c.id, surface, width: v.width, theme: v.theme, count: await count(mock, c.mock) })
+    if (c.app) audit({ kind: 'choice-app', id: c.id, surface, width: v.width, theme: v.theme, count: await count(app, c.app) })
+  }
 }
 
 /** Every gate of §4.1 for the active pairs of one surface and variant. Returns failure lines. */

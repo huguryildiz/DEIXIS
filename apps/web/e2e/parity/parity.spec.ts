@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createServer } from 'node:net'
-import { APP_EXCLUDE, MOCK_EXCLUDE, MOCKUP, PARITY_OUT, checkBreakpoint, driveMockup, gateSurface, measure, openMockup, writePixelDiff, type FixtureContext } from './gates'
+import { APP_EXCLUDE, MOCK_EXCLUDE, MOCKUP, PARITY_OUT, auditSelectors, checkBreakpoint, driveMockup, gateSurface, measure, openMockup, writePixelDiff, type FixtureContext } from './gates'
 import { BREAKPOINT, PAIRS, SURFACES, THEMES, WIDTHS, pairsFor, pendingBySlice, type Surface, type Theme } from './parity-map'
 
 // Parity check (D8, plan §4.1): the app on the fixture server against the mockup v24, per surface, at 1280 and 390,
@@ -289,6 +289,7 @@ test.describe('parity: app against the mockup v24', () => {
             await showApp(pages.app, server.url(), surface, research, report, cand)
             const pairs = pairsFor(surface.id, width)
             const failures = await gateSurface(pairs, { width, theme }, pages.mock, pages.app, ctx)
+            await auditSelectors(pages.mock, pages.app, surface.id, { width, theme })
             info.annotations.push({ type: 'parity', description: `${pairs.length} active pairs checked` })
             const diff = await writePixelDiff(pages.mock, pages.app, pages.scratch, `${surface.id}-${width}-${theme}`)
             info.annotations.push({ type: 'pixel-diff', description: diff })

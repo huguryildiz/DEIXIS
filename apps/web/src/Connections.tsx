@@ -713,7 +713,9 @@ export function ConnectionsTab({ dark, access, onConnections }: { dark: boolean;
         <div className="connection-checks">
           {check(t('API key (GEMINI_API_KEY)'), model.key_configured ? t('set') : t('not set'))}
           {check('Gemini CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
-          {check(t('Semantic passage search'), model.key_configured ? t('on · passage text is sent to Google') : t('off'))}
+          {/* From the saved semantic search provider, not from the key alone: another provider or Off may be chosen. */}
+          {check(t('Semantic passage search'), !semantic ? t('not known') : semantic.provider === 'gemini' ? t('on · passage text is sent to Google')
+            : model.key_configured ? t('off · another provider is chosen') : t('off'))}
         </div>
       </>}
       {sel.id === 'deepseek' && <>

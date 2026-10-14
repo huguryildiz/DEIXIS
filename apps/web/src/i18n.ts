@@ -4737,4 +4737,5 @@ const tr: Record<string, string> = {
   'Embedding model for semantic search': 'Anlamsal arama için gömme modeli',
   'Not used for semantic search': 'Anlamsal aramada kullanılmıyor',
   'No embedding model listed': 'Listelenen gömme modeli yok',
+  'off · another provider is chosen': 'kapalı · başka bir sağlayıcı seçili',
 }

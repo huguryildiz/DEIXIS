@@ -348,11 +348,23 @@ test.describe.serial('S25: the Library page', () => {
     await expect(result(page)).toContainText('1 PDFs added. The titles, authors and years are Zotero’s, not checked against a provider.')
     await expect(result(page)).toContainText('SYNTHETIC item: No PDF attachment.')
     answer = 'fail'
+    // The list reads after the failed import are held: until one is on screen the line says the list is being read.
+    let releaseReads: () => void = () => {}
+    const readsHeld = new Promise<void>(resolve => { releaseReads = resolve })
+    await page.route('**/api/library', async route => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      await readsHeld
+      return route.fallback()
+    })
     await page.getByRole('button', { name: 'Import from Zotero' }).click()
     await page.getByRole('dialog', { name: 'Import from Zotero' }).getByRole('button', { name: 'Import 3 items' }).click()
     // An error does not prove nothing was saved (the import saves item by item): the page says the result is not confirmed.
     await expect(result(page)).toContainText('The Zotero import could not be confirmed: SYNTHETIC Zotero did not answer')
+    await expect(result(page)).toContainText('Some items may have been saved before the error; reading the list again…')
+    await expect(result(page)).not.toContainText('the list was read again')
+    releaseReads()
     await expect(result(page)).toContainText('Some items may have been saved before the error; the list was read again')
+    await page.unroute('**/api/library')
     await expect(result(page)).not.toContainText('Nothing was imported')
   })
 
@@ -551,4 +563,38 @@ test.describe.serial('S25: the Library page', () => {
       expect(notice).toBe(0)
     })
   }
+  // Sol S25 round 2: two reads with no write between them; the older one answers last and must not replace the newer list.
+  test('an older Library read that answers after a newer read does not replace it', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await open(page)
+    const lib = await library()
+    const work = [...lib.entries].sort((x, y) => x.researches.length - y.researches.length)[0]
+    const target = lib.researches.find(r => [A.id, B.id, C.id].includes(r.id) && !work.researches.some(h => h.id === r.id))!
+    await find(page, work.title)
+    const cell = row(page, work.title).locator('td').nth(4)
+    let release: () => void = () => {}
+    const held = new Promise<void>(resolve => { release = resolve })
+    let seen = 0
+    let fetched = false
+    await page.route('**/api/library', async route => {
+      if (route.request().method() !== 'GET' || seen++) return route.fallback()
+      const stale = await route.fetch()
+      const body = await stale.text()
+      fetched = true
+      await held
+      return route.fulfill({ status: 200, contentType: 'application/json', body })
+    })
+    // A new research makes the shell's poll read the Library: that first read takes the list before the change, and is held.
+    await post('/api/researches', { question: 'SYNTHETIC research made before an older read', source_scope: 'attached', model_connection: 'codex', requested_model: 'fixture-model', effort: 'quick' })
+    await expect.poll(() => fetched, { timeout: 15_000 }).toBe(true)
+    // The change happens on the server, not through the page, so no write runs; a second research makes a newer read.
+    await post(`/api/researches/${target.id}/library-sources`, { work_id: work.work_id })
+    await post('/api/researches', { question: 'SYNTHETIC research made for a newer read', source_scope: 'attached', model_connection: 'codex', requested_model: 'fixture-model', effort: 'quick' })
+    const stored = (await library()).entries.find(e => e.work_id === work.work_id)!.researches
+    const expected = `${stored[0].title}${stored.length > 1 ? `+${stored.length - 1} more` : ''}`
+    await expect(cell).toHaveText(expected, { timeout: 15_000 })
+    release()
+    await page.waitForTimeout(800)
+    expect(await cell.textContent()).toBe(expected)
+  })
 })

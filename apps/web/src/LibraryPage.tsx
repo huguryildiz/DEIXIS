@@ -36,6 +36,7 @@ type PdfFilter = 'all' | 'text' | 'no_text' | 'abstract' | 'metadata'
 type Pending = { research: string | null; works: string[] }
 type Mode = 'table' | 'ask'
 type Result = { tone: 'ok' | 'warn' | 'bad'; lines: string[]; open?: { id: string; tab?: string } }
+type ReadOutcome = 'applied' | 'stale' | { error: string }
 // Row density and grouping, live choices of the earlier Library kept in the View options menu of the table head (Sol S25 round 1). "By
 // research" lists each work once, under the research with the newest activity that holds it; works no research holds
 // come last under "No research".
@@ -166,6 +167,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
   const version = useRef(0)
   const writes = useRef(0)
   const writeSeq = useRef(0)
+  const readSeq = useRef(0)
 
   const entries = useMemo(() => view?.entries ?? [], [view])
   const researches = useMemo(() => view?.researches ?? [], [view])
@@ -197,12 +199,29 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
     setSelected(current => (current && !works.has(current) ? null : current))
   }
 
-  function load() {
+  // Only the newest read applies (its answer or its error): an older read that answers later is dropped, even when no
+  // write ran between them. The outcome says whether this read was the one shown.
+  function load(): Promise<ReadOutcome> {
     const seen = version.current
-    api.library().then(next => { if (version.current === seen && !writes.current) show(next) })
-      .catch((e: Error) => { if (version.current === seen && !writes.current) setError(e.message) })
+    const seq = ++readSeq.current
+    const current = () => seq === readSeq.current && version.current === seen && !writes.current
+    return api.library().then(next => {
+      if (!current()) return 'stale' as const
+      show(next)
+      return 'applied' as const
+    }, (e: Error) => {
+      if (!current()) return 'stale' as const
+      setError(e.message)
+      return { error: e.message }
+    })
   }
-  useEffect(load, [researchKey])
+  // A read whose answer is confirmed on screen: one superseded by a newer read or a write is read again (at most 3 times).
+  async function readAgain(): Promise<ReadOutcome> {
+    let outcome = await load()
+    for (let i = 0; outcome === 'stale' && i < 3; i++) outcome = await load()
+    return outcome
+  }
+  useEffect(() => { void load() }, [researchKey])
 
   async function write<T>(name: string, run: () => Promise<T>, listOf: (answer: T) => LibraryView | undefined = () => undefined): Promise<T> {
     const seq = ++writeSeq.current
@@ -219,7 +238,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
       writes.current--
       version.current++
       if (!writes.current) setBusy(null)
-      if (!shown && !writes.current) load()
+      if (!shown && !writes.current) void load()
     }
   }
 
@@ -535,10 +554,15 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
     } catch (e) {
       // The import saves item by item, so an error does not prove that nothing was saved; the list is read again (write()).
       setZoteroOpen(false)
-      setResult({ tone: 'bad', lines: [
-        t('The Zotero import could not be confirmed: {message}', { message: errorText(e) }),
-        t('Some items may have been saved before the error; the list was read again and shows what the Library holds now.'),
-      ] })
+      const first = t('The Zotero import could not be confirmed: {message}', { message: errorText(e) })
+      const reading: Result = { tone: 'bad', lines: [first, t('Some items may have been saved before the error; reading the list again…')] }
+      setResult(reading)
+      // The line says the list was read again only once that read is on screen; a newer result replaces this one.
+      const outcome = await readAgain()
+      const done: Result = { tone: 'bad', lines: [first, outcome === 'applied'
+        ? t('Some items may have been saved before the error; the list was read again and shows what the Library holds now.')
+        : t('Some items may have been saved before the error; the list could not be read again: {message}', { message: outcome === 'stale' ? t('a newer change is still running') : outcome.error })] }
+      setResult(current => (current === reading ? done : current))
     }
   }
 
@@ -751,7 +775,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
           </div>
           {error && <div className="notice bad lib-notice" role="alert"><X size={16} aria-hidden /><div className="nb">
             <span>{view ? t('Could not read the Library again: {message}. The list below may be out of date.', { message: error }) : t('Could not load the Library: {message}', { message: error })}</span>
-            <div className="acts"><button type="button" className="ghost" onClick={() => { setError(''); load() }}>{t('Retry')}</button></div>
+            <div className="acts"><button type="button" className="ghost" onClick={() => { setError(''); void load() }}>{t('Retry')}</button></div>
           </div></div>}
           {result && <ResultNotice result={result} onOpen={target => onOpenResearch(target.id, target.tab)} onClose={() => setResult(null)} />}
           <div className="tbl-wrap"><table className="lib-table">

@@ -4751,6 +4751,9 @@ const tr: Record<string, string> = {
   '{role}: {model} (the connection’s default; the model saved in Settings is not listed now)': '{role}: {model} (bağlantının varsayılanı; Ayarlar’da kayıtlı model şu an listelenmiyor)',
   'Could not read the default models in Settings: {message}': 'Ayarlar’daki varsayılan modeller okunamadı: {message}',
   'Use the connections’ default models': 'Bağlantıların varsayılan modellerini kullan',
+  'Some items may have been saved before the error; reading the list again…': 'Hatadan önce bazı öğeler kaydedilmiş olabilir; liste yeniden okunuyor…',
+  'Some items may have been saved before the error; the list could not be read again: {message}': 'Hatadan önce bazı öğeler kaydedilmiş olabilir; liste yeniden okunamadı: {message}',
+  'a newer change is still running': 'daha yeni bir değişiklik hâlâ sürüyor',
   // UI parity S25: the Library page.
   '+{n} more': '+{n} daha',
   'Abstract {n}': 'Özet {n}',

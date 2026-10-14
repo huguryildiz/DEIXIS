@@ -292,12 +292,121 @@ test.describe.serial('S24: the Settings page', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
+  test('effort keeps "Model default", and a connection test refreshes the default model list (Sol r1 backlog)', async () => {
+    // SYNTHETIC connections: Codex lists one model with two thinking levels; a fresh test of Codex lists a second one.
+    const efforts = [{ id: 'low', description: '' }, { id: 'high', description: '' }]
+    const first = { id: 'syn-model-a', display_name: 'SYNTHETIC model A', is_default: true, reasoning_efforts: efforts }
+    const second = { id: 'syn-model-b', display_name: 'SYNTHETIC model B', is_default: false, reasoning_efforts: efforts }
+    let tested = false
+    const codex = () => ({ connection: 'codex', ready: true, reason: null, installed: true, signed_in: true, models: tested ? [first, second] : [first] })
+    await page.route(url => url.pathname === '/api/connections', async route => {
+      const response = await route.fetch()
+      const body = await response.json() as { models: Record<string, unknown> }
+      await route.fulfill({ response, json: { ...body, models: { ...body.models, codex: codex() } } })
+    })
+    await page.route(url => url.pathname === '/api/connections/codex', route => { tested = true; return route.fulfill({ json: codex() }) })
+    const saved: Record<string, unknown>[] = []
+    await page.route(url => url.pathname === '/api/settings/literature', route => {
+      const body = route.request().postDataJSON() as Record<string, unknown>
+      saved.push(body)
+      return route.fulfill({ json: { literature: body } })
+    })
+    await page.goto(server.url('#/settings'))
+    await page.reload()
+    const model = page.getByRole('combobox', { name: 'Literature model' })
+    const effort = page.getByRole('combobox', { name: 'Literature effort' })
+    await expect(model).toBeEnabled()
+    await expect(model.locator('option', { hasText: 'SYNTHETIC model B' })).toHaveCount(0)
+    await model.selectOption({ label: 'SYNTHETIC model A' })
+    await expect(effort).toBeEnabled()
+    await effort.selectOption('high')
+    await expect.poll(() => saved.at(-1)?.reasoning_effort).toBe('high')
+    // The nullable choice is still there after a level is chosen, and choosing it saves no level.
+    await expect(effort.locator('option')).toHaveText(['Model default', 'Low', 'High'])
+    await effort.selectOption({ label: 'Model default' })
+    await expect.poll(() => saved.at(-1)?.reasoning_effort ?? 'none').toBe('none')
+    // A connection test in the Codex sheet reads the model list again; the default model choices follow it.
+    await page.getByRole('button', { name: /^Codex CLI / }).click()
+    const sheet = page.getByRole('dialog', { name: 'Codex CLI' })
+    await sheet.getByRole('button', { name: 'Test the connection' }).click()
+    await expect(sheet.locator('.dmeta')).toContainText('checked')
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    await expect(model.locator('option', { hasText: 'SYNTHETIC model B' })).toHaveCount(1)
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
+
+  test('a failed check says it could not check and adds no new time (Sol r1)', async () => {
+    let fail = false
+    await page.route(url => url.pathname === '/api/ocr', route => fail ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC OCR check failure' } }) : route.fallback())
+    await page.goto(server.url('#/settings'))
+    await page.reload()
+    await page.getByRole('button', { name: /^OCR \(Tesseract\)/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'OCR (Tesseract)' })
+    const find = sheet.getByRole('button', { name: 'Find it on this computer' })
+    await find.click()
+    await expect(sheet.locator('.dmeta')).toContainText(/checked \d/)
+    const pill = await sheet.locator('.dmeta > span').first().innerText()
+    fail = true
+    await find.click()
+    await expect(sheet.locator('.dmeta .check-failed')).toHaveText(/^Could not check: .*SYNTHETIC OCR check failure/)
+    await expect(sheet.locator('.dmeta')).not.toContainText(/checked \d/)
+    // The state shown is still the last one read; nothing new is claimed.
+    await expect(sheet.locator('.dmeta > span').first()).toHaveText(pill)
+    fail = false
+    await find.click()
+    await expect(sheet.locator('.dmeta')).toContainText(/checked \d/)
+    await expect(sheet.locator('.dmeta .check-failed')).toHaveCount(0)
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
+
+  test('a semantic search read that started before a save does not undo the saved choice on screen (Sol r1)', async () => {
+    // SYNTHETIC semantic search state: OpenAI and Off can be chosen; nothing is saved yet.
+    const option = (provider: string, available: boolean) => ({ provider, models: provider === 'openai' ? ['text-embedding-3-small'] : [], available, reason: available ? null : 'SYNTHETIC not available' })
+    const view = (provider: string, explicit: boolean) => ({ provider, model: provider === 'openai' ? 'text-embedding-3-small' : null, explicit,
+      options: [option('builtin', false), option('openai', true), option('gemini', false), option('ollama', false), option('lm_studio', false), option('off', true)] })
+    let release: () => void = () => {}
+    const held = new Promise<void>(resolve => { release = resolve })
+    let reads = 0
+    await page.route(url => url.pathname === '/api/semantic-search', async route => {
+      if (route.request().method() === 'PUT') {
+        const body = route.request().postDataJSON() as { provider: string }
+        return route.fulfill({ json: view(body.provider, true) })
+      }
+      reads++
+      if (reads === 1) return route.fulfill({ json: view('off', false) })
+      await held  // a later read answers with the state from before the save
+      return route.fulfill({ json: view('off', false) })
+    })
+    await page.goto(server.url('#/settings'))
+    await page.reload()
+    const off = page.locator('.semantic-option[data-row="off"] input')
+    await expect(off).toBeChecked()
+    // The local server sheet's Test reads semantic search again; that read is held open.
+    await page.getByRole('button', { name: /^Local model servers/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'Local model servers' })
+    await sheet.getByRole('button', { name: 'Test' }).click()
+    await expect.poll(() => reads).toBe(2)
+    await page.keyboard.press('Escape')
+    await expect(sheet).toHaveCount(0)
+    await page.locator('.semantic-option[data-row="openai"] input').click()
+    await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+    release()
+    await page.waitForTimeout(500)
+    await expect(page.locator('.semantic-option[data-row="openai"] input')).toBeChecked()
+    await expect(page.locator('.semantic-privacy')).toHaveText('Passage text is sent to OpenAI.')
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
+
   test('Sign in again shows the command with Copy; it opens nothing', async () => {
     await page.goto(server.url('#/settings/connections'))
     await page.getByRole('button', { name: /^Codex CLI / }).click()
     const sheet = page.getByRole('dialog', { name: 'Codex CLI' })
     await sheet.getByRole('button', { name: 'Sign in again' }).click()
-    await expect(sheet.locator('.cmd-row code')).toHaveText('CODEX_HOME="$HOME/Library/Application Support/DEIXIS/codex-home" codex login')
+    // The command names the Codex home this backend runs with (here the fixture data folder's), never a fixed macOS path.
+    const home = (await (await page.request.get(server.url('api/connections'))).json() as { codex_home: string }).codex_home
+    expect(home.endsWith(`${path.basename(server.dataDir)}/codex-home`)).toBe(true)
+    await expect(sheet.locator('.cmd-row code')).toHaveText(`CODEX_HOME='${home}' codex login`)
     await expect(sheet.locator('.cmd-row').getByRole('button', { name: 'Copy' })).toBeVisible()
     await shot(page, 'S24-codex-sheet-desktop')
     await sheet.getByRole('button', { name: 'Close' }).click()

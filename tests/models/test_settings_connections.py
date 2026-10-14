@@ -127,6 +127,18 @@ def test_openai_compatible_connections_are_registered_and_report_a_missing_key(t
         assert models["ollama"]["reason"] == "Adapter not implemented in this version"
 
 
+def test_connections_name_the_codex_home_this_backend_uses(tmp_path, monkeypatch):
+    """S24 (Sol r1): the Settings sign-in command is built from the active Codex home, not a hard-coded macOS path."""
+    monkeypatch.delenv("DEIXIS_CODEX_HOME", raising=False)
+    app = create_app(Settings(data_dir=tmp_path / "data3", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(remote)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        assert c.get("/api/connections").json()["codex_home"] == str(tmp_path / "data3" / "codex-home")
+    monkeypatch.setenv("DEIXIS_CODEX_HOME", str(tmp_path / "SYNTHETIC codex home"))
+    with TestClient(app) as c:
+        assert c.get("/api/connections").json()["codex_home"] == str(tmp_path / "SYNTHETIC codex home")
+
+
 def test_one_model_connection_can_be_freshly_queried(client):
     response = client.get("/api/connections/fake?refresh=true")
     assert response.status_code == 200 and response.json()["connection"] == "fake"

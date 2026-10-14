@@ -1045,6 +1045,9 @@ def create_app(
             models.setdefault(name, {"connection": name, "ready": False, "reason": "Adapter not implemented in this version"})
         return {
             "models": models,
+            # The Codex home this backend runs Codex with (DEIXIS_CODEX_HOME or the data folder's codex-home), so the
+            # Settings sign-in command names the folder actually used. A local path, never a secret.
+            "codex_home": str(settings.codex_home),
             "providers": [
                 {"id": p, "implemented": True, "access_mode": c.access_mode(), "supplementary": c.supplementary,
                  "key_env": c.key_env, "role": provider_role(c),

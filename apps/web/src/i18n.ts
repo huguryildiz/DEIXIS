@@ -4732,4 +4732,5 @@ const tr: Record<string, string> = {
   'the system keychain': 'sistem anahtar zinciri',
   'Access and quota are recorded per request; not verified in advance.': 'Erişim ve kota her istekte kaydedilir; önceden doğrulanmaz.',
   'Semantic search provider': 'Anlamsal arama sağlayıcısı',
+  'Could not check: {message}': 'Denetlenemedi: {message}',
 }

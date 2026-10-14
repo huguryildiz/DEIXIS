@@ -427,7 +427,7 @@ function ReferenceFileImport() {
 // The sections of the Settings page that read connections (plan ST4–ST8 and the Cloud models placement of §2.2): Cloud
 // models, On this computer, Semantic search, the institutional access block given by the page, Scholarly sources and
 // Reference managers, with the connection sheet.
-export function ConnectionsTab({ dark, access }: { dark: boolean; access: ReactNode }) {
+export function ConnectionsTab({ dark, access, onConnections }: { dark: boolean; access: ReactNode; onConnections?: (connections: Connections) => void }) {
   const [data, setData] = useState<Connections | null>(null)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Selected | null>(null)
@@ -444,10 +444,12 @@ export function ConnectionsTab({ dark, access }: { dark: boolean; access: ReactN
   // What this sheet checked itself, and when the answer came: "checked HH:MM" belongs to that answer only.
   const [checking, setChecking] = useState<string | null>(null)
   const [checked, setChecked] = useState<Record<string, number>>({})
+  const [checkFailed, setCheckFailed] = useState<Record<string, string>>({})
   const [signIn, setSignIn] = useState<string | null>(null)
   const toast = useToast()
-  // A later read wins: an answer to an earlier request that arrives after it is dropped.
-  const seq = useRef({ connections: 0, tools: 0, semantic: 0, save: 0 })
+  // A later read wins: an answer to an earlier request that arrives after it is dropped. Semantic search reads and saves
+  // share one version: a save moves it on, so a read started before or during the save never replaces the saved result.
+  const seq = useRef({ connections: 0, tools: 0, semantic: 0, semanticVersion: 0, saving: false })
 
   const load = useCallback((refresh: boolean) => {
     const n = ++seq.current.connections
@@ -455,17 +457,22 @@ export function ConnectionsTab({ dark, access }: { dark: boolean; access: ReactN
       .catch((e: Error) => { if (n === seq.current.connections) setError(t('Connections could not be read: {message}', { message: e.message })) })
   }, [])
   const loadCredentials = useCallback(() => { api.credentials().then(setCredentials).catch((e: Error) => setError(t('Stored keys could not be read: {message}', { message: e.message }))) }, [])
-  const loadTools = useCallback((refresh: boolean) => {
+  // A read that a check asked for (`strict`) rejects when it fails, so the check is reported as not run, never as a fresh
+  // result over the old state. It resolves false when a later read replaced it (the check then shows no time either).
+  const loadTools = useCallback((refresh: boolean, strict = false): Promise<boolean> => {
     const n = ++seq.current.tools
-    return api.localTools(refresh).then(result => { if (n === seq.current.tools) { setTools(result); setToolsError('') } })
-      .catch((e: Error) => { if (n === seq.current.tools) setToolsError(e.message) })
+    return api.localTools(refresh).then(result => { if (n !== seq.current.tools) return false; setTools(result); setToolsError(''); return true })
+      .catch((e: Error) => { if (n === seq.current.tools) setToolsError(e.message); if (strict) throw e; return false })
   }, [])
-  const loadReader = useCallback(() => api.equationReader().then(setReader).catch((e: Error) => { setToolsError(e.message) }), [])
-  const loadOcr = useCallback(() => api.ocr().then(setOcrTool).catch((e: Error) => { setToolsError(e.message) }), [])
-  const loadSemantic = useCallback(() => {
-    const n = ++seq.current.semantic
-    return api.semanticSearch().then(result => { if (n === seq.current.semantic) { setSemantic(result); setSemError('') } })
-      .catch((e: Error) => { if (n === seq.current.semantic) setSemError(e.message) })
+  const loadReader = useCallback((strict = false): Promise<boolean> => api.equationReader().then(result => { setReader(result); return true })
+    .catch((e: Error) => { setToolsError(e.message); if (strict) throw e; return false }), [])
+  const loadOcr = useCallback((strict = false): Promise<boolean> => api.ocr().then(result => { setOcrTool(result); return true })
+    .catch((e: Error) => { setToolsError(e.message); if (strict) throw e; return false }), [])
+  const loadSemantic = useCallback((strict = false): Promise<boolean> => {
+    const n = ++seq.current.semantic, version = seq.current.semanticVersion, duringSave = seq.current.saving
+    const current = () => n === seq.current.semantic && version === seq.current.semanticVersion && !duringSave
+    return api.semanticSearch().then(result => { if (!current()) return false; setSemantic(result); setSemError(''); return true })
+      .catch((e: Error) => { if (current()) setSemError(e.message); if (strict) throw e; return false })
   }, [])
   const loadBuiltin = useCallback(() => api.builtinEmbedding().then(setBuiltin).catch((e: Error) => setSemError(e.message)), [])
   useEffect(() => { void load(false) }, [load])
@@ -491,13 +498,23 @@ export function ConnectionsTab({ dark, access }: { dark: boolean; access: ReactN
     return () => window.clearInterval(timer)
   }, [tools, loadTools])
 
+  const reloadTools = useCallback(() => loadTools(true).then(() => undefined), [loadTools])
+  const reloadReader = useCallback(() => loadReader().then(() => undefined), [loadReader])
   const reloadAfterKeyChange = useCallback(() => { loadCredentials(); void load(true); void loadSemantic() }, [loadCredentials, load, loadSemantic])
+  // The page's default model choices follow the same connections answer (after a key change or a test).
+  useEffect(() => { if (data) onConnections?.(data) }, [data, onConnections])
 
   // A check this sheet asked for: the button stays locked until its answer, and the time shown is that answer's.
   const runCheck = (key: string, check: () => Promise<unknown>) => {
     if (checking) return
     setChecking(key)
-    void check().then(() => setChecked(old => ({ ...old, [key]: Date.now() }))).finally(() => setChecking(current => current === key ? null : current))
+    const drop = <T,>(old: Record<string, T>) => { const next = { ...old }; delete next[key]; return next }
+    void check().then(result => {
+      // A read replaced by a later one is not this check's answer: no time, no failure.
+      if (result === false || (Array.isArray(result) && result.includes(false))) return
+      setChecked(old => ({ ...old, [key]: Date.now() })); setCheckFailed(drop)
+    }, (e: Error) => { setChecked(drop); setCheckFailed(old => ({ ...old, [key]: e.message })) })
+      .finally(() => setChecking(current => current === key ? null : current))
   }
   const refreshModel = (id: string) => api.modelConnection(id, true).then(result => {
     setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
@@ -570,13 +587,15 @@ export function ConnectionsTab({ dark, access }: { dark: boolean; access: ReactN
   const saving = pending !== null
   function chooseSemantic(provider: SemanticSearchProvider, model: string | null) {
     if (saving || !semantic) return
-    const n = ++seq.current.save
+    const version = ++seq.current.semanticVersion
+    seq.current.saving = true
     setPending({ provider, model })
     api.saveSemanticSearch(provider, model).then(result => {
-      if (n !== seq.current.save) return
-      setSemantic(result); toast('success', t('Semantic search setting saved.'))
-    }).catch((e: Error) => { if (n === seq.current.save) toast('error', t('Could not save: {message}', { message: e.message })) })
-      .finally(() => { if (n === seq.current.save) setPending(null) })
+      if (version !== seq.current.semanticVersion) return
+      seq.current.semantic++  // reads started before the save are dropped
+      setSemantic(result); setSemError(''); toast('success', t('Semantic search setting saved.'))
+    }).catch((e: Error) => { if (version === seq.current.semanticVersion) toast('error', t('Could not save: {message}', { message: e.message })) })
+      .finally(() => { if (version === seq.current.semanticVersion) { seq.current.saving = false; setPending(null) } })
   }
   const needsPill = (row: string): string | null => {
     if (!semantic) return null
@@ -627,12 +646,14 @@ export function ConnectionsTab({ dark, access }: { dark: boolean; access: ReactN
     : sel.kind === 'reference-files' ? t('BibTeX / RIS files')
     : sel.kind === 'zotero' ? 'Zotero'
     : cliTool?.name || localToolNames[sel.id] || sel.id
-  const checkedLine = (key: string) => checked[key] ? <span>{t('checked {time}', { time: clock(checked[key]) })}</span> : null
+  const checkedLine = (key: string) => checkFailed[key] ? <span className="warn-t check-failed">{t('Could not check: {message}', { message: checkFailed[key] })}</span>
+    : checked[key] ? <span>{t('checked {time}', { time: clock(checked[key]) })}</span> : null
   const dmeta = (key: string, [tone, status]: [Tone, string], extra?: ReactNode) =>
     <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> {t('Checking…')}</span> : <span className={tone === 'ok' ? 'ok-t' : tone === 'warn' ? 'warn-t' : ''}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
   const checkButton = (key: string, label: string, run: () => Promise<unknown>, disabled = false) =>
     <button type="button" className="btn-pri" disabled={disabled || checking !== null} onClick={() => runCheck(key, run)}>{checking === key ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
-  const codexLogin = 'CODEX_HOME="$HOME/Library/Application Support/DEIXIS/codex-home" codex login'
+  // The Codex home this backend uses (DEIXIS_CODEX_HOME or the data folder's), single-quoted for a POSIX shell.
+  const codexLogin = data?.codex_home ? `CODEX_HOME='${data.codex_home.replaceAll("'", "'\\''")}' codex login` : null
   const signInCommand = accountId === 'codex' ? codexLogin : accountId === 'claude' ? 'claude' : null
   const copy = (text: string) => { writeClipboard(text).then(() => toast('success', t('Command copied.')), () => toast('error', t('Could not copy; select the command and copy it.'))) }
 
@@ -676,7 +697,7 @@ export function ConnectionsTab({ dark, access }: { dark: boolean; access: ReactN
       </>}
       {model && <ModelCatalogue model={model} />}
       {!model && data && <p className="foot-note">{t('No model connection is set up for it in this version of DEIXIS; the tool on this computer is shown below.')}</p>}
-      {cliTool && (!model || !cliTool.installed) && <LocalToolDetails key={cliTool.id} tool={cliTool} dark={dark} onChanged={() => loadTools(true)} />}
+      {cliTool && (!model || !cliTool.installed) && <LocalToolDetails key={cliTool.id} tool={cliTool} dark={dark} onChanged={reloadTools} />}
     </>
   } else if (sel?.kind === 'model' && model) {
     const env = sel.id === 'gemini' ? 'GEMINI_API_KEY' : sel.id === 'deepseek' ? 'DEEPSEEK_API_KEY' : compatConnectionKeys[sel.id]
@@ -730,7 +751,7 @@ export function ConnectionsTab({ dark, access }: { dark: boolean; access: ReactN
       {!env && provider.id !== 'openalex' && <p className="foot-note">{provider.note}</p>}
     </>
   } else if (sel?.kind === 'cli' && cliTool) {
-    body = <LocalToolDetails key={cliTool.id} tool={cliTool} dark={dark} onChanged={() => loadTools(true)} />
+    body = <LocalToolDetails key={cliTool.id} tool={cliTool} dark={dark} onChanged={reloadTools} />
   } else if (sel?.kind === 'servers') {
     body = <>
       {dmeta('servers', serversStatus())}
@@ -738,30 +759,30 @@ export function ConnectionsTab({ dark, access }: { dark: boolean; access: ReactN
       {servers.map(server => <section key={server.id} className="server-block" aria-label={server.name || localToolNames[server.id]}>
         <h3>{server.name || localToolNames[server.id]}</h3>
         {server.endpoint && <div className="lbl">{t('Server address')}<code className="field mono">{server.endpoint}</code></div>}
-        <LocalToolDetails tool={server} dark={dark} onChanged={() => loadTools(true)} refresh={false} />
+        <LocalToolDetails tool={server} dark={dark} onChanged={reloadTools} refresh={false} />
       </section>)}
-      <div className="acts">{checkButton('servers', 'Test', () => Promise.all([loadTools(true), loadSemantic()]))}</div>
+      <div className="acts">{checkButton('servers', 'Test', () => Promise.all([loadTools(true, true), loadSemantic(true)]))}</div>
     </>
   } else if (sel?.kind === 'equation-reader') {
     body = <>
       {dmeta('equation-reader', readerStatus())}
       <p className="foot-note is-ink">{t('Runs on this computer. DEIXIS installs it into its data folder when you choose Install.')}</p>
-      <div className="acts">{checkButton('equation-reader', 'Find it on this computer', loadReader)}</div>
-      {reader && <EquationReaderDetails reader={reader} dark={dark} onChanged={loadReader} />}
+      <div className="acts">{checkButton('equation-reader', 'Find it on this computer', () => loadReader(true))}</div>
+      {reader && <EquationReaderDetails reader={reader} dark={dark} onChanged={reloadReader} />}
     </>
   } else if (sel?.kind === 'ocr-tool') {
     body = <>
       {dmeta('ocr-tool', ocrStatus())}
       <p className="foot-note is-ink">{t('Runs on this computer. Install it once, then test.')}</p>
-      <div className="acts">{checkButton('ocr-tool', 'Find it on this computer', loadOcr)}</div>
+      <div className="acts">{checkButton('ocr-tool', 'Find it on this computer', () => loadOcr(true))}</div>
       {ocrTool && <OcrToolDetails tool={ocrTool} />}
     </>
   } else if (sel?.kind === 'zotero') {
     body = <>
       {dmeta('zotero', zoteroStatus())}
       <p className="foot-note is-ink">{t('Collections are imported read-only from the home composer’s Add sources menu or a research’s Sources panel.')}</p>
-      <div className="acts">{checkButton('zotero', 'Find it on this computer', () => loadTools(true))}</div>
-      {zotero && <LocalToolDetails tool={zotero} dark={dark} onChanged={() => loadTools(true)} refresh={false} />}
+      <div className="acts">{checkButton('zotero', 'Find it on this computer', () => loadTools(true, true))}</div>
+      {zotero && <LocalToolDetails tool={zotero} dark={dark} onChanged={reloadTools} refresh={false} />}
     </>
   } else if (sel?.kind === 'reference-files') {
     body = <>

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Info, RotateCw } from 'lucide-react'
-import { api, usageApi, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
+import { api, usageApi, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
 import { connectionModels, modelKey, type ConnectionModel } from './Home'
 import { defaultEffort, exposesEffortControl } from './modelEffort'
 import { ConnectionsTab } from './Connections'
@@ -45,9 +45,10 @@ export function SettingsPage({ dark, section, language, onLanguage, access }: {
   const [savingRole, setSavingRole] = useState<ModelRole | null>(null)
   const [error, setError] = useState('')
 
+  // The model choices come from the connections answer the sections below read, so a key change or a connection test
+  // there updates them too (the sections show their own read error).
+  const onConnections = useCallback((result: Connections) => { setModels(connectionModels(result)); setAnyReady(Object.values(result.models).some(h => h.ready)) }, [])
   useEffect(() => {
-    api.connections().then(result => { setModels(connectionModels(result)); setAnyReady(Object.values(result.models).some(h => h.ready)) })
-      .catch((e: Error) => setError(t('Connections could not be read: {message}', { message: e.message })))
     api.settings().then(setDefaults).catch((e: Error) => setError(t('The default models could not be read: {message}', { message: e.message })))
   }, [])
 
@@ -113,14 +114,14 @@ export function SettingsPage({ dark, section, language, onLanguage, access }: {
             value={efforts.some(e => e.id === current?.reasoning_effort) ? current!.reasoning_effort! : ''}
             onChange={e => current && save(role, { ...current, reasoning_effort: e.target.value || null })}>
             {!efforts.length && <option value="">{t(picked ? 'No thinking levels' : '—')}</option>}
-            {efforts.length > 0 && !efforts.some(e => e.id === current?.reasoning_effort) && <option value="">{t('Model default')}</option>}
+            {efforts.length > 0 && <option value="">{t('Model default')}</option>}
             {efforts.map(level => <option key={level.id} value={level.id}>{reasoningLabel(level.id)}</option>)}
           </select>
         </div>
       })}
     </div>
 
-    <ConnectionsTab dark={dark} access={<InstitutionalAccessBlock access={access} />} />
+    <ConnectionsTab dark={dark} access={<InstitutionalAccessBlock access={access} />} onConnections={onConnections} />
 
     <UsageThisMonth />
 

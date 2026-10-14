@@ -66,7 +66,7 @@ test('a fixed list is compared item by item: count, order, visibility, size and 
   const mock = await browser.newPage(), app = await browser.newPage()
   try {
     const v = { width: 1280, theme: 'light' as const }
-    const ctx = { researches: 1, suggestions: 0 }
+    const ctx = { researches: 1, suggestions: 0, library: 0 }
     const pair = { id: 'nav', surface: 'home' as const, mock: 'nav button', app: 'nav button', checks: ['chrome' as const], list: 'fixed' as const, status: 'active' as const, dataText: { mock: ['.cnt'], app: ['.cnt'] } }
     await mock.setContent(css('') + NAV(['<button>New research</button>', '<button>Search</button>', '<button>Awaiting you<span class="cnt">3</span></button>']))
     // Same items, a different count badge (data): passes.
@@ -125,7 +125,7 @@ test('in a list, every item is checked in its states: a wrong hover on the secon
   const mock = await browser.newPage(), app = await browser.newPage()
   try {
     const v = { width: 1280, theme: 'light' as const }
-    const ctx = { researches: 1, suggestions: 0 }
+    const ctx = { researches: 1, suggestions: 0, library: 0 }
     const rows = '<nav><button class="hint">a</button><button class="hint">b</button><button class="hint">c</button></nav>'
     await mock.setContent(css('.hint{color:#9aa0a8}') + rows)
     const pair = { id: 'hints', surface: 'home' as const, mock: '.hint', app: '.hint', checks: ['colour' as const], list: 'fixed' as const,

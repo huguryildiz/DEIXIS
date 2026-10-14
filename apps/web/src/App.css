@@ -220,7 +220,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .user-name{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .app .user>button{margin-left:auto;padding:4px;border-radius:6px;color:var(--muted);font-size:14px;line-height:1.5}
 .app .user>button svg{display:inline;vertical-align:baseline}
-.app .user>button:hover{background:var(--hover-surface);color:var(--ink)}
+.app .user>button:hover{background:var(--hover-surface)}
 
 /* Phones (≤820px, mockup): the sidebar is an off-canvas drawer with a shadow and no scrim; its collapse button closes it.
    A 46px bar holds the menu button and the name. */

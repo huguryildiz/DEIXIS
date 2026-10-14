@@ -31,6 +31,8 @@
 /* The mockup's menu is a grid with a 1px gap between its rows. */
 .research-actions-menu{display:grid;gap:1px}
 .research-export-menu{min-width:260px}
+/* The mockup's export menu is a grid with a 1px gap between every heading and row; here the rows sit in groups. */
+.research-export-menu,.research-export-menu [data-slot=dropdown-menu-group]{display:grid;gap:1px}
 /* A file row that is a link takes the menu item's box (the rows that run code are DropdownMenuItems). */
 .research-export-item{display:flex;border-radius:6px;color:inherit;font-size:13px;line-height:1.5;text-decoration:none;outline:none;cursor:default}
 .research-export-item:is(:focus,[data-highlighted]){background:var(--hover-surface)}

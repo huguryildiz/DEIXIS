@@ -522,7 +522,8 @@ async function target(page: Page, selector: string, exclude: string[], index: nu
 async function hoverMeasure(page: Page, selector: string, exclude: string[], probe: string[], index: number): Promise<Measured | null> {
   const mark = await target(page, selector, exclude, index)
   if (!mark) return null
-  await page.locator(mark).hover()
+  // A bounded wait, so an element that takes no pointer (a disabled row) fails with its selector, not the test timeout.
+  await page.locator(mark).hover({ timeout: 15_000 }).catch(e => { throw new Error(`hover ${selector} [${index}]: ${e instanceof Error ? e.message.split('\n')[0] : e}`) })
   const m = await measure(page, mark, [], probe)
   await page.mouse.move(0, 0)
   return m

@@ -40,6 +40,15 @@ const WARN_TONE = ['.recents svg.i.wn', '.step.att>button', '.notice.warn>svg.i'
   '.warn-t', '.qcard header b', '.stage .lost b']
 
 export const COLOUR_EXCEPTIONS: ColourException[] = [
+  // S28: the mockup's dark avatar rule (`:root[data-theme="dark"] .avatar`, line 113) is written for the explicit dark
+  // theme only; unlike its brand rule (lines 46-47) it has no prefers-color-scheme twin, so under the system's dark mode
+  // the mockup keeps the light theme's navy avatar. The app follows the mockup's dark rule in both ways of being dark.
+  { id: 'avatar-dark-fill', rule: '§0 rule 4 (the mockup\'s own dark rule for the avatar)', token: '--accent', property: 'background-color', use: 'text',
+    selectors: ['.avatar'], mock: { light: '#2e4877', dark: '#2b3b5c' }, approved: { light: '#2e4877', dark: '#93acdf' }, states: ['default'],
+    note: 'The avatar circle in dark mode: --teal, as the mockup\'s explicit dark theme has it.' },
+  { id: 'avatar-dark-ink', rule: '§0 rule 4 (the mockup\'s own dark rule for the avatar)', token: '--paper', property: 'color', use: 'text',
+    selectors: ['.avatar'], mock: { light: '#ffffff', dark: '#ffffff' }, approved: { light: '#ffffff', dark: '#16181b' }, states: ['default'],
+    note: 'The initials on the dark avatar: the page colour, close to the mockup\'s --teal-ink (#15171b).' },
   { id: 'muted-text', rule: '§0 rule 4 (D5: --muted stays #5b6475; mockup --muted on --chip fails 4.5:1)', token: '--muted',
     property: 'color', use: 'text', selectors: ['*'], mock: { light: '#6b7280', dark: '#9aa1ab' }, approved: { light: '#5b6475', dark: '#9aa1ab' },
     states: ['default', 'hover', 'selected'], note: 'Metadata, captions and quiet labels, including on the chip surface.' },
@@ -115,8 +124,8 @@ export const PLACEMENTS: Placement[] = [
     container: 'Answer thread notices: "This answer was produced for revision N …" (stale scope) and the status line "Full text that arrived later is being read; an updated version may follow."', app: '.answer-thread .answer-notice, .answer-late-pending' },
   { id: 'sources-cited-tab', rule: '§0 rule 5 (the answer\'s "View N cited sources" opens the Sources panel on its cited works)', slice: 'S10',
     container: 'Sources panel filter strip: "Cited in answer" first, then Included, Passed abstract, Undecided, Excluded, Not read (S27) and All, where the mockup has it', app: null },
-  { id: 'english-question', rule: '§2.2 (Q1)', slice: 'S9', container: 'Plan step detail, row "English question for the semantic search" (the Search plan panel is S23b)', app: '.chat-step-detail .step-row' },
-  { id: 'seed-pdfs-block', rule: '§2.2 (Q1, D3)', slice: 'S9', container: 'Plan step detail, "PDFs guiding the search" with each PDF\'s use (read only; the choice of PDFs stays under the thread until S23b)', app: '.chat-step-detail .step-seeds' },
+  { id: 'english-question', rule: '§2.2 (Q1)', slice: 'S9', container: 'Plan step detail, row "English question for the semantic search" (the Search plan panel also shows it since S23b)', app: '.chat-step-detail .step-row' },
+  { id: 'seed-pdfs-block', rule: '§2.2 (Q1, D3)', slice: 'S9', container: 'Plan step detail, "PDFs guiding the search" with each PDF\'s use (read only; the choice of PDFs is in the Search plan panel since S23b, see seed-choice-stale)', app: '.chat-step-detail .step-seeds' },
   { id: 'prisma-s-export', rule: '§2.2 (Q1)', slice: 'S8', container: 'Export menu, SOURCES group: rows MD and JSON "PRISMA-S search report" after BIB and RIS', app: '.export-placement' },
   { id: 'search-details', rule: '§2.2 (Q1)', slice: 'S9', container: 'Search step detail: per-query rows, then works per source, the arms and the works no search found; the citation chain\'s requests and limits in the chaining step detail', app: '.chat-step-detail .chat-step-note' },
   { id: 'step-time', rule: '§0 rule 5 (each phase\'s duration was on its line)', slice: 'S9', container: 'Last row of every finished step\'s detail: "Time taken"', app: '.chat-step-detail .step-row' },
@@ -190,7 +199,7 @@ export const PLACEMENTS: Placement[] = [
   { id: 'counts-places', rule: '§2.2 (Q1)', slice: 'S11', container: 'unique and included in the Funnel panel; given and cited in the Answering step detail', app: null },
   { id: 'suggestion-research', rule: 'plan H15 / Q4 (a suggestion names the research whose answer it came from)', slice: 'S5b', container: 'Suggested card, under the suggestion, in the Resume card\'s meta-line style', app: '.home-card-source' },
   { id: 'zotero-library-source', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S6', container: 'Zotero dialog body, between the lead note and the collections: "Zotero on this computer" / "zotero.org"', app: '.zotero-source' },
-  { id: 'language-command', rule: '§2.4 (TR/EN placement)', slice: 'S1', container: 'Search palette: Türkçe / English rows when the query asks for "language" or "dil" (the Settings row is S24)', app: null },
+  { id: 'language-command', rule: '§2.4 (TR/EN placement)', slice: 'S1', container: 'Search palette: Türkçe / English rows when the query asks for "language" or "dil" (Settings has its own Language row since S24)', app: null },
   { id: 'jobs-sheet-controls', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Jobs sheet job line: Pause / Resume of an OCR run or a PDF collection, and the research title as a link', app: '.job-action, .job-research' },
   { id: 'jobs-sheet-unconfirmed', rule: '§2.3 / AGENTS.md (no success beyond stored state)', slice: 'S1', container: 'Jobs sheet, under Finished: jobs whose own run failed, was cancelled, or could not be read ("Status unknown")', app: null },
   { id: 'toast-dismiss', rule: '§0 rule 5 / §2.2 (Q1)', slice: 'S1', container: 'Toast, after the text and the Undo link: the dismiss button (errors stay until dismissed)', app: '.toast-close' },
@@ -244,6 +253,9 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'guide-plural', rule: '§2.3 (Q2, Q3)', mock: 'PDF guiding the search · its title, abstract and references shape the query. The others are read as sources.', app: 'PDFs guiding the search · their titles, abstracts and references shape the query.' },
   { id: 'scope-academic', rule: '§2.3 (Q2)', mock: 'Searches the connected scholarly sources', app: 'Searches scholarly sources to answer your question. (the model does not pick the providers: code rules route them)' },
   { id: 'scope-pdfs-academic', rule: '§2.3 (Q2, Q3)', mock: 'Searches using a chosen PDF and your question', app: 'Searches using your PDFs and your question. Only included sources are used in the answer. (up to five PDFs guide the search, D3)' },
+  // S28: Home's + menu rows say what the composer and the Zotero dialog really take.
+  { id: 'add-upload-detail', rule: '§2.3 (the composer also takes PDFs dropped on it)', mock: 'From this computer, up to 50 MB each', app: 'From this computer, up to 50 MB each. You can also drop files here.' },
+  { id: 'add-zotero-detail', rule: '§2.3 (S6: Zotero is read from the app on this computer or from zotero.org)', mock: 'Read-only, imported when the research starts', app: 'Read-only, from Zotero on this computer or zotero.org. Imported when the research starts.' },
   { id: 'budget-no-limit', rule: '§2.3 (Q2)', mock: 'N% of today\'s budget', app: '$X left today (when OpenAlex sends no limit header)' },
   { id: 'quota-continue', rule: '§2.3 (Q2, R19)', mock: 'Continue with the N finished searches', app: 'The run went on with the M that finished.' },
   { id: 'find-pdf-proxy-pill', rule: '§2.3 (Q2)', mock: 'TOBB ETÜ proxy', app: 'only the providers actually asked' },
@@ -324,7 +336,7 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'sources-proposal', rule: '§2.3 (Q2: built from the stored machine decision of the full-text, else abstract stage)', mock: 'include / passed abstract / uncertain / exclude / not screened + a written reason', app: 'the stored outcome word + its reason code in words + its basis (two full-text reads, or title and abstract); "not read in full" with no basis when the full text is missing, unreadable, waiting to be read or not yet confirmed as the work\'s; "not screened" when no decision exists' },
   // S15a: the Evidence table, cell and evidence report panels say only what the records hold.
   { id: 'cell-history', rule: '§2.3 (the list holds earlier values, proposals and the current value, newest first)', mock: 'Earlier values', app: 'History' },
-  { id: 'cell-recheck', rule: '§2.3 (the button rechecks this one cell; the column recheck is DEFERRED_TARGETS column-recheck)', mock: 'Recheck', app: 'Recheck this cell' },
+  { id: 'cell-recheck', rule: '§2.3 (the button rechecks this one cell; the column recheck is a separate button, see column-recheck-calls)', mock: 'Recheck', app: 'Recheck this cell' },
   { id: 'column-remove', rule: '§2.3 (a removed column\'s cells are kept and come back with Undo)', mock: 'Delete column', app: 'Remove column' },
   { id: 'suggest-count', rule: '§2.3 (the suggestion step returns up to eight columns, not three)', mock: 'Three proposals; you accept each one', app: 'Up to eight proposals; you accept each one' },
   { id: 'column-dialog-foot', rule: '§2.3 (the fill shows its call estimate before it starts; the dialog does not fill)', mock: 'Filling reads the text DEIXIS has for each source: up to N calls with gpt-5.6-luna.', app: 'The column starts empty. Fill empty cells reads the text DEIXIS has for each source and shows its calls before it starts.' },
@@ -388,11 +400,11 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
   { id: 'setup-rows-y', rule: '§2.3 (copy changes setup-leaves and setup-proxy) and §0 rule 2 (example-setup row)',
     pairs: ['home-first.setup-num', 'home-first.setup-num-ok', 'home-first.connect', 'home-first.ready', 'home-first.add'], axes: ['y'],
     note: 'The setup rows sit under the replaced head sentence, and the proxy row holds the replaced proxy sentence; both wrap differently from the mockup at 390 px. x, width and height are compared.' },
-  // S3: the palette and the keys dialog leave out the rows of DEFERRED_TARGETS, and the palette's recent rows are as many
-  // as the fixture's researches, so the rows below them sit higher than in the mockup.
-  { id: 's3-rows-y', rule: '§0 rule 1 (recent rows are data); the keys dialog rows were left out while S22b was not built',
-    pairs: ['palette.headings', 'palette.page-rows', 'palette.page-keys', 'palette.goto-rows', 'palette.goto-keys', 'keys.headings', 'keys.labels', 'keys.keys', 'keys.kbd'], axes: ['y'],
-    note: 'Rows after a left-out row, or after the recent research rows, move up; x, width and height are compared.' },
+  // S3: the palette's recent rows are as many as the fixture's researches, so the rows below them sit higher than in the
+  // mockup. (S28: the keys dialog and the palette's page rows match the mockup since S22b, so they are compared on y too.)
+  { id: 's3-rows-y', rule: '§0 rule 1 (recent rows are data)',
+    pairs: ['palette.headings', 'palette.goto-rows', 'palette.goto-keys'], axes: ['y'],
+    note: 'The headings and Go to rows after the recent research rows move up; x, width and height are compared.' },
   { id: 'followup-question-width', rule: '§0 rule 1 (the question is the person\'s, from the records)', pairs: ['followup-turn.question'], axes: ['x', 'width'],
     note: 'The Question bubble sits at the right and is as wide as its question, which is the fixture\'s, not the mockup\'s example; its type and colour are compared.' },
   { id: 'followup-acts-y', rule: 'PLACEMENTS followup-turn-states; §0 rule 1 (the answer\'s claims and aspects are stored data)', pairs: ['followup-turn.search', 'followup-turn.copy'], axes: ['y'],
@@ -400,12 +412,27 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
   { id: 'palette-recent-height', rule: '§0 rule 1 (example data is not copied: the row is a research title from the records)',
     pairs: ['palette.recent-rows'], axes: ['height'],
     note: 'A recent research row wraps its title as the mockup\'s does, so its height follows the title\'s length (the fixture\'s title is longer than the mockup\'s example). x and width are compared.' },
-  { id: 's8-menu-rows-y', rule: 'PLACEMENTS panel-menu-rows and search-again-new-answer; DEFERRED_TARGETS export-pdf-row',
-    pairs: ['research-menu.trash', 'export-menu.rows'], axes: ['y'],
-    note: 'Move to Trash sits below the placement rows; the Export rows after the left-out PDF row move up. x, width and height are compared.' },
+  { id: 's8-menu-rows-y', rule: 'PLACEMENTS panel-menu-rows and search-again-new-answer',
+    pairs: ['research-menu.trash'], axes: ['y'],
+    note: 'Move to Trash sits below the placement rows. x, width and height are compared. (S28: the Export rows are compared on y again; their groups now keep the mockup\'s 1px row gap.)' },
   { id: 's8-suggest-phone', rule: '§0 rule 5 (Suggest a short title has no other path; the mockup hides it at ≤820px)', widths: [390],
-    pairs: ['title-edit.row', 'title-edit.field', 'title-edit.save', 'title-edit.cancel'], axes: ['x', 'width'],
-    note: 'At 390px the rename row keeps Suggest as a 30px icon button, so the row and field are 38px narrower and Save and ✕ sit 38px to the right of the field\'s end; y and height are compared, and every axis at 1280.' },
+    pairs: ['title-edit.field'], axes: ['width'],
+    note: 'At 390px the rename row keeps Suggest as a 30px icon button, so the field is narrower by it and its gap; the row, Save and ✕ and the field\'s x, y and height are compared, and every axis at 1280.' },
+  // S28: Home's Models menu lists the research's three roles; the mockup's fourth row ("Literature (alternative)") is example data.
+  { id: 'models-menu-height', rule: '§0 rule 1 (the role rows are the research\'s roles, a data list)', pairs: ['models-menu.menu'], axes: ['height'],
+    note: 'One role row fewer than the mockup, so the menu is shorter by one row. x, y and width are compared.' },
+  { id: 'models-menu-settings-y', rule: '§0 rule 1 (the role rows are the research\'s roles, a data list)', pairs: ['models-menu.settings'], axes: ['y'],
+    note: '"Change the defaults in Settings" sits one role row higher than in the mockup. x, width and height are compared.' },
+  // S28: Home's source and + menus carry the replaced descriptions, longer than the mockup's, so the menu reaches its
+  // 340px cap and those rows wrap to a second line.
+  { id: 'home-menu-copy-width', rule: 'COPY_CHANGES scope-academic, scope-pdfs-academic, add-upload-detail, add-zotero-detail',
+    pairs: ['scope-menu.menu', 'scope-menu.heading', 'scope-menu.rows', 'scope-menu.later', 'add-menu.menu', 'add-menu.rows', 'add-menu.later'], axes: ['width'],
+    note: 'The menu is as wide as its longest description, capped at 340px, so it and its rows are wider than the mockup\'s. x is compared.' },
+  { id: 'home-menu-copy-wrap', rule: 'COPY_CHANGES scope-academic, scope-pdfs-academic, add-upload-detail, add-zotero-detail',
+    pairs: ['scope-menu.menu', 'scope-menu.rows', 'scope-menu.later', 'scope-menu.badge', 'add-menu.menu', 'add-menu.rows', 'add-menu.later', 'add-menu.badge'], axes: ['y', 'height'],
+    note: 'A row whose description wraps is one line taller, the menu with it, and the rows and Later badges below it sit lower. x is compared, and the width where home-menu-copy-width does not cover it.' },
+  { id: 'home-menu-badge-x', rule: 'home-menu-copy-width (the badge sits at the right end of its wider row)', pairs: ['add-menu.badge'], axes: ['x'],
+    note: 'The Later badges follow the right edge of the wider + menu. y and size are compared where home-menu-copy-wrap does not cover them.' },
   { id: 's8-revise-buttons-y', rule: 'PLACEMENTS key-terms-syntax', pairs: ['revise.buttons'], axes: ['y'],
     note: 'Cancel and Save revision sit below the key-terms syntax line; x, width and height are compared.' },
   // S12 Citation panel and Source details: blocks whose size is a record's, and the blocks below them.
@@ -535,8 +562,8 @@ export const APP_ADDITIONS: Array<{ id: string; rule: string; app: string; slice
 /** Styles the app draws where the mockup draws none, kept for accessibility. The listed properties of the listed pairs
  *  are not compared; every other check of those pairs still runs. */
 export const STYLE_EXCEPTIONS: Array<{ id: string; rule: string; pairs: string[]; properties: string[]; note: string }> = [
-  { id: 'menu-heading-case', rule: '.impeccable.md §2.4 (small caps labels are sentence-case text uppercased by CSS)', pairs: ['export-menu.headings'], properties: ['text-transform'],
-    note: 'The mockup writes REPORT, EVIDENCE TABLE and SOURCES in capitals; the app writes Report, Evidence table and Sources and uppercases them in CSS, so the Turkish labels case-fold correctly. The rendered text is the same.' },
+  { id: 'menu-heading-case', rule: '.impeccable.md §2.4 (small caps labels are sentence-case text uppercased by CSS)', pairs: ['export-menu.headings', 'scope-menu.heading', 'models-menu.heading', 'depth-menu.heading', 'scope-menu.badge', 'add-menu.badge'], properties: ['text-transform'],
+    note: 'The mockup writes REPORT, EVIDENCE TABLE, SOURCES, WORKFLOWS, MODELS, DEPTH and LATER in capitals; the app writes them in sentence case and uppercases them in CSS, so the Turkish labels case-fold correctly. The rendered text is the same.' },
   { id: 'palette-focus-line', rule: 'WCAG 2.4.7 (focus visible; a11y.spec X05 needs an indicator on every focus stop)', pairs: ['palette.field'], properties: ['box-shadow'],
     note: 'While its input has focus the palette field draws a 2px accent line along its bottom edge (inset box-shadow); the mockup\'s field has no focus indicator.' },
 ]

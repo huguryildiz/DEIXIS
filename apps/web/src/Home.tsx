@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Popover } from '@base-ui/react/popover'
-import { ArrowUp, BookMarked, Brain, Check, ChevronDown, Cpu, FileText, FileUp, Gauge, Lightbulb, Link2, Network, Paperclip, PenLine, Plus, RotateCw, ScanSearch, Search, ShieldCheck, SlidersHorizontal, Table2, Telescope, X, Zap, type LucideIcon } from 'lucide-react'
+import { ArrowUp, Brain, Check, ChevronDown, Cpu, FileText, FileUp, Gauge, LibraryBig, Lightbulb, Link2, Network, Paperclip, PenLine, Plus, RotateCw, ScanSearch, Search, ShieldCheck, SlidersHorizontal, Table2, Telescope, X, Zap, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -493,7 +493,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
       <div className="composer-band">
         <Select value={scope} onValueChange={value => { if (value) chooseScope(value as SourceScope) }}>
           <SelectTrigger className="composer-scope" aria-label={t('Source scope')} title={t('Where DEIXIS looks for sources')}><SelectValue>{(value: string) => { const Icon = scopeOptions[value as SourceScope].icon; return <><Icon size={15} aria-hidden />{t(scopeLabels[value as SourceScope])}</> }}</SelectValue></SelectTrigger>
-          <SelectContent className="home-menu" align="start" alignItemWithTrigger={false}>
+          <SelectContent className="home-menu" align="start" sideOffset={6} alignItemWithTrigger={false} collisionPadding={8} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }}>
             <div className="home-menu-heading" aria-hidden="true">{t('Workflows')}</div>
             {(Object.keys(scopeLabels) as SourceScope[]).map(s => <SelectItem key={s} value={s} className="home-menu-item"><MenuRow icon={scopeOptions[s].icon} title={t(scopeLabels[s])} detail={t(scopeOptions[s].detail)} /></SelectItem>)}
             <SelectItem value="__systematic_review" className="home-menu-item" disabled><MenuRow icon={Table2} title={t('Systematic review')} detail={t('Protocol, two reviewers, PRISMA flow')} later /></SelectItem>
@@ -510,8 +510,8 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
           <DropdownMenuTrigger ref={addButton} type="button" className="composer-add" aria-label={t('Add sources')} title={t('Add sources (optional)')}><Plus size={16} /></DropdownMenuTrigger>
           <DropdownMenuContent className="home-menu" align="start" sideOffset={6}>
             <DropdownMenuItem className="home-menu-item" onClick={() => fileInput.current?.click()}><MenuRow icon={FileUp} title={t('Upload PDF')} detail={t('From this computer, up to 50 MB each. You can also drop files here.')} /></DropdownMenuItem>
-            <DropdownMenuItem className="home-menu-item" onClick={() => setZoteroOpen(true)}><span className="home-menu-row"><ConnectionIcon id="zotero" /><span className="home-menu-text">{t('Zotero collection')}<small>{t('Read-only, from Zotero on this computer or zotero.org. Imported when the research starts.')}</small></span></span></DropdownMenuItem>
-            <DropdownMenuItem className="home-menu-item" disabled><MenuRow icon={BookMarked} title={t('Import BibTeX or RIS')} later /></DropdownMenuItem>
+            <DropdownMenuItem className="home-menu-item" onClick={() => setZoteroOpen(true)}><MenuRow icon={LibraryBig} title={t('Zotero collection')} detail={t('Read-only, from Zotero on this computer or zotero.org. Imported when the research starts.')} /></DropdownMenuItem>
+            <DropdownMenuItem className="home-menu-item" disabled><MenuRow icon={FileText} title={t('Import BibTeX or RIS')} later /></DropdownMenuItem>
             <DropdownMenuItem className="home-menu-item" disabled><MenuRow icon={Link2} title={t('Add by DOI')} later /></DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -522,7 +522,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
                 <Cpu size={15} aria-hidden /><span className="models-summary-label">{t('Models')}<span className="sr-only">: </span></span>
                 {roleRows.map(row => <span className="sr-only" key={row.role}>{t(modelRoles[row.role].label)} {row.summary}. </span>)}
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="home-menu" align="end" sideOffset={6}>
+              <DropdownMenuContent className="home-menu" align="start" sideOffset={6} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }}>
                 <DropdownMenuGroup>
                   <DropdownMenuLabel className="home-menu-heading">{t('Models')}</DropdownMenuLabel>
                   {roleRows.map(row => <DropdownMenuItem key={row.role} className="home-menu-item" onClick={() => { setPickerRole(row.role); setPickerNonce(n => n + 1) }}><MenuRow icon={Cpu} title={t(modelRoles[row.role].label)} detail={row.summary} /></DropdownMenuItem>)}
@@ -533,7 +533,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
           : <button type="button" className="models-summary" disabled title={connections ? notReadyReasons(connections) : ''}><Cpu size={15} aria-hidden /><span className="models-summary-label">{t('Models')}</span><span className="sr-only">: {t(connections ? 'no connection ready' : 'checking…')}</span></button>}
         <Select value={effort} onValueChange={value => { if (value) setEffort(value as Effort) }}>
           <SelectTrigger className="composer-depth" aria-label={t('Research depth')} title={t('How much searching and reading a run may do')}><SelectValue>{(value: string) => { const Icon = effortOptions[value as Effort].icon; return <><Icon size={15} aria-hidden />{t(effortLabels[value as Effort])}</> }}</SelectValue></SelectTrigger>
-          <SelectContent className="home-menu" align="end" alignItemWithTrigger={false}>
+          <SelectContent className="home-menu" align="start" sideOffset={6} alignItemWithTrigger={false} collisionPadding={8} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }}>
             <div className="home-menu-heading" aria-hidden="true">{t('Depth')}</div>
             {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d} className="home-menu-item"><MenuRow icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={effortDetail(d, limits)} /></SelectItem>)}
           </SelectContent>

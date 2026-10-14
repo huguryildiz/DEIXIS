@@ -14,7 +14,7 @@ export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zot
   | 'sources-why' | 'sources-sel' | 'queue-panel' | 'pdfs-panel' | 'funnel-panel' | 'activity-panel'
   | 'table-panel' | 'cell-panel' | 'ereport-panel' | 'ecite-panel'
   | 'cands-panel' | 'cand-panel' | 'cev-panel' | 'review-dialog' | 'review-panel' | 'watch-panel' | 'schedule-dialog' | 'followup-turn' | 'plan-panel' | 'settings' | 'settings-sheet'
-  | 'library' | 'library-empty'
+  | 'library' | 'library-empty' | 'scope-menu' | 'add-menu' | 'models-menu' | 'depth-menu'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -144,6 +144,15 @@ export const SURFACES: Surface[] = [
   { id: 'home-guide', mock: `setScenario('ok'); go('home'); st.scope = 'PDFs + academic search'; st.files = ${JSON.stringify(GUIDE_PDFS)}; render()`,
     app: '#/', ready: '.composer .guide label',
     open: page => page.locator('input[type=file]').first().setInputFiles(GUIDE_PDFS.map(name => ({ name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') }))) },
+  // S28 (H4, H6, H8, H9): Home's four menus, each opened from its own control as the mockup's `menu()` opens it.
+  { id: 'scope-menu', mock: HOME, mockAct: "menu('mode', document.querySelector('[data-menu=\"mode\"]'))", app: '#/', ready: '.home-cards .card',
+    appAct: async page => { await page.locator('.composer-scope').click(); await page.locator('.home-menu .home-menu-item').first().waitFor() } },
+  { id: 'add-menu', mock: HOME, mockAct: "menu('attach', document.querySelector('[data-menu=\"attach\"]'))", app: '#/', ready: '.home-cards .card',
+    appAct: async page => { await page.locator('.composer-add').click(); await page.locator('.home-menu .home-menu-item').first().waitFor() } },
+  { id: 'models-menu', mock: HOME, mockAct: "menu('models', document.querySelector('[data-menu=\"models\"]'))", app: '#/', ready: '.home-cards .card',
+    appAct: async page => { await page.locator('.composer .models-summary').click(); await page.locator('.home-menu .home-menu-item').first().waitFor() } },
+  { id: 'depth-menu', mock: HOME, mockAct: "menu('depth', document.querySelector('[data-menu=\"depth\"]'))", app: '#/', ready: '.home-cards .card',
+    appAct: async page => { await page.locator('.composer-depth').click(); await page.locator('.home-menu .home-menu-item').first().waitFor() } },
   { id: 'research', mock: "setScenario('ok')", app: '#/research/{research}', ready: '.research-topbar' },
   // The research page with one side panel open (S7a, R10/P1): the Sources panel, opened fresh.
   { id: 'research-panel', mock: "setScenario('ok'); openPanel('sources', 'cited', false)", app: '#/research/{research}/sources', ready: '[data-split-panel] #split-panel-title',
@@ -378,6 +387,13 @@ const shell = (surface: SurfaceId): Pair[] => [
     status: 'active' },  // §2.3 copy: COPY_CHANGES proxy-working and scopus-check
   { id: `${surface}.user-row`, surface, mock: '.side-foot .user', app: '.sidebar-foot .user', checks: ['chrome', 'type'], widths: DESK,
     status: 'active' },
+  // S28 (S15-S17): the user row's avatar and its two buttons, Keyboard shortcuts and the theme switch (its icon follows the theme).
+  // The buttons' colour is the --muted token (COLOUR_EXCEPTIONS muted-text); hover adds the hover surface only, as in the mockup.
+  { id: `${surface}.avatar`, surface, mock: '.side-foot .user .avatar', app: '.sidebar-foot .user .avatar', checks: ['chrome', 'type', 'colour'], widths: DESK, states: [], status: 'active' },
+  { id: `${surface}.keys-button`, surface, mock: '.side-foot .user button[data-act="keys"]', app: '.sidebar-foot .user .keys-toggle', checks: ['chrome', 'colour', 'icon'], widths: DESK,
+    icon: { mock: 'kbd', app: 'keyboard' }, states: ['hover'], status: 'active' },
+  { id: `${surface}.theme-button`, surface, mock: '.side-foot .user button[data-act="theme"]', app: '.sidebar-foot .user .theme-toggle', checks: ['chrome', 'colour'], widths: DESK,
+    states: ['hover'], status: 'active' },
   { id: `${surface}.jobs-card`, surface, mock: '.side-foot .bgcard', app: '.sidebar-foot .bgcard', checks: ['chrome', 'type'], widths: DESK,
     status: 'active' },
   { id: `${surface}.mobilebar`, surface, mock: '.mobilebar', app: '.mobilebar', checks: ['chrome', 'colour'], widths: PHONE,
@@ -606,6 +622,40 @@ const libraryPage: Pair[] = [
   { id: 'library-empty.buttons', surface: 'library-empty', mock: '.empty .acts button', app: '.lib-empty .acts button:not(.lib-start)', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], status: 'active' },
 ]
 
+// S28 (H4, H6, H8, H9): Home's menus. The rows are the mockup's in its order (the Models rows are the three real roles,
+// a data list, then "Change the defaults in Settings"); descriptions that carry changed copy or record facts are left out
+// of the text comparison (COPY_CHANGES scope-*, and the depth limits come from the server).
+const HM = '.home-menu'
+// Enabled rows are hovered; a "Later" row is disabled on both pages (the app's takes no pointer), so it is compared without
+// the hover state.
+const ON = { mock: ':not([disabled])', app: ':not([data-disabled])' }
+const homeMenu = (surface: SurfaceId, rows: Partial<Pair>, extra: Pair[] = [], details: Partial<Pair> = {}): Pair[] => [
+  { id: `${surface}.menu`, surface, mock: '.menu', app: HM, checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: `${surface}.rows`, surface, mock: `.menu button${ON.mock}`, app: `${HM} .home-menu-item${ON.app}`, checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', text: false,
+    states: ['hover'], unordered: true, status: 'active', ...rows },
+  { id: `${surface}.details`, surface, mock: '.menu button small', app: `${HM} .home-menu-text small`, checks: ['type', 'colour'], list: 'fixed', text: false, states: [], unordered: true, status: 'active', ...details },
+  ...extra,
+]
+const laterRows = (surface: SurfaceId, icon: Array<{ mock: string; app: string }>): Pair => ({ id: `${surface}.later`, surface, mock: '.menu button[disabled]', app: `${HM} .home-menu-item[data-disabled]`,
+  checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', text: false, icon, states: [], unordered: true, status: 'active' })
+const menuHeading = (surface: SurfaceId): Pair => ({ id: `${surface}.heading`, surface, mock: '.menu h6', app: `${HM} .home-menu-heading`, checks: ['chrome', 'type', 'colour'], text: true, states: [], unordered: true, status: 'active' })
+const menuBadge = (surface: SurfaceId): Pair => ({ id: `${surface}.badge`, surface, mock: '.menu .badge', app: `${HM} .home-menu-badge`, checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: [], unordered: true, status: 'active' })
+const homeMenus: Pair[] = [
+  ...homeMenu('scope-menu', { icon: [{ mock: 'search', app: 'search' }, { mock: 'clip', app: 'paperclip' }, { mock: 'file', app: 'file-text' }],
+    states: ['hover', 'selected'], selected: { mock: '.menu button.on', app: `${HM} .home-menu-item[data-selected]` } },
+  [menuHeading('scope-menu'), menuBadge('scope-menu'), laterRows('scope-menu', [{ mock: 'table', app: 'table-2' }])]),
+  ...homeMenu('add-menu', { icon: [{ mock: 'ul', app: 'file-up' }, { mock: 'lib', app: 'library-big' }] },
+    [menuBadge('add-menu'), laterRows('add-menu', [{ mock: 'file', app: 'file-text' }, { mock: 'link', app: 'link-2' }])]),
+  // The role rows are the research's three roles (the mockup's fourth "Literature (alternative)" is example data, §0 rule 1).
+  ...homeMenu('models-menu', { mock: '.menu button[data-act="toast"]', app: `${HM} .home-menu-item:not(:last-child)`, list: 'data', expected: () => 3, icon: { mock: 'cpu', app: 'cpu' } }, [
+    menuHeading('models-menu'),
+    { id: 'models-menu.settings', surface: 'models-menu', mock: '.menu button[data-go="settings"]', app: `${HM} .home-menu-item:last-child`, checks: ['chrome', 'type', 'colour', 'icon'], text: true,
+      icon: { mock: 'gear', app: 'sliders-horizontal' }, states: ['hover'], unordered: true, status: 'active' },
+  ], { mock: '.menu button[data-act="toast"] small', app: `${HM} .home-menu-item:not(:last-child) small`, list: 'data', expected: () => 3 }),
+  ...homeMenu('depth-menu', { icon: [{ mock: 'zap', app: 'zap' }, { mock: 'gauge', app: 'gauge' }, { mock: 'scope', app: 'telescope' }],
+    states: ['hover', 'selected'], selected: { mock: '.menu button.on', app: `${HM} .home-menu-item[data-selected]` }, dataText: { mock: ['small'], app: ['small'] } }, [menuHeading('depth-menu')]),
+]
+
 const TR = '.settings .rows > div'
 const trashPage: Pair[] = [
   { id: 'trash.title', surface: 'trash', mock: '.settings h1', app: '.trash-page > h1', checks: ['chrome', 'type', 'colour'], text: true, status: 'active' },
@@ -639,6 +689,7 @@ export const PAIRS: Pair[] = [
   ...states,
   ...palette,
   ...keysDialog,
+  ...homeMenus,
   { id: 'home.composer', surface: 'home', mock: '.composer', app: 'form.composer', checks: ['chrome'], status: 'active' },
   { id: 'home.scope-button', surface: 'home', mock: '.band .band-btn', app: '.composer-scope', checks: ['chrome', 'type'],
     status: 'active' },
@@ -804,10 +855,10 @@ export const PAIRS: Pair[] = [
   // The panel frame (S7a, R10/P1). Its body is each panel's own slice (S12-S15b); here the frame, its 46px head, the
   // heading and the head buttons. At 390 the panel covers the screen.
   { id: 'panel.frame', surface: 'research-panel', mock: '.panel', app: '[data-split-panel]', checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },
-  // At 1024 the panel and the thread are 56% / 44% of the space beside the sidebar on both sides, but the app's sidebar
-  // is 224px there (App.css, under 1050px) and the mockup's 256px.
+  // At 1024 the panel and the thread are 56% / 44% of the space beside the 256px sidebar on both sides (S28: the app's
+  // sidebar is 256px there since S1).
   { id: 'panel.frame@1024', surface: 'research-panel', mock: '.panel', app: '[data-split-panel]', checks: [], widths: [], breakpoint: true,
-    status: 'pending:S1', why: 'S1: sidebar 256px at 1024 (app 224px), then the panel is 430px as in the mockup' },
+    status: 'active' },
   { id: 'panel.head', surface: 'research-panel', mock: '.panel .p-head', app: '.split-panel-head', checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },
   { id: 'panel.title', surface: 'research-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
     icon: { mock: 'book', app: 'book-open' }, text: true, status: 'active' },
@@ -817,7 +868,7 @@ export const PAIRS: Pair[] = [
     icon: { mock: 'x', app: 'x' }, states: ['hover'], unordered: true, status: 'active' },
   { id: 'panel.thread', surface: 'research-panel', mock: '.thread-inner', app: '.thread-inner', checks: ['content'], widths: DESK, status: 'active' },
   { id: 'panel.thread@1024', surface: 'research-panel', mock: '.thread-inner', app: '.thread-inner', checks: [], widths: [], breakpoint: true,
-    status: 'pending:S1', why: 'S1: sidebar 256px at 1024 (app 224px), then the thread beside the panel is 338px as in the mockup' },
+    status: 'active' },
   // S13 Sources panel body (P5, P6, P8-P10): the filter tabs, the toolbar, the table head and the first row's parts.
   // Column widths follow the rows' text (an auto table layout), so cells inside the table compare type and colour, and
   // their controls compare width and height with x and y left out (GEOMETRY_EXCEPTIONS sources-table-cells-xy).

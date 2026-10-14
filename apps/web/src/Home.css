@@ -50,9 +50,11 @@
 
 /* The Home menus (scope, +, Models, depth): mockup .menu. They render in a portal, so the class sits on the popup itself. */
 [data-slot=select-content].home-menu,[data-slot=dropdown-menu-content].home-menu{display:grid;gap:1px;align-content:start;width:max-content;min-width:250px;max-width:min(340px,calc(100vw - 16px));padding:6px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);box-shadow:var(--shadow-float);-webkit-font-smoothing:antialiased}
-.home-menu-heading{margin:4px 8px;color:var(--muted);font-size:10.5px;font-weight:500;letter-spacing:.7px;text-transform:uppercase}
+.home-menu-heading{margin:4px 8px;color:var(--muted);font-size:10.5px;font-weight:500;line-height:1.5;letter-spacing:.7px;text-transform:uppercase}
+/* A Select menu's rows sit in its list element: the same 1px grid gap as the mockup's menu. */
+[data-slot=select-content].home-menu>div:has(>.home-menu-item){display:grid;gap:1px}
 .home-menu [data-slot=dropdown-menu-label].home-menu-heading{padding:0}
-.home-menu .home-menu-item{display:flex;align-items:flex-start;gap:9px;min-height:0;padding:7px 8px;border-radius:6px;color:var(--ink);font-size:13px;text-align:left}
+.home-menu .home-menu-item{display:flex;align-items:flex-start;gap:9px;min-height:0;padding:7px 8px;border-radius:6px;color:var(--ink);font-size:13px;text-align:left;line-height:1.5}
 .home-menu .home-menu-item[data-highlighted]{background:var(--hover-surface);color:var(--ink)}
 .home-menu .home-menu-item[data-disabled]{opacity:1;color:var(--muted);background:none}
 .home-menu [data-slot=select-item].home-menu-item{padding-right:28px}
@@ -60,9 +62,9 @@
 .home-menu-row{display:flex;align-items:flex-start;gap:9px;width:100%;min-width:0;white-space:normal}
 .home-menu-row>svg{flex:none;width:16px;height:16px;margin-top:2px;color:var(--muted)}
 .home-menu-row .connection-icon{flex:none;width:16px;height:16px;margin-top:2px;color:var(--muted)}
-.home-menu-text{flex:1;min-width:0;line-height:1.4}
-.home-menu-text small{display:block;margin-top:1px;color:var(--muted);font-size:11.5px;line-height:1.4}
-.home-menu-badge{flex:none;margin-left:auto;padding:0 5px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-size:10px;letter-spacing:.3px;text-transform:uppercase}
+.home-menu-text{flex:1;min-width:0;line-height:1.5}
+.home-menu-text small{display:block;margin-top:1px;color:var(--muted);font-size:11.5px;line-height:1.5}
+.home-menu-badge{flex:none;margin-left:auto;padding:0 5px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-size:10px;line-height:1.5;text-transform:uppercase}
 
 /* The PDF guide rows (H11, Q3): one check row per attached PDF in a mixed search, all guiding it (D3, at most five). */
 .composer .guide{display:grid;gap:4px;padding:8px 12px 10px;border-top:1px solid var(--line);background:var(--sidebar-surface);font-size:12.5px}

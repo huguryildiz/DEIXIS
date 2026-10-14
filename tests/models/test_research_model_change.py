@@ -247,3 +247,23 @@ def test_migration_0009_keeps_earlier_sessions_with_a_null_effort(tmp_path):
     assert db.migrate(lib.conn) == [9]
     after = lib.conn.execute("SELECT id, requested_model, status, reasoning_effort FROM model_sessions ORDER BY rowid").fetchall()
     assert [tuple(r)[:3] for r in after] == [tuple(r) for r in before] and all(r["reasoning_effort"] is None for r in after)
+
+
+def test_a_step_lists_each_model_and_effort_once_with_its_latest_call_last(tmp_path):
+    """Sol P3 r1: a step whose calls went high, low, then high again lists low before high, so the last entry is where
+    its latest call went and the model line does not name an unchanged role as set for the next calls."""
+    from deixis.workflow.views import research_view
+    lib = library(tmp_path)
+    change(lib, "fake-model-2", effort="high")
+    filled = fill(lib)
+    execute(lib, filled)
+    first = lib.conn.execute("SELECT * FROM model_sessions WHERE run_id = ? ORDER BY rowid LIMIT 1", (filled["id"],)).fetchone()
+    lib.conn.execute("DELETE FROM model_sessions WHERE step_id = ? AND id != ?", (first["step_id"], first["id"]))
+    row = dict(first)
+    for n, effort in enumerate(("low", "high")):
+        row.update(id=f"{first['id']}-{n}", reasoning_effort=effort)
+        lib.conn.execute(f"INSERT INTO model_sessions ({', '.join(row)}) VALUES ({', '.join('?' for _ in row)})", tuple(row.values()))
+    run = next(r for r in research_view(lib.store, lib.rid)["runs"] if r["id"] == filled["id"])
+    step = next(s for s in run["steps"] if s["id"] == first["step_id"])
+    assert step["models"] == [{"connection": "fake", "model": "fake-model-2", "effort": "low"},
+                              {"connection": "fake", "model": "fake-model-2", "effort": "high"}]

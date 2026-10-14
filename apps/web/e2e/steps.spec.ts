@@ -516,9 +516,9 @@ test.describe.serial('S9: the steps list', () => {
     await page.getByRole('option', { name: 'High' }).click()
     await dialog.getByRole('button', { name: 'Use this model' }).click()
     await expect(dialog).toHaveCount(0)
+    // Nothing was sent at the new effort yet (the full-text phase has no role entry, so no "set for the next calls" line).
     const literature = page.locator('.chat-run-models').first().locator('.chat-run-model').filter({ hasText: /^Literature/ })
-    // Nothing was sent at the new effort yet: it is named only as the setting for the next calls.
-    await expect(literature).toHaveText(['Literature · Codex · fixture-model', 'Literature, set for the next calls · Codex · fixture-model-b · High'])
+    await expect(literature).toHaveText(['Literature · Codex · fixture-model'])
     await note.getByRole('button', { name: 'Retry this step' }).click()
     await expect.poll(async () => (await discovery()).status, { timeout: 90_000 }).toBe('completed')
     // The full-text reads that ran after the retry went to fixture-model-b; screening keeps fixture-model.

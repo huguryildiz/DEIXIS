@@ -29,7 +29,7 @@ import './research/queue.css'
 import './research/followup.css'
 import './Trash.css'
 
-type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: 'connections' | 'access' | 'openalex' } | { view: 'trash' } | { view: 'library' }
+type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: 'connections' | 'access' | 'openalex' | 'profile' } | { view: 'trash' } | { view: 'library' }
 type ThemeChoice = 'system' | 'light' | 'dark'
 
 const activeRunStatuses = new Set<RunStatus>(['queued', 'running', 'pause_requested'])
@@ -54,6 +54,7 @@ function parseHash(): Route {
   if (hash === 'settings/connections') return { view: 'settings', tab: 'connections' }
   if (hash === 'settings/access') return { view: 'settings', tab: 'access' }
   if (hash === 'settings/openalex') return { view: 'settings', tab: 'openalex' }
+  if (hash === 'settings/profile') return { view: 'settings', tab: 'profile' }
   if (hash === 'settings') return { view: 'settings' }
   if (hash === 'trash') return { view: 'trash' }
   if (hash === 'library') return { view: 'library' }
@@ -531,7 +532,7 @@ export default function App() {
         <button type="button" className="access-retry" onClick={retryAccess} style={accessFailed ? undefined : { display: 'none' }}>{t('Check again')}</button>
         <div className="user">
           <span className="avatar" aria-hidden="true" style={profile ? undefined : { visibility: 'hidden' }}>{profile?.initials ?? ''}</span>
-          <span className="user-name" title={profile?.full_name}>{profile?.full_name ?? ''}</span>
+          <button type="button" className="user-name" onClick={() => go({ view: 'settings', tab: 'profile' })} aria-label={profile ? t('Profile · {name}', { name: profile.full_name }) : t('Profile')} title={t('Profile settings')}>{profile?.full_name ?? ''}</button>
           <button type="button" className="keys-toggle" onClick={() => openKeys()} aria-label={t('Shortcuts')} aria-keyshortcuts={singleKeys ? '?' : undefined} title={`${t('Shortcuts')} (?)`}><Keyboard size={16} aria-hidden="true" /></button>
           <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={themeName} title={t(dark ? 'Light mode' : 'Dark mode')}>{dark ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}</button>
         </div>
@@ -548,7 +549,7 @@ export default function App() {
         {route.view === 'research' && (route.id ? <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />
           : <EmptyResearch opened={researches.length > 0} />)}
         {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={(id, tab) => go({ view: 'research', id, tab })} onStartResearch={() => go({ view: 'home' })} />}
-        {route.view === 'settings' && <SettingsPage key={route.tab ?? 'page'} dark={dark} section={route.tab} language={language} onLanguage={chooseLanguage}
+        {route.view === 'settings' && <SettingsPage key={route.tab ?? 'page'} dark={dark} section={route.tab} language={language} onLanguage={chooseLanguage} onProfile={setProfile}
           access={{ proxy, readFailed: proxyReadFailed, testing: proxyBusy, testFailed: !!proxy?.address && proxyFailed === proxy.address, scopus: institutionalStatus,
             test: runProxyTest, save: saveProxy, reload: checkAccess }} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}

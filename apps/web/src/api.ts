@@ -709,7 +709,7 @@ export type EquationReader = {
   reading: { asset_id: string; title: string | null; pages: number; started_at: string } | null
   pdfs: Partial<Record<'read' | 'no_math' | 'failed' | 'reading' | 'pending', number>>
 }
-export type LocalTools = { machine: { chip: string | null; memory_gb: number | null; disk_free_gb: number | null }; tools: LocalTool[] }
+export type LocalTools = { machine: { chip: string | null; memory_gb: number | null; disk_free_gb: number | null; disk_total_gb?: number | null }; tools: LocalTool[] }
 export type SemanticSearchProvider = 'gemini' | 'builtin' | 'openai' | 'ollama' | 'lm_studio' | 'off'
 export type SemanticSearchOption = {
   provider: SemanticSearchProvider; models: string[]; available: boolean; reason: string | null
@@ -722,7 +722,7 @@ export type BuiltinEmbeddingJob = {
   started_at: string | null; finished_at: string | null; pid?: number; bytes_done?: number; bytes_total?: number; output: string
 }
 export type BuiltinEmbedding = { status: 'unsupported_platform' } | {
-  status: 'not_installed' | 'installing' | 'installing_elsewhere' | 'ready' | 'failed' | 'files_do_not_match' | 'removing' | 'remove_failed'
+  status: 'not_installed' | 'installing' | 'installing_elsewhere' | 'ready' | 'update_available' | 'failed' | 'files_do_not_match' | 'removing' | 'remove_failed'
   installed: boolean; available: boolean; last_full_check: { at: string; passed: boolean } | null; job: BuiltinEmbeddingJob | null
   model: { name: string; id: string; repository: string; revision: string; package: string }
   sizes: { runtime_bytes: number; model_bytes: number; python_bytes: number }
@@ -1289,6 +1289,7 @@ export const api = {
     request<SemanticSearch>('/api/semantic-search', json('PUT', { provider, model })),
   builtinEmbedding: () => request<BuiltinEmbedding>('/api/semantic-search/builtin'),
   installBuiltinEmbedding: () => request<{ job: BuiltinEmbeddingJob }>('/api/semantic-search/builtin/install', { method: 'POST' }),
+  checkBuiltinEmbedding: () => request<BuiltinEmbedding>('/api/semantic-search/builtin/check', { method: 'POST' }),
   cancelBuiltinEmbedding: () => request<{ job: BuiltinEmbeddingJob }>('/api/semantic-search/builtin/cancel', { method: 'POST' }),
   removeBuiltinEmbedding: () => request<BuiltinEmbedding>('/api/semantic-search/builtin', { method: 'DELETE' }),
   // The built-in model's English sentence for the current question revision, written once (slice 21).
@@ -1414,10 +1415,11 @@ export function subscribe(researchId: string, after: number, onEvent: () => void
   return () => source.close()
 }
 
-// App-shell endpoints (api/shell_routes.py): the awaiting counts on GET /api/researches, the OS profile name, the
+// App-shell endpoints (api/shell_routes.py): the awaiting counts on GET /api/researches, the profile name, the
 // institution proxy's label and test, and the contact email. The test states two separate facts; no combined verdict.
 export type AwaitingCounts = { queue: number; pdf: number }
-export type Profile = { full_name: string; initials: string }
+// The name typed in Settings wins over the OS account's; `account_name` is what clearing it returns to.
+export type Profile = { full_name: string; initials: string; name_source: 'setting' | 'account'; account_name: string }
 export type ScopusCompleteFact = 'confirmed' | 'not_confirmed' | 'could_not_check'
 export type ProxyTest = {
   proxy_reachable: boolean; proxy_http_status: number | null
@@ -1433,6 +1435,7 @@ export type ContactEmailSetting = { email: string | null; environment_set: boole
 
 export const shellApi = {
   profile: () => request<Profile>('/api/profile'),
+  saveProfileName: (full_name: string | null) => request<Profile>('/api/profile', json('PUT', { full_name })),
   proxySettings: () => request<ProxySettings>('/api/institution-proxy/settings'),
   saveProxyLabel: (label: string | null) => request<ProxySettings>('/api/institution-proxy/label', json('PUT', { label })),
   testProxy: () => request<ProxySettings>('/api/institution-proxy/test', { method: 'POST' }),

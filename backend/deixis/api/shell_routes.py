@@ -1,4 +1,4 @@
-"""Small routes behind the app shell (parity slice S2): awaiting counts, the OS profile name, the institution proxy's
+"""Small routes behind the app shell (parity slice S2): awaiting counts, the profile name (typed, else the OS account's), the institution proxy's
 label and test, and the contact email setting.
 
 Nothing here starts a run or writes evidence. The awaiting counts are read from the same derivations the research view
@@ -30,6 +30,8 @@ from deixis.storage.db import now
 from deixis.workflow import queue, waiting
 from deixis.workflow.store import Store
 
+PROFILE_NAME_SETTING = "profile_name"
+NAME_MAX = 80
 PROXY_LABEL_SETTING = "institution_proxy_label"
 PROXY_TEST_SETTING = "institution_proxy_test"
 PROXY_TEST_SECONDS = 10.0
@@ -125,10 +127,22 @@ def initials_of(name: str) -> str:
     return (words[0][0] + (words[-1][0] if len(words) > 1 else "")).upper()
 
 
-def profile() -> dict[str, str]:
+def os_name() -> str:
     """The person's name as the operating system has it. Read each time, never stored, never sent anywhere."""
-    name = _gecos_name() or _id_name() or _login_name()
-    return {"full_name": name, "initials": initials_of(name)}
+    return _gecos_name() or _id_name() or _login_name()
+
+
+def profile(stored: str | None, account: str) -> dict[str, Any]:
+    """The name typed in Settings wins over the account's name. Neither is sent anywhere; the email (F15) is the only
+    part of the profile that leaves the computer, as `mailto` with OpenAlex and Crossref requests."""
+    name = stored or account
+    return {"full_name": name, "initials": initials_of(name), "name_source": "setting" if stored else "account",
+            "account_name": account}
+
+
+class ProfileName(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    full_name: str | None = Field(default=None, max_length=400)
 
 
 # ---- F3: the proxy's label and test ----------------------------------------------------------------------------------
@@ -235,9 +249,22 @@ def register_shell_routes(app) -> None:
         store = store_of(request)
         return proxy_settings(store, await asyncio.to_thread(scopus.route_source) if store.setting(PROXY_TEST_SETTING) else None)
 
+    async def profile_view(request: Request) -> dict[str, Any]:
+        # The store belongs to the event-loop thread; only the account lookup (it may run `id -F`) goes to a thread.
+        stored = store_of(request).setting(PROFILE_NAME_SETTING) or None
+        return profile(stored, await asyncio.to_thread(os_name))
+
     @app.get("/api/profile")
-    async def get_profile() -> dict[str, str]:
-        return await asyncio.to_thread(profile)
+    async def get_profile(request: Request) -> dict[str, Any]:
+        return await profile_view(request)
+
+    @app.put("/api/profile")
+    async def put_profile(body: ProfileName, request: Request) -> dict[str, Any]:
+        name = " ".join((body.full_name or "").split())
+        if len(name) > NAME_MAX:
+            raise HTTPException(422, f"The name must be at most {NAME_MAX} characters")
+        store_of(request).set_setting(PROFILE_NAME_SETTING, name or None)
+        return await profile_view(request)
 
     @app.get("/api/institution-proxy/settings")
     async def get_proxy_settings(request: Request) -> dict[str, Any]:

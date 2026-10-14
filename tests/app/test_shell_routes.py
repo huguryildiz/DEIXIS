@@ -158,17 +158,32 @@ def test_a_research_with_nothing_waiting_has_zero_of_both(served):
 def test_profile_has_the_full_name_and_initials_from_the_account(served, monkeypatch):
     _, client, _, _ = served
     monkeypatch.setattr(shell_routes, "_gecos_name", lambda: "Ada Mary Lovelace")
-    assert client.get("/api/profile").json() == {"full_name": "Ada Mary Lovelace", "initials": "AL"}
+    assert client.get("/api/profile").json() == {"full_name": "Ada Mary Lovelace", "initials": "AL", "name_source": "account",
+                                                 "account_name": "Ada Mary Lovelace"}
 
 
 def test_profile_falls_back_to_id_f_and_then_the_login_name(served, monkeypatch):
     _, client, _, _ = served
     monkeypatch.setattr(shell_routes, "_gecos_name", lambda: "")
     monkeypatch.setattr(shell_routes, "_id_name", lambda: "Hüseyin Yıldız")
-    assert client.get("/api/profile").json() == {"full_name": "Hüseyin Yıldız", "initials": "HY"}
+    assert client.get("/api/profile").json()["full_name"] == "Hüseyin Yıldız"
+    assert client.get("/api/profile").json()["initials"] == "HY"
     monkeypatch.setattr(shell_routes, "_id_name", lambda: "")
     monkeypatch.setattr(shell_routes, "_login_name", lambda: "adal")
-    assert client.get("/api/profile").json() == {"full_name": "adal", "initials": "A"}
+    assert client.get("/api/profile").json()["full_name"] == "adal"
+    assert client.get("/api/profile").json()["initials"] == "A"
+
+
+def test_a_typed_name_wins_over_the_account_and_clearing_it_returns_to_the_account(served, monkeypatch):
+    _, client, _, _ = served
+    monkeypatch.setattr(shell_routes, "_gecos_name", lambda: "Ada Mary Lovelace")
+    saved = client.put("/api/profile", json={"full_name": "  Grace   Hopper "}).json()
+    assert saved == {"full_name": "Grace Hopper", "initials": "GH", "name_source": "setting", "account_name": "Ada Mary Lovelace"}
+    assert client.get("/api/profile").json()["full_name"] == "Grace Hopper"
+    cleared = client.put("/api/profile", json={"full_name": ""}).json()
+    assert (cleared["full_name"], cleared["name_source"]) == ("Ada Mary Lovelace", "account")
+    assert client.put("/api/profile", json={"full_name": "x" * 81}).status_code == 422
+    assert client.put("/api/profile", json={"full_name": "A", "email": "a@b.c"}).status_code == 422
 
 
 # ---- F3: the proxy's label and test --------------------------------------------------------------------------------

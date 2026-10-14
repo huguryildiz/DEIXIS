@@ -22,6 +22,10 @@
 .app .settings-page .rows{border:1px solid var(--line);border-radius:10px}
 .app .settings-page .rows>div{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
 .app .settings-page .rows>div:first-child{border-top:0}
+.app .settings-page .rows>form{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
+.app .settings-page .rows>form:first-child{border-top:0}
+.app .settings-page .set-profile .field{width:240px;max-width:100%;height:27px}
+.app .settings-page .set-profile form>.notice{flex:1 0 100%;margin:0}
 .app .settings-page .rows b{min-width:120px;color:var(--ink);font-size:13.5px;font-weight:500}
 .app .settings-page .rows p{flex:1;min-width:180px;margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
 .app .settings-page .rows .select{height:27px;color:var(--ink-2)}
@@ -104,6 +108,9 @@
 .connection-sheet .connection-body{flex:1;min-height:0;overflow:auto}
 .connection-sheet .mk .foot-note.is-ink{color:var(--ink-2)}
 .connection-sheet .mk .dmeta .spin{vertical-align:-2px}
+.connection-sheet .mk .notice{margin:0}
+.connection-sheet .mk .notice p{margin:0}
+.connection-sheet .mk .notice p+p{margin-top:4px}
 .connection-sheet .key-box,.connection-sheet .contact-field{display:grid;gap:8px}
 .connection-sheet .key-form-error{margin:0;color:var(--error-ink);font-size:12.5px}
 .connection-sheet .ghost.is-danger{color:var(--error-ink)}
@@ -124,3 +131,15 @@
 .connection-sheet .connection-checks .legacy-check:first-child{border-top:0}
 .connection-sheet .connection-checks .legacy-check strong{color:var(--ink-2)}
 .connection-sheet .connection-recheck{justify-self:start}
+.app .settings-page #profile{scroll-margin-top:24px}
+
+/* This computer: chip, memory and a disk meter in one bordered card, three cells on wide screens, stacked on phones. */
+.app .settings-page .machine-card{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.app .settings-page .machine-cell{display:flex;gap:10px;align-items:flex-start;padding:14px 16px;min-width:0}
+.app .settings-page .machine-cell+.machine-cell{border-left:1px solid var(--line)}
+.app .settings-page .machine-cell>svg{flex:0 0 auto;margin-top:2px;color:var(--muted)}
+.app .settings-page .machine-cell p{display:grid;gap:4px;margin:0;min-width:0;flex:1}
+.app .settings-page .machine-cell small{color:var(--muted);font-size:12px}
+.app .settings-page .machine-cell b{color:var(--ink);font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.app .settings-page .machine-disk .bar{margin-top:4px}
+@media (max-width:620px){.app .settings-page .machine-cell+.machine-cell{border-left:0;border-top:1px solid var(--line)}}

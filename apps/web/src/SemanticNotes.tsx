@@ -48,7 +48,7 @@ export function SemanticSetupNote() {
   const retry = <Button type="button" variant="link" size="sm" onClick={() => { void load() }}>{t('Check again')}</Button>
   if ((!semantic || !builtin) && loadError) return <Notice tone="error">{t('Could not check semantic search: {message}', { message: loadError })} {retry}</Notice>
   if (!semantic || !builtin || semantic.provider !== 'off' || semantic.explicit || builtin.status === 'unsupported_platform') return null
-  if (builtin.status === 'ready' || builtin.status === 'removing' || builtin.status === 'remove_failed') return null
+  if (builtin.status === 'ready' || (builtin.status === 'update_available' && builtin.available) || builtin.status === 'removing' || builtin.status === 'remove_failed') return null
   const install = () => {
     setStarting(true)
     setStartError('')
@@ -68,7 +68,7 @@ export function SemanticSetupNote() {
   const sizeVars = { total: aboutMb(sizes.runtime_bytes + sizes.model_bytes), python: aboutMb(sizes.python_bytes) }
   return <Notice tone="info">
     <p className="semantic-setup-text">{t('Semantic search is off, so sources are ranked by their keywords only. The built-in model ranks them by meaning; it runs on this computer and needs no key.')}</p>
-    {!running && <p className="semantic-setup-text">{t('It needs about {total} MB of disk, plus about {python} MB if uv has to download Python 3.12, plus uv’s download cache (not measured).', sizeVars)}</p>}
+    {!running && <p className="semantic-setup-text">{t('It needs about {total} MB of disk, plus about {python} MB if Python 3.12 has to be downloaded, plus room for a download cache.', sizeVars)}</p>}
     {mismatch && <p className="local-tool-error">{t('The model files do not match the checked copy, so the model is not used. Download them again.')}</p>}
     {builtin.status === 'failed' && <p className="local-tool-error">{t('The last download failed. Settings → Connections shows the details.')}</p>}
     {running && <p className="semantic-setup-progress" role="status"><LoaderCircle size={14} className="chat-spin" aria-hidden />
@@ -109,7 +109,7 @@ export function EnglishQuestion({ researchId, view, busy, onSaved }: {
     api.saveEnglishQuestion(researchId, body).then(onSaved).catch((e: Error) => setError(e.message)).finally(() => setSaving(false))
   }
   return <div className="english-question">
-    <Notice tone="attention">{t('The built-in semantic model reads English only. This question is not in English, so the built-in model is off for this research. Add one English sentence that says what you are looking for.')}</Notice>
+    <Notice tone="attention">{t('The built-in model reads English only, so it is off for this research. Add one English sentence that says what you are looking for.')}</Notice>
     <form onSubmit={e => { e.preventDefault(); if (text.trim()) save({ text: text.trim(), expected_version: view.research.version }) }}>
       <label className="sr-only" htmlFor="english-question-text">{t('English sentence for the built-in model')}</label>
       <input id="english-question-text" value={text} maxLength={500} onChange={e => setText(e.target.value)} placeholder={t('One English sentence')} disabled={saving || busy} />

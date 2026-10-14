@@ -1,7 +1,8 @@
 """API keys set from Settings (D29, D53).
 
-A key set in the shell wins and cannot be changed from the app. A key read from `.env` is replaced or removed in that
-file. Otherwise a key saved in Settings is stored in the system keychain (macOS Keychain, Windows Credential Locker,
+A key set in the shell wins and cannot be changed from the app. A key read from `.env` is moved into the keychain at
+startup and its line deleted (D19); only when no keychain is available, or the move fails, is it replaced or removed in
+that file. Otherwise a key saved in Settings is stored in the system keychain (macOS Keychain, Windows Credential Locker,
 Secret Service) under the service `DEIXIS`. Either way it is put into the process environment, where connectors already
 read their keys at call time. Key values are never logged or returned by the API.
 """
@@ -44,6 +45,10 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("DASHSCOPE_API_KEY", "model", "qwen", testable=True),
     ManagedKey("MOONSHOT_API_KEY", "model", "kimi", testable=True),
     ManagedKey("MISTRAL_API_KEY", "model", "mistral", testable=True),
+    ManagedKey("XAI_API_KEY", "model", "grok", testable=True),
+    ManagedKey("GITHUB_TOKEN", "model", "copilot", testable=True),
+    ManagedKey("ZAI_API_KEY", "model", "glm", testable=True),
+    ManagedKey("MODEL_API_KEY", "model", "muse_spark", testable=True),
     ManagedKey("OPENALEX_API_KEY", "source", "openalex"),
     ManagedKey("S2_API_KEY", "source", "semantic_scholar"),
     ManagedKey("NCBI_API_KEY", "source", "pubmed"),
@@ -106,6 +111,26 @@ def _rewrite_dotenv(env: str, value: str | None) -> None:
         raise
 
 
+def move_dotenv_keys_to_keychain() -> None:
+    """Move managed keys read from `.env` into the keychain and delete their lines (D19). A key is deleted from `.env`
+    only after the keychain returns the same value; on any failure it stays in `.env`, still in use."""
+    if keychain_name() is None:
+        return
+    for env in sorted(_from_dotenv):
+        value = os.environ.get(env)
+        if not value:
+            continue
+        try:
+            keyring.set_password(SERVICE, env, value)
+            if keyring.get_password(SERVICE, env) != value:
+                continue
+            _rewrite_dotenv(env, None)
+        except (KeyringError, OSError):
+            continue
+        _from_dotenv.discard(env)
+        _from_keychain.add(env)
+
+
 def load_into_environment() -> None:
     """Fill unset key variables from the keychain; called after .env is read."""
     if keychain_name() is None:
@@ -161,7 +186,7 @@ def delete(env: str) -> None:
 
 
 async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any]:
-    """One short request with the key: Gemini, DeepSeek, Qwen, Kimi and Mistral list models; OpenAI embeds one word, which also shows missing credit."""
+    """One short request with the key: Gemini, DeepSeek and the OpenAI-compatible connections list models; OpenAI embeds one word, which also shows missing credit."""
     try:
         if env == "GEMINI_API_KEY":
             response = await client.get(f"{GEMINI_API_URL}/models", params={"pageSize": 1},
@@ -169,7 +194,7 @@ async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any
         elif env == "DEEPSEEK_API_KEY":
             response = await client.get(f"{DEEPSEEK_API_URL}/models", headers={"Authorization": f"Bearer {value}"}, timeout=20)
         elif env in COMPAT_BY_KEY_ENV:
-            response = await client.get(f"{COMPAT_BY_KEY_ENV[env].base_url}/models", headers={"Authorization": f"Bearer {value}"}, timeout=20)
+            response = await client.get(COMPAT_BY_KEY_ENV[env].list_url, headers={"Authorization": f"Bearer {value}"}, timeout=20)
         else:
             response = await client.post(f"{OPENAI_API_URL}/embeddings", json={"model": "text-embedding-3-small", "input": ["test"]},
                                          headers={"Authorization": f"Bearer {value}"}, timeout=20)
@@ -181,6 +206,8 @@ async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any
     fields = {"kind": metadata["error_kind"], "http_status": code, "reset_at": retry_at(metadata["retry_after"])}
     if code == 200:
         return {"status": "ok", "detail": "The key works.", "checked_at": now()}
+    if code == 404 and env in COMPAT_BY_KEY_ENV and COMPAT_BY_KEY_ENV[env].static_models:
+        return {"status": "ok", "detail": "Saved. This API lists no models, so the key is checked by the first step.", "checked_at": now()}
     if code in (400, 401, 403):  # the provider's own message can quote part of the key, so it is not passed on
         return {"status": "rejected", "detail": f"The API did not accept the key (HTTP {code}).", "checked_at": now(), **fields}
     # 429: Gemini quota or OpenAI insufficient_quota; the message says which.

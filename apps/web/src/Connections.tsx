@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight, Copy, Link, LoaderCircle, RefreshCw, RotateCw, TriangleAlert, Upload } from 'lucide-react'
+import { ChevronRight, Copy, Cpu, HardDrive, MemoryStick, Link, LoaderCircle, RefreshCw, RotateCw, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
-import { api, ApiError, libraryImportsApi, shellApi, type BuiltinEmbedding, type Connections, type ContactEmailSetting, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, libraryImportsApi, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
-import { serviceErrorSentence, healthReasonText, compatConnectionKeys, connectionNames as modelNames, isPlannedModel, localToolNames, providerRole, reasoningLabel } from './labels'
+import { serviceErrorSentence, healthReasonText, compatConnectionKeys, connectionNames as modelNames, localToolNames, providerRole, reasoningLabel } from './labels'
 import { writeClipboard } from './clipboard'
 import { Notice } from './Notice'
 
@@ -22,6 +22,17 @@ const PROVIDER_ORDER = ['openalex', 'semantic_scholar', 'crossref', 'scopus', 'a
 const providerUse: Record<string, string> = {
   openalex: 'Search and citation chain', semantic_scholar: 'Abstracts and bulk search', crossref: 'Abstracts and metadata checks',
   scopus: 'Abstracts, once its full view is confirmed',
+}
+// What happens while a provider has no key (the keyless modes in providers/*.py, required keys in registry.py).
+const providerNoKey: Record<string, string> = {
+  openalex: 'Without a key, DEIXIS uses the daily budget OpenAlex gives to requests without a key. When it runs out, requests wait until it resets, and a run can pause.',
+  biorxiv: 'bioRxiv is searched through OpenAlex, so without the OpenAlex key it shares the same keyless daily budget.',
+  semantic_scholar: 'Without a key, Semantic Scholar often turns requests away at busy times. DEIXIS retries, so abstracts and bulk search results come in more slowly and some may be missing.',
+  pubmed: 'Without a key, PubMed allows 3 requests per second instead of 10, so searches can be slower.',
+  ieee_xplore: 'Without a key, IEEE Xplore is not searched.',
+  scopus: 'Without a key, Scopus is not used: no Scopus abstracts are read.',
+  core: 'Without a key, CORE is not searched.',
+  serpapi: 'Without a key, SerpApi is not searched.',
 }
 // Sources whose requests carry the contact email as `mailto` (openalex.py, crossref.py).
 const MAILTO_PROVIDERS = new Set(['openalex', 'crossref'])
@@ -64,10 +75,10 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved 
   const toast = useToast()
   if (!entry) return null
   const id = `key-${env}`
-  if (entry.source === 'environment') return <p className="foot-note">{t('This key is set in the shell that started DEIXIS; change or remove it there.')}</p>
+  if (entry.source === 'environment') return <p className="foot-note">{t('This key comes from the terminal that started DEIXIS; change or remove it there.')}</p>
   const inDotenv = entry.source === 'dotenv'
-  if (!entry.configured && !keychain.available) return <p className="foot-note">{t('No system keychain is available; set the key in .env.')}</p>
-  const where = inDotenv ? t('stored in .env') : t('stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })
+  if (!entry.configured && !keychain.available) return <p className="foot-note">{t('No system keychain is available.')}</p>
+  const where = inDotenv ? '' : t('stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })
   const typed = value.trim()
 
   function test() {
@@ -97,9 +108,9 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved 
   return <form className="key-box" onSubmit={e => { e.preventDefault(); if (typed) save(); else if (primary) test() }}>
     <label className="lbl" htmlFor={id}>{label}
       <input id={id} className="field" type="password" autoComplete="off" spellCheck={false} value={value} disabled={busy}
-        placeholder={entry.configured ? `•••••••••••• ${where}` : t('Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
+        placeholder={entry.configured ? `•••••••••••• ${where}`.trim() : t('Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
     </label>
-    <p className="foot-note">{inDotenv ? t('Stored in .env, never in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
+    <p className="foot-note">{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
       {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>
     {formError && <p className="key-form-error" role="alert">{formError}</p>}
     <div className="acts">
@@ -107,38 +118,7 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved 
       {entry.configured && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t('Remove key')}</button>}
     </div>
     {asking && <RemoveNotice busy={busy} onRemove={remove} onKeep={() => setAsking(false)}
-      text={t('Remove the key for {name}?', { name: service }) + ' ' + (inDotenv ? t('Its line is deleted from .env.') + ' ' : '') + removeEffect} />}
-  </form>
-}
-
-// The contact email (F15): sent as `mailto` with OpenAlex and Crossref requests; the setting wins over DEIXIS_CONTACT_EMAIL.
-function ContactEmailField() {
-  const [stored, setStored] = useState<ContactEmailSetting | null>(null)
-  const [draft, setDraft] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const toast = useToast()
-  useEffect(() => {
-    let live = true
-    shellApi.contactEmail().then(value => { if (live) { setStored(value); setDraft(value.email ?? '') } }, (e: Error) => { if (live) setError(e.message) })
-    return () => { live = false }
-  }, [])
-  const save = () => {
-    setBusy(true); setError('')
-    shellApi.saveContactEmail(draft.trim() || null).then(value => {
-      setStored(value); setDraft(value.email ?? '')
-      toast('success', t(value.email ? 'Contact email saved.' : 'Contact email removed.'))
-    }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
-  }
-  const changed = stored !== null && draft.trim() !== (stored.email ?? '')
-  return <form className="contact-field" onSubmit={e => { e.preventDefault(); if (changed) save() }}>
-    <label className="lbl" htmlFor="contact-email">{t('Contact email (sent as mailto)')}
-      <input id="contact-email" className="field" type="email" autoComplete="email" value={draft} disabled={stored === null || busy} placeholder="you@university.edu"
-        onChange={e => { setDraft(e.target.value); setError('') }} />
-    </label>
-    {stored && !stored.email && stored.environment_set && <p className="foot-note">{t('While this field is empty, DEIXIS_CONTACT_EMAIL from the environment is sent.')}</p>}
-    {error && <p className="key-form-error" role="alert">{error}</p>}
-    <div className="acts"><button type="submit" className="ghost" disabled={busy || !changed}>{t(busy ? 'Saving…' : 'Save')}</button></div>
+      text={t('Remove the key for {name}?', { name: service }) + ' ' + removeEffect} />}
   </form>
 }
 
@@ -175,7 +155,7 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true }: { tool: Loc
       {tool.role === 'detected' && <><dt>{t('Role')}</dt><dd>{t('Detected only; it does not run steps')}</dd></>}
       {tool.role === 'imports' && <><dt>{t('Role')}</dt><dd>{t('Imports a collection into a research, read-only')}</dd></>}
     </dl>}
-    {tool.kind === 'cli' && tool.role === 'detected' && <p className="local-tool-note">{t('Detected only: DEIXIS found (or did not find) this tool, but it does not run research steps and no step is sent to it.')}</p>}
+    {tool.kind === 'cli' && tool.role === 'detected' && <p className="local-tool-note">{t('DEIXIS only checks whether this tool is installed; it never uses it for research.')}</p>}
     {tool.kind === 'server' && tool.installed && (tool.running
       ? <>
         <p className="local-tool-note">{t('Running · {endpoint}', { endpoint: tool.endpoint ?? '' })}</p>
@@ -187,7 +167,6 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true }: { tool: Loc
     {tool.kind === 'app' && tool.installed && <>
       <p className="local-tool-note">{!tool.running ? t('Not running. Open Zotero to import from this computer.') : tool.local_api ? t('Local API on · {endpoint}', { endpoint: tool.endpoint ?? '' }) : t('Running, but its local API is off. Turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.')}</p>
     </>}
-    {tool.kind === 'app' && <p className="local-tool-note">{t(tool.web_configured ? 'zotero.org: ZOTERO_API_KEY and ZOTERO_LIBRARY_ID are set.' : 'zotero.org: set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID in .env to import from the web library.')}</p>}
     {!tool.installed && (tool.install.available
       ? <>
         <div className="cmd"><code>{tool.install.command.split(' ').map((word, i) => <span key={i}>{i > 0 && ' '}<span>{word}</span></span>)}</code></div>
@@ -270,7 +249,7 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
   }
   return <div className="local-tool-details-panel">
     <span className={`status-chip ${ready ? '' : 'is-configured'}`}>{t(ready ? 'Installed' : 'Not installed')}</span>
-    <p className="local-tool-note">{t('Marker reads PDF pages with mathematics from the page image and writes their equations as LaTeX, so answers and table cells read the equations instead of broken PDF text. It runs on this computer; no file leaves it. Answers and cells wait until the equations of the PDFs they read are read.')}</p>
+    <p className="local-tool-note">{t('Marker reads the equations in your PDFs from the page image, so answers and tables get them as LaTeX instead of broken PDF text. It runs on this computer, and no file leaves it.')}</p>
     <p className="local-tool-note">{t('About one Marker equation in fifty was misread in a test on three papers, and a misread equation looks correct. Equations that do not match the PDF’s own text are marked to check against the page.')}</p>
     <dl className="local-tool-facts">
       <dt>{t('Package')}</dt><dd><code className="local-tool-code">{reader.package}</code></dd>
@@ -292,7 +271,7 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
       {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={() => run(api.cancelEquationReaderInstall)} disabled={busy}>{t('Cancel installation')}</Button></div>}
     </>}
     {reader.installed && !running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={() => setConfirm('remove')} disabled={busy || !!reader.reading} title={reader.reading ? t('It cannot be removed while a PDF is being read') : undefined}>{t('Remove')}</Button></div>}
-    <ConfirmDialog open={confirm === 'install'} dark={dark} title={t('Install the equation reader?')} description={t('This downloads Marker and its models, about 4.4 GB, into the DEIXIS data folder. It can take several minutes. Marker’s code is GPL-3.0 and its models have their own license. Afterwards the stored PDFs are read in the background; that can take hours for a large library.')} context={reader.path} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installEquationReader)} onOpenChange={open => setConfirm(open ? 'install' : null)} />
+    <ConfirmDialog open={confirm === 'install'} dark={dark} title={t('Install the equation reader?')} description={t('This downloads Marker and its models (about 4.4 GB) into the DEIXIS data folder, which can take several minutes. Your stored PDFs are then read in the background, which can take hours for a large library.')} context={reader.path} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installEquationReader)} onOpenChange={open => setConfirm(open ? 'install' : null)} />
     <ConfirmDialog open={confirm === 'remove'} dark={dark} title={t('Remove the equation reader?')} description={t('Marker and its models are deleted. Equations already read stay in the stored text; new PDFs are no longer read.')} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.removeEquationReader)} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
   </div>
 }
@@ -301,8 +280,8 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
 function OcrToolDetails({ tool }: { tool: OcrTool }) {
   return <div className="local-tool-details-panel">
     <span className={`status-chip ${tool.available && !tool.missing_languages.length ? '' : 'is-configured'}`}>{t(!tool.available ? 'Not installed' : tool.missing_languages.length ? 'Installed · languages missing' : 'Installed')}</span>
-    <p className="local-tool-note">{t('Tesseract reads PDF pages that have no text layer, such as scanned articles, when you choose Read with OCR on a source. It runs on this computer; no file leaves it, and the PDF is not changed.')}</p>
-    <p className="local-tool-note">{t('OCR text is labelled wherever it is quoted. On four scanned articles about 0.2–1.5% of characters were misread and equations were unusable; numbers and equations from OCR text are not checked against the page.')}</p>
+    <p className="local-tool-note">{t('Tesseract reads scanned PDF pages that have no selectable text when you choose Read with OCR on a source. It runs on this computer, no file leaves it, and the PDF is not changed.')}</p>
+    <p className="local-tool-note">{t('Text read by OCR is labelled wherever it is quoted. In a test on four scanned articles, 0.2–1.5% of characters were misread and equations were unusable, so check numbers and equations against the page.')}</p>
     <dl className="local-tool-facts">
       <dt>{t('Version')}</dt><dd>{tool.version ?? t('not found')}</dd>
       {tool.available && <><dt>{t('Languages')}</dt><dd>{ocrLanguagesText(tool.languages)}</dd></>}
@@ -335,10 +314,14 @@ const builtinSteps: Record<string, string> = {
   model_files: 'Downloading the model files…', start_check: 'Checking that the model starts and answers…',
 }
 const aboutMb = (bytes: number) => Math.round(bytes / 1e6)
+// A translated template whose {name} placeholders are identifiers (model IDs, package names), shown in mono.
+const withCode = (template: string, vars: Record<string, string>): ReactNode =>
+  template.split(/\{(\w+)\}/).map((part, i) => i % 2 ? <code key={i} className="model-id">{vars[part] ?? part}</code> : part)
 
 function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinEmbedding; dark: boolean; onChanged: () => Promise<void> }) {
   const [confirm, setConfirm] = useState<'install' | 'remove' | null>(null)
   const [busy, setBusy] = useState(false)
+  const [upToDate, setUpToDate] = useState(false)
   const toast = useToast()
   function run(action: () => Promise<unknown>) {
     setBusy(true)
@@ -355,14 +338,22 @@ function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinE
   return <div className="semantic-builtin">
     {builtin.status === 'ready' && <span className="status-chip">{checked ? t('Ready · files checked {time}', { time: checked }) : t('Ready')}</span>}
     {builtin.status === 'ready' && <p className="local-tool-note">{t('Files checked at install and each time the model starts.')}</p>}
+    {builtin.status === 'ready' && upToDate && <p className="local-tool-note" role="status">{t('No update: you have the model this version of DEIXIS uses. Updates come with new versions of DEIXIS.')}</p>}
+    {builtin.status === 'update_available' && <>
+      <span className="status-chip is-warning">{t('Update available')}</span>
+      <p className="local-tool-note">{builtin.available
+        ? t('This version of DEIXIS uses a newer copy of the model. The installed copy stays in use until you update.')
+        : t('This version of DEIXIS uses a newer copy of the model. The installed copy is not used until you update.')}</p>
+    </>}
+    {(builtin.status === 'ready' || builtin.status === 'update_available') && <p className="local-tool-note">{withCode(t('Installed: the {model} model, {package} and a Python 3.12 of its own, in the DEIXIS data folder.'), { model: 'BAAI/bge-small-en-v1.5', package: 'fastembed' })}</p>}
     {builtin.status === 'files_do_not_match' && <p className="local-tool-error">{t('The model files do not match the checked copy, so the model is not used. Download them again.')}</p>}
-    {builtin.status === 'installing_elsewhere' && <p className="local-tool-note">{t('Being downloaded by another DEIXIS process.')}</p>}
+    {builtin.status === 'installing_elsewhere' && <p className="local-tool-note">{t('Another running copy of DEIXIS is downloading it.')}</p>}
     {builtin.status === 'removing' && <p className="local-tool-note">{t('Being removed…')}</p>}
     {builtin.status === 'remove_failed' && <>
       <p className="local-tool-error">{t('Removal did not finish: some files could not be deleted.')}</p>
       {(job?.output ?? '').split('\n').filter(Boolean).slice(0, 4).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
     </>}
-    {canDownload && <p className="local-tool-note">{t('Needs about {total} MB of disk (runtime about {runtime} MB installed, model {model} MB), plus about {python} MB if uv has to download Python 3.12, plus uv’s download cache (not measured).', sizeVars)}</p>}
+    {canDownload && builtin.status !== 'update_available' && <p className="local-tool-note">{t('Needs about {total} MB of disk, plus about {python} MB if Python 3.12 has to be downloaded, plus room for a download cache.', sizeVars)}</p>}
     {running && job && <p className="local-tool-note local-tool-progress-head" role="status"><LoaderCircle size={14} className="chat-spin" aria-hidden />
       {t('Step {step} of {steps}: {what}', { step: job.step, steps: job.steps, what: stepName })}
       {job.step_name === 'model_files' && job.bytes_total ? ` ${t('{done} of {total} MB', { done: aboutMb(job.bytes_done ?? 0), total: aboutMb(job.bytes_total) })}` : ''}</p>}
@@ -373,15 +364,18 @@ function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinE
     {!running && job?.status === 'cancelled' && builtin.status !== 'ready' && <p className="local-tool-note">{t('Download cancelled.')}</p>}
     {job?.output && (failed || running) && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{job.output}</pre></details>}
     {canDownload && (builtin.uv.available
-      ? <div className="actions"><Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirm('install')}>{t(failed || builtin.status === 'files_do_not_match' ? 'Try again' : 'Download')}</Button></div>
+      ? <div className="actions"><Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirm('install')}>{t(builtin.status === 'update_available' ? 'Update' : failed || builtin.status === 'files_do_not_match' ? 'Try again' : 'Download')}</Button>
+        {builtin.status === 'update_available' && <Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</Button>}</div>
       : <p className="local-tool-note">{builtin.uv.reason}<br /><a href={builtin.uv.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
     {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => run(api.cancelBuiltinEmbedding)}>{t('Cancel download')}</Button></div>}
-    {(builtin.status === 'ready' || builtin.status === 'remove_failed') && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</Button></div>}
+    {builtin.status === 'ready' && <div className="actions"><Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api.checkBuiltinEmbedding(); setUpToDate(true) })}>{t('Check for updates')}</Button>
+      <Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</Button></div>}
+    {(builtin.status === 'remove_failed' || (builtin.status === 'update_available' && !builtin.uv.available)) && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</Button></div>}
     <ConfirmDialog open={confirm === 'install'} dark={dark} neutral title={t('Download the built-in model?')}
-      description={t('It takes about {total} MB of disk in the DEIXIS data folder: the runtime (about {runtime} MB installed) and the model files ({model} MB), plus about {python} MB if uv has to download Python 3.12, and uv’s download cache (not measured). The model is downloaded once, from Hugging Face. For semantic search, no text leaves the computer.', sizeVars)}
+      description={t('The model is downloaded once from Hugging Face and takes about {total} MB in the DEIXIS data folder, plus about {python} MB if Python 3.12 has to be downloaded. After that, semantic search sends no text off this computer.', sizeVars)}
       context={builtin.path} confirmLabel={t('Download')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installBuiltinEmbedding)} onOpenChange={open => setConfirm(open ? 'install' : null)} />
     <ConfirmDialog open={confirm === 'remove'} dark={dark} title={t('Remove the built-in model?')}
-      description={t('Its environment and model files are deleted. Similarities it already stored stay and may still be used for the same question revision; records not yet scored are ranked without it until you download it again.')}
+      description={t('Its files are deleted. Scores it already gave are kept; sources not yet scored are ranked without it until you download it again.')}
       confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.removeBuiltinEmbedding)} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
   </div>
 }
@@ -531,8 +525,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const check = (label: string, value: string) => <div className="legacy-check" key={label}><span>{label}</span><strong>{value}</strong></div>
 
   const modelEntries = Object.entries(data?.models ?? {})
-  const plannedModels = modelEntries.filter(([, m]) => isPlannedModel(m.reason))
-  const cloudModels = modelEntries.filter(([id, m]) => !isPlannedModel(m.reason) && !ACCOUNT_TOOLS[id])
+  const cloudModels = modelEntries.filter(([id]) => !ACCOUNT_TOOLS[id])
   const toolOf = (id: string) => tools?.tools.find(tool => tool.id === id)
   const otherCli = (tools?.tools ?? []).filter(tool => tool.kind === 'cli' && tool.id !== 'codex' && tool.id !== 'claude_code')
   const servers = (tools?.tools ?? []).filter(tool => SERVER_IDS.includes(tool.id))
@@ -580,7 +573,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const zoteroStatus = (): [Tone, string] => !zotero ? (tools ? ['no', t('Not set up')] : toolsError ? unknown : loading)
     : zotero.running && zotero.local_api ? ['ok', t('Local API on')] : zotero.web_configured ? ['ok', t('zotero.org set')]
     : zotero.installed ? ['no', t(zotero.running ? 'Local API off' : 'Not running')] : ['no', t('Not set up')]
-  const modelDesc = (id: string) => id === 'gemini' ? t('API key · models and semantic search') : compatConnectionKeys[id] ? t('API key · not yet verified against the live API') : t('API key')
+  const modelDesc = (id: string) => id === 'gemini' ? t('API key · models and semantic search') : id === 'ollama' ? t('This computer · no key') : compatConnectionKeys[id] ? t('API key · not tested with the real service yet') : t('API key')
   const tile = (key: string, kind: Selected['kind'], id: string, name: string, desc: string, [tone, status]: [Tone, string]) =>
     <Tile key={key} name={name} desc={desc} tone={tone} status={status} active={isActive(kind, id)} onClick={() => show({ kind, id })} />
 
@@ -613,18 +606,15 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     if (row === 'server') return serverChoices.length ? null : serverOptions.some(o => /lists no embedding model/.test(o.reason ?? '')) ? t('Needs an embedding model') : t('Needs a local server')
     return null
   }
-  const semanticRows: { id: string; label: string; desc: string; providers: SemanticSearchProvider[]; body?: ReactNode }[] = [
+  const semanticRows: { id: string; label: string; desc?: ReactNode; providers: SemanticSearchProvider[]; body?: ReactNode }[] = [
     { id: 'builtin', providers: ['builtin'], label: t('This computer · built-in'),
-      desc: t('A small embedding model that runs on this computer. No key; for semantic search, no text leaves the computer.'),
       body: <>
-        <p className="local-tool-note">{t('English only: a research whose question is not in English needs one English sentence. The model you chose for the research steps still receives what it receives today.')}</p>
-        <p className="local-tool-note">{t('Measured on one Apple M1 Pro: 1,369 records took 51 seconds, 6,696 records about 4 minutes. Other computers were not measured.')}</p>
         {builtin && <BuiltinEmbeddingPanel builtin={builtin} dark={dark} onChanged={async () => { await loadBuiltin(); await loadSemantic() }} />}
       </> },
     { id: 'openai', providers: ['openai'], label: t('OpenAI embeddings'),
-      desc: t('{model} · sends titles, abstracts and passage text to OpenAI', { model: option('openai')?.models[0] ?? 'text-embedding-3-small' }) },
+      desc: withCode(t('{model} · sends titles, abstracts and passage text to OpenAI'), { model: option('openai')?.models[0] ?? 'text-embedding-3-small' }) },
     { id: 'gemini', providers: ['gemini'], label: t('Gemini embeddings'),
-      desc: t('{model} · sends titles, abstracts and passage text to Google', { model: option('gemini')?.models[0] ?? 'gemini-embedding' }),
+      desc: withCode(t('{model} · sends titles, abstracts and passage text to Google'), { model: option('gemini')?.models[0] ?? 'gemini-embedding' }),
       body: <>
         <p className="local-tool-note">{t('Reads the question in any language. Needs a Google AI Studio key; a free key works.')}</p>
         {!option('gemini')?.available && <GeminiKeyPath />}
@@ -633,7 +623,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     { id: 'off', providers: ['off'], label: t('Off'), desc: t('Keyword search only; sources get no similarity score.') },
   ]
   const privacy = !semantic ? null : semantic.provider === 'off' ? t('Sources get no similarity score; passages are ranked by keyword match only. No text is sent anywhere.')
-    : semantic.provider === 'gemini' ? t('Passage text is sent to Google. If your key is on Google’s free tier, Google may use the text you send to improve its products. DEIXIS cannot tell which tier your key is on.')
+    : semantic.provider === 'gemini' ? t('Passage text is sent to Google. If your key is on Google’s free tier, which DEIXIS cannot detect, Google may use that text to improve its products.')
     : semantic.provider === 'openai' ? t('Passage text is sent to {service}.', { service: 'OpenAI' })
     : semantic.provider === 'builtin' ? t('For semantic search, no text leaves the computer.') : t('Passage text stays on this computer.')
 
@@ -654,10 +644,18 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     : sel.kind === 'reference-files' ? t('BibTeX / RIS files')
     : sel.kind === 'zotero' ? 'Zotero'
     : cliTool?.name || localToolNames[sel.id] || sel.id
-  const checkedLine = (key: string) => checkFailed[key] ? <span className="warn-t check-failed">{t('Could not check: {message}', { message: checkFailed[key] })}</span>
-    : checked[key] ? <span>{t('checked {time}', { time: clock(checked[key]) })}</span> : null
-  const dmeta = (key: string, [tone, status]: [Tone, string], extra?: ReactNode) =>
-    <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> {t('Checking…')}</span> : <span className={tone === 'ok' ? 'ok-t' : tone === 'warn' ? 'warn-t' : ''}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
+  const checkedLine = (key: string) => checked[key] && !checkFailed[key] ? <span>{t('checked {time}', { time: clock(checked[key]) })}</span> : null
+  // A failed check and the reason a connection is not ready share one card under the status line.
+  const dmeta = (key: string, [tone, status]: [Tone, string], extra?: ReactNode, reason?: ReactNode) => {
+    const failed = checking !== key && checkFailed[key]
+    return <>
+      <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> {t('Checking…')}</span> : <span className={tone === 'ok' ? 'ok-t' : tone === 'warn' ? 'warn-t' : ''}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
+      {(failed || reason) && <Notice tone="attention">
+        {failed && <p className="check-failed">{t('Could not check: {message}', { message: checkFailed[key] })}</p>}
+        {reason && <p>{reason}</p>}
+      </Notice>}
+    </>
+  }
   const checkButton = (key: string, label: string, run: () => Promise<unknown>, disabled = false) =>
     <button type="button" className="btn-pri" disabled={disabled || checking !== null} onClick={() => runCheck(key, run)}>{checking === key ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
   // The Codex home this backend uses (DEIXIS_CODEX_HOME or the data folder's), single-quoted for a POSIX shell.
@@ -672,9 +670,9 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   if (sel?.kind === 'account' && accountId) {
     const key = `account:${accountId}`
     body = <>
-      {dmeta(key, accountStatus(accountId))}
+      {dmeta(key, accountStatus(accountId), undefined, model && !model.ready ? healthReasonText(model) : undefined)}
       <p className="foot-note is-ink">{t(accountId === 'codex'
-        ? 'Uses the account you sign in with through Codex CLI, kept in the DEIXIS Codex home. DEIXIS stores no password of its own.'
+        ? 'Uses the account you sign in with through Codex CLI. DEIXIS keeps this sign-in apart from your usual Codex one and stores no password.'
         : 'Uses the account you are signed in with in Claude Code. DEIXIS keeps no password or token of its own.')}</p>
       <div className="acts">
         {checkButton(key, 'Test the connection', () => refreshModel(accountId), !model)}
@@ -684,18 +682,17 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
         <p className="foot-note">{t(accountId === 'codex' ? 'Run this in a terminal, then test the connection:' : 'Run this in a terminal, type /login, then test the connection:')}</p>
         <div className="cmd-row"><code className="field mono">{signInCommand}</code><button type="button" className="ghost" onClick={() => copy(signInCommand)}><Copy aria-hidden />{t('Copy')}</button></div>
       </div>}
-      {model && !model.ready && <p className="foot-note">{healthReasonText(model)}</p>}
       {model && accountId === 'codex' && <>
-        <p className="foot-note">{t('DEIXIS runs Codex in its own Codex home with tools, connectors, skills and instruction files disabled, and starts a new session for every step.')}</p>
+        <p className="foot-note">{t('Codex only writes text for DEIXIS: its tools, add-ons and instruction files are turned off.')}</p>
         <div className="connection-checks">
           {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
-          {check(t('Signed in (DEIXIS Codex home)'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
+          {check(t('Signed in for DEIXIS'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
           {check(t('Instruction files loaded'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
           {check(t('MCP servers with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
         </div>
       </>}
       {model && accountId === 'claude' && <>
-        <p className="foot-note">{t('DEIXIS runs Claude Code through the official Agent SDK with tools, MCP servers, skills and instruction files disabled, and starts a new non-persistent session for every step.')}</p>
+        <p className="foot-note">{t('Claude Code only writes text for DEIXIS: its tools, add-ons and instruction files are turned off.')}</p>
         <div className="connection-checks">
           {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
           {check(t('Signed in to Claude Code'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
@@ -711,14 +708,13 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     const env = sel.id === 'gemini' ? 'GEMINI_API_KEY' : sel.id === 'deepseek' ? 'DEEPSEEK_API_KEY' : compatConnectionKeys[sel.id]
     const key = `model:${sel.id}`
     body = <>
-      {dmeta(key, modelStatus(model))}
-      {!model.ready && model.key_configured !== false && <p className="foot-note">{healthReasonText(model)}</p>}
+      {dmeta(key, modelStatus(model), undefined, !model.ready && model.key_configured !== false ? healthReasonText(model) : undefined)}
       <p className="foot-note is-ink">{t('Passages are sent to the provider you choose. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
       {env && keyedSheet(env, modelNames[sel.id] ?? sel.id, t('This connection stops working until a new key is added.'))}
       {sel.id === 'gemini' && <>
-        <p className="foot-note">{t('DEIXIS calls the Gemini API directly with GEMINI_API_KEY, with no tools, instruction files or CLI agent prompt, and one new request per step. The Gemini CLI is only detected; it does not run steps.')}</p>
+        <p className="foot-note">{t('DEIXIS talks to Gemini directly with your key. The Gemini CLI, if installed, is not used for research.')}</p>
         <div className="connection-checks">
-          {check(t('API key (GEMINI_API_KEY)'), model.key_configured ? t('set') : t('not set'))}
+          {check(t('API key'), model.key_configured ? t('set') : t('not set'))}
           {check('Gemini CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
           {/* From the saved semantic search provider, not from the key alone: another provider or Off may be chosen. */}
           {check(t('Semantic passage search'), !semantic ? t('not known') : semantic.provider === 'gemini' ? t('on · passage text is sent to Google')
@@ -726,12 +722,13 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
         </div>
       </>}
       {sel.id === 'deepseek' && <>
-        <p className="foot-note">{t('DEIXIS calls the DeepSeek API directly with DEEPSEEK_API_KEY, with no tools or instruction files and one new request per step.')}</p>
-        <div className="connection-checks">{check(t('API key (DEEPSEEK_API_KEY)'), model.key_configured ? t('set') : t('not set'))}</div>
+        <p className="foot-note">{t('DEIXIS talks to DeepSeek directly with your key.')}</p>
+        <div className="connection-checks">{check(t('API key'), model.key_configured ? t('set') : t('not set'))}</div>
       </>}
+      {sel.id === 'ollama' && <p className="foot-note">{t('DEIXIS uses Ollama on this computer, so no key is needed. Open the Ollama app or run `ollama serve`, then download a model with `ollama pull`.')}</p>}
       {compatConnectionKeys[sel.id] && <>
-        <p className="foot-note">{t('DEIXIS calls the {name} API directly through its OpenAI-compatible endpoint with {env}, with no tools or instruction files and one new request per step. Not yet verified against the live API.', { name: modelNames[sel.id] ?? sel.id, env: compatConnectionKeys[sel.id] })}</p>
-        <div className="connection-checks">{check(t('API key ({env})', { env: compatConnectionKeys[sel.id] }), model.key_configured ? t('set') : t('not set'))}</div>
+        <p className="foot-note">{t('DEIXIS talks to {name} directly with your key. This connection has not been tested with the real {name} service yet.', { name: modelNames[sel.id] ?? sel.id })}</p>
+        <div className="connection-checks">{check(t('API key'), model.key_configured ? t('set') : t('not set'))}</div>
       </>}
       <div className="acts">{checkButton(key, 'Check again', () => refreshModel(sel.id))}</div>
       <ModelCatalogue model={model} />
@@ -746,26 +743,24 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     const env = providerKeyEnv[provider.id]
     const [tone, status] = providerStatus(provider.access_mode)
     body = <>
-      {dmeta(`provider:${provider.id}`, [tone, status], provider.id === 'openalex' && provider.access_mode !== null
-        ? <span className={provider.access_mode === 'api_key' ? '' : 'warn-t'}>{t(provider.access_mode === 'api_key' ? 'own key' : 'keyless')}</span> : null)}
+      {dmeta(`provider:${provider.id}`, [tone, status])}
       <p className="foot-note is-ink">{provider.id === 'openalex'
-        ? t('Works without a key. A free key from openalex.org gives DEIXIS its own daily budget. When the budget runs out, OpenAlex requests wait until it resets.')
-        : !env ? (MAILTO_PROVIDERS.has(provider.id) ? t('No key needed. DEIXIS adds your contact email to its requests (mailto), as the service asks.') : t('No key needed.'))
-        : provider.note}</p>
+        ? t('Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.')
+        : !env ? (MAILTO_PROVIDERS.has(provider.id) ? t('No key needed. DEIXIS adds your contact email to its requests, as the service asks.') : t('No key needed.'))
+        : t(provider.note)}</p>
       {env && credentials && <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain} service={providerNames[provider.id] ?? provider.id}
         label={t(provider.id === 'openalex' ? 'API key (optional, free from openalex.org)' : 'API key')}
         removeEffect={t('Requests that need this key stop until you add one again.')} onSaved={reloadAfterKeyChange} />}
-      {MAILTO_PROVIDERS.has(provider.id) && <ContactEmailField />}
-      <div className="connection-checks">{check(t('Used for'), providerUse[provider.id] ? t(providerUse[provider.id]) : providerRole(provider.role))}{check(t('Access mode'), provider.access_mode ? t(provider.access_mode) : t('none'))}</div>
-      {(env || provider.id === 'openalex') && <p className="foot-note">{t('Access and quota are recorded per request; not verified in advance.')}</p>}
-      {!env && provider.id !== 'openalex' && <p className="foot-note">{provider.note}</p>}
+      {env && credentials && !keyEntry(env)?.configured && providerNoKey[provider.id] && <Notice tone="attention">{t(providerNoKey[provider.id])}</Notice>}
+      {MAILTO_PROVIDERS.has(provider.id) && <p className="foot-note"><a href="#/settings/profile">{t('Set the contact email in Profile')}</a></p>}
+      <div className="connection-checks">{check(t('Used for'), providerUse[provider.id] ? t(providerUse[provider.id]) : providerRole(provider.role))}</div>
     </>
   } else if (sel?.kind === 'cli' && cliTool) {
     body = <LocalToolDetails key={cliTool.id} tool={cliTool} dark={dark} onChanged={reloadTools} />
   } else if (sel?.kind === 'servers') {
     body = <>
       {dmeta('servers', serversStatus())}
-      <p className="foot-note is-ink">{t('Runs on this computer. Semantic search can use an embedding model from Ollama or LM Studio; local models do not run research steps in this version.')}</p>
+      <p className="foot-note is-ink">{t('Ollama and LM Studio run models on this computer. Semantic search can use one of their embedding models, and Ollama models can also run research steps.')}</p>
       {servers.map(server => <section key={server.id} className="server-block" aria-label={server.name || localToolNames[server.id]}>
         <h3>{server.name || localToolNames[server.id]}</h3>
         {server.endpoint && <div className="lbl">{t('Server address')}<code className="field mono">{server.endpoint}</code></div>}
@@ -799,13 +794,13 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   } else if (sel?.kind === 'zotero') {
     body = <>
       {dmeta('zotero', zoteroStatus())}
-      <p className="foot-note is-ink">{t('Collections are imported read-only from the home composer’s Add sources menu or a research’s Sources panel.')}</p>
+      <p className="foot-note is-ink">{t('Import a collection from Add sources on the home page or from a research’s Sources panel. Your Zotero library is never changed.')}</p>
       <div className="acts">{checkButton('zotero', 'Find it on this computer', () => loadTools(true, true))}</div>
       {zotero && <LocalToolDetails tool={zotero} dark={dark} onChanged={reloadTools} refresh={false} />}
     </>
   } else if (sel?.kind === 'reference-files') {
     body = <>
-      <p className="foot-note is-ink">{t('Imports a .bib or .ris file into the Library. An entry whose DOI OpenAlex or Crossref confirms is stored as that provider’s record; any other entry is kept as your own record, marked as not confirmed.')}</p>
+      <p className="foot-note is-ink">{t('Adds the entries of a .bib or .ris file to the Library. Entries whose DOI OpenAlex or Crossref confirms use that record; the rest are kept as you wrote them, marked as not confirmed.')}</p>
       <ReferenceFileImport />
     </>
   }
@@ -820,9 +815,6 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
       {cloudModels.map(([id, m]) => tile(id, 'model', id, modelNames[id] ?? id, modelDesc(id), modelStatus(m)))}
       {tile('openai', 'api-key', 'OPENAI_API_KEY', t('OpenAI API'), t('API key · semantic search only'), !credentials ? loading : openaiKey?.configured ? ['ok', t('Key configured')] : ['no', t('Not set up')])}
     </div>
-    {plannedModels.length > 0 && <details className="planned-connections"><summary><ChevronRight size={14} aria-hidden />{t('Planned model connections · {n}', { n: plannedModels.length })}</summary>
-      <div className="grid3">{plannedModels.map(([id]) => tile(id, 'model', id, modelNames[id] ?? id, t('Not available in this version'), ['no', t('Planned')]))}</div>
-    </details>}
     </div>
 
     <h2 id="on-this-computer" tabIndex={-1}>{t('On this computer')}</h2>
@@ -834,20 +826,28 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
       {tile('servers', 'servers', 'servers', t('Local model servers'), t('Ollama or LM Studio · no account'), serversStatus())}
       {tile('marker', 'equation-reader', 'marker', t('Equation reader (Marker)'), t('Reads equations as LaTeX'), readerStatus())}
     </div>
-    {(otherCli.length > 0 || machine) && <div className="computer-more">
-      {machine && (machine.chip || machine.memory_gb != null || machine.disk_free_gb != null) && <p className="foot-note local-tool-machine">
-        {machine.chip && <span>{t('This computer: {chip}', { chip: machine.chip })}</span>}
-        {machine.memory_gb != null && <span>{t('Memory: {gb} GB', { gb: machine.memory_gb })}</span>}
-        {machine.disk_free_gb != null && <span>{t('Free disk: {gb} GB', { gb: machine.disk_free_gb })}</span>}
-      </p>}
+    {otherCli.length > 0 && <div className="computer-more">
       {otherCli.length > 0 && <details className="planned-connections"><summary><ChevronRight size={14} aria-hidden />{t('Other command-line tools · {n}', { n: otherCli.length })}</summary>
         <p className="foot-note">{t('Only Claude Code and Codex CLI run research steps. The other tools are detected only: finding one here does not mean DEIXIS supports it.')}</p>
         <div className="grid3">{otherCli.map(tool => tile(tool.id, 'cli', tool.id, tool.name || localToolNames[tool.id] || tool.id, t('Detected only'), ['no', t(tool.job?.status === 'running' ? 'Installing…' : tool.installed ? 'Installed' : 'Not installed')]))}</div>
       </details>}
     </div>}
 
+    {machine && (machine.chip || machine.memory_gb != null || machine.disk_free_gb != null) && <>
+      <h2>{t('This computer')}</h2>
+      <div className="machine-card" data-group="machine">
+        {machine.chip && <div className="machine-cell"><Cpu size={16} aria-hidden /><p><small>{t('Processor')}</small><b>{machine.chip}</b></p></div>}
+        {machine.memory_gb != null && <div className="machine-cell"><MemoryStick size={16} aria-hidden /><p><small>{t('Memory')}</small><b>{machine.memory_gb} GB</b></p></div>}
+        {machine.disk_free_gb != null && <div className="machine-cell machine-disk"><HardDrive size={16} aria-hidden /><p><small>{t('Disk')}</small><b>{t('{gb} GB free', { gb: machine.disk_free_gb })}</b>
+          {machine.disk_total_gb ? <>
+            <span className="bar" role="meter" aria-label={t('Disk used')} aria-valuemin={0} aria-valuemax={machine.disk_total_gb} aria-valuenow={machine.disk_total_gb - machine.disk_free_gb}><i style={{ width: `${Math.round((1 - machine.disk_free_gb / machine.disk_total_gb) * 100)}%` }} /></span>
+            <small>{t('{used} GB used of {total} GB', { used: machine.disk_total_gb - machine.disk_free_gb, total: machine.disk_total_gb })}</small>
+          </> : null}</p></div>}
+      </div>
+    </>}
+
     <h2>{t('Semantic search')}</h2>
-    <p className="foot-note">{t('Ranks search results by meaning, not only by shared words. Changing the provider embeds passages again; earlier vectors are kept.')}</p>
+    <p className="foot-note">{t('Ranks search results by meaning, not only by shared words. Changing the provider scores the passages again; earlier scores are kept.')}</p>
     {semError && <Notice tone="error">{semError}</Notice>}
     <div className="rows opts semantic-choices" role="radiogroup" aria-label={t('Semantic search provider')} aria-busy={saving || undefined}>
       {semanticRows.map(row => {
@@ -862,7 +862,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
           <label className={!available ? 'is-disabled' : undefined}>
             <input type="radio" name="semantic-provider" checked={isChosen} disabled={!available || saving} onChange={pick}
               onClick={() => { if (isChosen && semantic && !semantic.explicit) pick() }} />
-            <span>{row.label}<small>{row.desc}</small></span>
+            <span>{row.label}{row.desc && <small>{row.desc}</small>}</span>
             {saving && isChosen && <span className="spin" aria-label={t('Saving…')} />}
             {need && <span className="st no">{need}</span>}
           </label>
@@ -882,7 +882,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
 
     <h2>{t('Scholarly sources')}</h2>
     <div className="grid3" data-group="sources">{providers.map(p => tile(p.id, 'provider', p.id, providerNames[p.id] ?? p.id, providerUse[p.id] ? t(providerUse[p.id]) : providerRole(p.role), providerStatus(p.access_mode)))}</div>
-    <p className="foot-note sources-note">{t('Every provider with the access it needs is enabled for new researches. Access and remaining quota are recorded with each request rather than guaranteed in advance.')}</p>
+    <p className="foot-note sources-note">{t('New researches use every source that has the access it needs.')}</p>
 
     <h2>{t('Reference managers')}</h2>
     <div className="grid3" data-group="references">

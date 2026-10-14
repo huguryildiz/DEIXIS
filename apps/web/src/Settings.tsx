@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Info, RotateCw } from 'lucide-react'
-import { api, usageApi, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
+import { api, shellApi, usageApi, type ContactEmailSetting, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
 import { connectionModels, modelKey, type ConnectionModel } from './Home'
 import { defaultEffort, exposesEffortControl } from './modelEffort'
 import { ConnectionsTab } from './Connections'
@@ -23,6 +23,67 @@ const clock = (iso: string) => new Date(iso).toLocaleTimeString(uiLocale(), { ho
 /** The institutional access state the sidebar's access line shows, read and tested by the app shell (App.tsx), so the
  *  page and the line never disagree and never run two tests at once. Two separate facts (plan §2.3): the proxy host
  *  answered or not, and Scopus grants its full view on this network or not. */
+/** The name in the sidebar: typed here, else the OS account's. It stays on this computer. */
+function ProfileNameRow({ onProfile }: { onProfile: (profile: Profile) => void }) {
+  const [stored, setStored] = useState<Profile | null>(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const toast = useToast()
+  useEffect(() => {
+    let live = true
+    shellApi.profile().then(value => { if (live) { setStored(value); setDraft(value.name_source === 'setting' ? value.full_name : '') } }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false }
+  }, [])
+  const current = stored?.name_source === 'setting' ? stored.full_name : ''
+  const changed = stored !== null && draft.trim() !== current
+  const save = () => {
+    setBusy(true); setError('')
+    shellApi.saveProfileName(draft.trim() || null).then(value => {
+      setStored(value); setDraft(value.name_source === 'setting' ? value.full_name : ''); onProfile(value)
+      toast('success', t(value.name_source === 'setting' ? 'Name saved.' : 'Name reset to the computer account.'))
+    }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  return <form onSubmit={e => { e.preventDefault(); if (changed) save() }}>
+    <b><label htmlFor="profile-name">{t('Name')}</label></b>
+    <p>{t('Shown in the sidebar. It stays on this computer.')}{error && <span className="key-form-error" role="alert"> {error}</span>}</p>
+    <input id="profile-name" className="field" type="text" autoComplete="name" maxLength={80} value={draft} disabled={stored === null || busy}
+      placeholder={stored?.account_name || t('Your name')} onChange={e => { setDraft(e.target.value); setError('') }} />
+    <button type="submit" className="ghost" disabled={busy || !changed}>{t(busy ? 'Saving…' : 'Save')}</button>
+  </form>
+}
+
+/** The contact email (F15): sent as `mailto` with OpenAlex and Crossref requests; the setting wins over DEIXIS_CONTACT_EMAIL. */
+function ContactEmailRow() {
+  const [stored, setStored] = useState<ContactEmailSetting | null>(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const toast = useToast()
+  useEffect(() => {
+    let live = true
+    shellApi.contactEmail().then(value => { if (live) { setStored(value); setDraft(value.email ?? '') } }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false }
+  }, [])
+  const changed = stored !== null && draft.trim() !== (stored.email ?? '')
+  const save = () => {
+    setBusy(true); setError('')
+    shellApi.saveContactEmail(draft.trim() || null).then(value => {
+      setStored(value); setDraft(value.email ?? '')
+      toast('success', t(value.email ? 'Contact email saved.' : 'Contact email removed.'))
+    }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  return <form onSubmit={e => { e.preventDefault(); if (changed) save() }}>
+    <b><label htmlFor="contact-email">{t('Email')}</label></b>
+    <p>{t('Sent only to OpenAlex and Crossref, which answer faster and more steadily when a request carries an email.')}
+      {error && <span className="key-form-error" role="alert"> {error}</span>}</p>
+    <input id="contact-email" className="field" type="email" autoComplete="email" value={draft} disabled={stored === null || busy} placeholder="you@university.edu"
+      onChange={e => { setDraft(e.target.value); setError('') }} />
+    <button type="submit" className="ghost" disabled={busy || !changed}>{t(busy ? 'Saving…' : 'Save')}</button>
+    {stored && !stored.email && !stored.environment_set && <Notice tone="attention">{t('Without an email, OpenAlex and Crossref answer more slowly at busy times. Searches still run.')}</Notice>}
+  </form>
+}
+
 export type AccessControl = {
   proxy: ProxySettings | null
   readFailed: boolean
@@ -37,8 +98,9 @@ export type AccessControl = {
   reload: () => void
 }
 
-export function SettingsPage({ dark, section, language, onLanguage, access }: {
-  dark: boolean; section?: 'connections' | 'access' | 'openalex'; language: UiLanguage; onLanguage: (language: UiLanguage) => void; access: AccessControl
+export function SettingsPage({ dark, section, language, onLanguage, onProfile, access }: {
+  dark: boolean; section?: 'connections' | 'access' | 'openalex' | 'profile'; language: UiLanguage; onLanguage: (language: UiLanguage) => void
+  onProfile: (profile: Profile) => void; access: AccessControl
 }) {
   const toast = useToast()
   const [models, setModels] = useState<ConnectionModel[] | null>(null)
@@ -60,7 +122,7 @@ export function SettingsPage({ dark, section, language, onLanguage, access }: {
   useEffect(() => {
     if (!section || section === 'openalex' || scrolled.current || !defaults) return
     scrolled.current = true
-    const target = document.getElementById(section === 'access' ? 'institutional-access' : 'on-this-computer')
+    const target = document.getElementById(section === 'access' ? 'institutional-access' : section === 'profile' ? 'profile' : 'on-this-computer')
     target?.scrollIntoView({ block: 'start' })
     target?.focus({ preventScroll: true })
   }, [section, defaults])
@@ -81,6 +143,12 @@ export function SettingsPage({ dark, section, language, onLanguage, access }: {
     <h1 tabIndex={-1}>{t('Settings')}</h1>
     {error && <Notice tone="error">{error}</Notice>}
     {anyReady === false && <div className="notice info"><Info aria-hidden /><span>{t('Connect Codex CLI or Claude Code below to start.')}</span></div>}
+
+    <h2 id="profile" tabIndex={-1}>{t('Profile')}</h2>
+    <div className="rows set-profile">
+      <ProfileNameRow onProfile={onProfile} />
+      <ContactEmailRow />
+    </div>
 
     <h2>{t('Default models')}</h2>
     <p className="foot-note set-roles-note">{t('Defaults apply to new researches. Each research keeps the models it was created with.')}</p>
@@ -213,7 +281,7 @@ function InstitutionalAccessBlock({ access }: { access: AccessControl }) {
         {(access.readFailed) && <button type="button" className="link" onClick={access.reload}>{t('Try again')}</button>}
       </div>
       {scopus && <div className="row proxy-state proxy-scopus"><span className={`st ${scopus.tone}`}>{scopus.pill}</span><span>{scopus.text}</span></div>}
-      <p className="foot-note">{t('Test saves the address and asks its host once; it never opens an article. Publisher links open through this address in your browser. DEIXIS never stores your library password.')}</p>
+      <p className="foot-note">{t('Publisher links open through this address in your browser, and DEIXIS never stores your library password. Test saves the address and checks once that the proxy answers; it does not open an article.')}</p>
     </div></div>
   </>
 }
@@ -267,6 +335,6 @@ function UsageThisMonth() {
           <small>{b?.as_of ? t('Last stored response, {time}', { time: clock(b.as_of) }) : b ? t('No OpenAlex response stored today') : ''}</small></p>
       </div>
     </div>
-    {month.value?.since && <p className="foot-note set-usage-note">{t('Model calls stored since {date}. OpenAlex’s figure is its last stored response, not a live reading.', { date: new Date(month.value.since).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })}</p>}
+    {month.value?.since && <p className="foot-note set-usage-note">{t('Model calls counted since {date}. The OpenAlex figure comes from its last response, not a live reading.', { date: new Date(month.value.since).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })}</p>}
   </>
 }

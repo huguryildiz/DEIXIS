@@ -448,14 +448,14 @@ test.describe.serial('S24: the Settings page', () => {
     const pill = await sheet.locator('.dmeta > span').first().innerText()
     fail = true
     await find.click()
-    await expect(sheet.locator('.dmeta .check-failed')).toHaveText(/^Could not check: .*SYNTHETIC OCR check failure/)
+    await expect(sheet.locator('.check-failed')).toHaveText(/^Could not check: .*SYNTHETIC OCR check failure/)
     await expect(sheet.locator('.dmeta')).not.toContainText(/checked \d/)
     // The state shown is still the last one read; nothing new is claimed.
     await expect(sheet.locator('.dmeta > span').first()).toHaveText(pill)
     fail = false
     await find.click()
     await expect(sheet.locator('.dmeta')).toContainText(/checked \d/)
-    await expect(sheet.locator('.dmeta .check-failed')).toHaveCount(0)
+    await expect(sheet.locator('.check-failed')).toHaveCount(0)
     await sheet.getByRole('button', { name: 'Close' }).click()
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })

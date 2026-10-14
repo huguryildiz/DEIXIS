@@ -1,4 +1,9 @@
+import os
 from pathlib import Path
+
+# Processes a test starts (CLI runs, helper scripts) inherit this and see no keychain, so they never read the developer's
+# keys or move `.env` keys into the real keychain (D19). In this process `memory_keychain` sets its own backend.
+os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
 
 import keyring
 import pytest
@@ -54,7 +59,8 @@ def migrated_template(tmp_path_factory):
 @pytest.fixture(autouse=True)
 def no_model_api_keys(monkeypatch):
     """Tests never use real model API keys; a test that needs one sets a fake key."""
-    for name in ("GEMINI_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY", "MISTRAL_API_KEY"):
+    for name in ("GEMINI_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY", "MISTRAL_API_KEY",
+                 "XAI_API_KEY", "GITHUB_TOKEN", "ZAI_API_KEY", "MODEL_API_KEY"):
         # setenv first records the original value, so a key a test saves through the app is removed afterwards too.
         monkeypatch.setenv(name, "unset")
         monkeypatch.delenv(name)

@@ -30,7 +30,7 @@ def test_health_without_a_key_is_not_ready_and_sends_nothing(monkeypatch):
         raise AssertionError("no request without a key")
 
     status = asyncio.run(adapter(handler).health(refresh=True))
-    assert (status["ready"], status["key_configured"]) == (False, False) and "GEMINI_API_KEY" in status["reason"]
+    assert (status["ready"], status["key_configured"]) == (False, False) and status["reason"] == "Add a Gemini API key in Settings to use the Gemini API"
 
 
 def test_health_lists_text_models_and_thinking_levels_for_gemini_3(monkeypatch):

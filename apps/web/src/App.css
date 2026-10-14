@@ -355,6 +355,9 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .keys-foot label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
 .keys-foot input{width:14px;height:14px;margin:0;accent-color:var(--accent)}
 .app .user>button+button{margin-left:0}
+/* The name opens the profile settings; it keeps the plain text look of the row. */
+.app .user>.user-name{margin-left:0;padding:0;border-radius:4px;color:inherit;font-size:inherit;line-height:inherit;text-align:left;background:none}
+.app .user>.user-name:hover{background:none;text-decoration:underline;text-underline-offset:3px}
 .keys-dialog .dialog-icon{color:var(--ink)}
 /* "Choose another model" (R20, S27): the role, model and effort fields in the confirm dialog's body. */
 .choose-model{display:grid;gap:10px;margin-top:12px}

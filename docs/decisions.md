@@ -4,6 +4,35 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D22 — Grok, GitHub Copilot, GLM, Muse Spark, Muse Glimmer and Ollama run research steps through the OpenAI-compatible adapter
+Status: accepted · Date: 2026-10-14 · Writer: Claude
+Context: Settings listed these six as "Planned model connections" with no adapter. The owner asked for them to work on macOS and Windows.
+Decision:
+- All six use `models/openai_compat.py`, with the same boundary as Qwen, Kimi and Mistral: no tools, JSON-object mode, one new request per step, the answering model checked against the requested one.
+- Grok: `api.x.ai/v1`, `XAI_API_KEY`. GitHub Copilot: GitHub Models, `models.github.ai/inference`, model list from `/catalog/models`, `GITHUB_TOKEN` with `models:read`. GLM: Z.ai `api.z.ai/api/paas/v4`, `ZAI_API_KEY`; when the API lists no models, three known GLM models are offered and the key is first checked by a step. Muse Spark and Muse Glimmer: Meta Model API `api.meta.ai/v1`, one `MODEL_API_KEY`, each connection keeping only the listed models with its own name prefix. Ollama: `127.0.0.1:11434/v1` with no key, on macOS, Windows and Linux alike; 127.0.0.1 because Windows may resolve `localhost` to ::1.
+- The four keys are managed keys (keychain, D19) and are tested by listing models. The "Planned model connections" group is gone.
+Limits: Mocked transports only. No live request was sent to any of the six; endpoints and model names come from the providers' documentation, and the UI still says "not yet verified against the live API". Meta's Model API was in public preview for US developers when this was written.
+
+## D20 — The built-in embedding model's packages are pinned with hashes; an installed copy that differs shows "Update available"
+Status: accepted · Date: 2026-10-14 · Writer: Claude
+Context: The built-in model's install pinned only `fastembed==0.8.1`; uv chose onnxruntime, numpy, tokenizers and the rest at install time, so two installs a month apart could differ. A changed pin never reached a copy that was already installed: `installed.json` was there, so it stayed "Ready".
+Decision:
+- `backend/deixis/documents/embedding-requirements.txt` lists every package of the environment with its version and hashes (`uv pip compile --universal --python-version 3.12 --generate-hashes`). Step 2 of the install is `uv pip sync` of that file, so packages not in it are removed.
+- `installed.json` records the sha256 of the file's requirement lines (comments do not count) next to the model ID. When either differs from what this DEIXIS pins, or is missing (installs before D20), the status is `update_available`: Settings shows "Update available" with an Update button. The copy stays in use while its model files still match.
+- An update is the same install job. After it passes, model folders of earlier revisions are deleted.
+- Settings → Semantic search → This computer has a Check for updates button: it compares the installed copy with the pins and hashes the model files again, then says "No update" or shows "Update available". It fetches nothing.
+- Updates are made by hand: regenerate the file (the command is in its header) or change `REVISION`/`MODEL_FILES`, run the tests, commit. DEIXIS never looks for new versions online.
+Limits: The lock was generated on macOS arm64; Linux and Intel wheels are in it but no install on those machines was run. A real update (uv, PyPI, Hugging Face) was run once on the M1 Pro against a scratch data folder; the tests use a fake uv.
+
+## D19 — API keys live in the system keychain; keys found in `.env` are moved there at startup
+Status: accepted · Date: 2026-10-14 · Writer: Claude
+Context: Before packaging, the owner asked that API keys not sit in a plain `.env` file but be stored encrypted where the app is installed. Keys saved in Settings already went to the system keychain (macOS Keychain, Windows Credential Locker, Secret Service); keys read from `.env` stayed there and were edited in that file.
+Decision:
+- At startup `credentials.move_dotenv_keys_to_keychain()` writes each managed key read from `.env` into the keychain under the service `DEIXIS` and deletes its line from `.env`. The line is deleted only after the keychain returns the same value; other lines and the file mode are kept.
+- When no keychain is available, or it refuses a key, that key stays in `.env` and is still used and edited there.
+- A key set in the shell still wins and is never moved.
+Limits: Only the keys in `credentials.MANAGED_KEYS` move. `ZOTERO_API_KEY`, `TYPESAFE_API_KEY` and other variables stay in `.env`. The move was tested with an in-memory keychain; the real macOS Keychain was not exercised by the tests.
+
 ## D18 — Parity with mockup v24 is closed; the parity check and its exceptions file stay as the gate for UI changes
 Status: accepted (UI parity S28, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
 Context: The parity campaign (slices S0–S28) brought the app to mockup v24 row by row. Each difference the app keeps on purpose is written in `apps/web/e2e/parity/exceptions.ts` with the rule behind it. S28 checked that every inventory row is compared with the mockup or covered by a behaviour test, and that every exception still describes a real difference.

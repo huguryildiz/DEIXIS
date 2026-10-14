@@ -90,13 +90,14 @@ def test_the_install_runs_its_four_steps_under_the_data_directory_and_writes_ins
     assert second == "install_running"
     assert (job["status"], job["step"], job["steps"], job["step_name"]) == ("succeeded", 4, 4, "start_check")
     calls = [json.loads(line) for line in setup["record"].read_text().splitlines()]
-    assert [c["argv"][:2] for c in calls] == [["venv", "--allow-existing"], ["pip", "install"]]
-    assert calls[1]["argv"][-1] == "fastembed==0.8.1"
+    assert [c["argv"][:2] for c in calls] == [["venv", "--allow-existing"], ["pip", "sync"]]
+    assert calls[1]["argv"][-1] == str(local_embedding.REQUIREMENTS)  # every package pinned with hashes (D20)
     for call in calls:  # uv's cache, its Python and Hugging Face's home all live under the data directory
         env = call["env"]
         assert env["UV_CACHE_DIR"] == str(paths.uv_cache) and env["UV_PYTHON_INSTALL_DIR"] == str(paths.uv_python)
         assert env["UV_PYTHON_PREFERENCE"] == "only-managed" and env["HF_HOME"] == str(paths.hf_home)
-    assert json.loads(paths.installed_marker.read_text())["revision"] == local_embedding.REVISION
+    marker = json.loads(paths.installed_marker.read_text())
+    assert (marker["revision"], marker["requirements"]) == (local_embedding.REVISION, local_embedding.requirements_digest())
     # installed.json is the last file written: nothing under the data directory is newer.
     newest = max(p.stat().st_mtime_ns for p in paths.root.rglob("*") if p.is_file() and p.name not in (
         "embedding-job.json", "embedding-install.lock", "embedding-in-use.lock"))
@@ -609,3 +610,64 @@ def test_a_cancel_during_a_slow_clean_up_holds_the_locks_until_the_deletion_has_
     job, deleted_before_return, lock_free = asyncio.run(go())
     assert job["status"] == "cancelled" and deleted_before_return and lock_free
     assert service.embedder.installing is False
+
+
+# ---- updates (D20) -------------------------------------------------------------------------------
+
+def test_the_requirements_file_pins_every_package_with_hashes_and_its_digest_ignores_comments(tmp_path, monkeypatch):
+    lines = [line for line in local_embedding.REQUIREMENTS.read_text().splitlines() if line and not line.startswith((" ", "#"))]
+    assert "fastembed==0.8.1 \\" in lines and all("==" in line for line in lines)
+    assert all(line.endswith("\\") for line in lines)  # each pin is followed by its hashes
+    digest = local_embedding.requirements_digest()
+    copy = tmp_path / "embedding-requirements.txt"
+    copy.write_text("# an edited comment\n" + local_embedding.REQUIREMENTS.read_text())
+    monkeypatch.setattr(local_embedding, "REQUIREMENTS", copy)
+    assert local_embedding.requirements_digest() == digest
+    copy.write_text(copy.read_text().replace("numpy==", "numpy==9"))
+    assert local_embedding.requirements_digest() != digest
+
+
+@pytest.mark.parametrize("marker", [{"model": local_embedding.MODEL_ID},  # written before D20: no package list
+                                    {"model": "bge-small-en-v1.5@0000000:256", "requirements": "x"}])
+def test_an_outdated_install_shows_update_available_stays_in_use_and_the_update_replaces_it(setup, marker):
+    service, paths = service_of(setup), setup["paths"]
+    install_fake(paths, setup["bodies"])
+    paths.installed_marker.write_text(json.dumps(marker))
+    stale = paths.models_root / "bge-small-en-v1.5@0000000"
+    stale.mkdir(parents=True)
+    (stale / "model_optimized.onnx").write_bytes(b"SYNTHETIC old revision")
+
+    async def go():
+        await service.start()
+        before = await service.status(), service.option()
+        await service.install()  # not refused as already installed
+        await until_done(service)
+        return before, await service.status()
+    (status, option), after = asyncio.run(go())
+    assert (status["status"], status["available"], option["available"]) == ("update_available", True, True)
+    assert after["status"] == "ready" and not paths.outdated()
+    assert not stale.exists() and paths.models.exists()  # the earlier revision's files are removed
+
+
+
+def test_check_for_updates_hashes_the_files_again_and_reports_the_state_without_going_online(setup):
+    service, paths = service_of(setup), setup["paths"]
+
+    async def refused():
+        with pytest.raises(ServiceError) as exc:
+            await service.check()
+        return exc.value.code
+    assert asyncio.run(refused()) == "not_installed"
+    install_fake(paths, setup["bodies"])
+
+    async def go():
+        await service.start()
+        first = (await service.status())["last_full_check"]["at"]
+        time.sleep(0.01)
+        ready = await service.check()
+        paths.installed_marker.write_text(json.dumps({"model": local_embedding.MODEL_ID}))  # pinned before D20
+        return first, ready, await service.check()
+    first, ready, outdated = asyncio.run(go())
+    assert ready["status"] == "ready" and ready["last_full_check"]["at"] > first
+    assert outdated["status"] == "update_available"
+    assert setup["seen"] == []  # nothing was fetched

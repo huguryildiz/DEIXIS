@@ -204,7 +204,7 @@ def test_unavailable_zotero_and_academic_scope_explain_what_to_do(tmp_path, monk
         turned_off = client.post(f"/api/researches/{rid}/zotero-imports", json={"source": "local", "collection_key": COLLECTION})
         assert turned_off.status_code == 503 and turned_off.json()["detail"] == zotero.LOCAL_TURNED_OFF
         web = client.get("/api/zotero/collections", params={"source": "web"})
-        assert web.status_code == 422 and "ZOTERO_API_KEY" in web.json()["detail"]
+        assert web.status_code == 422 and web.json()["detail"] == "The zotero.org library is not set up."
         academic = start(client, scope="academic")
         refused = client.post(f"/api/researches/{academic}/zotero-imports", json={"source": "local", "collection_key": COLLECTION})
         assert refused.status_code == 422 and "source scope" in refused.json()["detail"]

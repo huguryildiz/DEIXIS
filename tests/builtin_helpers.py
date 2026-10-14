@@ -29,7 +29,8 @@ def install_fake(paths: local_embedding.BuiltinPaths, bodies=None) -> None:
     paths.python.parent.mkdir(parents=True, exist_ok=True)
     if not paths.python.exists():
         os.symlink(sys.executable, paths.python)
-    paths.installed_marker.write_text(json.dumps({"model": local_embedding.MODEL_ID}))
+    paths.installed_marker.write_text(json.dumps({"model": local_embedding.MODEL_ID,
+                                                   "requirements": local_embedding.requirements_digest()}))
 
 
 def fake_embedder(paths, idle_seconds=300, integrity=None):

@@ -67,6 +67,7 @@
 .local-tool-error{margin:2px 0 0;padding:6px 8px;border:1px solid var(--error-line);border-radius:5px;background:var(--error-surface);color:var(--error-ink);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
 .local-tool-details summary{cursor:pointer;font-size:11px;color:var(--muted)}
 .local-tool-progress-head{display:flex;align-items:center;gap:6px}
+.model-id{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.92em}
 .local-tool-code{padding:1px 6px;border:1px solid var(--line);border-radius:5px;background:var(--hover-surface);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px}
 .reader-progress{--done:var(--accent);--none:color-mix(in srgb,var(--muted),transparent 45%);--failed:var(--tone-exclude);--track:color-mix(in srgb,var(--ink),transparent 93%);display:flex;flex-direction:column;gap:10px;width:100%;margin-top:4px}
 .reader-progress-card{display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--raised-surface,color-mix(in srgb,var(--paper),white 60%))}

@@ -152,7 +152,7 @@ test('fast answer abstract basis label renders at desktop and narrow widths in b
   } finally { await page.close(); await server.stop() }
 })
 
-test('connections separate planned models from configured scholarly access', async ({ browser }) => {
+test('connections separate model connections from configured scholarly access', async ({ browser }) => {
   const server = new FixtureServer(nextPort())
   await server.start()
   const page = await browser.newPage()
@@ -162,8 +162,9 @@ test('connections separate planned models from configured scholarly access', asy
     await expect(page).toHaveURL(/#\/settings$/)
     // One page (S24): the old Connections tab's link opens it at "On this computer".
     await page.goto(server.url('#/settings/connections'))
+    await expect(page.locator('.cloud-models .planned-connections')).toHaveCount(0)
     const planned = page.locator('.planned-connections').first()
-    await expect(planned.locator('summary')).toHaveText(/^Planned model connections · \d+$/)
+    await expect(planned.locator('summary')).toHaveText(/^Other command-line tools · \d+$/)
     await expect(planned).not.toHaveAttribute('open')
     const claudeTool = page.getByRole('button', { name: /^Claude Code (Installed|Not installed|Ready|Not signed in) Account sign-in$/ })
     await expect(claudeTool).toBeVisible()
@@ -177,7 +178,7 @@ test('connections separate planned models from configured scholarly access', asy
     await shot(page, 'connections-desktop')
 
     await page.getByRole('button', { name: 'OpenAlex No key needed Search and citation chain' }).click()
-    await expect(page.locator('.connection-sheet')).toContainText('Access and quota are recorded per request; not verified in advance.')
+    await expect(page.locator('.connection-sheet')).toContainText('Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.')
     await page.getByRole('button', { name: 'Close' }).click()
     // Synthetic configured-key response: verify its green style without using a real credential or provider request.
     await page.route('**/api/connections', async route => {

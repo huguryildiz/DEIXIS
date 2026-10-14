@@ -116,6 +116,7 @@ def load_settings() -> Settings:
     from deixis import credentials
 
     credentials.mark_dotenv(load_dotenv(REPO_ROOT / ".env"), REPO_ROOT / ".env")
+    credentials.move_dotenv_keys_to_keychain()
     credentials.load_into_environment()
     if "DEIXIS_SEARCH_WORKFLOW" in os.environ:
         warnings.warn("DEIXIS_SEARCH_WORKFLOW is ignored; new researches use sw", UserWarning, stacklevel=2)

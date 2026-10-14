@@ -56,7 +56,7 @@ def paths(monkeypatch):
     found = {}
     monkeypatch.setattr(local_tools.shutil, "which", lambda name: found.get(name))
     monkeypatch.setattr(local_tools, "TOOLS", {k: dataclasses.replace(t, app=None) for k, t in local_tools.TOOLS.items()})
-    monkeypatch.setattr(local_tools, "machine", lambda: {"chip": "SYNTHETIC chip", "memory_gb": 32, "disk_free_gb": 100})
+    monkeypatch.setattr(local_tools, "machine", lambda: {"chip": "SYNTHETIC chip", "memory_gb": 32, "disk_free_gb": 100, "disk_total_gb": 500})
     return found
 
 
@@ -121,10 +121,12 @@ def test_openai_compatible_connections_are_registered_and_report_a_missing_key(t
                      start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as c:
         models = c.get("/api/connections").json()["models"]
-        for name, env in (("qwen", "DASHSCOPE_API_KEY"), ("kimi", "MOONSHOT_API_KEY"), ("mistral", "MISTRAL_API_KEY")):
+        for name, env in (("qwen", "DASHSCOPE_API_KEY"), ("kimi", "MOONSHOT_API_KEY"), ("mistral", "MISTRAL_API_KEY"),
+                          ("grok", "XAI_API_KEY"), ("copilot", "GITHUB_TOKEN"), ("glm", "ZAI_API_KEY"),
+                          ("muse_spark", "MODEL_API_KEY"), ("muse_glimmer", "MODEL_API_KEY")):
             assert (models[name]["ready"], models[name]["key_configured"]) == (False, False)
-            assert env in models[name]["reason"] and "not implemented" not in models[name]["reason"]
-        assert models["ollama"]["reason"] == "Adapter not implemented in this version"
+            assert "API key in Settings" in models[name]["reason"] and env not in models[name]["reason"] and "not implemented" not in models[name]["reason"]
+        assert "key_configured" not in models["ollama"] and "not implemented" not in (models["ollama"].get("reason") or "")
 
 
 def test_connections_name_the_codex_home_this_backend_uses(tmp_path, monkeypatch):
@@ -165,6 +167,56 @@ def test_a_key_from_dotenv_is_replaced_and_removed_in_that_file(client, monkeypa
     assert dotenv.stat().st_mode & 0o777 == 0o600
     # A key added after removal goes to the keychain, as for any key that is not in .env.
     assert client.put("/api/credentials/S2_API_KEY", json={"value": "s2-fresh-key"}).json()["key"]["source"] == "keychain"
+
+
+def test_keys_from_dotenv_move_into_the_keychain_at_startup(monkeypatch, tmp_path, memory_keychain):
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("# SYNTHETIC\nOPENALEX_API_KEY=openalex-dotenv-key\nDEIXIS_PORT=8765\nS2_API_KEY='s2-dotenv-key'\n")
+    dotenv.chmod(0o600)
+    for name in ("OPENALEX_API_KEY", "S2_API_KEY", "DEIXIS_PORT"):
+        monkeypatch.delenv(name, raising=False)
+    from deixis.config import load_dotenv
+    credentials.mark_dotenv(load_dotenv(dotenv), dotenv)
+    credentials.move_dotenv_keys_to_keychain()
+    assert dotenv.read_text() == "# SYNTHETIC\nDEIXIS_PORT=8765\n"  # lines DEIXIS does not manage stay
+    assert dotenv.stat().st_mode & 0o777 == 0o600
+    assert memory_keychain.get_password("DEIXIS", "OPENALEX_API_KEY") == "openalex-dotenv-key"
+    assert memory_keychain.get_password("DEIXIS", "S2_API_KEY") == "s2-dotenv-key"
+    assert os.environ["OPENALEX_API_KEY"] == "openalex-dotenv-key"
+    assert credentials.status("OPENALEX_API_KEY")["source"] == "keychain"
+
+
+def test_a_key_stays_in_dotenv_when_the_keychain_does_not_keep_it(monkeypatch, tmp_path, memory_keychain):
+    from keyring.errors import PasswordSetError
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("OPENALEX_API_KEY=openalex-dotenv-key\nS2_API_KEY=s2-dotenv-key\n")
+    for name in ("OPENALEX_API_KEY", "S2_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    from deixis.config import load_dotenv
+    credentials.mark_dotenv(load_dotenv(dotenv), dotenv)
+    real_set = memory_keychain.set_password
+
+    def refuse_openalex(service, username, password):
+        if username == "OPENALEX_API_KEY":
+            raise PasswordSetError("SYNTHETIC refusal")
+        real_set(service, username, password)
+
+    monkeypatch.setattr(memory_keychain, "set_password", refuse_openalex)
+    credentials.move_dotenv_keys_to_keychain()
+    assert dotenv.read_text() == "OPENALEX_API_KEY=openalex-dotenv-key\n"
+    assert (credentials.status("OPENALEX_API_KEY")["source"], credentials.status("S2_API_KEY")["source"]) == ("dotenv", "keychain")
+
+
+def test_keys_stay_in_dotenv_without_a_keychain(monkeypatch, tmp_path):
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("OPENALEX_API_KEY=openalex-dotenv-key\n")
+    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    monkeypatch.setattr(credentials, "keychain_name", lambda: None)
+    from deixis.config import load_dotenv
+    credentials.mark_dotenv(load_dotenv(dotenv), dotenv)
+    credentials.move_dotenv_keys_to_keychain()
+    assert dotenv.read_text() == "OPENALEX_API_KEY=openalex-dotenv-key\n"
+    assert credentials.status("OPENALEX_API_KEY")["source"] == "dotenv"
 
 
 def test_keys_from_the_shell_are_left_alone_and_source_keys_are_not_tested(client, monkeypatch):

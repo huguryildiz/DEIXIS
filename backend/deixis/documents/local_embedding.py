@@ -43,6 +43,17 @@ REVISION = "aa8f8b060edb00e03bfdd08813a2949946c8ba55"
 MODEL_NAME = "bge-small-en-v1.5"
 FASTEMBED_MODEL = "BAAI/bge-small-en-v1.5"
 FASTEMBED_PACKAGE = "fastembed==0.8.1"
+# Every package of the environment, pinned with hashes and installed with `uv pip sync` (D20). Its digest goes into
+# installed.json; an installed copy whose digest or model differs from these is shown as "Update available".
+REQUIREMENTS = Path(__file__).with_name("embedding-requirements.txt")
+
+
+def requirements_digest() -> str:
+    """sha256 of the requirement lines only: a comment edited in the file is not an update."""
+    lines = [line for line in REQUIREMENTS.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+
+
 PYTHON_VERSION = "3.12"
 DIMENSIONS = 384
 LOCAL_BATCH = 64  # records per request; a batch took at most 2.5 s on the M1 Pro, so a pause waits about that long
@@ -158,6 +169,14 @@ class BuiltinPaths:
     def installed(self) -> bool:
         """Only an environment whose install wrote its last file counts; one without it is half-built."""
         return self.installed_marker.is_file() and self.python.exists()
+
+    def outdated(self) -> bool:
+        """An installed copy built from another model or another package list than this DEIXIS pins (D20)."""
+        try:
+            marker = json.loads(self.installed_marker.read_text())
+        except (OSError, ValueError):
+            return True
+        return marker.get("model") != MODEL_ID or marker.get("requirements") != requirements_digest()
 
     def runner_env(self) -> dict[str, str]:
         """Offline, with the data directory's own Hugging Face home: nothing is read from or written to ~/.cache."""

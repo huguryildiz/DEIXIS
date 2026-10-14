@@ -1,6 +1,7 @@
 """Installing, checking and removing the built-in embedding model from Settings (slice 21, D103).
 
-The install is a four-step background job: (1) the environment (`uv venv`, Python 3.12), (2) `fastembed==0.8.1`,
+The install is a four-step background job: (1) the environment (`uv venv`, Python 3.12), (2) `uv pip sync` of
+`embedding-requirements.txt` (fastembed and every dependency pinned with hashes, D20),
 (3) the five model files from the pinned revision, each checked against the manifest, (4) a start check: the runner
 says ready and embeds a known sentence into one 384-dimension unit vector. `installed.json` is written last; an
 environment without it is half-built and is built again. `uv` runs with its cache and its Python under the data
@@ -187,7 +188,7 @@ class EmbeddingService:
         reasons = {"not_installed": "Not downloaded", "failed": "Download failed", "installing": "Downloading",
                    "installing_elsewhere": "Downloading", "files_do_not_match": "Files do not match",
                    "removing": "Being removed", "remove_failed": "Removal did not finish"}
-        available = state == "ready"
+        available = self._usable(state)
         return {"available": available, "reason": None if available else reasons.get(state, "Not downloaded"),
                 "reason_code": None if available else state, "last_full_check": self.integrity.last_full_check()}
 
@@ -199,11 +200,17 @@ class EmbeddingService:
         if self._installing_elsewhere():
             return "installing_elsewhere"
         if self.paths.installed():
+            if self.paths.outdated():
+                return "update_available"  # D20: shown before a file mismatch, since the update downloads the files too
             return "ready" if self.integrity.available() else "files_do_not_match"
         job = self.read_job()
         if job and job.get("status") == "remove_failed":
             return "remove_failed"
         return "failed" if job and job.get("status") == "failed" else "not_installed"
+
+    def _usable(self, state: str) -> bool:
+        """An outdated copy stays in use while its files still match: only the package list may have changed."""
+        return state == "ready" or (state == "update_available" and self.integrity.available())
 
     async def status(self) -> dict[str, Any]:
         if not local_embedding.supported():
@@ -214,7 +221,7 @@ class EmbeddingService:
             self.paths.env, self.paths.models_root, self.paths.uv_cache, self.paths.uv_python, self.paths.hf_home)))
         uv = shutil.which("uv")
         return {
-            "status": state, "installed": self.paths.installed(), "available": state == "ready",
+            "status": state, "installed": self.paths.installed(), "available": self._usable(state),
             "last_full_check": self.integrity.last_full_check(), "job": job,
             "model": {"name": local_embedding.MODEL_NAME, "id": local_embedding.MODEL_ID,
                       "repository": local_embedding.REPOSITORY, "revision": local_embedding.REVISION,
@@ -236,7 +243,7 @@ class EmbeddingService:
         uv = shutil.which("uv")
         if uv is None:
             raise ServiceError("uv_missing", "uv was not found on this computer's PATH")
-        if self.paths.installed() and self.integrity.available():
+        if self.paths.installed() and not self.paths.outdated() and self.integrity.available():
             raise ServiceError("already_installed", "The built-in model is already installed")
         install_fd = _try_lock(self.paths.install_lock)
         if install_fd is None:
@@ -311,7 +318,7 @@ class EmbeddingService:
                 self._step(0)
                 await self._command([uv, "venv", "--allow-existing", "--python", local_embedding.PYTHON_VERSION, str(p.env)])
                 self._step(1)
-                await self._command([uv, "pip", "install", "--python", str(p.python), local_embedding.FASTEMBED_PACKAGE])
+                await self._command([uv, "pip", "sync", "--python", str(p.python), str(local_embedding.REQUIREMENTS)])
                 self._step(2)
 
                 def progress(done: int, total: int) -> None:
@@ -342,11 +349,15 @@ class EmbeddingService:
                     raise RuntimeError("the model files do not match after the install")
                 marker = {"model": local_embedding.MODEL_ID, "repository": local_embedding.REPOSITORY,
                           "revision": local_embedding.REVISION, "package": local_embedding.FASTEMBED_PACKAGE,
+                          "requirements": local_embedding.requirements_digest(),
                           "fastembed": info.get("fastembed"), "onnxruntime": info.get("onnxruntime"),
                           "installed_at": local_embedding.now_iso()}
                 partial = p.installed_marker.with_suffix(".json.tmp")
                 partial.write_text(json.dumps(marker))
                 os.replace(partial, p.installed_marker)  # the last file an install writes
+                for old in p.models_root.iterdir():  # an earlier revision's files, left by an update (D20)
+                    if old.is_dir() and old != p.models:
+                        await _to_completion(shutil.rmtree, old, True)
                 status = "succeeded"
         except asyncio.CancelledError:
             status = "cancelled"
@@ -370,6 +381,16 @@ class EmbeddingService:
             _release(self._install_fd)
             self._install_fd = self._in_use_fd = None
             self.embedder.installing = False
+
+    async def check(self) -> dict[str, Any]:
+        """Check for updates (D20): compare the installed copy with what this DEIXIS pins and hash its files again.
+        Nothing is fetched online; a newer model or package list arrives with a newer DEIXIS."""
+        if not local_embedding.supported():
+            raise ServiceError("unsupported_platform", "The built-in model is not available on Windows yet")
+        if self.owns_job() or self.embedder.removing or not self.paths.installed():
+            raise ServiceError("not_installed", "The built-in model is not installed")
+        await asyncio.to_thread(self.integrity.check_now)
+        return await self.status()
 
     async def cancel(self) -> dict[str, Any]:
         if not local_embedding.supported():

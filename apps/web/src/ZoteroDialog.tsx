@@ -92,7 +92,7 @@ function ZoteroDialogContent({ destination, busy, initial, onImport }: {
     ? t(chosen.items === 1 ? 'Import {n} item' : 'Import {n} items', { n: chosen.items })
     : t('Import items')
   const note = [
-    t(source === 'local' ? 'Reads Zotero on this computer through its local API · read-only.' : 'Reads the zotero.org library set in .env · read-only.'),
+    t(source === 'local' ? 'Reads Zotero on this computer through its local API · read-only.' : 'Reads your zotero.org library · read-only.'),
     // The count is Zotero's `numItems`; the import skips standalone notes and attachments that are not PDFs (zotero.collection_items).
     t('Counts are Zotero’s own; standalone notes and non-PDF attachments are skipped, so fewer items may be added.'),
     t(destination === 'home' ? 'Items are imported when the research starts and join it as included sources.' : 'Items are added to All works in the Library.'),

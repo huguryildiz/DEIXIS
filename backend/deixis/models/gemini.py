@@ -78,7 +78,7 @@ class GeminiAdapter:
                 status["cli_version"] = None
         if not key:
             status["reason_code"] = "needs_key"
-            status["reason"] = f"Add a Gemini API key in Settings or set {KEY_ENV} in .env to use the Gemini API"
+            status["reason"] = "Add a Gemini API key in Settings to use the Gemini API"
             return status
         # A second try after a transport error: the first can expire while something else holds the event loop, and
         # one failed check pauses the whole run.

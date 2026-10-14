@@ -1,6 +1,6 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 12 Ekim 2026. Ayrıntılı kararlar [docs/decisions.md](docs/decisions.md) içinde; eski D numaraları git'teki eski kayda gider (commit 26c8214).
+**Son güncelleme:** 14 Ekim 2026. Ayrıntılı kararlar [docs/decisions.md](docs/decisions.md) içinde; eski D numaraları git'teki eski kayda gider (commit 26c8214).
 
 ## Şu an
 
@@ -12,6 +12,7 @@
 - OpenAlex benzer-makale istekleri artık üst üste gidiyor (12 Eki, D10): istekler 1,5 sn arayla başlıyor, cevaplar birbirini beklemiyor; tohum istekleri yine tohum sırasıyla yazılıyor. Beklerken kota biterse ya da arama süresi dolarsa istek gönderilmiyor ve istek hakkından düşmüyor. Sayfa başına kayıt sınırı 100 (OpenAlex 200'ü kaldırıyor). 1,5 sn tek canlı denemeden (6 istek: 1,0 sn'de bir 429, 1,25 ve 1,5 sn'de hiç); tohumlu koşuda kazanılan süre canlı ölçülmedi.
 - Arayüz yeni tasarıma geçti (11 Eki, D5): mockup v24'ün görünümü 7 parçada uygulamaya taşındı (renkler ve yazı tipleri, sol menü, ana sayfa ve yazma kutusu, araştırma sayfası, yan paneller, kaynaklar/kuyruk/kanıt tablosu, kütüphane/ayarlar/çöp). Yapı ve davranış aynı; arkasında backend olmayan mockup düğmeleri eklenmedi. Mockup ile ekran görüntüsü kıyası 17 hata buldu, hepsi düzeltildi; 39 karar maddesinden 14'ü mockup'a uyarlandı, 25'i bilerek bırakıldı (`.local/design/port-visual-diff.md`). Tarayıcı testleri 210/210; her parçayı Sol inceledi. Ertelenen: sağ sütun, kütüphanenin üç bölmeli düzeni, ilk kurulum kartı.
 - Anahtarsız kullanıcıya yerleşik model (11 Eki, D7): Ayarlar'da seçim yoksa ve Gemini anahtarı yoksa, indirilmiş yerleşik model kendiliğinden kullanılıyor; önce anlamsal arama kapalı kalıyordu. Ana sayfada, anlamsal arama yalnız bu yüzden kapalıysa tek tıkla indirme notu çıkıyor; açıkça "Kapalı" seçen kullanıcıya çıkmıyor. Araştırma kaydı artık sıralamanın dondurduğu modeli yazıyor. Testlerle ve anahtarsız bir test sunucusunda gerçek indirmeyle doğrulandı; yerleşik modelin Gemini'ye göre sıralama kalitesi ölçülmedi.
+- Ayarlar ve modeller (14 Eki, D19, D20, D22, ortak commit): API anahtarları artık sistemin anahtar deposunda (macOS Keychain, Windows Credential Locker); `.env`'deki anahtarlar açılışta oraya taşınıyor ve arayüzde `.env` geçmiyor. Grok, GitHub Copilot, GLM, Muse Spark, Muse Glimmer ve Ollama araştırma adımlarını çalıştırabiliyor; "planlanan" grubu kalktı. Yerleşik embedding modelinin paketleri hash'le sabitlendi. Ana sayfadaki model seçici geri geldi, başlangıç modeli yalnız hazır bağlantılardan seçiliyor. Testler sahte istemcilerle; altı yeni model bağlantısına canlı istek gönderilmedi.
 - Sahip uygulamayı gözle kontrol ediyor; bulduğu sorunlar sırayla düzeltilir. P10 (macOS paketi) bu kontrol bitene kadar bekliyor.
 
 ## Sıradaki

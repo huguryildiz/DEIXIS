@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
 import { api, ApiError, homeApi, type Connections, type Effort, type EffortLimits, type IntentOutcome, type ModelOption, type ModelRole, type ResearchIntent, type ResearchSummary, type RoleModelSetting, type SeedSelection, type SourceScope, type Suggestion } from './api'
-import { connectionName, fileRestoreNote, fileRestoreTone, isPlannedModel, reasoningLabel, scopeLabels } from './labels'
+import { connectionName, fileRestoreNote, fileRestoreTone, reasoningLabel, scopeLabels } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroDialog, type ZoteroChoice } from './ZoteroDialog'
 import { ConnectionIcon } from './connectionIcons'
@@ -54,7 +54,7 @@ export const connectionModels = (connections: Connections): ConnectionModel[] =>
   Object.entries(connections.models).flatMap(([connection, health]) => (health.models ?? []).map(m => ({ ...m, id: modelKey(connection, m.id), connection, model: m.id })))
 // Why implemented connections offer no model.
 export const notReadyReasons = (connections: Connections) =>
-  Object.values(connections.models).filter(h => !h.ready && !isPlannedModel(h.reason)).map(h => `${connectionName(h.connection)}: ${h.reason ?? ''}`).join('; ')
+  Object.values(connections.models).filter(h => !h.ready).map(h => `${connectionName(h.connection)}: ${h.reason ?? ''}`).join('; ')
 
 // The most PDFs that guide one search (D3); the backend enforces it.
 export const MAX_SEED_PDFS = 5
@@ -171,7 +171,7 @@ export function ModelPicker({ role, icon: Icon, hint, models, value, onChange, e
     </Popover.Root>
     {efforts.length > 0 &&
       <Select value={effort ?? '__provider_default'} onValueChange={v => { if (v) onEffort(v === '__provider_default' ? null : v) }}>
-        <SelectTrigger aria-label={t('{role} reasoning effort', { role })} title={t('How long the {role} model thinks', { role: role.toLocaleLowerCase(uiLocale()) })}><SelectValue>{(v: string) => <><Brain size={15} />{reasoningLabel(v)}</>}</SelectValue></SelectTrigger>
+        <SelectTrigger aria-label={t('{role} reasoning effort', { role })} title={t('How long the {role} model thinks', { role: role.toLocaleLowerCase(uiLocale()) })}><SelectValue>{(v: string) => <><Brain size={15} />{v === '__provider_default' ? t('Provider default') : reasoningLabel(v)}</>}</SelectValue></SelectTrigger>
         <SelectContent className="intake-select-content has-details" align="start" alignItemWithTrigger={false}>
           <div className="intake-select-heading" aria-hidden="true">{t('{role} reasoning effort', { role })}</div>
           <p className="intake-select-description" aria-hidden="true">{t('How long the {role} model reasons before it replies. Higher settings take longer.', { role: role.toLocaleLowerCase(uiLocale()) })}</p>
@@ -303,11 +303,13 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
       setConnections(result)
       setDefaults(saved)
       const models = connectionModels(result)
-      const preferred = models.find(m => m.is_default) ?? models[0]
-      // A default from Settings applies while its connection still lists it; otherwise the composer starts from Codex's default model.
+      // Only a ready connection can run a step: a signed-out Codex still lists its models, so it must not be the start.
+      const ready = models.filter(m => result.models[m.connection]?.ready)
+      const preferred = ready.find(m => m.is_default) ?? ready[0]
+      // A default from Settings applies while its connection is ready and still lists it; otherwise the composer starts from the first ready connection's default model.
       const start = (setting: RoleModelSetting | undefined) => {
         const saved = setting?.model ? modelKey(setting.model_connection, setting.model) : null
-        const id = saved && models.some(m => m.id === saved) ? saved : preferred?.id
+        const id = saved && ready.some(m => m.id === saved) ? saved : preferred?.id
         if (!id) return null
         return { id, effort: (id === saved ? listedEffort(models, id, setting?.reasoning_effort ?? null) : null) ?? defaultEffort(models, id) }
       }

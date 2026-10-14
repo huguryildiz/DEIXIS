@@ -116,8 +116,9 @@ def machine() -> dict[str, Any]:
             memory = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
         except (AttributeError, ValueError, OSError):
             memory = None
+    disk = shutil.disk_usage(Path.home())
     return {"chip": chip, "memory_gb": round(memory / 2**30) if memory else None,
-            "disk_free_gb": round(shutil.disk_usage(Path.home()).free / 2**30)}
+            "disk_free_gb": round(disk.free / 2**30), "disk_total_gb": round(disk.total / 2**30)}
 
 
 class LocalTools:

@@ -135,7 +135,7 @@ test.describe.serial('S6: Zotero dialog on Home', () => {
   })
 
   test('zotero.org not configured shows the server message; an empty library offers Check again', async ({ page }) => {
-    const message = 'Set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID (plus ZOTERO_LIBRARY_TYPE=group for a group library) in .env to use zotero.org.'
+    const message = 'The zotero.org library is not set up.'
     await routeCollections(page, { status: 422, body: { detail: message } })
     await page.goto(server.url())
     const dialog = await openDialog(page)
@@ -144,7 +144,7 @@ test.describe.serial('S6: Zotero dialog on Home', () => {
     await expect(dialog).toContainText(message)
     await expect(dialog.locator('.zotero-dialog-primary')).toHaveText('Import items')
     await expect(dialog.locator('.zotero-dialog-primary')).toBeDisabled()
-    await expect(dialog).toContainText('Reads the zotero.org library set in .env · read-only.')
+    await expect(dialog).toContainText('Reads your zotero.org library · read-only.')
     await page.unroute('**/api/zotero/collections**')
     await routeCollections(page, { status: 200, body: { source: 'web', collections: [] } })
     await dialog.getByRole('button', { name: 'Zotero on this computer' }).click()

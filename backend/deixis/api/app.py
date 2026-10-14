@@ -1041,8 +1041,6 @@ def create_app(
         models = {}
         for name, adapter in request.app.state.adapters.items():
             models[name] = await adapter.health(refresh=refresh)
-        for name in ("grok", "copilot", "glm", "muse_spark", "muse_glimmer", "ollama"):
-            models.setdefault(name, {"connection": name, "ready": False, "reason": "Adapter not implemented in this version"})
         return {
             "models": models,
             # The Codex home this backend runs Codex with (DEIXIS_CODEX_HOME or the data folder's codex-home), so the
@@ -1053,8 +1051,8 @@ def create_app(
                  "key_env": c.key_env, "role": provider_role(c),
                  "contract_id": descriptors[p].contract_id, "adapter_revision": descriptors[p].adapter_revision,
                  "capabilities": sorted(descriptors[p].capabilities),
-                 "note": f"Add the key in Settings or set {c.key_env} in .env to enable it." if c.access_mode() == "not_configured"
-                 else "Access and quota are recorded per request; not verified in advance."}
+                 "note": "Add a key below to use this source." if c.access_mode() == "not_configured"
+                 else "New researches use this source."}
                 for p, c in CONNECTORS.items()
             ],
         }
@@ -1213,7 +1211,7 @@ def create_app(
         if source == "environment":
             raise HTTPException(409, f"{env} is set in the shell; change or remove it there")
         if source != "dotenv" and credentials.keychain_name() is None:
-            raise HTTPException(503, "No system keychain is available; set the key in .env")
+            raise HTTPException(503, "No system keychain is available")
         result = await credentials.test(request.app.state.http, env, body.value) if key.testable else None
         if result and result["status"] in ("rejected", "failed"):
             return JSONResponse(status_code=422, content={"code": "credential_test_failed",
@@ -1337,6 +1335,13 @@ def create_app(
     async def install_builtin(request: Request) -> dict[str, Any]:
         try:
             return {"job": await request.app.state.builtin.install()}
+        except ServiceError as exc:
+            raise service_error(exc) from exc
+
+    @app.post("/api/semantic-search/builtin/check")
+    async def check_builtin(request: Request) -> dict[str, Any]:
+        try:
+            return await request.app.state.builtin.check()
         except ServiceError as exc:
             raise service_error(exc) from exc
 

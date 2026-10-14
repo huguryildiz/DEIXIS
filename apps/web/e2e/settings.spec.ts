@@ -111,7 +111,7 @@ test.describe.serial('S24: the Settings page', () => {
 
   test('one page in the mockup order; the old Connections link opens it at "On this computer"', async () => {
     await page.goto(server.url('#/settings'))
-    await expect(page.locator('.settings-page h2')).toHaveText(['Default models', 'Cloud models', 'On this computer', 'Semantic search', 'Institutional access',
+    await expect(page.locator('.settings-page h2')).toHaveText(['Profile', 'Default models', 'Cloud models', 'On this computer', 'This computer', 'Semantic search', 'Institutional access',
       'Scholarly sources', 'Reference managers', 'Usage this month', 'Language'])
     await expect(page.getByRole('tab')).toHaveCount(0)
     const computer = page.locator('.grid3[data-group="computer"] .conn-name')

@@ -29,7 +29,8 @@ from deixis.workflow import seed_match as seed_match_rules
 from deixis.workflow.evidence_deps import latest_completed_restore, passage_dependencies
 from deixis.workflow.report.passage_freshness import passage_freshness
 from deixis.workflow import recovery_view
-from deixis.workflow import fast_path
+from deixis.workflow import fast_path, fast_search
+from deixis.workflow.expansion import queried_form
 
 
 # What the approval card shows of a vocabulary. The probes stay out: they are large, and the screen shows a term's
@@ -38,12 +39,20 @@ APPROVAL_VOCABULARY_FIELDS = ("claim_words", "exclusion_words", "outcome_terms",
 
 
 def _approval_side(vocabulary: dict[str, Any], criterion: dict[str, Any] | None,
-                   queries: list[dict[str, Any]]) -> dict[str, Any]:
-    """What the run searched under, as the approval card reads it (slice 08a)."""
+                   queries: list[dict[str, Any]], words: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """What the run searched under, as the approval card reads it (slice 08a). `words` is the frozen plan's record of
+    which words a sent query carries (D26): each term gets `searched` and `left_out` from it, both null where the plan
+    recorded nothing (frozen before the record, or not frozen yet)."""
     origins = approval_rules.block_origins(vocabulary)
+    carried = {(w["block"], w["term"]): w for w in words or []}
+
+    def searched(term: dict[str, Any]) -> dict[str, Any]:
+        word = carried.get((term["block"], queried_form(term)))
+        return {"searched": word["searched"] if word else None, "left_out": word["left_out"] if word else None}
+
     side = {
         "terms": [{field: term[field] for field in vocabulary_rules.TERM_FIELDS}
-                  | {"block_origin": origins.get(term["phrase"], "rule")} for term in vocabulary["terms"]],
+                  | {"block_origin": origins.get(term["phrase"], "rule")} | searched(term) for term in vocabulary["terms"]],
         **{field: vocabulary[field] for field in APPROVAL_VOCABULARY_FIELDS},
         "criterion": criterion,
     }
@@ -67,7 +76,8 @@ def approval_view(store: Store, run_id: str) -> dict[str, Any] | None:
     return {
         "approved_by": output["approval"].get("approved_by"),
         "proposal_hash": output["proposal_hash"],
-        "approved": _approval_side(approved["vocabulary"], approved["criterion"], approved["queries"]),
+        "approved": _approval_side(approved["vocabulary"], approved["criterion"], approved["queries"],
+                                   fast_search.frozen_words(store, run_id)),
         # How this run chains citations: the fast chain's rule and limits, frozen in the run's budget when it was
         # queued. The real seeds are only known after the search, in the run view.
         "chaining": _card_chaining(store, store.run(run_id)),

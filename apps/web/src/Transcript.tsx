@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Waypoints, type LucideIcon } from 'lucide-react'
 import { api, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
-import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels } from './labels'
+import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
 import { ModelName } from './ModelName'
@@ -846,9 +846,12 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     const parts: ReactNode[] = []
     if (key === 'plan' && run.kind === 'discovery') {
       const approved = run.approval?.approved
-      const words = approved?.terms.filter(term => !term.dropped).map(term => term.phrase) ?? []
+      const terms = approved?.terms.filter(term => !term.dropped) ?? []
       const queries = [...new Map((approved?.queries ?? []).map(q => [q.query_text, q])).values()]
-      if (words.length) parts.push(<div key="words">{t('Search words')}: {words.map(word => <code key={word}>{word}</code>)}</div>)
+      // A word the frozen plan records as carried by no sent query (D26) is named as not searched, with the stored reason.
+      const unsearched = terms.filter(term => term.searched === false)
+      if (terms.length) parts.push(<div key="words">{t('Search words')}: {terms.map(term => <code key={term.phrase} className={term.searched === false ? 'word-unsearched' : undefined}>{term.phrase}</code>)}</div>)
+      if (unsearched.length) parts.push(<div key="unsearched" className="step-row"><span>{t('Words not searched')}</span><span className="step-row-text">{unsearched.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
       // Each provider gets its own query text; with more than one provider the row names whose query it is.
       const severalProviders = new Set(queries.map(q => q.provider_id)).size > 1
       // The query text follows its label on the row, wrapping under it when long (mockup `.row` with a `code`).

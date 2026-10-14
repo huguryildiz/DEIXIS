@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
-import { PANEL_TITLES, panel } from './panels'
+import { PANEL_TITLES, closePanel, openPlanPanel, panel } from './panels'
 
 // UI parity S9: the steps list (mockup R14-R16, R18). One line per phase with an 18px icon: the phase's icon once done,
 // a spinner and shimmering words while live, the warning sign where the run stopped; a chevron takes the icon's place
@@ -54,7 +54,8 @@ class StepsServer {
 type Api = { context: APIRequestContext; token: string }
 type Funnel = { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number }
 type View = {
-  runs: Array<{ id: string; kind: string; status: string; budget: { fast_path?: { K?: number }; max_model_calls?: number }; steps?: Array<{ kind: string; status: string; operation_key: string }> }>
+  runs: Array<{ id: string; kind: string; status: string; budget: { fast_path?: { K?: number }; max_model_calls?: number }; steps?: Array<{ kind: string; status: string; operation_key: string }>
+    approval?: { approved: { terms: Array<{ phrase: string; dropped: string | null; searched?: boolean | null; left_out?: string | null }> } } | null }>
   scope: { literature_model: string | null }
   model_changes?: Array<{ role: string; from: { model: string | null }; to: { model: string | null }; changed_at: string }>
   counts: { queue: number; funnel?: Funnel | null; flow?: { five: { not_read_not_tried: number }; buckets: { not_screened: number; out_of_scope_model: number; out_of_scope_code: number } } | null }
@@ -157,6 +158,21 @@ test.describe.serial('S9: the steps list', () => {
     await expect(plan.locator('.step-row', { hasText: 'Inclusion criterion' })).toContainText('SYNTHETIC')
     await expect(plan).toContainText('Nobody reviewed the search vocabulary; the fast path went on without asking.')
     await expect(plan.locator('.step-row', { hasText: 'Time taken' })).toBeVisible()
+    // D26: a word the frozen plan records as carried by no sent query is struck through and named with its stored reason
+    // (the [parity] research's sixth task word is cut from the one OpenAlex keyword query a Standard run sends).
+    const terms = view.runs.find(r => r.kind === 'discovery')!.approval!.approved.terms.filter(t => !t.dropped)
+    const unsearched = terms.filter(t => t.searched === false)
+    expect(unsearched.map(t => [t.phrase, t.left_out])).toEqual([['modeled', 'query_limit']])
+    const words = plan.locator(':scope > div', { hasText: /^Search words:/ })
+    await expect(words.locator('code.word-unsearched')).toHaveText(unsearched.map(t => t.phrase))
+    await expect(words.locator('code:not(.word-unsearched)')).toHaveText(terms.filter(t => t.searched === true).map(t => t.phrase))
+    await expect(plan.locator('.step-row', { hasText: 'Words not searched' })).toContainText('modeled: cut to keep the query within its length and syntax limits')
+    // The Search plan panel marks the same stored word on its chip and names it under the blocks.
+    const planned = await openPlanPanel(page)
+    await expect(planned.locator('.kw > span.word-unsearched')).toHaveText(['modeled'])
+    await expect(planned.locator('.plan-unsearched')).toHaveText('Words the frozen plan did not search: modeled: cut to keep the query within its length and syntax limits')
+    await shot(page, 'p1-plan-unsearched')
+    await closePanel(page)
     // Search: one row per query with what was taken of what the provider reported, and the merge by DOI.
     const search = await open('Searched')
     await expect(search.locator('.step-row', { hasText: 'OpenAlex · semantic' })).toContainText(/\d+ of \d+ taken/)

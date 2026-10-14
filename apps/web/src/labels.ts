@@ -640,6 +640,16 @@ export const auditStratumLabels: Record<string, string> = {
 // What one seed PDF did in this revision's search (D3). Only what the stored steps report as true is named; a null
 // (not known yet) names nothing. The citation chain counts only when one of its requests for this PDF was sent. While a
 // run is active the wording is present tense, afterwards past.
+// Why a plan word went into no query the frozen plan sent (D26; fast_search.plan_words). Only the stored reason is named.
+export function wordLeftOutText(reason: string) {
+  switch (reason) {
+    case 'query_limit': return t('cut to keep the query within its length and syntax limits')
+    case 'not_sent': return t('only a query this run does not send held it')
+    case 'zero_results': return t('OpenAlex counted no record with it')
+    default: return reason
+  }
+}
+
 // Why a chosen PDF could not guide the search (D3).
 export function seedSkipText(reason: string) {
   switch (reason) {

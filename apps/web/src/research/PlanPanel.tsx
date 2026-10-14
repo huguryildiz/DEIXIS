@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Info, Search, TriangleAlert, X } from 'lucide-react'
 import { api, ApiError, searchPlanApi, type ResearchView, type SearchPlanProvider, type SearchPlanView, type UserSearchPlan } from '../api'
-import { providerName } from '../labels'
+import { providerName, wordLeftOutText } from '../labels'
 import { useToast } from '../Toast'
 import { t } from '../i18n'
 import './kit.css'
@@ -238,6 +238,8 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
   const draftPlan = plan && draft ? planOf(plan, draft) : null
   const wordsChanged = Boolean(plan && draft && (draft.setting.join('\n') !== plan.setting.map(r => r.term).join('\n') || draft.task.join('\n') !== plan.task.map(r => r.term).join('\n')))
   const backups = plan ? [...plan.setting_backup, ...plan.task_backup].map(row => row.term) : []
+  // The stored plan's words its frozen search did not carry (D26); a chip is marked while its word is the stored one.
+  const unsearched = loaded.unsearched ?? []
   const disabledReason = active ? t('Available when the run ends.') : !searchReady ? t('Choose a readable PDF to guide the search first.') : null
   const locked = saving || busy
 
@@ -264,9 +266,10 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
       <div className="lbl">{t('Search words')}
         {BLOCKS.map(name => <div key={name} className="kw" data-block={name}>
           <small>{t(BLOCK_LABELS[name])}</small>
-          {draft[name].map((term, i) => <span key={`${i}-${term}`}>{term}<button type="button" aria-label={t('Remove {word}', { word: term })} disabled={locked} onClick={() => removeWord(name, i)}><X aria-hidden /></button></span>)}
+          {draft[name].map((term, i) => <span key={`${i}-${term}`} className={unsearched.some(w => w.block === name && w.term === term) ? 'word-unsearched' : undefined}>{term}<button type="button" aria-label={t('Remove {word}', { word: term })} disabled={locked} onClick={() => removeWord(name, i)}><X aria-hidden /></button></span>)}
           {!draft[name].length && <em>{t('no word')}</em>}
         </div>)}
+        {unsearched.length > 0 && <small className="plan-unsearched">{t('Words the frozen plan did not search')}: {unsearched.map(w => t('{word}: {reason}', { word: w.term, reason: wordLeftOutText(w.left_out) })).join(' · ')}</small>}
         {backups.length > 0 && <small className="plan-backups">{t('Backup words, used in order when a word finds no record on OpenAlex: {words}', { words: backups.join(', ') })}</small>}
       </div>
       <div className="plan-add">

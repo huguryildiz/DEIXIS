@@ -582,6 +582,9 @@ class ResearchFlow:
             # with its reason, never an edit of the first one (SW14.2).
             reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
             fast_plan = fast_search.build_plan(self.store, run, scope, queries, seed_context)
+            # Which plan words a query the plan sends really carries (D26): a word can stand in the plan and still be
+            # cut from every sent query, and the plan step and the Search plan panel say so from this record.
+            fast_plan = fast_plan | {"words": fast_search.plan_words(vocabulary, fast_plan)}
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
                 scope, run["budget"], None, queries,
                 self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,

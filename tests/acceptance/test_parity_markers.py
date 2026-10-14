@@ -5,6 +5,7 @@ page reads. Passing shows the fixture produces the state through the app's own r
 quality or live provider access.
 """
 
+import json
 import time
 
 import httpx
@@ -280,3 +281,36 @@ def test_stale_seed_then_current_text(tmp_path):
                                                                     "expected_version": v["research"]["version"]})
         assert response.status_code == 200, response.text
         assert (response.json()["scope"]["revision"], response.json()["scope"]["seed_status"]) == (revision + 1, "ready")
+
+
+def test_parity_plan_words(tmp_path):
+    """D26: the [parity] research's sixth task word is cut from the one OpenAlex keyword query a Quick run sends, so
+    the plan step's terms and the Search plan panel name it as not searched, and every other word as searched."""
+    question = ("[parity] How has the relationship between k-connectivity, network lifetime and energy consumption "
+                "been modeled in SYNTHETIC wireless sensor networks?")
+    with client_for(tmp_path) as client:
+        start(client)
+        rid = research(client, question, effort="quick")
+        run_id = discover(client, rid)
+        # The record is written with the protocol, before the first search request: no need to wait for the run's end.
+        end, run = time.time() + 90, None
+        while time.time() < end:
+            run = next(r for r in view(client, rid)["runs"] if r["id"] == run_id)
+            if run["approval"] and any(t["searched"] is not None for t in run["approval"]["approved"]["terms"]):
+                break
+            time.sleep(0.05)
+        terms = [t for t in run["approval"]["approved"]["terms"] if not t["dropped"]]
+        assert [(t["phrase"], t["left_out"]) for t in terms if t["searched"] is False] == [("modeled", "query_limit")]
+        assert all(t["searched"] is True for t in terms if t["phrase"] != "modeled")
+        # The OpenAlex query the protocol froze really lacks the word, and the bulk query that holds it was not sent.
+        [query] = [q for q in run["approval"]["approved"]["queries"] if q["provider_id"] == "openalex"]
+        assert "modeled" not in query["query_text"]
+        body = json.loads(client.app.state.store.conn.execute(
+            "SELECT body_json FROM protocol_records WHERE research_id = ?", (rid,)).fetchone()[0])
+        assert body["fast_path_search"]["s2_bulk"] is None
+        assert any("modeled" in d["query"]["query_text"] for d in body["fast_path_search"]["dropped"])
+        panel = client.get(f"/api/researches/{rid}/search-plan").json()
+        assert panel["based_on"] is not None
+        assert panel["unsearched"] == [{"block": "task", "term": "modeled", "left_out": "query_limit"}]
+        assert "modeled" in [row["term"] for row in panel["plan"]["task"]]
+        settle(client, rid)

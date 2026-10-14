@@ -11,8 +11,9 @@ from deixis.providers import facade
 from deixis.providers.common import FIRST_PAGE, SearchOutcome
 from deixis.providers.registry import CONNECTORS, reading
 from deixis.storage.db import now, transaction
-from deixis.providers import openalex
+from deixis.providers import openalex, query_compiler
 from deixis.workflow import english_question, fast_path, seed_match, user_plan
+from deixis.workflow.expansion import queried_form
 
 
 def seed_query(question, envelope):
@@ -104,6 +105,70 @@ def build_plan(store, run, scope, queries, seed_context=None):
             "expansion": "fast_path_frozen_plan",
             # Only a run of a revision with a saved plan names this, so every other plan freezes as before.
             **({"excluded_providers": excluded} if user_plan.of(scope) is not None else {})}
+
+
+def _carried(vocabulary, query):
+    """The (block, form) pairs this compiled query really wrote, or None when that cannot be told.
+
+    The block compiler is pure, so its prefix allocation is computed again from the vocabulary that wrote the query
+    (the code's beside a model-written one, D92). Only when the text it gives is the stored text are its counts taken;
+    any other text says nothing about what the stored query holds."""
+    source = vocabulary["code_query"]["vocabulary"] if query.get("origin") == "code" else vocabulary
+    groups, names = [], []
+    for block in query_compiler.BLOCK_ORDER:
+        forms = list(dict.fromkeys(queried_form(t) for t in source["terms"] if t["block"] == block and not t["dropped"]))
+        if forms:
+            groups.append(forms)
+            names.append(block)
+    fitted = query_compiler.fit_block_counts(query["provider_id"], groups, query.get("endpoint")) if groups else None
+    if fitted is None or fitted[0] != query["query_text"]:
+        return None
+    return {(name, form) for name, group, count in zip(names, groups, fitted[1]) for form in group[:count]}
+
+
+def plan_words(vocabulary, plan):
+    """Every setting and task word of the frozen vocabulary and whether a query the plan sends carries it (D26).
+
+    The queries sent are the OpenAlex keyword queries and, at Detailed depth, the Semantic Scholar bulk query; the
+    semantic request sends the question's sentence, not these words. `searched` is false with `left_out` naming why:
+    the word's own drop reason (a count of zero, too broad), `query_limit` when a sent query that held the word had no
+    room for it, or `not_sent` when only a query the plan does not send held it. It is null when a sent query could
+    not be read back (`_carried`), so an unknown is never shown as searched or as left out."""
+    sent = [spec["query"] for spec in plan["keywords"]] + ([plan["s2_bulk"]] if plan.get("s2_bulk") else [])
+    carried = [_carried(vocabulary, query) for query in sent]
+    known = all(c is not None for c in carried)
+    held = {(t["block"], queried_form(t)) for q in sent for t in
+            (vocabulary["code_query"]["vocabulary"] if q.get("origin") == "code" else vocabulary)["terms"]
+            if not t["dropped"]}
+    words, seen = [], set()
+    for term in vocabulary["terms"]:
+        key = (term["block"], queried_form(term))
+        if term["block"] not in query_compiler.BLOCK_ORDER or key in seen:
+            continue
+        seen.add(key)
+        if term["dropped"]:
+            searched, left_out = False, term["dropped"]
+        elif any(c is not None and key in c for c in carried):
+            searched, left_out = True, None
+        elif not known:
+            searched, left_out = None, None
+        else:
+            searched, left_out = False, "query_limit" if key in held else "not_sent"
+        words.append({"block": key[0], "term": key[1], "searched": searched, "left_out": left_out})
+    return words
+
+
+def frozen_words(store, run_id):
+    """The plan words this run's frozen protocol recorded (`plan_words`), or None for a run that froze none or whose
+    plan was frozen before the record existed."""
+    step = store.existing_step(run_id, "protocol")
+    if step is None or step["status"] != "succeeded" or not step["output"]:
+        return None
+    run = store.run(run_id)
+    row = store.conn.execute(
+        "SELECT body_json FROM protocol_records WHERE research_id = ? AND protocol_revision = ?",
+        (run["research_id"], step["output"]["protocol_revision"])).fetchone()
+    return ((json.loads(row[0]).get("fast_path_search") or {}).get("words")) if row else None
 
 
 def stored_plan(store, run):

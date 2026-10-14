@@ -285,7 +285,12 @@ export type ApprovalTerm = {
   root: string; in_query: 'root' | 'phrase'; phrase_count: number | null; root_count: number | null
   // and_only: the form is too frequent to stand alone. dropped: why the phrase left the query, e.g. 'zero_results'.
   and_only: boolean; dropped: string | null
+  // Whether a query the frozen plan sends carries this word (D26), and why not: the word's own drop reason,
+  // 'query_limit' (cut from every sent query that held it) or 'not_sent' (only an unsent query held it). Both null
+  // where the frozen plan recorded nothing (frozen before the record, or not frozen yet).
+  searched?: boolean | null; left_out?: WordLeftOut | null
 }
+export type WordLeftOut = 'query_limit' | 'not_sent' | (string & {})
 export type CriterionPart = { name: string; definition: string }
 export type CriterionCue = { phrase: string; part: string | null; runs?: number[] }
 export type ApprovalCriterion = {
@@ -1741,6 +1746,9 @@ export type SearchPlanView = {
   issues: { code: string; path: string; message: string }[]  // rules the shown plan breaks (a code term may be long)
   queries: { label: string; origin: 'user' | 'model' | 'code'; query_text: string; compiled_from: 'plan_words' | 'protocol' }[]
   queries_preview: boolean  // true while a saved plan has not run: compiled again when the run starts
+  // The plan's words the frozen search did not carry (D26), as the plan writes them; null where the protocol recorded
+  // nothing (a preview, or a plan frozen before the record).
+  unsearched: { block: 'setting' | 'task'; term: string; left_out: WordLeftOut }[] | null
   providers: {
     provider_id: SearchPlanProvider; required: boolean; checked: boolean; in_scope: boolean; configured: boolean
     not_covered: 'pdf_link_lookup'[]  // still asked when left out: Crossref is used to find PDF links

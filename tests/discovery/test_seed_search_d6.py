@@ -19,7 +19,7 @@ SHARED_TITLE = "SYNTHETIC one title the question's page repeats"
 BEYOND_TITLE = "SYNTHETIC a work past the question's limit"
 SEED_ONLY_TITLE = "SYNTHETIC a work only a seed's own request found"
 PLAN_KEYS = {"version", "semantic", "keywords", "keyword_cap", "page_size", "order", "s2_bulk", "s2_bulk_index",
-             "s2_reserved", "dropped", "expansion"}
+             "s2_reserved", "dropped", "expansion", "words"}  # words: which plan words a sent query carries (D26)
 
 
 class Scripted(SeedTransport):

@@ -8,7 +8,9 @@
 .plan-panel .kw button:hover:not(:disabled){color:var(--ink)}
 .plan-panel .kw button:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-radius:3px}
 .plan-panel .kw svg{width:12px;height:12px}
-.plan-panel .plan-backups{display:block}
+.plan-panel .plan-backups,.plan-panel .plan-unsearched{display:block}
+/* A word the frozen search did not carry (D26); the "Words the frozen plan did not search" line under the blocks says so in text. */
+.plan-panel .kw span.word-unsearched{background:none;box-shadow:inset 0 0 0 1px var(--strong-line);color:var(--muted);text-decoration:line-through}
 .plan-panel .plan-add{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}
 .plan-panel .plan-add>.lbl:first-child{flex:1;min-width:200px}
 .plan-panel .plan-add select.field{width:auto;padding:8px 10px}

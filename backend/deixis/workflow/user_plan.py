@@ -238,6 +238,16 @@ def _preview(plan: dict[str, Any]) -> list[dict[str, Any]]:
             for n, q in enumerate(compiled, 1)]
 
 
+def _unsearched(plan: dict[str, Any], body: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """The words of `plan`, as the plan writes them, that the protocol's frozen search records as not searched."""
+    words = (body.get("fast_path_search") or {}).get("words")
+    if words is None:
+        return None
+    left = {(w["block"], criterion_rules.norm(w["term"])): w["left_out"] for w in words if w["searched"] is False}
+    return [{"block": block, "term": row["term"], "left_out": left[(block, criterion_rules.norm(row["term"]))]}
+            for block in GATE_BLOCKS for row in plan[block] if (block, criterion_rules.norm(row["term"])) in left]
+
+
 def view(store: Any, research_id: str) -> dict[str, Any]:
     """The plan the panel shows: the current revision's own plan when the person saved one, otherwise the plan the
     newest run of the same question searched (model-made or code-made), or none before any run froze one. Query 1 and
@@ -258,6 +268,8 @@ def view(store: Any, research_id: str) -> dict[str, Any]:
                   else "model" if (body.get("search_query") or {}).get("status") == "ready" else "code")
         queries = _queries(body)
     issues = contracts.check_user_search_plan(plan).issues if plan is not None else []
+    # The plan's words the frozen search did not carry (D26), only for a plan a protocol froze: a preview has none.
+    unsearched = (_unsearched(plan, base["body"]) if plan is not None and base is not None and not preview else None)
     return {
         "research_id": research_id, "expected_version": research["version"], "scope_revision": scope["revision"],
         "editable": scope["source_scope"] != "attached",
@@ -269,6 +281,9 @@ def view(store: Any, research_id: str) -> dict[str, Any]:
         "queries": queries,
         # True while the saved plan has not run: the queries are a preview, compiled again when the run starts.
         "queries_preview": preview,
+        # Each word of `plan` no query the frozen plan sent carried, with why (`fast_search.plan_words`); null when the
+        # protocol recorded no such list (frozen before it, or no protocol yet).
+        "unsearched": unsearched,
         "providers": [{"provider_id": provider, "required": provider == REQUIRED,
                        "checked": plan is not None and provider in plan["providers"],
                        "in_scope": provider in scope["providers"],

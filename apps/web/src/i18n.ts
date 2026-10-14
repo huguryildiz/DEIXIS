@@ -4842,4 +4842,7 @@ const tr: Record<string, string> = {
   '{n} searches were refused ({service} budget).': '{n} arama reddedildi ({service} bütçesi).',
   'The run went on with the {m} that finished.': 'Çalışma, tamamlanan {m} aramayla devam etti.',
   'Add an OpenAlex key': 'OpenAlex anahtarı ekle',
+  // UI parity S28, Sol round 1: requests closed before sending because the budget had already run out in the run.
+  '{n} search was not sent after the {service} budget ran out.': '{n} arama, {service} bütçesi bittikten sonra gönderilmedi.',
+  '{n} searches were not sent after the {service} budget ran out.': '{n} arama, {service} bütçesi bittikten sonra gönderilmedi.',
 }

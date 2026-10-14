@@ -27,7 +27,9 @@ first 34 titles they see and leave the rest of the 50 out of scope, the first th
 scripts (choose_run, confirm_quote, find_part) and the other 17 of the 20 read are agreeing includes, and the answer
 cites 12 sources. "[oa-quota]": the keyword query's first page answers with a next cursor and every later keyword
 page is refused as a spent OpenAlex daily budget (429, `x-ratelimit-remaining-usd: 0`), so the run completes on the
-searches that answered. "[no-passages]": every work has neither abstract nor open PDF, so the automatic answer is
+searches that answered. "[oa-quota-first]": OpenAlex refuses its semantic request as a spent daily budget, so the
+keyword request after it is closed in the app before it is sent (`before_send`): one refusal, the rest not sent; Quick
+and Standard pause on the budget, Detailed completes on Semantic Scholar. "[no-passages]": every work has neither abstract nor open PDF, so the automatic answer is
 `no_evidence` with nothing to give the model. "[no-include]": a research-title call holds the one worker for
 `NO_INCLUDE_HOLD_SECONDS`, so an answer run of another, files-only research queued behind it starts after the person
 excluded its only file and records `no_includable_source`. "[jobs-running]": three works whose open PDF downloads take
@@ -510,16 +512,17 @@ def queue_reading(si: dict[str, Any], output: dict[str, Any], question: str = ""
 PROBE_COUNT = 800
 RATE_LIMIT_MODE = False
 PROBE_MODE: str | None = None  # "[vocab-empty]" / "[vocab-broad]": what every count probe answers instead
-# Set from the question of each model call, like the flags above: "[parity]", "[oa-quota]", "[no-passages]", "[jobs-running]".
-PARITY_MODE = OA_QUOTA_MODE = NO_PASSAGES_MODE = JOBS_MODE = False
+# Set from the question of each model call, like the flags above: "[parity]", "[oa-quota]", "[oa-quota-first]", "[no-passages]",
+# "[jobs-running]".
+PARITY_MODE = OA_QUOTA_MODE = OA_QUOTA_FIRST_MODE = NO_PASSAGES_MODE = JOBS_MODE = False
 
 
 def reset_markers() -> None:
     """Every module flag back to its start, for tests that share a process (the browser server never needs it)."""
     global RATE_LIMIT_MODE, PROBE_MODE, LINEAGE_MODE, LINEAGE_REJECT_MODE
-    global PARITY_MODE, OA_QUOTA_MODE, NO_PASSAGES_MODE, JOBS_MODE
+    global PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE, NO_PASSAGES_MODE, JOBS_MODE
     RATE_LIMIT_MODE = LINEAGE_MODE = LINEAGE_REJECT_MODE = False
-    PARITY_MODE = OA_QUOTA_MODE = NO_PASSAGES_MODE = JOBS_MODE = False
+    PARITY_MODE = OA_QUOTA_MODE = OA_QUOTA_FIRST_MODE = NO_PASSAGES_MODE = JOBS_MODE = False
     PROBE_MODE = None
     PARITY_ROLES.clear()
 
@@ -533,6 +536,10 @@ def oa_quota(request: httpx.Request) -> httpx.Response | None:
         return None
     if params["cursor"] == "*":
         return httpx.Response(200, json={"meta": {"count": 2 * len(WORKS), "next_cursor": "oa-quota-2"}, "results": WORKS})
+    return spent_budget()
+
+
+def spent_budget() -> httpx.Response:
     return httpx.Response(429, headers={"x-ratelimit-limit": "100000", "x-ratelimit-remaining": "0",
                                         "x-ratelimit-remaining-usd": "0", "retry-after": "86400"},
                           json={"error": "Rate limit exceeded", "message": "SYNTHETIC: the daily budget of this key is used up."})
@@ -568,6 +575,8 @@ def openalex(request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, headers={"retry-after": "0"})
     if OA_QUOTA_MODE and request.url.host == "api.openalex.org" and (answer := oa_quota(request)) is not None:
         return answer
+    if OA_QUOTA_FIRST_MODE and request.url.host == "api.openalex.org" and "search.semantic" in params:
+        return spent_budget()
     works = (LINEAGE_REJECT_WORKS if LINEAGE_REJECT_MODE else LINEAGE_WORKS if LINEAGE_MODE else QUEUE_WORKS if QUEUE_MODE
              else NO_PASSAGE_WORKS if NO_PASSAGES_MODE else JOBS_WORKS if JOBS_MODE else WORKS)
     return httpx.Response(200, json={"meta": {"count": len(works)}, "results": works})
@@ -671,8 +680,8 @@ class ScriptedCodex:
         global LINEAGE_MODE, LINEAGE_REJECT_MODE
         LINEAGE_REJECT_MODE = '[lineage-reject]' in question
         LINEAGE_MODE = '[lineage]' in question or LINEAGE_REJECT_MODE
-        global PARITY_MODE, OA_QUOTA_MODE, NO_PASSAGES_MODE, JOBS_MODE
-        PARITY_MODE, OA_QUOTA_MODE = "[parity]" in question, "[oa-quota]" in question
+        global PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE, NO_PASSAGES_MODE, JOBS_MODE
+        PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE = "[parity]" in question, "[oa-quota]" in question, "[oa-quota-first]" in question
         NO_PASSAGES_MODE, JOBS_MODE = "[no-passages]" in question, "[jobs-running]" in question
         if "[no-include]" in question and task == "research_title":
             await asyncio.sleep(NO_INCLUDE_HOLD_SECONDS)

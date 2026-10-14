@@ -323,31 +323,38 @@ test.describe.serial('S9: the steps list', () => {
     await shot(page, 's27-usage-box')
   })
 
-  test('S28 (R19): searches a provider refused for its budget are counted from stored rows; Retry and Add an OpenAlex key', async () => {
-    test.setTimeout(150_000)
-    const rid = await create(api, `[oa-quota] ${MOLECULE}`)
-    await settled(api, rid)
-    type Search = { step_id: string; error: { service_kind?: string } | null }
-    type Steps = { id: string; kind: string; status: string }
-    const current = async () => (await (await api.context.get(`/api/researches/${rid}`)).json()) as { runs: Array<{ id: string; kind: string; status: string; steps?: Steps[] }>; search_runs: Search[] }
-    const stored = await current()
+  // S28 (R19), Sol round 1: "[oa-quota-first]" makes OpenAlex refuse its semantic request as a spent daily budget (HTTP
+  // 429); the keyword request that follows is then closed in the app before sending. The expectation comes from what
+  // the provider answered (a stored HTTP 429), not from the page's own rule: exactly one refusal, the rest not sent.
+  type Search = { step_id: string; error: { service_kind?: string; http_status?: number | null } | null }
+  type RunView = { runs: Array<{ id: string; kind: string; status: string; pause_reason?: string | null; steps?: Array<{ id: string; kind: string; status: string }> }>; search_runs: Search[] }
+  const quotaCounts = async (rid: string) => {
+    const stored = (await (await api.context.get(`/api/researches/${rid}`)).json()) as RunView
     const discovery = stored.runs.find(r => r.kind === 'discovery')!
+    const searchSteps = (discovery.steps ?? []).filter(s => s.kind.startsWith('provider_search'))
+    const rowOf = (id: string) => stored.search_runs.find(row => row.step_id === id)
+    const refusedByProvider = searchSteps.filter(s => rowOf(s.id)?.error?.http_status === 429).length
+    const closedInApp = searchSteps.filter(s => rowOf(s.id)?.error?.service_kind === 'quota_exhausted' && rowOf(s.id)?.error?.http_status == null).length
+    return { discovery, refusedByProvider, closedInApp, finished: searchSteps.filter(s => s.status === 'succeeded').length }
+  }
+
+  test('S28 (R19): a completed run counts the budget refusal apart from the searches never sent; Retry and Add an OpenAlex key', async () => {
+    test.setTimeout(150_000)
+    const rid = await create(api, `[oa-quota-first] ${MOLECULE}`, 'detailed')
+    await settled(api, rid)
+    const { discovery, refusedByProvider, closedInApp, finished } = await quotaCounts(rid)
     expect(discovery.status).toBe('completed')
-    const searches = (discovery.steps ?? []).filter(s => s.kind.startsWith('provider_search'))
-    const kindOf = (s: Steps) => stored.search_runs.find(row => row.step_id === s.id)?.error?.service_kind ?? ''
-    const refused = searches.filter(s => (s.status === 'failed' || s.status === 'outcome_unknown') && ['quota_exhausted', 'rate_limited'].includes(kindOf(s)))
-    const finished = searches.filter(s => s.status === 'succeeded').length
-    // The fixture's OpenAlex refuses every keyword page after the first: at least one refused, and some that finished.
-    expect(refused.length).toBeGreaterThan(0)
+    expect(refusedByProvider).toBe(1)
+    expect(closedInApp).toBeGreaterThan(0)
     expect(finished).toBeGreaterThan(0)
-    expect(new Set(refused.map(s => s.kind.split(':')[1]))).toEqual(new Set(['openalex']))
     await page.goto(`${server.url()}/#/research/${rid}`)
     const notice = page.locator('.chat-note.quota-notice')
-    await expect(notice.locator('p')).toHaveText(`${refused.length} ${refused.length === 1 ? 'search was' : 'searches were'} refused (OpenAlex budget). The run went on with the ${finished} that finished.`)
+    const notSent = closedInApp === 1 ? '1 search was not sent' : `${closedInApp} searches were not sent`
+    await expect(notice.locator('p')).toHaveText(`1 search was refused (OpenAlex budget). ${notSent} after the OpenAlex budget ran out. The run went on with the ${finished} that finished.`)
     // The notice carries the retry, so the run foot does not repeat it.
     await expect(page.locator('.chat-run-foot').getByRole('button', { name: 'Retry failed searches' })).toHaveCount(0)
     await shot(page, 's28-quota-notice')
-    // Retry failed searches queues the refused requests again on the same run.
+    // Retry failed searches queues the failed requests again on the same run.
     const control = page.waitForRequest(r => r.method() === 'POST' && r.url().endsWith(`/api/runs/${discovery.id}/retry_failed`))
     await notice.getByRole('button', { name: 'Retry failed searches' }).click()
     await control
@@ -357,7 +364,31 @@ test.describe.serial('S9: the steps list', () => {
     await expect(page).toHaveURL(/#\/settings\/openalex$/)
     await expect(page.getByRole('dialog', { name: 'OpenAlex' })).toBeVisible()
     // Let the queued retry settle before the next test reuses the server.
-    await expect.poll(async () => (await current()).runs.some(r => ACTIVE.has(r.status)), { timeout: 90_000 }).toBe(false)
+    await expect.poll(async () => (await viewOf(api, rid)).runs.some(r => ACTIVE.has(r.status)), { timeout: 90_000 }).toBe(false)
+  })
+
+  test('S28 (R19): a run paused on the budget names the refusal and the searches not sent and offers Add an OpenAlex key', async () => {
+    test.setTimeout(150_000)
+    const rid = await create(api, `[oa-quota-first] ${MOLECULE}`)
+    await expect.poll(async () => (await viewOf(api, rid)).runs.find(r => r.kind === 'discovery')?.status, { timeout: 90_000 }).toBe('paused')
+    const { discovery, refusedByProvider, closedInApp } = await quotaCounts(rid)
+    expect(discovery.pause_reason).toBe('provider_quota_exhausted')
+    expect(refusedByProvider).toBe(1)
+    expect(closedInApp).toBeGreaterThan(0)
+    await page.goto(`${server.url()}/#/research/${rid}`)
+    const notice = page.locator('.chat-note.notice', { has: page.locator('.quota-lines') })
+    const notSent = closedInApp === 1 ? '1 search was not sent' : `${closedInApp} searches were not sent`
+    await expect(notice.locator('.quota-lines')).toHaveText(`1 search was refused (OpenAlex budget). ${notSent} after the OpenAlex budget ran out.`)
+    // Nothing went on: no "the run went on" sentence and no completed-run notice.
+    await expect(notice).not.toContainText('The run went on')
+    await expect(page.locator('.chat-note.quota-notice')).toHaveCount(0)
+    await expect(notice.getByRole('button', { name: 'Resume run' })).toBeVisible()
+    await shot(page, 's28-quota-paused')
+    await notice.getByRole('button', { name: 'Add an OpenAlex key' }).click()
+    await expect(page).toHaveURL(/#\/settings\/openalex$/)
+    await expect(page.getByRole('dialog', { name: 'OpenAlex' })).toBeVisible()
+    expect((await post(api, `/api/runs/${discovery.id}/cancel`, {})).ok()).toBe(true)
+    await expect.poll(async () => (await viewOf(api, rid)).runs.some(r => ACTIVE.has(r.status)), { timeout: 60_000 }).toBe(false)
   })
 
   test('S27 (R20): Choose another model moves the stopped step’s role, recorded and shown; Retry this step sends it there', async () => {

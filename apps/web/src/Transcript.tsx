@@ -283,14 +283,24 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     .map(s => [s.kind.split(':')[1] ?? '', providerName(s.kind.split(':')[1] ?? '')])).entries()]
   const retrying = run.kind === 'discovery' && !active && (run.status === 'completed' || run.status === 'paused')
     && steps.some(s => s.kind.startsWith('provider_search') && troubled(s))
-  // R19: requests a provider refused for its request budget (the service kind on the request's stored search row), and
-  // the requests that finished. The run went on with those; the notice says so and offers the retry and a key.
+  // R19: requests stopped by a provider's request budget (the service kind on the request's stored search row), split by
+  // the step's stored delivery class: `rejected_not_executed` was sent and the provider refused it; `before_send` was
+  // never sent, because the budget had already run out in this run. A completed run went on with the requests that
+  // finished; a run paused on the budget offers the key in its pause notice.
   const searchSteps = steps.filter(s => s.kind.startsWith('provider_search'))
-  const budgetRefused = (s: Step) => ['quota_exhausted', 'rate_limited'].includes(searches.find(row => row.step_id === s.id)?.error?.service_kind ?? '')
-  const refused = searchSteps.filter(s => troubled(s) && budgetRefused(s))
-  const refusedBy = [...new Set(refused.map(s => s.kind.split(':')[1] ?? ''))]
+  const budgetStopped = (s: Step) => troubled(s) && ['quota_exhausted', 'rate_limited'].includes(searches.find(row => row.step_id === s.id)?.error?.service_kind ?? '')
+  const refused = searchSteps.filter(s => budgetStopped(s) && s.delivery_class === 'rejected_not_executed')
+  const notSent = searchSteps.filter(s => budgetStopped(s) && s.delivery_class === 'before_send')
+  const providersOf = (list: Step[]) => [...new Set(list.map(s => s.kind.split(':')[1] ?? ''))]
+  const budgetProviders = providersOf([...refused, ...notSent])
+  const budgetLines = [
+    refused.length > 0 && t(refused.length === 1 ? '{n} search was refused ({service} budget).' : '{n} searches were refused ({service} budget).', { n: refused.length, service: providersOf(refused).map(providerName).join(', ') }),
+    notSent.length > 0 && t(notSent.length === 1 ? '{n} search was not sent after the {service} budget ran out.' : '{n} searches were not sent after the {service} budget ran out.', { n: notSent.length, service: providersOf(notSent).map(providerName).join(', ') }),
+  ].filter(Boolean).join(' ')
   const finishedSearches = searchSteps.filter(s => s.status === 'succeeded').length
-  const quotaNotice = retrying && run.status === 'completed' && refused.length > 0
+  const quotaNotice = retrying && run.status === 'completed' && budgetProviders.length > 0
+  const quotaPause = run.status === 'paused' && run.pause_reason === 'provider_quota_exhausted' && budgetProviders.length > 0
+  const addOpenAlexKey = budgetProviders.includes('openalex') && <Button variant="outline" size="sm" className="notice-ghost" onClick={() => { window.location.hash = '#/settings/openalex' }}>{t('Add an OpenAlex key')}</Button>
   // The screening the run itself proposed on, and the sources the answer run reads.
   const screened = view.sources.filter(s => s.found_in_revision === run.scope_revision)
   const included = view.sources.filter(s => s.selection.state === 'included')
@@ -989,10 +999,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         {quotaNotice && <div className="chat-note notice is-warning quota-notice">
           <TriangleAlert size={16} aria-hidden />
           <div className="notice-body">
-            <p>{t(refused.length === 1 ? '{n} search was refused ({service} budget).' : '{n} searches were refused ({service} budget).', { n: refused.length, service: refusedBy.map(providerName).join(', ') })} {t('The run went on with the {m} that finished.', { m: finishedSearches })}</p>
+            <p>{budgetLines} {t('The run went on with the {m} that finished.', { m: finishedSearches })}</p>
             <div className="notice-actions">
               {onRetryFailedSearches && <Button size="sm" disabled={busy} onClick={() => void onRetryFailedSearches(run)}><RotateCw size={14} aria-hidden />{t('Retry failed searches')}</Button>}
-              {refusedBy.includes('openalex') && <Button variant="outline" size="sm" className="notice-ghost" onClick={() => { window.location.hash = '#/settings/openalex' }}>{t('Add an OpenAlex key')}</Button>}
+              {addOpenAlexKey}
             </div>
           </div>
         </div>}
@@ -1009,6 +1019,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
         {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
         {run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0 && <p>{t('The model has had its second try.')}</p>}
+        {quotaPause && <p className="quota-lines">{budgetLines}</p>}
         {changesSinceStop.map(change => {
           const words = { role: t(modelRoles[change.role].label).toLocaleLowerCase(uiLocale()), from: change.from.model ?? t('none'), to: change.to.model ?? '',
             time: new Date(change.changed_at).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' }) }
@@ -1024,6 +1035,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           {resumable && onControlRun && <Button size="sm" disabled={busy} onClick={() => onControlRun(run, 'resume')}>{modelDown ? <RotateCw size={14} aria-hidden /> : <Play size={14} aria-hidden />}{t(modelDown ? 'Retry this step' : 'Resume run')}</Button>}
           {modelDown && resumable && onChooseModel && (run.kind !== 'review' || ownerReview) && <Button variant="outline" size="sm" className="notice-ghost" disabled={busy} aria-haspopup="dialog" onClick={e => onChooseModel(run, stoppedRole(run), e.currentTarget, run.kind === 'review' && ownerReview ? ownerReview : undefined)}><Cpu size={14} aria-hidden />{t(run.kind === 'review' ? 'Review again with another model' : 'Choose another model')}</Button>}
           {/* Code does not translate a question, so this stop is answered in the revision form and nowhere else (SW2.1). */}
+          {quotaPause && addOpenAlexKey}
           {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" className="notice-ghost" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
           {/* Resume asks the model once more while a try is left; this button never asks it again (D92). */}
           {run.pause_reason === 'search_query_failed' && onChooseCodeQuery && <Button variant="outline" size="sm" className="notice-ghost" onClick={() => void onChooseCodeQuery(run)}>{t('Search with the query built from the question’s words')}</Button>}

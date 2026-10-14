@@ -158,6 +158,24 @@ def test_oa_quota_refuses_later_keyword_pages(tmp_path):
         assert v["counts"]["unique"] == len(fx.WORKS)
 
 
+def test_oa_quota_first_refuses_once_and_closes_the_rest_before_sending(tmp_path):
+    for effort, status in (("quick", "paused"), ("detailed", "completed")):
+        with client_for(tmp_path / effort) as client:
+            start(client)
+            rid = research(client, "[oa-quota-first] How is molecule release scheduled with bisection in relay networks?", effort=effort)
+            discover(client, rid)
+            v = settle(client, rid, kinds=("discovery",))
+            discovery = next(r for r in v["runs"] if r["kind"] == "discovery")
+            assert discovery["status"] == status, discovery
+            rows = {s["step_id"]: s for s in v["search_runs"]}
+            openalex = [s for s in discovery["steps"] if s["kind"] == "provider_search:openalex"]
+            sent = [s for s in openalex if s["delivery_class"] == "rejected_not_executed"]
+            closed = [s for s in openalex if s["delivery_class"] == "before_send"]
+            assert len(sent) == 1 and (rows[sent[0]["id"]]["error"] or {}).get("http_status") == 429, openalex
+            assert closed and all((rows[s["id"]]["error"] or {}).get("service_kind") == "quota_exhausted" for s in closed), openalex
+            assert len(sent) + len(closed) == len(openalex)
+
+
 def test_no_passages_answer(tmp_path):
     with client_for(tmp_path) as client:
         start(client)

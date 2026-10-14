@@ -274,19 +274,25 @@ export default function App() {
   const proxyWriteVersion = useRef(0)
   const proxyRead = useRef(0)
   const proxyWrites = useRef(0)
+  // A sidebar name save moves this on (start and answer): a test answer that crossed it keeps the name already shown.
+  const proxyLabelVersion = useRef(0)
   const proxyReread = useRef<() => void>(() => {})
   const runProxyTest = useCallback((address?: string): Promise<ProxySettings | null> => {
     const start = () => {
       if (address) proxyAddress.current = address
       proxyTesting.current = true
       proxyVersion.current++
-      const written = proxyWriteVersion.current
+      const written = proxyWriteVersion.current, named = proxyLabelVersion.current
       let stale = false
       setProxyBusy(true)
       const flight: Promise<ProxySettings | null> = shellApi.testProxy().then(result => {
         if (written !== proxyWriteVersion.current) { stale = true; return null }
         proxyVersion.current++
-        proxyFailedAt.current = null; setProxyFailed(null); setProxy(result); proxyAddress.current = result.address
+        proxyFailedAt.current = null; setProxyFailed(null); proxyAddress.current = result.address
+        const crossed = named !== proxyLabelVersion.current
+        setProxy(old => !crossed || !old ? result
+          : { ...result, label: old.label, label_default: old.label_default, label_is_default: old.label_is_default })
+        if (crossed) stale = true
         return result
       }, (error: Error) => {
         if (written !== proxyWriteVersion.current) { stale = true; return null }
@@ -333,6 +339,24 @@ export default function App() {
         setProxy(old => old && { ...old, address: saved.address, test: saved.address ? old.test : null, test_is_current: false })
       }
     } finally { proxyWrites.current-- }
+    checkAccess()
+  }, [checkAccess])
+  // Saves the sidebar name ('' returns to the proxy host) under the same version: a read started before the save or while
+  // it runs is dropped, on success and on error. Only the name fields are taken from the answer, and only when no address
+  // save crossed it (the default name follows the address); the read that follows brings the rest.
+  const saveProxyLabel = useCallback(async (label: string) => {
+    const written = proxyWriteVersion.current, named = ++proxyLabelVersion.current
+    proxyVersion.current++
+    proxyWrites.current++
+    try {
+      const saved = await shellApi.saveProxyLabel(label || null)
+      proxyVersion.current++
+      if (written === proxyWriteVersion.current && named === proxyLabelVersion.current) {
+        proxyLabelVersion.current++
+        setProxy(old => old && { ...old, label: saved.label, label_default: saved.label_default, label_is_default: saved.label_is_default })
+      }
+    } catch (error) { proxyVersion.current++; proxyLabelVersion.current++; throw error }
+    finally { proxyWrites.current-- }
     checkAccess()
   }, [checkAccess])
   const retryAccess = () => { proxyFailedAt.current = null; setProxyFailed(null); setProxyReadFailed(false); checkAccess() }
@@ -551,7 +575,7 @@ export default function App() {
         {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={(id, tab) => go({ view: 'research', id, tab })} onStartResearch={() => go({ view: 'home' })} />}
         {route.view === 'settings' && <SettingsPage key={route.tab ?? 'page'} dark={dark} section={route.tab} language={language} onLanguage={chooseLanguage} onProfile={setProfile}
           access={{ proxy, readFailed: proxyReadFailed, testing: proxyBusy, testFailed: !!proxy?.address && proxyFailed === proxy.address, scopus: institutionalStatus,
-            test: runProxyTest, save: saveProxy, reload: checkAccess }} />}
+            test: runProxyTest, save: saveProxy, saveLabel: saveProxyLabel, reload: checkAccess }} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>
       <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} language={language} onLanguage={chooseLanguage}

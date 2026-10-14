@@ -92,6 +92,9 @@
 .app .settings-page .proxy .proxy-state{gap:8px;color:var(--muted);font-size:12.5px}
 .app .settings-page .proxy .proxy-state>span:not(.st):not(.spin){flex:1;min-width:0}
 .app .settings-page .proxy .proxy-scopus{flex-basis:100%}
+.app .settings-page .proxy .proxy-name{display:grid;flex-basis:100%;gap:4px;margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.app .settings-page .proxy .proxy-name .field{flex:0 1 240px;min-width:0;height:27px;color:var(--ink-2);font-family:inherit;font-size:12.5px}
+.app .settings-page .proxy .proxy-name .key-form-error{color:var(--error-ink);font-size:12.5px}
 .app .settings-page .proxy>.foot-note{flex:1 1 0;min-width:180px}
 
 /* ── Copyright line ────────────────────────────────────────────────────────────────────────────────────── */

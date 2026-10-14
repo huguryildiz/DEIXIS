@@ -31,7 +31,7 @@ Decision:
 - At startup `credentials.move_dotenv_keys_to_keychain()` writes each managed key read from `.env` into the keychain under the service `DEIXIS` and deletes its line from `.env`. The line is deleted only after the keychain returns the same value; other lines and the file mode are kept.
 - When no keychain is available, or it refuses a key, that key stays in `.env` and is still used and edited there.
 - A key set in the shell still wins and is never moved.
-Limits: Only the keys in `credentials.MANAGED_KEYS` move. `ZOTERO_API_KEY`, `TYPESAFE_API_KEY` and other variables stay in `.env`. The move was tested with an in-memory keychain; the real macOS Keychain was not exercised by the tests.
+Limits: Only the keys in `credentials.MANAGED_KEYS` move. `ZOTERO_API_KEY` and `TYPESAFE_API_KEY` (TypeSafe's Jev classifier, not used by DEIXIS yet) were added later the same day; they move too but have no card in Settings. `ZOTERO_LIBRARY_ID` and other variables stay in `.env`. The move was tested with an in-memory keychain; the real macOS Keychain was not exercised by the tests.
 
 ## D18 — Parity with mockup v24 is closed; the parity check and its exceptions file stay as the gate for UI changes
 Status: accepted (UI parity S28, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude

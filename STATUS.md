@@ -13,6 +13,7 @@
 - Arayüz yeni tasarıma geçti (11 Eki, D5): mockup v24'ün görünümü 7 parçada uygulamaya taşındı (renkler ve yazı tipleri, sol menü, ana sayfa ve yazma kutusu, araştırma sayfası, yan paneller, kaynaklar/kuyruk/kanıt tablosu, kütüphane/ayarlar/çöp). Yapı ve davranış aynı; arkasında backend olmayan mockup düğmeleri eklenmedi. Mockup ile ekran görüntüsü kıyası 17 hata buldu, hepsi düzeltildi; 39 karar maddesinden 14'ü mockup'a uyarlandı, 25'i bilerek bırakıldı (`.local/design/port-visual-diff.md`). Tarayıcı testleri 210/210; her parçayı Sol inceledi. Ertelenen: sağ sütun, kütüphanenin üç bölmeli düzeni, ilk kurulum kartı.
 - Anahtarsız kullanıcıya yerleşik model (11 Eki, D7): Ayarlar'da seçim yoksa ve Gemini anahtarı yoksa, indirilmiş yerleşik model kendiliğinden kullanılıyor; önce anlamsal arama kapalı kalıyordu. Ana sayfada, anlamsal arama yalnız bu yüzden kapalıysa tek tıkla indirme notu çıkıyor; açıkça "Kapalı" seçen kullanıcıya çıkmıyor. Araştırma kaydı artık sıralamanın dondurduğu modeli yazıyor. Testlerle ve anahtarsız bir test sunucusunda gerçek indirmeyle doğrulandı; yerleşik modelin Gemini'ye göre sıralama kalitesi ölçülmedi.
 - Ayarlar ve modeller (14 Eki, D19, D20, D22, ortak commit): API anahtarları artık sistemin anahtar deposunda (macOS Keychain, Windows Credential Locker); `.env`'deki anahtarlar açılışta oraya taşınıyor ve arayüzde `.env` geçmiyor. Grok, GitHub Copilot, GLM, Muse Spark, Muse Glimmer ve Ollama araştırma adımlarını çalıştırabiliyor; "planlanan" grubu kalktı. Yerleşik embedding modelinin paketleri hash'le sabitlendi. Ana sayfadaki model seçici geri geldi, başlangıç modeli yalnız hazır bağlantılardan seçiliyor. Testler sahte istemcilerle; altı yeni model bağlantısına canlı istek gönderilmedi.
+- Zotero ve TypeSafe anahtarları da Keychain'e taşınıyor (14 Eki, D19 eki): `ZOTERO_API_KEY` ve `TYPESAFE_API_KEY` açılışta `.env`'den alınıyor; Ayarlar'da kartları yok. `ZOTERO_LIBRARY_ID` `.env`'de kalıyor.
 - Sahip uygulamayı gözle kontrol ediyor; bulduğu sorunlar sırayla düzeltilir. P10 (macOS paketi) bu kontrol bitene kadar bekliyor.
 
 ## Sıradaki
@@ -67,4 +68,5 @@
 
 ### Ertelenmiş fikirler (sahip kararı bekler)
 
+- Jev (TypeSafe sınıflandırıcısı) ile tam metin hakkının hangi kaynaklara gideceğini sıralamak: her özet için kritere uyma olasılığı; karar yine modelde kalır. Hız, fiyat ve isabet ölçülmedi; dondurulmuş sorularda Jev'li/Jev'siz kıyasla denenir. Anahtar Keychain'de (`TYPESAFE_API_KEY`).
 - Örnek sorular; kütüphaneden "bu kaynak X araştırmasına dahil edilmişti" ipuçları; 403 dönen açık erişim PDF'lerinin nedenini sınıflandırmak; tanıtım sayfası (P10 sonrası); hızlı cevabın denklemleri arXiv kaynağından okuması; kill-search için ek sinyaller; iki sorgunun terimleri büyük ölçüde örtüşünce uyarı.

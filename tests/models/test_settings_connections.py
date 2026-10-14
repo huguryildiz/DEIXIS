@@ -171,14 +171,16 @@ def test_a_key_from_dotenv_is_replaced_and_removed_in_that_file(client, monkeypa
 
 def test_keys_from_dotenv_move_into_the_keychain_at_startup(monkeypatch, tmp_path, memory_keychain):
     dotenv = tmp_path / ".env"
-    dotenv.write_text("# SYNTHETIC\nOPENALEX_API_KEY=openalex-dotenv-key\nDEIXIS_PORT=8765\nS2_API_KEY='s2-dotenv-key'\n")
+    dotenv.write_text("# SYNTHETIC\nOPENALEX_API_KEY=openalex-dotenv-key\nDEIXIS_PORT=8765\nS2_API_KEY='s2-dotenv-key'\n"
+                      "ZOTERO_API_KEY=zotero-dotenv-key\nZOTERO_LIBRARY_ID=123\n")
     dotenv.chmod(0o600)
-    for name in ("OPENALEX_API_KEY", "S2_API_KEY", "DEIXIS_PORT"):
+    for name in ("OPENALEX_API_KEY", "S2_API_KEY", "DEIXIS_PORT", "ZOTERO_API_KEY", "ZOTERO_LIBRARY_ID"):
         monkeypatch.delenv(name, raising=False)
     from deixis.config import load_dotenv
     credentials.mark_dotenv(load_dotenv(dotenv), dotenv)
     credentials.move_dotenv_keys_to_keychain()
-    assert dotenv.read_text() == "# SYNTHETIC\nDEIXIS_PORT=8765\n"  # lines DEIXIS does not manage stay
+    assert dotenv.read_text() == "# SYNTHETIC\nDEIXIS_PORT=8765\nZOTERO_LIBRARY_ID=123\n"  # lines DEIXIS does not manage stay
+    assert memory_keychain.get_password("DEIXIS", "ZOTERO_API_KEY") == "zotero-dotenv-key"
     assert dotenv.stat().st_mode & 0o777 == 0o600
     assert memory_keychain.get_password("DEIXIS", "OPENALEX_API_KEY") == "openalex-dotenv-key"
     assert memory_keychain.get_password("DEIXIS", "S2_API_KEY") == "s2-dotenv-key"

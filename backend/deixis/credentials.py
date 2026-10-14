@@ -56,6 +56,9 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("SCOPUS_API_KEY", "source", "scopus"),
     ManagedKey("CORE_API_KEY", "source", "core"),
     ManagedKey("SERPAPI_API_KEY", "source", "serpapi"),
+    # Kept in the keychain only; Settings shows no card for these two (D19).
+    ManagedKey("ZOTERO_API_KEY", "source", "zotero"),
+    ManagedKey("TYPESAFE_API_KEY", "source", "typesafe"),
 )}
 _from_keychain: set[str] = set()
 _from_dotenv: set[str] = set()

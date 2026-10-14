@@ -520,6 +520,17 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       await expect(artifact).toContainText('Report · V1')
       await page.getByRole('button', { name: 'Generate a new answer' }).click()
       await expect(artifact).toContainText('Report · V2', { timeout: 60_000 })
+      // The new answer queues its own review; the scan waits until every run of the research has finished (each answer
+      // has its review, nothing queued or running), then reloads, so it reads the settled thread rather than a thread
+      // between two refreshes (S28, Sol round 1).
+      await expect.poll(async () => {
+        const settled = await (await page.request.get(viewUrl)).json() as { runs: Array<{ kind: string; status: string }> }
+        const count = (kind: string) => settled.runs.filter(r => r.kind === kind).length
+        return count('answer') >= 2 && count('answer_review') >= count('answer') && !settled.runs.some(r => ['queued', 'running', 'pause_requested'].includes(r.status))
+      }, { timeout: 120_000 }).toBe(true)
+      await page.reload()
+      await showAnswer(page)
+      await expect(artifact).toContainText('Report · V2')
       await dismissToasts(page)
       await scan(page, '3b answer thread after an answer', () => dismissToasts(page))
 

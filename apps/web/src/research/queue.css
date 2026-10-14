@@ -114,11 +114,6 @@
 .queue-panel .queue-decided-title{color:var(--ink);font-family:var(--font-sans);font-size:14px;font-weight:500;line-height:1.35;text-align:left;cursor:pointer}
 .queue-panel .queue-decided-title:hover{text-decoration:underline;text-underline-offset:3px}
 .queue-panel .queue-decided-note{margin:4px 0 0;color:var(--ink);font-size:12.5px;line-height:1.5}
-.research-view .chat-queue-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0 0;color:var(--ink);font-size:13px}
-.research-view .chat-queue-line>svg{color:var(--tone-uncertain)}
-.research-view .chat-queue-line>span[aria-hidden]{color:var(--muted)}
-.research-view .chat-queue-line button{color:var(--accent);font-weight:550;cursor:pointer}
-.research-view .chat-queue-line button:hover{text-decoration:underline;text-underline-offset:3px}
 @media (max-width:760px){.qcard .queue-runs,.qcard .queue-pair,.qcard .queue-identity{grid-template-columns:minmax(0,1fr)}}
 
 /* ---- "Get more full text" (mockup `pdfs()`, P40): depth boxes, lists, drop zone ---- */

@@ -63,7 +63,6 @@
 .app .settings-page .planned-connections[open]>summary>svg{transform:rotate(90deg)}
 .app .settings-page .planned-connections>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .app .settings-page .computer-more{display:grid;gap:10px}
-.app .settings-page .local-tool-machine{display:flex;flex-wrap:wrap;gap:4px 14px}
 
 /* ── Semantic search (mockup `.rows.opts`) ─────────────────────────────────────────────────────────────── */
 .app .settings-page .rows.opts>div{display:block;padding:0}
@@ -116,7 +115,7 @@
 .connection-sheet .mk .notice{margin:0}
 .connection-sheet .mk .notice p{margin:0}
 .connection-sheet .mk .notice p+p{margin-top:4px}
-.connection-sheet .key-box,.connection-sheet .contact-field{display:grid;gap:8px}
+.connection-sheet .key-box{display:grid;gap:8px}
 .connection-sheet .key-form-error{margin:0;color:var(--error-ink);font-size:12.5px}
 .connection-sheet .key-box .notice{margin:0;color:var(--error-ink)}
 .connection-sheet .ghost.is-danger{color:var(--error-ink)}

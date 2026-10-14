@@ -223,7 +223,6 @@
 .evidence-compare strong{color:var(--ink);font-family:var(--font-sans);font-size:16px;font-weight:450;line-height:1.35;overflow-wrap:anywhere}
 .evidence-compare small{color:var(--muted);font-size:11.5px;line-height:1.45;overflow-wrap:anywhere}
 .evidence-proposal .evidence-actions{margin-top:12px}
-.evidence-proposal .evidence-actions+.evidence-sub{margin-top:8px}
 
 .evidence-form{display:flex;flex-direction:column;gap:12px}
 .evidence-field{display:flex;flex-direction:column;gap:4px;min-width:0;margin:0;padding:0;border:0}
@@ -254,7 +253,6 @@
 .cell-slot i:nth-child(2){width:72%}
 .cell-slot i:nth-child(3){width:45%}
 @keyframes cell-shimmer{to{background-position:-200% 0}}
-.cell-slot+.evidence-sub{margin-top:8px}
 .cell-foot{display:grid;flex:none;gap:8px;padding:14px 24px 18px;border-top:1px solid var(--line);background:var(--sidebar-surface)}
 /* The column dialog (mockup `addColDlg`): name, instruction, a two-column format grid, the format's own controls. */
 .column-dialog{max-width:480px}

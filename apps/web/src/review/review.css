@@ -1,8 +1,7 @@
 /* Reviews by another model (UI parity S15b, mockup `reviewDlg`, `reviewPanel`, `.finding`, `.sendbox`). The shared
    parts (`.pad.detail`, notices, buttons, fields, quotes) come from kit.css under `.mk`. */
-.review-target-line, .review-entry { display: block; margin: 8px 0; color: var(--accent); font-size: 13px; font-weight: 500; text-align: left; }
-.review-target-line:hover, .review-entry:hover { text-decoration: underline; text-underline-offset: 2px; }
-.review-entry:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+.review-target-line { display: block; margin: 8px 0; color: var(--accent); font-size: 13px; font-weight: 500; text-align: left; }
+.review-target-line:hover { text-decoration: underline; text-underline-offset: 2px; }
 .review-target-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* The request dialog: the mockup's `.dlg-b` rows. */
@@ -62,8 +61,6 @@ body:has(.review-dialog) div:has(> [data-slot="select-content"]) { z-index: 70; 
 .review-editor-context .review-claim { font-family: var(--font-sans); font-size: 18px; line-height: 1.68; max-width: 70ch; }
 .review-apply-editor { min-width: 0; }
 .report-document .evidence-report-claim-meta > .review-apply-editor { display: block; width: 100%; }
-.review-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 @media (max-width: 760px) {
-  .review-actions { flex-direction: column; align-items: stretch; }
   .mk .review-identity { grid-template-columns: minmax(0, 1fr); }
 }

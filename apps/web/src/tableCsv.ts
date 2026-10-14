@@ -14,7 +14,7 @@ export const stateLabels: Record<CellState, string> = {
 export const accessLabels: Record<TableRow['access_level'], string> = { pdf_available: 'PDF text', abstract: 'Abstract only', metadata: 'Metadata only' }
 
 // A value keeps the shape of the column revision it was made under, so it is read from its own keys.
-export function valueText(column: TableColumn, value: CellValue | null) {
+function valueText(column: TableColumn, value: CellValue | null) {
   if (!value) return ''
   if (value.option_ids) return value.option_ids.map(id => column.options?.find(o => o.id === id)?.label ?? id).join(', ')
   if (typeof value.number === 'number') return [value.number.toLocaleString(uiLocale(), { maximumFractionDigits: 12 }), value.unit].filter(Boolean).join(' ')
@@ -23,7 +23,7 @@ export function valueText(column: TableColumn, value: CellValue | null) {
 }
 
 // The row head writes the source's full reference in the citation style chosen on the report.
-export function savedStyle(): CitationStyle {
+function savedStyle(): CitationStyle {
   return citationStyle()
 }
 
@@ -32,7 +32,7 @@ export const revisionText = (column: TableColumn, rev: CellRevision) => (hasValu
 
 // The table as CSV: one value column and one evidence column (quote and locator) per table column. Current values only;
 // proposals waiting for a decision are left out. The BOM lets spreadsheet apps read the file as UTF-8.
-export function tableCsv(table: TableView, sources: Source[]) {
+function tableCsv(table: TableView, sources: Source[]) {
   const byId = new Map(sources.map(s => [s.source_version_id, s]))
   const style = savedStyle()
   const cells = new Map(table.cells.map(c => [`${c.column_id}:${c.source_version_id}`, c]))

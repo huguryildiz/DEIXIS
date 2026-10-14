@@ -61,7 +61,7 @@ function parseHash(): Route {
   return { view: 'home' }
 }
 
-export function go(route: Route) {
+function go(route: Route) {
   window.location.hash = route.view === 'research' ? `/research/${route.id}${route.tab ? `/${route.tab}` : ''}`
     : route.view === 'home' ? '/'
     : route.view === 'settings' ? `/settings${route.tab ? `/${route.tab}` : ''}`

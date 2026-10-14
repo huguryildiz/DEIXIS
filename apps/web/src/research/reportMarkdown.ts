@@ -15,7 +15,7 @@ function reportFilename(title: string, version: number) {
   return `${base || 'deixis-report'}-v${version}.md`
 }
 
-export function pdfSuggestion(answer: Answer, sources: Source[]): { notes: Limitation[]; sources: Source[] } | null {
+function pdfSuggestion(answer: Answer, sources: Source[]): { notes: Limitation[]; sources: Source[] } | null {
   if (answer.status !== 'structurally_valid' || answer.applicability === 'stale_scope') return null
   const lacking = (ids: string[]) => [...new Set(ids)]
     .map(id => sources.find(s => s.source_version_id === id && s.origin === 'provider' && !s.access.assets.length))

@@ -7,10 +7,6 @@
 .detail-sheet [data-slot=sheet-title]>svg{flex:none;width:16px;height:16px;color:var(--muted)}
 /* Report sheet (S5): the shared panel head carries the title and a quiet toolbar; the document is a 680px column with a
    27px serif title, sans claims at 14.5px and 15px section heads (mockup `.report`). */
-.detail-sheet.report-sheet [data-slot=sheet-header].report-toolbar{position:relative;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;min-height:46px;padding:7px 46px 7px 14px;border-bottom:1px solid var(--line);background:var(--paper)}
-.report-toolbar-title{display:flex;align-items:center;gap:8px;min-width:0;color:var(--muted)}
-.report-toolbar-title svg{flex:none;width:16px;height:16px}
-.report-toolbar [data-slot=sheet-title]{display:block;overflow:hidden;color:var(--ink);font-family:var(--font-sans);font-size:13.5px;font-weight:500;line-height:1.4;letter-spacing:0;text-overflow:ellipsis;white-space:nowrap}
 .report-toolbar-actions{display:flex;align-items:center;gap:2px;flex:none}
 .report-toolbar-actions [data-slot=button]{height:30px;gap:6px;padding-inline:8px;border-radius:7px;color:var(--ink-2);font-size:12.5px;font-weight:500}
 .report-toolbar-actions [data-slot=button] svg{color:var(--muted)}
@@ -28,15 +24,12 @@
 .report-document-head p{margin:6px 0 0;color:var(--muted);font-size:12.5px}
 .report-content.legacy-answer{margin:0}
 .report-content>.section-label{margin-bottom:14px;color:var(--muted);font-size:12.5px}
-.report-content .answer-section h3,.report-content>h3,.report-content .reference-head h3{margin:24px 0 8px;color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:600;line-height:1.4;letter-spacing:0}
+.report-content .answer-section h3,.report-content>h3{margin:24px 0 8px;color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:600;line-height:1.4;letter-spacing:0}
 .report-content .answer-section:first-of-type h3{margin-top:0}
 .report-content .answer-paragraph{margin:0 0 12px;color:var(--ink);font-family:var(--font-sans);font-size:14.5px;line-height:1.65}
-.report-content .answer-paragraph .answer-lead{font-weight:600}
 .report-content .claim{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:14.5px;line-height:1.65}
 .report-content .plain-list{margin:0 0 12px;padding-left:18px;font-family:var(--font-sans);font-size:14.5px;line-height:1.65}
 .report-content em{font-family:var(--font-serif);font-size:1.06em}
-.report-content .reference-head{margin:24px 0 10px}
-.report-content .reference-head h3{margin:0}
 .report-content .legacy-mini-note{margin-top:20px;padding-top:12px;border-top:1px solid var(--line);font-size:12px!important}
 .report-sheet .support-badge{padding:1px 5px;border-color:transparent;background:var(--ui-accent);color:var(--muted);font-size:10.5px;font-weight:500;letter-spacing:0}
 /* Numbered reference list: number column, entry, then neutral pills (mockup `.refs`). */
@@ -54,20 +47,14 @@
 .detail-sheet .ref-pill>svg{display:none}
 .detail-sheet .ref-pill:is(.is-abstract,.is-text,.is-ocr,.is-retracted,.is-published,.is-accepted,.is-submitted,.is-removed,.is-cited,.is-similarity)::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pill)}
 .report-sheet .export-links{height:30px;border-radius:7px}
-.report-sheet .reference-head [data-slot=select-trigger]{height:30px;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12.5px}
-.report-sheet .reference-head [data-slot=select-trigger]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-@container report-sheet (max-width:820px){.report-toolbar-actions .report-export-label{display:none}}
 .report-sheet[data-slot=sheet-content]{container:report-sheet/inline-size}
 @media(max-width:760px){
   .report-artifact{padding:12px 14px}
   .report-artifact-preview{display:none}
   /* One 46px row on a phone: the title gives way first, and Copy, Download and Evidence view drop to icons whose text stays
      as their accessible name. Only an evidence report with every control may still wrap. */
-  .detail-sheet.report-sheet [data-slot=sheet-header].report-toolbar{flex-wrap:wrap;row-gap:4px;gap:4px 8px;padding:7px 46px 7px 14px}
-  .report-toolbar-title{flex:1 1 110px;min-height:30px}
   .report-toolbar-actions{flex-wrap:wrap;margin-left:auto}
   .report-toolbar-actions [data-slot=button]:has(>.report-head-label){position:relative;width:30px;padding-inline:0}
-  .report-toolbar-actions .report-head-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
   .report-document{padding:22px 18px 60px}
   .report-document-head h1{font-size:24px}
 }
@@ -205,12 +192,8 @@
 .pdf-document canvas{display:block;margin:0 auto;background:var(--page-surface);box-shadow:0 1px 5px color-mix(in srgb,#000,transparent 78%)}
 .pdf-document>p{margin-top:36px}
 @media(max-width:640px){.pdf-toolbar{grid-template-columns:1fr auto;padding-inline:10px}.pdf-zoom-controls{display:none}.pdf-document{padding:10px 8px 28px}}
-.source-sheet .panel-note{margin-top:16px;border-top:0;padding-top:0}
 /* Connection details sheet: portaled outside .app, so it carries its own status colours. */
 .detail-sheet.connection-sheet [data-slot=sheet-header]{padding-right:56px}
-.connection-sheet-head{display:flex;align-items:center;gap:10px}
-.connection-sheet-head .connection-icon{width:24px;height:24px}
-.connection-sheet-head .source-title{margin:0}
 .connection-sheet .status-chip{margin-top:12px;padding:2px 10px;font-size:12px}
 .connection-sheet .source-byline{margin-top:12px;color:var(--muted)}
 .connection-checks{margin-top:18px;border-top:1px solid var(--line)}
@@ -218,7 +201,7 @@
 .connection-models{list-style:none;margin:0;padding:0}
 .connection-models li{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
 .connection-models small{font-size:11px;color:var(--muted)}
-.connection-model-copy{display:grid;gap:3px;min-width:0}.connection-model-copy strong{font-weight:600}.connection-model-copy code{font-size:10px;color:var(--muted);overflow-wrap:anywhere}.connection-model-meta{display:grid;justify-items:end;gap:5px;flex-shrink:0}.reasoning-levels{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:4px;max-width:210px}.reasoning-levels span{padding:2px 6px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:10px;line-height:1.3}.connection-catalog-refresh{display:flex;align-items:center;gap:7px}
+.connection-model-copy{display:grid;gap:3px;min-width:0}.connection-model-copy strong{font-weight:600}.connection-model-copy code{font-size:10px;color:var(--muted);overflow-wrap:anywhere}.connection-model-meta{display:grid;justify-items:end;gap:5px;flex-shrink:0}.reasoning-levels{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:4px;max-width:210px}.reasoning-levels span{padding:2px 6px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:10px;line-height:1.3}
 .connection-sheet .connection-recheck{margin-top:22px}
 /* "Get more full text" (UI parity S14, P40): the lists sit in mockup .plist boxes (research/queue.css); these rules
    cover the row parts. The thread keeps one note line (.pdf-ready-lede) that links to the panel. */
@@ -341,7 +324,6 @@
 .split-panel .ib[aria-pressed=true]{background:var(--accent-tint);color:var(--accent)}
 .split-panel .ib:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .split-panel .ib:disabled{opacity:.45;cursor:default}
-.split-panel .ib .ib-count{position:absolute;top:1px;right:0;min-width:14px;height:14px;padding:0 3px;border-radius:7px;background:var(--accent);color:var(--paper);font-size:9.5px;font-weight:600;line-height:14px;text-align:center}
 .report-toolbar-actions [data-slot=select-trigger].report-select{width:auto;height:auto;min-height:0;gap:4px;margin-right:0;padding:4px 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12.5px;line-height:normal;box-shadow:none}
 .report-select-sizer{display:inline-grid;text-align:left}
 .report-select-sizer>span{grid-area:1/1}

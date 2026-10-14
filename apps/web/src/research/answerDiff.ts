@@ -35,7 +35,7 @@ export function comparisonBase(shown: Answer, answers: Answer[]): ComparisonBase
   return base ? { kind: 'ok', answer: base, version: base.report_version! } : { kind: 'first' }
 }
 
-export type ClaimChange = {
+type ClaimChange = {
   added: boolean                                 // no claim of the base has this text
   basis: { from: Basis; to: Basis } | null       // same text; the stored reading depth differs (both answers store it)
   addedPassages: Set<string>                     // passages this claim cites that the base claim of the same text did not

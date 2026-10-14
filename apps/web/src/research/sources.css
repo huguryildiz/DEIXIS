@@ -31,12 +31,9 @@
 .sort-option small{display:block;margin-top:2px;font-size:11px;line-height:1.35;color:var(--muted-foreground)}
 .source-empty button{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
 .version-note{display:block;margin:0 0 4px;color:var(--muted);font-size:11px;line-height:1.5}
-.source-main>strong,.source-main small{display:block}
-.source-main .source-title{color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.35;font-weight:500;letter-spacing:-.005em;text-wrap:balance}
-.source-main small{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5}
 /* Citation-style byline (mockup .src-m): authors · year, then venue in italics with volume, pages and the OpenAlex count. */
-.source-main .source-byline,.pdf-ready-head .source-byline{display:grid;gap:0;margin-top:3px;font-size:12px;line-height:1.45;color:var(--muted)}
-.source-main .source-byline em,.pdf-ready-head .source-byline em{font-style:italic;color:var(--ink-2)}
+.pdf-ready-head .source-byline{display:grid;gap:0;margin-top:3px;font-size:12px;line-height:1.45;color:var(--muted)}
+.pdf-ready-head .source-byline em{font-style:italic;color:var(--ink-2)}
 /* Version, access, similarity and provenance as neutral pills (mockup .pill) with a dot in the attribute's tone; the text names it. */
 .source-status{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:7px;font-size:11.5px;line-height:1.5;color:var(--muted)}
 .source-fact{--fact:var(--muted);display:inline-flex;align-items:center;gap:6px;color:color-mix(in srgb,var(--fact),var(--ink) 22%)}
@@ -55,10 +52,8 @@
 .source-fact.is-cited{--fact:var(--accent)}
 .source-fact.is-unstated{--fact:var(--muted)}
 .source-fact.is-similarity{--fact:var(--attr-similarity);font-variant-numeric:tabular-nums;cursor:help}
-.source-main .proposal>svg{display:inline;vertical-align:-2px;margin-right:5px;color:var(--muted)}
 .legacy-research .proposal{font-size:12px!important;margin:8px 0 0!important;line-height:1.55}
 .legacy-research .proposal.is-model{display:flex;gap:8px;margin-top:9px!important;padding:0;border-radius:0;background:none;color:var(--ink-2);font-size:12.5px!important;line-height:1.5}
-.proposal .proposal-tag{flex:none;font-size:12px;font-weight:500;color:var(--muted);white-space:nowrap}
 .proposal em{font-style:normal;color:var(--ink);font-weight:600}
 .proposal .verdict{--pill:var(--muted);color:var(--pill);font-weight:600}
 .verdict.is-include{--pill:var(--tone-include)}
@@ -107,7 +102,6 @@
 .pdf-lookup :is(a,button){color:var(--accent)}
 .pdf-lookup button:disabled{color:var(--muted);cursor:wait}
 .section-actions{display:flex;flex:none;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:10px}
-.reference-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
 .export-links{display:inline-flex;align-items:stretch;height:36px;border:1px solid var(--strong-line);border-radius:9px;background:var(--raised-surface);overflow:hidden;color:var(--muted)}
 .export-links-label{display:inline-flex;align-items:center;gap:7px;padding:0 11px;font-size:12px;font-weight:500;white-space:nowrap}
 .export-links-label svg{color:var(--muted)}
@@ -128,7 +122,6 @@
 @media (max-width:720px){.section-actions{flex:1 1 100%;justify-content:flex-start}.zotero-panel-head .source-filters{order:1}}
 @media (max-width:540px){.section-actions{align-items:stretch}.export-links{width:100%}.export-links-label{flex:1}.source-add-actions{width:100%}.export-links+.source-add-actions{padding:8px 0 0;border-top:1px solid var(--line);border-left:0}.app .source-action{flex:1;padding-inline:10px}}
 @media (prefers-reduced-motion:reduce){.app .source-action,.export-links a{transition:none}}
-.intake-menu-item>.connection-icon{width:17px;height:17px;color:var(--primary)}
 .attachment-chip .connection-icon{width:13px;height:13px}
 .zotero-panel{display:grid;gap:10px;margin:0 0 16px;padding:14px 16px;border:1px solid var(--line);border-radius:8px}
 .zotero-panel-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px}

@@ -15,8 +15,8 @@ const BIOGRAPHY_START = /(?<=[.”"])\s+(?=[A-Z][\p{L}'’.-]+(?:\s[A-Z][\p{L}'�
 const REFERENCE_ENTRY = /^\[(\d{1,4})\]\s/
 const EQUATION_TAG = /\\tag\{(\d{1,3})\}|\((\d{1,3})\)\s*\$*$/g
 
-export type Block = { id: string; kind: 'heading' | 'table' | 'note' | 'para' | 'figure' | 'bio' | 'title'; text: string; label?: string }
-export type Page = { head: Passages[number]; blocks: Block[] }
+type Block = { id: string; kind: 'heading' | 'table' | 'note' | 'para' | 'figure' | 'bio' | 'title'; text: string; label?: string }
+type Page = { head: Passages[number]; blocks: Block[] }
 export type Doc = { pages: Page[]; targets: Map<string, string>; references: Map<string, string>; headings: Block[] }
 
 function pagesOf(passages: Passages) {
@@ -42,7 +42,7 @@ function headingLike(line: string) {
   return capitals >= 0.8 || (words.length >= 2 && words.length <= 10 && words.every(w => /^[\p{Lu}\d(]/u.test(w) || SMALL_WORD.test(w)))
 }
 
-export function splitHeadingLines(text: string) {
+function splitHeadingLines(text: string) {
   return text.replace(HEADING_LINE, (whole, start: string, line: string, more: string | undefined) => {
     if (!headingLike(line)) return whole
     const before = start ? '\n\n' : ''
@@ -50,7 +50,7 @@ export function splitHeadingLines(text: string) {
   })
 }
 
-export function pageParagraphs(passages: Passages) {
+function pageParagraphs(passages: Passages) {
   // Passages are cut at a fixed length; a cut that did not end a sentence, or one inside a reference entry, continues the paragraph.
   // Marker leaves its in-document links ("Figure [4a](#page-6-2)"); only their text is shown.
   const text = passages.map(item => readablePassageText(item.kind, splitHeadingLines(item.text)).replace(/\[([^\]\n]{1,40})\]\(#page-\d+-\d+\)/g, '$1')).reduce((all, next) => {
@@ -83,7 +83,7 @@ const squash = (text: string) => text.toLocaleLowerCase().replace(/[^\p{L}\p{N}]
 const TITLE_LINE = (text: string) => text.length <= 100 && !/[\d@,;:.?!*]/.test(text)
   && text.split(/\s+/).filter(w => /^\p{Lu}/u.test(w)).length >= Math.ceil(text.split(/\s+/).filter(w => w.length > 3).length * 0.8)
 
-export function firstPage(original: string[], sourceTitle: string | null): { paragraphs: string[]; title: number } {
+function firstPage(original: string[], sourceTitle: string | null): { paragraphs: string[]; title: number } {
   // A journal header run into the title's first line ("IEEE TRANSACTIONS ON COMMUNICATIONS 1 End-to-End …") is split off.
   const opening = sourceTitle?.split(/\s+/).slice(0, 3).join(' ')
   const paragraphs = original.flatMap((text, i) => {

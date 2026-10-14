@@ -85,7 +85,6 @@
 .answer-section:first-of-type h3{margin-top:14px}
 .answer-paragraph{margin:0 0 18px;line-height:1.7}
 .report-content .answer-paragraph{font-family:var(--font-sans);font-size:18px;line-height:1.72;color:var(--ink)}
-.answer-paragraph .answer-lead{font-weight:650;color:var(--ink);margin-right:.35em}
 .answer-paragraph .claim+.claim::before{content:' '}
 .answer-paragraph .review-reason{display:block}
 .math-display{display:block;margin:10px 0;overflow-x:auto;overflow-y:hidden}
@@ -217,12 +216,6 @@
 .chat-list-text code{display:inline-block;max-width:100%;padding:2px 6px;border-radius:5px;background:var(--selected-surface);color:var(--ink-2);font-family:ui-monospace,'SFMono-Regular','Cascadia Code','Roboto Mono',Consolas,monospace;font-size:12px;overflow-wrap:anywhere}
 .chat-list-text small{display:block;margin-top:2px;font-size:11.5px;color:var(--muted)}
 .chat-list>li>small{flex:none;font-size:11px;letter-spacing:.02em;color:var(--muted)}
-.chat-list-meta{display:inline-flex;align-items:center;gap:6px;flex:none;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
-.chat-list-meta b{font-weight:550;color:color-mix(in srgb,var(--ink),var(--muted) 30%)}
-.chat-list-meta .connection-icon{display:inline-flex}
-.chat-list-meta .connection-icon svg{width:13px;height:13px}
-.chat-list>li.is-attention .chat-list-meta,.chat-list>li.is-attention .chat-list-meta b{color:var(--tone-uncertain)}
-.chat-list>li.is-running .chat-list-meta{color:var(--accent)}
 .chat-step-note{margin:2px 0 8px 28px;padding-left:12px;border-left:1px solid var(--line);color:var(--muted);font-size:12.5px;line-height:1.55}
 .chat-step-note p{margin:0 0 3px}
 .chat-step-note p{max-width:112ch}
@@ -247,9 +240,6 @@
 .chat-arm-list .connection-icon svg{width:13px;height:13px}
 .chat-arm-note{margin:4px 0 2px!important}
 .chat-probe-list{margin:2px 0 6px}
-.chat-step-note .chat-phase-summary{color:color-mix(in srgb,var(--ink),var(--muted) 24%);font-size:13.5px;line-height:1.72}
-.chat-scope-note{margin-top:10px!important;padding:10px 12px;border:1px solid color-mix(in srgb,var(--tone-uncertain),transparent 77%);border-radius:9px;background:color-mix(in srgb,var(--tone-uncertain),transparent 94%);color:color-mix(in srgb,var(--ink),var(--muted) 22%)}
-.chat-scope-note>span{display:block;margin-bottom:3px;color:var(--tone-uncertain);font-size:11px;font-weight:700}
 /* Run notes in the mockup .notice tones: amber surface while paused, red when it failed, neutral when cancelled. */
 .chat-note{--note-surface:var(--warn-surface);padding:11px 13px;border:1px solid transparent;border-radius:10px;background:var(--note-surface);color:var(--ink-2);font-size:13px;line-height:1.55}
 .chat-note p{margin:0 0 6px}
@@ -284,7 +274,6 @@
 .pdf-suggest-list{display:flex;flex-direction:column;gap:8px;margin:14px 0 0;padding:0;list-style:none}
 .pdf-suggest-list li{display:flex;align-items:center;gap:10px;min-width:0}
 .source-key{display:inline-flex;flex:none;align-items:center;padding:0 5px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-family:var(--font-sans);font-size:11.5px;font-style:normal;font-weight:500;line-height:1.6;letter-spacing:0;font-variant-numeric:tabular-nums;white-space:nowrap}
-.source-main .source-title .source-key{margin-right:8px;vertical-align:2px}
 .source-sheet .source-venue .source-key{margin-right:2px;padding:0;border:0;color:var(--ink-2);font-size:12.5px}
 .source-sheet .source-venue .source-key::after{content:"·";margin-left:8px;color:var(--muted);font-weight:400}
 .reference-list .ref-key{align-self:start;margin-top:1px;color:var(--accent);border-color:color-mix(in srgb,var(--accent),transparent 70%)}
@@ -305,13 +294,10 @@
 .shimmer-text{background:linear-gradient(90deg,var(--muted) 44%,var(--accent) 50%,var(--muted) 56%) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:text-shimmer 2.2s linear infinite}
 @keyframes text-shimmer{from{background-position:100% 0}to{background-position:0 0}}
 @media (prefers-reduced-motion:reduce){.shimmer-text{animation:none;background:none;-webkit-text-fill-color:currentColor}}
-@container (max-width:760px){.chat-list>li{flex-wrap:wrap}.chat-list-meta{width:100%;justify-content:flex-start}}
+@container (max-width:760px){.chat-list>li{flex-wrap:wrap}}
 @media (max-width:650px){.chat-step-detail,.chat-list{margin-left:9px}.chat-run-foot{margin-left:0;padding-left:0}}
 .answer-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:18px 0 8px}
 .answer-actions [data-slot=button]:not(.quiet-action){border-radius:999px}
-.legacy-research .research-thread .review-entry{display:inline-flex;align-self:flex-start;align-items:center;width:auto;height:30px;margin:4px 0;padding:0 12px;border:1px solid var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:13px;text-decoration:none}
-.legacy-research .research-thread .review-entry:hover{background:var(--hover-surface);color:var(--ink);text-decoration:none}
-.legacy-research .research-thread .review-entry:disabled{color:var(--muted);background:var(--paper)}
 .legacy-research .research-thread .legacy-answer h2{margin:4px 0 8px;color:var(--ink);font-size:15px;font-weight:500;line-height:1.5;letter-spacing:0}
 .answer-actions .quiet-action{height:auto;padding:2px 0;border:0;border-bottom:1px solid var(--strong-line);border-radius:0;background:none;color:var(--muted);font-size:13px;font-weight:500}
 .answer-actions .quiet-action:hover{background:none;color:var(--ink)}
@@ -337,9 +323,6 @@
 .plain-list em{font-style:normal;color:var(--ink)}
 .reference-list{list-style:none!important;padding:0!important;margin:0;border-top:1px solid var(--line)}
 .reference-list li{border-bottom:1px solid var(--line)}
-.reference-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:27px 0 10px}
-.reference-head h3{margin:0}
-.app .reference-head [data-slot=select-trigger]{height:32px;gap:7px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,transparent);box-shadow:none;color:var(--ink);font-size:12px}
 .reference-list button{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;width:100%;text-align:left;padding:11px 0;font-size:12px;line-height:1.6;color:var(--ink)}
 .reference-list .ref-num{color:var(--accent);font-weight:600}
 .reference-list button:hover .ref-text{color:var(--accent)}
@@ -361,10 +344,6 @@
 .research-title-text.is-typing::after{content:'';display:inline-block;width:2px;height:.78em;margin-left:.1em;background:var(--accent);vertical-align:-.02em;animation:title-caret .65s steps(1,end) infinite}
 @keyframes title-caret{50%{opacity:0}}
 @media(prefers-reduced-motion:reduce){.research-title-text.is-typing::after{display:none;animation:none}}
-.chat-list>li.chat-list-round{display:block;padding:12px 2px 6px;border-bottom:none;font-size:12px}
-.chat-list>li.chat-list-round b{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--ink);margin-right:8px}
-.chat-list>li.chat-list-round b svg{color:var(--muted)}
-.chat-list>li.chat-list-round:not(:first-child){padding-top:18px}
 /* The latest answer in the thread (mockup `answerBlock()`, R22-R29, UI parity S10): notices, card, prose, Methods,
    action pills and Next steps, 18px apart as in the mockup's `.thread-inner`. */
 .answer-thread{display:grid;gap:18px;margin:12px 0 0;font-size:14px;line-height:1.5}

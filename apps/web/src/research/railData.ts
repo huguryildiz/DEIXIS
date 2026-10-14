@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 // The rail shows from 1100px (mockup `@media (max-width:1100px){.rail{display:none}}`); below it the panels are reached
 // from the ⋯ menu (ResearchView), the answer and the keys.
-export const RAIL_QUERY = '(min-width: 1100px)'
+const RAIL_QUERY = '(min-width: 1100px)'
 export function useRailWide() {
   const [wide, setWide] = useState(() => window.matchMedia(RAIL_QUERY).matches)
   useEffect(() => {

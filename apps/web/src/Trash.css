@@ -65,14 +65,7 @@
 @media(max-width:760px){.app .trash-page{padding-inline:24px}}
 
 /* Choosing sources */
-.app .source-row.has-pick{position:relative;padding-left:32px}
-.app .source-row.is-other-version.has-pick{padding-left:44px}
-.app .source-pick{position:absolute;top:23px;left:6px;width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}
-.app .source-row.is-other-version .source-pick{left:16px}
 .app .source-row.is-picked{background:color-mix(in srgb,var(--accent),transparent 96%)}
-.app .source-pick-all{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 8px 0 6px;color:var(--muted);font-size:12px;cursor:pointer}
-.app .source-pick-all input{width:15px;height:15px;margin:0;accent-color:var(--accent)}
-.app .source-list.has-selection-bar{padding-bottom:12px}
 .app .selection-bar{position:sticky;bottom:16px;z-index:5;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px;margin-top:14px;padding:10px 12px 10px 16px;border:1px solid var(--strong-line);border-radius:10px;background:var(--raised-surface);box-shadow:0 10px 30px -12px rgb(24 31 45/.28)}
 .app .selection-bar>strong{font-size:13px;font-weight:600}
 .app .selection-bar-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}

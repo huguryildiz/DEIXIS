@@ -11,7 +11,7 @@ export const stateLabels: Record<WatchCheck['state'], string> = {
 export const triggerLabels: Record<WatchCheck['trigger'], string> = {
   manual: 'Your check', scheduled: 'Scheduled check', catch_up: 'Catch-up check',
 }
-export const reasonLabels: Record<string, string> = {
+const reasonLabels: Record<string, string> = {
   provider_failed: 'A provider read failed.', not_configured: 'The provider is not configured.',
   quota_deferred: 'The provider quota deferred this read.', budget_deferred: 'The check budget deferred this read.',
   deadline_deferred: 'The check deadline deferred this read.', outcome_unknown: 'The read outcome is unknown.',

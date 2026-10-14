@@ -40,9 +40,8 @@
   /* App chrome and controls never print; neither do the action blocks the Markdown export leaves out (bibliography
      links, citation style picker, review requests, aspects to investigate). The PDF upload suggestions keep their text,
      which carries the access limitations, and lose only their Get PDF and Attach PDF controls. */
-  .sidebar, .sidebar-resizer, .mobilebar, .mobile-scrim, .toast, .research-topbar, .research-facts, .research-tabs-bar,
-  .run-strip, .chat-question.is-editing, .revline, .report-toolbar-actions, .reference-tools, .pdf-suggest-actions, .pdf-suggest-info,
-  .review-entry, .candidate-aspects,
+  .sidebar, .sidebar-resizer, .mobilebar, .toast, .research-topbar, .research-facts,
+  .run-strip, .chat-question.is-editing, .revline, .report-toolbar-actions, .pdf-suggest-actions, .pdf-suggest-info, .candidate-aspects,
   .evidence-toolbar, .evidence-toolbar-note, .evidence-run, .evidence-add-rows, .sugg, .th-add-cell,
   .evidence-row-menu, [data-slot="sheet-overlay"], [data-slot="sheet-close"] { display: none !important; }
   .app, .main-shell, .main-shell > main { display: block !important; width: auto !important; min-height: 0 !important;
@@ -67,7 +66,6 @@
     overflow: visible !important; transform: none !important; border: 0 !important; box-shadow: none !important;
     background: #fff !important; }
   .report-scroll, .report-document { height: auto !important; max-height: none !important; overflow: visible !important; }
-  .report-toolbar { position: static !important; border: 0 !important; padding-left: 0 !important; padding-right: 0 !important; }
 
   /* The evidence table: every row and column on paper, the header row repeated on each page. */
   .table-panel { page: evidence-table; position: static !important; inset: auto !important;
@@ -91,7 +89,7 @@
   :is(.evidence-cell, .evidence-col-head) > * { display: block !important; margin-top: 3px; }
   .evidence-grid :is(th, td) { position: static !important; box-shadow: none !important; }
   .evidence-grid thead { display: table-header-group; }
-  .claim, .report-section li, .katex-display { break-inside: avoid; }
+  .claim, .katex-display { break-inside: avoid; }
   h1, h2, h3, h4 { break-after: avoid; }
   a[href] { color: inherit; text-decoration: none; }
 }

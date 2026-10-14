@@ -20,7 +20,7 @@ const readStyle = (): CitationStyle => {
 let currentStyle: CitationStyle | null = null
 const styleListeners = new Set<() => void>()
 export function citationStyle(): CitationStyle { return (currentStyle ??= readStyle()) }
-export function setCitationStyle(next: CitationStyle) {
+function setCitationStyle(next: CitationStyle) {
   currentStyle = next
   try { localStorage.setItem(STYLE_KEY, next) } catch { /* the choice still applies for this tab */ }
   styleListeners.forEach(listener => listener())

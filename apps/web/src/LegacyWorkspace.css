@@ -1,4 +1,4 @@
-.legacy-research,.legacy-connections{max-width:1040px}.legacy-research .session-meta{margin-bottom:19px}.legacy-research [data-slot=tabs-content]{padding-top:20px}.legacy-research h2,.legacy-connections h2{font-size:26px}.legacy-research p{line-height:1.7}
+.legacy-research{max-width:1040px}.legacy-research .session-meta{margin-bottom:19px}.legacy-research h2{font-size:26px}.legacy-research p{line-height:1.7}
 .legacy-mini-note{font-size:11px!important;color:var(--muted);line-height:1.6}.legacy-answer{margin:18px 0}.legacy-answer h2{margin-top:7px}
 .legacy-check{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:11px 0;font-size:11px}.legacy-check strong{font-weight:500;color:var(--muted)}
 .research-seed{display:flex;align-items:center;flex-wrap:wrap;gap:10px 16px;border-top:1px solid var(--line);padding:16px 0;margin-top:16px}

@@ -28,7 +28,7 @@ export const outcomeLabels: Record<LineageStepOutcome['kind'], string> = {
   failed_pair: 'the model call for this pair failed', unsent_pair: 'not sent: the call budget or message size did not allow it',
   step_failed: "a model call failed for this work's candidates", skipped: 'a chunk was skipped when the run stopped',
 }
-export const uncheckedLabels: Record<string, string> = {
+const uncheckedLabels: Record<string, string> = {
   passage_text: 'passage text', node_snapshots: 'development cell snapshots', passages: 'passages',
   mention_passages: 'mention passages', fingerprint: 'input fingerprint',
 }

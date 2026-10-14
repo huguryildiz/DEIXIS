@@ -15,7 +15,7 @@ export function QueryList({ matrix, heading = true }: { matrix: CandidateMatrix;
 }
 // A matrix cell (mockup `.mx .rel`): the model's reading of one element, a warning mark when it is uncertain or the
 // conditions are unclear, the condition alignment and the model's note.
-export function CellText({ cell }: { cell: CandidateCell }) {
+function CellText({ cell }: { cell: CandidateCell }) {
   const attention = cell.relation === 'uncertain' || cell.condition_alignment === 'unclear'
   return <><span className={`rel ${relationTones[cell.relation] ?? 'none'}`}>{attention && <TriangleAlert size={11} aria-label={t('Needs attention')} />}{label(relationLabels, cell.relation)}</span>
     {cell.condition_alignment && <div className="src-m">{label(alignmentLabels, cell.condition_alignment)}</div>}<div className="src-m">{t('Model’s note:')} <span data-stored-text>{cell.note}</span></div></>

@@ -5,8 +5,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 // opened the first panel.
 // `opener` is the control outside the panels that opened the stack; `returnTo` is the control inside the panel below that opened this
 // stacked panel (a citation chip, a row), which Back focuses again while it is still there.
-export type PanelEntry = { name: string; opener: HTMLElement | null; returnTo?: HTMLElement | null }
-export type PanelSlots = { head: HTMLElement; body: HTMLElement }
+type PanelEntry = { name: string; opener: HTMLElement | null; returnTo?: HTMLElement | null }
+type PanelSlots = { head: HTMLElement; body: HTMLElement }
 export type PanelStack = {
   entries: PanelEntry[]
   current: string | null
@@ -110,7 +110,7 @@ export function usePanels(): PanelStack | null {
 }
 
 // At this width and below the panel covers the screen as a modal dialog (mockup `.panel` at 820px).
-export const PANEL_PHONE_QUERY = '(max-width: 820px)'
+const PANEL_PHONE_QUERY = '(max-width: 820px)'
 export function usePhone() {
   const [phone, setPhone] = useState(() => window.matchMedia(PANEL_PHONE_QUERY).matches)
   useEffect(() => {

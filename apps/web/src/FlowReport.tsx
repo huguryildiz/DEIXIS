@@ -26,7 +26,7 @@ const ORDER = Object.keys(flowBucketLabels) as FlowBucket[]
 
 // The Sources tab's flow block, beside the export links: the five in one line, every bucket and box when opened, and
 // the PRISMA-S search report.
-export function FlowBlock({ researchId, counts }: { researchId: string; counts: Counts }) {
+function FlowBlock({ researchId, counts }: { researchId: string; counts: Counts }) {
   const flow = counts.flow
   if (!flow) return null
   return <details className="search-summary flow-block">

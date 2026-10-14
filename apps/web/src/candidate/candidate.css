@@ -69,7 +69,7 @@
 .split-panel .mk.detail.candidate-evidence h1 { font-size: 16px; }
 .candidate-evidence .rowacts a { color: var(--accent); }
 /* The card editor and a review copy's passage stay sheets. */
-.candidate-editor, .candidate-evidence-sheet { overflow-wrap: anywhere; }
+.candidate-editor { overflow-wrap: anywhere; }
 .candidate-editor h3 { font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
 .detail-sheet .candidate-passage { padding-block: 12px; border-block: 1px solid var(--line); font-family: var(--font-sans); font-size: 16px; line-height: 1.6; white-space: pre-wrap; }
 .candidate-editor button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }

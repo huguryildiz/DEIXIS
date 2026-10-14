@@ -44,6 +44,6 @@ const icons: Record<string, ReactNode> = {
 }
 
 export function ConnectionIcon({ id }: { id: string }) {
-  const icon = icons[id]
+  const icon = icons[id === 'copilot_cli' ? 'copilot' : id]
   return icon ? <span className="connection-icon" data-icon={id} aria-hidden="true">{icon}</span> : null
 }

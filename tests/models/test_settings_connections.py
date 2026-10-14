@@ -308,15 +308,16 @@ def test_other_llm_clis_are_detected_only_with_a_fixed_install_command(client, p
     tools = {t["id"]: t for t in client.get("/api/local-tools?refresh=true").json()["tools"]}
     for tool_id, (binary, command) in NEW_CLIS.items():
         tool = tools[tool_id]
-        assert (tool["kind"], tool["role"], tool["install"]["command"]) == ("cli", "detected", command), tool_id
+        role = "runs_steps" if tool_id == "copilot_cli" else "detected"  # D24
+        assert (tool["kind"], tool["role"], tool["install"]["command"]) == ("cli", role, command), tool_id
         assert local_tools.TOOLS[tool_id].binary == binary
     assert (tools["qwen_code"]["installed"], tools["qwen_code"]["version"], tools["qwen_code"]["path"]) == (True, "9.9.9", "/SYNTHETIC/bin/qwen")
     assert tools["aider"]["installed"] is True and tools["kimi_cli"]["installed"] is False
     # uv is on PATH here, npm and brew are not, so only the uv-installed tools can be installed.
     assert tools["kimi_cli"]["install"]["available"] is True and tools["cline"]["install"]["available"] is False
     assert "npm" in tools["cline"]["install"]["unavailable_reason"]
-    # Only the two step-running CLIs carry that role; none of the new ones does.
-    assert sorted(t["id"] for t in tools.values() if t["role"] == "runs_steps") == ["claude_code", "codex"]
+    # Only the step-running CLIs carry that role: Claude Code, Codex and, of the new ones, Copilot CLI (D24).
+    assert sorted(t["id"] for t in tools.values() if t["role"] == "runs_steps") == ["claude_code", "codex", "copilot_cli"]
 
 
 def test_installing_a_detected_cli_runs_only_its_fixed_command(client, paths, tmp_path):

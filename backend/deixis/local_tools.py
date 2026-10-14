@@ -1,8 +1,8 @@
 """Command-line tools and local model servers on this computer (D29).
 
 Detection reads the PATH, app bundles, `--version` output and the model servers' loopback endpoints. An install runs
-the one package-manager command fixed for that tool id, never a command taken from a request. Codex and Claude Code run
-research steps; the other CLIs are detected only (found is not supported), and a local server's embedding models can rank answer passages. Zotero
+the one package-manager command fixed for that tool id, never a command taken from a request. Codex, Claude Code and
+GitHub Copilot CLI (D24) run research steps; the other CLIs are detected only (found is not supported), and a local server's embedding models can rank answer passages. Zotero
 is the one reference manager: its local API is where a collection import reads from (D16).
 """
 
@@ -57,7 +57,7 @@ TOOLS = {t.id: t for t in (
     Tool("mistral_vibe", "Mistral Vibe", "cli", "vibe", ("uv", "tool", "install", "mistral-vibe"),
          "https://github.com/mistralai/mistral-vibe"),
     Tool("copilot_cli", "GitHub Copilot CLI", "cli", "copilot", ("npm", "install", "-g", "@github/copilot"),
-         "https://github.com/github/copilot-cli"),
+         "https://github.com/github/copilot-cli", role="runs_steps"),
     Tool("opencode", "OpenCode", "cli", "opencode", ("npm", "install", "-g", "opencode-ai"),
          "https://opencode.ai"),
     Tool("aider", "Aider", "cli", "aider", ("uv", "tool", "install", "aider-chat"),

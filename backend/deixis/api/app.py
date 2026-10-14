@@ -42,6 +42,7 @@ from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_R
                                  TEST_EFFORT_BUDGETS, RevisionConflict)
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
+from deixis.models.copilot_cli import CopilotCliAdapter
 from deixis.models.deepseek import DeepSeekAdapter
 from deixis.models.openai_compat import CONNECTIONS as COMPAT_CONNECTIONS, OpenAICompatAdapter
 from deixis.models.gemini import GeminiAdapter
@@ -749,6 +750,7 @@ def create_app(
         adapter_map = adapters if adapters is not None else {
             "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace"),
             "claude": ClaudeCodeAdapter(workspace=settings.data_dir / "claude-workspace"),
+            "copilot_cli": CopilotCliAdapter(home=settings.data_dir / "copilot-home", workspace=settings.data_dir / "copilot-workspace"),
             "gemini": GeminiAdapter(client=http),
             "deepseek": DeepSeekAdapter(client=http),
             **{name: OpenAICompatAdapter(spec, client=http) for name, spec in COMPAT_CONNECTIONS.items()},

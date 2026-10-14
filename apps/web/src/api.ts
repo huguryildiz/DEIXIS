@@ -711,7 +711,7 @@ export type LocalToolInstall = { command: string; available: boolean; unavailabl
 export type AccountSignIn = { state: 'idle' | 'waiting' | 'succeeded' | 'failed' | 'timed_out'; message: string | null }
 export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string } | null
 export type LocalTool = {
-  id: 'claude_code' | 'codex' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'
+  id: 'claude_code' | 'codex' | 'copilot_cli' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'
   installed: boolean; version: string | null; path: string | null; role: 'runs_steps' | 'detected' | 'imports'
   running?: boolean; endpoint?: string; models?: LocalToolModel[]; local_api?: boolean; web_configured?: boolean
   install: LocalToolInstall; job: LocalToolJob

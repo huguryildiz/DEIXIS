@@ -21,7 +21,8 @@ from typing import Any
 
 SIGNIN_TIMEOUT_SECONDS = 10 * 60
 CHECK_INTERVAL_SECONDS = 3.0
-TOOLS = {"codex": ("codex", ["login"], "Codex CLI"), "claude": ("claude", ["auth", "login"], "Claude Code")}
+TOOLS = {"codex": ("codex", ["login"], "Codex CLI"), "claude": ("claude", ["auth", "login"], "Claude Code"),
+         "copilot_cli": ("copilot", ["login"], "GitHub Copilot CLI")}
 LINUX_TERMINALS = ("x-terminal-emulator", "gnome-terminal", "konsole", "xterm")
 
 # What is handed to the process starter: an argument list, or on Windows one command-line string whose quoting

@@ -26,15 +26,15 @@ export type ExportReport = { answer: Answer; title: string; version: number }
 
 // The topbar's Export menu (mockup `menu('export')`, R8): Report, Evidence table and Sources groups of file rows. A row
 // is shown only when its file can be made now: the report's Markdown (written here, as the report panel's Download
-// writes it) and Word file, the table's CSV (written here) and its Excel and Word files, the bibliographies and the
-// PRISMA-S search report (§2.2). The PDF rows (print) are wired in S27.
+// writes it), its PDF (the browser's print dialog on the report panel, `onPrintReport`, S27) and its Word file, the
+// table's CSV (written here) and its Excel and Word files, the bibliographies and the PRISMA-S search report (§2.2).
 // Like the mockup's menu(), the list opens under the trigger at its left edge and slides back inside the window.
 // `icon`: the answer's download button in the thread (mockup `.ib` with `data-menu="export"`) opens the same menu.
 // `cited`: the works the report's answer cites that are still in this research (what its BibTeX lists); the row exports
 // that answer's sources, so it needs the report.
-export function ExportMenu({ researchId, report, sources, tables, included, cited, prisma, icon = false }: {
+export function ExportMenu({ researchId, report, sources, tables, included, cited, prisma, icon = false, onPrintReport }: {
   researchId: string; report: ExportReport | null; sources: Source[]; tables: TableSummary[] | null
-  included: number; cited: number; prisma: boolean; icon?: boolean
+  included: number; cited: number; prisma: boolean; icon?: boolean; onPrintReport: (answerId: string) => void
 }) {
   const toast = useToast()
   const [style] = useCitationStyle()
@@ -60,6 +60,7 @@ export function ExportMenu({ researchId, report, sources, tables, included, cite
       {report && <DropdownMenuGroup>
         <DropdownMenuLabel>{t('Report')}</DropdownMenuLabel>
         <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => downloadReportMarkdown(report.answer, sources, report.title, report.version, style)}>{row('MD', t('Markdown'))}</DropdownMenuItem>
+        <DropdownMenuItem className="research-export-item menu-fmt" title={t('Opens the report and the print dialog; choose Save as PDF there.')} onClick={() => onPrintReport(report.answer.id)}>{row('PDF', t('Portable document'))}</DropdownMenuItem>
         {link(answerDocxUrl(researchId, report.answer.id, lang, style), 'DOCX', t('Word document'))}
       </DropdownMenuGroup>}
       {table && <DropdownMenuGroup>

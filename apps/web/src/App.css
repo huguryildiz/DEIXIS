@@ -356,3 +356,10 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .keys-foot input{width:14px;height:14px;margin:0;accent-color:var(--accent)}
 .app .user>button+button{margin-left:0}
 .keys-dialog .dialog-icon{color:var(--ink)}
+/* "Choose another model" (R20, S27): the role, model and effort fields in the confirm dialog's body. */
+.choose-model{display:grid;gap:10px;margin-top:12px}
+.choose-model-row{display:grid;grid-template-columns:120px minmax(0,1fr);align-items:center;gap:10px;color:var(--ink-2);font-size:13px}
+.choose-model-note{color:var(--muted);font-size:12.5px}
+/* The Role, Model and effort lists open above the dialog (z 61), as in the review dialog. */
+body:has(.choose-model) div:has(> [data-slot="select-content"]){z-index:70}
+@media (max-width:520px){.choose-model-row{grid-template-columns:minmax(0,1fr)}}

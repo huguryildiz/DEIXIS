@@ -2,13 +2,15 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { AlignLeft, Clock, Copy, File, Lightbulb, ListChecks, Table2, type LucideIcon } from 'lucide-react'
 import { api, type Answer, type QueueRow, type ResearchView, type Run, type TableSummary } from '../api'
 import { collectionProgress } from '../BackgroundJobs'
-import { queueKindLabels } from '../labels'
+import { queueKindLabels, runKindLabels } from '../labels'
 import { t } from '../i18n'
 import { useRailWide } from './railData'
+import { budgetAsOf, budgetFigure, useOpenAlexBudget, usageRun } from './usageData'
 
 // The artifacts rail (mockup `rail()`, RL1-RL7): 300px beside the thread from 1100px, gone while a panel is open (the
 // page hides it, it stays mounted so the button that opened a panel takes focus back). Every number comes from the view
-// the page already holds, or from the queue list for the amber box. RL8 (the Usage box) is S27's.
+// the page already holds, or from the queue list for the amber box. The Usage box (RL8, S27) reads the newest run with a
+// model-call limit and OpenAlex's budget today as its last stored response says it, with that response's time.
 
 // The funnel box and its bars open the Search funnel panel (S14, P41).
 const FUNNEL_PANEL = 'funnel'
@@ -66,6 +68,15 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
   const runCount = view.run_total ?? view.runs.length
   const collecting = view.runs.find((r: Run) => r.kind === 'pdf_collection' && ['queued', 'running', 'pause_requested', 'paused'].includes(r.status))
   const collection = collecting ? collectionProgress(view, collecting.steps ?? []) : null
+  // Usage (RL8): the run's calls are `usage.model_calls`, which the store counts in the same write as each stored model
+  // session (store.start_model_session), so it is the run's Usage box total; the limit is the run's frozen budget.
+  const callsRun = usageRun(view.runs)
+  const calls = callsRun?.usage.model_calls ?? 0
+  const callLimit = callsRun?.budget.max_model_calls ?? 0
+  const budget = useOpenAlexBudget(!off, view.last_event_id)
+  const budgetValue = budget.value
+  const budgetText = budgetValue ? budgetFigure(budgetValue) : null
+  const used = budgetValue?.used_fraction ?? null
 
   // The mockup's "Found" bar shows unique works (duplicates merged), so it is named so; rows found stay in the Funnel
   // panel. "Full text read" counts each work once over every run of this question; the reading step counts one run.
@@ -133,6 +144,18 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
       <Row icon={Clock} label={t('Activity')} aside={t(runCount === 1 ? '{n} run' : '{n} runs', { n: runCount })} onClick={open('activity')} />
       <Row icon={Lightbulb} label={t('Candidates')} aside={candidateCount === null ? undefined : String(candidateCount)} onClick={open('cands')} />
       <Row icon={Clock} label={t('Follow-up')} aside={followupCount === null ? undefined : t('{n} new', { n: followupCount })} onClick={open('watch')} />
+    </Box>
+
+    <Box title={t('Usage')}>
+      {callsRun && <>
+        <div className="kv"><span>{t('Model calls')}</span><span className="tnum rail-data">{number(calls)} / {number(callLimit)}</span></div>
+        <div className="bar" aria-hidden><i style={{ width: `${Math.min(100, calls / callLimit * 100)}%`, background: 'var(--accent)' }} /></div>
+        <p className="rail-usage-note">{t('Latest run: {kind}', { kind: t(runKindLabels[callsRun.kind]) })}</p>
+      </>}
+      <div className="kv rail-usage-budget"><span>{t('OpenAlex budget today')}</span><span className="tnum rail-data" title={budgetValue && !budgetText ? t('No OpenAlex response with a budget figure is stored since the daily reset (midnight UTC).') : undefined}>
+        {budgetText ?? (budgetValue ? t('not known') : budget.failed ? t('could not be read') : '…')}</span></div>
+      {used !== null && <div className="bar" aria-hidden><i style={{ width: `${Math.max(1, used * 100)}%`, background: used >= 1 ? 'var(--error-ink)' : 'var(--accent)' }} /></div>}
+      {budgetValue && <p className="rail-usage-note">{[budgetAsOf(budgetValue) ?? t('No OpenAlex response stored since the daily reset'), budget.failed && t('not refreshed: the last read failed')].filter(Boolean).join(' · ')}</p>}
     </Box>
   </aside>
 }

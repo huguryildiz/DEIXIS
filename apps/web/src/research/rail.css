@@ -30,3 +30,6 @@
 .rail .kv span:last-child{color:var(--muted)}
 /* The depth box's scope line (S11 follow-up): which report's input the bar counts. */
 .rail .rail-scope{margin:0 0 6px;color:var(--muted);font-size:11.5px;line-height:1.4}
+/* The Usage box (RL8, S27): which run the calls belong to, and the time of the stored OpenAlex response. */
+.rail .rail-usage-note{margin:0;color:var(--muted);font-size:11.5px;line-height:1.4}
+.rail .rail-usage-budget{margin-top:4px}

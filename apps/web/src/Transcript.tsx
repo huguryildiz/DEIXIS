@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, FileText, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Waypoints, type LucideIcon } from 'lucide-react'
-import { api, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
+import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Waypoints, type LucideIcon } from 'lucide-react'
+import { api, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { ArmReport, NotFoundReport, SignalReport } from './ProbeTables'
 import { ModelName } from './ModelName'
-import { effortLabels } from './Home'
+import { effortLabels, modelRoles } from './Home'
 import { AnswerFlowNote } from './FlowReport'
 import type { ModelText } from './modelText'
 import { t, uiLocale } from './i18n'
 import { scrollBehavior } from './motion'
 import { Button } from '@/components/ui/button'
+import { RunUsageBox } from './research/usage'
+import { MODEL_DOWN, stoppedRole } from './research/modelDown'
 
 // The research as a record of work: one turn per run, each run one line per phase (mockup `.steps`, R14), details one
 // click deeper (R15). The page's event stream refreshes the view; a one-second clock keeps running durations moving.
@@ -116,11 +118,12 @@ const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unk
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onRewrite, busy = false }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
   onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
+  onChooseModel?: (run: Run, role: ModelRole, opener: HTMLElement) => void
   // The too-broad notice (R21): the rewritten question is saved as a new revision, which then searches.
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
   // The reading step's "Get more full text" link opens the PDFs panel; the screening step's "N not read" the Search funnel.
@@ -166,7 +169,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
     {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} keepOpen={run.id === latestAnswerRun || run.id === latestDiscovery}
       modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
-      onControlRun={onControlRun} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} onEditPlan={onEditPlan} busy={busy}
+      onControlRun={onControlRun} onChooseModel={onChooseModel} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} onEditPlan={onEditPlan} busy={busy}
       queueLine={run.id === (latestDiscovery ?? lastReading) && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
@@ -177,12 +180,13 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, busy, queueLine = null, children }: {
+function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, busy, queueLine = null, children }: {
   run: Run; view: ResearchView; now: number; latest: boolean; keepOpen: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   onGiveKeyTerms?: () => void
   onChooseCodeQuery?: (run: Run) => Promise<void>
   onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
+  onChooseModel?: (run: Run, role: ModelRole, opener: HTMLElement) => void
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
   onOpenPdfs?: () => void
   onOpenFunnel?: () => void
@@ -646,11 +650,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const label = run.kind === 'review' ? [t('Review by another model'), t(reviewState === 'partial' ? 'Partial' : runStatusLabels[reviewState]), ...(reviewState === 'failed' ? [pauseReasonText(reviewFailure) || t('The run failed.')] : [])].join(' · ') : t((run.kind === 'discovery' ? discoveryHeadings : run.kind === 'pdf_collection' ? collectionHeadings : run.kind === 'fulltext_fetch' ? fulltextHeadings : run.kind === 'fulltext_adjudication' ? readingHeadings : run.kind === 'pdf_ocr' ? ocrHeadings : run.kind === 'report' ? reportHeadings : answerHeadings)[outcome] ?? runStatusLabels[run.status])
   const olderRevision = run.scope_revision !== view.research.current_scope_revision
   // What the run asked of the model against what it was allowed; the limit is left out once the count passes it.
+  // The Usage box reads the run's stored model sessions by role (RunUsageBox); here only whether the limit was reached.
   const calls = run.usage.model_calls ?? 0
   const callLimit = run.budget.max_model_calls ?? 0
-  const spend = callLimit && calls <= callLimit
-    ? t(calls === 1 ? 'The model was asked once (limit {limit})' : 'The model was asked {calls} times (limit {limit})', { calls, limit: callLimit })
-    : t(calls === 1 ? 'The model was asked once' : 'The model was asked {calls} times', { calls })
   const callLimitReached = callLimit > 0 && calls >= callLimit
   // Which model ran each model phase of this run, listed once here rather than on every step line.
   const models = order.filter((key, i) => agents[key]?.model && stateOf(i) !== 'skipped').map(key => agents[key]!)
@@ -871,6 +873,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   // too broad to search, a field to rewrite it.
   const resumable = run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)
   const userPaused = run.status === 'paused' && run.pause_reason === 'user_requested'
+  // A model that did not answer (R20): Resume run reads "Retry this step" (it sends the stopped step again), and the
+  // person may move the role to another model first; the changes made since the stop are listed on the notice.
+  const modelDown = run.status === 'paused' && MODEL_DOWN.has(run.pause_reason ?? '')
+  const changesSinceStop = modelDown ? (view.model_changes ?? []).filter(change => change.changed_at > run.updated_at) : []
   const vocabularyEnd = run.status === 'failed' && (run.pause_reason === 'vocabulary_too_broad' || run.pause_reason === 'vocabulary_empty')
   const nextLine = active ? (() => {
     const waiting = [...order.filter((_, i) => phaseStates[i] === 'waiting'), ...(autoAnswer ? ['answer', 'review'] as PhaseKey[] : [])]
@@ -933,7 +939,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           {models.length > 0 && <span className="chat-run-models">{models}</span>}
           <button type="button" className="chat-usage-toggle" aria-expanded={usageOpen} onClick={() => setUsageOpen(!usageOpen)}>{t('Usage')}</button>
         </li>}
-        {usageOpen && <li className="usage-box">{spend}</li>}
+        {usageOpen && <RunUsageBox run={run} cursor={view.last_event_id} />}
         </ol>
         {(callLimitReached || (retrying && onRetryFailedSearches)) && <div className="chat-run-foot">
           {callLimitReached && <p className="chat-run-limit"><TriangleAlert size={13} aria-hidden />{t('The model call limit for this run was reached.')}</p>}
@@ -954,8 +960,12 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
         {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
         {run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0 && <p>{t('The model has had its second try.')}</p>}
+        {changesSinceStop.map(change => <p key={change.id} className="notice-model-change">{t('You moved the {role} role from {from} to {to} ({time}). The finished steps keep their model; the stopped step uses the new one when you retry it.', {
+          role: t(modelRoles[change.role].label).toLocaleLowerCase(uiLocale()), from: change.from.model ?? t('none'), to: change.to.model ?? '',
+          time: new Date(change.changed_at).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' }) })}</p>)}
         <div className="notice-actions">
-          {resumable && onControlRun && <Button size="sm" disabled={busy} onClick={() => onControlRun(run, 'resume')}><Play size={14} aria-hidden />{t('Resume run')}</Button>}
+          {resumable && onControlRun && <Button size="sm" disabled={busy} onClick={() => onControlRun(run, 'resume')}>{modelDown ? <RotateCw size={14} aria-hidden /> : <Play size={14} aria-hidden />}{t(modelDown ? 'Retry this step' : 'Resume run')}</Button>}
+          {modelDown && resumable && onChooseModel && <Button variant="outline" size="sm" className="notice-ghost" disabled={busy} aria-haspopup="dialog" onClick={e => onChooseModel(run, stoppedRole(run), e.currentTarget)}><Cpu size={14} aria-hidden />{t('Choose another model')}</Button>}
           {/* Code does not translate a question, so this stop is answered in the revision form and nowhere else (SW2.1). */}
           {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" className="notice-ghost" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
           {/* Resume asks the model once more while a try is left; this button never asks it again (D92). */}

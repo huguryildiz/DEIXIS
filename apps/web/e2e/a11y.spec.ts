@@ -1575,8 +1575,9 @@ test.describe.serial('X05: A to G by keyboard', () => {
     test.setTimeout(240_000)
     await startByKeyboard(page, keys, 'SYNTHETIC [model-down] How is molecule release scheduling optimized?')
     await expect(page.getByText('Search & screening · Stopped')).toBeVisible({ timeout: 60_000 })
-    await tabTo(page, page.getByRole('button', { name: 'Resume run' }), 'Resume run')
-    await press(page, 'Enter', 'Resume run', () => expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 }))
+    // A model that did not answer: Resume run reads "Retry this step" (R20, S27).
+    await tabTo(page, page.getByRole('button', { name: 'Retry this step' }), 'Retry this step')
+    await press(page, 'Enter', 'Retry this step', () => expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 }))
     await keyPanel(page, 'answer', 'Answer')
   })
 

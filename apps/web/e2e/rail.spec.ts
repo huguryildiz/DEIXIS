@@ -51,7 +51,7 @@ type Step = { kind: string; status: string; operation_key: string }
 type View = {
   research: { current_scope_revision: number }
   run_total?: number
-  runs: Array<{ id: string; kind: string; status: string; scope_revision: number; steps?: Step[] }>
+  runs: Array<{ id: string; kind: string; status: string; scope_revision: number; steps?: Step[]; usage: { model_calls?: number }; budget: { max_model_calls?: number } }>
   counts: { queue?: number; look_again?: number; waiting_for_pdf?: number; cited: number; fulltext_read_works?: number; funnel?: { unique: number; abstracts_read: number; candidates: number } | null }
   answers: Array<{ id: string; status: string; inputs_given: { depth?: { pdf: number; abstract: number; metadata: number } } | null }>
   sources: Array<{ version_role: string; selection: { state: string; version: number }; source_version_id: string }>
@@ -154,12 +154,66 @@ test.describe.serial('S11: the artifacts rail', () => {
     // Its scope: the works the newest report was given, named by its version (S11 follow-up).
     await expect(depth.locator('.rail-scope')).toHaveText(`Works given to the latest report (V${reports})`)
     // Run: Activity with the research's run count (all of them, not the ten the view lists), Candidates, Follow-up.
-    // Usage is not here (RL8 is S27's).
     expect(view.run_total).toBeGreaterThanOrEqual(view.runs.length)
     await expect(box(page, 'Run').locator('button.li').first()).toContainText(`${view.run_total} runs`)
     await expect(box(page, 'Run').locator('button.li span')).toHaveText(['Activity', 'Candidates', 'Follow-up'])
-    await expect(page.locator('.rail .box h5')).toHaveText([`Artifacts (${reports + 1})`, 'Waiting for your decisionOpen', 'From search to answerOpen', 'How deeply sources were readOpen', 'Run'])
+    await expect(page.locator('.rail .box h5')).toHaveText([`Artifacts (${reports + 1})`, 'Waiting for your decisionOpen', 'From search to answerOpen', 'How deeply sources were readOpen', 'Run', 'Usage'])
     await shot(page, 's11-rail')
+  })
+
+  test('S27 (RL8): the Usage box shows the newest run’s stored calls against its limit and OpenAlex’s last stored budget', async () => {
+    const view = await viewOf(api, rid)
+    // The run the box names is picked from the stored runs, never by position on the page.
+    const run = view.runs.find(r => (r.budget.max_model_calls ?? 0) > 0)!
+    expect(run).toBeTruthy()
+    const usage = await (await api.context.get(`/api/usage?period=run&run_id=${run.id}`)).json() as { total: number }
+    // The rail's figure is the run's counter, which the store writes with each stored model session: the same number.
+    expect(run.usage.model_calls ?? 0).toBe(usage.total)
+    const budget = await (await api.context.get('/api/openalex/budget-today')).json() as { used_fraction: number | null; remaining: number | null; unit: string | null; as_of: string | null }
+    await page.goto(research())
+    const usageBox = box(page, 'Usage')
+    await expect(usageBox.locator('.kv span:first-child')).toHaveText(['Model calls', 'OpenAlex budget today'])
+    await expect(usageBox.locator('.kv').first().locator('.rail-data')).toHaveText(`${usage.total.toLocaleString()} / ${run.budget.max_model_calls!.toLocaleString()}`)
+    const kinds: Record<string, string> = { discovery: 'Search & screening', answer: 'Answer', answer_review: 'Answer review', pdf_collection: 'PDF collection', screen_more: 'Abstract screening of more works' }
+    await expect(usageBox.locator('.rail-usage-note').first()).toHaveText(`Latest run: ${kinds[run.kind] ?? run.kind}`)
+    // The fixture's OpenAlex answers carry no rate-limit header, so nothing is stored since the reset: "not known", no
+    // bar and no 0 (a stored figure is shown with its time instead).
+    const figure = usageBox.locator('.kv').nth(1).locator('.rail-data')
+    if (budget.remaining === null) {
+      await expect(figure).toHaveText('not known')
+      await expect(usageBox.locator('.bar')).toHaveCount(1)
+      await expect(usageBox.locator('.rail-usage-note').nth(1)).toHaveText('No OpenAlex response stored since the daily reset')
+    } else {
+      await expect(figure).not.toHaveText('not known')
+      await expect(usageBox.locator('.rail-usage-note').nth(1)).toHaveText(/^Last stored response, /)
+    }
+  })
+
+  test('S27 (P25): Recheck this column queues one run over the column; each result waits as a proposal and no value changes', async () => {
+    test.setTimeout(150_000)
+    type Table = { columns: Array<{ id: string; name: string }>; rows: unknown[]; counts: { with_value: number; pending_proposals: number } }
+    const tables = await (await api.context.get(`/api/researches/${rid}/tables`)).json() as Array<{ id: string }>
+    const tableOf = async () => (await (await api.context.get(`/api/researches/${rid}/tables/${tables[0].id}`)).json()) as Table
+    const before = await tableOf()
+    const column = before.columns.find(c => c.name === 'Network model')!
+    await page.goto(`${research()}/table`)
+    await page.locator('.evidence-grid thead .evidence-col-head', { hasText: 'Network model' }).click()
+    const item = page.getByRole('menuitem', { name: /^Recheck this column/ })
+    await expect(item).toContainText(`${before.rows.length} rows · 1–2 calls each`)
+    const queued = page.waitForResponse(response => response.url().endsWith(`/columns/${column.id}/recheck`) && response.request().method() === 'POST')
+    await item.click()
+    // The toast names what the server planned: the cells it reads again and the rows it leaves for having no text.
+    const run = await (await queued).json() as { id: string; target: { cells: unknown[]; rows_without_text: unknown[] } }
+    const planned = run.target.cells.length
+    expect(planned + run.target.rows_without_text.length).toBe(before.rows.length)
+    await expect(page.locator('.toast').filter({ hasText: planned === 1 ? 'Recheck of “Network model” started: 1 cell is read again.' : `Recheck of “Network model” started: ${planned} cells are read again.` })).toBeVisible()
+    await expect.poll(async () => (await viewOf(api, rid)).runs.find(r => r.id === run.id)?.status, { timeout: 120_000 }).toBe('completed')
+    // Results wait as proposals: no cell value changed, more proposals wait, and the table's foot reads the stored counts.
+    const after = await tableOf()
+    expect(after.counts.with_value).toBe(before.counts.with_value)
+    expect(after.counts.pending_proposals).toBeGreaterThan(before.counts.pending_proposals)
+    await expect(page.locator('.table-counts')).toContainText(`${after.counts.pending_proposals} proposals waiting`)
+    await expect(page.locator('.toast').filter({ hasText: 'Column recheck finished. Its results wait as proposals in the cells; no value was changed.' })).toBeVisible()
   })
 
   test('every box opens its panel; the rail is gone while a panel is open and returns with focus on the box', async () => {

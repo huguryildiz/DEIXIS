@@ -180,7 +180,7 @@ export type Step = {
     // The full-text reading plan: the works it froze.
     works?: unknown[] } | null
 }
-export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more'
+export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
@@ -194,6 +194,9 @@ export type RunTarget = {
   // answer_review: the answer it reviews.
   answer_id?: string
   sources?: { source_version_id: string; column_ids: string[] }[]
+  // table_column_recheck (S17): the column's planned cells, each with the version it had, and the rows with no stored
+  // text, which get no call.
+  cells?: { source_version_id: string; cell_version: number }[]; rows_without_text?: string[]
   // pdf_ocr (D51): the PDF read and the Tesseract languages used.
   asset_id?: string; languages?: string[]
 }
@@ -632,6 +635,8 @@ export type ResearchView = {
   reviewer: { mode: ReviewMode; connection: string | null; model: string | null; reasoning_effort: string | null }
   // The semantic search arm for the current revision (slice 21). Carries no count of what will be sent.
   semantic?: SemanticArm
+  // Every change of a role's model the person made in this research, oldest first (S17, F10).
+  model_changes?: ResearchModelChange[]
 }
 export type SemanticArm = {
   provider: SemanticSearchProvider; stored_model: string | null; arm: 'on' | 'off' | 'english_question_missing' | 'not_installed'

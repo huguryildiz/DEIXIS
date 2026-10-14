@@ -15,21 +15,21 @@ import { t, uiLanguage, uiLocale } from '../i18n'
 
 // The report panel (mockup `panel()` for `report`, P2/P3). Its head: the version select (when the question has more than
 // one report), the citation style, Review with another model (the claim reviews of this answer, live) and the download
-// menu (Markdown, Word; Copy as the live placement, §2.2). The shield opens the review request dialog (P32). "Show changes"
+// menu (Markdown, PDF through the print dialog, Word; Copy as the live placement, §2.2). The shield opens the review request dialog (P32). "Show changes"
 // (with more than one version) turns on the answer diff (P4, S21): the "Changes since Vn" box under the meta line and the
-// marks in the text. The PDF row is print (S27), not drawn before it exists. The document: the serif title, one meta line
+// marks in the text. The PDF row prints this panel as shown (S27, printPanel.ts). The document: the serif title, one meta line
 // (Report · Vn · date · sources · the claim reviews' counts), then the report's own content.
 
 export type ReportVersion = { id: string; version: number }
 
 const count = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
 
-export function ReportPanel({ open, onOpenChange, dark, title, version, latestVersion, versions, onVersion, researchId, answer, style, onStyle, onReview, onCopy, onDownload, compare, changes, children }: {
+export function ReportPanel({ open, onOpenChange, dark, title, version, latestVersion, versions, onVersion, researchId, answer, style, onStyle, onReview, onCopy, onDownload, onPrint, compare, changes, children }: {
   open: boolean; onOpenChange: (open: boolean) => void; dark: boolean; title: string; version: number; latestVersion: number
   versions: ReportVersion[]; onVersion: (answerId: string) => void
   researchId: string; answer: Answer
   style: CitationStyle; onStyle: (style: CitationStyle) => void
-  onReview: (opener: HTMLElement) => void; onCopy: () => void; onDownload: () => void
+  onReview: (opener: HTMLElement) => void; onCopy: () => void; onDownload: () => void; onPrint: () => void
   compare?: { on: boolean; onToggle: () => void }; changes?: ReactNode; children: ReactNode
 }) {
   // The works the answer cites, each once over its versions (the card's "N sources"), and the claim reviews' verdicts.
@@ -68,6 +68,7 @@ export function ReportPanel({ open, onOpenChange, dark, title, version, latestVe
         <DropdownMenuTrigger render={<button type="button" className="ib report-download" aria-label={t('Download report')} title={t('Download')} />}><Download size={15} aria-hidden /></DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6} className="research-export-menu report-export-menu">
           <DropdownMenuItem className="research-export-item menu-fmt" onClick={onDownload}>{fmt('MD', t('Markdown'))}</DropdownMenuItem>
+          <DropdownMenuItem className="research-export-item menu-fmt" title={t('Opens the print dialog on this report; choose Save as PDF there.')} onClick={onPrint}>{fmt('PDF', t('Portable document'))}</DropdownMenuItem>
           <MenuPrimitive.LinkItem href={answerDocxUrl(researchId, answer.id, lang, style)} download closeOnClick data-slot="dropdown-menu-item" className="research-export-item menu-fmt">{fmt('DOCX', t('Word document'))}</MenuPrimitive.LinkItem>
           {/* Copying the report as Markdown (live, §2.2) sits with the files it matches. */}
           <DropdownMenuItem className="research-export-item menu-fmt export-placement" onClick={onCopy}><Copy size={15} aria-hidden /><b>{t('Copy')}</b><span>{t('Markdown to the clipboard')}</span></DropdownMenuItem>
@@ -76,7 +77,7 @@ export function ReportPanel({ open, onOpenChange, dark, title, version, latestVe
     </div>}>
     <p className="sr-only">{t('Source-linked research report, version {n}.', { n: version })}</p>
     <div className="report-scroll">
-      <article className="report-document">
+      <article className="report-document" data-answer-id={answer.id}>
         <header className="report-document-head">
           <h1>{title}</h1>
           <div className="meta">

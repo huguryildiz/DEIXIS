@@ -29,7 +29,9 @@ class StepsServer {
   readonly dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-steps-'))
   constructor(readonly port: number) {}
   async start() {
-    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), DEIXIS_FIXTURE_FULLTEXT: 'on' }
+    const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: path.join(REPO, 'backend'), DEIXIS_FIXTURE_FULLTEXT: 'on',
+      // A second SYNTHETIC model, so the model-down notice's "Choose another model" has one to move to (S27).
+      DEIXIS_FIXTURE_SECOND_MODEL: 'on' }
     this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
     for (let i = 0; i < 150; i++) {
       try { if ((await fetch(`http://127.0.0.1:${this.port}/api/health`)).ok) return } catch { /* not listening yet */ }
@@ -52,7 +54,9 @@ class StepsServer {
 type Api = { context: APIRequestContext; token: string }
 type Funnel = { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number }
 type View = {
-  runs: Array<{ id: string; kind: string; status: string; budget: { fast_path?: { K?: number } }; steps?: Array<{ kind: string; status: string; operation_key: string }> }>
+  runs: Array<{ id: string; kind: string; status: string; budget: { fast_path?: { K?: number }; max_model_calls?: number }; steps?: Array<{ kind: string; status: string; operation_key: string }> }>
+  scope: { literature_model: string | null }
+  model_changes?: Array<{ role: string; from: { model: string | null }; to: { model: string | null }; changed_at: string }>
   counts: { queue: number; funnel?: Funnel | null; flow?: { five: { not_read_not_tried: number }; buckets: { not_screened: number; out_of_scope_model: number; out_of_scope_code: number } } | null }
   answers: Array<{ run_id: string; claims: Array<{ evidence: Array<{ passage_id: string; source_version_id: string }> }>; inputs_given: { sources: number; passages: number } | null }>
 }
@@ -82,6 +86,7 @@ test.describe.serial('S9: the steps list', () => {
   const server = new StepsServer(nextPort())
   let api: Api
   let page: Page
+  let parityRid = ''
 
   test.beforeAll(async ({ browser }) => {
     await server.start()
@@ -94,6 +99,7 @@ test.describe.serial('S9: the steps list', () => {
   test('a finished research reads as seven phase lines, from the plan to the citation check, each with its icon', async () => {
     test.setTimeout(180_000)
     const rid = await create(api, PARITY, 'standard')
+    parityRid = rid
     await settled(api, rid)
     const view = await viewOf(api, rid)
     const funnel = view.counts.funnel!
@@ -286,10 +292,66 @@ test.describe.serial('S9: the steps list', () => {
     await expect(page.locator('.chat-step.att .chat-step-line')).toHaveText('Stopped while screening', { timeout: 60_000 })
     const note = page.locator('.chat-note.notice.is-error')
     await expect(note).toContainText('DEIXIS could not reach Codex.')
-    await expect(note.getByRole('button', { name: 'Resume run' })).toBeVisible()
+    await expect(note.getByRole('button', { name: 'Retry this step' })).toBeVisible()
     await shot(page, 's9-steps-stopped')
     await note.getByRole('button', { name: 'Cancel run' }).click()
     await expect.poll(async () => (await viewOf(api, rid)).runs.find(r => r.kind === 'discovery')?.status, { timeout: 30_000 }).toBe('cancelled')
-    await expect(page.getByRole('button', { name: 'Resume run' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Retry this step' })).toHaveCount(0)
+  })
+
+  test('S27 (R17): the Usage box splits the run’s stored model calls by role and gives OpenAlex’s last stored budget', async () => {
+    const view = await viewOf(api, parityRid)
+    const discovery = view.runs.find(r => r.kind === 'discovery')!
+    const usage = await (await api.context.get(`/api/usage?period=run&run_id=${discovery.id}`)).json() as { total: number; roles: Array<{ role: string; calls: number }> }
+    const budget = await (await api.context.get('/api/openalex/budget-today')).json() as { remaining: number | null }
+    expect(usage.total).toBeGreaterThan(0)
+    await page.goto(`${server.url()}/#/research/${parityRid}`)
+    const toggle = page.locator(`.chat-toggle[data-run-id="${discovery.id}"]`)
+    const turn = page.locator('.chat-turn', { has: toggle })
+    if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
+    await turn.getByRole('button', { name: 'Usage', exact: true }).click()
+    const box = turn.locator('.usage-box')
+    // The calls and the roles they are split into come from one stored answer (model sessions by Settings role).
+    const limit = discovery.budget.max_model_calls ?? 0
+    const split = usage.roles.filter(r => r.calls > 0).map(r => `${r.role} ${r.calls}`).join(', ')
+    await expect(box.locator('span').first()).toHaveText(limit && usage.total <= limit
+      ? `The models were asked ${usage.total} times (limit ${limit}): ${split}.` : `The models were asked ${usage.total} times: ${split}.`)
+    // The fixture's OpenAlex sends no rate-limit header: no figure is stored, so the budget reads as not known, never 0.
+    await expect(box.locator('span').nth(1)).toHaveText(budget.remaining === null
+      ? 'OpenAlex: no budget figure is stored since the daily reset (midnight UTC), so today’s budget is not known.'
+      : /^OpenAlex: .* in its last stored response \(\d/)
+    await shot(page, 's27-usage-box')
+  })
+
+  test('S27 (R20): Choose another model moves the stopped step’s role, recorded and shown; Retry this step sends it there', async () => {
+    test.setTimeout(150_000)
+    const rid = await create(api, `[model-down] ${MOLECULE}`)
+    await page.goto(`${server.url()}/#/research/${rid}`)
+    await expect(page.locator('.chat-step.att .chat-step-line')).toHaveText('Stopped while screening', { timeout: 60_000 })
+    const note = page.locator('.chat-note.notice.is-error')
+    await expect(note.getByRole('button')).toHaveText(['Retry this step', 'Choose another model', 'Cancel run'])
+    await note.getByRole('button', { name: 'Choose another model' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Choose another model' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('Steps that already finished keep the model they ran on, and nothing is sent until you retry the step.')
+    // The stopped step is abstract screening, run by the literature model.
+    await expect(dialog.getByRole('combobox', { name: 'Role' })).toHaveText(/^Literature/)
+    const use = dialog.getByRole('button', { name: 'Use this model' })
+    await expect(use).toBeDisabled()
+    await dialog.getByRole('combobox', { name: 'Model' }).click()
+    await page.getByRole('option', { name: 'Codex · fixture-model-b' }).click()
+    await use.click()
+    await expect(dialog).toHaveCount(0)
+    // The change the server recorded is the one the page reports; the run is still stopped: nothing was sent.
+    const after = await viewOf(api, rid)
+    const change = after.model_changes?.at(-1)
+    expect(change).toMatchObject({ role: 'literature', from: { model: 'fixture-model' }, to: { model: 'fixture-model-b' } })
+    expect(after.runs.find(r => r.kind === 'discovery')?.status).toBe('paused')
+    await expect(page.locator('.toast').filter({ hasText: 'Literature model changed from fixture-model to fixture-model-b for this research.' })).toBeVisible()
+    await expect(note.locator('.notice-model-change')).toContainText('You moved the literature role from fixture-model to fixture-model-b')
+    await note.getByRole('button', { name: 'Retry this step' }).click()
+    await expect.poll(async () => (await viewOf(api, rid)).runs.find(r => r.kind === 'discovery')?.status, { timeout: 60_000 }).toBe('completed')
+    expect((await viewOf(api, rid)).scope.literature_model).toBe('fixture-model-b')
+    await expect(page.locator('.chat-note.notice.is-error')).toHaveCount(0)
   })
 })

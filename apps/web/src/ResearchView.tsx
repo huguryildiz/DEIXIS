@@ -31,6 +31,8 @@ import { AuditSample } from './AuditSample'
 import { WaitingForPdf } from './WaitingForPdf'
 import { EnglishQuestion, UploadedTextNote } from './SemanticNotes'
 import { AnswerThread, type AnswerReviewControl, type AnswerThreadContext } from './research/AnswerThread'
+import { printReport } from './research/printPanel'
+import { ChooseModelDialog, type ChooseModelTarget } from './research/ChooseModelDialog'
 import { comparisonBase } from './research/answerDiff'
 import { ReviewSurface } from './review/ReviewSurface'
 import { useReviewSurface } from './review/useReviewSurface'
@@ -98,6 +100,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [ocrTool, setOcrTool] = useState<OcrTool | null>(null)
   // The counts under the question open the Sources tab, so the selection filter lives here rather than inside the list.
   const [sourceFilter, setSourceFilter] = useState<StateFilter>('all')
+  // The model-down notice's "Choose another model" (R20): the stopped run and the role of its stopped step.
+  const [chooseModel, setChooseModel] = useState<ChooseModelTarget | null>(null)
   // One work the audit sample sent the person to (slice 20): the Sources list shows that work alone, by its id.
   const [sourceFocus, setSourceFocus] = useState<string | null>(null)
   const openPanel = panels.open
@@ -269,10 +273,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (!previous || (previous.id === current.id && previous.status === current.status)) return
     const label = t(current.kind === 'answer' ? 'Answer generation' : runKindLabels[current.kind])
     const reason = pauseReasonText(current.pause_reason, current.error)
-    if (previous.id !== current.id) { if (ACTIVE.has(current.status) && !announcedRuns.current.has(current.id)) toast('success', t('{label} started.', { label })); return }
+    // A new run that already ended by the next read (a short recheck started and finished between two reads) still has its
+    // end announced below; only a run still under way says it started.
+    if (previous.id !== current.id && ACTIVE.has(current.status)) { if (!announcedRuns.current.has(current.id)) toast('success', t('{label} started.', { label })); return }
     switch (current.status) {
       case 'completed': {
-        if (current.kind !== 'discovery' && current.kind !== 'answer') { toast('success', current.kind === 'cell_recheck' ? t('Recheck finished. Its result waits as a proposal in the cell.') : t('{label} finished.', { label })); break }
+        if (current.kind !== 'discovery' && current.kind !== 'answer') { toast('success', current.kind === 'cell_recheck' ? t('Recheck finished. Its result waits as a proposal in the cell.') : current.kind === 'table_column_recheck' ? t('Column recheck finished. Its results wait as proposals in the cells; no value was changed.') : t('{label} finished.', { label })); break }
         const answer = view.answers.find(a => a.run_id === current.id)
         if (current.kind === 'discovery') toast('success', t('Search & screening finished. Review the sources and include the ones to use.'))
         else if (answer?.status === 'structurally_valid') toast('success', t('Answer ready.'))
@@ -638,6 +644,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (openReportId) replacePanel(`report:${openReportId}`, `report:${answerId}`)
     setOpenReportId(answerId)
   }
+  // The Export menu's PDF row opens the report panel of the version the menu exports, then the print dialog on it.
+  const printShownReport = (answerId: string) => { setOpenReportId(answerId); void printReport(answerId, toast) }
   const openCitation = (target: CitationOpen) => setPassageTarget({ passageId: target.passageId, highlightText: target.anchor, fromCitation: true, view: target.view, find: target.find })
   const answerVersion = answer?.report_version ?? 0
   const answerThread: AnswerThreadContext | undefined = answer ? {
@@ -647,7 +655,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     included, hasTable: (tables?.length ?? 0) > 0,
     canNewAnswer: !busy && !active && Boolean(included || answersWithoutInclude),
     downloadMenu: answer.status === 'structurally_valid' ? <ExportMenu icon researchId={id} report={{ answer, title: answer.report_title ?? heading, version: answerVersion }}
-      sources={view.sources} tables={tables} included={included} cited={citedListed} prisma={Boolean(view.counts.flow)} /> : null,
+      sources={view.sources} tables={tables} included={included} cited={citedListed} prisma={Boolean(view.counts.flow)} onPrintReport={printShownReport} /> : null,
     onPanel: (name, opener) => openPanel(name, { opener }),
     onShowSources: (filter, opener) => { setSourceFocus(null); setSourceFilter(filter); openPanel('sources', { opener }) },
     onRevise: () => reviseQuestion(),
@@ -725,7 +733,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onClick={() => reviseQuestion()}><PencilLine size={16} className="size-4" aria-hidden /><span className="research-topbar-label">{t('Revise question')}</span></Button>
       {!titleEditing && <>
         <ExportMenu researchId={id} report={answer?.status === 'structurally_valid' ? { answer, title: answer.report_title ?? heading, version: answer.report_version ?? 0 } : null}
-          sources={view.sources} tables={tables} included={included} cited={citedListed} prisma={Boolean(view.counts.flow)} />
+          sources={view.sources} tables={tables} included={included} cited={citedListed} prisma={Boolean(view.counts.flow)} onPrintReport={printShownReport} />
         <DropdownMenu onOpenChange={open => { if (open) rowChosen.current = false }}>
           <DropdownMenuTrigger render={<Button ref={moreButton} variant="ghost" size="icon-sm" className="research-more" aria-label={t('Research actions')} title={t('Research actions')} />}><Ellipsis size={16} aria-hidden /></DropdownMenuTrigger>
           <DropdownMenuContent align="start" sideOffset={6} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }} className="research-actions-menu" finalFocus={() => (rowChosen.current ? false : moreButton.current)}>
@@ -792,6 +800,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onGiveKeyTerms={() => reviseQuestion('terms')}
         queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')} onOpenFunnel={() => openPanel('funnel')}
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
+        onChooseModel={(target, role, opener) => setChooseModel({ run: target, role, opener })}
         onEditPlan={hasAcademic ? opener => openPanel('plan', { opener }) : undefined}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
         latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} review={answerReview} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
@@ -860,7 +869,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {/* Each former tab is a panel; its content is unchanged and renders into the panel frame while it is open. */}
     <StackPanel name="sources" title={t('Sources')} icon={BookOpen} className="sources-panel-box">
       <section className="sources-panel" aria-labelledby="sources-heading">
-      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourcesPanel sources={view.sources} cited={citedClaims} citedVersions={citedVersionClaims} answerVersion={answer ? answerVersion : null} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
+      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourcesPanel sources={view.sources} cited={citedClaims} citedVersions={citedVersionClaims} answerVersion={answer ? answerVersion : null} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} cursor={view.last_event_id} effort={view.scope.effort} onChanged={async () => { await load(); onChanged() }} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
         onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
         onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
         onOpen={source => setPdfTarget({ assetId: null, sourceVersionId: source.source_version_id, view: 'text' })}
@@ -932,6 +941,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <PlanPanel researchId={id} view={view} busy={busy} searchReady={seedSearchReady} answerRevision={answer ? answer.scope_revision : null}
         seeds={seedChoice} onAnnounced={runId => announcedRuns.current.add(runId)} onChanged={async () => { await load(); onChanged() }} onClose={closePanels} />
     </StackPanel>
+    <ChooseModelDialog key={chooseModel?.run.id ?? 'none'} target={chooseModel} view={view} dark={dark} onClose={() => setChooseModel(null)} onChanged={next => { setView(next); onChanged() }} />
     <ConfirmDialog open={Boolean(removeTarget)} dark={dark} title={t('Remove PDF?')}
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}

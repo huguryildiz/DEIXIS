@@ -196,10 +196,10 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     const counts = (await viewOf(api, rid)).counts
     expect(counts.cited).toBeGreaterThan(0)
     expect(counts.included).toBe(0)
-    await expect(rows.locator('b')).toHaveText(['MD', 'DOCX', 'BIB', 'MD', 'JSON'])
-    await expect(rows.nth(1)).toHaveAttribute('href', /\/answers\/[^/]+\/export\/docx\?lang=en&style=apa$/)
-    await expect(rows.nth(2)).toContainText(/BibTeX · \d+ cited sources?/)
-    await expect(rows.nth(3)).toHaveAttribute('href', /prisma-s/i)
+    await expect(rows.locator('b')).toHaveText(['MD', 'PDF', 'DOCX', 'BIB', 'MD', 'JSON'])
+    await expect(rows.nth(2)).toHaveAttribute('href', /\/answers\/[^/]+\/export\/docx\?lang=en&style=apa$/)
+    await expect(rows.nth(3)).toContainText(/BibTeX · \d+ cited sources?/)
+    await expect(rows.nth(4)).toHaveAttribute('href', /prisma-s/i)
     await shot(page, 's8-export-menu')
     const markdown = page.waitForEvent('download')
     await rows.nth(0).click()
@@ -213,11 +213,52 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await page.reload()
     await exportButton.click()
     await expect(menu.locator('[data-slot=dropdown-menu-label]')).toHaveText(['Report', 'Evidence table', 'Sources'])
-    await expect(rows.locator('b')).toHaveText(['MD', 'DOCX', 'CSV', 'XLSX', 'DOCX', 'BIB', 'MD', 'JSON'])
-    await expect(rows.nth(3)).toHaveAttribute('href', new RegExp(`/tables/${table.table.id}/export/xlsx`))
+    await expect(rows.locator('b')).toHaveText(['MD', 'PDF', 'DOCX', 'CSV', 'XLSX', 'DOCX', 'BIB', 'MD', 'JSON'])
+    await expect(rows.nth(4)).toHaveAttribute('href', new RegExp(`/tables/${table.table.id}/export/xlsx`))
     const csv = page.waitForEvent('download')
-    await rows.nth(2).click()
+    await rows.nth(3).click()
     expect((await csv).suggestedFilename()).toMatch(/^synthetic-topbar-table-v\d+\.csv$/)
+  })
+
+  test('S27: the PDF row opens the report panel of the exported version and the print dialog on it alone', async () => {
+    // window.print is recorded, not run: what matters is what the page holds when the dialog would open.
+    await page.goto(`${server.url()}/#/research/${rid}`)
+    // The page is shared and a hash change does not reload it, so the stub goes straight into the open page.
+    await page.evaluate(() => {
+      const w = window as typeof window & { __prints?: Array<{ mode: string | undefined; answer: string | null }> }
+      w.__prints = []
+      window.print = () => {
+        w.__prints!.push({ mode: document.documentElement.dataset.print, answer: document.querySelector('[data-split-panel] .report-document')?.getAttribute('data-answer-id') ?? null })
+        window.dispatchEvent(new Event('afterprint'))
+      }
+    })
+    const view = await viewOf(api, rid) as View & { answers: Array<{ id: string; status: string; report_version: number | null }> }
+    const shown = view.answers.filter(a => a.status === 'structurally_valid').sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
+    await topbar(page).getByRole('button', { name: 'Export' }).click()
+    const pdf = page.locator('[data-slot=dropdown-menu-content] .menu-fmt').filter({ has: page.locator('b', { hasText: /^PDF$/ }) })
+    await expect(pdf).toHaveCount(1)
+    await expect(pdf).toContainText('Portable document')
+    await pdf.click()
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { __prints?: unknown[] }).__prints)).toEqual([{ mode: 'panel', answer: shown.id }])
+    await expect(page.locator('[data-split-panel] .report-document')).toHaveAttribute('data-answer-id', shown.id)
+    // After the dialog the page is itself again; under print media with the PDF row's mark only the report prints.
+    await expect(page.locator('html')).not.toHaveAttribute('data-print', /.*/)
+    await page.evaluate(() => { document.documentElement.dataset.print = 'panel' })
+    await page.emulateMedia({ media: 'print' })
+    await expect(page.locator('.research-topbar')).toBeHidden()
+    await expect(page.locator('.split-panel-head')).toBeHidden()
+    await expect(page.locator('aside.sidebar')).toBeHidden()
+    await expect(page.locator('[data-split-panel] .report-document h1')).toBeVisible()
+    // The browser writes a real PDF from that print layout (headless Chromium's page.pdf is the print path).
+    const file = await page.pdf({ format: 'A4' })
+    expect(file.subarray(0, 5).toString()).toBe('%PDF-')
+    expect(file.length).toBeGreaterThan(5000)
+    await page.emulateMedia({ media: 'screen' })
+    await page.evaluate(() => { delete document.documentElement.dataset.print })
+    // The report panel's own Download menu prints the version it shows.
+    await page.locator('.split-panel-head .report-download').click()
+    await page.locator('[data-slot=dropdown-menu-content] .menu-fmt').filter({ has: page.locator('b', { hasText: /^PDF$/ }) }).click()
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { __prints?: unknown[] }).__prints?.length)).toBe(2)
   })
 
   test('Revise question turns the bubble into the form; Save writes revision 2 and keeps revision 1 behind Show', async () => {
@@ -381,7 +422,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await page.goto(`${server.url()}/#/research/${stopped}`)
     await expect(chip(page)).toHaveText('Search & screening · Stopped', { timeout: 60_000 })
     const stoppedNote = page.locator('.chat-note.notice')
-    await expect(stoppedNote.getByRole('button', { name: 'Resume run' })).toBeVisible()
+    await expect(stoppedNote.getByRole('button', { name: 'Retry this step' })).toBeVisible()
     await stoppedNote.getByRole('button', { name: 'Cancel run' }).click()
     await expect(chip(page)).toHaveCount(0, { timeout: 30_000 })
 

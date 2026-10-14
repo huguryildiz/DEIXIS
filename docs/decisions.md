@@ -4,6 +4,15 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D15 — A stopped model is replaced only by the person, and the stopped step waits for Retry
+Status: accepted (UI parity S27, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
+Context: The model-down notice (mockup R20) offers "Retry this step" and "Choose another model". The route that changes a research role's model (`PUT /api/researches/{id}/models`, S17) records the change and makes the next model steps use it. The notice needed a rule for what the choice does to the stopped run and what the page says about it.
+Decision:
+- On a run paused because its model did not answer (`model_call_failed`, `model_connection_not_ready`, `model_connection_unavailable`, `model_mismatch`), Resume run reads "Retry this step"; it sends the stopped step again through the existing resume. Cancel run stays.
+- "Choose another model" opens a dialog with the role of the stopped step preselected and the models the connections list as ready. Saving records the change and does nothing else: the run stays paused until the person presses Retry this step. Finished steps keep the model they ran on.
+- The toast names the change the server returned (role, from, to), and the notice lists every change made since the stop until the run moves on.
+Limits: The run turn's model line ("Literature · model") reads the research's current model, so after a change it names the new model for the whole run, including steps that ran on the old one; per-step models are in the stored step inputs and are not shown there yet. Tested on SYNTHETIC fixture records with a second listed model (e2e/steps.spec.ts, `DEIXIS_FIXTURE_SECOND_MODEL`); no real model was asked.
+
 ## D14 — A run can be bound to the question revision the screen showed
 Status: accepted (decided with Sol over S23b's review, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
 Context: The Search plan panel (D12, slice S23b) saves a plan as a new question revision and then asks for its search. Another window can save a newer revision between those two requests; a run made then would search that other plan while the panel says its own plan is being searched.

@@ -41,7 +41,7 @@ class ReportServer {
 
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled' })
 const reportSheet = (page: Page) => page.locator('[data-split-panel]').filter({ has: page.locator('.report-sheet') }).last()
-// The evidence report's download menu (UI parity S15a, mockup `eexport`): MD, TEX and DOCX rows, then Copy.
+// The evidence report's download menu (UI parity S15a, mockup `eexport`): MD, TEX, PDF (S27) and DOCX rows, then Copy.
 const reportMenu = async (page: Page, row: RegExp) => {
   await reportSheet(page).getByRole('button', { name: 'Download report' }).click()
   await page.getByRole('menuitem', { name: row }).click()
@@ -169,6 +169,22 @@ test('write, read, edit, restore and acknowledge an evidence report', async ({ b
     expect(unexpectedDownloads).toBe(downloadsBefore409)
     await page.unroute(latexPath)
     await toastsOff(page)
+    // The PDF row (S27) opens the print dialog on this panel as shown (window.print recorded, not run): the page is
+    // marked to print the panel alone, nothing is downloaded and no toast says a file was saved.
+    await page.evaluate(() => {
+      const w = window as typeof window & { __prints?: Array<{ mode: string | undefined; report: string | null }> }
+      w.__prints = []
+      window.print = () => {
+        w.__prints!.push({ mode: document.documentElement.dataset.print, report: document.querySelector('[data-split-panel] .evidence-report-document')?.getAttribute('data-report-id') ?? null })
+        window.dispatchEvent(new Event('afterprint'))
+      }
+    })
+    const downloadsBeforePdf = unexpectedDownloads
+    await reportMenu(page, /^PDF/)
+    await expect.poll(() => page.evaluate(() => (window as typeof window & { __prints?: unknown[] }).__prints)).toEqual([{ mode: 'panel', report: reportId }])
+    await expect(page.locator('html')).not.toHaveAttribute('data-print', /.*/)
+    expect(unexpectedDownloads).toBe(downloadsBeforePdf)
+    await expect(page.locator('.toast')).toHaveCount(0)
     const report = await (await api.get(`/api/researches/${researchId}/reports/${reportId}`)).json()
     expect(report.review.status).toBe('reviewed')
     const reviewed = report.review.sections_reviewed.length

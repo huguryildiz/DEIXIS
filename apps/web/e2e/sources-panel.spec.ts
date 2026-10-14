@@ -54,7 +54,7 @@ type Source = {
   access: { assets: unknown[] }
 }
 type View = {
-  runs: Array<{ kind: string; status: string }>
+  runs: Array<{ id: string; kind: string; status: string }>
   counts: { included: number; excluded: number; pending: number }
   answers: Array<{ status: string; report_version: number | null; claims: Array<{ evidence: Array<{ work_id: string; source_version_id: string }> }> }>
   sources: Source[]
@@ -103,8 +103,8 @@ test.describe.serial('S13: the Sources panel', () => {
     const recs = view.sources.filter(s => s.version_role === 'record')
     await page.goto(sourcesUrl())
     await expect(sources()).toBeVisible()
-    // The mockup's tabs in its order (Not read is wired with the never-screened list, S27).
-    await expect(sources().locator('.tabs button')).toHaveText([/^Cited in answer\d+$/, /^Included\d+$/, /^Passed abstract\d+$/, /^Undecided\d+$/, /^Excluded\d+$/, /^All\d+$/])
+    // The mockup's tabs in its order; Not read lists the never-screened works (S27, its own test below).
+    await expect(sources().locator('.tabs button')).toHaveText([/^Cited in answer\d+$/, /^Included\d+$/, /^Passed abstract\d+$/, /^Undecided\d+$/, /^Excluded\d+$/, /^Not read\d+$/, /^All\d+$/])
     const answer = view.answers.filter(a => a.status === 'structurally_valid').sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
     const cited = new Set(answer.claims.flatMap(c => c.evidence.map(e => e.work_id)))
     const expected: Record<string, number> = {
@@ -287,5 +287,47 @@ test.describe.serial('S13: the Sources panel', () => {
     await expect(records()).toHaveCount(1)
     await sources().getByRole('button', { name: 'Save to library' }).click()
     await expect(page.getByText('Saved 1 source to the Library.')).toBeVisible()
+  })
+
+  test('S27 (P5, P7, P41): Not read lists the never-screened works from their route in its order; the funnel opens it; Screen N more never includes', async () => {
+    test.setTimeout(240_000)
+    type Page_ = { total: number; screenable: number; items: Array<{ work_id: string; title: string | null }> }
+    const unscreened = async () => (await (await api.context.get(`/api/researches/${rid}/unscreened?offset=0&limit=50`)).json()) as Page_
+    const route = await unscreened()
+    expect(route.total).toBeGreaterThan(0)
+    // The funnel's "Show them" opens this tab, as the mockup's link does.
+    await page.goto(`${server.url()}/#/research/${rid}/funnel`)
+    await page.locator('.funnel-panel .lost').getByRole('button', { name: 'Show them' }).click()
+    await expect(sources()).toBeVisible()
+    await expect(tab('Not read')).toHaveAttribute('aria-pressed', 'true')
+    // The count and the rows come from the one route: its total, and its first page in the ranked list's order, each
+    // row the research's own row of that work.
+    await expect(tab('Not read').locator('em')).toHaveText(route.total.toLocaleString())
+    const view = await viewOf(api, rid)
+    const titleOf = new Map(view.sources.filter(s => s.version_role === 'record').map(s => [s.work_id, s.title]))
+    await expect(records().locator('button.src-t')).toHaveText(route.items.map(item => titleOf.get(item.work_id) ?? item.title ?? ''))
+    await expect(sources().locator('thead th').nth(1)).toHaveText(`Source (${route.items.length})`)
+    if (route.total > route.items.length) await expect(sources().locator('.source-more')).toContainText(`Show ${Math.min(50, route.total - route.items.length)} more`)
+    const notice = sources().locator('.source-notread')
+    await expect(notice).toContainText(`${route.total.toLocaleString()} works sit below that line, listed here in its order; ${route.screenable.toLocaleString()} of them have an abstract to read.`)
+    await expect(notice).toContainText('Rank and similarity are the signals the list was ordered by, not relevance.')
+    await shot(page, 'S27-sources-not-read')
+    // Screen N more: N is what the next run reads (at most 40 works with an abstract); the toast reports the run the
+    // server queued, and the run never includes a source by itself.
+    const includedBefore = view.sources.filter(s => s.selection.state === 'included').map(s => s.source_version_id).sort()
+    const next = Math.min(40, route.screenable)
+    expect(next).toBeGreaterThan(0)
+    const queued = page.waitForResponse(response => response.url().endsWith('/screen-more') && response.request().method() === 'POST')
+    await notice.getByRole('button', { name: `Screen ${next} more` }).click()
+    const run = await (await queued).json() as { id: string; budget: { screen_more: { planned: number } } }
+    const planned = run.budget.screen_more.planned
+    await expect(page.getByText(planned === 1 ? 'Screen more queued: 1 work is read twice at the abstract stage. It never includes a source by itself.'
+      : `Screen more queued: ${planned} works are read twice at the abstract stage. It never includes a source by itself.`)).toBeVisible()
+    await expect.poll(async () => (await viewOf(api, rid)).runs.find(r => r.id === run.id)?.status, { timeout: 150_000 }).toBe('completed')
+    const after = await viewOf(api, rid)
+    expect(after.sources.filter(s => s.selection.state === 'included').map(s => s.source_version_id).sort()).toEqual(includedBefore)
+    const routeAfter = await unscreened()
+    expect(routeAfter.total).toBeLessThan(route.total)
+    await expect(tab('Not read').locator('em')).toHaveText(routeAfter.total.toLocaleString())
   })
 })

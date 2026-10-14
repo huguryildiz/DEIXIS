@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
-import { api, ApiError, tableExportUrl, type AnswerFormat, type CellEdit, type CellEvidence, type CellRevision, type CellState, type CellSummary, type CellValue, type CellView, type ColumnSpec, type ColumnSuggestion, type ResearchView, type Run, type Source, type TableColumn, type TableRow, type TableSummary, type TableTemplate, type TableView } from './api'
+import { api, ApiError, researchModelApi, tableExportUrl, type AnswerFormat, type CellEdit, type CellEvidence, type CellRevision, type CellState, type CellSummary, type CellValue, type CellView, type ColumnSpec, type ColumnSuggestion, type ResearchView, type Run, type Source, type TableColumn, type TableRow, type TableSummary, type TableTemplate, type TableView } from './api'
 import { ConfirmDialog } from './ConfirmDialog'
 import { PassageSheet } from './PassageSheet'
 import { ModelName } from './ModelName'
@@ -33,8 +33,8 @@ import { accessLabels, downloadTableCsv, hasValue, reportGate, revisionText, sta
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 // Table runs are controlled where their work shows: the run line under the table's toolbar.
-export const TABLE_RUN_KINDS = new Set(['table_fill', 'cell_recheck', 'table_columns', 'lineage_links'])
-const tableRunLabels: Record<string, string> = { table_fill: 'Filling empty cells', cell_recheck: 'Rechecking a cell', table_columns: 'Suggesting columns', lineage_links: 'Development links' }
+export const TABLE_RUN_KINDS = new Set(['table_fill', 'cell_recheck', 'table_column_recheck', 'table_columns', 'lineage_links'])
+const tableRunLabels: Record<string, string> = { table_fill: 'Filling empty cells', cell_recheck: 'Rechecking a cell', table_column_recheck: 'Rechecking a column', table_columns: 'Suggesting columns', lineage_links: 'Development links' }
 const MAX_WHOLE_PASSAGES = 48  // a source within this many passages (and 60,000 characters) is read whole
 const MAX_RECHECK_PASSAGES = 16
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -273,13 +273,28 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
   // Live state comes from the active run's stored target: the cells a fill plans to read, or the one cell a recheck reads.
   const filling = new Set<string>()
   if (activeRun?.kind === 'table_fill' && activeRun.target?.table_id === tableId) activeRun.target.sources?.forEach(s => s.column_ids.forEach(cid => filling.add(`${cid}:${s.source_version_id}`)))
-  const rechecking = activeRun?.kind === 'cell_recheck' && activeRun.target?.table_id === tableId ? `${activeRun.target.column_id}:${activeRun.target.source_version_id}` : null
+  // A cell recheck reads its one cell; a column recheck (S27, F20) its planned cells in row order, each until its step
+  // has finished (the step's key names the cell's source).
+  const rechecking = new Set<string>()
+  if (activeRun?.kind === 'cell_recheck' && activeRun.target?.table_id === tableId) rechecking.add(`${activeRun.target.column_id}:${activeRun.target.source_version_id}`)
+  const columnRecheck = activeRun?.kind === 'table_column_recheck' && activeRun.target?.table_id === tableId ? activeRun : null
+  const columnDone = new Set((columnRecheck?.steps ?? []).filter(step => step.operation_key.startsWith('column_recheck:') && (step.status === 'succeeded' || step.status === 'failed')).map(step => step.operation_key.slice('column_recheck:'.length)))
+  columnRecheck?.target?.cells?.forEach(cell => { if (!columnDone.has(cell.source_version_id)) rechecking.add(`${columnRecheck.target?.column_id}:${cell.source_version_id}`) })
+  const columnProgress = columnRecheck?.target?.cells?.length ? { done: columnRecheck.target.cells.filter(cell => columnDone.has(cell.source_version_id)).length, n: columnRecheck.target.cells.length } : null
   const suggesting = activeRun?.kind === 'table_columns' && activeRun.target?.table_id === tableId
   const fillable = !activeRun && estimate.sources > 0 && columns.length > 0
   // A planned source counts as done once every cell it was to fill has a value.
   const planned = activeRun?.kind === 'table_fill' && activeRun.target?.table_id === tableId ? activeRun.target.sources ?? [] : null
   const fillProgress = planned?.length ? { done: planned.filter(s => s.column_ids.every(cid => cells.get(`${cid}:${s.source_version_id}`)?.current)).length, n: planned.length } : null
   const suggestColumns = () => act(async () => { await api.suggestColumns(researchId, tableId, newKey()); onRunStarted() })
+  // The toast names what the server planned: the cells it reads and the rows it skips for having no stored text.
+  const recheckColumn = (col: TableColumn) => act(async () => {
+    const run = await researchModelApi.recheckColumn(researchId, tableId, col.id, col.version, newKey())
+    const planned = run.target?.cells?.length ?? 0, skipped = run.target?.rows_without_text?.length ?? 0
+    toast('success', [t(planned === 1 ? 'Recheck of “{column}” started: {n} cell is read again. Its result will wait as a proposal.' : 'Recheck of “{column}” started: {n} cells are read again. Their results will wait as proposals.', { column: col.name, n: planned }),
+      skipped > 0 && t(skipped === 1 ? '{n} row has no stored text and gets no call.' : '{n} rows have no stored text and get no call.', { n: skipped })].filter(Boolean).join(' '))
+    onRunStarted()
+  })
   const names = new Set(columns.map(c => c.name.trim().toLocaleLowerCase()))
   const suggestionRun = table.column_suggestions
   const suggestions = (suggestionRun?.columns ?? []).map((s, i) => ({ s, key: `${suggestionRun?.step_id}:${i}` }))
@@ -409,7 +424,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
       {moreMenu}
       {tables.length > 1 && <select className="evidence-table-choice" aria-label={t('Table')} value={tableId} onChange={e => setChosen(e.target.value)}>{tables.map(x => <option key={x.id} value={x.id}>{x.title}</option>)}</select>}
     </div>
-    {runLine(fillProgress ? [t('{done} / {n} sources', fillProgress)] : suggesting ? [t('From the question and the rows’ abstracts')] : [])}
+    {runLine(fillProgress ? [t('{done} / {n} sources', fillProgress)] : columnProgress ? [t('{column}: {done} / {n} cells', { column: columns.find(c => c.id === columnRecheck?.target?.column_id)?.name ?? '', ...columnProgress })] : suggesting ? [t('From the question and the rows’ abstracts')] : [])}
     {cancelDialog}
     {(fillable || (activeRun && !tableRun) || estimate.sources_without_text > 0 || estimate.sources_beyond_limit > 0 || columns.some(c => c.accepted_by === 'automatic')) && <div className="table-notes">
       {fillable && <UploadedTextNote semantic={view.semantic} />}
@@ -472,6 +487,9 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
                     <DropdownMenuGroup>
                       <DropdownMenuLabel>{col.name}</DropdownMenuLabel>
                       <DropdownMenuItem onClick={() => setEditor({ mode: 'edit', column: col })}><PencilLine size={15} aria-hidden /><span>{t('Edit column')}<small>{formatText(col)}</small></span></DropdownMenuItem>
+                      {/* One run over the column's rows (F20); each result waits as a proposal in its cell (mockup `reccol`). */}
+                      <DropdownMenuItem className="column-recheck" disabled={busy || Boolean(activeRun)} title={activeRun ? t('Available when the active run finishes') : t('Each row with stored text is read again for this column; every result waits as a proposal, and the model does not see the current values.')}
+                        onClick={() => { void recheckColumn(col) }}><RotateCw size={15} aria-hidden /><span>{t('Recheck this column')}<small>{activeRun ? t('Available when the active run finishes') : t(rows.length === 1 ? '{n} row · 1–2 calls · {model}' : '{n} rows · 1–2 calls each · {model}', { n: rows.length, model })}</small></span></DropdownMenuItem>
                       <DropdownMenuItem variant="destructive" disabled={busy} onClick={() => setRemoving(col)}><Trash2 size={15} aria-hidden /><span>{t('Remove column')}</span></DropdownMenuItem>
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
@@ -501,7 +519,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
                 {columns.map((col, c) => {
                   const id = `${col.id}:${row.source_version_id}`
                   return <td key={col.id} role="gridcell" className={cellTarget?.columnId === col.id && cellTarget.sourceId === row.source_version_id ? 'is-open' : undefined}>
-                    <CellButton column={col} row={row} summary={cells.get(id)} live={rechecking === id ? 'recheck' : filling.has(id) && !cells.get(id)?.current ? 'fill' : null}
+                    <CellButton column={col} row={row} summary={cells.get(id)} live={rechecking.has(id) ? 'recheck' : filling.has(id) && !cells.get(id)?.current ? 'fill' : null}
                       position={`${r}:${c}`} focusable={r === fr && c === fc} onFocus={() => setFocus([r, c])}
                       onOpen={() => setCellTarget({ columnId: col.id, sourceId: row.source_version_id })} />
                   </td>
@@ -542,7 +560,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
       </div>
     </StackPanel>
     {cellTarget && cellColumn && cellRow && <CellPanel key={`${cellColumn.id}:${cellRow.source_version_id}`} researchId={researchId} tableId={tableId} column={cellColumn} row={cellRow} refresh={view.last_event_id}
-      source={view.sources.find(s => s.source_version_id === cellRow.source_version_id)} activeRun={activeRun} rechecking={rechecking === `${cellColumn.id}:${cellRow.source_version_id}`}
+      source={view.sources.find(s => s.source_version_id === cellRow.source_version_id)} activeRun={activeRun} rechecking={rechecking.has(`${cellColumn.id}:${cellRow.source_version_id}`)}
       model={model} dark={dark} onChanged={() => { void load() }} onRunStarted={onRunStarted} onOpenSource={() => setSourceTarget(cellRow.source_version_id)} onClose={() => setCellTarget(null)} />}
   </div>
 }

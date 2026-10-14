@@ -23,6 +23,7 @@ import { ExportLinks } from './ExportMenu'
 import { ChangesBox, ReportPanel, type ReportVersion } from './ReportPanel'
 import { BASIS_BADGES, diffAnswers, type ComparisonBase } from './answerDiff'
 import { downloadReportMarkdown, reportMarkdown, reportParts, verdictTones } from './reportMarkdown'
+import { printReport } from './printPanel'
 
 // The latest answer in the thread (mockup `answerBlock()`, R22-R29): the notices of its state, the report card (or the
 // live card while a new version is written), the first paragraphs of its claims with their citations, the Methods box,
@@ -317,7 +318,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {threadPart}
     <ReportPanel open={reportOpen} onOpenChange={onReportOpenChange} dark={dark} title={title} version={version} latestVersion={latestVersion}
       versions={versions} onVersion={id => onVersion?.(id)} researchId={researchId} answer={answer} style={style} onStyle={chooseStyle}
-      onReview={requestReview} onCopy={() => { void copyReport() }} onDownload={downloadReport}
+      onReview={requestReview} onCopy={() => { void copyReport() }} onDownload={downloadReport} onPrint={() => { void printReport(answer.id, toast) }}
       compare={changes && { on: changes.on, onToggle: changes.onToggle }} changes={changes?.on ? <ChangesBox version={version} base={changes.base} diff={diff} /> : null}>
       {report}
     </ReportPanel>
@@ -390,3 +391,4 @@ function ReviewNote({ review }: { review: Answer['review'] }) {
   const counts = (Object.keys(verdictLabels) as Verdict[]).map(v => [v, review.reviews.filter(r => r.verdict === v).length] as const).filter(([, n]) => n > 0)
   return <p className="legacy-mini-note review-summary"><ShieldCheck size={13} aria-hidden /><span><strong>{t('Claim check (automatic)')}{model}:</strong> {counts.map(([v, n]) => `${n} ${t(verdictLabels[v])}`).join(' · ')}. {review.notes && `${review.notes} `}{t('This is an additional model’s reading of each claim against its cited passages. It does not change the answer and is not independent verification.')}</span></p>
 }
+

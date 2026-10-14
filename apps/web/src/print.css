@@ -1,8 +1,8 @@
-/* Print stylesheet for the "PDF" rows of the export menus (S18; S27 wires the rows to window.print()).
+/* Print stylesheet for the "PDF" rows of the export menus (S18; S27 wires the rows to window.print(), research/printPanel.ts).
    DEIXIS writes no PDF itself (no PDF library, see the parity plan §2.4): the browser's print dialog saves one from
    the page as drawn, so the fonts, KaTeX math and citation marks are the ones on screen.
-   What prints: an open sheet (the answer report, the evidence report, or any other side panel) alone; with no sheet
-   open, the research page without its chrome, which on the Evidence tab is the evidence table.
+   What prints: a PDF row prints the open side panel alone (the answer report or the evidence report, as the panel shows
+   it); an open sheet prints alone; with nothing open, the research page without its chrome.
    Everything here sits inside @media print, so the screen is never affected. */
 @media print {
   @page { size: A4; margin: 15mm 14mm; }
@@ -47,6 +47,18 @@
   .evidence-row-menu, [data-slot="sheet-overlay"], [data-slot="sheet-close"] { display: none !important; }
   .app, .main-shell, .main-shell > main { display: block !important; width: auto !important; min-height: 0 !important;
     height: auto !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+
+  /* A PDF row (html[data-print="panel"]) prints the open side panel alone: every element that is not the panel, inside
+     it or holding it goes away, and the panel, its frame and the elements holding it lose their fixed heights, grid
+     tracks and scrolling, so its content flows over the pages. The panel's head (back, actions, close) does not print;
+     the report document carries its own title. */
+  html[data-print="panel"] body :not([data-split-panel], [data-split-panel] *, :has([data-split-panel])) { display: none !important; }
+  html[data-print="panel"] :is(body :has([data-split-panel]), [data-split-panel], .split-panel-body, .split-panel-content) {
+    display: block !important; position: static !important; inset: auto !important; width: auto !important;
+    max-width: none !important; min-width: 0 !important; height: auto !important; min-height: 0 !important;
+    max-height: none !important; overflow: visible !important; margin: 0 !important; padding: 0 !important;
+    border: 0 !important; box-shadow: none !important; transform: none !important; background: #fff !important; }
+  html[data-print="panel"] .split-panel-head { display: none !important; }
 
   /* An open sheet prints alone, as one long page flow instead of a fixed, scrolled panel. */
   body:has([data-slot="sheet-content"]) #root { display: none !important; }

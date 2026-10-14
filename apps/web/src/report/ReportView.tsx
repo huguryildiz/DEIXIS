@@ -7,6 +7,7 @@ import { api, ApiError, reportDocxUrl, type Passage, type ReportClaim, type Repo
 import { MathText } from '../MathText'
 import { failedRowReasonText, failedSectionReasonText, locatorText, pauseReasonText, reportAssemblyDraftText, reportChangeLabels, reportChangeViaLabels, reportSupportLabels } from '../labels'
 import { StackPanel } from '../research/SplitPanel'
+import { printPanel } from '../research/printPanel'
 import { usePanels } from '../research/usePanelStack'
 import { excerpt } from '../research/excerpt'
 import { HighlightedPassageText } from '../PassageSheet'
@@ -90,7 +91,7 @@ function staleFor(report: ReportDetail, cellId: string | null | undefined, sourc
 
 // The evidence report panel (mockup `erepPanel`, P21-P31 report half), stacked like every research panel. Its head:
 // Evidence view (the cited cells under each claim), Review with another model, and the download menu (Markdown, LaTeX,
-// Word; Copy as the live placement, §2.2; the PDF row is print, S27). A citation chip opens the stored citation in its
+// Word; Copy as the live placement, §2.2; the PDF row opens the print dialog on this panel, S27). A citation chip opens the stored citation in its
 // own panel (mockup `ecitePanel`); from there the passage opens in Source details.
 export function ReportView({ researchId, reportId, view, tables, title, dark, onClose, onOpenCitation, onOpenCell, onChanged, onOpenCandidate }: {
   researchId: string; reportId: string; view: ResearchView; tables: TableSummary[] | null; title: string; dark: boolean; onClose: () => void
@@ -347,6 +348,9 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
       <DropdownMenuContent align="end" sideOffset={6} className="research-export-menu report-export-menu">
         <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => void markdown('download')}>{fmt('MD', t('Markdown'))}</DropdownMenuItem>
         <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => void latex()}>{fmt('TEX', t('LaTeX · .tex and .bib in a zip'))}</DropdownMenuItem>
+        {/* The print dialog on this panel as shown (S27); the person saves the PDF there. */}
+        <DropdownMenuItem className="research-export-item menu-fmt" title={t('Opens the print dialog on this report; choose Save as PDF there.')}
+          onClick={() => { void printPanel(`.evidence-report-document[data-report-id="${CSS.escape(reportId)}"]`).then(ok => { if (!ok) toast('error', t('The report could not be shown for printing, so no print dialog opened.')) }) }}>{fmt('PDF', t('Portable document'))}</DropdownMenuItem>
         <MenuPrimitive.LinkItem href={reportDocxUrl(researchId, reportId)} download closeOnClick data-slot="dropdown-menu-item" className="research-export-item menu-fmt">{fmt('DOCX', t('Word document'))}</MenuPrimitive.LinkItem>
         {/* Copying the report as Markdown (live, §2.2) sits with the files it matches. */}
         <DropdownMenuItem className="research-export-item menu-fmt export-placement" onClick={() => void markdown('copy')}><Copy size={15} aria-hidden /><b>{t('Copy')}</b><span>{t('Markdown to the clipboard')}</span></DropdownMenuItem>
@@ -357,7 +361,7 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
   return <><StackPanel name="ereport" open onClose={onClose} title={panelTitle} icon={AlignLeft} className={`report-panel report-sheet erep-panel${dark ? ' dark' : ''}`} actions={actions}>
     <p className="sr-only">{t('Evidence report')}</p>
     <div className="report-scroll">
-    <article ref={documentRoot} className="report-document evidence-report-document">
+    <article ref={documentRoot} className="report-document evidence-report-document" data-report-id={reportId}>
       {error && <Notice tone="error">{error}</Notice>}
       {!report ? <p>{t('Loading report…')}</p> : <>
         <header className="report-document-head"><h1>{title}</h1>

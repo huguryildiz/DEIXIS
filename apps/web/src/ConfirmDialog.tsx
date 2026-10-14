@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 
 // neutral: an action that can be undone (removing a source from a research, starting a table); red stays for what cannot.
 // Drawn in the shared dialog shell (mockup `.pal.dlg`): icon and title in the head, the text in the body, the actions in the footer.
-export function ConfirmDialog({ open, dark, title, description, context, children, confirmLabel, cancelLabel, busy = false, neutral = false, onConfirm, onOpenChange }: {
+export function ConfirmDialog({ open, dark, title, description, context, children, confirmLabel, cancelLabel, busy = false, neutral = false, confirmDisabled = false, onConfirm, onOpenChange }: {
   open: boolean
   dark: boolean
   title: string
@@ -16,6 +16,7 @@ export function ConfirmDialog({ open, dark, title, description, context, childre
   cancelLabel: string
   busy?: boolean
   neutral?: boolean
+  confirmDisabled?: boolean  // the confirm button waits for a choice inside the dialog
   onConfirm: () => void
   onOpenChange: (open: boolean) => void
 }) {
@@ -29,7 +30,7 @@ export function ConfirmDialog({ open, dark, title, description, context, childre
       </DialogBody>
       <DialogFooter className="confirm-dialog-actions">
         <Button className="confirm-dialog-cancel" variant="outline" autoFocus disabled={busy} onClick={() => onOpenChange(false)}>{cancelLabel}</Button>
-        <Button className={neutral ? undefined : 'confirm-dialog-danger'} variant={neutral ? 'default' : 'destructive'} disabled={busy} onClick={onConfirm}>{confirmLabel}</Button>
+        <Button className={neutral ? undefined : 'confirm-dialog-danger'} variant={neutral ? 'default' : 'destructive'} disabled={busy || confirmDisabled} onClick={onConfirm}>{confirmLabel}</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>

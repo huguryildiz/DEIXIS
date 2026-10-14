@@ -446,7 +446,7 @@ const researchMenu: Pair[] = [
   { id: 'research-menu.trash', surface: 'research-menu', mock: '.menu button.danger', app: `${MENU} [data-variant=destructive]`, checks: ['chrome', 'type', 'colour', 'icon'], text: true,
     icon: { mock: 'trash', app: 'trash' }, unordered: true, status: 'active' },
 ]
-// S8 (R8): the Export menu. The PDF row is DEFERRED_TARGETS (S27 wires print); the PRISMA-S rows are a PLACEMENT. The
+// S8 (R8): the Export menu. The PDF rows open the print dialog (S27); the PRISMA-S rows are a PLACEMENT. The
 // counts in the sources rows are data, so the rows' text is compared through their format labels.
 const exportMenu: Pair[] = [
   { id: 'export-menu.menu', surface: 'export-menu', mock: '.menu', app: MENU, checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
@@ -605,13 +605,19 @@ export const PAIRS: Pair[] = [
   { id: 'research.followup-depth', surface: 'research', mock: '.mini .r .ghost', app: '.followup-composer .followup-depth', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
   { id: 'research.followup-send', surface: 'research', mock: '.mini .r .send', app: '.followup-composer .followup-send', checks: ['chrome', 'colour', 'icon'],
     icon: { mock: 'up', app: 'arrow-up' }, use: 'icon', states: [], status: 'active' },
-  // S11 (RL1-RL7): the artifacts rail. RL8's Usage box is S27's, so the box list is compared up to it (DEFERRED_TARGETS).
+  // S11 (RL1-RL7): the artifacts rail; RL8's Usage box (S27) is the last box, its own pair below.
   { id: 'research.rail', surface: 'research', mock: '.rail', app: '.rail', checks: ['chrome'], widths: DESK, breakpoint: true, status: 'active' },
   // The boxes' h5 carries a count inside plain text (`Artifacts (2)`), so fixed text is not compared for the box frames;
   // the funnel's labels and the Run box rows are (fixed text, data left out). The frames are chrome (§4.1): the
   // Artifacts box has a row per report version and table (its height is data), the boxes below it sit lower by as much.
   { id: 'research.rail-artifacts', surface: 'research', mock: '.rail .box:first-child', app: '.rail .box:first-child', checks: ['chrome', 'content'], text: false, widths: DESK, status: 'active' },
-  { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box:not(:first-child):not(:has(.legend))', app: '.rail .box:not(:first-child):not(:has(.legend))', checks: ['chrome', 'content'], list: 'fixed', text: false, widths: DESK, status: 'active' },
+  { id: 'research.rail-boxes', surface: 'research', mock: '.rail .box:not(:first-child):not(:has(.legend)):not(:last-child)', app: '.rail .box:not(:first-child):not(:has(.legend)):not(:last-child)', checks: ['chrome', 'content'], list: 'fixed', text: false, widths: DESK, status: 'active' },
+  // The Usage box (RL8, S27) names the run its calls belong to and the time of the stored OpenAlex response, two lines
+  // the mockup lacks (PLACEMENTS rail-usage-notes), and draws the budget bar only with a limit header; its height is left
+  // out (GEOMETRY_EXCEPTIONS rail-usage-height). Its kv rows are compared for type and colour.
+  { id: 'research.rail-usage', surface: 'research', mock: '.rail .box:last-child', app: '.rail .box:last-child', checks: ['chrome', 'content'], text: false, widths: DESK, status: 'active' },
+  { id: 'research.rail-usage-kv', surface: 'research', mock: '.rail .box:last-child .kv', app: '.rail .box:last-child .kv', checks: ['type', 'colour'], list: 'fixed', widths: DESK,
+    dataText: { mock: ['.tnum'], app: ['.rail-data'] }, states: [], status: 'active' },
   // The depth box ("How deeply sources were read", the one box with a legend) is its own pair: it carries a scope line
   // the mockup lacks (GEOMETRY_EXCEPTIONS rail-depth-scope-height), so only its height is left out.
   { id: 'research.rail-depth', surface: 'research', mock: '.rail .box:has(.legend)', app: '.rail .box:has(.legend)', checks: ['chrome', 'content'], text: false, widths: DESK, status: 'active' },

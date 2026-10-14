@@ -196,6 +196,7 @@ export const runKindLabels: Record<RunKind, string> = {
   followup_answer: 'Follow-up answer',
   discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title', lineage_links: 'Development links', claim_decomposition: 'Claim breakdown', kill_search: 'Prior-art search for a claim',
   screen_more: 'Abstract screening of more works',
+  table_column_recheck: 'Column recheck',
 }
 
 export const reportSupportLabels: Record<string, string> = { source_stated: 'Stated by the source', analyst_inference: 'Analyst inference' }
@@ -249,6 +250,7 @@ const pauseReasons: Record<string, string> = {
   scope_revised: 'The question was revised while this run was working. Its remaining results were not applied.',
   table_unavailable: 'The table was removed while this run was waiting.',
   cell_unavailable: 'The cell’s column or row left the table before the recheck ran.',
+  column_unavailable: 'The column left the table before its recheck finished. Proposals already written stay in their cells.',
   no_text: 'The source has no stored text to read.',
   equations_failed: 'Reading the equations of a PDF failed. Resume to answer from that PDF’s text layer.',
   equations_blocked_by_run: 'A PDF’s equations could not be stored while another run uses the same source. Resume when that run ends.',

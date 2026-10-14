@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpDown, Download, Filter, LibraryBig, ListMinus, ListPlus, Search, Table2 } from 'lucide-react'
+import { ArrowUpDown, Download, Filter, Info, LibraryBig, ListChecks, ListMinus, ListPlus, Search, Table2 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { api, type Source, type TableSummary } from '../api'
+import { api, type Effort, type EffortLimits, type Source, type TableSummary, type UnscreenedWork } from '../api'
 import { accessParts, versionText } from '../labels'
-import { t } from '../i18n'
+import { t, uiLocale } from '../i18n'
+import { useToast } from '../Toast'
+import { effortLabels } from '../Home'
+import { SCREEN_MORE_SIZE, useScreenMore, useUnscreened } from './unscreened'
 import { focusWhenLost } from '../focus'
 import { SourceRow } from './SourceRow'
 import { proposalOf } from './sourceProposal'
@@ -13,7 +16,9 @@ import type { OcrContext } from './shared'
 // The Sources panel (mockup P5, P6, P8, P9, P10; UI parity S13): filter tabs with counts, the toolbar, the exclusion
 // reason bar, the source table and the selection bar. Rows, counts and the CSV all come from `sources`, the list the
 // view holds: every tab count is the number of works that tab lists. Other versions of a work follow their record's line
-// and count with it (versions of one work count once). "Not read" (the never-screened works, F12) is wired in S27.
+// and count with it (versions of one work count once). "Not read" (P5, P7; S27) lists the never-screened works of the
+// ranked list from their own route, in that list's order, and its count is that route's total; its notice queues
+// "Screen N more", which never includes a source by itself.
 type SourceSort = 'relevant' | 'found' | 'cited' | 'newest' | 'oldest' | 'title'
 const sourceSorts: Record<SourceSort, string> = { relevant: 'Most relevant', found: 'Order found', cited: 'Most cited', newest: 'Newest first', oldest: 'Oldest first', title: 'Title A–Z' }
 // Search position is not comparable across queries: the model's screening verdict decides, then similarity to the question
@@ -24,7 +29,7 @@ const verdictRank = (s: Source) => verdictOrder[proposalOf(s)?.tone ?? 'none'] ?
 // since removed from the research is not in `sources`, so the tab says how many it leaves out. "Passed abstract" holds the
 // undecided works whose current decision is the abstract stage's `candidate` (the funnel's rule) and that no person set;
 // "Undecided" holds the other undecided works, so Included, Passed abstract, Undecided and Excluded add up to All.
-const stateFilters = [['cited', 'Cited in answer'], ['included', 'Included'], ['passed', 'Passed abstract'], ['pending', 'Undecided'], ['excluded', 'Excluded'], ['all', 'All']] as const
+const stateFilters = [['cited', 'Cited in answer'], ['included', 'Included'], ['passed', 'Passed abstract'], ['pending', 'Undecided'], ['excluded', 'Excluded'], ['notread', 'Not read'], ['all', 'All']] as const
 export type StateFilter = typeof stateFilters[number][0]
 type PdfFilter = 'all' | 'with_pdf' | 'without_pdf'
 const pdfFilterLabels: Record<PdfFilter, string> = { all: 'All', with_pdf: 'PDF attached', without_pdf: 'No PDF' }
@@ -39,7 +44,7 @@ const sourceCompare: Record<SourceSort, (a: Source, b: Source) => number> = {
   title: (a, b) => a.title.localeCompare(b.title),
 }
 const passedAbstract = (s: Source) => s.selection.state === 'pending' && s.selection.origin !== 'user' && s.screening?.stage === 'abstract' && s.screening.passed_abstract
-const tabOf = (s: Source): Exclude<StateFilter, 'cited' | 'all'> => passedAbstract(s) ? 'passed' : s.selection.state
+const tabOf = (s: Source): Exclude<StateFilter, 'cited' | 'all' | 'notread'> => passedAbstract(s) ? 'passed' : s.selection.state
 
 export type SourceActions = { onRemoveFromResearch: (source: Source) => void; onSelect: (source: Source, state: Source['selection']['state']) => void; onReason: (source: Source, reason: string) => Promise<boolean>; onOpen: (source: Source) => void; onAbstract: (source: Source) => void; onDiscoverPdf: (source: Source) => void; onAttachPdf: (source: Source) => void; onAttachCandidate: (source: Source, candidateId: string) => void; onOpenPdf: (source: Source, assetId: string) => void; onPlainText: (source: Source, assetId: string) => void; onRemoveAsset: (source: Source, assetId: string) => void; onReplaceAsset: (source: Source, assetId: string) => void; onReextract: (source: Source, assetId: string) => void; onRereadEquations: (source: Source, assetId: string) => void; pdfFinding: string[]; ocr: OcrContext }
 type BarActions = { researchId: string; active: boolean; onStartTable: (ids: string[]) => void; onAddToTable: (table: TableSummary, ids: string[]) => void; onRemove: (ids: string[]) => void; onSaveToLibrary: (ids: string[]) => Promise<void> }
@@ -60,7 +65,13 @@ function downloadCsv(rows: Source[]) {
   URL.revokeObjectURL(url)
 }
 
-export function SourcesPanel({ sources, cited, citedVersions, answerVersion, busy, filter, onFilter, focus, onFocus, picked, onPick, bar, ...a }: { sources: Source[]; cited: ReadonlyMap<string, number>; citedVersions: ReadonlyMap<string, number>; answerVersion: number | null; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; focus: string | null; onFocus: (workId: string | null) => void; picked: string[]; onPick: (ids: string[]) => void; bar: BarActions } & SourceActions) {
+export function SourcesPanel({ sources, cited, citedVersions, answerVersion, busy, filter, onFilter, focus, onFocus, picked, onPick, bar, cursor, effort, onChanged, ...a }: { sources: Source[]; cited: ReadonlyMap<string, number>; citedVersions: ReadonlyMap<string, number>; answerVersion: number | null; busy: boolean; filter: StateFilter; onFilter: (filter: StateFilter) => void; focus: string | null; onFocus: (workId: string | null) => void; picked: string[]; onPick: (ids: string[]) => void; bar: BarActions
+  cursor: number; effort: Effort; onChanged: () => Promise<unknown> } & SourceActions) {
+  const toast = useToast()
+  const unscreened = useUnscreened(bar.researchId, cursor)
+  const { screening, screenMore } = useScreenMore(bar.researchId, toast, () => Promise.all([onChanged(), unscreened.reload()]))
+  const [limits, setLimits] = useState<EffortLimits | null>(null)
+  useEffect(() => { api.effortLimits().then(setLimits, () => setLimits(null)) }, [])
   const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('relevant')
@@ -76,7 +87,7 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
     else families.push([source])
   }
   const isCited = (family: Source[]) => cited.has(family[0].work_id)
-  const counts: Record<StateFilter, number> = { cited: families.filter(isCited).length, included: 0, passed: 0, pending: 0, excluded: 0, all: families.length }
+  const counts: Record<Exclude<StateFilter, 'notread'>, number> = { cited: families.filter(isCited).length, included: 0, passed: 0, pending: 0, excluded: 0, all: families.length }
   families.forEach(([record]) => counts[tabOf(record)]++)
   const citedRemoved = Math.max(0, cited.size - counts.cited)
   const hasPdf = (family: Source[]) => family.some(source => source.access.assets.length > 0)
@@ -84,8 +95,15 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
   const needle = query.trim().toLocaleLowerCase()
   const matches = (s: Source) => [s.title, s.venue, s.doi, s.year === null ? null : String(s.year), ...s.authors].some(text => text?.toLocaleLowerCase().includes(needle))
   const focused = focus ? families.filter(f => f[0].work_id === focus) : null
-  const shown = focused ?? families.filter(f => (filter === 'all' || (filter === 'cited' ? isCited(f) : tabOf(f[0]) === filter)) && (pdfFilter === 'all' || (pdfFilter === 'with_pdf' ? hasPdf(f) : !hasPdf(f))) && (!needle || f.some(matches)))
-    .sort((x, y) => sourceCompare[sort](x[0], y[0]))
+  const passes = (f: Source[]) => (pdfFilter === 'all' || (pdfFilter === 'with_pdf' ? hasPdf(f) : !hasPdf(f))) && (!needle || f.some(matches))
+  // "Not read": the route's rows in the ranked list's order (the sort does not apply), each the work's family in this
+  // research; a listed work this page does not hold (removed since) is shown from the route's own fields.
+  const byWork = new Map(families.map(f => [f[0].work_id, f]))
+  const notRead = filter === 'notread' && !focused
+  const notReadRows = notRead ? unscreened.items.map(item => ({ item, family: byWork.get(item.work_id) ?? null }))
+    .filter(({ item, family }) => family ? passes(family) : (pdfFilter !== 'with_pdf' && (!needle || [item.title, item.venue, item.doi].some(text => text?.toLocaleLowerCase().includes(needle))))) : []
+  const shown = focused ?? (notRead ? notReadRows.flatMap(row => row.family ? [row.family] : [])
+    : families.filter(f => (filter === 'all' || (filter === 'cited' ? isCited(f) : tabOf(f[0]) === filter)) && passes(f)).sort((x, y) => sourceCompare[sort](x[0], y[0])))
   const shownRows = shown.flat()
   const shownIds = shownRows.map(s => s.source_version_id)
   const allShownPicked = shownIds.length > 0 && shownIds.every(sid => picked.includes(sid))
@@ -121,7 +139,7 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
   return <div className="sources-table-block">
     {/* Filter tabs (mockup .tabs): an underline strip, one count per tab. */}
     <div className="tabs source-filters" role="group" aria-label={t('Show sources')}>
-      {stateFilters.map(([key, label]) => <button key={key} type="button" aria-pressed={!focused && filter === key} className={!focused && filter === key ? 'on' : undefined} onClick={() => { onFocus(null); onFilter(key) }}>{t(label)}<em className="tnum">{counts[key]}</em></button>)}
+      {stateFilters.map(([key, label]) => <button key={key} type="button" aria-pressed={!focused && filter === key} className={!focused && filter === key ? 'on' : undefined} onClick={() => { onFocus(null); onFilter(key) }}>{t(label)}<em className="tnum" title={key === 'notread' && !unscreened.page ? t('Not known: the never-screened list is not read') : undefined}>{key === 'notread' ? (unscreened.page ? unscreened.page.total.toLocaleString() : '–') : counts[key]}</em></button>)}
     </div>
     {/* Toolbar (mockup .toolbar): search, Sort, PDF filter, Download, Save to library. */}
     <div className="toolbar source-toolbar">
@@ -145,6 +163,7 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
       <button type="button" className="ghost" disabled={!shownRows.length} onClick={() => downloadCsv(shownRows)} title={t(shownRows.length === 1 ? 'Download the {n} row shown as CSV' : 'Download the {n} rows shown as CSV', { n: shownRows.length })}><Download size={14} aria-hidden />{t('Download')}</button>
       <button type="button" className="ghost" disabled={busy || !shownRows.length} onClick={() => { void bar.onSaveToLibrary(shownIds) }} title={t(shownRows.length === 1 ? 'Save the {n} row shown to the Library' : 'Save the {n} rows shown to the Library', { n: shownRows.length })}><LibraryBig size={14} aria-hidden />{t('Save to library')}</button>
     </div>
+    {notRead && <NotReadNotice unscreened={unscreened} effort={effort} limits={limits} busy={busy} active={bar.active} screening={screening} onScreenMore={() => { void screenMore() }} />}
     {!focused && filter === 'cited' && citedRemoved > 0 && <p className="source-focus source-cited-scope">{t(citedRemoved === 1 ? 'The answer also cites {n} work since removed from this research. It is not listed here; its quotes still open from the report.' : 'The answer also cites {n} works since removed from this research. They are not listed here; their quotes still open from the report.', { n: citedRemoved })}</p>}
     {focused && <p className="source-focus">{t('Showing the one work the audit sample sent you to.')} <button type="button" onClick={clearAll}>{t('Show all sources')}</button></p>}
     {/* The exclusion reason bar (mockup .why-bar), above the table. */}
@@ -176,7 +195,11 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
           onOpen={() => a.onOpen(source)} onAbstract={() => a.onAbstract(source)} onDiscoverPdf={() => a.onDiscoverPdf(source)} onAttachPdf={() => a.onAttachPdf(source)}
           onAttachCandidate={candidateId => a.onAttachCandidate(source, candidateId)} onOpenPdf={assetId => a.onOpenPdf(source, assetId)} onPlainText={assetId => a.onPlainText(source, assetId)}
           onRemoveAsset={assetId => a.onRemoveAsset(source, assetId)} onReplaceAsset={assetId => a.onReplaceAsset(source, assetId)} onReextract={assetId => a.onReextract(source, assetId)} onRereadEquations={assetId => a.onRereadEquations(source, assetId)} />)}
-        {!shown.length && <tr className="more-row"><td colSpan={4}>{needle || pdfFilter !== 'all'
+        {notReadRows.filter(row => !row.family).map(({ item }) => <UnlistedRow key={item.work_id} item={item} />)}
+        {notRead && unscreened.page && unscreened.items.length < unscreened.page.total && <tr className="source-more"><td colSpan={4}>
+          <button type="button" className="link" disabled={unscreened.loadingMore} aria-busy={unscreened.loadingMore} onClick={unscreened.more}>{t('Show {n} more', { n: Math.min(50, unscreened.page.total - unscreened.items.length).toLocaleString() })}</button>
+          {unscreened.moreFailed && <span className="source-more-error" role="alert">{t('The next works could not be read.')}</span>}</td></tr>}
+        {!shown.length && !(notRead && (notReadRows.length > 0 || unscreened.status !== 'ready' || !unscreened.page?.total)) && <tr className="more-row"><td colSpan={4}>{needle || pdfFilter !== 'all'
           ? t(needle && pdfFilter !== 'all' ? 'No works match “{q}” with {pdf}.' : needle ? 'No works match “{q}”.' : 'No works match with {pdf}.', { q: query.trim(), pdf: t(pdfFilterLabels[pdfFilter]).toLocaleLowerCase() })
           : t('No source matches this filter.')} <button type="button" className="link" onClick={clearAll}>{t(needle || pdfFilter !== 'all' ? 'Clear search and filter' : 'Show all sources')}</button></td></tr>}
       </tbody>
@@ -204,4 +227,37 @@ function SelectionBar({ ids, busy, researchId, active, onStartTable, onAddToTabl
       <button type="button" className="ghost" onClick={onClear}>{t('Clear')}</button>
     </div>
   </div>
+}
+
+// The "Not read" notice (mockup P7): what the list is, and "Screen N more" with the number the next run would read.
+function NotReadNotice({ unscreened, effort, limits, busy, active, screening, onScreenMore }: {
+  unscreened: ReturnType<typeof useUnscreened>; effort: Effort; limits: EffortLimits | null; busy: boolean; active: boolean; screening: boolean; onScreenMore: () => void
+}) {
+  const { page, status } = unscreened
+  const number = (n: number) => n.toLocaleString(uiLocale())
+  if (status === 'loading' && !page) return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb"><span>{t('Reading the works found but never screened…')}</span></div></div>
+  if (status === 'none') return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb"><span>{t('This research has no completed search with a ranked list, so no work is listed as never screened.')}</span></div></div>
+  if (status === 'failed' || !page) return <div className="notice warn source-notread" role="alert"><Info size={16} aria-hidden /><div className="nb"><span>{t('The works found but never screened could not be read.')}</span>
+    <div className="acts"><button type="button" className="ghost" onClick={() => { void unscreened.reload() }}>{t('Try again')}</button></div></div></div>
+  if (!page.total) return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb"><span>{t('Every work on the ranked list was screened.')}</span></div></div>
+  const papers = limits?.efforts[effort]?.papers
+  const next = Math.min(SCREEN_MORE_SIZE, page.screenable)
+  return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb">
+    <span>{papers !== undefined
+      ? t('These works were found but never screened: {depth} depth screens the top {n} of the ranked list. {total} works sit below that line, listed here in its order; {screenable} of them have an abstract to read.', { depth: t(effortLabels[effort]), n: number(papers), total: number(page.total), screenable: number(page.screenable) })
+      : t('These works were found but never screened. {total} works sit below the part of the ranked list that was screened, listed here in its order; {screenable} of them have an abstract to read.', { total: number(page.total), screenable: number(page.screenable) })}
+      {' '}{t('Rank and similarity are the signals the list was ordered by, not relevance.')}</span>
+    {next > 0 && <div className="acts"><button type="button" className="ghost source-screen-more" disabled={busy || active || screening} aria-busy={screening} title={active ? t('Available when the current run ends') : t('Reads the abstracts of the next {n} works twice; it never includes a source by itself.', { n: number(next) })} onClick={onScreenMore}><ListChecks size={14} aria-hidden />{t('Screen {n} more', { n: number(next) })}</button></div>}
+  </div></div>
+}
+
+// A listed never-screened work that is no longer among this research's sources: its stored fields, no actions.
+function UnlistedRow({ item }: { item: UnscreenedWork }) {
+  return <tr className="source-row source-unlisted">
+    <td className="cb" />
+    <td><span className="src-t">{item.title ?? t('Untitled record')}</span>
+      <span className="src-m">{[item.year, item.venue, t('rank {n}', { n: item.signals.rank })].filter(Boolean).join(' · ')}</span></td>
+    <td><span className="prop">{t('not screened')}</span></td>
+    <td />
+  </tr>
 }

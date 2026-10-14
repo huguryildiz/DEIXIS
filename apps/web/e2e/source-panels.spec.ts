@@ -176,12 +176,12 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await expect(check).toContainText('Structural check passed: each citation resolves to a stored passage that was given to this step.')
       await expect(check.getByRole('link', { name: '.bib' })).toHaveAttribute('href', new RegExp(`format=bibtex&sources=cited&answer_id=${latest.id}$`))
       await expect(check.getByRole('link', { name: '.ris' })).toHaveAttribute('href', new RegExp(`format=ris&sources=cited&answer_id=${latest.id}$`))
-      // Download: Markdown, Word, and Copy (live, kept with the files).
+      // Download: Markdown, PDF (the print dialog, S27), Word, and Copy (live, kept with the files).
       await report.getByRole('button', { name: 'Download report' }).click()
       const rows = page.locator('.report-export-menu .research-export-item')
-      await expect(rows.locator('b')).toHaveText(['MD', 'DOCX', 'Copy'])
+      await expect(rows.locator('b')).toHaveText(['MD', 'PDF', 'DOCX', 'Copy'])
       await expect(rows.locator('span:not([aria-hidden])').filter({ hasText: /\w/ }).last()).toHaveText('Markdown to the clipboard')
-      await expect(rows.nth(1)).toHaveAttribute('href', new RegExp(`/answers/${latest.id}/export/docx\\?lang=en&style=apa$`))
+      await expect(rows.nth(2)).toHaveAttribute('href', new RegExp(`/answers/${latest.id}/export/docx\\?lang=en&style=apa$`))
       await page.keyboard.press('Escape')
       // Review with another model opens the request dialog over the panel (UI parity S15b, P32); Escape closes only the dialog.
       const review = report.locator('.split-panel-actions').getByRole('button', { name: 'Review with another model' })

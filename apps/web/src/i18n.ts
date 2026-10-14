@@ -4541,7 +4541,6 @@ const tr: Record<string, string> = {
   'The model change was saved.': 'Model değişikliği kaydedildi.',
   'Not changed: {message}. The page now shows the latest state.': 'Değiştirilmedi: {message}. Sayfa artık son durumu gösteriyor.',
   'Choose another model': 'Başka bir model seç',
-  'The stopped step and the steps after it use the model you choose. Steps that already finished keep the model they ran on, and nothing is sent until you retry the step.': 'Duran adım ve ondan sonraki adımlar seçtiğiniz modeli kullanır. Bitmiş adımlar çalıştıkları modeli korur ve adımı yeniden deneyene kadar hiçbir şey gönderilmez.',
   'Use this model': 'Bu modeli kullan',
   'The model connections could not be read.': 'Model bağlantıları okunamadı.',
   'Reading the model connections…': 'Model bağlantıları okunuyor…',
@@ -4556,7 +4555,6 @@ const tr: Record<string, string> = {
   'Reading the works found but never screened…': 'Bulunan ama hiç taranmamış eserler okunuyor…',
   'This research has no completed search with a ranked list, so no work is listed as never screened.': 'Bu araştırmanın sıralı listesi olan tamamlanmış bir araması yok, bu yüzden hiç taranmamış olarak listelenen eser yok.',
   'The works found but never screened could not be read.': 'Bulunan ama hiç taranmamış eserler okunamadı.',
-  'Every work on the ranked list was screened.': 'Sıralı listedeki her eser tarandı.',
   'These works were found but never screened: {depth} depth screens the top {n} of the ranked list. {total} works sit below that line, listed here in its order; {screenable} of them have an abstract to read.': 'Bu eserler bulundu ama hiç taranmadı: {depth} derinlik sıralı listenin ilk {n} eserini tarar. {total} eser bu çizginin altında kalıyor ve burada listenin sırasıyla gösteriliyor; {screenable} tanesinin okunacak özeti var.',
   'These works were found but never screened. {total} works sit below the part of the ranked list that was screened, listed here in its order; {screenable} of them have an abstract to read.': 'Bu eserler bulundu ama hiç taranmadı. {total} eser sıralı listenin taranan kısmının altında kalıyor ve burada listenin sırasıyla gösteriliyor; {screenable} tanesinin okunacak özeti var.',
   'Rank and similarity are the signals the list was ordered by, not relevance.': 'Sıra ve benzerlik, listenin sıralandığı sinyallerdir; ilgililik değildir.',
@@ -4588,4 +4586,7 @@ const tr: Record<string, string> = {
   'Reading the stopped review…': 'Duran inceleme okunuyor…',
   'The never-screened works keep the ranked list’s stored order; sorting does not apply to them.': 'Hiç taranmamış eserler sıralı listenin kayıtlı sırasını korur; sıralama onlara uygulanmaz.',
   'Ranked list order': 'Sıralı liste düzeni',
+  'Later steps of the role you pick use the model you choose; the stopped step uses it on Retry only when it is a step of that role. Steps that already finished keep the model they ran on, and nothing is sent until you retry the step.': 'Seçtiğiniz rolün sonraki adımları seçtiğiniz modeli kullanır; duran adım onu Yeniden dene ile yalnızca o rolün adımıysa kullanır. Bitmiş adımlar çalıştıkları modeli korur ve adımı yeniden denemedikçe hiçbir şey gönderilmez.',
+  '{role} model changed from {from} to {to} for this research. Later steps of that role use it; the stopped step is a {stopped} step, so Retry still sends it to the {stopped} model.': '{role} modeli bu araştırma için {from} modelinden {to} modeline değişti. O rolün sonraki adımları onu kullanır; duran adım bir {stopped} adımı olduğundan Yeniden dene onu yine {stopped} modeline gönderir.',
+  'No unscreened works left to list.': 'Listelenecek taranmamış eser kalmadı.',
 }

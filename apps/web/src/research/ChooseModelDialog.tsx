@@ -10,7 +10,7 @@ import { ReviewRequest } from '../review/ReviewRequest'
 import '../review/review.css'
 import { exposesEffortControl } from '../modelEffort'
 import { useToast } from '../Toast'
-import { t } from '../i18n'
+import { t, uiLocale } from '../i18n'
 
 // "Choose another model" on the model-down notice (R20; F10, UI parity S27). A model that did not answer is never
 // replaced by the app; this is the person's explicit choice, recorded with the research (`research_model_changes`) and
@@ -61,10 +61,13 @@ function RoleModelDialog({ target, view, dark, onClose, onChanged, onReload }: {
       const change = next.model_changes.at(-1)
       onChanged(next)
       onClose()
-      toast('success', change
-        ? t('{role} model changed from {from} to {to} for this research. Steps that run from now on use it; finished steps keep the model they ran on. Retry the step to send it.', {
-          role: t(modelRoles[change.role].label), from: change.from.model ?? t('none'), to: change.to.model ?? '' })
-        : t('The model change was saved.'))
+      // Only a change of the stopped step's own role moves where Retry sends it (the notice says the same).
+      const words = change && { role: t(modelRoles[change.role].label), from: change.from.model ?? t('none'), to: change.to.model ?? '',
+        stopped: t(modelRoles[target.role].label).toLocaleLowerCase(uiLocale()) }
+      toast('success', !change || !words ? t('The model change was saved.')
+        : change.role === target.role
+          ? t('{role} model changed from {from} to {to} for this research. Steps that run from now on use it; finished steps keep the model they ran on. Retry the step to send it.', words)
+          : t('{role} model changed from {from} to {to} for this research. Later steps of that role use it; the stopped step is a {stopped} step, so Retry still sends it to the {stopped} model.', words))
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         // The research moved on (another tab, a run started): read it again before saying the page shows it.
@@ -75,7 +78,7 @@ function RoleModelDialog({ target, view, dark, onClose, onChanged, onReload }: {
     } finally { setBusy(false) }
   }
   return <ConfirmDialog open={open} dark={dark} neutral busy={busy} title={t('Choose another model')}
-    description={t('The stopped step and the steps after it use the model you choose. Steps that already finished keep the model they ran on, and nothing is sent until you retry the step.')}
+    description={t('Later steps of the role you pick use the model you choose; the stopped step uses it on Retry only when it is a step of that role. Steps that already finished keep the model they ran on, and nothing is sent until you retry the step.')}
     confirmLabel={t('Use this model')} cancelLabel={t('Cancel')} confirmDisabled={!chosen} onConfirm={() => { if (chosen) void save() }} onOpenChange={next => { if (!next) close() }}>
     <div className="choose-model">
       <label className="choose-model-row"><span>{t('Role')}</span>

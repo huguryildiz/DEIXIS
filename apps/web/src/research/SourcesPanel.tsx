@@ -240,7 +240,7 @@ function NotReadNotice({ unscreened, effort, limits, busy, active, screening, on
   if (status === 'none') return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb"><span>{t('This research has no completed search with a ranked list, so no work is listed as never screened.')}</span></div></div>
   if (status === 'failed' || !page) return <div className="notice warn source-notread" role="alert"><Info size={16} aria-hidden /><div className="nb"><span>{t('The works found but never screened could not be read.')}</span>
     <div className="acts"><button type="button" className="ghost" onClick={() => { void unscreened.reload() }}>{t('Try again')}</button></div></div></div>
-  if (!page.total) return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb"><span>{t('Every work on the ranked list was screened.')}</span></div></div>
+  if (!page.total) return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb"><span>{t('No unscreened works left to list.')}</span></div></div>
   const papers = limits?.efforts[effort]?.papers
   const next = Math.min(SCREEN_MORE_SIZE, page.screenable)
   return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb">

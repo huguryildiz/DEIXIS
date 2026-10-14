@@ -20,7 +20,7 @@ export const effortLabels: Record<Effort, string> = { quick: 'Quick', standard: 
 // Limits mirror TEST_EFFORT_BUDGETS in backend/deixis/domain/rules.py.
 export const scopeOptions: Record<SourceScope, { icon: LucideIcon; detail: string }> = {
   academic: { icon: Search, detail: 'Searches scholarly sources to answer your question.' },
-  attached: { icon: Paperclip, detail: 'Only the PDFs you add; no search runs' },
+  attached: { icon: Paperclip, detail: 'Only the PDFs and Zotero items you add; no search runs' },
   attached_and_academic: { icon: FileText, detail: 'Searches using your PDFs and your question. Only included sources are used in the answer.' },
 }
 export const effortOptions: Record<Effort, { icon: LucideIcon }> = {

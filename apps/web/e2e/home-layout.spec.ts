@@ -74,10 +74,10 @@ test.describe.serial('S4: Home layout', () => {
     await expect(options.nth(0)).toContainText('Academic search')
     await expect(options.nth(1)).toContainText('Attached files')
     await expect(options.nth(2)).toContainText('Files + academic search')
-    // The descriptions word for word (COPY_CHANGES scope-academic, scope-pdfs-academic; parity leaves them out of its text check).
+    // The descriptions word for word (COPY_CHANGES scope-academic, scope-attached-detail, scope-pdfs-academic; parity leaves them out of its text check).
     await expect(options.locator('small')).toHaveText([
       'Searches scholarly sources to answer your question.',
-      'Only the PDFs you add; no search runs',
+      'Only the PDFs and Zotero items you add; no search runs',
       'Searches using your PDFs and your question. Only included sources are used in the answer.',
       'Protocol, two reviewers, PRISMA flow',
     ])

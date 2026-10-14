@@ -1370,7 +1370,6 @@ const tr: Record<string, string> = {
   'Standard': 'Standart',
   'Detailed': 'Ayrıntılı',
   'Searches the connected scholarly providers': 'Bağlı akademik sağlayıcılarda arar',
-  'Only the PDFs you add; no search runs': 'Yalnızca eklediğiniz PDF’ler; arama yapılmaz',
   'Your PDFs plus a scholarly provider search': 'PDF’leriniz ve akademik sağlayıcı araması',
   'Answer': 'Yanıt',
   'Literature': 'Literatür',
@@ -4845,4 +4844,6 @@ const tr: Record<string, string> = {
   // UI parity S28, Sol round 1: requests closed before sending because the budget had already run out in the run.
   '{n} search was not sent after the {service} budget ran out.': '{n} arama, {service} bütçesi bittikten sonra gönderilmedi.',
   '{n} searches were not sent after the {service} budget ran out.': '{n} arama, {service} bütçesi bittikten sonra gönderilmedi.',
+  // UI parity S28, Sol round 3: the attached scope also takes a Zotero collection.
+  'Only the PDFs and Zotero items you add; no search runs': 'Yalnızca eklediğiniz PDF’ler ve Zotero öğeleri; arama yapılmaz',
 }

@@ -256,6 +256,7 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   // S28 (Sol round 2): the attached scopes also take a Zotero collection, so their names say files, not PDFs.
   { id: 'scope-attached-name', rule: '§2.3 (an attached scope reads PDFs and Zotero items)', mock: 'Attached PDFs only', app: 'Attached files' },
   { id: 'scope-mixed-name', rule: '§2.3 (an attached scope reads PDFs and Zotero items)', mock: 'PDFs + academic search', app: 'Files + academic search' },
+  { id: 'scope-attached-detail', rule: '§2.3 (an attached scope reads PDFs and Zotero items)', mock: 'Only the PDFs you add; no search runs', app: 'Only the PDFs and Zotero items you add; no search runs' },
   // S28: Home's + menu rows say what the composer and the Zotero dialog really take.
   { id: 'add-upload-detail', rule: '§2.3 (the composer also takes PDFs dropped on it)', mock: 'From this computer, up to 50 MB each', app: 'From this computer, up to 50 MB each. You can also drop files here.' },
   { id: 'add-zotero-detail', rule: '§2.3 (S6: Zotero is read from the app on this computer or from zotero.org)', mock: 'Read-only, imported when the research starts', app: 'Read-only, from Zotero on this computer or zotero.org. Imported when the research starts.' },
@@ -428,10 +429,10 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     note: '"Change the defaults in Settings" sits one role row higher than in the mockup. x, width and height are compared.' },
   // S28: Home's source and + menus carry the replaced descriptions, longer than the mockup's, so the menu reaches its
   // 340px cap and those rows wrap to a second line.
-  { id: 'home-menu-copy-width', rule: 'COPY_CHANGES scope-academic, scope-pdfs-academic, add-upload-detail, add-zotero-detail',
+  { id: 'home-menu-copy-width', rule: 'COPY_CHANGES scope-academic, scope-attached-detail, scope-pdfs-academic, add-upload-detail, add-zotero-detail',
     pairs: ['scope-menu.menu', 'scope-menu.heading', 'scope-menu.rows', 'scope-menu.later', 'add-menu.menu', 'add-menu.rows', 'add-menu.later'], axes: ['width'],
     note: 'The menu is as wide as its longest description, capped at 340px, so it and its rows are wider than the mockup\'s. x is compared.' },
-  { id: 'home-menu-copy-wrap', rule: 'COPY_CHANGES scope-academic, scope-pdfs-academic, add-upload-detail, add-zotero-detail',
+  { id: 'home-menu-copy-wrap', rule: 'COPY_CHANGES scope-academic, scope-attached-detail, scope-pdfs-academic, add-upload-detail, add-zotero-detail',
     pairs: ['scope-menu.rows', 'add-menu.rows'], axes: ['y', 'height'],
     note: 'A row whose description wraps is one line taller, and the rows below it sit lower. x is compared (width: home-menu-copy-width).' },
   { id: 'home-menu-copy-height', rule: 'home-menu-copy-wrap (the menu holds the taller rows)', pairs: ['scope-menu.menu', 'add-menu.menu'], axes: ['height'],

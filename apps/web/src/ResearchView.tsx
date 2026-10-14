@@ -55,6 +55,8 @@ import { FollowupTurnView } from './research/FollowupTurns'
 import { followupClaim, followupClaimId, useFollowupTurns } from './research/followupData'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
+// Rechecks a person starts from the table; short enough to start and end between two reads of the research.
+const RECHECK_KINDS = new Set(['cell_recheck', 'table_column_recheck'])
 const TRANSCRIPT_KINDS = new Set<RunKind>(['discovery', 'pdf_collection', 'fulltext_fetch', 'fulltext_adjudication', 'pdf_ocr', 'answer', 'report', 'review'])
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -274,9 +276,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (!previous || (previous.id === current.id && previous.status === current.status)) return
     const label = t(current.kind === 'answer' ? 'Answer generation' : runKindLabels[current.kind])
     const reason = pauseReasonText(current.pause_reason, current.error)
-    // A new run that already ended by the next read (a short recheck started and finished between two reads) still has its
-    // end announced below; only a run still under way says it started.
-    if (previous.id !== current.id && ACTIVE.has(current.status)) { if (!announcedRuns.current.has(current.id)) toast('success', t('{label} started.', { label })); return }
+    // A new run still under way says it started. One that already ended by the next read stays silent (a background run,
+    // such as a title suggestion after a saved revision, must not take the toast slot), except a recheck the person asked
+    // for, which can start and finish between two reads: its end is announced below.
+    if (previous.id !== current.id) {
+      if (ACTIVE.has(current.status)) { if (!announcedRuns.current.has(current.id)) toast('success', t('{label} started.', { label })); return }
+      if (!RECHECK_KINDS.has(current.kind)) return
+    }
     switch (current.status) {
       case 'completed': {
         if (current.kind !== 'discovery' && current.kind !== 'answer') { toast('success', current.kind === 'cell_recheck' ? t('Recheck finished. Its result waits as a proposal in the cell.') : current.kind === 'table_column_recheck' ? t('Column recheck finished. Its results wait as proposals in the cells; no value was changed.') : t('{label} finished.', { label })); break }

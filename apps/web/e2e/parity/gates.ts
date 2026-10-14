@@ -522,11 +522,18 @@ async function target(page: Page, selector: string, exclude: string[], index: nu
 async function hoverMeasure(page: Page, selector: string, exclude: string[], probe: string[], index: number): Promise<Measured | null> {
   const mark = await target(page, selector, exclude, index)
   if (!mark) return null
-  // A bounded wait, so an element that takes no pointer (a disabled row) fails with its selector, not the test timeout.
-  await page.locator(mark).hover({ timeout: 15_000 }).catch(e => { throw new Error(`hover ${selector} [${index}]: ${e instanceof Error ? e.message.split('\n')[0] : e}`) })
-  const m = await measure(page, mark, [], probe)
-  await page.mouse.move(0, 0)
-  return m
+  // Excluded controls are not compared, so they must not take the pointer either (the mockup's floating states switcher
+  // covers the drawer's user row at 390).
+  const pointer = (off: boolean) => page.evaluate(({ exclude, off }) => exclude.forEach(sel => document.querySelectorAll<HTMLElement>(sel)
+    .forEach(el => { el.style.pointerEvents = off ? 'none' : '' })), { exclude, off })
+  await pointer(true)
+  try {
+    // A bounded wait, so an element that takes no pointer (a disabled row) fails with its selector, not the test timeout.
+    await page.locator(mark).hover({ timeout: 15_000 }).catch(e => { throw new Error(`hover ${selector} [${index}]: ${e instanceof Error ? e.message.split('\n')[0] : e}`) })
+    const m = await measure(page, mark, [], probe)
+    await page.mouse.move(0, 0)
+    return m
+  } finally { await pointer(false) }
 }
 
 /** A surface that changes on hover (a card that lifts): background, border colour and shadow in the hover state, as

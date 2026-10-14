@@ -727,6 +727,8 @@ export const PAIRS: Pair[] = [
 
   // S5b: the first-run setup card (H2). The rows follow the head sentence and the proxy sentence, both replaced under
   // §2.3, so their y is a declared geometry exception; the mockup's "Use the example setup" row is a mockup control.
+  // S28 (S11): with no research the sidebar's recent list holds one line.
+  { id: 'home-first.recents-empty', surface: 'home-first', mock: '#recents > p', app: '#recent-list > p', checks: ['chrome', 'type', 'colour'], text: true, widths: DESK, states: [], status: 'active' },
   { id: 'home-first.setup', surface: 'home-first', mock: '.setup', app: '.home-setup', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
   { id: 'home-first.setup-head', surface: 'home-first', mock: '.setup h3', app: '.home-setup h2', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
   { id: 'home-first.setup-rows', surface: 'home-first', mock: '.setup > div:has(> .num)', app: '.home-setup-row', checks: ['content', 'type'], list: 'fixed', text: false, status: 'active' },

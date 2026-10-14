@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight, Copy, Cpu, HardDrive, MemoryStick, Link, LoaderCircle, RefreshCw, RotateCw, TriangleAlert, Upload } from 'lucide-react'
+import { Ban, ChevronRight, Copy, Cpu, FileText, HardDrive, MemoryStick, Link, LoaderCircle, RefreshCw, RotateCw, ScanText, Server, Sigma, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -7,7 +7,8 @@ import { api, ApiError, libraryImportsApi, type BuiltinEmbedding, type Connectio
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
-import { serviceErrorSentence, healthReasonText, compatConnectionKeys, connectionNames as modelNames, localToolNames, providerRole, reasoningLabel } from './labels'
+import { serviceErrorSentence, healthReasonText, compatConnectionKeys, connectionNames as modelNames, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
+import { ConnectionIcon } from './connectionIcons'
 import { writeClipboard } from './clipboard'
 import { Notice } from './Notice'
 
@@ -42,6 +43,14 @@ const SERVER_IDS = ['ollama', 'lm_studio']
 const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
 const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
 
+// Settings icons, drawn in black and white (Settings.css): brand marks where connectionIcons.tsx has one, a plain glyph otherwise.
+const glyph = (icon: ReactNode) => <span className="connection-icon" aria-hidden="true">{icon}</span>
+const GLYPHS: Record<string, ReactNode> = {
+  ocr: glyph(<ScanText strokeWidth={1.8} />), marker: glyph(<Sigma strokeWidth={1.8} />), servers: glyph(<Server strokeWidth={1.8} />),
+  server: glyph(<Server strokeWidth={1.8} />), 'reference-files': glyph(<FileText strokeWidth={1.8} />), off: glyph(<Ban strokeWidth={1.8} />),
+}
+const settingsIcon = (key: string) => GLYPHS[key] ?? <ConnectionIcon id={localToolIcon(key)} />
+
 type Selected = { kind: 'account' | 'model' | 'cli' | 'servers' | 'equation-reader' | 'ocr-tool' | 'provider' | 'api-key' | 'zotero' | 'reference-files'; id: string }
 type Tone = 'ok' | 'no' | 'warn'
 
@@ -64,9 +73,9 @@ function keyRefusal(service: string, env: string, status: unknown): string | nul
 }
 
 // A tile (mockup `.conn`): the name with its status pill, then one line on what it is. Green only when it can be used.
-function Tile({ name, desc, tone, status, active, onClick }: { name: string; desc: string; tone: Tone; status: string; active: boolean; onClick: () => void }) {
+function Tile({ icon, name, desc, tone, status, active, onClick }: { icon: ReactNode; name: string; desc: string; tone: Tone; status: string; active: boolean; onClick: () => void }) {
   return <button type="button" className={`conn ${active ? 'on' : ''}`} onClick={onClick}>
-    <b><span className="conn-name">{name}</span><span className={`st ${tone}`}>{status}</span></b>
+    <b><span className="conn-title">{icon}<span className="conn-name">{name}</span></span><span className={`st ${tone}`}>{status}</span></b>
     <small>{desc}</small>
   </button>
 }
@@ -595,7 +604,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     : zotero.installed ? ['no', t(zotero.running ? 'Local API off' : 'Not running')] : ['no', t('Not set up')]
   const modelDesc = (id: string) => id === 'gemini' ? t('API key · models and semantic search') : id === 'ollama' ? t('This computer · no key') : compatConnectionKeys[id] ? t('API key · not tested with the real service yet') : t('API key')
   const tile = (key: string, kind: Selected['kind'], id: string, name: string, desc: string, [tone, status]: [Tone, string]) =>
-    <Tile key={key} name={name} desc={desc} tone={tone} status={status} active={isActive(kind, id)} onClick={() => show({ kind, id })} />
+    <Tile key={key} icon={settingsIcon(key)} name={name} desc={desc} tone={tone} status={status} active={isActive(kind, id)} onClick={() => show({ kind, id })} />
 
   // Semantic search rows (plan ST5): the mockup's five, one "Local model server" for Ollama and LM Studio. A row that
   // cannot be chosen says what it needs, from the options' own state. A choice is saved at once; choosing the row that
@@ -653,6 +662,8 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const model = sel?.kind === 'model' ? data?.models[sel.id] : accountId ? data?.models[accountId] : undefined
   const provider = sel?.kind === 'provider' ? data?.providers.find(p => p.id === sel.id) : undefined
   const cliTool = sel?.kind === 'cli' ? toolOf(sel.id) : accountId ? toolOf(ACCOUNT_TOOLS[accountId].tool) : undefined
+  // The sheet title carries the same icon as the tile it opened from.
+  const sheetIconKey = !sel ? '' : sel.kind === 'api-key' ? 'openai' : sel.kind === 'ocr-tool' ? 'ocr' : sel.kind === 'reference-files' ? 'reference-files' : sel.id
   const name = !sel ? ''
     : sel.kind === 'account' ? ACCOUNT_TOOLS[sel.id]?.name ?? sel.id
     : sel.kind === 'model' ? modelNames[sel.id] ?? sel.id
@@ -875,7 +886,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
           <label className={!available ? 'is-disabled' : undefined}>
             <input type="radio" name="semantic-provider" checked={isChosen} disabled={!available || saving} onChange={pick}
               onClick={() => { if (isChosen && semantic && !semantic.explicit) pick() }} />
-            <span>{row.label}{row.desc && <small>{row.desc}</small>}</span>
+            {settingsIcon(row.id)}<span>{row.label}{row.desc && <small>{row.desc}</small>}</span>
             {saving && isChosen && <span className="spin" aria-label={t('Saving…')} />}
             {need && <span className="st no">{need}</span>}
           </label>
@@ -905,7 +916,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
 
     <Sheet open={open && !gone} onOpenChange={setOpen}>
       <SheetContent className={`detail-sheet connection-sheet ${dark ? 'dark' : ''}`}>
-        <SheetHeader><SheetTitle><Link size={16} aria-hidden /><span>{name}</span></SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
+        <SheetHeader><SheetTitle>{(sheetIconKey && settingsIcon(sheetIconKey)) || <Link size={16} aria-hidden />}<span>{name}</span></SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
         <div className="connection-body mk pad detail">{body}</div>
       </SheetContent>
     </Sheet>

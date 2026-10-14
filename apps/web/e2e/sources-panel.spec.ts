@@ -258,15 +258,25 @@ test.describe.serial('S13: the Sources panel', () => {
       const csv = readFileSync(await (await download).path(), 'utf8')
       expect(csv).toContain(`"'=HYPERLINK(""https://example.invalid"",""SYNTHETIC"")"`)
       expect(csv).not.toMatch(/(^|,)"?=HYPERLINK/m)
-    } finally { await page.unrouteAll({ behavior: 'wait' }) }
+    } finally {
+      await page.unrouteAll({ behavior: 'wait' })
+      // The patched view stays on screen after the route is gone (a later goto to the same hash does not reload), so the
+      // page is read again from the server before the next test uses it.
+      await page.reload()
+    }
   })
 
   test('the selection bar: N chosen, Start table, Add to table, Add to library (the server’s count), Remove, Clear', async () => {
+    // Three included works picked from the stored records by title, never by their place in the list: the list's order
+    // follows the sort and every reload. No earlier test saves to the Library, so none of them is saved yet.
+    const [first, second, third] = (await viewOf(api, rid)).sources.filter(s => s.version_role === 'record' && s.selection.state === 'included').map(s => s.title)
+    const row = (title: string) => records().filter({ has: page.locator('.src-t').getByText(title, { exact: true }) })
     await page.goto(sourcesUrl())
+    await page.reload()
     await tab('Included').click()
-    await records().nth(0).getByRole('checkbox').check()
-    await records().nth(1).getByRole('checkbox').check()
-    await expect(records().nth(0)).toHaveClass(/\bsel\b/)
+    await row(first).getByRole('checkbox').check()
+    await row(second).getByRole('checkbox').check()
+    await expect(row(first)).toHaveClass(/\bsel\b/)
     const bar = page.getByRole('region', { name: 'Chosen sources' })
     await expect(bar).toContainText('2 chosen')
     await expect(bar.getByRole('button')).toHaveText(['Start table', 'Add to table', 'Add to library', 'Remove from research', 'Clear'])
@@ -283,8 +293,9 @@ test.describe.serial('S13: the Sources panel', () => {
     await bar.getByRole('button', { name: 'Clear' }).click()
     await expect(bar).toHaveCount(0)
     // The toolbar's Save to library saves the rows shown.
-    await sources().getByRole('searchbox', { name: 'Filter sources' }).fill((await records().nth(2).locator('.src-t').textContent())!)
+    await sources().getByRole('searchbox', { name: 'Filter sources' }).fill(third)
     await expect(records()).toHaveCount(1)
+    await expect(row(third)).toHaveCount(1)
     await sources().getByRole('button', { name: 'Save to library' }).click()
     await expect(page.getByText('Saved 1 source to the Library.')).toBeVisible()
   })

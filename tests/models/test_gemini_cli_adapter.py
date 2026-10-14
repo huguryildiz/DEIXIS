@@ -250,3 +250,16 @@ def test_run_cli_stops_a_child_left_holding_the_pipes(tmp_path):
         time.sleep(0.1)
     else:
         raise AssertionError("the child kept running")
+
+
+def test_a_nonzero_exit_is_not_completed_even_with_a_success_event():
+    """Sol D23 round 1: the process exit code must be 0 too."""
+    result = GeminiCliAdapter.result_of(CliRun(1, answer(), "Error: something broke"), MODEL)
+    assert result.status == "failed" and result.delivery_class == "after_send_unknown"
+
+
+def test_a_sign_in_refusal_after_the_init_event_is_not_sent():
+    """Sol D23 round 1: a refusal with no answer and no model stats sent nothing, even after `init`."""
+    stdout = lines({"type": "init", "session_id": "s", "model": MODEL})
+    result = GeminiCliAdapter.result_of(CliRun(42, stdout, INELIGIBLE), MODEL)
+    assert (result.status, result.delivery_class, result.error_kind) == ("unavailable", "before_send", "auth_failed")

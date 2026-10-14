@@ -296,9 +296,12 @@ class GeminiCliAdapter:
             return ModelStepResult("isolation_violation", raw_text=text or None, error="Gemini CLI reported a tool event",
                                    delivery_class="after_send_unknown", **common)
         errors = [str(e.get("message") or "") for e in events if e.get("type") == "error" and e.get("severity") == "error"]
-        if result is None or result.get("status") != "success" or errors:
+        # Completed only when the closing event says success, no error event came and the process itself exited 0.
+        if result is None or result.get("status") != "success" or errors or run.returncode != 0:
             failure = auth_failure(run.stderr) if result is None else None
-            if failure and not events:
+            # A sign-in refusal comes before any model request: with no answer and no model stats nothing was sent,
+            # even if the CLI already wrote its `init` event.
+            if failure and not text and not answered:
                 return ModelStepResult("unavailable", error=failure[1], error_kind=failure[0],
                                        delivery_class="before_send", **common)
             detail = "; ".join(errors) or (run.stderr.strip().splitlines() or [f"exit {run.returncode}"])[-1]

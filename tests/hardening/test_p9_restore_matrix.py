@@ -723,6 +723,12 @@ EMPTY_BECAUSE = {
     "watch_seen": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
     "watch_seen_alias": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
     "watch_items": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",
+    # UI parity tables (S17, S19a, S22a): the rich library builder takes none of these steps; each table's backup and
+    # restore has its own test.
+    "followup_turns": "the builder asks no follow-up question; backup/restore: tests/storage/test_followup_turns_storage.py",
+    "followup_turn_links": "same as followup_turns",
+    "library_items": "the builder saves nothing to the Library; backup/restore: tests/storage/test_library_items.py",
+    "research_model_changes": "the builder changes no research model; backup/restore: tests/models/test_research_model_change.py",
     "watch_gaps": "the rich library builder starts no interval watch, so no scheduling gap is recorded",
     "watch_schedule_changes": "the rich library builder changes no follow-up watch schedule",
 }

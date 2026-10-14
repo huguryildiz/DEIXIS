@@ -617,6 +617,41 @@ test.describe.serial('S24: the Settings page', () => {
     await sheet.getByRole('button', { name: 'Close' }).click()
   })
 
+  test('a keyless source\'s Test says only whether the service answered: HTTP code or why not; a failed test shows no old answer (P5)', async () => {
+    // Crossref goes to the fixture server's mocked transport, which answers HTTP 200; the fixture has no contact email.
+    await page.goto(server.url('#/settings'))
+    await page.reload()
+    await page.getByRole('button', { name: /^Crossref / }).click()
+    const sheet = page.getByRole('dialog', { name: 'Crossref' })
+    const meta = sheet.locator('.dmeta')
+    await expect(meta).not.toContainText('Answered')
+    await sheet.getByRole('button', { name: 'Test' }).click()
+    await expect(meta).toContainText('Answered · HTTP 200')
+    await expect(meta).toContainText(/checked \d/)
+    await expect(sheet.getByText('Sent without a contact email; none is set in Profile.')).toBeVisible()
+    // An answer with no reply, then a test that could not run: the old answer and its time go, the reason shows.
+    let next: 'timeout' | 'fail' = 'timeout'
+    await page.route(url => url.pathname === '/api/providers/crossref/test', route => next === 'fail'
+      ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC provider test failure' } })
+      : route.fulfill({ json: { provider: 'crossref', answered: false, http_status: null, failure: 'timeout', error: 'ReadTimeout',
+        timeout_seconds: 20, contact_email_sent: true, checked_at: PINNED } }))
+    await sheet.getByRole('button', { name: 'Test' }).click()
+    await expect(meta).toContainText('Did not answer · no reply in 20 s')
+    await expect(sheet.getByText('Sent without a contact email; none is set in Profile.')).toHaveCount(0)
+    next = 'fail'
+    await sheet.getByRole('button', { name: 'Test' }).click()
+    await expect(sheet.locator('.check-failed')).toHaveText(/^Could not check: .*SYNTHETIC provider test failure/)
+    await expect(meta).not.toContainText(/answer/i)
+    await expect(meta).not.toContainText(/checked \d/)
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+    // A source that requires a key has no keyless Test.
+    await page.getByRole('button', { name: /^Scopus / }).click()
+    const scopus = page.getByRole('dialog', { name: 'Scopus' })
+    await expect(scopus.locator('.connection-body > .acts')).toHaveCount(0)
+    await scopus.getByRole('button', { name: 'Close' }).click()
+  })
+
   test('BibTeX / RIS files import into the Library and report what the server stored', async () => {
     await page.goto(server.url('#/settings'))
     await page.getByRole('button', { name: /^BibTeX \/ RIS files/ }).click()

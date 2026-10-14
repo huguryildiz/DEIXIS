@@ -693,6 +693,9 @@ export type Keychain = { available: boolean; name: string | null }
 export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean }
 export type Credentials = { keychain: Keychain; keys: KeyEntry[] }
 export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed'; detail: string; checked_at: string; kind?: string; http_status?: number | null; reset_at?: string | null }
+// One request to a keyless source (P5): whether it answered, with its HTTP status, or why no answer came.
+export type ProviderTest = { provider: string; answered: boolean; http_status: number | null; failure: 'timeout' | 'connection' | 'other' | null
+  error: string | null; timeout_seconds: number; contact_email_sent: boolean; checked_at: string }
 export type LocalToolModel = { id: string; size_bytes: number | null; embedding: boolean }
 export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; url: string }
 // 'failed' is set by the page itself when the terminal could not be opened (the server answered with an error).
@@ -1274,6 +1277,7 @@ export const api = {
   saveCredential: (env: string, value: string) => request<{ key: KeyEntry; test: KeyTest | null }>(`/api/credentials/${env}`, json('PUT', { value })),
   removeCredential: (env: string) => request<{ key: KeyEntry }>(`/api/credentials/${env}`, { method: 'DELETE' }),
   testCredential: (env: string) => request<KeyTest>(`/api/credentials/${env}/test`, { method: 'POST' }),
+  testProvider: (id: string) => request<ProviderTest>(`/api/providers/${encodeURIComponent(id)}/test`, { method: 'POST' }),
   equationReader: () => request<EquationReader>('/api/equation-reader'),
   installEquationReader: () => request<{ job: EquationReader['job'] }>('/api/equation-reader/install', { method: 'POST' }),
   cancelEquationReaderInstall: () => request<{ job: EquationReader['job'] }>('/api/equation-reader/cancel', { method: 'POST' }),

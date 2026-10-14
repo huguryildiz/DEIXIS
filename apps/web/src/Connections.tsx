@@ -3,7 +3,7 @@ import { Ban, ChevronRight, Copy, Cpu, FileText, HardDrive, MemoryStick, Link, L
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
-import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
@@ -70,6 +70,14 @@ function keyRefusal(service: string, env: string, status: unknown): string | nul
     : t('{service} could not read this key (HTTP 400). Copy the whole key again.', v)
   if (typeof status === 'number') return t('{service} answered with an error (HTTP {code}), so the key could not be tested. Try again later.', v)
   return null
+}
+
+// What a keyless source's Test measured (P5): only whether a reply came, with its HTTP code, or why none came.
+function providerAnswer(test: ProviderTest): string {
+  if (test.answered) return t('Answered · HTTP {code}', { code: String(test.http_status) })
+  if (test.failure === 'timeout') return t('Did not answer · no reply in {seconds} s', { seconds: String(test.timeout_seconds) })
+  if (test.failure === 'connection') return t('Did not answer · no connection')
+  return t('Did not answer · {error}', { error: test.error ?? '' })
 }
 
 // A tile (mockup `.conn`): the name with its status pill, then one line on what it is. Green only when it can be used.
@@ -471,6 +479,8 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const [signIn, setSignIn] = useState<string | null>(null)
   // The sign-in DEIXIS started for a tool (D21); it is polled while the person finishes it in the terminal window that opened.
   const [signInRun, setSignInRun] = useState<{ tool: string; run: AccountSignIn } | null>(null)
+  // The last answer to each keyless source's Test; shown only while its check's time is (the same check's answer).
+  const [providerTests, setProviderTests] = useState<Record<string, ProviderTest>>({})
   const toast = useToast()
   // A later read wins: an answer to an earlier request that arrives after it is dropped. Semantic search reads and saves
   // share one version: a save moves it on, so a read started before or during the save never replaces the saved result.
@@ -796,8 +806,12 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   } else if (sel?.kind === 'provider' && provider) {
     const env = providerKeyEnv[provider.id]
     const [tone, status] = providerStatus(provider.access_mode)
+    const key = `provider:${provider.id}`
+    const keyless = provider.access_mode === 'keyless'
+    const test = keyless && checking !== key && checked[key] && !checkFailed[key] ? providerTests[provider.id] : undefined
+    const id = provider.id
     body = <>
-      {dmeta(`provider:${provider.id}`, [tone, status])}
+      {dmeta(key, [tone, status], test && <span className={`status-chip ${test.answered && (test.http_status ?? 0) < 300 ? '' : 'is-warning'}`}>{providerAnswer(test)}</span>)}
       <p className="foot-note is-ink">{provider.id === 'openalex'
         ? t('Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.')
         : !env ? (MAILTO_PROVIDERS.has(provider.id) ? t('No key needed. DEIXIS adds your contact email to its requests, as the service asks.') : t('No key needed.'))
@@ -806,6 +820,8 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
         label={t(provider.id === 'openalex' ? 'API key (optional, free from openalex.org)' : 'API key')}
         removeEffect={t('Requests that need this key stop until you add one again.')} onSaved={reloadAfterKeyChange} />}
       {env && credentials && !keyEntry(env)?.configured && providerNoKey[provider.id] && <Notice tone="attention">{t(providerNoKey[provider.id])}</Notice>}
+      {keyless && <div className="acts">{checkButton(key, 'Test', () => api.testProvider(id).then(result => setProviderTests(old => ({ ...old, [id]: result }))))}</div>}
+      {test && !test.contact_email_sent && <p className="foot-note">{t('Sent without a contact email; none is set in Profile.')}</p>}
       {MAILTO_PROVIDERS.has(provider.id) && <p className="foot-note"><a href="#/settings/profile">{t('Set the contact email in Profile')}</a></p>}
       <div className="connection-checks">{check(t('Used for'), providerUse[provider.id] ? t(providerUse[provider.id]) : providerRole(provider.role))}</div>
     </>

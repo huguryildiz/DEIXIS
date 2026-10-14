@@ -4,6 +4,16 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D33 — A keyless source's Test sends one request without a key and reports only whether the service answered
+Status: accepted · Date: 2026-10-15 · Writer: Claude
+Context: The mockup gives Crossref, arXiv and the OpenAlex sheet a Test button. Settings had none for a source used without a key: `credentials.test()` tests model keys only, and source keys are saved untested.
+Decision:
+- `POST /api/providers/{id}/test` (`api/provider_test_routes.py`, `providers/keyless_check.py`) sends one one-record read to the endpoint that connector searches, without any key, on a new connection. The contact email goes in the User-Agent, and also as `mailto` (OpenAlex, bioRxiv through OpenAlex, Crossref) or `email` (PubMed). Semantic Scholar's request goes through its process-wide gate. No retry, 20 s time-out.
+- The reply is reported as answered with its HTTP status, or not answered with the reason (time-out, no connection, other) and the error class, plus whether a contact email was sent and `checked_at`. The body is not read, so the result says nothing about search results, quota or record quality. Nothing is stored.
+- Only a connector whose access mode is `keyless` right now is tested; one used with a key, or one that requires a key, gets 422. `credentials.py` is unchanged.
+- The sheet shows "Answered · HTTP 200" or "Did not answer · …" next to the status, with the check's time; a test that could not run shows why and hides the earlier answer. COPY_CHANGES keyless-sheet-save is narrowed to the wording that still differs.
+Limits: Tested with mocked transports and the fixture server only; no live request to any source was sent. An HTTP answer, even 200, does not show that a search would return records.
+
 ## D28 — The answer step organizes by topic, answers comparisons with the trade-off, and matches certainty to the evidence
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: The owner asked whether an outside literature-review skill (an agent skill with its own search and DOI tools) could be used. Its tools do not fit DEIXIS, where code searches and the model has no tools. Some of its writing rules were missing from `references/source-grounded-answer.md`.

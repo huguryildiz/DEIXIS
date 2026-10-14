@@ -4891,4 +4891,10 @@ const tr: Record<string, string> = {
   'Only the PDFs and Zotero items you add; no search runs': 'Yalnızca eklediğiniz PDF’ler ve Zotero öğeleri; arama yapılmaz',
   'Add a key below to use this source.': 'Bu kaynağı kullanmak için aşağıya bir anahtar ekleyin.',
   'New researches use this source.': 'Yeni araştırmalar bu kaynağı kullanır.',
+  // P5: the Test on a keyless source's sheet says only whether the service answered.
+  'Answered · HTTP {code}': 'Cevap verdi · HTTP {code}',
+  'Did not answer · no reply in {seconds} s': 'Cevap vermedi · {seconds} sn içinde yanıt gelmedi',
+  'Did not answer · no connection': 'Cevap vermedi · bağlantı kurulamadı',
+  'Did not answer · {error}': 'Cevap vermedi · {error}',
+  'Sent without a contact email; none is set in Profile.': 'İletişim e-postası olmadan gönderildi; Profil’de ayarlı değil.',
 }

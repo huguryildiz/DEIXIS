@@ -36,10 +36,11 @@ ISOLATION_ARGS = (
 )
 
 
-def native_binary(found: Path) -> str:
+def native_binary(found: Path) -> str | None:
     """The platform binary behind npm's `copilot` launcher. The launcher is a node script that runs the binary as a
     child with the same pipes; stopping the launcher leaves the binary running and holding them, so DEIXIS runs the
-    binary itself. A standalone install (Homebrew, WinGet, the install script) is the binary already."""
+    binary itself. A standalone install (Homebrew, WinGet, the install script) is the binary already. None when the
+    launcher is there but its binary is not: running the launcher is the case this avoids."""
     real = found.resolve()
     # npm on Windows puts copilot.cmd next to node_modules; on macOS and Linux the link points into the package.
     package = real.parent if real.name == "npm-loader.js" else found.parent / "node_modules" / "@github" / "copilot"
@@ -54,7 +55,7 @@ def native_binary(found: Path) -> str:
             candidate = base / f"copilot-{p}-{arch}" / name
             if candidate.is_file():
                 return str(candidate)
-    return str(found)
+    return None
 
 
 def copilot_environment(home: Path, source: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -92,17 +93,21 @@ class CopilotCliAdapter:
             return
         try:
             if sys.platform == "win32":
-                proc.kill()
+                # The whole tree: kill() would end only the binary, not what it started.
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=15)
+                if proc.returncode is None:
+                    proc.kill()
             else:
                 os.killpg(proc.pid, sig)
-        except (ProcessLookupError, PermissionError):
+        except (ProcessLookupError, PermissionError, OSError, subprocess.TimeoutExpired):
             pass
 
     def _command(self) -> list[str] | None:
         if self._cli is not None:
             return list(self._cli)
         found = shutil.which("copilot")
-        return [native_binary(Path(found))] if found else None
+        binary = native_binary(Path(found)) if found else None
+        return [binary] if binary else None
 
     def _prepare(self) -> dict[str, str]:
         self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -201,6 +206,9 @@ class CopilotCliAdapter:
             return ModelStepResult("unavailable", error="GitHub Copilot CLI not found" if not cmd else "no model requested",
                                    delivery_class="before_send")
         env = self._prepare()
+        if configured := self._configured_mcp_servers():
+            return ModelStepResult("isolation_violation", error=f"MCP servers configured in the DEIXIS Copilot home: {', '.join(configured)}",
+                                   delivery_class="before_send")
         # Prompt mode has no separate system message; the schema is in the stored developer text (D86).
         prompt = f"{base}\n\n{developer}\n\nReturn only a JSON object.\n\n{message}"
         args = [*cmd, "-p", "", "--output-format", "json", "--model", requested_model, *ISOLATION_ARGS]
@@ -219,6 +227,11 @@ class CopilotCliAdapter:
             self._stop(proc)
             await proc.wait()
             return ModelStepResult("failed", error="Copilot CLI turn timed out", delivery_class="after_send_unknown")
+        except BaseException:
+            # The caller stopped waiting (cancelled): stop the run too, so it does not go on unseen.
+            self._stop(proc)
+            await asyncio.shield(proc.wait())
+            raise
         finally:
             self._active.discard(proc)
         return parse_events(out.decode(errors="replace"), err.decode(errors="replace"), proc.returncode, requested_model)
@@ -240,6 +253,9 @@ def parse_events(stdout: str, stderr: str, returncode: int | None, requested_mod
     tools: list[str] = []
     live_mcp: list[str] = []
     errors: list[str] = []
+    event_errors: list[str] = []
+    sent = False
+    finished: int | None = None
     usage: dict[str, Any] | None = None
     session_id: str | None = None
     for line in stdout.splitlines():
@@ -261,26 +277,30 @@ def parse_events(stdout: str, stderr: str, returncode: int | None, requested_mod
             if data.get("content"):
                 content = data["content"]
             tools += [t.get("name") or "?" for t in data.get("toolRequests") or []]
+        elif kind == "model.call_start":
+            sent = True  # the request left for the provider
         elif kind == "tool.execution_start":
             tools.append(data.get("toolName") or "?")
-        elif kind == "model.call_final_result" and data.get("result") not in (None, "success"):
-            errors.append(str(data.get("error") or data.get("result")))
+        elif kind == "model.call_final_result" and data.get("result") != "success":
+            event_errors.append(str(data.get("error") or data.get("result")))
         elif kind == "session.error" or kind.endswith(".error"):
-            errors.append(str(data.get("message") or data.get("error") or kind))
+            event_errors.append(str(data.get("message") or data.get("error") or kind))
         elif kind == "session.usage_checkpoint":
             for metric in data.get("providerModelMetrics") or []:
                 usage = (metric.get("metrics") or {}).get("usage") or usage
         elif kind == "result":
             session_id = event.get("sessionId") or session_id
+            finished = event.get("exitCode")
     errors += [line.strip() for line in stderr.splitlines() if line.strip()][-3:]
     common: dict[str, Any] = {"resolved_model": actual_model, "external_thread_id": session_id, "token_usage": usage,
                               "tool_item_types": tools, "requested_model_verified": actual_model == requested_model}
     if live_mcp:
         return ModelStepResult("isolation_violation", error=f"MCP servers connected: {', '.join(live_mcp)}",
                                delivery_class="after_send_unknown", **common)
-    if returncode != 0 or content is None:
-        error = "; ".join(errors) or f"Copilot CLI exited with code {returncode}"
-        sent = actual_model is not None
+    # Completed only with an answer, no error event, and the run's own end event saying it exited cleanly.
+    if returncode != 0 or content is None or event_errors or finished != 0:
+        error = "; ".join(event_errors + errors) or f"Copilot CLI exited with code {returncode}"
+        sent = sent or actual_model is not None
         return ModelStepResult("failed", raw_text=content, error=safe_error(error)[:300],
                                delivery_class="after_send_unknown" if sent else "before_send", **common)
     return ModelStepResult("completed", raw_text=content, **common)

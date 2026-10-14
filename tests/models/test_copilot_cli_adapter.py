@@ -33,7 +33,9 @@ if "--acp" in args:
     sys.exit(0)
 record = fake["record"]
 with open(record, "w") as f:
-    json.dump({"argv": args, "cwd": os.getcwd(), "env": dict(os.environ), "stdin": sys.stdin.read()}, f)
+    json.dump({"argv": args, "cwd": os.getcwd(), "env": dict(os.environ), "stdin": sys.stdin.read(), "pid": os.getpid()}, f)
+if fake.get("sleep"):
+    import time; time.sleep(fake["sleep"])
 sys.stdout.write(fake.get("events", ""))
 sys.exit(fake.get("exit", 0))
 '''
@@ -48,6 +50,7 @@ def message(model="gpt-5-mini", content='{"answer": "4"}', tools=()):
                                                   "toolRequests": [{"name": name} for name in tools]}}
 
 
+END = {"type": "result", "sessionId": "s-1", "exitCode": 0}
 OK = events(
     {"type": "session.mcp_servers_loaded", "data": {"servers": [{"name": "github-mcp-server", "status": "disabled"}]}},
     {"type": "assistant.message", "data": {"model": "gpt-5-mini", "content": "", "toolRequests": []}},
@@ -118,19 +121,19 @@ def test_run_step_sends_the_prompt_on_stdin_with_every_tool_off(tmp_path, monkey
 
 def test_a_tool_request_or_run_is_reported_for_rejection(tmp_path, monkeypatch):
     out = events(message(content="", tools=["view"]),
-                 {"type": "tool.execution_start", "data": {"toolName": "bash"}}, message())
+                 {"type": "tool.execution_start", "data": {"toolName": "bash"}}, message(), END)
     result = asyncio.run(make(tmp_path, monkeypatch, events=out).run_step("b", "d", "m", {}, "gpt-5-mini"))
     assert result.tool_item_types == ["view", "bash"]
 
 
 def test_a_connected_mcp_server_is_an_isolation_violation():
-    out = events({"type": "session.mcp_servers_loaded", "data": {"servers": [{"name": "playwright", "status": "connected"}]}}, message())
+    out = events({"type": "session.mcp_servers_loaded", "data": {"servers": [{"name": "playwright", "status": "connected"}]}}, message(), END)
     result = parse_events(out, "", 0, "gpt-5-mini")
     assert result.status == "isolation_violation" and "playwright" in result.error
 
 
 def test_another_model_answering_is_kept_and_not_verified():
-    result = parse_events(events(message(model="gpt-5.4"), message(model="gpt-5-mini")), "", 0, "gpt-5-mini")
+    result = parse_events(events(message(model="gpt-5.4"), message(model="gpt-5-mini"), END), "", 0, "gpt-5-mini")
     assert result.status == "completed" and result.resolved_model == "gpt-5.4" and result.requested_model_verified is False
 
 
@@ -165,3 +168,62 @@ def test_native_binary_skips_the_npm_launcher(tmp_path, monkeypatch):
     standalone.parent.mkdir()
     standalone.write_text("")
     assert native_binary(standalone) == str(standalone)
+
+
+def test_an_error_event_after_an_answer_fails_the_step():
+    out = events(message(), {"type": "session.error", "data": {"message": "quota exceeded"}}, END)
+    result = parse_events(out, "", 0, "gpt-5-mini")
+    assert result.status == "failed" and "quota exceeded" in result.error and result.delivery_class == "after_send_unknown"
+
+
+def test_an_answer_without_the_end_event_is_not_completed():
+    assert parse_events(events(message()), "", 0, "gpt-5-mini").status == "failed"
+
+
+def test_a_failure_after_the_model_call_started_is_after_send():
+    out = events({"type": "model.call_start", "data": {"model": "gpt-5-mini"}})
+    result = parse_events(out, "connection reset", 1, "gpt-5-mini")
+    assert result.status == "failed" and result.delivery_class == "after_send_unknown"
+
+
+def test_a_configured_mcp_server_stops_the_step_before_copilot_starts(tmp_path, monkeypatch):
+    adapter = make(tmp_path, monkeypatch, events=OK)
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / "mcp-config.json").write_text(json.dumps({"mcpServers": {"playwright": {}}}))
+    result = asyncio.run(adapter.run_step("b", "d", "m", {}, "gpt-5-mini"))
+    assert result.status == "isolation_violation" and result.delivery_class == "before_send"
+    assert not (tmp_path / "record.json").exists()
+
+
+def test_a_cancelled_step_stops_copilot(tmp_path, monkeypatch):
+    import os
+    adapter = make(tmp_path, monkeypatch, events=OK, sleep=60)
+
+    async def go():
+        task = asyncio.create_task(adapter.run_step("b", "d", "m", {}, "gpt-5-mini"))
+        for _ in range(100):
+            await asyncio.sleep(0.1)
+            if (tmp_path / "record.json").exists():
+                break
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            return True
+        return False
+
+    assert asyncio.run(go()) is True
+    pid = record(tmp_path)["pid"]
+    try:
+        os.kill(pid, 0)
+        alive = True
+    except ProcessLookupError:
+        alive = False
+    assert not alive and not adapter._active
+
+
+def test_a_launcher_without_its_binary_is_not_run(tmp_path):
+    package = tmp_path / "lib" / "node_modules" / "@github" / "copilot"
+    package.mkdir(parents=True)
+    (package / "npm-loader.js").write_text("")
+    assert native_binary(package / "npm-loader.js") is None

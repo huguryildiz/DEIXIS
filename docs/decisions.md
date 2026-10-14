@@ -4,6 +4,17 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D28 — The answer step organizes by topic, answers comparisons with the trade-off, and matches certainty to the evidence
+Status: accepted · Date: 2026-10-15 · Writer: Claude
+Context: The owner asked whether an outside literature-review skill (an agent skill with its own search and DOI tools) could be used. Its tools do not fit DEIXIS, where code searches and the model has no tools. Some of its writing rules were missing from `references/source-grounded-answer.md`.
+Decision:
+- The grounded answer groups paragraphs by topic rather than by source, and the first claims of its sections must carry the argument when read in order.
+- A question that names alternatives is answered with the conditions under which each does better, not one summary per alternative.
+- A premise in the question that the passages contradict is said in the first paragraph; one they do not show is said to be not shown. Alternatives reported in settings that cannot be compared are said to be not comparable from the passages.
+- One source's finding is written as that source's finding, and the setting of a result is named only when the passage states it. Record metadata may supply only a source's year and a `submittedVersion` label ("submitted" or "preprint version", never "not peer reviewed"); a later year alone does not show that one result replaced another. Rule 5 (one claim per source, cross-source statements as `analyst_inference`), the 30-claim limit and the phrasebank rules still apply.
+- The answer review notes three failures in its existing `notes` field: one summary per alternative instead of conditions, an answer built on a premise the cited passages contradict, and one source's finding written as established. It judges only the passages a claim cites, and does not lower a verdict for year or version wording taken from the records. No schema or validator change.
+Limits: Instruction text only; the application does not check any of these rules. Not measured on real-model answers; whether answers change, and whether for the better, is unknown until a live run compares them. Editing these files changes `skill_package_hash`.
+
 ## D22 — Grok, GitHub Copilot, GLM, Muse Spark, Muse Glimmer and Ollama run research steps through the OpenAI-compatible adapter
 Status: accepted · Date: 2026-10-14 · Writer: Claude
 Context: Settings listed these six as "Planned model connections" with no adapter. The owner asked for them to work on macOS and Windows.

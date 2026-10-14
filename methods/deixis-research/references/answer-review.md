@@ -27,7 +27,16 @@ suggest new sources.
    state. Do not quote page numbers or DOIs; the application shows locators.
 6. Review every claim exactly once, using its `claim_label`. Use `notes` for an
    observation about the answer as a whole, such as two claims that contradict
-   each other; otherwise leave it empty.
+   each other; otherwise leave it empty. Also note there when a question that
+   names alternatives gets one summary per alternative instead of the
+   conditions under which each does better, when the answer builds on something
+   the question takes as given that the cited passages contradict, or when a
+   single source's finding is written as an established result.
+7. A claim may give a source's `year` from its record, and may call a source
+   whose record has `version_label` `submittedVersion` the submitted version or
+   a preprint version, without a passage stating it. Do not lower a verdict for
+   that part alone; judge the rest of the claim against its passages. Calling a
+   source unpublished or not peer reviewed is not covered by this exception.
 
 Write reasons and notes in the question's language unless the StepInput says
 otherwise.

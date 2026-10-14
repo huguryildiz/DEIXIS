@@ -27,6 +27,18 @@ did.
    directly, with the numbers the passages give for it.
    Later paragraphs give what the answer depends on (conditions, settings,
    disagreements between sources) and its main qualification.
+   Organize paragraphs by topic, not by source. Read in order, the first claims
+   of the sections should make the answer's argument on their own; if they read
+   as a list of sources, regroup the claims. Grouping by topic does not change
+   rule 5: each source's finding stays its own claim, and a statement across
+   sources is an `analyst_inference` after them. When the question names
+   alternatives to compare, give the conditions under which the passages show
+   each doing better, not one summary per alternative; when the passages report
+   the alternatives in settings that cannot be compared, say that the comparison
+   cannot be made from them. When the question takes something as given that
+   the supplied passages contradict, say so in the first paragraph; when they
+   do not show it, say that the supplied passages do not show it. These rules
+   stay within the claim limit of rule 4 and the Phrasing rules below.
 4. Keep the answer short: two to six claims per paragraph, at most thirty
    claims in all. Choose the passages that bear most directly on the question,
    above all those that compare the alternatives the question names or report
@@ -107,6 +119,21 @@ did.
    abstract. If every supplied passage is an abstract, state in an `access`
    limitation that the answer is based only on abstracts.
 10. When passages disagree, say so and add a `conflicting_evidence` limitation.
+   Match certainty to the evidence. A finding one source reports is that
+   source's finding, not an established result. When a passage states the
+   setting of a result (simulation, testbed, field trial, clinical trial,
+   cohort), say it in the claim; never name a setting the passage does not
+   state. Two record fields may be used in claim text without a passage
+   stating them: a source's `year`, and a `version_label` of
+   `submittedVersion`, written as "the submitted version" or "a preprint
+   version" and never as unpublished or not peer reviewed. No finding, setting
+   or relation between sources may come from record fields. When one source
+   refines or contradicts another, write each source's claim separately, with
+   its year when the record gives one, then the relation as an
+   `analyst_inference`. Only when one source's passage itself states the
+   relation to another work is that a `source_stated` claim citing that
+   passage alone. A later year alone does not show that one result replaced
+   another.
 11. Put parts of the question the passages do not answer in `unanswered_aspects`.
    An empty claim list with a clear statement of what is missing is a valid answer.
 12. A structured report of what the supplied passages state is supported. If the

@@ -709,34 +709,22 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     const key = `model:${sel.id}`
     body = <>
       {dmeta(key, modelStatus(model), undefined, !model.ready && model.key_configured !== false ? healthReasonText(model) : undefined)}
-      <p className="foot-note is-ink">{t('Passages are sent to the provider you choose. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
       {env && keyedSheet(env, modelNames[sel.id] ?? sel.id, t('This connection stops working until a new key is added.'))}
       {sel.id === 'gemini' && <>
-        <p className="foot-note">{t('DEIXIS talks to Gemini directly with your key. The Gemini CLI, if installed, is not used for research.')}</p>
         <div className="connection-checks">
-          {check(t('API key'), model.key_configured ? t('set') : t('not set'))}
-          {check('Gemini CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
           {/* From the saved semantic search provider, not from the key alone: another provider or Off may be chosen. */}
           {check(t('Semantic passage search'), !semantic ? t('not known') : semantic.provider === 'gemini' ? t('on · passage text is sent to Google')
             : model.key_configured ? t('off · another provider is chosen') : t('off'))}
         </div>
       </>}
-      {sel.id === 'deepseek' && <>
-        <p className="foot-note">{t('DEIXIS talks to DeepSeek directly with your key.')}</p>
-        <div className="connection-checks">{check(t('API key'), model.key_configured ? t('set') : t('not set'))}</div>
-      </>}
       {sel.id === 'ollama' && <p className="foot-note">{t('DEIXIS uses Ollama on this computer, so no key is needed. Open the Ollama app or run `ollama serve`, then download a model with `ollama pull`.')}</p>}
-      {compatConnectionKeys[sel.id] && <>
-        <p className="foot-note">{t('DEIXIS talks to {name} directly with your key. This connection has not been tested with the real {name} service yet.', { name: modelNames[sel.id] ?? sel.id })}</p>
-        <div className="connection-checks">{check(t('API key'), model.key_configured ? t('set') : t('not set'))}</div>
-      </>}
       <div className="acts">{checkButton(key, 'Check again', () => refreshModel(sel.id))}</div>
       <ModelCatalogue model={model} />
     </>
   } else if (sel?.kind === 'api-key') {
     body = <>
       {dmeta('api-key', openaiKey?.configured ? ['ok', t('Key configured')] : ['no', t('Not set up')])}
-      <p className="foot-note is-ink">{t('Used for semantic search only, when OpenAI embeddings are chosen. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
+      <p className="foot-note is-ink">{t('Used for semantic search only, when OpenAI embeddings are chosen.')}</p>
       {keyedSheet('OPENAI_API_KEY', 'OpenAI', t('Semantic search with OpenAI stops until a new key is added.'))}
     </>
   } else if (sel?.kind === 'provider' && provider) {
@@ -810,7 +798,6 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
 
     <div className="cloud-models">
     <h2>{t('Cloud models')}</h2>
-    <p className="foot-note">{t('Passages are sent to the provider you choose. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
     <div className="grid3" data-group="cloud">
       {cloudModels.map(([id, m]) => tile(id, 'model', id, modelNames[id] ?? id, modelDesc(id), modelStatus(m)))}
       {tile('openai', 'api-key', 'OPENAI_API_KEY', t('OpenAI API'), t('API key · semantic search only'), !credentials ? loading : openaiKey?.configured ? ['ok', t('Key configured')] : ['no', t('Not set up')])}

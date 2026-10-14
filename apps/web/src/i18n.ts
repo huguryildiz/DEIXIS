@@ -4686,7 +4686,7 @@ const tr: Record<string, string> = {
   'Could not copy; select the command and copy it.': 'Kopyalanamadı; komutu seçip kopyalayın.',
   'Sign in again': 'Yeniden oturum aç',
   'No model connection is set up for it in this version of DEIXIS; the tool on this computer is shown below.': 'DEIXIS’in bu sürümünde onun için bir model bağlantısı kurulu değil; bu bilgisayardaki araç aşağıda gösteriliyor.',
-  'Used for semantic search only, when OpenAI embeddings are chosen. Once a key is saved it is never shown again; it can only be replaced or removed.': 'Yalnız OpenAI gömmeleri seçildiğinde anlamsal arama için kullanılır. Bir anahtar kaydedildikten sonra bir daha gösterilmez; yalnız değiştirilebilir veya kaldırılabilir.',
+  'Used for semantic search only, when OpenAI embeddings are chosen.': 'Yalnız OpenAI gömmeleri seçildiğinde anlamsal arama için kullanılır.',
   'Semantic search with OpenAI stops until a new key is added.': 'Yeni bir anahtar eklenene kadar OpenAI ile anlamsal arama durur.',
   'Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.': 'Anahtarsız da çalışır. openalex.org’dan alınan ücretsiz bir anahtar DEIXIS’e kendi günlük bütçesini verir.',
   'API key (optional, free from openalex.org)': 'API anahtarı (isteğe bağlı, openalex.org’dan ücretsiz)',

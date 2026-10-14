@@ -283,12 +283,13 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     .map(s => [s.kind.split(':')[1] ?? '', providerName(s.kind.split(':')[1] ?? '')])).entries()]
   const retrying = run.kind === 'discovery' && !active && (run.status === 'completed' || run.status === 'paused')
     && steps.some(s => s.kind.startsWith('provider_search') && troubled(s))
-  // R19: requests stopped by a provider's request budget (the service kind on the request's stored search row), split by
-  // the step's stored delivery class: `rejected_not_executed` was sent and the provider refused it; `before_send` was
-  // never sent, because the budget had already run out in this run. A completed run went on with the requests that
-  // finished; a run paused on the budget offers the key in its pause notice.
+  // R19: requests stopped by a provider's request budget, read from the step's own stored failure (its error's service
+  // kind and its delivery class are written together by its latest attempt; a retried step keeps older search rows):
+  // `rejected_not_executed` was sent and the provider refused it; `before_send` was never sent, because the budget had
+  // already run out in this run. A completed run went on with the requests that finished; a run paused on the budget
+  // offers the key in its pause notice.
   const searchSteps = steps.filter(s => s.kind.startsWith('provider_search'))
-  const budgetStopped = (s: Step) => troubled(s) && ['quota_exhausted', 'rate_limited'].includes(searches.find(row => row.step_id === s.id)?.error?.service_kind ?? '')
+  const budgetStopped = (s: Step) => troubled(s) && ['quota_exhausted', 'rate_limited'].includes((s.error as { service_kind?: string } | null)?.service_kind ?? '')
   const refused = searchSteps.filter(s => budgetStopped(s) && s.delivery_class === 'rejected_not_executed')
   const notSent = searchSteps.filter(s => budgetStopped(s) && s.delivery_class === 'before_send')
   const providersOf = (list: Step[]) => [...new Set(list.map(s => s.kind.split(':')[1] ?? ''))]

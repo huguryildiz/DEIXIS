@@ -27,7 +27,9 @@ first 34 titles they see and leave the rest of the 50 out of scope, the first th
 scripts (choose_run, confirm_quote, find_part) and the other 17 of the 20 read are agreeing includes, and the answer
 cites 12 sources. "[oa-quota]": the keyword query's first page answers with a next cursor and every later keyword
 page is refused as a spent OpenAlex daily budget (429, `x-ratelimit-remaining-usd: 0`), so the run completes on the
-searches that answered. "[oa-quota-first]": OpenAlex refuses its semantic request as a spent daily budget, so the
+searches that answered. "[oa-quota-net]" and "[oa-net-quota]": OpenAlex's semantic request is refused as a spent
+budget (or its connection is refused) until `oa-flip` exists in the data directory, then the other way round, so a
+retried search's latest attempt differs from its first. "[oa-quota-first]": OpenAlex refuses its semantic request as a spent daily budget, so the
 keyword request after it is closed in the app before it is sent (`before_send`): one refusal, the rest not sent; Quick
 and Standard pause on the budget, Detailed completes on Semantic Scholar. "[no-passages]": every work has neither abstract nor open PDF, so the automatic answer is
 `no_evidence` with nothing to give the model. "[no-include]": a research-title call holds the one worker for
@@ -515,6 +517,10 @@ PROBE_MODE: str | None = None  # "[vocab-empty]" / "[vocab-broad]": what every c
 # Set from the question of each model call, like the flags above: "[parity]", "[oa-quota]", "[oa-quota-first]", "[no-passages]",
 # "[jobs-running]".
 PARITY_MODE = OA_QUOTA_MODE = OA_QUOTA_FIRST_MODE = NO_PASSAGES_MODE = JOBS_MODE = False
+# "[oa-quota-net]" / "[oa-net-quota]": OpenAlex's semantic request fails one way until the file `oa-flip` exists in the
+# fixture data directory (FLIP_DIR, set by main), then the other way: a spent budget (429) or a refused connection.
+OA_FLIP_MODE: str | None = None
+FLIP_DIR: Path | None = None
 
 
 def reset_markers() -> None:
@@ -523,6 +529,8 @@ def reset_markers() -> None:
     global PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE, NO_PASSAGES_MODE, JOBS_MODE
     RATE_LIMIT_MODE = LINEAGE_MODE = LINEAGE_REJECT_MODE = False
     PARITY_MODE = OA_QUOTA_MODE = OA_QUOTA_FIRST_MODE = NO_PASSAGES_MODE = JOBS_MODE = False
+    global OA_FLIP_MODE
+    OA_FLIP_MODE = None
     PROBE_MODE = None
     PARITY_ROLES.clear()
 
@@ -577,6 +585,11 @@ def openalex(request: httpx.Request) -> httpx.Response:
         return answer
     if OA_QUOTA_FIRST_MODE and request.url.host == "api.openalex.org" and "search.semantic" in params:
         return spent_budget()
+    if OA_FLIP_MODE and request.url.host == "api.openalex.org" and "search.semantic" in params:
+        flipped = FLIP_DIR is not None and (FLIP_DIR / "oa-flip").exists()
+        if (OA_FLIP_MODE == "quota-net") != flipped:
+            return spent_budget()
+        raise httpx.ConnectError("SYNTHETIC: connection refused", request=request)
     works = (LINEAGE_REJECT_WORKS if LINEAGE_REJECT_MODE else LINEAGE_WORKS if LINEAGE_MODE else QUEUE_WORKS if QUEUE_MODE
              else NO_PASSAGE_WORKS if NO_PASSAGES_MODE else JOBS_WORKS if JOBS_MODE else WORKS)
     return httpx.Response(200, json={"meta": {"count": len(works)}, "results": works})
@@ -682,6 +695,8 @@ class ScriptedCodex:
         LINEAGE_MODE = '[lineage]' in question or LINEAGE_REJECT_MODE
         global PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE, NO_PASSAGES_MODE, JOBS_MODE
         PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE = "[parity]" in question, "[oa-quota]" in question, "[oa-quota-first]" in question
+        global OA_FLIP_MODE
+        OA_FLIP_MODE = "quota-net" if "[oa-quota-net]" in question else "net-quota" if "[oa-net-quota]" in question else None
         NO_PASSAGES_MODE, JOBS_MODE = "[no-passages]" in question, "[jobs-running]" in question
         if "[no-include]" in question and task == "research_title":
             await asyncio.sleep(NO_INCLUDE_HOLD_SECONDS)
@@ -1148,6 +1163,8 @@ def main() -> None:
     parser.add_argument("--write-reextract-pdfs", type=Path, help="Write SYNTHETIC R4 restoration PDFs and exit")
     parser.add_argument("--write-seed-pdf", type=Path, help="Write the SYNTHETIC seed PDF of [stale-seed] / [no-include] and exit")
     args = parser.parse_args()
+    global FLIP_DIR
+    FLIP_DIR = args.data_dir
     keyring.set_keyring(MemoryKeyring())  # a browser run never reads or writes the system keychain (P9 H0a, plan 4 rule 5)
     if args.write_reextract_pdfs:
         seed_reextract(args.data_dir, write_pdfs_dir=args.write_reextract_pdfs)

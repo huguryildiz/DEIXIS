@@ -391,6 +391,72 @@ test.describe.serial('S9: the steps list', () => {
     await expect.poll(async () => (await viewOf(api, rid)).runs.some(r => ACTIVE.has(r.status)), { timeout: 60_000 }).toBe(false)
   })
 
+  // Sol round 2: a retried search keeps its earlier search rows; the notice reads the step's latest stored failure.
+  // "[oa-quota-net]" / "[oa-net-quota]" flip OpenAlex's semantic request between a spent budget and a refused
+  // connection once `oa-flip` exists in the fixture data directory, so the retry fails the other way.
+  type Attempts = { runs: Array<{ id: string; kind: string; status: string; steps?: Array<{ id: string; kind: string; status: string; error: { http_status?: number | null; service_kind?: string } | null }> }>; search_runs: Array<{ step_id: string; query_text: string; error: { http_status?: number | null; service_kind?: string } | null }> }
+  const semanticAttempts = async (rid: string) => {
+    const stored = (await (await api.context.get(`/api/researches/${rid}`)).json()) as Attempts
+    const discovery = stored.runs.find(r => r.kind === 'discovery')!
+    const ids = new Set((discovery.steps ?? []).filter(s => s.kind === 'provider_search:openalex').map(s => s.id))
+    // The semantic request searches the question itself (its query text starts with the marker); the keyword query does not.
+    const rows = stored.search_runs.filter(row => ids.has(row.step_id))
+    const stepId = rows.find(row => row.query_text.startsWith('[oa-'))?.step_id ?? ''
+    return { discovery, rows: rows.filter(row => row.step_id === stepId), step: (discovery.steps ?? []).find(s => s.id === stepId) }
+  }
+  const flip = path.join(server.dataDir, 'oa-flip')
+  const retryAndSettle = async (rid: string, runId: string) => {
+    writeFileSync(flip, '')
+    const control = page.waitForRequest(r => r.method() === 'POST' && r.url().endsWith(`/api/runs/${runId}/retry_failed`))
+    await page.locator('.chat-run-foot').getByRole('button', { name: 'Retry failed searches' }).click()
+    await control
+    await expect.poll(async () => { const v = await viewOf(api, rid); return v.runs.find(r => r.kind === 'discovery')?.status === 'completed' && !v.runs.some(r => ACTIVE.has(r.status)) }, { timeout: 90_000 }).toBe(true)
+  }
+
+  test('S28 (R19, Sol r2): a budget refusal retried into a refused connection is no longer counted as a budget stop', async () => {
+    test.setTimeout(180_000)
+    try {
+      const rid = await create(api, `[oa-quota-net] ${MOLECULE}`)
+      await expect.poll(async () => (await viewOf(api, rid)).runs.find(r => r.kind === 'discovery')?.status, { timeout: 90_000 }).toBe('paused')
+      const before = (await semanticAttempts(rid)).discovery
+      await page.goto(`${server.url()}/#/research/${rid}`)
+      await expect(page.locator('.quota-lines')).toContainText('1 search was refused (OpenAlex budget).')
+      await retryAndSettle(rid, before.id)
+      const { rows, step } = await semanticAttempts(rid)
+      // Stored: the first attempt was the provider's budget refusal, the latest a connection that never answered.
+      expect(rows.map(row => row.error?.http_status ?? null)).toEqual([429, null])
+      expect(step?.status).toBe('failed')
+      expect(step?.error?.http_status ?? null).toBeNull()
+      await page.reload()
+      await expect(page.locator('.chat-run-foot').getByRole('button', { name: 'Retry failed searches' })).toBeVisible()
+      await expect(page.locator('.chat-note.quota-notice')).toHaveCount(0)
+      await expect(page.locator('.quota-lines')).toHaveCount(0)
+      await expect(page.locator('.research-thread, main').first()).not.toContainText('budget ran out')
+    } finally { rmSync(flip, { force: true }) }
+  })
+
+  test('S28 (R19, Sol r2): a refused connection retried into a budget refusal opens the notice with Add an OpenAlex key', async () => {
+    test.setTimeout(180_000)
+    try {
+      const rid = await create(api, `[oa-net-quota] ${MOLECULE}`)
+      await settled(api, rid)
+      const before = (await semanticAttempts(rid)).discovery
+      expect(before.status).toBe('completed')
+      await page.goto(`${server.url()}/#/research/${rid}`)
+      await expect(page.locator('.chat-note.quota-notice')).toHaveCount(0)
+      await retryAndSettle(rid, before.id)
+      const { discovery, rows, step } = await semanticAttempts(rid)
+      // Stored: the first attempt never reached the provider, the latest is its budget refusal.
+      expect(rows.map(row => row.error?.http_status ?? null)).toEqual([null, 429])
+      expect(step?.error?.http_status).toBe(429)
+      const finished = (discovery.steps ?? []).filter(s => s.kind.startsWith('provider_search') && s.status === 'succeeded').length
+      await page.reload()
+      const notice = page.locator('.chat-note.quota-notice')
+      await expect(notice.locator('p')).toHaveText(`1 search was refused (OpenAlex budget). The run went on with the ${finished} that finished.`)
+      await expect(notice.getByRole('button', { name: 'Add an OpenAlex key' })).toBeVisible()
+    } finally { rmSync(flip, { force: true }) }
+  })
+
   test('S27 (R20): Choose another model moves the stopped step’s role, recorded and shown; Retry this step sends it there', async () => {
     test.setTimeout(150_000)
     const rid = await create(api, `[model-down] ${MOLECULE}`)

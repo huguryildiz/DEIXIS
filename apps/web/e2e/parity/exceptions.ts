@@ -253,6 +253,9 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'guide-plural', rule: '§2.3 (Q2, Q3)', mock: 'PDF guiding the search · its title, abstract and references shape the query. The others are read as sources.', app: 'PDFs guiding the search · their titles, abstracts and references shape the query.' },
   { id: 'scope-academic', rule: '§2.3 (Q2)', mock: 'Searches the connected scholarly sources', app: 'Searches scholarly sources to answer your question. (the model does not pick the providers: code rules route them)' },
   { id: 'scope-pdfs-academic', rule: '§2.3 (Q2, Q3)', mock: 'Searches using a chosen PDF and your question', app: 'Searches using your PDFs and your question. Only included sources are used in the answer. (up to five PDFs guide the search, D3)' },
+  // S28 (Sol round 2): the attached scopes also take a Zotero collection, so their names say files, not PDFs.
+  { id: 'scope-attached-name', rule: '§2.3 (an attached scope reads PDFs and Zotero items)', mock: 'Attached PDFs only', app: 'Attached files' },
+  { id: 'scope-mixed-name', rule: '§2.3 (an attached scope reads PDFs and Zotero items)', mock: 'PDFs + academic search', app: 'Files + academic search' },
   // S28: Home's + menu rows say what the composer and the Zotero dialog really take.
   { id: 'add-upload-detail', rule: '§2.3 (the composer also takes PDFs dropped on it)', mock: 'From this computer, up to 50 MB each', app: 'From this computer, up to 50 MB each. You can also drop files here.' },
   { id: 'add-zotero-detail', rule: '§2.3 (S6: Zotero is read from the app on this computer or from zotero.org)', mock: 'Read-only, imported when the research starts', app: 'Read-only, from Zotero on this computer or zotero.org. Imported when the research starts.' },

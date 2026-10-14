@@ -631,13 +631,15 @@ const HM = '.home-menu'
 const ON = { mock: ':not([disabled])', app: ':not([data-disabled])' }
 const homeMenu = (surface: SurfaceId, rows: Partial<Pair>, extra: Pair[] = [], details: Partial<Pair> = {}): Pair[] => [
   { id: `${surface}.menu`, surface, mock: '.menu', app: HM, checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
-  { id: `${surface}.rows`, surface, mock: `.menu button${ON.mock}`, app: `${HM} .home-menu-item${ON.app}`, checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', text: false,
-    states: ['hover'], unordered: true, status: 'active', ...rows },
+  // Each row's fixed title is compared as text (its description is left out: `small` is changed copy or record facts,
+  // pinned word for word in home-layout.spec).
+  { id: `${surface}.rows`, surface, mock: `.menu button${ON.mock}`, app: `${HM} .home-menu-item${ON.app}`, checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', text: true,
+    dataText: { mock: ['small'], app: ['small'] }, states: ['hover'], unordered: true, status: 'active', ...rows },
   { id: `${surface}.details`, surface, mock: '.menu button small', app: `${HM} .home-menu-text small`, checks: ['type', 'colour'], list: 'fixed', text: false, states: [], unordered: true, status: 'active', ...details },
   ...extra,
 ]
 const laterRows = (surface: SurfaceId, icon: Array<{ mock: string; app: string }>): Pair => ({ id: `${surface}.later`, surface, mock: '.menu button[disabled]', app: `${HM} .home-menu-item[data-disabled]`,
-  checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', text: false, icon, states: [], unordered: true, status: 'active' })
+  checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', text: true, dataText: { mock: ['small'], app: ['small'] }, icon, states: [], unordered: true, status: 'active' })
 const menuHeading = (surface: SurfaceId): Pair => ({ id: `${surface}.heading`, surface, mock: '.menu h6', app: `${HM} .home-menu-heading`, checks: ['chrome', 'type', 'colour'], text: true, states: [], unordered: true, status: 'active' })
 const menuBadge = (surface: SurfaceId): Pair => ({ id: `${surface}.badge`, surface, mock: '.menu .badge', app: `${HM} .home-menu-badge`, checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: [], unordered: true, status: 'active' })
 const homeMenus: Pair[] = [

@@ -564,7 +564,8 @@ const settingsPage: Pair[] = [
   { id: 'settings-sheet.scrim', surface: 'settings-sheet', mock: '.sheet-scrim', app: '[data-slot=sheet-overlay]', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
   { id: 'settings-sheet.sheet', surface: 'settings-sheet', mock: 'aside.sheet', app: '.connection-sheet', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
   { id: 'settings-sheet.head', surface: 'settings-sheet', mock: 'aside.sheet .p-head', app: '.connection-sheet [data-slot=sheet-header]', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
-  { id: 'settings-sheet.title', surface: 'settings-sheet', mock: 'aside.sheet .p-head h2', app: '.connection-sheet [data-slot=sheet-title]', checks: ['type', 'icon'], icon: { mock: 'link', app: 'link' }, text: true, unordered: true, status: 'active' },
+  // The title carries the connection's own black-and-white mark instead of the mockup's link icon (APP_ADDITIONS settings-icons).
+  { id: 'settings-sheet.title', surface: 'settings-sheet', mock: 'aside.sheet .p-head h2', app: '.connection-sheet [data-slot=sheet-title]', checks: ['type'], text: true, unordered: true, status: 'active' },
   { id: 'settings-sheet.close', surface: 'settings-sheet', mock: 'aside.sheet .p-head .ib', app: '.connection-sheet [data-slot=sheet-close]', checks: ['chrome', 'icon'], icon: { mock: 'x', app: 'x' }, unordered: true, status: 'active' },
   { id: 'settings-sheet.meta', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail > .dmeta', app: '.connection-body > .dmeta', checks: ['chrome', 'type'], text: false, unordered: true, status: 'active' },
   { id: 'settings-sheet.account', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail > .foot-note', app: '.connection-body > .foot-note', checks: ['content', 'type', 'colour'], text: false, states: [], unordered: true, status: 'active' },

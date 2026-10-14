@@ -4947,12 +4947,16 @@ class ResearchFlow:
         call returns no session and the rate-limited result, and the caller builds its next input itself.
         """
         attempts = 0
+        # The effort this call carries, as the session records it: only an adapter that forwards one sends it (an
+        # OpenAI-compatible connection never does), and an empty choice sends none (D20).
+        sent_effort = (reasoning_effort or None) if getattr(adapter, "sends_reasoning_effort", False) else None
         while True:
             step_attempt = self.store.conn.execute("SELECT attempt FROM run_steps WHERE id = ?", (step_id,)).fetchone()[0]
             remaining = self._send_window(run_id)
             if remaining is not None and remaining <= 0:
                 raise _ReadCutoff  # not sent, so no session is opened and nothing is charged
-            session = self.store.start_model_session(rid, run_id, step_id, step_input_id, connection, requested_model)
+            session = self.store.start_model_session(rid, run_id, step_id, step_input_id, connection, requested_model,
+                                                     sent_effort)
             if remaining is None:
                 result = await adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort)
             else:

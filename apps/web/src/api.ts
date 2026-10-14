@@ -162,8 +162,9 @@ export type RoleModelSetting = { model_connection: string; model: string | null;
 export type Step = {
   id: string; operation_key: string; kind: string; status: string; attempt: number; delivery_class: string | null
   error_code: string | null; error: unknown; started_at: string | null; finished_at: string | null
-  // The models this step's calls went to, from its stored sessions (D15): the model that answered when known, else the one asked for.
-  models?: { connection: string; model: string | null }[]
+  // The models this step's calls went to, from its stored sessions (D15): the model that answered when known, else the one asked for,
+  // with the reasoning effort the call was sent with (null when none was sent or the session predates its storage, D20).
+  models?: { connection: string; model: string | null; effort?: string | null }[]
   // Only small counting/provenance outputs carry through this view; model prose remains in its own artifact view.
   output: { pdfs_read?: number; pdfs_skipped?: number; page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number
     // A pdf_ocr run (D51): the pages without text it found, and whether the merged OCR text was taken into use.

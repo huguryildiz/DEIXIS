@@ -15,6 +15,14 @@ Decision:
 - The answer review notes three failures in its existing `notes` field: one summary per alternative instead of conditions, an answer built on a premise the cited passages contradict, and one source's finding written as established. It judges only the passages a claim cites, and does not lower a verdict for year or version wording taken from the records. No schema or validator change.
 Limits: Instruction text only; the application does not check any of these rules. Not measured on real-model answers; whether answers change, and whether for the better, is unknown until a live run compares them. Editing these files changes `skill_package_hash`.
 
+## D25 — A model session stores the reasoning effort it was sent with, and the model line names only that
+Status: accepted (post-parity P3, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
+Context: D15's model line names the models a run's stored sessions went to, but `model_sessions` kept no effort, so the line named none (COPY_CHANGES model-line-sessions), and the page fell back to the model's listed default when given no effort.
+Decision:
+- Migration 0009 adds `model_sessions.reasoning_effort`. A call's session stores the effort its adapter put in the request: the Codex, Claude, Gemini and DeepSeek adapters declare `sends_reasoning_effort`; an OpenAI-compatible connection (D22's Grok, GitHub Copilot, GLM, Muse and Ollama among them) sends none and stores null although the role has one. No effort chosen stores null. Earlier sessions stay null; nothing is back-filled.
+- A step's `models` carries each model and effort its calls went to, once each, ordered by its latest call. The model line names a stored effort, and for a call stored without one it names the model alone, never the role's current effort or the model's listed default. A role now set to another effort than its last stored call's is named as "set for the next calls"; a call stored without an effort is compared by model only.
+Limits: Tested on SYNTHETIC fixture records with a scripted second model that lists efforts (e2e/steps.spec.ts) and pytest on stored sessions, the view and the migration; no real model was asked, and whether a service honoured the effort it was sent is not checked. An answer's or a review's own model record (the fallback when a phase has no stored calls) still carries no effort.
+
 ## D22 — Grok, GitHub Copilot, GLM, Muse Spark, Muse Glimmer and Ollama run research steps through the OpenAI-compatible adapter
 Status: accepted · Date: 2026-10-14 · Writer: Claude
 Context: Settings listed these six as "Planned model connections" with no adapter. The owner asked for them to work on macOS and Windows.
@@ -98,7 +106,7 @@ Decision:
 - The toast names the change the server returned (role, from, to), and the notice lists every change made since the stop until the run moves on.
 - A review by another model keeps the model it was requested with (`owner_reviews.requested_model`), so a role change never moves it. On a stopped review the button reads "Review again with another model" and opens the review request flow (Preview, then Start review) for the same target with the stopped review's focus and note; a new review is started beside the stopped one, which stays as it was. A change notice on any run says where Retry sends the stopped step: to the new model only when the changed role is the stopped step's own.
 - The run turn's model line names, for each model phase, the models its steps' stored sessions went to (`model_sessions`, each model once), so a run that moved a role names both models. While the run can still send, a phase not finished also names the role's model set now, labelled "set for the next calls".
-Limits: Reasoning effort is not stored per call, so a model named from stored sessions carries no effort; only the "set for the next calls" entry shows one, from the current setting. Tested on SYNTHETIC fixture records with a second listed model (e2e/steps.spec.ts, `DEIXIS_FIXTURE_SECOND_MODEL`) and a pytest on the view's step models; no real model was asked.
+Limits: Reasoning effort is not stored per call, so a model named from stored sessions carries no effort; only the "set for the next calls" entry shows one, from the current setting (superseded by D25: sessions stored from migration 0009 on keep the effort they were sent with). Tested on SYNTHETIC fixture records with a second listed model (e2e/steps.spec.ts, `DEIXIS_FIXTURE_SECOND_MODEL`) and a pytest on the view's step models; no real model was asked.
 
 ## D14 — A run can be bound to the question revision the screen showed
 Status: accepted (decided with Sol over S23b's review, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude

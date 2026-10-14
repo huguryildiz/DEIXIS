@@ -677,20 +677,24 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   // are named, in phase order, under the role its task runs on (a full-text reading or a report section too, whose phase
   // has no role entry), each model once, so a run that moved a role to another model names both. The answer and a
   // review by another model fall back to their own records. While the run can still send (active or paused), a phase not
-  // finished also names the role's model set now, labelled as the one its next calls go to.
+  // finished also names the role's model set now, labelled as the one its next calls go to. A stored call names the
+  // reasoning effort it was sent with, and nothing when its session holds none (D20); `undefined` keeps modelText from
+  // filling in the model's listed default.
   const canSend = active || run.status === 'paused'
-  const shownModels: Array<{ key: string; role: string; connection: string; model: string | null; effort: string | null; next: boolean }> = []
-  const lastUsed = new Map<string, string>()  // role → the model its latest stored call went to
-  const add = (role: string, connection: string, model: string | null, effort: string | null, next: boolean) => {
-    const id = `${role}:${connection}:${model}:${next}`
+  const shownModels: Array<{ key: string; role: string; connection: string; model: string | null; effort: string | null | undefined; next: boolean }> = []
+  const lastUsed = new Map<string, { model: string; effort: string | null }>()  // role → where its latest stored call went
+  const add = (role: string, connection: string, model: string | null, effort: string | null | undefined, next: boolean) => {
+    const id = `${role}:${connection}:${model}:${effort ?? ''}:${next}`
     if (model && !shownModels.some(m => m.key === id)) shownModels.push({ key: id, role, connection, model, effort, next })
   }
+  const changedSince = (last: { model: string; effort: string | null } | undefined, agent: { connection: string; model: string | null; effort: string | null }) =>
+    !last || last.model !== `${agent.connection}:${agent.model}` || (last.effort !== null && last.effort !== agent.effort)
   const roleOfStep = (kind: string) => kind === 'model:owner_review' ? 'Review' : kind === 'model:answer_review' ? 'Reviewer'
     : roleOfTask(kind.slice('model:'.length)) === 'literature' ? 'Literature' : 'Answer'
   const storedCalls = (from: Step[]) => from.forEach(step => (step.models ?? []).forEach(m => {
     const role = roleOfStep(step.kind)
-    add(role, m.connection, m.model, null, false)
-    lastUsed.set(role, `${m.connection}:${m.model}`)
+    add(role, m.connection, m.model, m.effort ?? undefined, false)
+    lastUsed.set(role, { model: `${m.connection}:${m.model}`, effort: m.effort ?? null })
   }))
   order.forEach((key, i) => {
     const used = groups[i].some(step => step.models?.length)
@@ -700,9 +704,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     if (!agent || state === 'skipped') return
     if (key === 'semantic') { add(agent.role, agent.connection, agent.model, null, false); return }
     const recorded = (key === 'answer' && answer?.model) || (key === 'review' && (run.kind === 'review' ? ownerReview : answer?.review?.model))
-    if (!used && recorded) add(agent.role, agent.connection, agent.model, run.kind === 'review' ? agent.effort : null, false)
-    // Named only when it differs from where the role's calls last went; the same model needs no second line.
-    else if (canSend && state !== 'done' && run.kind !== 'review' && lastUsed.get(agent.role) !== `${agent.connection}:${agent.model}`) add(agent.role, agent.connection, agent.model, agent.effort, true)
+    if (!used && recorded) add(agent.role, agent.connection, agent.model, run.kind === 'review' ? agent.effort ?? undefined : undefined, false)
+    // Named only when it differs from where the role's calls last went: another model, or another effort than the one a
+    // stored call was sent with (a call stored without an effort is compared by model only). The same needs no second line.
+    else if (canSend && state !== 'done' && run.kind !== 'review' && changedSince(lastUsed.get(agent.role), agent)) add(agent.role, agent.connection, agent.model, agent.effort, true)
   })
   // Model steps outside the phases this run lists still name their calls.
   storedCalls(steps.filter(step => !order.includes(phaseOf(step.kind) as PhaseKey)))

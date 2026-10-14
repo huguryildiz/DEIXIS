@@ -108,11 +108,14 @@
 .connection-sheet .connection-body{flex:1;min-height:0;overflow:auto}
 .connection-sheet .mk .foot-note.is-ink{color:var(--ink-2)}
 .connection-sheet .mk .dmeta .spin{vertical-align:-2px}
+.connection-sheet .mk .dmeta{align-items:center;gap:6px}
+.connection-sheet .mk .dmeta>span+span::before{display:none}
 .connection-sheet .mk .notice{margin:0}
 .connection-sheet .mk .notice p{margin:0}
 .connection-sheet .mk .notice p+p{margin-top:4px}
 .connection-sheet .key-box,.connection-sheet .contact-field{display:grid;gap:8px}
 .connection-sheet .key-form-error{margin:0;color:var(--error-ink);font-size:12.5px}
+.connection-sheet .key-box .notice{margin:0;color:var(--error-ink)}
 .connection-sheet .ghost.is-danger{color:var(--error-ink)}
 .connection-sheet .signin-cmd{display:grid;gap:6px}
 .connection-sheet .cmd-row{display:flex;align-items:center;gap:8px}
@@ -125,6 +128,8 @@
 .connection-sheet .status-chip{gap:0;margin-top:0;padding:1px 7px;border-color:transparent;font-size:11px;font-weight:500;line-height:1.5}
 .connection-sheet .status-chip::before{display:none}
 .connection-sheet .status-chip.is-configured{border-color:transparent;background:var(--hover-surface)}
+.connection-sheet .status-chip.is-status{gap:5px}
+.connection-sheet .status-chip.is-status::before{display:block}
 .connection-sheet .local-tool-note,.connection-sheet .local-tool-error{font-size:12.5px}
 .connection-sheet .connection-checks{border:1px solid var(--line);border-radius:10px}
 .connection-sheet .connection-checks .legacy-check{padding:9px 14px;border-bottom:0;border-top:1px solid var(--line);font-size:13px}

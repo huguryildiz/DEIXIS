@@ -45,6 +45,24 @@ const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocal
 type Selected = { kind: 'account' | 'model' | 'cli' | 'servers' | 'equation-reader' | 'ocr-tool' | 'provider' | 'api-key' | 'zotero' | 'reference-files'; id: string }
 type Tone = 'ok' | 'no' | 'warn'
 
+// Why a service refused a new key, in plain words, with the HTTP code it answered. The readings follow each
+// provider's published error codes (Oct 2026); a provider that documents nothing gets the generic reading.
+function keyRefusal(service: string, env: string, status: unknown): string | null {
+  const v = { service, code: String(status) }
+  if (status === 401) return t('{service} does not recognise this key (HTTP 401). It may be mistyped, cut short or deleted. Copy it again or create a new key.', v)
+    + (env === 'DASHSCOPE_API_KEY' || env === 'MOONSHOT_API_KEY' ? ' ' + t('A key made on the China platform does not work on the international one, and the other way round.') : '')
+  if (status === 402) return t('{service} accepts this key, but the account has no balance left (HTTP 402). Add credit on the provider’s site and try again.', v)
+  if (status === 403) return env === 'OPENAI_API_KEY' ? t('{service} does not allow this key here (HTTP 403). The service may not be offered in your country, or the key may be restricted. Check the key’s permissions.', v)
+    : env === 'MISTRAL_API_KEY' ? t('{service} knows this key, but your plan does not include the model used for the test (HTTP 403).', v)
+    : env === 'DASHSCOPE_API_KEY' ? t('{service} knows this key, but the account has no access to the model, or its free quota is used up (HTTP 403).', v)
+    : t('{service} knows this key but does not let it make the test request (HTTP 403). The key may be restricted, or the account may lack access or credit. Check the key on the provider’s site.', v)
+  if (status === 400) return env === 'GEMINI_API_KEY' ? t('{service} did not accept this key (HTTP 400). The key may be wrong, or billing may not be set up for its project.', v)
+    : env === 'DASHSCOPE_API_KEY' ? t('{service} did not accept this key (HTTP 400). The account may have an unpaid balance.', v)
+    : t('{service} could not read this key (HTTP 400). Copy the whole key again.', v)
+  if (typeof status === 'number') return t('{service} answered with an error (HTTP {code}), so the key could not be tested. Try again later.', v)
+  return null
+}
+
 // A tile (mockup `.conn`): the name with its status pill, then one line on what it is. Green only when it can be used.
 function Tile({ name, desc, tone, status, active, onClick }: { name: string; desc: string; tone: Tone; status: string; active: boolean; onClick: () => void }) {
   return <button type="button" className={`conn ${active ? 'on' : ''}`} onClick={onClick}>
@@ -96,7 +114,7 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved 
         ? t('Key saved, but the service test failed.') + ' ' + serviceErrorSentence({ kind: result.test.kind, service, resetAt: result.test.reset_at, effect: 'settings' })
         : t('Key saved.'))
     }).catch((e: Error) => setFormError(e instanceof ApiError && e.code === 'credential_test_failed'
-      ? t('The key was not saved.') + ' ' + serviceErrorSentence({ kind: e.details?.kind, service, resetAt: e.details?.reset_at, effect: 'settings' })
+      ? t('The key was not saved.') + ' ' + (keyRefusal(service, env, e.details?.http_status) ?? serviceErrorSentence({ kind: e.details?.kind, service, resetAt: e.details?.reset_at, effect: 'settings' }))
       : e.message)).finally(() => setBusy(false))
   }
   function remove() {
@@ -112,7 +130,7 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved 
     </label>
     <p className="foot-note">{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
       {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>
-    {formError && <p className="key-form-error" role="alert">{formError}</p>}
+    {formError && <Notice tone="error"><p>{formError}</p></Notice>}
     <div className="acts">
       {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(busy ? (typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…') : primary)}</button>}
       {entry.configured && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t('Remove key')}</button>}
@@ -645,12 +663,12 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     : sel.kind === 'reference-files' ? t('BibTeX / RIS files')
     : sel.kind === 'zotero' ? 'Zotero'
     : cliTool?.name || localToolNames[sel.id] || sel.id
-  const checkedLine = (key: string) => checked[key] && !checkFailed[key] ? <span>{t('checked {time}', { time: clock(checked[key]) })}</span> : null
+  const checkedLine = (key: string) => checked[key] && !checkFailed[key] ? <span className="status-chip is-configured">{t('checked {time}', { time: clock(checked[key]) })}</span> : null
   // A failed check and the reason a connection is not ready share one card under the status line.
   const dmeta = (key: string, [tone, status]: [Tone, string], extra?: ReactNode, reason?: ReactNode) => {
     const failed = checking !== key && checkFailed[key]
     return <>
-      <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> {t('Checking…')}</span> : <span className={tone === 'ok' ? 'ok-t' : tone === 'warn' ? 'warn-t' : ''}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
+      <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> {t('Checking…')}</span> : <span className={`status-chip is-status ${tone === 'warn' ? 'is-warning' : tone === 'no' ? 'is-configured' : ''}`}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
       {(failed || reason) && <Notice tone="attention">
         {failed && <p className="check-failed">{t('Could not check: {message}', { message: checkFailed[key] })}</p>}
         {reason && <p>{reason}</p>}

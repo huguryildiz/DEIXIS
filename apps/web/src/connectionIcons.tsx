@@ -42,6 +42,8 @@ const icons: Record<string, ReactNode> = {
   zotero: <svg viewBox="0 0 24 24"><path d="M21.231 2.462 7.18 20.923h14.564V24H2.256v-2.462L16.308 3.076H2.975V0h18.256v2.462z" fill="#CC2936" /></svg>,
   doi: <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="12" fill="currentColor" /><g className="doi-glyph" fill="none" stroke="#fff" strokeWidth="1.8"><circle cx="6.8" cy="13.4" r="2.6" /><path d="M9.4 7.4v9.5" /><circle cx="14" cy="13.4" r="2.6" /><path d="M19.5 9.9v7" /></g><circle className="doi-glyph-dot" cx="19.5" cy="8.1" r="1.05" fill="#fff" /></svg>,
 }
+// Gemini CLI runs Google's Gemini models: the same mark as the Gemini API.
+icons.gemini_cli = icons.gemini
 
 export function ConnectionIcon({ id }: { id: string }) {
   const icon = icons[id === 'copilot_cli' ? 'copilot' : id]

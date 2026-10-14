@@ -316,8 +316,8 @@ def test_other_llm_clis_are_detected_only_with_a_fixed_install_command(client, p
     # uv is on PATH here, npm and brew are not, so only the uv-installed tools can be installed.
     assert tools["kimi_cli"]["install"]["available"] is True and tools["cline"]["install"]["available"] is False
     assert "npm" in tools["cline"]["install"]["unavailable_reason"]
-    # Only the step-running CLIs carry that role: Claude Code, Codex and, of the new ones, Copilot CLI (D24).
-    assert sorted(t["id"] for t in tools.values() if t["role"] == "runs_steps") == ["claude_code", "codex", "copilot_cli"]
+    # Only the step-running CLIs carry that role: Claude Code, Codex and, of the new ones, Copilot CLI (D24) and Gemini CLI (D23).
+    assert sorted(t["id"] for t in tools.values() if t["role"] == "runs_steps") == ["claude_code", "codex", "copilot_cli", "gemini_cli"]
 
 
 def test_installing_a_detected_cli_runs_only_its_fixed_command(client, paths, tmp_path):

@@ -44,6 +44,7 @@ from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
 from deixis.models.copilot_cli import CopilotCliAdapter
 from deixis.models.deepseek import DeepSeekAdapter
+from deixis.models.gemini_cli import GeminiCliAdapter
 from deixis.models.openai_compat import CONNECTIONS as COMPAT_CONNECTIONS, OpenAICompatAdapter
 from deixis.models.gemini import GeminiAdapter
 from deixis.providers import scopus
@@ -752,6 +753,7 @@ def create_app(
             "claude": ClaudeCodeAdapter(workspace=settings.data_dir / "claude-workspace"),
             "copilot_cli": CopilotCliAdapter(home=settings.data_dir / "copilot-home", workspace=settings.data_dir / "copilot-workspace"),
             "gemini": GeminiAdapter(client=http),
+            "gemini_cli": GeminiCliAdapter(home=settings.data_dir / "gemini-cli-home"),
             "deepseek": DeepSeekAdapter(client=http),
             **{name: OpenAICompatAdapter(spec, client=http) for name, spec in COMPAT_CONNECTIONS.items()},
         }

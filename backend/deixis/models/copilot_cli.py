@@ -17,7 +17,6 @@ import platform
 import re
 import shutil
 import signal
-import subprocess
 import sys
 import time
 from collections.abc import Mapping
@@ -25,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from deixis.models.adapter import CODEX_ENV_ALLOWLIST, ModelStepResult
+from deixis.models.cli_process import reap, spawn_options, stop_group
 from deixis.domain.limits import safe_error, service_error_kind
 
 # A tool name Copilot does not have: with it as the only available tool, the model is offered none.
@@ -80,45 +80,6 @@ class CopilotCliAdapter:
         self._health: tuple[float, dict[str, Any]] | None = None
         self._active: set[asyncio.subprocess.Process] = set()
 
-    @staticmethod
-    def _spawn_options() -> dict[str, Any]:
-        # Its own process group, so a stop also reaches anything the binary started.
-        if sys.platform == "win32":
-            return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-        return {"start_new_session": True}
-
-    @staticmethod
-    def _stop(proc: asyncio.subprocess.Process, sig: int = signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM) -> None:
-        """Stops the run's whole process group, whether or not the binary itself has already exited: a child it left
-        behind can still hold the output pipes."""
-        if sys.platform == "win32":
-            # The whole tree; kill() alone would end only the binary. Only while the binary runs: its pid may be reused
-            # once it has exited, and taskkill cannot reach a child whose parent has exited anyway.
-            if proc.returncode is not None:
-                return
-            try:
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=15)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
-            if proc.returncode is None:
-                try:
-                    proc.kill()
-                except (ProcessLookupError, OSError):
-                    pass
-            return
-        try:
-            os.killpg(proc.pid, sig)  # the group id is the binary's pid (start_new_session)
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
-
-    @staticmethod
-    async def _reap(proc: asyncio.subprocess.Process) -> None:
-        # Bounded: a left-over child holding a pipe must not keep the step waiting.
-        try:
-            await asyncio.wait_for(asyncio.shield(proc.wait()), 10)
-        except TimeoutError:
-            pass
-
     def _command(self) -> list[str] | None:
         if self._cli is not None:
             return list(self._cli)
@@ -143,7 +104,7 @@ class CopilotCliAdapter:
         proc = await asyncio.create_subprocess_exec(
             *cmd, "--acp", "--disable-builtin-mcps", "--no-custom-instructions", "--no-auto-update",
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            cwd=self.workspace, env=env, **self._spawn_options())
+            cwd=self.workspace, env=env, **spawn_options())
         assert proc.stdin and proc.stdout
 
         async def call(rid: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -167,8 +128,8 @@ class CopilotCliAdapter:
                 await call(1, "initialize", {"protocolVersion": 1, "clientCapabilities": {}})
                 return await call(2, "session/new", {"cwd": str(self.workspace), "mcpServers": []})
         finally:
-            self._stop(proc)
-            await self._reap(proc)
+            stop_group(proc)
+            await reap(proc)
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
@@ -182,11 +143,11 @@ class CopilotCliAdapter:
         try:
             done = await asyncio.create_subprocess_exec(*cmd, "--version", stdout=asyncio.subprocess.PIPE,
                                                         stderr=asyncio.subprocess.DEVNULL, env=env,
-                                                        **self._spawn_options())
+                                                        **spawn_options())
             try:
                 out, _ = await asyncio.wait_for(done.communicate(), 15)
             finally:
-                self._stop(done)
+                stop_group(done)
             version = re.search(r"\d+(?:\.\d+)+", out.decode(errors="replace"))
             status["cli_version"] = version.group(0) if version else None
             session = await self._acp_catalogue(cmd, env)
@@ -234,30 +195,30 @@ class CopilotCliAdapter:
         try:
             proc = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                         stderr=asyncio.subprocess.PIPE, cwd=self.workspace, env=env,
-                                                        **self._spawn_options())
+                                                        **spawn_options())
         except OSError as exc:
             return ModelStepResult("unavailable", error=safe_error(str(exc))[:300], delivery_class="before_send")
         self._active.add(proc)
         try:
             out, err = await asyncio.wait_for(proc.communicate(prompt.encode()), self.turn_timeout)
         except TimeoutError:
-            self._stop(proc)
-            await self._reap(proc)
+            stop_group(proc)
+            await reap(proc)
             return ModelStepResult("failed", error="Copilot CLI turn timed out", delivery_class="after_send_unknown")
         except BaseException:
             # The caller stopped waiting (cancelled): stop the run too, so it does not go on unseen.
-            self._stop(proc)
-            await self._reap(proc)
+            stop_group(proc)
+            await reap(proc)
             raise
         finally:
             self._active.discard(proc)
-            self._stop(proc)  # anything the binary started and left running
+            stop_group(proc)  # anything the binary started and left running
         return parse_events(out.decode(errors="replace"), err.decode(errors="replace"), proc.returncode, requested_model)
 
     async def cancel(self) -> bool:
         active = tuple(self._active)
         for proc in active:
-            self._stop(proc, signal.SIGTERM)
+            stop_group(proc, signal.SIGTERM)
         return bool(active)
 
     async def close(self) -> None:

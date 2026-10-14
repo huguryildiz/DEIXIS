@@ -39,7 +39,7 @@ const providerNoKey: Record<string, string> = {
 // Sources whose requests carry the contact email as `mailto` (openalex.py, crossref.py).
 const MAILTO_PROVIDERS = new Set(['openalex', 'crossref'])
 // The model connections that sign in with an account on this computer, and the command-line tool each one runs.
-const ACCOUNT_TOOLS: Record<string, { tool: LocalTool['id']; name: string }> = { codex: { tool: 'codex', name: 'Codex CLI' }, claude: { tool: 'claude_code', name: 'Claude Code' }, copilot_cli: { tool: 'copilot_cli', name: 'GitHub Copilot CLI' } }
+const ACCOUNT_TOOLS: Record<string, { tool: LocalTool['id']; name: string }> = { codex: { tool: 'codex', name: 'Codex CLI' }, claude: { tool: 'claude_code', name: 'Claude Code' }, copilot_cli: { tool: 'copilot_cli', name: 'GitHub Copilot CLI' }, gemini_cli: { tool: 'gemini_cli', name: 'Gemini CLI' } }
 const SERVER_IDS = ['ollama', 'lm_studio']
 const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
 const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
@@ -597,7 +597,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const modelEntries = Object.entries(data?.models ?? {})
   const cloudModels = modelEntries.filter(([id]) => !ACCOUNT_TOOLS[id])
   const toolOf = (id: string) => tools?.tools.find(tool => tool.id === id)
-  const otherCli = (tools?.tools ?? []).filter(tool => tool.kind === 'cli' && tool.id !== 'codex' && tool.id !== 'claude_code' && tool.id !== 'copilot_cli')
+  const otherCli = (tools?.tools ?? []).filter(tool => tool.kind === 'cli' && tool.id !== 'codex' && tool.id !== 'claude_code' && tool.id !== 'copilot_cli' && tool.id !== 'gemini_cli')
   const servers = (tools?.tools ?? []).filter(tool => SERVER_IDS.includes(tool.id))
   const zotero = toolOf('zotero')
   const machine = tools?.machine
@@ -732,7 +732,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     <button type="button" className="btn-pri" disabled={disabled || checking !== null} onClick={() => runCheck(key, run)}>{checking === key ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
   // The Codex home this backend uses (DEIXIS_CODEX_HOME or the data folder's), single-quoted for a POSIX shell.
   const codexLogin = data?.codex_home ? `CODEX_HOME='${data.codex_home.replaceAll("'", "'\\''")}' codex login` : null
-  const signInCommand = accountId === 'codex' ? codexLogin : accountId === 'claude' ? 'claude auth login' : accountId === 'copilot_cli' ? 'copilot login' : null
+  const signInCommand = accountId === 'codex' ? codexLogin : accountId === 'claude' ? 'claude auth login' : accountId === 'copilot_cli' ? 'copilot login' : accountId === 'gemini_cli' ? 'gemini' : null
   const copy = (text: string) => { writeClipboard(text).then(() => toast('success', t('Command copied.')), () => toast('error', t('Could not copy; select the command and copy it.'))) }
 
   const keyedSheet = (env: string, service: string, effect: string) => credentials && <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain}
@@ -746,6 +746,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
       {dmeta(key, accountStatus(accountId), undefined, model && !model.ready ? healthReasonText(model) : undefined)}
       <p className="foot-note is-ink">{t(accountId === 'codex'
         ? 'Uses the account you sign in with through Codex CLI. DEIXIS keeps this sign-in apart from your usual Codex one and stores no password.'
+        : accountId === 'gemini_cli' ? 'Uses the Google account you are signed in with in Gemini CLI. DEIXIS keeps no password or token of its own.'
         : accountId === 'copilot_cli' ? 'Uses the GitHub account you are signed in with in Copilot CLI. DEIXIS keeps no password or token of its own.'
         : 'Uses the account you are signed in with in Claude Code. DEIXIS keeps no password or token of its own.')}</p>
       <div className="acts">
@@ -790,6 +791,14 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
           {check(t('Instruction files used'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
           {check(t('Add-ons with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
         </div>
+      </>}
+      {model && accountId === 'gemini_cli' && <>
+        <p className="foot-note">{t('Gemini CLI only writes text for DEIXIS: DEIXIS starts it with its own settings, which turn off its tools, MCP servers, extensions and instruction files, and stops a step if the CLI reports any tool use.')}</p>
+        <div className="connection-checks">
+          {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
+          {check(t('Signed in to Gemini CLI'), model.signed_in ? t('yes') : t('no'))}
+        </div>
+        {model.catalogue === 'fixed' && <p className="foot-note">{t('Gemini CLI cannot list its models, so this list is fixed in DEIXIS. A step that another model answers is stopped.')}</p>}
       </>}
       {model && <ModelCatalogue model={model} />}
       {!model && data && <p className="foot-note">{t('No model connection is set up for it in this version of DEIXIS; the tool on this computer is shown below.')}</p>}
@@ -917,12 +926,13 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
       {tile('marker', 'equation-reader', 'marker', t('Equation reader (Marker)'), t('Reads equations as LaTeX'), readerStatus())}
     </div>
     <div className="computer-more" data-panel="models">
-      {/* Copilot CLI runs steps like Codex and Claude Code (D24); the mockup's five tiles above stay as they are. */}
+      {/* Copilot CLI (D24) and Gemini CLI (D23) run steps like Codex and Claude Code; the mockup's five tiles above stay as they are. */}
       <div className="grid3" data-group="computer-accounts">
         {tile('copilot_cli', 'account', 'copilot_cli', 'GitHub Copilot CLI', t('Account sign-in'), accountStatus('copilot_cli'))}
+        {tile('gemini_cli', 'account', 'gemini_cli', 'Gemini CLI', t('Google account sign-in'), accountStatus('gemini_cli'))}
       </div>
       {otherCli.length > 0 && <details className="planned-connections"><summary><ChevronRight size={14} aria-hidden />{t('Other command-line tools · {n}', { n: otherCli.length })}</summary>
-        <p className="foot-note">{t('Only Claude Code, Codex CLI and GitHub Copilot CLI run research steps. The other tools are detected only: finding one here does not mean DEIXIS supports it.')}</p>
+        <p className="foot-note">{t('Only Claude Code, Codex CLI, GitHub Copilot CLI and Gemini CLI run research steps. The other tools are detected only: finding one here does not mean DEIXIS supports it.')}</p>
         <div className="grid3">{otherCli.map(tool => tile(tool.id, 'cli', tool.id, tool.name || localToolNames[tool.id] || tool.id, t('Detected only'), ['no', t(tool.job?.status === 'running' ? 'Installing…' : tool.installed ? 'Installed' : 'Not installed')]))}</div>
       </details>}
     </div>

@@ -1,9 +1,8 @@
 """Gemini API model connection.
 
 DEIXIS calls the Gemini API directly with GEMINI_API_KEY: one stateless request per step, with no tools, no
-instruction files and no CLI agent prompt. The Gemini CLI is detected and reported only. Its headless mode adds its
-own agent instructions and tools, and on 2026-09-15 its Google sign-in for individuals answered IneligibleTierError,
-so it does not run steps. The adapter never falls back to another connection or model.
+instruction files and no CLI agent prompt. The Gemini CLI with a Google account is a separate connection
+(`gemini_cli.py`, D23). The adapter never falls back to another connection or model.
 """
 
 from __future__ import annotations

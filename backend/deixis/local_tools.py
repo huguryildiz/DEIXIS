@@ -1,8 +1,8 @@
 """Command-line tools and local model servers on this computer (D29).
 
 Detection reads the PATH, app bundles, `--version` output and the model servers' loopback endpoints. An install runs
-the one package-manager command fixed for that tool id, never a command taken from a request. Codex, Claude Code and
-GitHub Copilot CLI (D24) run research steps; the other CLIs are detected only (found is not supported), and a local server's embedding models can rank answer passages. Zotero
+the one package-manager command fixed for that tool id, never a command taken from a request. Codex, Claude Code,
+GitHub Copilot CLI (D24) and Gemini CLI (D23) run research steps; the other CLIs are detected only (found is not supported), and a local server's embedding models can rank answer passages. Zotero
 is the one reference manager: its local API is where a collection import reads from (D16).
 """
 
@@ -49,7 +49,7 @@ TOOLS = {t.id: t for t in (
     Tool("codex", "Codex CLI", "cli", "codex", ("npm", "install", "-g", "@openai/codex"),
          "https://developers.openai.com/codex/cli", role="runs_steps"),
     Tool("gemini_cli", "Gemini CLI", "cli", "gemini", ("npm", "install", "-g", "@google/gemini-cli"),
-         "https://github.com/google-gemini/gemini-cli"),
+         "https://github.com/google-gemini/gemini-cli", role="runs_steps"),
     Tool("qwen_code", "Qwen Code", "cli", "qwen", ("npm", "install", "-g", "@qwen-code/qwen-code"),
          "https://github.com/QwenLM/qwen-code"),
     Tool("kimi_cli", "Kimi CLI", "cli", "kimi", ("uv", "tool", "install", "kimi-cli"),

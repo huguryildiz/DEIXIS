@@ -696,6 +696,8 @@ export type ModelHealth = {
   connection: string; ready: boolean; reason_code?: string | null; reset_at?: string | null; reason?: string | null; installed?: boolean; cli_version?: string; signed_in?: boolean; key_configured?: boolean
   account_type?: string | null; plan_type?: string | null; models?: ModelOption[]
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
+  // 'fixed': the connection cannot list its models; DEIXIS keeps the list (Gemini CLI, D23).
+  catalogue?: 'fixed'
 }
 export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; providers: { id: string; implemented: boolean; access_mode: string | null; supplementary?: boolean; role?: string; note: string }[] }
 export type Keychain = { available: boolean; name: string | null }

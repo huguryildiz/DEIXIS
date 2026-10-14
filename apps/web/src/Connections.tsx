@@ -547,7 +547,9 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     void check().then(result => {
       // A read replaced by a later one is not this check's answer: no time, no failure.
       if (result === false || (Array.isArray(result) && result.includes(false))) return
-      setChecked(old => ({ ...old, [key]: Date.now() })); setCheckFailed(drop)
+      // A check whose answer carries the server's own time (a keyless source's Test) shows that time.
+      const at = result && typeof result === 'object' && 'checked_at' in result ? Date.parse(String(result.checked_at)) : NaN
+      setChecked(old => ({ ...old, [key]: Number.isNaN(at) ? Date.now() : at })); setCheckFailed(drop)
     }, (e: Error) => { setChecked(drop); setCheckFailed(old => ({ ...old, [key]: e.message })) })
       .finally(() => setChecking(current => current === key ? null : current))
   }
@@ -820,7 +822,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
         label={t(provider.id === 'openalex' ? 'API key (optional, free from openalex.org)' : 'API key')}
         removeEffect={t('Requests that need this key stop until you add one again.')} onSaved={reloadAfterKeyChange} />}
       {env && credentials && !keyEntry(env)?.configured && providerNoKey[provider.id] && <Notice tone="attention">{t(providerNoKey[provider.id])}</Notice>}
-      {keyless && <div className="acts">{checkButton(key, 'Test', () => api.testProvider(id).then(result => setProviderTests(old => ({ ...old, [id]: result }))))}</div>}
+      {keyless && <div className="acts">{checkButton(key, 'Test', () => api.testProvider(id).then(result => { setProviderTests(old => ({ ...old, [id]: result })); return result }))}</div>}
       {test && !test.contact_email_sent && <p className="foot-note">{t('Sent without a contact email; none is set in Profile.')}</p>}
       {MAILTO_PROVIDERS.has(provider.id) && <p className="foot-note"><a href="#/settings/profile">{t('Set the contact email in Profile')}</a></p>}
       <div className="connection-checks">{check(t('Used for'), providerUse[provider.id] ? t(providerUse[provider.id]) : providerRole(provider.role))}</div>

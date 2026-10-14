@@ -81,6 +81,26 @@ def test_an_error_status_is_an_answer_with_its_code(tmp_path):
     assert result["answered"] is True and result["http_status"] == 429 and result["failure"] is None
 
 
+class BrokenBody(httpx.AsyncByteStream):
+    """A body that fails once anyone reads it."""
+    read = False
+
+    async def __aiter__(self):
+        BrokenBody.read = True
+        raise httpx.ReadTimeout("SYNTHETIC body never arrives")
+        yield b""
+
+
+def test_a_reply_counts_once_its_status_arrives_and_its_body_is_not_read(tmp_path):
+    BrokenBody.read = False
+    client = make_client(tmp_path, Recorder(lambda request: httpx.Response(200, stream=BrokenBody())))
+    try:
+        result = client.post("/api/providers/arxiv/test").json()
+    finally:
+        client.__exit__(None, None, None)
+    assert result["answered"] is True and result["http_status"] == 200 and BrokenBody.read is False
+
+
 @pytest.mark.parametrize("exc, failure", [(httpx.ReadTimeout, "timeout"), (httpx.ConnectError, "connection"),
                                           (httpx.RemoteProtocolError, "other")])
 def test_no_reply_is_reported_as_not_answered_with_the_reason(tmp_path, exc, failure):

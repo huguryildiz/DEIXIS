@@ -42,15 +42,19 @@ async def check(client: httpx.AsyncClient, provider_id: str, email: str | None) 
     url, params = REQUESTS[provider_id]
     sent = {"provider": provider_id, "contact_email_sent": bool(email), "timeout_seconds": TIMEOUT_SECONDS}
 
-    def attempt():
-        return client.get(url, params=params(email), headers={"User-Agent": user_agent(email)}, timeout=TIMEOUT_SECONDS)
+    async def attempt() -> int:
+        # Streamed and closed once the status line and headers are in: the body is never read, so a slow or broken
+        # body cannot turn a reply that came into "did not answer".
+        async with client.stream("GET", url, params=params(email), headers={"User-Agent": user_agent(email)},
+                                 timeout=TIMEOUT_SECONDS) as response:
+            return response.status_code
 
     try:
-        response = await (SEMANTIC_SCHOLAR_PACER.run(attempt) if provider_id == "semantic_scholar" else attempt())
+        status = await (SEMANTIC_SCHOLAR_PACER.run(attempt) if provider_id == "semantic_scholar" else attempt())
     except httpx.TimeoutException as exc:
         return sent | {"answered": False, "http_status": None, "failure": "timeout", "error": type(exc).__name__, "checked_at": now()}
     except httpx.ConnectError as exc:
         return sent | {"answered": False, "http_status": None, "failure": "connection", "error": type(exc).__name__, "checked_at": now()}
     except httpx.HTTPError as exc:
         return sent | {"answered": False, "http_status": None, "failure": "other", "error": type(exc).__name__, "checked_at": now()}
-    return sent | {"answered": True, "http_status": response.status_code, "failure": None, "error": None, "checked_at": now()}
+    return sent | {"answered": True, "http_status": status, "failure": None, "error": None, "checked_at": now()}

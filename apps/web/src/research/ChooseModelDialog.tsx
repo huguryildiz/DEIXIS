@@ -25,7 +25,7 @@ export type ChooseModelTarget = { run: Run; role: ModelRole; opener: HTMLElement
 // `onReviewStarted` gets the new review's run, so the page announces it once (here) and not again as a run that started.
 export function ChooseModelDialog({ target, view, dark, onClose, onChanged, onReload, onReviewStarted }: {
   target: ChooseModelTarget | null; view: ResearchView; dark: boolean; onClose: () => void; onChanged: (view: ResearchView) => void
-  onReload: () => Promise<unknown>; onReviewStarted: (runId: string) => Promise<unknown>
+  onReload: () => Promise<boolean>; onReviewStarted: (runId: string) => Promise<unknown>
 }) {
   if (target?.review) return <ReviewAgainDialog target={target} review={target.review} view={view} dark={dark} onClose={onClose} onStarted={onReviewStarted} />
   return <RoleModelDialog target={target} view={view} dark={dark} onClose={onClose} onChanged={onChanged} onReload={onReload} />
@@ -33,7 +33,7 @@ export function ChooseModelDialog({ target, view, dark, onClose, onChanged, onRe
 
 function RoleModelDialog({ target, view, dark, onClose, onChanged, onReload }: {
   target: ChooseModelTarget | null; view: ResearchView; dark: boolean; onClose: () => void; onChanged: (view: ResearchView) => void
-  onReload: () => Promise<unknown>
+  onReload: () => Promise<boolean>
 }) {
   const toast = useToast()
   const [models, setModels] = useState<ConnectionModel[] | null>(null)
@@ -68,7 +68,7 @@ function RoleModelDialog({ target, view, dark, onClose, onChanged, onReload }: {
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         // The research moved on (another tab, a run started): read it again before saying the page shows it.
-        const reloaded = await onReload().then(() => true, () => false)
+        const reloaded = await onReload().catch(() => false)  // false: the view could not be read again
         toast('warning', reloaded ? t('Not changed: {message}. The page now shows the latest state.', { message: e.message })
           : t('Not changed: {message}. The latest state could not be read; reload the page.', { message: e.message }))
       } else toast('error', e instanceof Error ? e.message : String(e))

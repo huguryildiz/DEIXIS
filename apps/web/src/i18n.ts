@@ -4586,4 +4586,6 @@ const tr: Record<string, string> = {
   'This review keeps the model it was requested with ({model}); Retry sends it there again. Start review begins a new review of the same target on the model you choose, with the same focus and note; the stopped review stays as it is.': 'Bu inceleme istendiği modelde kalır ({model}); Yeniden dene onu yine oraya gönderir. İncelemeyi başlat, aynı hedefin yeni bir incelemesini seçtiğiniz modelde, aynı odak ve notla başlatır; duran inceleme olduğu gibi kalır.',
   'The stopped review could not be read: {error}': 'Duran inceleme okunamadı: {error}',
   'Reading the stopped review…': 'Duran inceleme okunuyor…',
+  'The never-screened works keep the ranked list’s stored order; sorting does not apply to them.': 'Hiç taranmamış eserler sıralı listenin kayıtlı sırasını korur; sıralama onlara uygulanmaz.',
+  'Ranked list order': 'Sıralı liste düzeni',
 }

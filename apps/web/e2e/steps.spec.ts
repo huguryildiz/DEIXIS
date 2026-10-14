@@ -361,4 +361,34 @@ test.describe.serial('S9: the steps list', () => {
     // Both models ran in this run, each named once: planning on fixture-model, screening after the retry on fixture-model-b.
     await expect(literature).toHaveText(['Literature · Codex · fixture-model', 'Literature · Codex · fixture-model-b'])
   })
+
+  test('S27 (R20, Sol r2): a model changed while full text was being read is named for the full-text phase; the run names both', async () => {
+    test.setTimeout(180_000)
+    const rid = await create(api, `[read-down] ${MOLECULE}`)
+    await page.goto(`${server.url()}/#/research/${rid}`)
+    const note = page.locator('.chat-note.notice.is-error')
+    await expect(note.getByRole('button', { name: 'Choose another model' })).toBeVisible({ timeout: 90_000 })
+    type Steps = { steps?: Array<{ kind: string; status: string; models?: Array<{ connection: string; model: string | null }> }> }
+    const discovery = async () => (await viewOf(api, rid)).runs.find(r => r.kind === 'discovery') as unknown as Steps & { status: string }
+    // The run stopped at a full-text reading call; screening already ran on fixture-model.
+    const stoppedAt = [...((await discovery()).steps ?? [])].reverse().find(s => s.kind.startsWith('model:') && s.status !== 'succeeded')
+    expect(stoppedAt?.kind).toBe('model:fulltext_adjudication')
+    await note.getByRole('button', { name: 'Choose another model' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Choose another model' })
+    await expect(dialog.getByRole('combobox', { name: 'Role' })).toHaveText(/^Literature/)
+    await dialog.getByRole('combobox', { name: 'Model' }).click()
+    await page.getByRole('option', { name: 'Codex · fixture-model-b' }).click()
+    await dialog.getByRole('button', { name: 'Use this model' }).click()
+    await expect(dialog).toHaveCount(0)
+    await note.getByRole('button', { name: 'Retry this step' }).click()
+    await expect.poll(async () => (await discovery()).status, { timeout: 90_000 }).toBe('completed')
+    // The full-text reads that ran after the retry went to fixture-model-b; screening keeps fixture-model.
+    const done = (await discovery()).steps ?? []
+    const reads = done.filter(s => s.kind === 'model:fulltext_adjudication' && s.status === 'succeeded')
+    expect(reads.length).toBeGreaterThan(0)
+    expect(reads.every(s => s.models?.at(-1)?.model === 'fixture-model-b')).toBe(true)
+    expect(done.filter(s => s.kind === 'model:abstract_screening').every(s => s.models?.every(m => m.model === 'fixture-model'))).toBe(true)
+    const literature = page.locator('.chat-run-models').first().locator('.chat-run-model').filter({ hasText: /^Literature/ })
+    await expect(literature).toHaveText(['Literature · Codex · fixture-model', 'Literature · Codex · fixture-model-b'])
+  })
 })

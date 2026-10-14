@@ -144,8 +144,9 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
     {/* Toolbar (mockup .toolbar): search, Sort, PDF filter, Download, Save to library. */}
     <div className="toolbar source-toolbar">
       <label className="search source-search"><Search size={14} aria-hidden /><input type="search" aria-label={t('Filter sources')} placeholder={t('Search…')} value={query} onChange={e => { onFocus(null); setQuery(e.target.value) }} /></label>
-      <Select value={sort} onValueChange={value => { if (value) setSort(value as SourceSort) }}>
-        <SelectTrigger className={`ghost source-sort${sort !== 'relevant' ? ' tint' : ''}`} aria-label={t('Sort sources')}><SelectValue>{(value: string) => <><ArrowUpDown size={14} aria-hidden />{t(sourceSorts[value as SourceSort])}</>}</SelectValue></SelectTrigger>
+      {/* "Not read" keeps the ranked list's stored order, so Sort is off there and says which order is shown. */}
+      <Select value={sort} disabled={notRead} onValueChange={value => { if (value) setSort(value as SourceSort) }}>
+        <SelectTrigger className={`ghost source-sort${sort !== 'relevant' && !notRead ? ' tint' : ''}`} aria-label={t('Sort sources')} title={notRead ? t('The never-screened works keep the ranked list’s stored order; sorting does not apply to them.') : undefined}><SelectValue>{(value: string) => <><ArrowUpDown size={14} aria-hidden />{notRead ? t('Ranked list order') : t(sourceSorts[value as SourceSort])}</>}</SelectValue></SelectTrigger>
         <SelectContent className="source-menu" align="start" alignItemWithTrigger={false}>
           <SelectGroup><SelectLabel>{t('Sort')}</SelectLabel>
             {(Object.keys(sourceSorts) as SourceSort[]).map(k => <SelectItem key={k} value={k}>{k === 'relevant' ? <span className="sort-option">{t(sourceSorts[k])}<small>{t('Screening result first, then similarity to the question, then search position')}</small></span> : t(sourceSorts[k])}</SelectItem>)}

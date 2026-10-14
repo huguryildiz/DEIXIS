@@ -13,7 +13,7 @@ import { t, uiLocale } from './i18n'
 import { scrollBehavior } from './motion'
 import { Button } from '@/components/ui/button'
 import { RunUsageBox } from './research/usage'
-import { MODEL_DOWN, stoppedRole } from './research/modelDown'
+import { MODEL_DOWN, roleOfTask, stoppedRole } from './research/modelDown'
 
 // The research as a record of work: one turn per run, each run one line per phase (mockup `.steps`, R14), details one
 // click deeper (R15). The page's event stream refreshes the view; a one-second clock keeps running durations moving.
@@ -654,30 +654,39 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const calls = run.usage.model_calls ?? 0
   const callLimit = run.budget.max_model_calls ?? 0
   const callLimitReached = callLimit > 0 && calls >= callLimit
-  // Which models ran each model phase of this run, listed once here rather than on every step line (D15). A phase names
-  // the models its steps' stored sessions went to, each once, so a run that moved a role to another model names both;
-  // the answer and a review by another model fall back to their own records. While the run can still send (active or
-  // paused), a phase not finished also names the role's model set now, labelled as the one its next calls go to.
+  // Which models ran this run, listed once here rather than on every step line (D15). Every model step's stored calls
+  // are named, in phase order, under the role its task runs on (a full-text reading or a report section too, whose phase
+  // has no role entry), each model once, so a run that moved a role to another model names both. The answer and a
+  // review by another model fall back to their own records. While the run can still send (active or paused), a phase not
+  // finished also names the role's model set now, labelled as the one its next calls go to.
   const canSend = active || run.status === 'paused'
   const shownModels: Array<{ key: string; role: string; connection: string; model: string | null; effort: string | null; next: boolean }> = []
-  const lastUsed = new Map<string, string>()  // role → the model its latest stored call went to, in phase order
+  const lastUsed = new Map<string, string>()  // role → the model its latest stored call went to
+  const add = (role: string, connection: string, model: string | null, effort: string | null, next: boolean) => {
+    const id = `${role}:${connection}:${model}:${next}`
+    if (model && !shownModels.some(m => m.key === id)) shownModels.push({ key: id, role, connection, model, effort, next })
+  }
+  const roleOfStep = (kind: string) => kind === 'model:owner_review' ? 'Review' : kind === 'model:answer_review' ? 'Reviewer'
+    : roleOfTask(kind.slice('model:'.length)) === 'literature' ? 'Literature' : 'Answer'
+  const storedCalls = (from: Step[]) => from.forEach(step => (step.models ?? []).forEach(m => {
+    const role = roleOfStep(step.kind)
+    add(role, m.connection, m.model, null, false)
+    lastUsed.set(role, `${m.connection}:${m.model}`)
+  }))
   order.forEach((key, i) => {
+    const used = groups[i].some(step => step.models?.length)
+    storedCalls(groups[i])
     const agent = agents[key]
     const state = stateOf(i)
     if (!agent || state === 'skipped') return
-    const used = groups[i].flatMap(step => step.models ?? [])
-    const add = (connection: string, model: string | null, effort: string | null, next: boolean) => {
-      const id = `${agent.role}:${connection}:${model}:${next}`
-      if (model && !shownModels.some(m => m.key === id)) shownModels.push({ key: id, role: agent.role, connection, model, effort, next })
-    }
-    if (key === 'semantic') { add(agent.connection, agent.model, null, false); return }
-    used.forEach(m => add(m.connection, m.model, null, false))
-    if (used.length) lastUsed.set(agent.role, `${used.at(-1)!.connection}:${used.at(-1)!.model}`)
+    if (key === 'semantic') { add(agent.role, agent.connection, agent.model, null, false); return }
     const recorded = (key === 'answer' && answer?.model) || (key === 'review' && (run.kind === 'review' ? ownerReview : answer?.review?.model))
-    if (!used.length && recorded) add(agent.connection, agent.model, run.kind === 'review' ? agent.effort : null, false)
+    if (!used && recorded) add(agent.role, agent.connection, agent.model, run.kind === 'review' ? agent.effort : null, false)
     // Named only when it differs from where the role's calls last went; the same model needs no second line.
-    else if (canSend && state !== 'done' && run.kind !== 'review' && lastUsed.get(agent.role) !== `${agent.connection}:${agent.model}`) add(agent.connection, agent.model, agent.effort, true)
+    else if (canSend && state !== 'done' && run.kind !== 'review' && lastUsed.get(agent.role) !== `${agent.connection}:${agent.model}`) add(agent.role, agent.connection, agent.model, agent.effort, true)
   })
+  // Model steps outside the phases this run lists still name their calls.
+  storedCalls(steps.filter(step => !order.includes(phaseOf(step.kind) as PhaseKey)))
   const models = shownModels.map(m => <span key={m.key} className={m.next ? 'chat-run-model chat-run-model-next' : 'chat-run-model'}>
     {m.role && <>{m.next ? t('{role}, set for the next calls', { role: t(m.role) }) : t(m.role)} · </>}<ModelName connection={m.connection} text={modelText(m.model, m.effort)} /></span>)
   // Live runs read as one line per phase: what the run has not reached yet is named once in the "Next:" line, and what it

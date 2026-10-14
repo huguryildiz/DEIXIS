@@ -159,7 +159,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       setView(next)
       setError('')
       if (firstEvent.current === null) firstEvent.current = next.last_event_id
-    } catch (e) { setError(errorText(e)) }
+      return true
+    } catch (e) { setError(errorText(e)); return false }  // whether the view was read, for callers that report it
   }, [id])
   useEffect(() => { void load() }, [load])
   // Tables of this research, for the Evidence count and the table cards; refreshed on every recorded event (a table created, edited, trashed or restored).
@@ -869,7 +870,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {/* Each former tab is a panel; its content is unchanged and renders into the panel frame while it is open. */}
     <StackPanel name="sources" title={t('Sources')} icon={BookOpen} className="sources-panel-box">
       <section className="sources-panel" aria-labelledby="sources-heading">
-      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: load }}><SourcesPanel sources={view.sources} cited={citedClaims} citedVersions={citedVersionClaims} answerVersion={answer ? answerVersion : null} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} cursor={view.last_event_id} effort={view.scope.effort} onChanged={async () => { await load(); onChanged() }} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
+      <TextRecoveryContext.Provider value={{ researchId: id, eventCursor: view.last_event_id, busy, acceptView: next => { setView(next); onChanged() }, reload: async () => { await load() } }}><SourcesPanel sources={view.sources} cited={citedClaims} citedVersions={citedVersionClaims} answerVersion={answer ? answerVersion : null} busy={busy} filter={sourceFilter} onFilter={setSourceFilter} cursor={view.last_event_id} effort={view.scope.effort} onChanged={async () => { await load(); onChanged() }} focus={sourceFocus} onFocus={setSourceFocus} picked={picked} onPick={setPicked} onRemoveFromResearch={source => { void askRemoval([source.source_version_id]) }}
         onSelect={(source, state) => act(() => api.select(id, source.source_version_id, state, source.selection.version))}
         onReason={(source, reason) => act(() => api.select(id, source.source_version_id, source.selection.state, source.selection.version, reason), t('Reason saved with your choice.'))}
         onOpen={source => setPdfTarget({ assetId: null, sourceVersionId: source.source_version_id, view: 'text' })}
@@ -942,7 +943,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         seeds={seedChoice} onAnnounced={runId => announcedRuns.current.add(runId)} onChanged={async () => { await load(); onChanged() }} onClose={closePanels} />
     </StackPanel>
     <ChooseModelDialog key={chooseModel?.run.id ?? 'none'} target={chooseModel} view={view} dark={dark} onClose={() => setChooseModel(null)} onChanged={next => { setView(next); onChanged() }}
-      onReload={async () => { await load(); onChanged() }} onReviewStarted={async runId => { announcedRuns.current.add(runId); await load(); onChanged() }} />
+      onReload={async () => { const read = await load(); onChanged(); return read }} onReviewStarted={async runId => { announcedRuns.current.add(runId); await load(); onChanged() }} />
     <ConfirmDialog open={Boolean(removeTarget)} dark={dark} title={t('Remove PDF?')}
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}

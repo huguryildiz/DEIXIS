@@ -56,8 +56,10 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("SCOPUS_API_KEY", "source", "scopus"),
     ManagedKey("CORE_API_KEY", "source", "core"),
     ManagedKey("SERPAPI_API_KEY", "source", "serpapi"),
-    # Kept in the keychain only; Settings shows no card for these two (D19).
+    # The zotero.org pair is set on Settings' Zotero card; the library ID is not secret but is kept with its key (D19).
     ManagedKey("ZOTERO_API_KEY", "source", "zotero"),
+    ManagedKey("ZOTERO_LIBRARY_ID", "source", "zotero"),
+    # Kept in the keychain only; Settings shows no card for it (D19).
     ManagedKey("TYPESAFE_API_KEY", "source", "typesafe"),
 )}
 _from_keychain: set[str] = set()

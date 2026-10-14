@@ -83,8 +83,9 @@ function RemoveNotice({ text, busy, onRemove, onKeep }: { text: string; busy: bo
 
 // A key field (mockup sheet `key` kind). The stored key is never shown: the field starts empty and its placeholder says
 // where the key is kept. Save and test, Test and Remove key report only what the server answered.
-function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved }: {
+function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved, plain = false }: {
   env: string; entry: KeyEntry | undefined; keychain: Keychain; label: string; service: string; removeEffect: string; onSaved: () => void
+  plain?: boolean  // an identifier, not a secret: typed in the open and named as an ID
 }) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
@@ -125,18 +126,18 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved 
   const primary = typed ? (entry.testable ? 'Save and test' : 'Save') : entry.configured && entry.testable ? 'Test' : null
   return <form className="key-box" onSubmit={e => { e.preventDefault(); if (typed) save(); else if (primary) test() }}>
     <label className="lbl" htmlFor={id}>{label}
-      <input id={id} className="field" type="password" autoComplete="off" spellCheck={false} value={value} disabled={busy}
-        placeholder={entry.configured ? `•••••••••••• ${where}`.trim() : t('Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
+      <input id={id} className="field" type={plain ? 'text' : 'password'} inputMode={plain ? 'numeric' : undefined} autoComplete="off" spellCheck={false} value={value} disabled={busy}
+        placeholder={entry.configured ? `•••••••••••• ${where}`.trim() : t(plain ? 'Type your user ID' : 'Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
     </label>
     <p className="foot-note">{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
       {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>
     {formError && <Notice tone="error"><p>{formError}</p></Notice>}
     <div className="acts">
       {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(busy ? (typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…') : primary)}</button>}
-      {entry.configured && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t('Remove key')}</button>}
+      {entry.configured && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t(plain ? 'Remove ID' : 'Remove key')}</button>}
     </div>
     {asking && <RemoveNotice busy={busy} onRemove={remove} onKeep={() => setAsking(false)}
-      text={t('Remove the key for {name}?', { name: service }) + ' ' + removeEffect} />}
+      text={t(plain ? 'Remove the ID for {name}?' : 'Remove the key for {name}?', { name: service }) + ' ' + removeEffect} />}
   </form>
 }
 
@@ -804,6 +805,12 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
       <p className="foot-note is-ink">{t('Import a collection from Add sources on the home page or from a research’s Sources panel. Your Zotero library is never changed.')}</p>
       <div className="acts">{checkButton('zotero', 'Find it on this computer', () => loadTools(true, true))}</div>
       {zotero && <LocalToolDetails tool={zotero} dark={dark} onChanged={reloadTools} refresh={false} />}
+      {credentials && <>
+        <p className="foot-note is-ink">{t('To import from zotero.org, create a read-only key at zotero.org/settings/keys. Your user ID is shown on the same page.')}</p>
+        {(['ZOTERO_API_KEY', 'ZOTERO_LIBRARY_ID'] as const).map(env => <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain}
+          plain={env === 'ZOTERO_LIBRARY_ID'} label={t(env === 'ZOTERO_API_KEY' ? 'zotero.org API key' : 'zotero.org user ID')} service="zotero.org"
+          removeEffect={t('Importing from zotero.org stops until you add it again.')} onSaved={() => { reloadAfterKeyChange(); void reloadTools() }} />)}
+      </>}
     </>
   } else if (sel?.kind === 'reference-files') {
     body = <>

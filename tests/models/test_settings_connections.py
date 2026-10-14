@@ -175,12 +175,14 @@ def test_keys_from_dotenv_move_into_the_keychain_at_startup(monkeypatch, tmp_pat
                       "ZOTERO_API_KEY=zotero-dotenv-key\nZOTERO_LIBRARY_ID=123\n")
     dotenv.chmod(0o600)
     for name in ("OPENALEX_API_KEY", "S2_API_KEY", "DEIXIS_PORT", "ZOTERO_API_KEY", "ZOTERO_LIBRARY_ID"):
-        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv(name, "unset")  # recorded, so the value .env sets is removed afterwards
+        monkeypatch.delenv(name)
     from deixis.config import load_dotenv
     credentials.mark_dotenv(load_dotenv(dotenv), dotenv)
     credentials.move_dotenv_keys_to_keychain()
-    assert dotenv.read_text() == "# SYNTHETIC\nDEIXIS_PORT=8765\nZOTERO_LIBRARY_ID=123\n"  # lines DEIXIS does not manage stay
+    assert dotenv.read_text() == "# SYNTHETIC\nDEIXIS_PORT=8765\n"  # lines DEIXIS does not manage stay
     assert memory_keychain.get_password("DEIXIS", "ZOTERO_API_KEY") == "zotero-dotenv-key"
+    assert memory_keychain.get_password("DEIXIS", "ZOTERO_LIBRARY_ID") == "123"
     assert dotenv.stat().st_mode & 0o777 == 0o600
     assert memory_keychain.get_password("DEIXIS", "OPENALEX_API_KEY") == "openalex-dotenv-key"
     assert memory_keychain.get_password("DEIXIS", "S2_API_KEY") == "s2-dotenv-key"
@@ -193,7 +195,8 @@ def test_a_key_stays_in_dotenv_when_the_keychain_does_not_keep_it(monkeypatch, t
     dotenv = tmp_path / ".env"
     dotenv.write_text("OPENALEX_API_KEY=openalex-dotenv-key\nS2_API_KEY=s2-dotenv-key\n")
     for name in ("OPENALEX_API_KEY", "S2_API_KEY"):
-        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv(name, "unset")  # recorded, so the value .env sets is removed afterwards
+        monkeypatch.delenv(name)
     from deixis.config import load_dotenv
     credentials.mark_dotenv(load_dotenv(dotenv), dotenv)
     real_set = memory_keychain.set_password
@@ -212,13 +215,27 @@ def test_a_key_stays_in_dotenv_when_the_keychain_does_not_keep_it(monkeypatch, t
 def test_keys_stay_in_dotenv_without_a_keychain(monkeypatch, tmp_path):
     dotenv = tmp_path / ".env"
     dotenv.write_text("OPENALEX_API_KEY=openalex-dotenv-key\n")
-    monkeypatch.delenv("OPENALEX_API_KEY", raising=False)
+    monkeypatch.setenv("OPENALEX_API_KEY", "unset")
+    monkeypatch.delenv("OPENALEX_API_KEY")
     monkeypatch.setattr(credentials, "keychain_name", lambda: None)
     from deixis.config import load_dotenv
     credentials.mark_dotenv(load_dotenv(dotenv), dotenv)
     credentials.move_dotenv_keys_to_keychain()
     assert dotenv.read_text() == "OPENALEX_API_KEY=openalex-dotenv-key\n"
     assert credentials.status("OPENALEX_API_KEY")["source"] == "dotenv"
+
+
+def test_the_zotero_org_pair_is_saved_from_settings(client, memory_keychain):
+    for name in ("ZOTERO_API_KEY", "ZOTERO_LIBRARY_ID"):
+        assert next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == name)["service"] == "zotero"
+    assert client.put("/api/credentials/ZOTERO_LIBRARY_ID", json={"value": "group-1"}).status_code == 422
+    assert client.put("/api/credentials/ZOTERO_API_KEY", json={"value": "short"}).status_code == 422
+    saved = client.put("/api/credentials/ZOTERO_LIBRARY_ID", json={"value": "1234567"})  # SYNTHETIC; real IDs can be 7 digits
+    assert saved.status_code == 200 and saved.json()["key"]["source"] == "keychain"
+    assert client.put("/api/credentials/ZOTERO_API_KEY", json={"value": "zotero-synthetic-key"}).status_code == 200
+    assert memory_keychain.get_password("DEIXIS", "ZOTERO_LIBRARY_ID") == "1234567"
+    tool = next(t for t in client.get("/api/local-tools").json()["tools"] if t["id"] == "zotero")
+    assert tool["web_configured"] is True
 
 
 def test_keys_from_the_shell_are_left_alone_and_source_keys_are_not_tested(client, monkeypatch):

@@ -199,7 +199,7 @@ def create_research_row(store: Store, body: CreateResearch, literature_connectio
 
 
 class KeyValue(BaseModel):
-    value: str = Field(min_length=8, max_length=400, pattern=r"^\S+$")
+    value: str = Field(min_length=1, max_length=400, pattern=r"^\S+$")
 
 
 class ProxyAddress(BaseModel):
@@ -1207,6 +1207,10 @@ def create_app(
     async def save_credential(env: str, body: KeyValue, request: Request) -> dict[str, Any]:
         """Test a model key with one short request, then store it in .env or the keychain; a key the API refuses is not stored."""
         key = managed_key(env)
+        if env == "ZOTERO_LIBRARY_ID" and not body.value.isdigit():
+            raise HTTPException(422, "A zotero.org library ID is a number")
+        if env != "ZOTERO_LIBRARY_ID" and len(body.value) < 8:
+            raise HTTPException(422, "A key has at least 8 characters")
         source = credentials.status(env)["source"]
         if source == "environment":
             raise HTTPException(409, f"{env} is set in the shell; change or remove it there")

@@ -156,7 +156,7 @@ class LocalTools:
             local_api = await self._zotero_local_api(tool)
             status["installed"] = status["installed"] or local_api is not None
             status |= {"endpoint": tool.endpoint, "running": local_api is not None, "local_api": bool(local_api),
-                       # zotero.org import reads these from .env; they are reported as set or not, never shown.
+                       # zotero.org import reads these from the environment (filled from the keychain); reported as set or not, never shown.
                        "web_configured": bool(os.environ.get("ZOTERO_API_KEY") and os.environ.get("ZOTERO_LIBRARY_ID"))}
         return status
 

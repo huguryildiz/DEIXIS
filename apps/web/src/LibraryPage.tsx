@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import {
   ArrowUpDown, Check, ChevronLeft, ChevronRight, Download, Ellipsis, FileText, Filter, Folder, LibraryBig, Link2,
-  MessageSquare, Search, Table2, Trash2, Upload, X,
+  MessageSquare, Plus, Search, SlidersHorizontal, Table2, Trash2, Upload, X,
 } from 'lucide-react'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -10,6 +10,7 @@ import {
   api, ApiError, libraryApi, libraryImportsApi, type AccessLevel, type LibraryEntry, type LibraryResearch, type LibraryView,
   type LibraryWork, type ModelRole, type RoleModelSetting,
 } from './api'
+import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from './ConfirmDialog'
 import { SourceKey } from './SourceKey'
 import { PassageSheet } from './PassageSheet'
@@ -35,9 +36,17 @@ type PdfFilter = 'all' | 'text' | 'no_text' | 'abstract' | 'metadata'
 type Pending = { research: string | null; works: string[] }
 type Mode = 'table' | 'ask'
 type Result = { tone: 'ok' | 'warn' | 'bad'; lines: string[]; open?: { id: string; tab?: string } }
+// Row density and grouping, live choices of the earlier Library kept in the View options menu of the table head (Sol S25 round 1). "By
+// research" lists each work once, under the research with the newest activity that holds it; works no research holds
+// come last under "No research".
+type Density = 'comfortable' | 'compact'
+type Grouping = 'research' | 'none'
+type Band = { id: string; title: string; count: number }
 
 const SORT_KEY = 'deixis-library-sort'
 const PAGE_SIZE_KEY = 'deixis-library-page-size'
+const DENSITY_KEY = 'deixis-library-density'
+const GROUPING_KEY = 'deixis-library-grouping'
 const PAGE_SIZES = [25, 50, 100]
 const WORK_TYPE = 'application/x-deixis-work'
 
@@ -63,6 +72,10 @@ function readSort(): SortKey {
   const stored = readStored(SORT_KEY) ?? ''
   return stored in SORTS ? stored as SortKey : OLD_SORTS[stored] ?? 'added_new'
 }
+// The earlier Library stored 'project' for grouping by project; the left pane now chooses one research, so the flat list
+// of the mockup is the default and only a stored 'project' choice groups.
+const readDensity = (): Density => (readStored(DENSITY_KEY) === 'compact' ? 'compact' : 'comfortable')
+const readGrouping = (): Grouping => (readStored(GROUPING_KEY) === 'project' ? 'research' : 'none')
 function readPageSize(): number {
   const stored = Number(readStored(PAGE_SIZE_KEY))
   return PAGE_SIZES.includes(stored) ? stored : PAGE_SIZES[0]
@@ -98,7 +111,7 @@ function pagerItems(page: number, pages: number): (number | 'gap')[] {
 
 // The model a new research from the Library runs with: the default saved in Settings while its connection still lists
 // it, otherwise the connection's own default model, as the Home composer starts. The dialog names it before anything starts.
-type ModelChoice = { connection: string; model: string; effort: string | null; name: string; fromSettings: boolean }
+type ModelChoice = { connection: string; model: string; effort: string | null; name: string; fromSettings: boolean; savedUnlisted: boolean }
 function startModel(models: ConnectionModel[], setting: RoleModelSetting | undefined): ModelChoice | null {
   const saved = setting?.model ? modelKey(setting.model_connection, setting.model) : null
   const preferred = models.find(m => m.is_default) ?? models[0]
@@ -106,17 +119,18 @@ function startModel(models: ConnectionModel[], setting: RoleModelSetting | undef
   const chosen = models.find(m => m.id === id)
   if (!chosen) return null
   const effort = (id === saved ? listedEffort(models, chosen.id, setting?.reasoning_effort ?? null) : null) ?? defaultEffort(models, chosen.id)
-  return { connection: chosen.connection, model: chosen.model, effort, name: chosen.display_name ?? chosen.model, fromSettings: id === saved }
+  return { connection: chosen.connection, model: chosen.model, effort, name: chosen.display_name ?? chosen.model, fromSettings: id === saved, savedUnlisted: Boolean(saved) && id !== saved }
 }
 
 // Counts the records of a bibliography file the server sent: one `@type{` per BibTeX entry, one `TY  -` per RIS record.
 const recordsIn = (text: string, format: 'bibtex' | 'ris') => (format === 'bibtex' ? text.match(/^\s*@(?!comment|preamble|string)\w+\s*[{(]/gim) : text.match(/^TY {2}- /gm))?.length ?? 0
 
-export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
+export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onStartResearch }: {
   dark: boolean
   researchKey: string
   onChanged: () => void
   onOpenResearch: (id: string, tab?: string) => void
+  onStartResearch?: () => void
 }) {
   const toast = useToast()
   const [view, setView] = useState<LibraryView | null>(null)
@@ -127,6 +141,8 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
   const [sort, setSort] = useState<SortKey>(readSort)
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(readPageSize)
+  const [density, setDensity] = useState<Density>(readDensity)
+  const [grouping, setGrouping] = useState<Grouping>(readGrouping)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   // The write that is running, by name; every write control is locked while one runs.
   const [busy, setBusy] = useState<string | null>(null)
@@ -278,6 +294,15 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
     setPdf(next)
     resetList()
   }
+  function chooseDensity(next: Density) {
+    setDensity(next)
+    writeStored(DENSITY_KEY, next)
+  }
+  function chooseGrouping(next: Grouping) {
+    setGrouping(next)
+    writeStored(GROUPING_KEY, next === 'research' ? 'project' : 'none')
+    setPage(0)
+  }
   function choosePageSize(size: number) {
     setPageSize(size)
     writeStored(PAGE_SIZE_KEY, String(size))
@@ -291,13 +316,35 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
     })
   }
 
+  // Grouping applies in All works; a chosen research is one group already.
+  const grouped = grouping === 'research' && project === null
   const inProject = useMemo(() => (project ? entries.filter(entry => entry.researches.some(r => r.id === project)) : entries), [entries, project])
   const needle = query.trim().toLocaleLowerCase(uiLocale())
   const shown = useMemo(() => {
     const list = inProject.filter(entry => passesPdf(entry, pdf) && (!needle || [entry.title, authorsText(entry.authors), entry.venue ?? '',
       entry.year === null ? '' : String(entry.year), entry.doi ?? '', ...entry.researches.map(r => r.title)].join('\n').toLocaleLowerCase(uiLocale()).includes(needle)))
-    return [...list].sort(COMPARE[sort])
-  }, [inProject, pdf, needle, sort])
+    const sorted = [...list].sort(COMPARE[sort])
+    if (!grouped) return sorted
+    // By research: the bands in the order of the research list, each work under its first (newest) research, sorted within.
+    const order = new Map(researches.map((r, i) => [r.id, i]))
+    const rank = (entry: LibraryEntry) => order.get(entry.researches[0]?.id ?? '') ?? researches.length
+    return sorted.map((entry, i) => ({ entry, i })).sort((a, b) => rank(a.entry) - rank(b.entry) || a.i - b.i).map(x => x.entry)
+  }, [inProject, pdf, needle, sort, grouped, researches])
+  // A work's band is its first research while that research is listed; otherwise "No research".
+  const bandCounts = useMemo(() => {
+    const listed = new Set(researches.map(r => r.id))
+    const counts = new Map<string, number>()
+    for (const entry of shown) {
+      const id = listed.has(entry.researches[0]?.id ?? '') ? entry.researches[0].id : ''
+      counts.set(id, (counts.get(id) ?? 0) + 1)
+    }
+    return counts
+  }, [shown, researches])
+  const bandOf = (entry: LibraryEntry): Band => {
+    const owner = researches.find(r => r.id === entry.researches[0]?.id)
+    const id = owner?.id ?? ''
+    return { id, title: owner?.title ?? t('No research'), count: bandCounts.get(id) ?? 0 }
+  }
   const pages = Math.max(1, Math.ceil(shown.length / pageSize))
   const currentPage = Math.min(page, pages - 1)
   const rows = shown.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
@@ -345,7 +392,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
       return
     }
     // Filled inside the write; a holder, so the counts read after it are the ones the requests produced.
-    const out = { added: 0, present: already, depth: null as AccessLevel | null, failed: [] as string[], last: undefined as LibraryView | undefined }
+    const out = { added: 0, present: already, depth: null as AccessLevel | null, failed: [] as string[], failedIds: [] as string[], last: undefined as LibraryView | undefined }
     await write('add', async () => {
       for (const workId of todo) {
         try {
@@ -355,12 +402,13 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
           out.depth = answer.access_level
         } catch (e) {
           if (e instanceof ApiError && e.status === 409) out.present++
-          else out.failed.push(errorText(e))
+          else { out.failed.push(errorText(e)); out.failedIds.push(workId) }
         }
       }
     }, () => out.last).catch(() => undefined)
     if (selected && workIds.includes(selected)) setWorkVersion(v => v + 1)
-    setPicked(current => (current.size ? new Set() : current))
+    // The works that could not be added stay chosen, so the person can try them again.
+    setPicked(current => (out.failedIds.length ? new Set(out.failedIds) : current.size ? new Set() : current))
     const name = shortTitle(research.title)
     const { added, present, depth: depthOf, failed } = out
     const parts = [
@@ -414,13 +462,17 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
         : t('{n} works removed from every research that held them. They stay in All works.', { n: removed.length })),
     { label: t('Undo'), run: () => void restore(undo) })
   }
+  // Every research's restore is sent and the guard holds until all of them settle, so the list read afterwards shows each
+  // one that went through, and a failure is reported beside the restores that worked.
   async function restore(undo: { research: string; svids: string[] }[]) {
-    try {
-      await write('restore', () => Promise.all(undo.map(u => api.restoreSources(u.research, u.svids))))
-      toast('success', t('Put back.'))
-    } catch (e) {
-      toast('error', t('Could not put it back: {message}', { message: errorText(e) }))
-    }
+    const settled = await write('restore', () => Promise.allSettled(undo.map(u => api.restoreSources(u.research, u.svids))))
+    const failed = settled.flatMap((r, i) => (r.status === 'rejected' ? [{ research: undo[i].research, message: errorText(r.reason) }] : []))
+    const back = settled.length - failed.length
+    if (!failed.length) { toast('success', t('Put back.')); return }
+    const names = failed.map(f => shortTitle(projectTitle(f.research) || t('a research'))).join(', ')
+    toast('error', back
+      ? t('Put back in {n} of {m} researches; not in {names}: {message}', { n: back, m: settled.length, names, message: failed[0].message })
+      : t('Could not put it back: {message}', { message: failed[0].message }))
   }
 
   function trashProject(research: LibraryResearch) {
@@ -481,8 +533,12 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
         ],
       })
     } catch (e) {
+      // The import saves item by item, so an error does not prove that nothing was saved; the list is read again (write()).
       setZoteroOpen(false)
-      setResult({ tone: 'bad', lines: [t('Nothing was imported from Zotero: {message}', { message: errorText(e) })] })
+      setResult({ tone: 'bad', lines: [
+        t('The Zotero import could not be confirmed: {message}', { message: errorText(e) }),
+        t('Some items may have been saved before the error; the list was read again and shows what the Library holds now.'),
+      ] })
     }
   }
 
@@ -527,21 +583,30 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
         lines.push(t('Research “{title}” created with {n} works from the Library.', { title: shortTitle(created.research.title || question), n: created.added_source_version_ids.length }))
         onChanged()
         if (mode === 'table') {
-          const table = (await api.tables(id).catch(() => [])).find(item => item.title)
+          let tables
+          try {
+            tables = await api.tables(id)
+          } catch (e) {
+            // A failed read is not an empty answer: the table may exist, so nothing is claimed about it.
+            tone = 'warn'
+            lines.push(t('Could not read its study table ({message}), so the table state is not confirmed and column suggestions were not requested. Open the research to check.', { message: errorText(e) }))
+            return
+          }
+          const table = tables.find(item => item.title)
           if (!table) { tone = 'warn'; lines.push(t('No study table was made, so column suggestions did not start. Open the research to start a table.')); return }
           open = { id, tab: 'table' }
           lines.push(t('Its study table holds {n} rows.', { n: table.rows }))
           try {
-            await api.suggestColumns(id, table.id, crypto.randomUUID())
-            lines.push(t('Column suggestions started; the table panel shows them when they are ready.'))
+            const run = await api.suggestColumns(id, table.id, crypto.randomUUID())
+            lines.push(t(run.status === 'queued' ? 'Column suggestions are queued; the table panel shows them when they are ready.' : 'Column suggestions are {status}; the table panel shows them when they are ready.', { status: run.status }))
           } catch (e) {
             tone = 'warn'
             lines.push(t('Column suggestions did not start: {message}', { message: errorText(e) }))
           }
         } else {
           try {
-            await api.startRun(id, 'answer', crypto.randomUUID())
-            lines.push(t('The answer started; the research page shows its steps.'))
+            const run = await api.startRun(id, 'answer', crypto.randomUUID())
+            lines.push(t(run.status === 'queued' ? 'The answer is queued; the research page shows its steps.' : 'The answer run is {status}; the research page shows its steps.', { status: run.status }))
           } catch (e) {
             tone = 'warn'
             lines.push(t('The answer did not start: {message}', { message: errorText(e) }))
@@ -597,6 +662,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
             <button type="button" className="btn-teal" disabled={locked} onClick={() => fileInput.current?.click()}><Upload size={16} aria-hidden />{t('Upload PDF')}</button>
             <button type="button" className="ghost" ref={zoteroButton} disabled={locked} onClick={() => setZoteroOpen(true)}>{t('Import from Zotero')}</button>
           </div>
+          {onStartResearch && <div className="lib-empty-more"><button type="button" className="ghost lib-start" onClick={onStartResearch}><Plus size={16} aria-hidden />{t('Start a research')}</button></div>}
           {result && <ResultNotice result={result} onOpen={target => onOpenResearch(target.id, target.tab)} onClose={() => setResult(null)} />}
         </div>
       </div>
@@ -618,7 +684,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
     onRemove={() => setPending({ research: project, works: pickedWorks.map(e => e.work_id) })} />
 
   return <section className="library-page" ref={sectionRef}>
-    <div className="lib">
+    <div className="lib" data-density={density} data-grouping={grouped ? 'research' : 'none'}>
       <div className="lib-head">
         <h1 tabIndex={-1}><span>{t('Library')} /</span> <span className="lib-crumb" title={projectName}>{projectName}</span></h1>
         {project && <DropdownMenu>
@@ -694,15 +760,43 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
                 checked={shown.length > 0 && shown.every(e => picked.has(e.work_id))}
                 ref={box => { if (box) box.indeterminate = shown.some(e => picked.has(e.work_id)) && !shown.every(e => picked.has(e.work_id)) }}
                 onChange={event => setPicked(event.target.checked ? new Set(shown.map(e => e.work_id)) : new Set())} /></th>
-              <th scope="col">{t('Title')}</th><th scope="col">{t('Year')}</th><th scope="col">{t('Reading depth')}</th><th scope="col">{t('Research')}</th><th aria-label={t('Actions')} />
+              <th scope="col">{t('Title')}</th><th scope="col">{t('Year')}</th><th scope="col">{t('Reading depth')}</th><th scope="col">{t('Research')}</th>
+              <th className="lib-view-cell">
+                <DropdownMenu>
+                  <DropdownMenuTrigger className={`ib lib-view${density !== 'comfortable' || grouping !== 'none' ? ' tint' : ''}`} aria-label={t('View options')} title={t('View options')}><SlidersHorizontal size={16} aria-hidden /></DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-auto library-menu">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="lib-menu-h">{t('Rows')}</DropdownMenuLabel>
+                      {(['comfortable', 'compact'] as Density[]).map(key => <DropdownMenuItem key={key} onClick={() => chooseDensity(key)}>
+                        {density === key ? <Check size={16} /> : <span className="library-menu-gap" aria-hidden />}<span className="library-tx">{t(key === 'compact' ? 'Compact' : 'Comfortable')}</span>
+                      </DropdownMenuItem>)}
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="lib-menu-h">{t('Group works')}</DropdownMenuLabel>
+                      {(['research', 'none'] as Grouping[]).map(key => <DropdownMenuItem key={key} onClick={() => chooseGrouping(key)}>
+                        {grouping === key ? <Check size={16} /> : <span className="library-menu-gap" aria-hidden />}
+                        <span className="library-tx">{t(key === 'research' ? 'By research' : 'All works')}{key === 'research' && project && <small>{t('In All works')}</small>}</span>
+                      </DropdownMenuItem>)}
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </th>
             </tr></thead>
             <tbody>
               {view === null && !error && <tr className="more-row"><td colSpan={6} role="status">{t('Loading Library…')}</td></tr>}
-              {rows.map(entry => <Row key={entry.work_id} entry={entry} project={project} researches={researches} picked={picked.has(entry.work_id)} locked={locked}
+              {rows.map((entry, i) => {
+                const band = grouped ? bandOf(entry) : null
+                const head = band && (i === 0 || bandOf(rows[i - 1]).id !== band.id)
+                  ? <tr key={`band-${band.id}`} className="lib-band" data-band={band.id || 'none'}><th colSpan={6} scope="colgroup">
+                    <span>{band.title}</span><em className="tnum">{num(band.count)}</em></th></tr>
+                  : null
+                return [head, <Row key={entry.work_id} entry={entry} project={project} researches={researches} picked={picked.has(entry.work_id)} locked={locked}
                 dragging={dragging?.workId === entry.work_id} onPick={() => togglePick(entry.work_id)} onOpen={() => openWork(entry)}
                 onFocusTitle={() => { cursorRef.current = entry.work_id }} onDragStart={event => startDrag(event, entry)} onDragEnd={endDrag}
                 onAdd={research => void addWorks([entry.work_id], research)} onOpenResearch={id => onOpenResearch(id, 'sources')}
-                onCopyDoi={doi => void copyDoi(doi)} onRemove={() => setPending({ research: project, works: [entry.work_id] })} />)}
+                onCopyDoi={doi => void copyDoi(doi)} onRemove={() => setPending({ research: project, works: [entry.work_id] })} />]
+              })}
               {view !== null && !shown.length && <tr className="more-row lib-nomatch"><td colSpan={6}>
                 {narrowed
                   ? <>{t(needle && pdf !== 'all' ? 'No works match “{q}” with {pdf}.' : needle ? 'No works match “{q}”.' : 'No works match with {pdf}.', { q: query.trim(), pdf: t(PDF_FILTERS[pdf]) })} <button type="button" className="link" onClick={() => { setQuery(''); choosePdf('all') }}>{t('Clear search and filter')}</button></>
@@ -911,27 +1005,41 @@ function NewResearchDialog({ request, dark, busy, count, onClose, onStart }: {
   onClose: () => void; onStart: (question: string, answer: ModelChoice, literature: ModelChoice) => void
 }) {
   const [question, setQuestion] = useState('')
-  const [models, setModels] = useState<{ answer: ModelChoice | null; literature: ModelChoice | null } | null>(null)
+  // The connections' models and the Settings defaults are read on each opening. A failed Settings read is not "no default
+  // in Settings": it stays on screen and Start waits until a retry reads Settings or the person chooses the connections'
+  // own default models instead.
+  const [list, setList] = useState<ConnectionModel[] | null>(null)
+  const [saved, setSaved] = useState<Record<ModelRole, RoleModelSetting> | null>(null)
+  const [settingsError, setSettingsError] = useState('')
+  const [fallback, setFallback] = useState(false)
   const [failed, setFailed] = useState('')
+  const [attempt, setAttempt] = useState(0)
   const open = request !== null
   const mode = request?.mode ?? 'ask'
+  useEffect(() => { if (open) { setQuestion(''); setFallback(false) } }, [open])
   useEffect(() => {
     if (!open) return
     let live = true
-    setQuestion('')
-    setModels(null)
+    setList(null)
+    setSaved(null)
+    setSettingsError('')
     setFailed('')
-    Promise.all([api.connections(), api.settings().catch(() => null)]).then(([connections, saved]) => {
+    Promise.all([api.connections(), api.settings().then(value => ({ value, error: '' }), (e: Error) => ({ value: null, error: e.message }))]).then(([connections, settings]) => {
       if (!live) return
-      const list = connectionModels(connections)
-      const defaults = saved as Record<ModelRole, RoleModelSetting> | null
-      setModels({ answer: startModel(list, defaults?.answer), literature: startModel(list, defaults?.literature) })
+      setList(connectionModels(connections))
+      setSaved(settings.value as Record<ModelRole, RoleModelSetting> | null)
+      setSettingsError(settings.error)
     }, (e: Error) => { if (live) setFailed(e.message) })
     return () => { live = false }
-  }, [open])
+  }, [open, attempt])
+  const usable = list !== null && (!settingsError || fallback)
+  const models = usable ? { answer: startModel(list, saved?.answer), literature: startModel(list, saved?.literature) } : null
   const ready = Boolean(models?.answer && models.literature)
   const line = (role: string, choice: ModelChoice | null) => choice
-    ? t(choice.fromSettings ? '{role}: {model} (the default in Settings)' : '{role}: {model} (the connection’s default; Settings has none)', { role: t(role), model: choice.name })
+    ? t(choice.fromSettings ? '{role}: {model} (the default in Settings)'
+      : settingsError ? '{role}: {model} (the connection’s default; Settings could not be read)'
+      : choice.savedUnlisted ? '{role}: {model} (the connection’s default; the model saved in Settings is not listed now)'
+      : '{role}: {model} (the connection’s default; Settings has none)', { role: t(role), model: choice.name })
     : t('{role}: no model is listed by any connection.', { role: t(role) })
   return <ConfirmDialog open={open} dark={dark} neutral busy={busy} confirmDisabled={!ready || question.trim().length < 3}
     title={t(mode === 'table' ? 'Start evidence table' : 'Ask about these works')}
@@ -944,8 +1052,15 @@ function NewResearchDialog({ request, dark, busy, count, onClose, onStart }: {
     <label className="lib-question">{t(mode === 'table' ? 'What should the table compare?' : 'Your question')}
       <textarea className="field" rows={3} maxLength={4000} value={question} onChange={event => setQuestion(event.target.value)} /></label>
     {failed ? <p className="lib-models" role="alert">{t('Could not read the model connections: {message}', { message: failed })}</p>
-      : !models ? <p className="lib-models" role="status">{t('Reading the model connections…')}</p>
-      : <p className="lib-models">{line('Answer model', models.answer)}<br />{line('Literature model', models.literature)}</p>}
+      : list === null ? <p className="lib-models" role="status">{t('Reading the model connections…')}</p>
+      : settingsError && !fallback ? <div className="lib-models lib-settings-error" role="alert">
+        <span>{t('Could not read the default models in Settings: {message}', { message: settingsError })}</span>
+        <span className="acts">
+          <Button variant="outline" size="sm" onClick={() => setAttempt(n => n + 1)}>{t('Try again')}</Button>
+          <Button variant="outline" size="sm" onClick={() => setFallback(true)}>{t('Use the connections’ default models')}</Button>
+        </span>
+      </div>
+      : models && <p className="lib-models">{line('Answer model', models.answer)}<br />{line('Literature model', models.literature)}</p>}
   </ConfirmDialog>
 }
 

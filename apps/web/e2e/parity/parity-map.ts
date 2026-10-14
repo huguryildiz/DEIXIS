@@ -603,7 +603,7 @@ const libraryPage: Pair[] = [
   { id: 'library-empty.icon', surface: 'library-empty', mock: '.empty svg.i', app: '.lib-empty > div > svg', checks: ['chrome', 'icon'], icon: { mock: 'lib', app: 'library-big' }, status: 'active' },
   { id: 'library-empty.heading', surface: 'library-empty', mock: '.empty h2', app: '.lib-empty h1', checks: ['chrome', 'type', 'colour'], text: true, states: [], status: 'active' },
   { id: 'library-empty.text', surface: 'library-empty', mock: '.empty p', app: '.lib-empty p', checks: ['content', 'type', 'colour'], text: false, states: [], status: 'active' },
-  { id: 'library-empty.buttons', surface: 'library-empty', mock: '.empty .acts button', app: '.lib-empty .acts button', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], status: 'active' },
+  { id: 'library-empty.buttons', surface: 'library-empty', mock: '.empty .acts button', app: '.lib-empty .acts button:not(.lib-start)', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], status: 'active' },
 ]
 
 const TR = '.settings .rows > div'

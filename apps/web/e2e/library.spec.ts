@@ -287,9 +287,12 @@ test.describe.serial('S25: the Library page', () => {
     await expect(ask.locator('.lib-models')).toContainText('Answer model: ')
     await expect(ask.getByRole('button', { name: 'Start' })).toBeDisabled()
     await ask.getByLabel('Your question').fill('SYNTHETIC: what do these two works report?')
+    const runAnswer = page.waitForResponse(r => r.request().method() === 'POST' && /\/api\/researches\/[^/]+\/runs$/.test(new URL(r.url()).pathname))
     await ask.getByRole('button', { name: 'Start' }).click()
     await expect(result(page)).toContainText('created with 2 works from the Library.')
-    await expect(result(page)).toContainText('The answer started; the research page shows its steps.')
+    // The line names the status of the run the server returned (queued, not "started").
+    const runStatus = ((await (await runAnswer).json()) as { status: string }).status
+    await expect(result(page)).toContainText(runStatus === 'queued' ? 'The answer is queued; the research page shows its steps.' : `The answer run is ${runStatus}; the research page shows its steps.`)
     const asked = (await library()).researches.find(r => !lib.researches.some(x => x.id === r.id))!
     const askedView = await view(asked.id)
     expect(askedView.scope.source_scope).toBe('attached')
@@ -301,9 +304,11 @@ test.describe.serial('S25: the Library page', () => {
     await pane.getByRole('button', { name: 'Start evidence table' }).click()
     const table = page.getByRole('dialog', { name: 'Start evidence table' })
     await table.getByLabel('What should the table compare?').fill('SYNTHETIC: compare the release schedules')
+    const suggest = page.waitForResponse(r => r.request().method() === 'POST' && r.url().endsWith('/column-suggestions'))
     await table.getByRole('button', { name: 'Start' }).click()
     await expect(result(page)).toContainText('Its study table holds 2 rows.')
-    await expect(result(page)).toContainText('Column suggestions started')
+    const suggestStatus = ((await (await suggest).json()) as { status: string }).status
+    await expect(result(page)).toContainText(suggestStatus === 'queued' ? 'Column suggestions are queued' : `Column suggestions are ${suggestStatus}`)
     const before = new Set([...lib.researches.map(r => r.id), asked.id])
     const tabled = (await library()).researches.find(r => !before.has(r.id))!
     const tables = (await (await api.get(`/api/researches/${tabled.id}/tables`)).json()) as { rows: number }[]
@@ -345,15 +350,165 @@ test.describe.serial('S25: the Library page', () => {
     answer = 'fail'
     await page.getByRole('button', { name: 'Import from Zotero' }).click()
     await page.getByRole('dialog', { name: 'Import from Zotero' }).getByRole('button', { name: 'Import 3 items' }).click()
-    await expect(result(page)).toContainText('Nothing was imported from Zotero: SYNTHETIC Zotero did not answer')
+    // An error does not prove nothing was saved (the import saves item by item): the page says the result is not confirmed.
+    await expect(result(page)).toContainText('The Zotero import could not be confirmed: SYNTHETIC Zotero did not answer')
+    await expect(result(page)).toContainText('Some items may have been saved before the error; the list was read again')
+    await expect(result(page)).not.toContainText('Nothing was imported')
   })
 
-  test('an empty Library offers Upload PDF and Import from Zotero', async ({ page }) => {
+  test('an empty Library offers Upload PDF, Import from Zotero and Start a research', async ({ page }) => {
     await page.route('**/api/library', route => route.fulfill({ json: { entries: [], researches: [], counts: { works: 0, versions: 0, researches: 0 } } }))
     await page.goto(`${server.url()}/#/library`)
     await expect(page.getByRole('heading', { name: 'No saved works yet' })).toBeVisible()
     await expect(page.locator('.lib-empty p')).toHaveText('The sources of every research land here. You can also upload PDFs or import a Zotero collection.')
     await expect(page.locator('.lib-empty .acts button')).toHaveText(['Upload PDF', 'Import from Zotero'])
+    await expect(page.locator('.lib-empty .lib-start')).toHaveText('Start a research')
+    await page.locator('.lib-empty').getByRole('button', { name: 'Start a research' }).click()
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/')
+  })
+
+  test('View menu: compact rows and By research grouping are kept choices; each work is listed once under its newest research', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await open(page)
+    const lib = await library()
+    const viewMenu = page.getByRole('button', { name: 'View options' })
+    await viewMenu.click()
+    await expect(page.getByRole('menu').locator('.lib-menu-h')).toHaveText(['Rows', 'Group works'])
+    await expect(page.getByRole('menuitem')).toHaveText(['Comfortable', 'Compact', 'By research', 'All works'])
+    await page.getByRole('menuitem', { name: 'Compact' }).click()
+    await expect(page.locator('.lib')).toHaveAttribute('data-density', 'compact')
+    await viewMenu.click()
+    await page.getByRole('menuitem', { name: 'By research' }).click()
+    await expect(page.locator('.lib')).toHaveAttribute('data-grouping', 'research')
+    // Page size 100 so every work is on one page; the bands follow the research list, each with the works it owns.
+    await page.reload()
+    await expect(page.locator('.lib')).toHaveAttribute('data-density', 'compact')
+    await expect(page.locator('.lib')).toHaveAttribute('data-grouping', 'research')
+    const owner = (e: Entry) => (lib.researches.some(r => r.id === e.researches[0]?.id) ? e.researches[0].id : '')
+    const bands = [...lib.researches.map(r => r.id), ''].filter(id => lib.entries.some(e => owner(e) === id))
+    const firstPage = page.locator('.lib-table tbody tr.lib-band')
+    const shownBands = await firstPage.evaluateAll(trs => trs.map(tr => (tr as HTMLElement).dataset.band ?? ''))
+    // The first page shows a prefix of the band order.
+    expect(shownBands).toEqual(bands.map(id => id || 'none').slice(0, shownBands.length))
+    const first = bands[0]
+    const firstTitle = first ? lib.researches.find(r => r.id === first)!.title : 'No research'
+    await expect(firstPage.first()).toHaveText(`${firstTitle}${lib.entries.filter(e => owner(e) === first).length}`)
+    // A chosen research is one group already: no band rows.
+    await left(page).locator(`button[data-research="${A.id}"]`).click()
+    await expect(page.locator('.lib-table tbody tr.lib-band')).toHaveCount(0)
+    await left(page).locator('button').first().click()
+    await viewMenu.click()
+    await page.getByRole('menuitem', { name: 'Comfortable' }).click()
+    await viewMenu.click()
+    await page.getByRole('menuitem', { name: 'All works' }).click()
+    await expect(page.locator('.lib')).toHaveAttribute('data-grouping', 'none')
+    await expect(page.locator('.lib')).toHaveAttribute('data-density', 'comfortable')
+    await expect(page.locator('.lib-table tbody tr.lib-band')).toHaveCount(0)
+  })
+
+  test('a Settings read error stays visible and Start waits until Settings is read or the connections’ defaults are chosen', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await open(page)
+    const lib = await library()
+    let failSettings = true
+    await page.route('**/api/settings', route => (failSettings && route.request().method() === 'GET'
+      ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC settings read failure' } }) : route.fallback()))
+    await left(page).locator(`button[data-research="${A.id}"]`).click()
+    await row(page, holding(lib, A.id)[0].title).getByRole('checkbox').check()
+    await page.locator('.lib-right').getByRole('button', { name: 'Ask about these works' }).click()
+    const ask = page.getByRole('dialog', { name: 'Ask about these works' })
+    await ask.getByLabel('Your question').fill('SYNTHETIC: a question that is never sent')
+    await expect(ask.getByRole('alert')).toContainText('Could not read the default models in Settings: SYNTHETIC settings read failure')
+    await expect(ask.getByRole('button', { name: 'Start' })).toBeDisabled()
+    await expect(ask).not.toContainText('Settings has none')
+    await ask.getByRole('button', { name: 'Use the connections’ default models' }).click()
+    await expect(ask.locator('.lib-models')).toContainText('(the connection’s default; Settings could not be read)')
+    await expect(ask.getByRole('button', { name: 'Start' })).toBeEnabled()
+    // Cancel and open again: the choice is asked again; Try again reads Settings once it answers.
+    await ask.getByRole('button', { name: 'Cancel' }).click()
+    await page.locator('.lib-right').getByRole('button', { name: 'Ask about these works' }).click()
+    await expect(ask.getByRole('alert')).toContainText('Could not read the default models in Settings')
+    failSettings = false
+    await ask.getByRole('button', { name: 'Try again' }).click()
+    await expect(ask.getByRole('alert')).toHaveCount(0)
+    await expect(ask.locator('.lib-models')).toContainText('Answer model: ')
+    await expect(ask.locator('.lib-models')).not.toContainText('Settings could not be read')
+    await ask.getByRole('button', { name: 'Cancel' }).click()
+  })
+
+  test('a failed study table read keeps the created research and requests no column suggestions; a failed add keeps its work chosen', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await open(page)
+    const lib = await library()
+    await page.route('**/api/researches/*/tables', route => (route.request().method() === 'GET'
+      ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC tables read failure' } }) : route.fallback()))
+    let suggestions = 0
+    page.on('request', r => { if (r.url().endsWith('/column-suggestions')) suggestions++ })
+    await left(page).locator(`button[data-research="${A.id}"]`).click()
+    const two = holding(lib, A.id).slice(0, 2)
+    for (const e of two) await row(page, e.title).getByRole('checkbox').check()
+    await page.locator('.lib-right').getByRole('button', { name: 'Start evidence table' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Start evidence table' })
+    await dialog.getByLabel('What should the table compare?').fill('SYNTHETIC: a table whose read fails')
+    await dialog.getByRole('button', { name: 'Start' }).click()
+    await expect(result(page)).toContainText('created with 2 works from the Library.')
+    await expect(result(page)).toContainText('Could not read its study table (SYNTHETIC tables read failure), so the table state is not confirmed and column suggestions were not requested.')
+    await expect(result(page)).not.toContainText('No study table was made')
+    expect(suggestions).toBe(0)
+    const made = (await library()).researches.find(r => !lib.researches.some(x => x.id === r.id))!
+    expect(made).toBeTruthy()
+    await page.unroute('**/api/researches/*/tables')
+    // Two works to C, one refused by the server: that one stays chosen, the added one is not.
+    await left(page).locator(`button[data-research="${A.id}"]`).click()
+    const fresh = await library()
+    const pair = holding(fresh, A.id).filter(e => !e.researches.some(r => r.id === B.id)).slice(0, 2)
+    const target = pair.length === 2 ? B : C
+    const both = pair.length === 2 ? pair : holding(fresh, A.id).filter(e => !e.researches.some(r => r.id === C.id)).slice(0, 2)
+    expect(both.length).toBe(2)
+    const refused = both[1]
+    await page.route(`**/api/researches/${target.id}/library-sources`, async route => {
+      if ((route.request().postDataJSON() as { work_id: string }).work_id === refused.work_id) return route.fulfill({ status: 500, json: { detail: 'SYNTHETIC add refused' } })
+      return route.fallback()
+    })
+    for (const e of both) await row(page, e.title).getByRole('checkbox').check()
+    await page.locator('.lib-right').getByRole('button', { name: 'Add to a research' }).click()
+    await page.getByRole('menu').locator(`[data-research="${target.id}"]`).click()
+    await expect(toast(page)).toContainText('1 could not be added: SYNTHETIC add refused')
+    await expect(page.locator('.lib-right .pane-h')).toHaveText('New from selection · 1')
+    await expect(row(page, refused.title).getByRole('checkbox')).toBeChecked()
+    await expect(row(page, both[0].title).getByRole('checkbox')).not.toBeChecked()
+  })
+
+  test('Undo of a removal from two researches waits for both restores and reports the one that failed', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await open(page)
+    const lib = await library()
+    const work = lib.entries.find(e => e.researches.length >= 2)!
+    const [failing, slow] = work.researches
+    await find(page, work.title)
+    await row(page, work.title).getByRole('button', { name: /^More for/ }).click()
+    await page.getByRole('menuitem', { name: /^Remove from every research/ }).click()
+    await page.getByRole('dialog', { name: 'Remove from every research?' }).getByRole('button', { name: 'Remove' }).click()
+    await expect(toast(page)).toContainText('removed from every research that held it')
+    await expect(row(page, work.title).locator('td').nth(4)).toHaveText('None')
+    // The first research's restore fails at once; the second is held for 1.5 s, past the moment the failure is known.
+    await page.route(`**/api/researches/${failing.id}/sources/restore`, route => route.fulfill({ status: 500, json: { detail: 'SYNTHETIC restore refused' } }))
+    await page.route(`**/api/researches/${slow.id}/sources/restore`, async route => {
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      return route.fallback()
+    })
+    const slowDone = page.waitForResponse(r => r.url().includes(`/api/researches/${slow.id}/sources/restore`))
+    await toast(page).getByRole('button', { name: 'Undo' }).click()
+    await slowDone
+    await expect(toast(page)).toContainText(`Put back in ${work.researches.length - 1} of ${work.researches.length} researches; not in`, { timeout: 10_000 })
+    await expect(toast(page)).toContainText('SYNTHETIC restore refused')
+    // Read once after a pause: the list must show the restore that finished after the failure.
+    await page.waitForTimeout(800)
+    const cell = await row(page, work.title).locator('td').nth(4).textContent()
+    const stored = (await library()).entries.find(e => e.work_id === work.work_id)!.researches
+    expect(stored.map(r => r.id)).toContain(slow.id)
+    expect(stored.map(r => r.id)).not.toContain(failing.id)
+    expect(cell).toBe(`${stored[0].title}${stored.length > 1 ? `+${stored.length - 1} more` : ''}`)
   })
 
   // S24 lesson: a read that started before a write must not undo the write's screen, on success or on error. The held

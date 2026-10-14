@@ -29,6 +29,7 @@
 .library-page .btn-teal:disabled{opacity:.45;cursor:default}
 .library-page .ib{display:grid;flex:none;place-items:center;width:30px;height:30px;border-radius:7px;color:var(--muted)}
 .library-page .ib:hover:not(:disabled){background:var(--hover-surface);color:var(--ink)}
+.library-page .ib.tint{background:var(--accent-tint);color:var(--accent)}
 .library-page .link{padding:0;border:0;background:none;color:var(--accent);font-weight:500;cursor:pointer}
 .library-page .link:hover{text-decoration:underline;text-underline-offset:2px}
 
@@ -63,6 +64,14 @@
 .library-page .lib-table input[type=checkbox]{width:15px;height:15px;margin:0;accent-color:var(--accent)}
 .library-page .lib-table tr.sel td{background:var(--accent-tint)}
 .library-page .lib-table tr.is-dragging td{opacity:.45}
+.library-page .lib-table th.lib-view-cell{width:1%;padding:4px 8px}
+.library-page .lib-table th.lib-view-cell .ib{width:26px;height:26px;margin-left:auto}
+.library-page .lib-table tr.lib-band th{position:static;display:table-cell;padding:7px 12px;border-right:0;background:var(--sidebar-surface);color:var(--ink);font-size:12.5px;font-weight:600;white-space:normal}
+.library-page .lib-table tr.lib-band em{margin-left:8px;color:var(--muted);font-style:normal;font-weight:400}
+/* Compact rows (View menu): one line per work, the byline and the version pills kept short. */
+.library-page .lib[data-density=compact] .lib-table td{padding-top:5px;padding-bottom:5px}
+.library-page .lib[data-density=compact] .lib-table .src-m{margin-top:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-page .lib[data-density=compact] .lib-table .pills{display:none}
 .library-page .lib-title-cell{min-width:260px}
 .library-page .lib-title-line{display:block;line-height:1.35}
 .library-page .lib-title-line .lib-key{margin-right:6px}
@@ -138,6 +147,11 @@
 .library-page .empty p{margin:0;color:var(--muted);font-size:13.5px}
 .library-page .empty .acts{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
 .library-page .empty .acts .ghost{border-radius:999px}
+.library-page .empty>div{position:relative}
+/* Start a research (a live action the mockup's empty state has no place for) sits under the box, outside its flow, so the
+   mockup's centred heading and buttons keep their place. */
+.library-page .empty .lib-empty-more{position:absolute;top:100%;right:0;left:0;display:flex;justify-content:center;margin-top:10px}
+.library-page .empty .lib-empty-more .ghost{border-radius:999px}
 .library-page .empty .notice{margin:6px 0 0;text-align:left}
 
 /* Menus render in a portal, so the root class carries the recipe (mockup `.menu`). */
@@ -157,6 +171,8 @@
 .lib-question .field{width:100%;padding:8px 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit;font-size:14px;line-height:1.5;resize:vertical;outline:0}
 .lib-question .field:focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:1px}
 .lib-models{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.lib-settings-error{display:grid;gap:8px;color:var(--error-ink)}
+.lib-settings-error .acts{display:flex;flex-wrap:wrap;gap:6px}
 
 @media (max-width:1100px){
   .library-page .lib-body{grid-template-columns:180px minmax(0,1fr)}

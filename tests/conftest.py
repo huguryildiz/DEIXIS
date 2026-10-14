@@ -61,6 +61,18 @@ def no_model_api_keys(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_repository_dotenv(monkeypatch):
+    """`load_settings()` fills unset variables from the repository's own `.env`, which holds the developer's real keys, and
+    those stay in the worker's environment for every later test (an OPENALEX_API_KEY turned a later keyless OpenAlex 401
+    into a keyed one). Tests never read that file; a test that needs a `.env` writes its own."""
+    from deixis import config
+    from deixis.paths import REPO_ROOT
+
+    real, repository = config.load_dotenv, (REPO_ROOT / ".env").resolve()
+    monkeypatch.setattr(config, "load_dotenv", lambda path: set() if Path(path).resolve() == repository else real(path))
+
+
+@pytest.fixture(autouse=True)
 def no_registered_builtin_model(monkeypatch):
     """The built-in model's integrity is registered module-wide by an app; with nothing saved, a ready model is the
     default (D7), so one test's app never leaks it into another test."""

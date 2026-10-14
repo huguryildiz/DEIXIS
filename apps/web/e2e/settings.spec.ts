@@ -59,13 +59,23 @@ class ProxyStore {
   test: Test | null = null
   next: Test | 'fail' = tested()
   gate: Promise<void> | null = null
+  // The next settings read answers late, with the state it saw when it arrived (a read that started before a change).
+  readHold: Promise<void> | null = null
+  held = 0
   posts = 0
   view() {
     return { address: this.address, label: this.address ? 'login.proxy.example.edu' : null, label_default: this.address ? 'login.proxy.example.edu' : null,
       label_is_default: true, test: this.test, test_is_current: !!this.test && this.test.address === this.address }
   }
   async install(page: Page) {
-    await page.route('**/api/institution-proxy/settings', route => route.fulfill({ json: this.view() }))
+    await page.route('**/api/institution-proxy/settings', async route => {
+      const seen = this.view()
+      const hold = this.readHold
+      if (!hold) return route.fulfill({ json: seen })
+      this.readHold = null; this.held++
+      await hold
+      await route.fulfill({ json: seen })
+    })
     await page.route('**/api/institution-proxy/test', async route => {
       this.posts++
       if (this.gate) await this.gate
@@ -189,6 +199,49 @@ test.describe.serial('S24: the Settings page', () => {
     await page.locator('.proxy').getByRole('button', { name: 'Remove' }).click()
     await expect(page.getByText('Proxy address removed. Links open directly.')).toBeVisible()
     await expect(state).toHaveText('Not set upWithout a proxy, publisher links open directly.')
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
+
+  test('a proxy read that started before a change does not undo the saved address, its test, or a removal (Sol r2)', async () => {
+    const store = new ProxyStore()
+    store.address = ADDRESS
+    store.test = { ...tested(), address: ADDRESS }
+    await store.install(page)
+    await page.route('**/api/institutional-access**', route => route.fulfill({ json: { status: 'not_checked', via: 'scopus' } }))
+    await page.goto(server.url('#/settings/access'))
+    await page.reload()
+    const state = page.locator('.proxy-state').first()
+    const field = page.getByLabel('Proxy address (EZproxy or OpenAthens prefix)')
+    const time = await hhmm(page, PINNED)
+    await expect(state).toHaveText(`Proxy reachableArticle access not checked. The proxy host answered with HTTP 302 at ${time}.`)
+
+    // A read starts and is held with the old address and its test; the person saves a new address and tests it.
+    const NEW = 'https://login.other-proxy.example.edu/login?url='
+    let release!: () => void
+    store.readHold = new Promise(resolve => { release = resolve })
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect.poll(() => store.held).toBe(1)
+    store.next = tested({ proxy_http_status: 200 })
+    await field.fill(NEW)
+    await page.locator('.proxy').getByRole('button', { name: 'Test' }).click()
+    await expect(state).toHaveText(`Proxy reachableArticle access not checked. The proxy host answered with HTTP 200 at ${time}.`)
+    expect(store.address).toBe(NEW)
+    release()
+    await page.waitForTimeout(600)
+    await expect(field).toHaveValue(NEW)
+    await expect(state).toHaveText(`Proxy reachableArticle access not checked. The proxy host answered with HTTP 200 at ${time}.`)
+
+    // The same for a removal: the late read still holds the address.
+    store.readHold = new Promise(resolve => { release = resolve })
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect.poll(() => store.held).toBe(2)
+    await page.locator('.proxy').getByRole('button', { name: 'Remove' }).click()
+    await expect(state).toHaveText('Not set upWithout a proxy, publisher links open directly.')
+    expect(store.address).toBeNull()
+    release()
+    await page.waitForTimeout(600)
+    await expect(state).toHaveText('Not set upWithout a proxy, publisher links open directly.')
+    await expect(field).toHaveValue('')
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
@@ -395,6 +448,37 @@ test.describe.serial('S24: the Settings page', () => {
     await page.waitForTimeout(500)
     await expect(page.locator('.semantic-option[data-row="openai"] input')).toBeChecked()
     await expect(page.locator('.semantic-privacy')).toHaveText('Passage text is sent to OpenAI.')
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
+
+  test('the local server sheet shows each address read-only and chooses the embedding model, as the page row does (Sol r2 backlog)', async () => {
+    const option = (provider: string, available: boolean, models: string[] = []) => ({ provider, models, available, reason: available ? null : 'SYNTHETIC not available' })
+    const view = (provider: string, model: string | null) => ({ provider, model, explicit: true,
+      options: [option('builtin', false), option('openai', false), option('gemini', false), option('ollama', true, ['syn-embed-small', 'syn-embed-large']), option('lm_studio', false), option('off', true)] })
+    const puts: { provider: string; model: string | null }[] = []
+    await page.route(url => url.pathname === '/api/semantic-search', route => {
+      if (route.request().method() !== 'PUT') return route.fulfill({ json: view('off', null) })
+      const body = route.request().postDataJSON() as { provider: string; model: string | null }
+      puts.push(body)
+      return route.fulfill({ json: view(body.provider, body.model) })
+    })
+    await page.goto(server.url('#/settings'))
+    await page.reload()
+    await page.getByRole('button', { name: /^Local model servers/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'Local model servers' })
+    await expect(sheet.locator('.server-block code').first()).toBeVisible()
+    await expect(sheet.locator('.server-block input')).toHaveCount(0)
+    await expect(sheet).toContainText('Each address is the one its app uses by default; this version of DEIXIS cannot change it.')
+    const model = sheet.getByRole('combobox', { name: 'Embedding model for semantic search' })
+    await expect(model).toHaveValue('')
+    await model.selectOption({ label: 'Ollama · syn-embed-large' })
+    await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+    expect(puts.at(-1)).toEqual({ provider: 'ollama', model: 'syn-embed-large' })
+    await expect(model).toHaveValue('ollama|syn-embed-large')
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    // The page row shows the same saved choice.
+    await expect(page.locator('.semantic-option[data-row="server"] input')).toBeChecked()
+    await expect(page.locator('.semantic-option[data-row="server"] select')).toHaveValue('ollama|syn-embed-large')
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 

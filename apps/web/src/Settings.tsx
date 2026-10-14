@@ -32,6 +32,8 @@ export type AccessControl = {
   scopus: InstitutionalAccess['status'] | null
   /** A fresh test after any running one; rejects when the request fails. */
   test: (address?: string) => Promise<ProxySettings>
+  /** Saves the address ('' removes it) under the same version as reads and tests; rejects when the save fails. */
+  save: (address: string) => Promise<void>
   reload: () => void
 }
 
@@ -157,7 +159,7 @@ function InstitutionalAccessBlock({ access }: { access: AccessControl }) {
     setBusy(true); setMessage('')
     try {
       if (address !== (saved ?? '')) {
-        try { await api.saveInstitutionProxy(address) } catch (e) { setMessage(t('Not saved: {message}', { message: (e as Error).message })); return }
+        try { await access.save(address) } catch (e) { setMessage(t('Not saved: {message}', { message: (e as Error).message })); return }
         setDraft(null)
       }
       try { await access.test(address) } catch (e) { setMessage(t('The check could not run: {message}', { message: (e as Error).message })) }
@@ -166,7 +168,7 @@ function InstitutionalAccessBlock({ access }: { access: AccessControl }) {
   const remove = () => {
     if (busy) return
     setBusy(true); setMessage('')
-    api.saveInstitutionProxy('').then(() => { setDraft(null); toast('success', t('Proxy address removed. Links open directly.')) })
+    access.save('').then(() => { setDraft(null); toast('success', t('Proxy address removed. Links open directly.')) })
       .catch((e: Error) => setMessage(t('Not removed: {message}', { message: e.message })))
       .finally(() => { setBusy(false); access.reload() })
   }

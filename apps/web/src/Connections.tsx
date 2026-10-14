@@ -585,6 +585,7 @@ export function ConnectionsTab({ dark, access, onConnections }: { dark: boolean;
   const serverChoices = serverOptions.filter(o => o.available).flatMap(o => o.models.map(m => ({ provider: o.provider, model: m, label: `${o.provider === 'ollama' ? 'Ollama' : 'LM Studio'} · ${m}` })))
   const chosen = pending ?? (semantic ? { provider: semantic.provider, model: semantic.model } : null)
   const saving = pending !== null
+  const serverChosen = !!chosen && SERVER_IDS.includes(chosen.provider)
   function chooseSemantic(provider: SemanticSearchProvider, model: string | null) {
     if (saving || !semantic) return
     const version = ++seq.current.semanticVersion
@@ -761,6 +762,15 @@ export function ConnectionsTab({ dark, access, onConnections }: { dark: boolean;
         {server.endpoint && <div className="lbl">{t('Server address')}<code className="field mono">{server.endpoint}</code></div>}
         <LocalToolDetails tool={server} dark={dark} onChanged={reloadTools} refresh={false} />
       </section>)}
+      {servers.some(server => server.endpoint) && <p className="foot-note">{t('Each address is the one its app uses by default; this version of DEIXIS cannot change it.')}</p>}
+      {/* The same choice as the Local model server row on the page: choosing a model saves it as the semantic search provider. */}
+      <label className="lbl">{t('Embedding model for semantic search')}
+        <select className="select server-embedding" disabled={saving || !serverChoices.length} value={serverChosen ? `${chosen!.provider}|${chosen!.model ?? ''}` : ''}
+          onChange={e => { if (!e.target.value) return; const [p, ...m] = e.target.value.split('|'); chooseSemantic(p as SemanticSearchProvider, m.join('|')) }}>
+          {!serverChosen && <option value="">{t(serverChoices.length ? 'Not used for semantic search' : 'No embedding model listed')}</option>}
+          {serverChoices.map(c => <option key={`${c.provider}|${c.model}`} value={`${c.provider}|${c.model}`}>{c.label}</option>)}
+        </select>
+      </label>
       <div className="acts">{checkButton('servers', 'Test', () => Promise.all([loadTools(true, true), loadSemantic(true)]))}</div>
     </>
   } else if (sel?.kind === 'equation-reader') {

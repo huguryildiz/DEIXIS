@@ -4733,4 +4733,8 @@ const tr: Record<string, string> = {
   'Access and quota are recorded per request; not verified in advance.': 'Erişim ve kota her istekte kaydedilir; önceden doğrulanmaz.',
   'Semantic search provider': 'Anlamsal arama sağlayıcısı',
   'Could not check: {message}': 'Denetlenemedi: {message}',
+  'Each address is the one its app uses by default; this version of DEIXIS cannot change it.': 'Her adres, uygulamasının varsayılan olarak kullandığı adrestir; DEIXIS’in bu sürümü onu değiştiremez.',
+  'Embedding model for semantic search': 'Anlamsal arama için gömme modeli',
+  'Not used for semantic search': 'Anlamsal aramada kullanılmıyor',
+  'No embedding model listed': 'Listelenen gömme modeli yok',
 }

@@ -265,12 +265,19 @@ export default function App() {
   // so it measures the address saved by then. The address a failed request was for is remembered for the retry wait.
   const proxyFlight = useRef<Promise<ProxySettings> | null>(null)
   const proxyAddress = useRef<string | null>(null)
+  // Reads, saves, removals and tests of the proxy share one version: a save or a test moves it on, so a read that was
+  // started before it, or while it ran, never replaces what the save or the test produced.
+  const proxyVersion = useRef(0)
+  const proxyRead = useRef(0)
+  const proxyWrites = useRef(0)
   const runProxyTest = useCallback((address?: string): Promise<ProxySettings> => {
     const start = () => {
       if (address) proxyAddress.current = address
       proxyTesting.current = true
+      proxyVersion.current++
       setProxyBusy(true)
       const flight: Promise<ProxySettings> = shellApi.testProxy().then(result => {
+        proxyVersion.current++
         proxyFailedAt.current = null; setProxyFailed(null); setProxy(result); proxyAddress.current = result.address
         return result
       }, (error: Error) => {
@@ -286,7 +293,9 @@ export default function App() {
   }, [])
   const checkAccess = useCallback(() => {
     api.institutionalAccess().then(result => setInstitutionalStatus(result.status)).catch(() => setInstitutionalStatus('unknown'))
+    const n = ++proxyRead.current, version = proxyVersion.current, busy = proxyWrites.current > 0 || proxyTesting.current
     shellApi.proxySettings().then(settings => {
+      if (n !== proxyRead.current || version !== proxyVersion.current || busy) return
       setProxy(settings)
       setProxyReadFailed(false)
       if (!proxyTesting.current) proxyAddress.current = settings.address
@@ -296,6 +305,18 @@ export default function App() {
       runProxyTest().catch(() => undefined)
     }, () => setProxyReadFailed(true))
   }, [runProxyTest])
+  // Saves (or, with '', removes) the address. The read that follows starts after the save, so it holds the new address.
+  const saveProxy = useCallback(async (address: string) => {
+    proxyVersion.current++
+    proxyWrites.current++
+    try {
+      const saved = await api.saveInstitutionProxy(address)
+      proxyVersion.current++
+      proxyAddress.current = saved.address
+      setProxy(old => old && { ...old, address: saved.address, test: saved.address ? old.test : null, test_is_current: false })
+    } finally { proxyWrites.current-- }
+    checkAccess()
+  }, [checkAccess])
   const retryAccess = () => { proxyFailedAt.current = null; setProxyFailed(null); setProxyReadFailed(false); checkAccess() }
   useEffect(() => {
     const check = checkAccess
@@ -512,7 +533,7 @@ export default function App() {
         {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={id => go({ view: 'research', id })} onStartResearch={() => go({ view: 'home' })} />}
         {route.view === 'settings' && <SettingsPage key={route.tab ?? 'page'} dark={dark} section={route.tab} language={language} onLanguage={chooseLanguage}
           access={{ proxy, readFailed: proxyReadFailed, testing: proxyBusy, testFailed: !!proxy?.address && proxyFailed === proxy.address, scopus: institutionalStatus,
-            test: runProxyTest, reload: checkAccess }} />}
+            test: runProxyTest, save: saveProxy, reload: checkAccess }} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>
       <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} language={language} onLanguage={chooseLanguage}

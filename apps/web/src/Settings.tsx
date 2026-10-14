@@ -80,7 +80,7 @@ function ContactEmailRow() {
     <input id="contact-email" className="field" type="email" autoComplete="email" value={draft} disabled={stored === null || busy} placeholder="you@university.edu"
       onChange={e => { setDraft(e.target.value); setError('') }} />
     <button type="submit" className="ghost" disabled={busy || !changed}>{t(busy ? 'Saving…' : 'Save')}</button>
-    {stored && !stored.email && <Notice tone="attention">{stored.environment_set ? t('While this field is empty, DEIXIS_CONTACT_EMAIL from the environment is sent.') : t('Without an email, OpenAlex and Crossref answer more slowly at busy times. Searches still run.')}</Notice>}
+    {stored && !stored.email && <Notice tone="attention">{stored.environment_set ? t('While this field is empty, DEIXIS sends the email that was set when it started.') : t('Without an email, OpenAlex and Crossref answer more slowly at busy times. Searches still run.')}</Notice>}
   </form>
 }
 

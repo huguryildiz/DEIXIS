@@ -253,6 +253,7 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
     <p className="local-tool-note">{t('About one Marker equation in fifty was misread in a test on three papers, and a misread equation looks correct. Equations that do not match the PDF’s own text are marked to check against the page.')}</p>
     <dl className="local-tool-facts">
       <dt>{t('Package')}</dt><dd><code className="local-tool-code">{reader.package}</code></dd>
+      <dt>{t('License')}</dt><dd>{t('Code GPL-3.0; the models have their own license')}</dd>
       {reader.size_bytes > 0 && <><dt>{t('Size on disk')}</dt><dd>{formatBytes(reader.size_bytes)}</dd></>}
       {!ready && <><dt>{t('Needs')}</dt><dd>{t('About 4.4 GB of disk · {gb} GB free', { gb: reader.disk_free_gb })}</dd></>}
     </dl>
@@ -687,8 +688,8 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
         <div className="connection-checks">
           {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
           {check(t('Signed in for DEIXIS'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
-          {check(t('Instruction files loaded'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
-          {check(t('MCP servers with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
+          {check(t('Instruction files used'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
+          {check(t('Add-ons with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
         </div>
       </>}
       {model && accountId === 'claude' && <>
@@ -696,8 +697,8 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
         <div className="connection-checks">
           {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
           {check(t('Signed in to Claude Code'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
-          {check(t('Instruction files loaded'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
-          {check(t('MCP servers with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
+          {check(t('Instruction files used'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
+          {check(t('Add-ons with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
         </div>
       </>}
       {model && <ModelCatalogue model={model} />}

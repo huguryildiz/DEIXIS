@@ -171,7 +171,7 @@ test('connections separate model connections from configured scholarly access', 
     await claudeTool.click()
     const sheet = page.getByRole('dialog', { name: 'Claude Code' })
     await expect(sheet.locator('.dmeta')).toHaveText(/^(Installed|Not installed|Ready|Not signed in)/)
-    await expect(sheet.getByRole('button', { name: 'Sign in again' })).toBeVisible()
+    await expect(sheet.getByRole('button', { name: /^Sign in( again)?$/ })).toBeVisible()
     await sheet.getByRole('button', { name: 'Close' }).click()
     await expect(page.getByRole('button', { name: 'OpenAlex No key needed Search and citation chain' })).toBeVisible()
     await expect(page.locator('.settings-page')).not.toContainText('Connected')

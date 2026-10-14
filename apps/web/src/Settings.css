@@ -121,6 +121,7 @@
 .connection-sheet .key-box .notice{margin:0;color:var(--error-ink)}
 .connection-sheet .ghost.is-danger{color:var(--error-ink)}
 .connection-sheet .signin-cmd{display:grid;gap:6px}
+.connection-sheet .signin-wait{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .connection-sheet .cmd-row{display:flex;align-items:center;gap:8px}
 .connection-sheet .cmd-row code{flex:1;min-width:0;padding:6px 8px;overflow-wrap:anywhere;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
 .connection-sheet .server-block{display:grid;gap:8px;padding-top:10px;border-top:1px solid var(--line)}

@@ -694,6 +694,8 @@ export type Credentials = { keychain: Keychain; keys: KeyEntry[] }
 export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed'; detail: string; checked_at: string; kind?: string; http_status?: number | null; reset_at?: string | null }
 export type LocalToolModel = { id: string; size_bytes: number | null; embedding: boolean }
 export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; url: string }
+// 'failed' is set by the page itself when the terminal could not be opened (the server answered with an error).
+export type AccountSignIn = { state: 'idle' | 'waiting' | 'succeeded' | 'failed' | 'timed_out'; message: string | null }
 export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string } | null
 export type LocalTool = {
   id: 'claude_code' | 'codex' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'
@@ -1284,6 +1286,8 @@ export const api = {
   localTools: (refresh = false) => request<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`),
   installLocalTool: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/install`, { method: 'POST' }),
   cancelLocalToolInstall: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/cancel`, { method: 'POST' }),
+  startAccountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`, { method: 'POST' }),
+  accountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`),
   semanticSearch: () => request<SemanticSearch>('/api/semantic-search'),
   saveSemanticSearch: (provider: SemanticSearchProvider, model: string | null) =>
     request<SemanticSearch>('/api/semantic-search', json('PUT', { provider, model })),

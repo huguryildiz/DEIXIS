@@ -3,7 +3,7 @@ import { Ban, ChevronRight, Copy, Cpu, FileText, HardDrive, MemoryStick, Link, L
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
-import { api, ApiError, libraryImportsApi, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
@@ -469,6 +469,8 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const [checked, setChecked] = useState<Record<string, number>>({})
   const [checkFailed, setCheckFailed] = useState<Record<string, string>>({})
   const [signIn, setSignIn] = useState<string | null>(null)
+  // The sign-in DEIXIS started for a tool (D21); it is polled while the person finishes it in the terminal window that opened.
+  const [signInRun, setSignInRun] = useState<{ tool: string; run: AccountSignIn } | null>(null)
   const toast = useToast()
   // A later read wins: an answer to an earlier request that arrives after it is dropped. Semantic search reads and saves
   // share one version: a save moves it on, so a read started before or during the save never replaces the saved result.
@@ -542,6 +544,30 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const refreshModel = (id: string) => api.modelConnection(id, true).then(result => {
     setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
   }).catch((e: Error) => { toast('error', t('Check failed: {message}', { message: e.message })); throw e })
+  const settleSignIn = useCallback((tool: string, run: AccountSignIn) => {
+    setSignInRun(current => current && current.tool !== tool ? current : { tool, run })
+    if (run.state !== 'succeeded') return
+    toast('success', t('Signed in to {name}.', { name: ACCOUNT_TOOLS[tool]?.name ?? tool }))
+    void api.modelConnection(tool, true).then(result => {
+      setData(current => current ? { ...current, models: { ...current.models, [tool]: result } } : current)
+    }).catch(() => undefined)
+    void loadTools(true)
+  }, [toast, loadTools])
+  const startSignIn = (tool: string) => {
+    api.startAccountSignIn(tool).then(run => settleSignIn(tool, run), (e: Error) => {
+      setSignInRun({ tool, run: { state: 'failed', message: e.message } })
+      setSignIn(tool)
+      toast('error', t('Could not start the sign-in: {message}', { message: e.message }))
+    })
+  }
+  const signInTool = signInRun?.run.state === 'waiting' ? signInRun.tool : null
+  useEffect(() => {
+    if (!signInTool) return
+    const timer = window.setInterval(() => {
+      api.accountSignIn(signInTool).then(run => settleSignIn(signInTool, run), () => undefined)
+    }, 2000)
+    return () => window.clearInterval(timer)
+  }, [signInTool, settleSignIn])
   const show = (item: Selected) => { setSelected(item); setOpen(true); setSignIn(null) }
   // A link to one provider's sheet (`#/settings/openalex`) opens it once the providers are read.
   const opened = useRef(false)
@@ -691,7 +717,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     <button type="button" className="btn-pri" disabled={disabled || checking !== null} onClick={() => runCheck(key, run)}>{checking === key ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
   // The Codex home this backend uses (DEIXIS_CODEX_HOME or the data folder's), single-quoted for a POSIX shell.
   const codexLogin = data?.codex_home ? `CODEX_HOME='${data.codex_home.replaceAll("'", "'\\''")}' codex login` : null
-  const signInCommand = accountId === 'codex' ? codexLogin : accountId === 'claude' ? 'claude' : null
+  const signInCommand = accountId === 'codex' ? codexLogin : accountId === 'claude' ? 'claude auth login' : null
   const copy = (text: string) => { writeClipboard(text).then(() => toast('success', t('Command copied.')), () => toast('error', t('Could not copy; select the command and copy it.'))) }
 
   const keyedSheet = (env: string, service: string, effect: string) => credentials && <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain}
@@ -700,6 +726,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   let body: ReactNode = null
   if (sel?.kind === 'account' && accountId) {
     const key = `account:${accountId}`
+    const ownRun = signInRun?.tool === accountId ? signInRun.run : null
     body = <>
       {dmeta(key, accountStatus(accountId), undefined, model && !model.ready ? healthReasonText(model) : undefined)}
       <p className="foot-note is-ink">{t(accountId === 'codex'
@@ -707,10 +734,18 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
         : 'Uses the account you are signed in with in Claude Code. DEIXIS keeps no password or token of its own.')}</p>
       <div className="acts">
         {checkButton(key, 'Test the connection', () => refreshModel(accountId), !model)}
-        {signInCommand && <button type="button" className="ghost" aria-expanded={signIn === accountId} onClick={() => setSignIn(signIn === accountId ? null : accountId)}>{t('Sign in again')}</button>}
+        {signInCommand && <button type="button" className="ghost" disabled={ownRun?.state === 'waiting'} onClick={() => startSignIn(accountId)}>
+          {ownRun?.state === 'waiting' && <span className="spin" aria-hidden />}
+          {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') ? t('Try again') : model?.signed_in ? t('Sign in again') : t('Sign in')}
+        </button>}
       </div>
+      {ownRun?.state === 'waiting' && <p className="foot-note signin-wait" role="status">
+        <span className="spin" aria-hidden />{t('A terminal window opened. Finish signing in there; this updates by itself.')}
+      </p>}
+      {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && ownRun.message && <p className="foot-note warn-t" role="alert">{ownRun.message}</p>}
+      {signInCommand && <button type="button" className="ghost" aria-expanded={signIn === accountId} onClick={() => setSignIn(signIn === accountId ? null : accountId)}>{t('Or run this in a terminal')}</button>}
       {signIn === accountId && signInCommand && <div className="signin-cmd">
-        <p className="foot-note">{t(accountId === 'codex' ? 'Run this in a terminal, then test the connection:' : 'Run this in a terminal, type /login, then test the connection:')}</p>
+        <p className="foot-note">{t('Run this in a terminal, then test the connection:')}</p>
         <div className="cmd-row"><code className="field mono">{signInCommand}</code><button type="button" className="ghost" onClick={() => copy(signInCommand)}><Copy aria-hidden />{t('Copy')}</button></div>
       </div>}
       {model && accountId === 'codex' && <>

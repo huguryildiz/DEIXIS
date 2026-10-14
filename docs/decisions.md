@@ -14,6 +14,16 @@ Decision:
 - The sheet shows "Answered · HTTP 200" or "Did not answer · …" next to the status, with the check's time; a test that could not run shows why and hides the earlier answer. COPY_CHANGES keyless-sheet-save is narrowed to the wording that still differs.
 Limits: Tested with mocked transports and the fixture server only; no live request to any source was sent. An HTTP answer, even 200, does not show that a search would return records.
 
+## D32 — The library's folder can be changed in Settings; the move happens at the next start
+Status: accepted · Date: 2026-10-15 · Writer: Claude
+Context: The owner asked for a "Data location" card like Claude Science's: where DEIXIS keeps its library, how big it is, free disk space, and a way to move it. Until now only `DEIXIS_DATA_DIR` could move it.
+Decision:
+- The chosen folder is stored in `location.json` inside the platform default folder, which never moves. `default_data_dir()` reads `DEIXIS_DATA_DIR`, then that pointer, then the platform default.
+- Settings → This computer → Data location shows the folder, its size by part (database, PDFs, provider responses, tools, other), the free space on its disk, and Change location (the macOS folder chooser; a path field elsewhere). A change is refused while research runs are queued or running, while `DEIXIS_DATA_DIR` is set, and for a folder inside the current one or containing it.
+- The open library is never moved while DEIXIS runs. The pointer records `move_from`; `deixis serve` moves every entry of the old folder into the new one before it opens the database, the database last. On one disk each entry is renamed. Across disks each is copied, renamed into place and recorded in the pointer before the original is deleted, so an interrupted move finishes at the next start. Symlinks and `pyvenv.cfg` files under `tools/` that named the old folder are pointed at the new one.
+- A folder that already holds `library.sqlite` is opened as it is; the old library stays where it was and nothing is merged. The confirmation says so first.
+Limits: The tests use temp folders and a fake cross-disk failure; no move to a real external disk was run, and the macOS folder chooser (osascript) was not exercised by a test. The tool environments' relinking was tested on a synthetic layout only, so a moved Marker or built-in model install may still need reinstalling.
+
 ## D31 — A run's OpenAlex and Semantic Scholar requests are stored one row each and counted in its Usage box
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: The run's Usage box gave OpenAlex's day budget but no count of the run's own requests (S27, COPY_CHANGES usage-box-openalex). The steps store traces of some requests, but a retried search replaces its step's trace and the planning requests (term counts, routing, seed lookups) and the OpenAlex PDF lookups keep none.

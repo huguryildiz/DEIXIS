@@ -79,6 +79,15 @@ def no_repository_dotenv(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_platform_data_dir(monkeypatch, tmp_path_factory):
+    """The platform default folder holds the location pointer (D32); tests never read or write the real one. A test
+    that needs a pointer patches `config.platform_data_dir` to its own temp folder."""
+    from deixis import config
+
+    monkeypatch.setattr(config, "platform_data_dir", lambda: tmp_path_factory.getbasetemp() / "no-platform-default")
+
+
+@pytest.fixture(autouse=True)
 def no_registered_builtin_model(monkeypatch):
     """The built-in model's integrity is registered module-wide by an app; with nothing saved, a ready model is the
     default (D7), so one test's app never leaks it into another test."""

@@ -165,3 +165,34 @@
 :is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon img{filter:grayscale(1) contrast(1.2)}
 .app .settings-page .opts .connection-icon{margin-top:3px}
 .app .settings-page .opts label.is-disabled .connection-icon{opacity:.4}
+
+/* Data location (D32): one bordered card under This computer — the folder, its size by part as a stacked bar with a
+   legend, the free space on its disk, and the change for the next start. */
+.app .settings-page .data-location{display:grid;gap:10px;padding:14px 16px;border:1px solid var(--line);border-radius:10px}
+.app .settings-page .dl-head{display:flex;align-items:flex-start;gap:10px}
+.app .settings-page .dl-head>svg{flex:none;margin-top:2px;color:var(--muted)}
+.app .settings-page .dl-head>p{display:grid;gap:2px;flex:1;min-width:0;margin:0}
+.app .settings-page .dl-head b{color:var(--ink);font-size:13.5px;font-weight:500}
+.app .settings-page .dl-head small{color:var(--muted);font-size:12.5px}
+.app .settings-page .dl-path{display:block;padding:6px 8px;border-radius:6px;background:var(--sidebar-surface);color:var(--ink-2);font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}
+.app .settings-page .dl-size{margin:0;color:var(--ink-2);font-size:13px}
+.app .settings-page .dl-bar{display:flex;height:6px;overflow:hidden;border-radius:3px;background:var(--selected-surface)}
+.app .settings-page .dl-bar i{display:block;height:100%;min-width:2px}
+.app .settings-page .dl-bar i+i{border-left:1px solid var(--paper)}
+.app .settings-page [data-part=database]{--part:var(--accent)}
+.app .settings-page [data-part=pdfs]{--part:var(--attr-text)}
+.app .settings-page [data-part=payloads]{--part:var(--attr-submitted)}
+.app .settings-page [data-part=tools]{--part:var(--attr-abstract)}
+.app .settings-page [data-part=other]{--part:var(--faint)}
+.app .settings-page .dl-bar i{background:var(--part)}
+.app .settings-page .dl-legend{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 18px;margin:0;padding:0;list-style:none;color:var(--muted);font-size:12.5px}
+.app .settings-page .dl-legend li{display:flex;align-items:center;gap:7px}
+.app .settings-page .dl-legend .tnum{margin-left:auto;color:var(--ink-2)}
+.app .settings-page .dl-dot{flex:none;width:8px;height:8px;border-radius:2px;background:var(--part)}
+.app .settings-page .dl-free{display:flex;gap:7px;margin:0;padding-top:8px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+.app .settings-page .dl-free .tnum{margin-left:auto;color:var(--ink);font-weight:500}
+.app .settings-page .data-location .notice{margin:0}
+.app .settings-page .dl-reason{margin:0;color:var(--muted);font-size:12.5px}
+.app .settings-page .dl-typed{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.app .settings-page .dl-typed label{flex-basis:100%;color:var(--muted);font-size:12px}
+.app .settings-page .dl-typed .field{flex:1;min-width:220px;height:27px;font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}

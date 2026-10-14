@@ -11,8 +11,18 @@ from typing import Any, Callable
 
 
 def default_data_dir() -> Path:
+    """DEIXIS_DATA_DIR, else the folder chosen in Settings (the pointer file, D32), else the platform default."""
     if env := os.environ.get("DEIXIS_DATA_DIR"):
         return Path(env).expanduser()
+    from deixis import data_location
+
+    if (chosen := data_location.pointer_path()) is not None:
+        return chosen
+    return platform_data_dir()
+
+
+def platform_data_dir() -> Path:
+    """The platform's default data folder; it also holds the pointer file, so it never moves."""
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "DEIXIS"
     if sys.platform == "win32":

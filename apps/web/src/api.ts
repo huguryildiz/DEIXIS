@@ -1777,3 +1777,16 @@ export const searchPlanApi = {
 export type ScopeRevision = { revision: number; question: string; source_scope: SourceScope; key_terms: string | null; created_at: string }
 export const scopeRevision = (researchId: string, revision: number) =>
   request<ScopeRevision>(`/api/researches/${encodeURIComponent(researchId)}/scope-revisions/${revision}`)
+
+// Settings → This computer → Data location (D32; api/data_location_routes.py). A change takes effect at the next start.
+export type DataLocationPart = { key: 'database' | 'pdfs' | 'payloads' | 'tools' | 'other'; label: string; bytes: number }
+export type DataLocation = {
+  path: string; is_default: boolean; set_outside_app: boolean; pending_path: string | null; pending_has_library: boolean
+  size_bytes: number; breakdown: DataLocationPart[]; free_bytes: number | null; running_runs: number
+}
+export const dataLocationApi = {
+  get: () => request<DataLocation>('/api/settings/data-location'),
+  check: (path: string) => request<{ path: string; has_library: boolean }>('/api/settings/data-location', json('POST', { path, check: true })),
+  change: (path: string) => request<DataLocation>('/api/settings/data-location', json('POST', { path })),
+  choose: () => request<{ path: string | null }>('/api/settings/data-location/choose', { method: 'POST' }),
+}

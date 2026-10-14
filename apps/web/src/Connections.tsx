@@ -3,6 +3,7 @@ import { Ban, ChevronRight, Copy, Cpu, FileText, HardDrive, MemoryStick, Link, L
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
+import { DataLocationCard } from './DataLocation'
 import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
@@ -922,6 +923,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
           </> : null}</p></div>}
       </div>
     </>}
+    <DataLocationCard dark={dark} />
 
     <h2>{t('Semantic search')}</h2>
     <p className="foot-note">{t('Ranks search results by meaning, not only by shared words. Changing the provider scores the passages again; earlier scores are kept.')}</p>

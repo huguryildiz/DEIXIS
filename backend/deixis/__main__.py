@@ -20,6 +20,7 @@ import uvicorn
 
 from deixis.api.app import create_app
 from deixis.config import Settings, load_settings
+from deixis.data_location import apply_pending_move, data_dir_problem
 from deixis.storage import backup, db
 from deixis.storage.db import SchemaCheckUnreadable, UnknownSchemaError, check_schema_known
 
@@ -59,21 +60,6 @@ def port_available(host: str, port: int) -> bool:
     return True
 
 
-def data_dir_problem(path: Path) -> str | None:
-    """Why `path` cannot hold the library, or None. Looks only; creates and writes nothing."""
-    existing = path
-    try:
-        while not existing.exists() and existing != existing.parent:
-            existing = existing.parent
-    except PermissionError:  # a parent that cannot be searched hides whether the path exists
-        return "is not writable"
-    if not existing.is_dir():
-        return "is not a folder"
-    if not os.access(existing, os.W_OK | os.X_OK):
-        return "is not writable" if existing == path else f"cannot be created because {existing} is not writable"
-    return None
-
-
 def schema_problem(db_path: Path) -> str | None:
     """Why the library at `db_path` must not be opened (written by a newer DEIXIS, or unreadable), or None. Writes nothing."""
     try:
@@ -93,6 +79,11 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) ->
     if not port_available(settings.host, settings.port):
         print(f"Port {settings.port} is in use. DEIXIS may already be running at {url} — "
               "open it, stop the other process, or set DEIXIS_PORT.", file=sys.stderr)
+        return 2
+    # A location chosen in Settings (D32) is moved into before anything opens the library; a second DEIXIS on this
+    # port was refused above, so no running process holds the old folder.
+    if (message := apply_pending_move(settings.data_dir)) is not None:
+        print(message, file=sys.stderr)
         return 2
     if problem := data_dir_problem(settings.data_dir):
         print(f"Cannot use the data directory {settings.data_dir}: it {problem}. "

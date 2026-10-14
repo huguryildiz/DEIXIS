@@ -227,3 +227,26 @@ def test_a_launcher_without_its_binary_is_not_run(tmp_path):
     package.mkdir(parents=True)
     (package / "npm-loader.js").write_text("")
     assert native_binary(package / "npm-loader.js") is None
+
+
+def test_a_child_left_holding_the_pipes_is_stopped_with_the_group(tmp_path, monkeypatch):
+    """Sol round 2: the binary exits but a child it started keeps stdout open; the timeout stops the whole group."""
+    import os
+    if os.name == "nt":
+        return
+    script = tmp_path / "fake_copilot.py"
+    script.write_text("import subprocess, sys, json, os\n"
+                      "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+                      "json.dump({'pid': child.pid}, open(os.path.join(os.path.dirname(__file__), 'record.json'), 'w'))\n")
+    adapter = CopilotCliAdapter(home=tmp_path / "home", workspace=tmp_path / "ws", cli=[sys.executable, str(script)], turn_timeout=3)
+    result = asyncio.run(adapter.run_step("b", "d", "m", {}, "gpt-5-mini"))
+    assert result.status == "failed" and "timed out" in result.error
+    pid = record(tmp_path)["pid"]
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        import time; time.sleep(0.1)
+    else:
+        raise AssertionError("the child kept running")

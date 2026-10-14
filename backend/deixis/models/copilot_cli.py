@@ -89,17 +89,34 @@ class CopilotCliAdapter:
 
     @staticmethod
     def _stop(proc: asyncio.subprocess.Process, sig: int = signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM) -> None:
-        if proc.returncode is not None:
+        """Stops the run's whole process group, whether or not the binary itself has already exited: a child it left
+        behind can still hold the output pipes."""
+        if sys.platform == "win32":
+            # The whole tree; kill() alone would end only the binary. Only while the binary runs: its pid may be reused
+            # once it has exited, and taskkill cannot reach a child whose parent has exited anyway.
+            if proc.returncode is not None:
+                return
+            try:
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=15)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except (ProcessLookupError, OSError):
+                    pass
             return
         try:
-            if sys.platform == "win32":
-                # The whole tree: kill() would end only the binary, not what it started.
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=15)
-                if proc.returncode is None:
-                    proc.kill()
-            else:
-                os.killpg(proc.pid, sig)
-        except (ProcessLookupError, PermissionError, OSError, subprocess.TimeoutExpired):
+            os.killpg(proc.pid, sig)  # the group id is the binary's pid (start_new_session)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+    @staticmethod
+    async def _reap(proc: asyncio.subprocess.Process) -> None:
+        # Bounded: a left-over child holding a pipe must not keep the step waiting.
+        try:
+            await asyncio.wait_for(asyncio.shield(proc.wait()), 10)
+        except TimeoutError:
             pass
 
     def _command(self) -> list[str] | None:
@@ -151,7 +168,7 @@ class CopilotCliAdapter:
                 return await call(2, "session/new", {"cwd": str(self.workspace), "mcpServers": []})
         finally:
             self._stop(proc)
-            await proc.wait()
+            await self._reap(proc)
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
@@ -225,15 +242,16 @@ class CopilotCliAdapter:
             out, err = await asyncio.wait_for(proc.communicate(prompt.encode()), self.turn_timeout)
         except TimeoutError:
             self._stop(proc)
-            await proc.wait()
+            await self._reap(proc)
             return ModelStepResult("failed", error="Copilot CLI turn timed out", delivery_class="after_send_unknown")
         except BaseException:
             # The caller stopped waiting (cancelled): stop the run too, so it does not go on unseen.
             self._stop(proc)
-            await asyncio.shield(proc.wait())
+            await self._reap(proc)
             raise
         finally:
             self._active.discard(proc)
+            self._stop(proc)  # anything the binary started and left running
         return parse_events(out.decode(errors="replace"), err.decode(errors="replace"), proc.returncode, requested_model)
 
     async def cancel(self) -> bool:

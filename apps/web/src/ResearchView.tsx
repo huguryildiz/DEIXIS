@@ -800,7 +800,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onGiveKeyTerms={() => reviseQuestion('terms')}
         queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')} onOpenFunnel={() => openPanel('funnel')}
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
-        onChooseModel={(target, role, opener) => setChooseModel({ run: target, role, opener })}
+        onChooseModel={(target, role, opener, review) => setChooseModel({ run: target, role, opener, review })}
         onEditPlan={hasAcademic ? opener => openPanel('plan', { opener }) : undefined}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
         latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} review={answerReview} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
@@ -941,7 +941,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <PlanPanel researchId={id} view={view} busy={busy} searchReady={seedSearchReady} answerRevision={answer ? answer.scope_revision : null}
         seeds={seedChoice} onAnnounced={runId => announcedRuns.current.add(runId)} onChanged={async () => { await load(); onChanged() }} onClose={closePanels} />
     </StackPanel>
-    <ChooseModelDialog key={chooseModel?.run.id ?? 'none'} target={chooseModel} view={view} dark={dark} onClose={() => setChooseModel(null)} onChanged={next => { setView(next); onChanged() }} />
+    <ChooseModelDialog key={chooseModel?.run.id ?? 'none'} target={chooseModel} view={view} dark={dark} onClose={() => setChooseModel(null)} onChanged={next => { setView(next); onChanged() }}
+      onReload={async () => { await load(); onChanged() }} onReviewStarted={async runId => { announcedRuns.current.add(runId); await load(); onChanged() }} />
     <ConfirmDialog open={Boolean(removeTarget)} dark={dark} title={t('Remove PDF?')}
       description={t('This PDF will not be used in future answers. Existing answers that used the source will be marked outdated.')}
       context={removeTarget?.source.title} confirmLabel={t('Remove PDF')} cancelLabel={t('Cancel')} busy={busy}

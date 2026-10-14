@@ -123,7 +123,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
   onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
-  onChooseModel?: (run: Run, role: ModelRole, opener: HTMLElement) => void
+  onChooseModel?: (run: Run, role: ModelRole, opener: HTMLElement, review?: { card: ReviewCard; kind: ReviewTargetKind }) => void
   // The too-broad notice (R21): the rewritten question is saved as a new revision, which then searches.
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
   // The reading step's "Get more full text" link opens the PDFs panel; the screening step's "N not read" the Search funnel.
@@ -186,7 +186,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   onGiveKeyTerms?: () => void
   onChooseCodeQuery?: (run: Run) => Promise<void>
   onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
-  onChooseModel?: (run: Run, role: ModelRole, opener: HTMLElement) => void
+  onChooseModel?: (run: Run, role: ModelRole, opener: HTMLElement, review?: { card: ReviewCard; kind: ReviewTargetKind }) => void
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
   onOpenPdfs?: () => void
   onOpenFunnel?: () => void
@@ -654,10 +654,32 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const calls = run.usage.model_calls ?? 0
   const callLimit = run.budget.max_model_calls ?? 0
   const callLimitReached = callLimit > 0 && calls >= callLimit
-  // Which model ran each model phase of this run, listed once here rather than on every step line.
-  const models = order.filter((key, i) => agents[key]?.model && stateOf(i) !== 'skipped').map(key => agents[key]!)
-    .filter((agent, i, all) => all.findIndex(a => a.role === agent.role) === i)  // the literature model plans and screens; name it once
-    .map(agent => <span key={agent.role} className="chat-run-model">{agent.role && <>{t(agent.role)} · </>}<ModelName connection={agent.connection} text={modelText(agent.model, agent.effort)} /></span>)
+  // Which models ran each model phase of this run, listed once here rather than on every step line (D15). A phase names
+  // the models its steps' stored sessions went to, each once, so a run that moved a role to another model names both;
+  // the answer and a review by another model fall back to their own records. While the run can still send (active or
+  // paused), a phase not finished also names the role's model set now, labelled as the one its next calls go to.
+  const canSend = active || run.status === 'paused'
+  const shownModels: Array<{ key: string; role: string; connection: string; model: string | null; effort: string | null; next: boolean }> = []
+  const lastUsed = new Map<string, string>()  // role → the model its latest stored call went to, in phase order
+  order.forEach((key, i) => {
+    const agent = agents[key]
+    const state = stateOf(i)
+    if (!agent || state === 'skipped') return
+    const used = groups[i].flatMap(step => step.models ?? [])
+    const add = (connection: string, model: string | null, effort: string | null, next: boolean) => {
+      const id = `${agent.role}:${connection}:${model}:${next}`
+      if (model && !shownModels.some(m => m.key === id)) shownModels.push({ key: id, role: agent.role, connection, model, effort, next })
+    }
+    if (key === 'semantic') { add(agent.connection, agent.model, null, false); return }
+    used.forEach(m => add(m.connection, m.model, null, false))
+    if (used.length) lastUsed.set(agent.role, `${used.at(-1)!.connection}:${used.at(-1)!.model}`)
+    const recorded = (key === 'answer' && answer?.model) || (key === 'review' && (run.kind === 'review' ? ownerReview : answer?.review?.model))
+    if (!used.length && recorded) add(agent.connection, agent.model, run.kind === 'review' ? agent.effort : null, false)
+    // Named only when it differs from where the role's calls last went; the same model needs no second line.
+    else if (canSend && state !== 'done' && run.kind !== 'review' && lastUsed.get(agent.role) !== `${agent.connection}:${agent.model}`) add(agent.connection, agent.model, agent.effort, true)
+  })
+  const models = shownModels.map(m => <span key={m.key} className={m.next ? 'chat-run-model chat-run-model-next' : 'chat-run-model'}>
+    {m.role && <>{m.next ? t('{role}, set for the next calls', { role: t(m.role) }) : t(m.role)} · </>}<ModelName connection={m.connection} text={modelText(m.model, m.effort)} /></span>)
   // Live runs read as one line per phase: what the run has not reached yet is named once in the "Next:" line, and what it
   // skips stays out (mockup `.steps`, R14 and R16).
   const phaseStates = order.map((_, i) => stateOf(i))
@@ -960,12 +982,20 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
         {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
         {run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0 && <p>{t('The model has had its second try.')}</p>}
-        {changesSinceStop.map(change => <p key={change.id} className="notice-model-change">{t('You moved the {role} role from {from} to {to} ({time}). The finished steps keep their model; the stopped step uses the new one when you retry it.', {
-          role: t(modelRoles[change.role].label).toLocaleLowerCase(uiLocale()), from: change.from.model ?? t('none'), to: change.to.model ?? '',
-          time: new Date(change.changed_at).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' }) })}</p>)}
+        {changesSinceStop.map(change => {
+          const words = { role: t(modelRoles[change.role].label).toLocaleLowerCase(uiLocale()), from: change.from.model ?? t('none'), to: change.to.model ?? '',
+            time: new Date(change.changed_at).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' }) }
+          // Only the stopped step's own role moves where Retry sends it; a review by another model keeps its requested model.
+          const text = run.kind === 'review'
+            ? t('You moved the {role} role from {from} to {to} ({time}). A review by another model keeps the model it was requested with, so Retry sends it to {model} again.', { ...words, model: ownerReview?.card.requested_model.model ?? t('the same model') })
+            : change.role !== stoppedRole(run)
+              ? t('You moved the {role} role from {from} to {to} ({time}). The stopped step runs on the {stopped} model, so Retry sends it where it went before.', { ...words, stopped: t(modelRoles[stoppedRole(run)].label).toLocaleLowerCase(uiLocale()) })
+              : t('You moved the {role} role from {from} to {to} ({time}). The finished steps keep their model; the stopped step uses the new one when you retry it.', words)
+          return <p key={change.id} className="notice-model-change">{text}</p>
+        })}
         <div className="notice-actions">
           {resumable && onControlRun && <Button size="sm" disabled={busy} onClick={() => onControlRun(run, 'resume')}>{modelDown ? <RotateCw size={14} aria-hidden /> : <Play size={14} aria-hidden />}{t(modelDown ? 'Retry this step' : 'Resume run')}</Button>}
-          {modelDown && resumable && onChooseModel && <Button variant="outline" size="sm" className="notice-ghost" disabled={busy} aria-haspopup="dialog" onClick={e => onChooseModel(run, stoppedRole(run), e.currentTarget)}><Cpu size={14} aria-hidden />{t('Choose another model')}</Button>}
+          {modelDown && resumable && onChooseModel && (run.kind !== 'review' || ownerReview) && <Button variant="outline" size="sm" className="notice-ghost" disabled={busy} aria-haspopup="dialog" onClick={e => onChooseModel(run, stoppedRole(run), e.currentTarget, run.kind === 'review' && ownerReview ? ownerReview : undefined)}><Cpu size={14} aria-hidden />{t(run.kind === 'review' ? 'Review again with another model' : 'Choose another model')}</Button>}
           {/* Code does not translate a question, so this stop is answered in the revision form and nowhere else (SW2.1). */}
           {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" className="notice-ghost" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
           {/* Resume asks the model once more while a try is left; this button never asks it again (D92). */}

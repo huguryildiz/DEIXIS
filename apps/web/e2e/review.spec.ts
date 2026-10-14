@@ -22,7 +22,8 @@ class ReviewServer {
   readonly url = `http://127.0.0.1:${this.port}`
   async start() {
     this.proc = spawn(PYTHON, [path.join(REPO, 'tests/acceptance/fixture_server.py'), '--data-dir', this.dataDir, '--port', String(this.port)], {
-      cwd: REPO, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${REPO}/backend:${REPO}` }, stdio: 'inherit',
+      // A second SYNTHETIC model is listed so a stopped review can be asked again on another model (test 9, S27).
+      cwd: REPO, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${REPO}/backend:${REPO}`, DEIXIS_FIXTURE_SECOND_MODEL: 'on' }, stdio: 'inherit',
     })
     await expect.poll(async () => {
       if (this.proc?.exitCode !== null) throw new Error('B3 synthetic fixture exited before health was ready')
@@ -622,4 +623,55 @@ test('8 report eligibility and missing failure reasons are visible in both langu
     await check(button(requestForm(page), previewName)).toBeEnabled()
     await closeSheet()
   }
+})
+
+test('9 a stopped review keeps its requested model; Review again with another model starts a new review on the one chosen (S27)', async ({ page }) => {
+  test.setTimeout(180_000)
+  const rid = await includedResearch(page, '[review-down]')
+  await showAnswer(page)
+  await expect(page.getByText('Ran answer generation')).toBeVisible({ timeout: 60_000 })
+  const answer = (await view(page, rid)).answers[0]
+  const f: Target = { rid, kind: 'answer', id: answer.id, readReport: async () => { throw new Error('answer has no report editor') } }
+  const first = await apiStart(page, f)
+  await expect.poll(async () => (await view(page, rid)).runs.find(r => r.id === first.run.id)?.status, { timeout: 60_000 }).toBe('paused')
+  const stopped = await readReview(page, f, first.review.id)
+  expect(stopped.requested_model.model).toBe('fixture-model')
+  await dismissToasts(page)
+  const note = page.locator('.chat-note.notice.is-error')
+  await expect(note.getByRole('button')).toHaveText(['Retry this step', 'Review again with another model', 'Cancel run'], { timeout: 30_000 })
+  // A role change of the research does not move a review by another model: the notice says where Retry sends it.
+  const research = await view(page, rid)
+  const moved = await page.request.put(`${server.url}/api/researches/${rid}/models`, { headers: await headers(page),
+    data: { role: 'answer', connection: 'codex', model: 'fixture-model-b', reasoning_effort: null, expected_version: research.research.version } })
+  expect(moved.ok()).toBe(true)
+  await expect(note.locator('.notice-model-change')).toContainText('A review by another model keeps the model it was requested with, so Retry sends it to fixture-model again.')
+  // The dialog is the review request for the same answer, with the stopped review's focus; it names the model it keeps.
+  await note.getByRole('button', { name: 'Review again with another model' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Review again with another model' })
+  await expect(dialog.locator('.review-again-lead')).toContainText('This review keeps the model it was requested with (fixture-model)')
+  await expect(dialog.locator('.review-request-target')).toHaveText(`Answer · V${answer.report_version}`)
+  await expect(dialog.getByRole('radio', { name: /^Source support/ })).toBeChecked()
+  await dialog.getByRole('button', { name: 'Review model' }).click()
+  await page.getByRole('option', { name: /fixture-model-b/ }).click()
+  await button(dialog, 'Preview').click()
+  await expect(dialog.getByRole('heading', { name: 'What will be sent' })).toBeFocused()
+  // Every toast text is recorded: the new review can finish at once, and its own finish toast then takes the one slot.
+  await page.evaluate(() => {
+    const w = window as typeof window & { __toasts?: string[] }
+    w.__toasts = []
+    new MutationObserver(() => document.querySelectorAll('.toast').forEach(el => { if (!w.__toasts!.includes(el.textContent ?? '')) w.__toasts!.push(el.textContent ?? '') }))
+      .observe(document.body, { childList: true, subtree: true, characterData: true })
+  })
+  const startedResponse = page.waitForResponse(r => r.url() === base(f) && r.request().method() === 'POST')
+  await button(dialog, 'Start review').click()
+  const started = await (await startedResponse).json() as { review: { id: string }; run: { id: string } }
+  await expect(dialog).toHaveCount(0)
+  // A new review on the chosen model; the stopped one still asks its own model and is not changed.
+  const fresh = await readReview(page, f, started.review.id)
+  expect(started.review.id).not.toBe(first.review.id)
+  expect(fresh.requested_model.model).toBe('fixture-model-b')
+  expect((await readReview(page, f, first.review.id)).requested_model.model).toBe('fixture-model')
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __toasts?: string[] }).__toasts!.some(text => text.includes('A new review started on fixture-model-b. The stopped review keeps fixture-model and stays as it was.')))).toBe(true)
+  await expect.poll(async () => (await readReview(page, f, started.review.id)).state, { timeout: 60_000 }).toMatch(/^(completed|partial)$/)
+  expect((await view(page, rid)).runs.find(r => r.id === first.run.id)?.status).toBe('paused')
 })

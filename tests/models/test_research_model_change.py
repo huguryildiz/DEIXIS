@@ -64,6 +64,24 @@ def test_a_model_change_is_recorded_and_only_later_steps_use_it(tmp_path):
     assert cell(lib, lib.published)["current"]["model"]["resolved_model"] == "fake-model"  # the earlier value keeps its model
 
 
+def test_each_step_in_the_research_view_names_the_model_its_calls_went_to(tmp_path):
+    """UI parity S27 (D15): after a change, a finished step still names the model it ran on, from its stored sessions,
+    and a later step names the new one; the view never puts the role's current model on an earlier step."""
+    from deixis.workflow.views import research_view
+    lib = library(tmp_path)
+    filled = fill(lib)
+    execute(lib, filled)
+    change(lib, "fake-model-2", effort="high")
+    checked = lib.tables.request_recheck(lib.rid, lib.tid, lib.cid, lib.published, 1, None)
+    execute(lib, checked)
+
+    runs = {run["id"]: run for run in research_view(lib.store, lib.rid)["runs"]}
+    called = lambda run_id: [step["models"] for step in runs[run_id]["steps"] if step["kind"].startswith("model:")]
+    assert called(filled["id"]) and all(models == [{"connection": "fake", "model": "fake-model"}] for models in called(filled["id"]))
+    assert called(checked["id"]) == [[{"connection": "fake", "model": "fake-model-2"}]]
+    assert all(step["models"] == [] for run in runs.values() for step in run["steps"] if not step["kind"].startswith("model:"))
+
+
 def test_the_change_history_is_append_only(tmp_path):
     lib = library(tmp_path)
     change(lib, "fake-model-2")

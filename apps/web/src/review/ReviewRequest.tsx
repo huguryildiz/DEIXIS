@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { CircleX, Eye, ScanSearch } from 'lucide-react'
 import { DialogBody, DialogFooter } from '@/components/ui/dialog'
 import { api, type Connections, type ReviewFocus, type ReviewPreview, type ReviewRequest as RequestBody, type ReviewNotReviewed, type ReviewTargetKind } from '../api'
@@ -16,8 +16,10 @@ import { NotReviewed } from './NotReviewed'
 // optional note, then Preview, which shows what will be sent as counts (claims or elements, passages, characters, estimated tokens),
 // the groups and the send limits, and what is left out (mockup `.sendbox`); it does not show the full claim or passage text. Start review is enabled only
 // after that preview was shown; any change asks for a new preview.
-export function ReviewRequest({ researchId, targetKind, targetId, version, runActive, unavailableReason = '', sectionLabel, sourceName, started, cancel }: {
+// `initial` fills the focus and note from a stopped review that is asked again on another model (S27); `lead` says so.
+export function ReviewRequest({ researchId, targetKind, targetId, version, runActive, unavailableReason = '', sectionLabel, sourceName, started, cancel, initial, lead }: {
   researchId: string; targetKind: ReviewTargetKind; targetId: string; version: number; runActive: boolean
+  initial?: { focus: ReviewFocus; owner_note: string | null }; lead?: ReactNode
   unavailableReason?: string; sourceName?: (id: string) => string; sectionLabel: (ref: string) => string; started: (id: string) => void | Promise<void>
   cancel: () => void
 }) {
@@ -27,8 +29,8 @@ export function ReviewRequest({ researchId, targetKind, targetId, version, runAc
   const [connections, setConnections] = useState<Connections | null>(null)
   const [model, setModel] = useState(restoredBody ? modelKey(restoredBody.connection, restoredBody.model) : '')
   const [effort, setEffort] = useState<string | null>(restoredBody?.reasoning_effort ?? null)
-  const [focus, setFocus] = useState<ReviewFocus>(restoredBody?.focus ?? 'source_support')
-  const [note, setNote] = useState(restoredBody?.owner_note ?? '')
+  const [focus, setFocus] = useState<ReviewFocus>(restoredBody?.focus ?? initial?.focus ?? 'source_support')
+  const [note, setNote] = useState(restoredBody?.owner_note ?? initial?.owner_note ?? '')
   const [preview, setPreview] = useState<{ value: ReviewPreview; body: RequestBody; key: string } | null>(null)
   const [shown, setShown] = useState(false)
   const [stale, setStale] = useState(false)
@@ -98,6 +100,7 @@ export function ReviewRequest({ researchId, targetKind, targetId, version, runAc
   return <form className="review-request mk" onSubmit={event => { event.preventDefault(); if (preview && !needsPreview && !disabledReason) void command.send(newCommand({ ...preview.body, snapshot_sha256: preview.value.snapshot_sha256, preview_fingerprint: preview.value.preview_fingerprint }, preview.key)) }}>
     <DialogBody>
       <p className="foot-note review-request-target">{t(targetKind === 'candidate' ? 'Candidate · version {n}' : targetKind === 'answer' ? 'Answer · V{n}' : 'Evidence report · V{n}', { n: version })}</p>
+      {lead}
       <fieldset className="lbl" disabled={Boolean(command.pending)} role="radiogroup" aria-label={t('Review focus')}><legend>{t('Review focus')}</legend>
         <div className="opts">
           <label><input type="radio" name={radioName} checked={focus === 'source_support'} onChange={() => { change(); setFocus('source_support') }} /><span>{t('Source support')}<small>{t('Does each claim follow from what it cites')}</small></span></label>

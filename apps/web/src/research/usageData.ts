@@ -44,8 +44,22 @@ export function useRunUsage(runId: string | null, cursor: number) {
   return useStoredRead<Usage>(runId && `run:${runId}`, read, cursor)
 }
 
+// The UTC day, changing at midnight UTC while the page is open: OpenAlex's daily budget resets then, so the stored figure
+// of the day before is dropped and read again for the new day.
+function useUtcDay() {
+  const [day, setDay] = useState(() => new Date().toISOString().slice(0, 10))
+  useEffect(() => {
+    const now = new Date()
+    const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) + 1000
+    const timer = setTimeout(() => setDay(new Date().toISOString().slice(0, 10)), next - now.getTime())
+    return () => clearTimeout(timer)
+  }, [day])
+  return day
+}
+
 export function useOpenAlexBudget(enabled: boolean, cursor: number) {
-  return useStoredRead<OpenAlexBudgetToday>(enabled ? 'openalex' : null, usageApi.openAlexBudgetToday, cursor)
+  const day = useUtcDay()
+  return useStoredRead<OpenAlexBudgetToday>(enabled ? `openalex:${day}` : null, usageApi.openAlexBudgetToday, cursor)
 }
 
 // The budget as a short figure (the rail) and as a sentence (the run's Usage box). With a limit header it is the share

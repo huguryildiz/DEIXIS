@@ -15,6 +15,8 @@ export async function printPanel(ready: string, timeout = 4000): Promise<boolean
     await new Promise(resolve => requestAnimationFrame(resolve))
   }
   await document.fonts?.ready
+  // The panel may have changed while the fonts loaded (closed, or another report opened): print only if it still holds the target.
+  if (!document.querySelector(`[data-split-panel] ${ready}`)) return false
   const root = document.documentElement
   const done = () => { delete root.dataset.print; window.removeEventListener('afterprint', done) }
   root.dataset.print = 'panel'

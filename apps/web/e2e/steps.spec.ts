@@ -330,6 +330,9 @@ test.describe.serial('S9: the steps list', () => {
     await expect(page.locator('.chat-step.att .chat-step-line')).toHaveText('Stopped while screening', { timeout: 60_000 })
     const note = page.locator('.chat-note.notice.is-error')
     await expect(note.getByRole('button')).toHaveText(['Retry this step', 'Choose another model', 'Cancel run'])
+    // The model line names the model the planning calls went to, from their stored sessions (D15).
+    const literature = page.locator('.chat-run-models').first().locator('.chat-run-model').filter({ hasText: /^Literature/ })
+    await expect(literature).toHaveText(['Literature · Codex · fixture-model'])
     await note.getByRole('button', { name: 'Choose another model' }).click()
     const dialog = page.getByRole('dialog', { name: 'Choose another model' })
     await expect(dialog).toBeVisible()
@@ -349,9 +352,13 @@ test.describe.serial('S9: the steps list', () => {
     expect(after.runs.find(r => r.kind === 'discovery')?.status).toBe('paused')
     await expect(page.locator('.toast').filter({ hasText: 'Literature model changed from fixture-model to fixture-model-b for this research.' })).toBeVisible()
     await expect(note.locator('.notice-model-change')).toContainText('You moved the literature role from fixture-model to fixture-model-b')
+    // The finished planning step still names fixture-model; the new choice is named apart, as where the next calls go.
+    await expect(literature).toHaveText(['Literature · Codex · fixture-model', 'Literature, set for the next calls · Codex · fixture-model-b'])
     await note.getByRole('button', { name: 'Retry this step' }).click()
     await expect.poll(async () => (await viewOf(api, rid)).runs.find(r => r.kind === 'discovery')?.status, { timeout: 60_000 }).toBe('completed')
     expect((await viewOf(api, rid)).scope.literature_model).toBe('fixture-model-b')
     await expect(page.locator('.chat-note.notice.is-error')).toHaveCount(0)
+    // Both models ran in this run, each named once: planning on fixture-model, screening after the retry on fixture-model-b.
+    await expect(literature).toHaveText(['Literature · Codex · fixture-model', 'Literature · Codex · fixture-model-b'])
   })
 })

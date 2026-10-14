@@ -4,7 +4,7 @@ Started by the Playwright acceptance run (apps/web/e2e) for cases A–G. Every r
 application behavior in a browser; it does not measure model quality or live provider access.
 
 Question markers select failure scripts: "[rate-limit]" (OpenAlex 429), "[model-down]" (the first abstract-screening call
-fails before sending), "[invent-locator]" (every answer draft asserts a page and an equation), "[slow-cells]" (each cell
+fails before sending), "[review-down]" (the first review-by-another-model call fails before sending), "[invent-locator]" (every answer draft asserts a page and an equation), "[slow-cells]" (each cell
 extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs), "[query-down]" (every call that
 writes the search query fails, so the run stops for the model query, D92), "[queue]" (the reading model answers each
 queue work by a script, so case J finds one row of each kind it needs), "[protocol-title]" (with
@@ -691,6 +691,10 @@ class ScriptedCodex:
                                    http_status=429, retry_after="3600")
         if "[model-down]" in question and task == "abstract_screening" and si["research_id"] not in self.failed_once:
             self.failed_once.add(si["research_id"])
+            return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
+        if "[review-down]" in question and task == "owner_review" and ("review", si["research_id"]) not in self.failed_once:
+            # S27: the first review-by-another-model call drops before it is sent, so the review run stops (model_call_failed).
+            self.failed_once.add(("review", si["research_id"]))
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")
         if "[query-down]" in question and task == "search_query":
             return ModelStepResult("failed", error="SYNTHETIC connection dropped", delivery_class="before_send")

@@ -4574,4 +4574,16 @@ const tr: Record<string, string> = {
   'Column recheck': 'Sütun yeniden denetimi',
   'Rechecking a column': 'Bir sütun yeniden denetleniyor',
   'The column left the table before its recheck finished. Proposals already written stay in their cells.': 'Sütun, yeniden denetimi bitmeden tablodan çıktı. Zaten yazılmış öneriler hücrelerinde kalır.',
+  // UI parity S27, Sol round 1: models named from stored sessions, a stopped review asked again on another model.
+  '{role}, set for the next calls': '{role}, sonraki çağrılar için seçili',
+  'You moved the {role} role from {from} to {to} ({time}). A review by another model keeps the model it was requested with, so Retry sends it to {model} again.': '{role} rolünü {from} modelinden {to} modeline taşıdınız ({time}). Başka bir modelle inceleme, istendiği modelde kalır; Yeniden dene onu yine {model} modeline gönderir.',
+  'the same model': 'aynı model',
+  'You moved the {role} role from {from} to {to} ({time}). The stopped step runs on the {stopped} model, so Retry sends it where it went before.': '{role} rolünü {from} modelinden {to} modeline taşıdınız ({time}). Duran adım {stopped} modelinde çalışır; Yeniden dene onu önceki yerine gönderir.',
+  'Review again with another model': 'Başka bir modelle yeniden incele',
+  'Not changed: {message}. The latest state could not be read; reload the page.': 'Değiştirilmedi: {message}. Son durum okunamadı; sayfayı yeniden yükleyin.',
+  'A new review started on {model}. The stopped review keeps {old} and stays as it was.': '{model} ile yeni bir inceleme başladı. Duran inceleme {old} modelinde ve olduğu gibi kalır.',
+  'A new review started. The stopped review keeps its model and stays as it was.': 'Yeni bir inceleme başladı. Duran inceleme kendi modelinde ve olduğu gibi kalır.',
+  'This review keeps the model it was requested with ({model}); Retry sends it there again. Start review begins a new review of the same target on the model you choose, with the same focus and note; the stopped review stays as it is.': 'Bu inceleme istendiği modelde kalır ({model}); Yeniden dene onu yine oraya gönderir. İncelemeyi başlat, aynı hedefin yeni bir incelemesini seçtiğiniz modelde, aynı odak ve notla başlatır; duran inceleme olduğu gibi kalır.',
+  'The stopped review could not be read: {error}': 'Duran inceleme okunamadı: {error}',
+  'Reading the stopped review…': 'Duran inceleme okunuyor…',
 }

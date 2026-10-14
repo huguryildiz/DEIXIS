@@ -7,6 +7,7 @@ its own test and, in the refusal tests, to show that it relaxes nothing it must 
 
 from __future__ import annotations
 
+import fcntl
 import os
 import sqlite3
 import sys
@@ -40,12 +41,19 @@ def tripwire(monkeypatch):
     seen = {"listed": [], "sqlite": []}
     real_listdir, real_scandir, real_connect = os.listdir, os.scandir, sqlite3.connect
 
-    def listdir(path="."):
+    def record(path):
+        # shutil.rmtree (pytest's tmp_path teardown among others) lists a folder through its file descriptor: record the
+        # folder the descriptor names, so such a listing is still seen.
+        if isinstance(path, int):
+            path = os.fsdecode(fcntl.fcntl(path, fcntl.F_GETPATH, bytes(1024)).split(b"\0", 1)[0]) if hasattr(fcntl, "F_GETPATH") else os.readlink(f"/proc/self/fd/{path}")
         seen["listed"].append(Path(path).resolve())
+
+    def listdir(path="."):
+        record(path)
         return real_listdir(path)
 
     def scandir(path="."):
-        seen["listed"].append(Path(path).resolve())
+        record(path)
         return real_scandir(path)
 
     def connect(*args, **kwargs):

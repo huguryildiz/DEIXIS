@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { BookMarked, Cloud, GraduationCap, Laptop, LoaderCircle, RefreshCw, ScanText, Server, Sigma, Sparkles, SquareTerminal, TextSearch } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { ChevronRight, Copy, Link, LoaderCircle, RefreshCw, RotateCw, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
-import { api, ApiError, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
-import { ConnectionIcon } from './connectionIcons'
+import { api, ApiError, libraryImportsApi, shellApi, type BuiltinEmbedding, type Connections, type ContactEmailSetting, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
-import { serviceErrorSentence, healthReasonText, compatConnectionKeys, connectionNames as modelNames, isPlannedModel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
+import { serviceErrorSentence, healthReasonText, compatConnectionKeys, connectionNames as modelNames, isPlannedModel, localToolNames, providerRole, reasoningLabel } from './labels'
+import { writeClipboard } from './clipboard'
 import { Notice } from './Notice'
 
 const providerNames: Record<string, string> = {
@@ -16,82 +16,130 @@ const providerNames: Record<string, string> = {
 }
 // Providers that take their own key; env names come from the credentials contract.
 const providerKeyEnv: Record<string, string> = { openalex: 'OPENALEX_API_KEY', biorxiv: 'OPENALEX_API_KEY', semantic_scholar: 'S2_API_KEY', pubmed: 'NCBI_API_KEY', ieee_xplore: 'IEEE_API_KEY', scopus: 'SCOPUS_API_KEY', core: 'CORE_API_KEY', serpapi: 'SERPAPI_API_KEY' }
-const hasProviderAccessMode = (mode: string | null) => mode === 'api_key' || mode === 'keyless'
-const providerStatus = (mode: string | null) => mode === 'api_key' ? t('API key configured') : mode === 'keyless' ? t('No API key required') : t('Key not configured')
+// The mockup's order comes first (plan ST7); every other registered connector follows in the registry's order.
+const PROVIDER_ORDER = ['openalex', 'semantic_scholar', 'crossref', 'scopus', 'arxiv']
+// What the fast path asks each source for (CLAUDE.md, D12); the others carry their role in the registry.
+const providerUse: Record<string, string> = {
+  openalex: 'Search and citation chain', semantic_scholar: 'Abstracts and bulk search', crossref: 'Abstracts and metadata checks',
+  scopus: 'Abstracts, once its full view is confirmed',
+}
+// Sources whose requests carry the contact email as `mailto` (openalex.py, crossref.py).
+const MAILTO_PROVIDERS = new Set(['openalex', 'crossref'])
+// The model connections that sign in with an account on this computer, and the command-line tool each one runs.
+const ACCOUNT_TOOLS: Record<string, { tool: LocalTool['id']; name: string }> = { codex: { tool: 'codex', name: 'Codex CLI' }, claude: { tool: 'claude_code', name: 'Claude Code' } }
+const SERVER_IDS = ['ollama', 'lm_studio']
 const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
+const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
 
-type Selected = { kind: 'model' | 'provider' | 'local-tool' | 'equation-reader' | 'ocr-tool' | 'api-key'; id: string }
+type Selected = { kind: 'account' | 'model' | 'cli' | 'servers' | 'equation-reader' | 'ocr-tool' | 'provider' | 'api-key' | 'zotero' | 'reference-files'; id: string }
+type Tone = 'ok' | 'no' | 'warn'
 
-// One connection in a grid: icon, name and a status line with a dot, green when it can be used.
-function ConnectionTile({ icon, name, ok, status, active, onClick }: { icon: ReactNode; name: string; ok: boolean; status: string; active: boolean; onClick: () => void }) {
-  return <button type="button" className={`connection-card ${ok ? 'is-ready' : ''} ${active ? 'active' : ''}`} onClick={onClick}>
-    <span className="connection-card-icon">{icon}</span>
-    <span className="connection-card-text"><strong>{name}</strong><span className="connection-card-status" title={status}>{status}</span></span>
+// A tile (mockup `.conn`): the name with its status pill, then one line on what it is. Green only when it can be used.
+function Tile({ name, desc, tone, status, active, onClick }: { name: string; desc: string; tone: Tone; status: string; active: boolean; onClick: () => void }) {
+  return <button type="button" className={`conn ${active ? 'on' : ''}`} onClick={onClick}>
+    <b><span className="conn-name">{name}</span><span className={`st ${tone}`}>{status}</span></b>
+    <small>{desc}</small>
   </button>
 }
 
-// Shared key management block: status + test/replace/remove, or the key form. Used for cloud model
-// keys (Gemini, OpenAI) and scholarly source keys inside their respective cards/sheets.
-function KeyPanel({ env, entry, keychain, dark, onSaved }: { env: string; entry: KeyEntry | undefined; keychain: Keychain; dark: boolean; onSaved: () => void }) {
-  const [editing, setEditing] = useState(false)
+// The mockup's inline confirmation (`.notice.warn` with two buttons) for removing a key.
+function RemoveNotice({ text, busy, onRemove, onKeep }: { text: string; busy: boolean; onRemove: () => void; onKeep: () => void }) {
+  return <div className="notice warn" role="group" aria-label={t('Remove the key')}>
+    <TriangleAlert aria-hidden />
+    <div className="nb"><span>{text}</span>
+      <div className="acts"><button type="button" className="ghost is-danger" disabled={busy} onClick={onRemove}>{t('Remove')}</button><button type="button" className="ghost" disabled={busy} onClick={onKeep}>{t('Keep it')}</button></div>
+    </div>
+  </div>
+}
+
+// A key field (mockup sheet `key` kind). The stored key is never shown: the field starts empty and its placeholder says
+// where the key is kept. Save and test, Test and Remove key report only what the server answered.
+function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved }: {
+  env: string; entry: KeyEntry | undefined; keychain: Keychain; label: string; service: string; removeEffect: string; onSaved: () => void
+}) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
-  const [testing, setTesting] = useState(false)
   const [formError, setFormError] = useState('')
-  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [asking, setAsking] = useState(false)
   const toast = useToast()
   if (!entry) return null
   const id = `key-${env}`
-
+  if (entry.source === 'environment') return <p className="foot-note">{t('This key is set in the shell that started DEIXIS; change or remove it there.')}</p>
   const inDotenv = entry.source === 'dotenv'
-  if (entry.source === 'environment') return <p>{t('This key is set in the shell that started DEIXIS; change or remove it there.')}</p>
+  if (!entry.configured && !keychain.available) return <p className="foot-note">{t('No system keychain is available; set the key in .env.')}</p>
+  const where = inDotenv ? t('stored in .env') : t('stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })
+  const typed = value.trim()
 
   function test() {
-    setTesting(true)
+    setBusy(true); setFormError('')
     api.testCredential(env).then(result => {
-      toast(result.status === 'ok' ? 'success' : 'warning', result.status === 'ok' ? t('The key works.') : serviceErrorSentence({ kind: result.kind, service: modelNames[entry!.service] ?? providerNames[entry!.service] ?? entry!.service, resetAt: result.reset_at, effect: 'settings' }))
+      toast(result.status === 'ok' ? 'success' : 'warning', result.status === 'ok' ? t('The key works.') : serviceErrorSentence({ kind: result.kind, service, resetAt: result.reset_at, effect: 'settings' }))
       onSaved()
-    }).catch((e: Error) => toast('error', e.message)).finally(() => setTesting(false))
+    }).catch((e: Error) => setFormError(e.message)).finally(() => setBusy(false))
   }
   function save() {
     setBusy(true); setFormError('')
-    api.saveCredential(env, value).then(result => { setEditing(false); setValue(''); onSaved(); toast(result.test && result.test.status !== 'ok' ? 'warning' : 'success', result.test && result.test.status !== 'ok'
-        ? t('Key saved, but the service test failed.') + ' ' + serviceErrorSentence({ kind: result.test.kind, service: modelNames[entry!.service] ?? entry!.service, resetAt: result.test.reset_at, effect: 'settings' })
-        : t('Key saved.')) })
-      .catch((e: Error) => setFormError(e instanceof ApiError && e.code === 'credential_test_failed'
-        ? t('The key was not saved.') + ' ' + serviceErrorSentence({ kind: e.details?.kind, service: modelNames[entry!.service] ?? entry!.service, resetAt: e.details?.reset_at, effect: 'settings' })
-        : e.message)).finally(() => setBusy(false))
+    api.saveCredential(env, typed).then(result => {
+      setValue(''); onSaved()
+      toast(result.test && result.test.status !== 'ok' ? 'warning' : 'success', result.test && result.test.status !== 'ok'
+        ? t('Key saved, but the service test failed.') + ' ' + serviceErrorSentence({ kind: result.test.kind, service, resetAt: result.test.reset_at, effect: 'settings' })
+        : t('Key saved.'))
+    }).catch((e: Error) => setFormError(e instanceof ApiError && e.code === 'credential_test_failed'
+      ? t('The key was not saved.') + ' ' + serviceErrorSentence({ kind: e.details?.kind, service, resetAt: e.details?.reset_at, effect: 'settings' })
+      : e.message)).finally(() => setBusy(false))
   }
   function remove() {
-    setBusy(true)
-    api.removeCredential(env).then(() => { setConfirmRemove(false); onSaved(); toast('success', t('Key removed.')) })
-      .catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+    setBusy(true); setFormError('')
+    api.removeCredential(env).then(() => { setAsking(false); onSaved(); toast('success', t('Key removed.')) })
+      .catch((e: Error) => setFormError(e.message)).finally(() => setBusy(false))
   }
-
-  if (editing) return <form className="key-form" onSubmit={e => { e.preventDefault(); save() }}>
-    <label htmlFor={id}>{t('API key')}</label>
-    <input id={id} className="key-field" type="password" autoComplete="off" value={value} onChange={e => setValue(e.target.value)} />
-    <p className="key-form-note">{inDotenv
-      ? t(entry.testable ? 'The key is tested with one short request before it is saved. It replaces the line in .env and is never shown again.' : 'It replaces the line in .env and is never shown again.')
-      : t(entry.testable ? 'The key is tested with one short request before it is saved. It is stored in {keychain} and never shown again.' : 'It is stored in {keychain} and never shown again.', { keychain: keychain.name ?? t('the system keychain') })}</p>
+  const primary = typed ? (entry.testable ? 'Save and test' : 'Save') : entry.configured && entry.testable ? 'Test' : null
+  return <form className="key-box" onSubmit={e => { e.preventDefault(); if (typed) save(); else if (primary) test() }}>
+    <label className="lbl" htmlFor={id}>{label}
+      <input id={id} className="field" type="password" autoComplete="off" spellCheck={false} value={value} disabled={busy}
+        placeholder={entry.configured ? `•••••••••••• ${where}` : t('Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
+    </label>
+    <p className="foot-note">{inDotenv ? t('Stored in .env, never in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
+      {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>
     {formError && <p className="key-form-error" role="alert">{formError}</p>}
-    <div className="actions"><Button type="submit" size="sm" disabled={busy || !value.trim()}>{t(busy ? (entry.testable ? 'Testing and saving…' : 'Saving…') : (entry.testable ? 'Test and save' : 'Save'))}</Button><Button type="button" variant="ghost" size="sm" onClick={() => { setEditing(false); setValue(''); setFormError('') }}>{t('Cancel')}</Button></div>
-  </form>
-
-  if (!entry.configured) {
-    if (!keychain.available) return <p>{t('No system keychain is available; set the key in .env.')}</p>
-    return <div className="actions"><Button variant="outline" size="sm" onClick={() => setEditing(true)}>{t('Add key')}</Button></div>
-  }
-
-  return <div className="key-panel">
-    <p>{t(inDotenv ? 'Stored in .env' : 'Stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })}</p>
-    <div className="actions">
-      {entry.testable && <Button variant="outline" size="sm" onClick={test} disabled={testing}>{t(testing ? 'Testing…' : 'Test')}</Button>}
-      <Button variant="outline" size="sm" onClick={() => setEditing(true)}>{t('Replace key')}</Button>
-      <Button variant="outline" size="sm" className="is-destructive" onClick={() => setConfirmRemove(true)}>{t('Remove')}</Button>
+    <div className="acts">
+      {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(busy ? (typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…') : primary)}</button>}
+      {entry.configured && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t('Remove key')}</button>}
     </div>
-    <ConfirmDialog open={confirmRemove} dark={dark} title={t('Remove this key?')} description={t(inDotenv ? 'Its line is deleted from .env. This connection stops working until a new key is added.' : 'This connection stops working until a new key is added.')} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={remove} onOpenChange={setConfirmRemove} />
-  </div>
+    {asking && <RemoveNotice busy={busy} onRemove={remove} onKeep={() => setAsking(false)}
+      text={t('Remove the key for {name}?', { name: service }) + ' ' + (inDotenv ? t('Its line is deleted from .env.') + ' ' : '') + removeEffect} />}
+  </form>
+}
+
+// The contact email (F15): sent as `mailto` with OpenAlex and Crossref requests; the setting wins over DEIXIS_CONTACT_EMAIL.
+function ContactEmailField() {
+  const [stored, setStored] = useState<ContactEmailSetting | null>(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const toast = useToast()
+  useEffect(() => {
+    let live = true
+    shellApi.contactEmail().then(value => { if (live) { setStored(value); setDraft(value.email ?? '') } }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false }
+  }, [])
+  const save = () => {
+    setBusy(true); setError('')
+    shellApi.saveContactEmail(draft.trim() || null).then(value => {
+      setStored(value); setDraft(value.email ?? '')
+      toast('success', t(value.email ? 'Contact email saved.' : 'Contact email removed.'))
+    }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  const changed = stored !== null && draft.trim() !== (stored.email ?? '')
+  return <form className="contact-field" onSubmit={e => { e.preventDefault(); if (changed) save() }}>
+    <label className="lbl" htmlFor="contact-email">{t('Contact email (sent as mailto)')}
+      <input id="contact-email" className="field" type="email" autoComplete="email" value={draft} disabled={stored === null || busy} placeholder="you@university.edu"
+        onChange={e => { setDraft(e.target.value); setError('') }} />
+    </label>
+    {stored && !stored.email && stored.environment_set && <p className="foot-note">{t('While this field is empty, DEIXIS_CONTACT_EMAIL from the environment is sent.')}</p>}
+    {error && <p className="key-form-error" role="alert">{error}</p>}
+    <div className="acts"><button type="submit" className="ghost" disabled={busy || !changed}>{t(busy ? 'Saving…' : 'Save')}</button></div>
+  </form>
 }
 
 // Warnings are left out: brew prints them for unrelated taps, so they rarely explain a failed install.
@@ -99,7 +147,7 @@ function errorLines(output: string): string[] {
   return output.split('\n').map(line => line.trim()).filter(line => /\berror\b|fatal|npm err!|permission denied|could not|not found/i.test(line)).slice(0, 3)
 }
 
-function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: boolean; onChanged: () => Promise<void> }) {
+function LocalToolDetails({ tool, dark, onChanged, refresh = true }: { tool: LocalTool; dark: boolean; onChanged: () => Promise<void>; refresh?: boolean }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -115,7 +163,7 @@ function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: bo
     setCancelling(true)
     api.cancelLocalToolInstall(tool.id).then(onChanged).catch((e: Error) => toast('error', e.message)).finally(() => setCancelling(false))
   }
-  function refresh() {
+  function again() {
     setRefreshing(true)
     onChanged().finally(() => setRefreshing(false))
   }
@@ -138,8 +186,8 @@ function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: bo
       : <p className="local-tool-note">{t(tool.id === 'ollama' ? 'Start it with `ollama serve`' : 'Open LM Studio and start its local server')}</p>)}
     {tool.kind === 'app' && tool.installed && <>
       <p className="local-tool-note">{!tool.running ? t('Not running. Open Zotero to import from this computer.') : tool.local_api ? t('Local API on · {endpoint}', { endpoint: tool.endpoint ?? '' }) : t('Running, but its local API is off. Turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.')}</p>
-      <p className="local-tool-note">{t(tool.web_configured ? 'zotero.org: ZOTERO_API_KEY and ZOTERO_LIBRARY_ID are set.' : 'zotero.org: set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID in .env to import from the web library.')}</p>
     </>}
+    {tool.kind === 'app' && <p className="local-tool-note">{t(tool.web_configured ? 'zotero.org: ZOTERO_API_KEY and ZOTERO_LIBRARY_ID are set.' : 'zotero.org: set ZOTERO_API_KEY and ZOTERO_LIBRARY_ID in .env to import from the web library.')}</p>}
     {!tool.installed && (tool.install.available
       ? <>
         <div className="cmd"><code>{tool.install.command.split(' ').map((word, i) => <span key={i}>{i > 0 && ' '}<span>{word}</span></span>)}</code></div>
@@ -157,7 +205,7 @@ function LocalToolDetails({ tool, dark, onChanged }: { tool: LocalTool; dark: bo
       </>}
       {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={cancelInstall} disabled={cancelling}>{t(cancelling ? 'Cancelling…' : 'Cancel installation')}</Button></div>}
     </>}
-    <Button variant="outline" className="connection-recheck" onClick={refresh} disabled={refreshing}><RefreshCw size={14} />{t(refreshing ? 'Refreshing…' : 'Refresh configuration')}</Button>
+    {refresh && <Button variant="outline" className="connection-recheck" onClick={again} disabled={refreshing}><RefreshCw size={14} />{t(refreshing ? 'Refreshing…' : 'Refresh configuration')}</Button>}
   </div>
 }
 
@@ -249,10 +297,8 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
   </div>
 }
 
-// The local OCR tool (D51): detected, not installed by DEIXIS; the command to install it is shown when it or a language is missing.
-function OcrToolDetails({ tool, onRefresh }: { tool: OcrTool; onRefresh: () => Promise<void> }) {
-  const [refreshing, setRefreshing] = useState(false)
-  const refresh = () => { setRefreshing(true); void onRefresh().finally(() => setRefreshing(false)) }
+// The local OCR tool (D51): detected, not installed by DEIXIS.
+function OcrToolDetails({ tool }: { tool: OcrTool }) {
   return <div className="local-tool-details-panel">
     <span className={`status-chip ${tool.available && !tool.missing_languages.length ? '' : 'is-configured'}`}>{t(!tool.available ? 'Not installed' : tool.missing_languages.length ? 'Installed · languages missing' : 'Installed')}</span>
     <p className="local-tool-note">{t('Tesseract reads PDF pages that have no text layer, such as scanned articles, when you choose Read with OCR on a source. It runs on this computer; no file leaves it, and the PDF is not changed.')}</p>
@@ -263,7 +309,6 @@ function OcrToolDetails({ tool, onRefresh }: { tool: OcrTool; onRefresh: () => P
       {tool.missing_languages.length > 0 && <><dt>{t('Missing')}</dt><dd>{ocrLanguagesText(tool.missing_languages)}</dd></>}
     </dl>
     {tool.reason && <p className="local-tool-note">{tool.reason}</p>}
-    <Button variant="outline" className="connection-recheck" onClick={refresh} disabled={refreshing}><RefreshCw size={14} />{t(refreshing ? 'Checking…' : 'Check again')}</Button>
   </div>
 }
 
@@ -346,12 +391,45 @@ function GeminiKeyPath() {
   return <p className="local-tool-note">{before}<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a>{after}</p>
 }
 
-export function ConnectionsTab({ dark }: { dark: boolean }) {
-  const [data, setData] = useState<Connections | null>(null)
+// A .bib or .ris file into the Library (F14, S19b's route). The sheet reports what the server stored, entry by entry
+// counted from its answer: saved, already saved, confirmed by a provider, kept as the person's own record, unreadable.
+function ReferenceFileImport() {
+  const input = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
-  const [refreshingModel, setRefreshingModel] = useState<string | null>(null)
+  const [result, setResult] = useState<ReferenceImport | null>(null)
   const [error, setError] = useState('')
-  // The selection outlives `open` so the drawer keeps its content while it animates closed.
+  const choose = (file: File | undefined) => {
+    if (!file || busy) return
+    setBusy(true); setError(''); setResult(null)
+    libraryImportsApi.referenceFile(file).then(answer => setResult(answer.reference_import))
+      .catch((e: Error) => setError(e instanceof ApiError && e.code === 'import_no_entries'
+        ? t('Nothing was imported: no entry in the file could be read.') : t('Nothing was imported: {message}', { message: e.message })))
+      .finally(() => { setBusy(false); if (input.current) input.current.value = '' })
+  }
+  const entries = result?.entries ?? []
+  const confirmed = entries.filter(e => e.record === 'provider' || e.record === 'existing').length
+  const own = entries.filter(e => e.record === 'user_supplied').length
+  return <div className="reference-import">
+    <input ref={input} type="file" accept=".bib,.ris,.bibtex,text/plain" hidden onChange={e => choose(e.target.files?.[0])} />
+    <div className="acts"><button type="button" className="btn-pri" disabled={busy} onClick={() => input.current?.click()}>{busy ? <span className="spin" aria-hidden /> : <Upload aria-hidden />}{t(busy ? 'Importing…' : 'Choose a .bib or .ris file')}</button></div>
+    {error && <p className="key-form-error" role="alert">{error}</p>}
+    {result && <div className="reference-result" role="status">
+      <p>{t('{file}: {n} entries read. {saved} saved to the Library, {already} were already there.', { file: result.filename ?? t('The file'), n: entries.length, saved: result.saved.length, already: result.already_saved.length })}</p>
+      <p>{t('{confirmed} matched a provider record by DOI; {own} kept as your own records, not confirmed by a provider.', { confirmed, own })}</p>
+      {result.errors.length > 0 && <>
+        <p>{t('{n} entries could not be read and were left out:', { n: result.errors.length })}</p>
+        <ul>{result.errors.slice(0, 20).map((err, i) => <li key={i}>{t('Line {line}', { line: err.line })}{err.key ? ` · ${err.key}` : ''}: {err.message}</li>)}</ul>
+      </>}
+    </div>}
+  </div>
+}
+
+// The sections of the Settings page that read connections (plan ST4–ST8 and the Cloud models placement of §2.2): Cloud
+// models, On this computer, Semantic search, the institutional access block given by the page, Scholarly sources and
+// Reference managers, with the connection sheet.
+export function ConnectionsTab({ dark, access }: { dark: boolean; access: ReactNode }) {
+  const [data, setData] = useState<Connections | null>(null)
+  const [error, setError] = useState('')
   const [selected, setSelected] = useState<Selected | null>(null)
   const [open, setOpen] = useState(false)
   const [credentials, setCredentials] = useState<Credentials | null>(null)
@@ -361,26 +439,39 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
   const [ocrTool, setOcrTool] = useState<OcrTool | null>(null)
   const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
   const [semError, setSemError] = useState('')
-  const [semProvider, setSemProvider] = useState<SemanticSearchProvider | null>(null)
-  const [semModel, setSemModel] = useState<string | null>(null)
-  const [semBusy, setSemBusy] = useState(false)
+  const [pending, setPending] = useState<{ provider: SemanticSearchProvider; model: string | null } | null>(null)
   const [builtin, setBuiltin] = useState<BuiltinEmbedding | null>(null)
+  // What this sheet checked itself, and when the answer came: "checked HH:MM" belongs to that answer only.
+  const [checking, setChecking] = useState<string | null>(null)
+  const [checked, setChecked] = useState<Record<string, number>>({})
+  const [signIn, setSignIn] = useState<string | null>(null)
   const toast = useToast()
+  // A later read wins: an answer to an earlier request that arrives after it is dropped.
+  const seq = useRef({ connections: 0, tools: 0, semantic: 0, save: 0 })
 
   const load = useCallback((refresh: boolean) => {
-    setBusy(true)
-    api.connections(refresh).then(result => { setData(result); setError('') }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+    const n = ++seq.current.connections
+    return api.connections(refresh).then(result => { if (n === seq.current.connections) { setData(result); setError('') } })
+      .catch((e: Error) => { if (n === seq.current.connections) setError(t('Connections could not be read: {message}', { message: e.message })) })
   }, [])
-  const loadCredentials = useCallback(() => { api.credentials().then(setCredentials).catch(() => { /* shown inline per key panel */ }) }, [])
-  const loadTools = useCallback((refresh: boolean) => api.localTools(refresh).then(result => { setTools(result); setToolsError('') }).catch((e: Error) => { setToolsError(e.message) }), [])
+  const loadCredentials = useCallback(() => { api.credentials().then(setCredentials).catch((e: Error) => setError(t('Stored keys could not be read: {message}', { message: e.message }))) }, [])
+  const loadTools = useCallback((refresh: boolean) => {
+    const n = ++seq.current.tools
+    return api.localTools(refresh).then(result => { if (n === seq.current.tools) { setTools(result); setToolsError('') } })
+      .catch((e: Error) => { if (n === seq.current.tools) setToolsError(e.message) })
+  }, [])
   const loadReader = useCallback(() => api.equationReader().then(setReader).catch((e: Error) => { setToolsError(e.message) }), [])
   const loadOcr = useCallback(() => api.ocr().then(setOcrTool).catch((e: Error) => { setToolsError(e.message) }), [])
-  const loadSemantic = useCallback(() => { api.semanticSearch().then(result => { setSemantic(result); setSemError('') }).catch((e: Error) => setSemError(e.message)) }, [])
+  const loadSemantic = useCallback(() => {
+    const n = ++seq.current.semantic
+    return api.semanticSearch().then(result => { if (n === seq.current.semantic) { setSemantic(result); setSemError('') } })
+      .catch((e: Error) => { if (n === seq.current.semantic) setSemError(e.message) })
+  }, [])
   const loadBuiltin = useCallback(() => api.builtinEmbedding().then(setBuiltin).catch((e: Error) => setSemError(e.message)), [])
-  useEffect(() => { load(false) }, [load])
+  useEffect(() => { void load(false) }, [load])
   useEffect(() => { loadCredentials() }, [loadCredentials])
-  useEffect(() => { loadTools(false) }, [loadTools])
-  useEffect(() => { loadSemantic() }, [loadSemantic])
+  useEffect(() => { void loadTools(false) }, [loadTools])
+  useEffect(() => { void loadSemantic() }, [loadSemantic])
   useEffect(() => { void loadBuiltin() }, [loadBuiltin])
   useEffect(() => {
     if (builtin?.status !== 'installing' && builtin?.status !== 'installing_elsewhere' && builtin?.status !== 'removing') return
@@ -394,261 +485,376 @@ export function ConnectionsTab({ dark }: { dark: boolean }) {
     const timer = window.setInterval(() => { void loadReader() }, reader?.job?.status === 'running' ? 2000 : 10000)
     return () => window.clearInterval(timer)
   }, [reader, loadReader])
-  useEffect(() => { if (semantic) { setSemProvider(semantic.provider); setSemModel(semantic.model) } }, [semantic])
   useEffect(() => {
     if (!tools?.tools.some(tool => tool.job?.status === 'running')) return
-    const timer = window.setInterval(() => loadTools(false), 2000)
+    const timer = window.setInterval(() => { void loadTools(false) }, 2000)
     return () => window.clearInterval(timer)
   }, [tools, loadTools])
 
-  const reloadAfterKeyChange = useCallback(() => { loadCredentials(); load(true); loadSemantic() }, [loadCredentials, load, loadSemantic])
+  const reloadAfterKeyChange = useCallback(() => { loadCredentials(); void load(true); void loadSemantic() }, [loadCredentials, load, loadSemantic])
 
-  const refreshModel = useCallback((id: string, notify = false) => {
-    setRefreshingModel(id)
-    return api.modelConnection(id, true).then(result => {
-      setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
-      setError('')
-      if (notify) {
-        const label = modelNames[id] ?? id
-        if (result.ready) toast('success', t('{name}: ready', { name: label }))
-        else toast('warning', `${label}: ${healthReasonText(result)}`)
-      }
-    }).catch((e: Error) => {
-      if (notify) toast('error', t('Check failed: {message}', { message: e.message }))
-      else toast('error', t('Could not refresh model catalogue: {message}', { message: e.message }))
-    }).finally(() => setRefreshingModel(current => current === id ? null : current))
-  }, [toast])
-  const show = (item: Selected) => {
-    setSelected(item)
-    setOpen(true)
-    if (item.kind === 'model') void refreshModel(item.id)
+  // A check this sheet asked for: the button stays locked until its answer, and the time shown is that answer's.
+  const runCheck = (key: string, check: () => Promise<unknown>) => {
+    if (checking) return
+    setChecking(key)
+    void check().then(() => setChecked(old => ({ ...old, [key]: Date.now() }))).finally(() => setChecking(current => current === key ? null : current))
   }
-  const recheck = () => {
-    if (!selected) return
-    if (selected.kind === 'model') { void refreshModel(selected.id, true); return }
-    setBusy(true)
-    api.connections(true).then(result => {
-      setData(result); setError('')
-      // This refreshes configuration only; it does not spend a provider request or verify access.
-      const p = result.providers.find(x => x.id === selected.id)
-      if (p && hasProviderAccessMode(p.access_mode)) toast('success', t('Configuration refreshed; live access was not tested.'))
-      else toast('warning', t('{name}: key not configured', { name }))
-    }).catch((e: Error) => toast('error', t('Check failed: {message}', { message: e.message }))).finally(() => setBusy(false))
-  }
-  const isActive = (kind: Selected['kind'], id: string) => open && selected?.kind === kind && selected.id === id
+  const refreshModel = (id: string) => api.modelConnection(id, true).then(result => {
+    setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
+  }).catch((e: Error) => { toast('error', t('Check failed: {message}', { message: e.message })); throw e })
+  const show = (item: Selected) => { setSelected(item); setOpen(true); setSignIn(null) }
+  const isActive = (kind: Selected['kind'], id: string) => open && !gone && selected?.kind === kind && selected.id === id
   const check = (label: string, value: string) => <div className="legacy-check" key={label}><span>{label}</span><strong>{value}</strong></div>
 
-  const model = selected?.kind === 'model' ? data?.models[selected.id] : undefined
-  const provider = selected?.kind === 'provider' ? data?.providers.find(p => p.id === selected.id) : undefined
-  const localTool = selected?.kind === 'local-tool' ? tools?.tools.find(tool => tool.id === selected.id) : undefined
-  const name = selected
-    ? selected.kind === 'model'
-      ? modelNames[selected.id] ?? selected.id
-      : selected.kind === 'provider'
-        ? providerNames[selected.id] ?? selected.id
-        : selected.kind === 'api-key' ? t('OpenAI API') : selected.kind === 'equation-reader' ? t('Equation reader (Marker)') : selected.kind === 'ocr-tool' ? t('OCR (Tesseract)') : localTool?.name || localToolNames[selected.id] || selected.id
-    : ''
   const modelEntries = Object.entries(data?.models ?? {})
-  const availableModels = modelEntries.filter(([, model]) => !isPlannedModel(model.reason))
-  const plannedModels = modelEntries.filter(([, model]) => isPlannedModel(model.reason))
-  const signInModels = availableModels.filter(([, m]) => m.key_configured === undefined)
-  const keyModels = availableModels.filter(([, m]) => m.key_configured !== undefined)
-  const modelCard = ([id, m]: (typeof modelEntries)[number]) => <ConnectionTile key={id} icon={<ConnectionIcon id={id} />} name={modelNames[id] ?? id} ok={m.ready} status={m.ready ? t('Ready') : m.signed_in === false && m.installed ? t('Not signed in') : m.installed === false ? t('Not installed') : t('Not connected')} active={isActive('model', id)} onClick={() => show({ kind: 'model', id })} />
-  const toolCard = (tool: LocalTool) => <ConnectionTile key={tool.id} icon={<ConnectionIcon id={localToolIcon(tool.id)} />} name={tool.name || localToolNames[tool.id] || tool.id} ok={tool.installed} status={t(tool.job?.status === 'running' ? 'Installing…' : tool.installed ? 'Installed' : 'Not installed')} active={isActive('local-tool', tool.id)} onClick={() => show({ kind: 'local-tool', id: tool.id })} />
-  const providerCard = (p: Connections['providers'][number]) => <ConnectionTile key={p.id} icon={<ConnectionIcon id={p.id} />} name={providerNames[p.id] ?? p.id} ok={p.access_mode === 'api_key'} status={p.role === 'verification' ? `${providerRole(p.role)} · ${providerStatus(p.access_mode)}` : providerStatus(p.access_mode)} active={isActive('provider', p.id)} onClick={() => show({ kind: 'provider', id: p.id })} />
-  const keylessProviders = (data?.providers ?? []).filter(p => !providerKeyEnv[p.id])
-  const keyProviders = (data?.providers ?? []).filter(p => providerKeyEnv[p.id])
-
-  const openaiKey = credentials?.keys.find(k => k.env === 'OPENAI_API_KEY')
-  const geminiKey = credentials?.keys.find(k => k.env === 'GEMINI_API_KEY')
-  const deepseekKey = credentials?.keys.find(k => k.env === 'DEEPSEEK_API_KEY')
-
-  const cliTools = (tools?.tools ?? []).filter(tool => tool.kind === 'cli')
-  const serverTools = (tools?.tools ?? []).filter(tool => tool.kind === 'server')
-  const appTools = (tools?.tools ?? []).filter(tool => tool.kind === 'app')
+  const plannedModels = modelEntries.filter(([, m]) => isPlannedModel(m.reason))
+  const cloudModels = modelEntries.filter(([id, m]) => !isPlannedModel(m.reason) && !ACCOUNT_TOOLS[id])
+  const toolOf = (id: string) => tools?.tools.find(tool => tool.id === id)
+  const otherCli = (tools?.tools ?? []).filter(tool => tool.kind === 'cli' && tool.id !== 'codex' && tool.id !== 'claude_code')
+  const servers = (tools?.tools ?? []).filter(tool => SERVER_IDS.includes(tool.id))
+  const zotero = toolOf('zotero')
   const machine = tools?.machine
-  const hasMachineInfo = machine && (machine.chip || machine.memory_gb != null || machine.disk_free_gb != null)
+  const providers = [...(data?.providers ?? [])].sort((a, b) => {
+    const rank = (id: string) => { const i = PROVIDER_ORDER.indexOf(id); return i < 0 ? PROVIDER_ORDER.length : i }
+    return rank(a.id) - rank(b.id)
+  })
+  const openaiKey = credentials?.keys.find(k => k.env === 'OPENAI_API_KEY')
+  const keyEntry = (env: string) => credentials?.keys.find(k => k.env === env)
 
-  const semanticLabels: Record<SemanticSearchProvider, string> = { gemini: 'Gemini', builtin: t('This computer · built-in'), openai: 'OpenAI', ollama: t('This computer · Ollama'), lm_studio: t('This computer · LM Studio'), off: t('Off · keyword search only') }
-  // What a choice says under its row (slice 21): Gemini's key path and languages, the built-in model's place and state.
-  const optionBody = (opt: SemanticSearchOption) => {
-    if (opt.provider === 'gemini') return <>
-      <p className="local-tool-note">{t('Reads the question in any language. Needs a Google AI Studio key; a free key works.')}</p>
-      {!opt.available && <GeminiKeyPath />}
-    </>
-    if (opt.provider === 'builtin') return <>
-      <p className="local-tool-note">{t('Runs on this computer. No key, no account. For semantic search, no text leaves the computer; the model you chose for the research steps still receives what it receives today. English only: a research whose question is not in English needs one English sentence.')}</p>
-      <p className="local-tool-note">{t('Measured on one Apple M1 Pro: 1,369 records took 51 seconds, 6,696 records about 4 minutes. Other computers were not measured.')}</p>
-      {builtin && <BuiltinEmbeddingPanel builtin={builtin} dark={dark} onChanged={async () => { await loadBuiltin(); loadSemantic() }} />}
-    </>
+  // A sheet whose subject is no longer listed closes; one still loading stays.
+  const gone = !!selected && (selected.kind === 'model' ? !!data && !data.models[selected.id]
+    : selected.kind === 'provider' ? !!data && !data.providers.some(p => p.id === selected.id)
+    : selected.kind === 'cli' || selected.kind === 'zotero' ? !!tools && !tools.tools.some(tool => tool.id === selected.id)
+    : selected.kind === 'account' ? !!data && !!tools && !data.models[selected.id] && !tools.tools.some(tool => tool.id === ACCOUNT_TOOLS[selected.id]?.tool)
+    : false)
+
+  const modelStatus = (m: ModelHealth): [Tone, string] => m.ready ? ['ok', t('Ready')]
+    : m.key_configured === false ? ['no', t('Not set up')]
+    : m.signed_in === false && m.installed ? ['no', t('Not signed in')]
+    : m.installed === false && m.key_configured === undefined ? ['no', t('Not installed')]
+    : ['warn', t('Not ready')]
+  const loading: [Tone, string] = ['no', t('Checking…')]
+  const unknown: [Tone, string] = ['no', t('Not known')]
+  const accountStatus = (id: string): [Tone, string] => {
+    const model = data?.models[id]
+    if (model) return modelStatus(model)
+    const tool = toolOf(ACCOUNT_TOOLS[id].tool)
+    if (tool) return tool.installed ? ['no', t('Installed')] : ['no', t('Not installed')]
+    return (!data || !tools) && !error && !toolsError ? loading : unknown
+  }
+  const serversStatus = (): [Tone, string] => {
+    if (!tools) return toolsError ? unknown : loading
+    if (servers.some(s => s.running)) return ['ok', t('Running')]
+    return servers.some(s => s.installed) ? ['no', t('Not running')] : ['no', t('Not installed')]
+  }
+  const ocrStatus = (): [Tone, string] => !ocrTool ? (toolsError ? unknown : loading)
+    : !ocrTool.available ? ['no', t('Not installed')] : !ocrTool.missing_languages.length ? ['ok', t('Installed')]
+    : ['warn', t(ocrTool.languages.join() === 'eng' ? 'English only' : 'Languages missing')]
+  const readerStatus = (): [Tone, string] => !reader ? (toolsError ? unknown : loading)
+    : reader.job?.status === 'running' ? ['no', t('Installing…')] : reader.installed && reader.models_downloaded ? ['ok', t('Installed')] : ['no', t('Not installed')]
+  const providerStatus = (mode: string | null): [Tone, string] => mode === 'api_key' ? ['ok', t('Key configured')] : mode === 'keyless' ? ['ok', t('No key needed')] : ['no', t('Not set up')]
+  const zoteroStatus = (): [Tone, string] => !zotero ? (tools ? ['no', t('Not set up')] : toolsError ? unknown : loading)
+    : zotero.running && zotero.local_api ? ['ok', t('Local API on')] : zotero.web_configured ? ['ok', t('zotero.org set')]
+    : zotero.installed ? ['no', t(zotero.running ? 'Local API off' : 'Not running')] : ['no', t('Not set up')]
+  const modelDesc = (id: string) => id === 'gemini' ? t('API key · models and semantic search') : compatConnectionKeys[id] ? t('API key · not yet verified against the live API') : t('API key')
+  const tile = (key: string, kind: Selected['kind'], id: string, name: string, desc: string, [tone, status]: [Tone, string]) =>
+    <Tile key={key} name={name} desc={desc} tone={tone} status={status} active={isActive(kind, id)} onClick={() => show({ kind, id })} />
+
+  // Semantic search rows (plan ST5): the mockup's five, one "Local model server" for Ollama and LM Studio. A row that
+  // cannot be chosen says what it needs, from the options' own state. A choice is saved at once; choosing the row that
+  // is only the default (nothing saved yet) saves it too.
+  const option = (p: SemanticSearchProvider) => semantic?.options.find(o => o.provider === p)
+  const serverOptions = SERVER_IDS.map(id => option(id as SemanticSearchProvider)).filter((o): o is SemanticSearchOption => !!o)
+  const serverChoices = serverOptions.filter(o => o.available).flatMap(o => o.models.map(m => ({ provider: o.provider, model: m, label: `${o.provider === 'ollama' ? 'Ollama' : 'LM Studio'} · ${m}` })))
+  const chosen = pending ?? (semantic ? { provider: semantic.provider, model: semantic.model } : null)
+  const saving = pending !== null
+  function chooseSemantic(provider: SemanticSearchProvider, model: string | null) {
+    if (saving || !semantic) return
+    const n = ++seq.current.save
+    setPending({ provider, model })
+    api.saveSemanticSearch(provider, model).then(result => {
+      if (n !== seq.current.save) return
+      setSemantic(result); toast('success', t('Semantic search setting saved.'))
+    }).catch((e: Error) => { if (n === seq.current.save) toast('error', t('Could not save: {message}', { message: e.message })) })
+      .finally(() => { if (n === seq.current.save) setPending(null) })
+  }
+  const needsPill = (row: string): string | null => {
+    if (!semantic) return null
+    if (row === 'gemini') return option('gemini')?.available ? null : t('Needs a Google AI key')
+    if (row === 'openai') return option('openai')?.available ? null : t('Needs an OpenAI key')
+    if (row === 'builtin') { const o = option('builtin'); return o && !o.available ? t(o.reason ?? 'Not downloaded') : null }
+    if (row === 'server') return serverChoices.length ? null : serverOptions.some(o => /lists no embedding model/.test(o.reason ?? '')) ? t('Needs an embedding model') : t('Needs a local server')
     return null
   }
+  const semanticRows: { id: string; label: string; desc: string; providers: SemanticSearchProvider[]; body?: ReactNode }[] = [
+    { id: 'builtin', providers: ['builtin'], label: t('This computer · built-in'),
+      desc: t('A small embedding model that runs on this computer. No key; for semantic search, no text leaves the computer.'),
+      body: <>
+        <p className="local-tool-note">{t('English only: a research whose question is not in English needs one English sentence. The model you chose for the research steps still receives what it receives today.')}</p>
+        <p className="local-tool-note">{t('Measured on one Apple M1 Pro: 1,369 records took 51 seconds, 6,696 records about 4 minutes. Other computers were not measured.')}</p>
+        {builtin && <BuiltinEmbeddingPanel builtin={builtin} dark={dark} onChanged={async () => { await loadBuiltin(); await loadSemantic() }} />}
+      </> },
+    { id: 'openai', providers: ['openai'], label: t('OpenAI embeddings'),
+      desc: t('{model} · sends titles, abstracts and passage text to OpenAI', { model: option('openai')?.models[0] ?? 'text-embedding-3-small' }) },
+    { id: 'gemini', providers: ['gemini'], label: t('Gemini embeddings'),
+      desc: t('{model} · sends titles, abstracts and passage text to Google', { model: option('gemini')?.models[0] ?? 'gemini-embedding' }),
+      body: <>
+        <p className="local-tool-note">{t('Reads the question in any language. Needs a Google AI Studio key; a free key works.')}</p>
+        {!option('gemini')?.available && <GeminiKeyPath />}
+      </> },
+    { id: 'server', providers: ['ollama', 'lm_studio'], label: t('Local model server'), desc: t('An embedding model on Ollama or LM Studio') },
+    { id: 'off', providers: ['off'], label: t('Off'), desc: t('Keyword search only; sources get no similarity score.') },
+  ]
+  const privacy = !semantic ? null : semantic.provider === 'off' ? t('Sources get no similarity score; passages are ranked by keyword match only. No text is sent anywhere.')
+    : semantic.provider === 'gemini' ? t('Passage text is sent to Google. If your key is on Google’s free tier, Google may use the text you send to improve its products. DEIXIS cannot tell which tier your key is on.')
+    : semantic.provider === 'openai' ? t('Passage text is sent to {service}.', { service: 'OpenAI' })
+    : semantic.provider === 'builtin' ? t('For semantic search, no text leaves the computer.') : t('Passage text stays on this computer.')
 
-  const needsModel = (p: SemanticSearchProvider | null) => p === 'ollama' || p === 'lm_studio'
-  function chooseSemantic(p: SemanticSearchProvider, models: string[]) { setSemProvider(p); setSemModel(needsModel(p) ? (models[0] ?? null) : null) }
-  function saveSemantic() {
-    if (!semProvider) return
-    setSemBusy(true)
-    api.saveSemanticSearch(semProvider, needsModel(semProvider) ? semModel : null)
-      .then(result => { setSemantic(result); toast('success', t('Semantic search setting saved.')) })
-      .catch((e: Error) => toast('error', t('Could not save: {message}', { message: e.message })))
-      .finally(() => setSemBusy(false))
+  // ---- the connection sheet ----
+  const sel = selected
+  const accountId = sel?.kind === 'account' ? sel.id : null
+  const model = sel?.kind === 'model' ? data?.models[sel.id] : accountId ? data?.models[accountId] : undefined
+  const provider = sel?.kind === 'provider' ? data?.providers.find(p => p.id === sel.id) : undefined
+  const cliTool = sel?.kind === 'cli' ? toolOf(sel.id) : accountId ? toolOf(ACCOUNT_TOOLS[accountId].tool) : undefined
+  const name = !sel ? ''
+    : sel.kind === 'account' ? ACCOUNT_TOOLS[sel.id]?.name ?? sel.id
+    : sel.kind === 'model' ? modelNames[sel.id] ?? sel.id
+    : sel.kind === 'provider' ? providerNames[sel.id] ?? sel.id
+    : sel.kind === 'api-key' ? t('OpenAI API')
+    : sel.kind === 'equation-reader' ? t('Equation reader (Marker)')
+    : sel.kind === 'ocr-tool' ? t('OCR (Tesseract)')
+    : sel.kind === 'servers' ? t('Local model servers')
+    : sel.kind === 'reference-files' ? t('BibTeX / RIS files')
+    : sel.kind === 'zotero' ? 'Zotero'
+    : cliTool?.name || localToolNames[sel.id] || sel.id
+  const checkedLine = (key: string) => checked[key] ? <span>{t('checked {time}', { time: clock(checked[key]) })}</span> : null
+  const dmeta = (key: string, [tone, status]: [Tone, string], extra?: ReactNode) =>
+    <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> {t('Checking…')}</span> : <span className={tone === 'ok' ? 'ok-t' : tone === 'warn' ? 'warn-t' : ''}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
+  const checkButton = (key: string, label: string, run: () => Promise<unknown>, disabled = false) =>
+    <button type="button" className="btn-pri" disabled={disabled || checking !== null} onClick={() => runCheck(key, run)}>{checking === key ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
+  const codexLogin = 'CODEX_HOME="$HOME/Library/Application Support/DEIXIS/codex-home" codex login'
+  const signInCommand = accountId === 'codex' ? codexLogin : accountId === 'claude' ? 'claude' : null
+  const copy = (text: string) => { writeClipboard(text).then(() => toast('success', t('Command copied.')), () => toast('error', t('Could not copy; select the command and copy it.'))) }
+
+  const keyedSheet = (env: string, service: string, effect: string) => credentials && <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain}
+    label={t('API key')} service={service} removeEffect={effect} onSaved={reloadAfterKeyChange} />
+
+  let body: ReactNode = null
+  if (sel?.kind === 'account' && accountId) {
+    const key = `account:${accountId}`
+    body = <>
+      {dmeta(key, accountStatus(accountId))}
+      <p className="foot-note is-ink">{t(accountId === 'codex'
+        ? 'Uses the account you sign in with through Codex CLI, kept in the DEIXIS Codex home. DEIXIS stores no password of its own.'
+        : 'Uses the account you are signed in with in Claude Code. DEIXIS keeps no password or token of its own.')}</p>
+      <div className="acts">
+        {checkButton(key, 'Test the connection', () => refreshModel(accountId), !model)}
+        {signInCommand && <button type="button" className="ghost" aria-expanded={signIn === accountId} onClick={() => setSignIn(signIn === accountId ? null : accountId)}>{t('Sign in again')}</button>}
+      </div>
+      {signIn === accountId && signInCommand && <div className="signin-cmd">
+        <p className="foot-note">{t(accountId === 'codex' ? 'Run this in a terminal, then test the connection:' : 'Run this in a terminal, type /login, then test the connection:')}</p>
+        <div className="cmd-row"><code className="field mono">{signInCommand}</code><button type="button" className="ghost" onClick={() => copy(signInCommand)}><Copy aria-hidden />{t('Copy')}</button></div>
+      </div>}
+      {model && !model.ready && <p className="foot-note">{healthReasonText(model)}</p>}
+      {model && accountId === 'codex' && <>
+        <p className="foot-note">{t('DEIXIS runs Codex in its own Codex home with tools, connectors, skills and instruction files disabled, and starts a new session for every step.')}</p>
+        <div className="connection-checks">
+          {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
+          {check(t('Signed in (DEIXIS Codex home)'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
+          {check(t('Instruction files loaded'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
+          {check(t('MCP servers with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
+        </div>
+      </>}
+      {model && accountId === 'claude' && <>
+        <p className="foot-note">{t('DEIXIS runs Claude Code through the official Agent SDK with tools, MCP servers, skills and instruction files disabled, and starts a new non-persistent session for every step.')}</p>
+        <div className="connection-checks">
+          {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
+          {check(t('Signed in to Claude Code'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
+          {check(t('Instruction files loaded'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
+          {check(t('MCP servers with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
+        </div>
+      </>}
+      {model && <ModelCatalogue model={model} />}
+      {!model && data && <p className="foot-note">{t('No model connection is set up for it in this version of DEIXIS; the tool on this computer is shown below.')}</p>}
+      {cliTool && (!model || !cliTool.installed) && <LocalToolDetails key={cliTool.id} tool={cliTool} dark={dark} onChanged={() => loadTools(true)} />}
+    </>
+  } else if (sel?.kind === 'model' && model) {
+    const env = sel.id === 'gemini' ? 'GEMINI_API_KEY' : sel.id === 'deepseek' ? 'DEEPSEEK_API_KEY' : compatConnectionKeys[sel.id]
+    const key = `model:${sel.id}`
+    body = <>
+      {dmeta(key, modelStatus(model))}
+      {!model.ready && model.key_configured !== false && <p className="foot-note">{healthReasonText(model)}</p>}
+      <p className="foot-note is-ink">{t('Passages are sent to the provider you choose. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
+      {env && keyedSheet(env, modelNames[sel.id] ?? sel.id, t('This connection stops working until a new key is added.'))}
+      {sel.id === 'gemini' && <>
+        <p className="foot-note">{t('DEIXIS calls the Gemini API directly with GEMINI_API_KEY, with no tools, instruction files or CLI agent prompt, and one new request per step. The Gemini CLI is only detected; it does not run steps.')}</p>
+        <div className="connection-checks">
+          {check(t('API key (GEMINI_API_KEY)'), model.key_configured ? t('set') : t('not set'))}
+          {check('Gemini CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
+          {check(t('Semantic passage search'), model.key_configured ? t('on · passage text is sent to Google') : t('off'))}
+        </div>
+      </>}
+      {sel.id === 'deepseek' && <>
+        <p className="foot-note">{t('DEIXIS calls the DeepSeek API directly with DEEPSEEK_API_KEY, with no tools or instruction files and one new request per step.')}</p>
+        <div className="connection-checks">{check(t('API key (DEEPSEEK_API_KEY)'), model.key_configured ? t('set') : t('not set'))}</div>
+      </>}
+      {compatConnectionKeys[sel.id] && <>
+        <p className="foot-note">{t('DEIXIS calls the {name} API directly through its OpenAI-compatible endpoint with {env}, with no tools or instruction files and one new request per step. Not yet verified against the live API.', { name: modelNames[sel.id] ?? sel.id, env: compatConnectionKeys[sel.id] })}</p>
+        <div className="connection-checks">{check(t('API key ({env})', { env: compatConnectionKeys[sel.id] }), model.key_configured ? t('set') : t('not set'))}</div>
+      </>}
+      <div className="acts">{checkButton(key, 'Check again', () => refreshModel(sel.id))}</div>
+      <ModelCatalogue model={model} />
+    </>
+  } else if (sel?.kind === 'api-key') {
+    body = <>
+      {dmeta('api-key', openaiKey?.configured ? ['ok', t('Key configured')] : ['no', t('Not set up')])}
+      <p className="foot-note is-ink">{t('Used for semantic search only, when OpenAI embeddings are chosen. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
+      {keyedSheet('OPENAI_API_KEY', 'OpenAI', t('Semantic search with OpenAI stops until a new key is added.'))}
+    </>
+  } else if (sel?.kind === 'provider' && provider) {
+    const env = providerKeyEnv[provider.id]
+    const [tone, status] = providerStatus(provider.access_mode)
+    body = <>
+      {dmeta(`provider:${provider.id}`, [tone, status], provider.id === 'openalex' && provider.access_mode !== null
+        ? <span className={provider.access_mode === 'api_key' ? '' : 'warn-t'}>{t(provider.access_mode === 'api_key' ? 'own key' : 'keyless')}</span> : null)}
+      <p className="foot-note is-ink">{provider.id === 'openalex'
+        ? t('Works without a key. A free key from openalex.org gives DEIXIS its own daily budget. When the budget runs out, OpenAlex requests wait until it resets.')
+        : !env ? (MAILTO_PROVIDERS.has(provider.id) ? t('No key needed. DEIXIS adds your contact email to its requests (mailto), as the service asks.') : t('No key needed.'))
+        : provider.note}</p>
+      {env && credentials && <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain} service={providerNames[provider.id] ?? provider.id}
+        label={t(provider.id === 'openalex' ? 'API key (optional, free from openalex.org)' : 'API key')}
+        removeEffect={t('Requests that need this key stop until you add one again.')} onSaved={reloadAfterKeyChange} />}
+      {MAILTO_PROVIDERS.has(provider.id) && <ContactEmailField />}
+      <div className="connection-checks">{check(t('Used for'), providerUse[provider.id] ? t(providerUse[provider.id]) : providerRole(provider.role))}{check(t('Access mode'), provider.access_mode ? t(provider.access_mode) : t('none'))}</div>
+      {(env || provider.id === 'openalex') && <p className="foot-note">{t('Access and quota are recorded per request; not verified in advance.')}</p>}
+      {!env && provider.id !== 'openalex' && <p className="foot-note">{provider.note}</p>}
+    </>
+  } else if (sel?.kind === 'cli' && cliTool) {
+    body = <LocalToolDetails key={cliTool.id} tool={cliTool} dark={dark} onChanged={() => loadTools(true)} />
+  } else if (sel?.kind === 'servers') {
+    body = <>
+      {dmeta('servers', serversStatus())}
+      <p className="foot-note is-ink">{t('Runs on this computer. Semantic search can use an embedding model from Ollama or LM Studio; local models do not run research steps in this version.')}</p>
+      {servers.map(server => <section key={server.id} className="server-block" aria-label={server.name || localToolNames[server.id]}>
+        <h3>{server.name || localToolNames[server.id]}</h3>
+        {server.endpoint && <div className="lbl">{t('Server address')}<code className="field mono">{server.endpoint}</code></div>}
+        <LocalToolDetails tool={server} dark={dark} onChanged={() => loadTools(true)} refresh={false} />
+      </section>)}
+      <div className="acts">{checkButton('servers', 'Test', () => Promise.all([loadTools(true), loadSemantic()]))}</div>
+    </>
+  } else if (sel?.kind === 'equation-reader') {
+    body = <>
+      {dmeta('equation-reader', readerStatus())}
+      <p className="foot-note is-ink">{t('Runs on this computer. DEIXIS installs it into its data folder when you choose Install.')}</p>
+      <div className="acts">{checkButton('equation-reader', 'Find it on this computer', loadReader)}</div>
+      {reader && <EquationReaderDetails reader={reader} dark={dark} onChanged={loadReader} />}
+    </>
+  } else if (sel?.kind === 'ocr-tool') {
+    body = <>
+      {dmeta('ocr-tool', ocrStatus())}
+      <p className="foot-note is-ink">{t('Runs on this computer. Install it once, then test.')}</p>
+      <div className="acts">{checkButton('ocr-tool', 'Find it on this computer', loadOcr)}</div>
+      {ocrTool && <OcrToolDetails tool={ocrTool} />}
+    </>
+  } else if (sel?.kind === 'zotero') {
+    body = <>
+      {dmeta('zotero', zoteroStatus())}
+      <p className="foot-note is-ink">{t('Collections are imported read-only from the home composer’s Add sources menu or a research’s Sources panel.')}</p>
+      <div className="acts">{checkButton('zotero', 'Find it on this computer', () => loadTools(true))}</div>
+      {zotero && <LocalToolDetails tool={zotero} dark={dark} onChanged={() => loadTools(true)} refresh={false} />}
+    </>
+  } else if (sel?.kind === 'reference-files') {
+    body = <>
+      <p className="foot-note is-ink">{t('Imports a .bib or .ris file into the Library. An entry whose DOI OpenAlex or Crossref confirms is stored as that provider’s record; any other entry is kept as your own record, marked as not confirmed.')}</p>
+      <ReferenceFileImport />
+    </>
   }
 
-  return <div className="connections-tab">
+  return <>
     {error && <Notice tone="error">{error}</Notice>}
 
-    <section className="connections-group">
-      <h2 className="with-icon"><Cloud size={20} aria-hidden />{t('Cloud models')}</h2>
-      <p className="legacy-mini-note">{t('Passages are sent to the provider you choose. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
-      <h3 className="connections-subhead">{t('Account sign-in')}</h3>
-      <div className="connection-grid">{signInModels.map(modelCard)}</div>
-      <h3 className="connections-subhead">{t('API key')}</h3>
-      <div className="connection-grid">
-        {keyModels.map(modelCard)}
-        <ConnectionTile icon={<ConnectionIcon id="openai" />} name={t('OpenAI API')} ok={!!openaiKey?.configured} status={t(openaiKey?.configured ? 'Key configured' : 'Not connected')} active={isActive('api-key', 'OPENAI_API_KEY')} onClick={() => show({ kind: 'api-key', id: 'OPENAI_API_KEY' })} />
-      </div>
-      {plannedModels.length > 0 && <details className="planned-connections"><summary>{t('Planned model connections · {n}', { n: plannedModels.length })}</summary><div className="connection-grid">{plannedModels.map(modelCard)}</div></details>}
-    </section>
+    <div className="cloud-models">
+    <h2>{t('Cloud models')}</h2>
+    <p className="foot-note">{t('Passages are sent to the provider you choose. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
+    <div className="grid3" data-group="cloud">
+      {cloudModels.map(([id, m]) => tile(id, 'model', id, modelNames[id] ?? id, modelDesc(id), modelStatus(m)))}
+      {tile('openai', 'api-key', 'OPENAI_API_KEY', t('OpenAI API'), t('API key · semantic search only'), !credentials ? loading : openaiKey?.configured ? ['ok', t('Key configured')] : ['no', t('Not set up')])}
+    </div>
+    {plannedModels.length > 0 && <details className="planned-connections"><summary><ChevronRight size={14} aria-hidden />{t('Planned model connections · {n}', { n: plannedModels.length })}</summary>
+      <div className="grid3">{plannedModels.map(([id]) => tile(id, 'model', id, modelNames[id] ?? id, t('Not available in this version'), ['no', t('Planned')]))}</div>
+    </details>}
+    </div>
 
-    <section className="connections-group">
-      <h2 className="with-icon"><Laptop size={20} aria-hidden />{t('On this computer')}</h2>
-      <p className="legacy-mini-note">{t('Found from this computer’s PATH, installed apps and local server ports. Install runs the command shown, after you confirm.')}</p>
-      {hasMachineInfo && <p className="local-tool-machine">
-        {machine?.chip && <span>{t('This computer: {chip}', { chip: machine.chip })}</span>}
-        {machine?.memory_gb != null && <span>{t('Memory: {gb} GB', { gb: machine.memory_gb })}</span>}
-        {machine?.disk_free_gb != null && <span>{t('Free disk: {gb} GB', { gb: machine.disk_free_gb })}</span>}
+    <h2 id="on-this-computer" tabIndex={-1}>{t('On this computer')}</h2>
+    {toolsError && <Notice tone="error">{toolsError}</Notice>}
+    <div className="grid3" data-group="computer">
+      {tile('codex', 'account', 'codex', 'Codex CLI', t('Account sign-in'), accountStatus('codex'))}
+      {tile('claude', 'account', 'claude', 'Claude Code', t('Account sign-in'), accountStatus('claude'))}
+      {tile('ocr', 'ocr-tool', 'tesseract', t('OCR (Tesseract)'), t('Scanned PDFs'), ocrStatus())}
+      {tile('servers', 'servers', 'servers', t('Local model servers'), t('Ollama or LM Studio · no account'), serversStatus())}
+      {tile('marker', 'equation-reader', 'marker', t('Equation reader (Marker)'), t('Reads equations as LaTeX'), readerStatus())}
+    </div>
+    {(otherCli.length > 0 || machine) && <div className="computer-more">
+      {machine && (machine.chip || machine.memory_gb != null || machine.disk_free_gb != null) && <p className="foot-note local-tool-machine">
+        {machine.chip && <span>{t('This computer: {chip}', { chip: machine.chip })}</span>}
+        {machine.memory_gb != null && <span>{t('Memory: {gb} GB', { gb: machine.memory_gb })}</span>}
+        {machine.disk_free_gb != null && <span>{t('Free disk: {gb} GB', { gb: machine.disk_free_gb })}</span>}
       </p>}
-      {toolsError && <Notice tone="error">{toolsError}</Notice>}
-      <h3 className="connections-subhead with-icon"><SquareTerminal size={15} aria-hidden />{t('Command-line tools')}</h3>
-      <p className="legacy-mini-note">{t('Only Claude Code and Codex CLI run research steps. The other tools are detected only: finding one here does not mean DEIXIS supports it.')}</p>
-      <div className="connection-grid">{cliTools.map(toolCard)}</div>
-      <h3 className="connections-subhead with-icon"><Server size={15} aria-hidden />{t('Local model servers')}</h3>
-      <div className="connection-grid">{serverTools.map(toolCard)}</div>
-      <p className="legacy-mini-note">{t('Local models do not run research steps in this version; embedding models can be chosen for semantic search.')}</p>
-      {reader && <>
-        <h3 className="connections-subhead with-icon"><Sigma size={15} aria-hidden />{t('Equation reader')}</h3>
-        <div className="connection-grid"><ConnectionTile icon={<Sigma size={18} aria-hidden />} name="Marker" ok={reader.installed && reader.models_downloaded} status={reader.job?.status === 'running' ? t('Installing…') : t(reader.installed && reader.models_downloaded ? 'Installed' : 'Not installed')} active={isActive('equation-reader', 'marker')} onClick={() => show({ kind: 'equation-reader', id: 'marker' })} /></div>
-      </>}
-      {ocrTool && <>
-        <h3 className="connections-subhead with-icon"><ScanText size={15} aria-hidden />{t('OCR for scanned PDFs')}</h3>
-        <div className="connection-grid"><ConnectionTile icon={<ScanText size={18} aria-hidden />} name="Tesseract" ok={ocrTool.available} status={t(!ocrTool.available ? 'Not installed' : !ocrTool.missing_languages.length ? 'Installed' : ocrTool.languages.join() === 'eng' ? 'English only' : 'Languages missing')} active={isActive('ocr-tool', 'tesseract')} onClick={() => show({ kind: 'ocr-tool', id: 'tesseract' })} /></div>
-      </>}
-      {appTools.length > 0 && <>
-        <h3 className="connections-subhead with-icon"><BookMarked size={15} aria-hidden />{t('Reference managers')}</h3>
-        <div className="connection-grid">{appTools.map(toolCard)}</div>
-        <p className="legacy-mini-note">{t('Collections are imported read-only from a research’s Sources tab or the home composer’s Add sources menu.')}</p>
-      </>}
-    </section>
+      {otherCli.length > 0 && <details className="planned-connections"><summary><ChevronRight size={14} aria-hidden />{t('Other command-line tools · {n}', { n: otherCli.length })}</summary>
+        <p className="foot-note">{t('Only Claude Code and Codex CLI run research steps. The other tools are detected only: finding one here does not mean DEIXIS supports it.')}</p>
+        <div className="grid3">{otherCli.map(tool => tile(tool.id, 'cli', tool.id, tool.name || localToolNames[tool.id] || tool.id, t('Detected only'), ['no', t(tool.job?.status === 'running' ? 'Installing…' : tool.installed ? 'Installed' : 'Not installed')]))}</div>
+      </details>}
+    </div>}
 
-    <section className="connections-group">
-      <h2 className="with-icon"><Sparkles size={20} aria-hidden />{t('Semantic search')}</h2>
-      <p className="legacy-mini-note">{t('The question and passages are matched by meaning even when the words differ, and the result is fused with keyword search. Changing the provider embeds passages again; earlier vectors are kept. Similarity only ranks passages; it does not show that a passage supports a claim.')}</p>
-      {semError && <Notice tone="error">{semError}</Notice>}
-      {semantic && <>
-        <div className="semantic-choices" role="radiogroup" aria-label={t('Semantic search provider')}>
-          {semantic.options.map(opt => {
-            const checked = semProvider === opt.provider
-            const body = optionBody(opt)
-            return <div className="semantic-option" key={opt.provider}>
-              <label className={`semantic-choice ${!opt.available ? 'is-disabled' : ''}`}>
-                <input type="radio" name="semantic-provider" checked={checked} disabled={!opt.available} onChange={() => chooseSemantic(opt.provider, opt.models)} />
-                {opt.provider === 'off' ? <TextSearch className="semantic-off-icon" size={16} aria-hidden /> : <ConnectionIcon id={opt.provider} />}
-                <strong>{semanticLabels[opt.provider]}</strong>
-                {!needsModel(opt.provider) && opt.models[0] && <code className="semantic-model-name">{opt.models[0]}</code>}
-                {opt.available ? <span className="status-chip">{t('Available')}</span> : <span className="semantic-reason">{t(opt.reason ?? '')}</span>}
-                {needsModel(opt.provider) && checked && <select className="semantic-model" value={semModel ?? ''} onChange={e => setSemModel(e.target.value)}>{opt.models.map(m => <option key={m} value={m}>{m}</option>)}</select>}
-              </label>
-              {body && <div className="semantic-option-body">{body}</div>}
-            </div>
-          })}
+    <h2>{t('Semantic search')}</h2>
+    <p className="foot-note">{t('Ranks search results by meaning, not only by shared words. Changing the provider embeds passages again; earlier vectors are kept.')}</p>
+    {semError && <Notice tone="error">{semError}</Notice>}
+    <div className="rows opts semantic-choices" role="radiogroup" aria-label={t('Semantic search provider')} aria-busy={saving || undefined}>
+      {semanticRows.map(row => {
+        const isChosen = !!chosen && row.providers.includes(chosen.provider)
+        const available = !!semantic && (row.id === 'server' ? serverChoices.length > 0 : !!option(row.providers[0])?.available)
+        const need = needsPill(row.id)
+        const pick = () => {
+          if (row.id === 'server') { const first = serverChoices[0]; if (first) chooseSemantic(first.provider, first.model) }
+          else chooseSemantic(row.providers[0], null)
+        }
+        return <div className="semantic-option" key={row.id} data-row={row.id}>
+          <label className={!available ? 'is-disabled' : undefined}>
+            <input type="radio" name="semantic-provider" checked={isChosen} disabled={!available || saving} onChange={pick}
+              onClick={() => { if (isChosen && semantic && !semantic.explicit) pick() }} />
+            <span>{row.label}<small>{row.desc}</small></span>
+            {saving && isChosen && <span className="spin" aria-label={t('Saving…')} />}
+            {need && <span className="st no">{need}</span>}
+          </label>
+          {row.id === 'server' && isChosen && serverChoices.length > 0 && <div className="semantic-option-body">
+            <select className="select semantic-model" aria-label={t('Embedding model')} disabled={saving} value={`${chosen?.provider}|${chosen?.model ?? ''}`}
+              onChange={e => { const [p, ...m] = e.target.value.split('|'); chooseSemantic(p as SemanticSearchProvider, m.join('|')) }}>
+              {serverChoices.map(c => <option key={`${c.provider}|${c.model}`} value={`${c.provider}|${c.model}`}>{c.label}</option>)}
+            </select>
+          </div>}
+          {row.body && <div className="semantic-option-body">{row.body}</div>}
         </div>
-        {semProvider && <p className="legacy-mini-note">{semProvider === 'off' ? t('Sources get no similarity score; passages are ranked by keyword match only. No text is sent anywhere.')
-          : semProvider === 'gemini' ? t('Passage text is sent to Google. If your key is on Google’s free tier, Google may use the text you send to improve its products. DEIXIS cannot tell which tier your key is on.')
-          : semProvider === 'openai' ? t('Passage text is sent to {service}.', { service: 'OpenAI' })
-          : semProvider === 'builtin' ? t('For semantic search, no text leaves the computer.') : t('Passage text stays on this computer.')}</p>}
-        <div className="actions"><Button size="sm" disabled={semBusy || !semProvider || (needsModel(semProvider) && !semModel)} onClick={saveSemantic}>{t(semBusy ? 'Saving…' : 'Save')}</Button></div>
-      </>}
-    </section>
+      })}
+    </div>
+    {privacy && <p className="foot-note semantic-privacy">{privacy}</p>}
 
-    <section className="connections-group">
-      <h2 className="with-icon"><GraduationCap size={20} aria-hidden />{t('Scholarly sources')}</h2>
-      <h3 className="connections-subhead">{t('No API key')}</h3>
-      <div className="connection-grid">{keylessProviders.map(providerCard)}</div>
-      <h3 className="connections-subhead">{t('API key')}</h3>
-      <div className="connection-grid">{keyProviders.map(providerCard)}</div>
-      <p className="legacy-mini-note">{t('Every provider with the access it needs is enabled for new researches, and the model chooses which to query. Access and remaining quota are recorded with each request rather than guaranteed in advance.')}</p>
-    </section>
+    {access}
 
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetContent className={`detail-sheet source-sheet connection-sheet ${dark ? 'dark' : ''}`}>
-        <SheetHeader><SheetTitle>{t(selected?.kind === 'provider' ? 'Scholarly source' : selected?.kind === 'api-key' ? 'Model connection' : selected?.kind === 'local-tool' || selected?.kind === 'equation-reader' || selected?.kind === 'ocr-tool' ? 'Local tool details' : 'Model connection')}</SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
-        <div className="sheet-body">
-          {selected && <div className="connection-sheet-head">{selected.kind === 'equation-reader' ? <Sigma size={20} aria-hidden /> : selected.kind === 'ocr-tool' ? <ScanText size={20} aria-hidden /> : <ConnectionIcon id={selected.kind === 'local-tool' ? localToolIcon(selected.id) : selected.id} />}<h2 className="source-title">{name}</h2></div>}
-          {selected?.kind === 'equation-reader' && reader && <EquationReaderDetails reader={reader} dark={dark} onChanged={loadReader} />}
-          {selected?.kind === 'ocr-tool' && ocrTool && <OcrToolDetails tool={ocrTool} onRefresh={loadOcr} />}
-          {localTool && <LocalToolDetails key={localTool.id} tool={localTool} dark={dark} onChanged={() => loadTools(true)} />}
-          {model && <>
-            {refreshingModel === selected?.id && <p className="source-byline connection-catalog-refresh"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Refreshing model catalogue…')}</p>}
-            {model.ready ? <span className="status-chip">{t('Ready')}</span> : <p className="source-byline">{healthReasonText(model)}</p>}
-            {selected?.id === 'codex' && <>
-              <p className="source-byline">{t('DEIXIS runs Codex in its own Codex home with tools, connectors, skills and instruction files disabled, and starts a new session for every step.')}</p>
-              <div className="connection-checks">
-                {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
-                {check(t('Signed in (DEIXIS Codex home)'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
-                {check(t('Instruction files loaded'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
-                {check(t('MCP servers with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
-              </div>
-              {!model.signed_in && model.installed && <p className="source-byline">{t('Sign in once in a terminal:')}<br /><code className="command">CODEX_HOME="$HOME/Library/Application Support/DEIXIS/codex-home" codex login</code></p>}
-            </>}
-            {selected?.id === 'claude' && <>
-              <p className="source-byline">{t('DEIXIS runs Claude Code through the official Agent SDK with tools, MCP servers, skills and instruction files disabled, and starts a new non-persistent session for every step.')}</p>
-              <div className="connection-checks">
-                {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
-                {check(t('Signed in to Claude Code'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
-                {check(t('Instruction files loaded'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
-                {check(t('MCP servers with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
-              </div>
-            </>}
-            {selected?.id === 'gemini' && <>
-              <p className="source-byline">{t('DEIXIS calls the Gemini API directly with GEMINI_API_KEY, with no tools, instruction files or CLI agent prompt, and one new request per step. The Gemini CLI is only detected; it does not run steps.')}</p>
-              <div className="connection-checks">
-                {check(t('API key (GEMINI_API_KEY)'), model.key_configured ? t('set') : t('not set'))}
-                {check('Gemini CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
-                {check(t('Semantic passage search'), model.key_configured ? t('on · passage text is sent to Google') : t('off'))}
-              </div>
-              {credentials && <KeyPanel env="GEMINI_API_KEY" entry={geminiKey} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
-            </>}
-            {selected?.id === 'deepseek' && <>
-              <p className="source-byline">{t('DEIXIS calls the DeepSeek API directly with DEEPSEEK_API_KEY, with no tools or instruction files and one new request per step.')}</p>
-              <div className="connection-checks">
-                {check(t('API key (DEEPSEEK_API_KEY)'), model.key_configured ? t('set') : t('not set'))}
-              </div>
-              {credentials && <KeyPanel env="DEEPSEEK_API_KEY" entry={deepseekKey} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
-            </>}
-            {selected && compatConnectionKeys[selected.id] && <>
-              <p className="source-byline">{t('DEIXIS calls the {name} API directly through its OpenAI-compatible endpoint with {env}, with no tools or instruction files and one new request per step. Not yet verified against the live API.', { name: modelNames[selected.id] ?? selected.id, env: compatConnectionKeys[selected.id] })}</p>
-              <div className="connection-checks">
-                {check(t('API key ({env})', { env: compatConnectionKeys[selected.id] }), model.key_configured ? t('set') : t('not set'))}
-              </div>
-              {credentials && <KeyPanel env={compatConnectionKeys[selected.id]} entry={credentials.keys.find(k => k.env === compatConnectionKeys[selected.id])} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
-            </>}
-            <ModelCatalogue model={model} />
-          </>}
-          {selected?.kind === 'api-key' && <>
-            <span className={`status-chip ${openaiKey?.configured ? '' : 'is-configured'}`}>{t(openaiKey?.configured ? 'Key configured' : 'Not connected')}</span>
-            <p className="source-byline">{t('Passages are sent to the provider you choose. Once a key is saved it is never shown again; it can only be replaced or removed.')}</p>
-            {credentials && <KeyPanel env="OPENAI_API_KEY" entry={openaiKey} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
-          </>}
-          {provider && <>
-            {hasProviderAccessMode(provider.access_mode) && <span className={`status-chip ${provider.access_mode === 'keyless' ? 'is-configured' : ''}`}>{providerStatus(provider.access_mode)}</span>}
-            <p className="source-byline">{provider.note}</p>
-            <div className="connection-checks">{check(t('Used for'), providerRole(provider.role))}{check(t('Access mode'), provider.access_mode ? t(provider.access_mode) : t('none'))}</div>
-            {credentials && providerKeyEnv[provider.id] && <KeyPanel env={providerKeyEnv[provider.id]} entry={credentials.keys.find(k => k.env === providerKeyEnv[provider.id])} keychain={credentials.keychain} dark={dark} onSaved={reloadAfterKeyChange} />}
-          </>}
-          {!localTool && selected?.kind !== 'equation-reader' && selected?.kind !== 'ocr-tool' && selected?.kind !== 'api-key' && <Button variant="outline" className="connection-recheck" onClick={recheck} disabled={busy || refreshingModel === selected?.id}><RefreshCw size={14} />{t(provider ? (busy ? 'Refreshing…' : 'Refresh configuration') : (refreshingModel === selected?.id ? 'Checking…' : 'Check again'))}</Button>}
-        </div>
+    <h2>{t('Scholarly sources')}</h2>
+    <div className="grid3" data-group="sources">{providers.map(p => tile(p.id, 'provider', p.id, providerNames[p.id] ?? p.id, providerUse[p.id] ? t(providerUse[p.id]) : providerRole(p.role), providerStatus(p.access_mode)))}</div>
+    <p className="foot-note sources-note">{t('Every provider with the access it needs is enabled for new researches. Access and remaining quota are recorded with each request rather than guaranteed in advance.')}</p>
+
+    <h2>{t('Reference managers')}</h2>
+    <div className="grid3" data-group="references">
+      {tile('zotero', 'zotero', 'zotero', 'Zotero', t('Read-only collections'), zoteroStatus())}
+      {tile('reference-files', 'reference-files', 'files', t('BibTeX / RIS files'), t('Import a .bib or .ris file'), ['ok', t('Available')])}
+    </div>
+
+    <Sheet open={open && !gone} onOpenChange={setOpen}>
+      <SheetContent className={`detail-sheet connection-sheet ${dark ? 'dark' : ''}`}>
+        <SheetHeader><SheetTitle><Link size={16} aria-hidden /><span>{name}</span></SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
+        <div className="connection-body mk pad detail">{body}</div>
       </SheetContent>
     </Sheet>
-  </div>
+  </>
 }

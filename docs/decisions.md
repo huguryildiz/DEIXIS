@@ -4,6 +4,17 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D16 — Settings shows only what was stored or measured, and a key is never shown again
+Status: accepted (UI parity S24, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
+Context: The mockup's Settings page (ST1–ST11) marks every tile "Connected", says the proxy test "opened a test article", and offers a Save step for semantic search. The app has no route that opens an article through the proxy, and several tiles have nothing a page visit could test.
+Decision:
+- A tile's pill and a sheet's state line name the stored state: signed in or not, installed or not, key configured, no key needed, not set up, planned. Opening Settings tests nothing. Test, Save and test, and Find it on this computer report only the server's answer, with the time it was checked.
+- The proxy line and the Scopus line are two facts. The proxy line says whether the proxy host answered ("Proxy reachable · article access not checked", "Proxy did not answer", "Checking", "Not set up"). The Scopus line says whether Scopus confirmed its full view on this network. The words "Working", "VPN required" and "institutional network" are not used. Test saves a changed address and then asks its host once. One proxy test runs at a time, shared with the sidebar.
+- A semantic search choice saves when it is chosen, as in the mockup. A "Needs …" pill comes from the provider's real readiness.
+- A key field is always empty. Its placeholder says where the key is stored (keychain or .env), and keys go through credentials.py. A stored key is replaced or removed, never shown. Remove asks inline first.
+- Usage this month counts the calls in stored model sessions by role. A bar is the role's share of the month's calls. OpenAlex today is its last stored response, shown with that response's time. A figure that is not stored reads "not known", never 0.
+Limits: Tested on SYNTHETIC fixture records with route-simulated proxy, usage and credential answers (e2e/settings.spec.ts, builtin-embedding.spec.ts, parity surfaces settings and settings-sheet). No live proxy, Scopus or OpenAlex key was used. A keyless provider has no test route, so its sheet only saves the contact email.
+
 ## D15 — A stopped model is replaced only by the person, and the stopped step waits for Retry
 Status: accepted (UI parity S27, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
 Context: The model-down notice (mockup R20) offers "Retry this step" and "Choose another model". The route that changes a research role's model (`PUT /api/researches/{id}/models`, S17) records the change and makes the next model steps use it. The notice needed a rule for what the choice does to the stopped run and what the page says about it.

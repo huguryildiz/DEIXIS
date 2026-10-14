@@ -13,7 +13,7 @@ export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zot
   | 'research-menu' | 'export-menu' | 'title-edit' | 'revise' | 'trash' | 'trash-confirm' | 'trash-empty' | 'report-panel' | 'report-changes' | 'cite-panel' | 'detail-panel'
   | 'sources-why' | 'sources-sel' | 'queue-panel' | 'pdfs-panel' | 'funnel-panel' | 'activity-panel'
   | 'table-panel' | 'cell-panel' | 'ereport-panel' | 'ecite-panel'
-  | 'cands-panel' | 'cand-panel' | 'cev-panel' | 'review-dialog' | 'review-panel' | 'watch-panel' | 'schedule-dialog' | 'followup-turn' | 'plan-panel'
+  | 'cands-panel' | 'cand-panel' | 'cev-panel' | 'review-dialog' | 'review-panel' | 'watch-panel' | 'schedule-dialog' | 'followup-turn' | 'plan-panel' | 'settings' | 'settings-sheet'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -110,6 +110,21 @@ async function trashRows(page: Page) {
     sources: [{ source_version_id: 'sv-syn', work_id: 'w-syn', title: 'SYNTHETIC removed source title', version_label: 'publishedVersion', year: 2021, research_id: 'syn-research', research_title: 'SYNTHETIC research that lost a source',
       removed_at: '2026-10-08T10:00:00Z', removal_note: null, found_again_at: null, quotes: 0, cells: 0, abstract_passage_id: null, cited: 0 }],
   } }))
+}
+
+/** S24: the mockup's Settings state: a saved proxy whose host answered (its "Working" line) and an OpenAlex budget with
+ *  a limit (its 38% bar). SYNTHETIC records shaped like the stored ones; nothing is asked of a real proxy or OpenAlex. */
+async function settingsState(page: Page) {
+  const at = '2026-10-14T07:05:00Z'
+  const address = 'https://login.proxy.example.edu/login?url='
+  const view = { address, label: 'login.proxy.example.edu', label_default: 'login.proxy.example.edu', label_is_default: true, test_is_current: true,
+    test: { proxy_reachable: true, proxy_http_status: 302, proxy_error: null, proxy_error_detail: null, scopus_complete: 'could_not_check', scopus_configured: false,
+      address, route: 'SYNTHETIC-route', route_changed_during_test: false, tested_at: at } }
+  await page.route('**/api/institution-proxy/settings', route => route.fulfill({ json: view }))
+  await page.route('**/api/institution-proxy/test', route => route.fulfill({ json: view }))
+  await page.route('**/api/institution-proxy', route => route.fulfill({ json: { address } }))
+  await page.route('**/api/openalex/budget-today', route => route.fulfill({ json: { provider: 'openalex', unit: 'credits', remaining: 620, limit: 1000, used_fraction: 0.38,
+    reset_at: at, as_of: at, source: 'last_stored_response' } }))
 }
 
 /** S13: the Sources panel on "Cited in answer", where the mockup opens it. */
@@ -310,9 +325,18 @@ export const SURFACES: Surface[] = [
     appAct: async page => { await page.locator('.research-topbar .research-title-button').click(); await page.locator('.research-title-input').blur() } },
   { id: 'revise', mock: "setScenario('ok')", mockAct: 'st.editQ = true; render()', app: '#/research/{research}', ready: '.research-topbar', widths: DESK,
     appAct: async page => { await page.locator('.research-topbar .research-revise').click(); await page.locator('#revise-question').blur() } },
-  { id: 'dialog', mock: HOME, mockAct: "zoteroDlg('home')", app: '#/settings/connections', ready: '.connection-grid', reader: 'not-installed',
+  // S24: the Settings page (ST1–ST11), one column in the mockup's order with the Cloud models block (PLACEMENTS) after
+  // Default models.
+  { id: 'settings', mock: "setScenario('ok'); go('settings')", app: '#/settings', ready: '.settings-page .set-usage [data-role="openalex"] small', prepare: settingsState },
+  { id: 'settings-sheet', mock: "setScenario('ok'); go('settings')", mockAct: "st.conn = 'Codex CLI'; render()", app: '#/settings', ready: '.settings-page .set-usage', prepare: settingsState,
     appAct: async page => {
-      await page.getByRole('button', { name: /^Marker/ }).click()
+      await page.locator('.grid3[data-group="computer"] .conn').filter({ hasText: /^Codex CLI/ }).click()
+      await page.locator('.connection-sheet .connection-body .acts').waitFor()
+      await page.mouse.move(0, 0)
+    } },
+  { id: 'dialog', mock: HOME, mockAct: "zoteroDlg('home')", app: '#/settings/connections', ready: '.settings-page .grid3[data-group="computer"]', reader: 'not-installed',
+    appAct: async page => {
+      await page.getByRole('button', { name: /^Equation reader/ }).click()
       await page.locator('.connection-sheet').getByRole('button', { name: 'Install', exact: true }).click()
       await page.locator('.dialog').waitFor()
     } },
@@ -474,6 +498,58 @@ const revise: Pair[] = [
 
 // S26: the Trash page (T1-T3). The source row's ⋯ button and title button are the PLACEMENT trash-source-menu; the
 // confirm texts are COPY_CHANGES trash-confirm-*. Row notes are data (the dates and titles come from the records).
+// S24: the Settings page (ST1–ST11). Pairs below the Cloud models block (a PLACEMENT) compare x and width, not y. Tile
+// pills, tile notes and the semantic rows' notes carry changed copy (COPY_CHANGES settings-*, semantic-*), so their text
+// is not compared; headings, role and usage names and the language row are.
+const SI = '.settings-in'
+const SP = '.settings-page'
+const settingsPage: Pair[] = [
+  { id: 'settings.title', surface: 'settings', mock: `${SI} > h1`, app: `${SP} > h1`, checks: ['chrome', 'type', 'colour'], text: true, status: 'active' },
+  { id: 'settings.headings', surface: 'settings', mock: `${SI} > h2`, app: `${SP} > h2`, checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  { id: 'settings.roles', surface: 'settings', mock: `${SI} > .rows:has(select)`, app: `${SP} > .set-roles`, checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'settings.role', surface: 'settings', mock: `${SI} > .rows:has(select) > div`, app: '.set-roles > div', checks: ['chrome', 'colour'], use: 'decorative', list: 'fixed', text: false, status: 'active' },
+  { id: 'settings.role-name', surface: 'settings', mock: `${SI} > .rows:has(select) > div > b`, app: '.set-roles > div > b', checks: ['type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  { id: 'settings.role-note', surface: 'settings', mock: `${SI} > .rows:has(select) > div > p`, app: '.set-roles > div > p', checks: ['type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  { id: 'settings.role-select', surface: 'settings', mock: `${SI} > .rows:has(select) select`, app: '.set-roles select', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'settings.computer', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3`, app: '.grid3[data-group="computer"]', checks: ['content'], status: 'active' },
+  { id: 'settings.computer-tile', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn`, app: '.grid3[data-group="computer"] > .conn', checks: ['content', 'colour'], use: 'decorative', list: 'fixed', text: false, states: ['hover'], hoverSurface: true, status: 'active' },
+  { id: 'settings.tile-name', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn > b`, app: '.grid3[data-group="computer"] > .conn > b', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'settings.tile-pill', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn .st`, app: '.grid3[data-group="computer"] > .conn .st', checks: ['type'], list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'settings.tile-note', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn small`, app: '.grid3[data-group="computer"] > .conn small', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'settings.semantic-note', surface: 'settings', mock: `${SI} > h2:nth-of-type(3) + .foot-note`, app: `${SP} > .foot-note:has(+ .semantic-choices)`, checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'settings.semantic', surface: 'settings', mock: `${SI} > .rows.opts`, app: '.semantic-choices', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'settings.semantic-row', surface: 'settings', mock: `${SI} > .rows.opts > label`, app: '.semantic-choices > .semantic-option > label', checks: ['content', 'type'], list: 'fixed', text: false, status: 'active' },
+  { id: 'settings.semantic-note-row', surface: 'settings', mock: `${SI} > .rows.opts > label small`, app: '.semantic-choices > .semantic-option > label small', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'settings.proxy', surface: 'settings', mock: `${SI} .proxy`, app: `${SP} .proxy`, checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'settings.proxy-label', surface: 'settings', mock: `${SI} .proxy > .lbl`, app: `${SP} .proxy > .lbl`, checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'settings.proxy-field', surface: 'settings', mock: '#pxUrl', app: '#proxy-address', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'settings.proxy-test', surface: 'settings', mock: `${SI} .proxy .lbl .row button`, app: `${SP} .proxy .lbl .row button`, checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], status: 'active' },
+  { id: 'settings.proxy-state', surface: 'settings', mock: `${SI} .proxy > .row`, app: `${SP} .proxy > .proxy-state`, checks: ['content', 'type', 'colour'], text: false, states: [], status: 'active' },
+  { id: 'settings.proxy-foot', surface: 'settings', mock: `${SI} .proxy > .foot-note`, app: `${SP} .proxy > .foot-note`, checks: ['type', 'colour'], text: false, states: [], status: 'active' },
+  { id: 'settings.source-tile', surface: 'settings', mock: `${SI} > h2:nth-of-type(5) + .grid3 > .conn`, app: '.grid3[data-group="sources"] > .conn', checks: ['content', 'colour'], use: 'decorative', list: 'fixed', text: false, states: ['hover'], hoverSurface: true, status: 'active' },
+  { id: 'settings.reference-tile', surface: 'settings', mock: `${SI} > h2:nth-of-type(6) + .grid3 > .conn`, app: '.grid3[data-group="references"] > .conn', checks: ['content', 'colour'], use: 'decorative', list: 'fixed', text: false, states: ['hover'], hoverSurface: true, status: 'active' },
+  { id: 'settings.usage', surface: 'settings', mock: `${SI} > h2:nth-of-type(7) + .rows`, app: '.set-usage', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'settings.usage-row', surface: 'settings', mock: `${SI} > h2:nth-of-type(7) + .rows > div`, app: '.set-usage > div', checks: ['content', 'colour'], use: 'decorative', list: 'fixed', text: false, status: 'active' },
+  { id: 'settings.usage-name', surface: 'settings', mock: `${SI} > h2:nth-of-type(7) + .rows > div > b`, app: '.set-usage > div > b', checks: ['type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  { id: 'settings.usage-bar', surface: 'settings', mock: `${SI} > h2:nth-of-type(7) + .rows .bar`, app: '.set-usage .bar', checks: ['colour'], use: 'decorative', list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'settings.usage-value', surface: 'settings', mock: `${SI} > h2:nth-of-type(7) + .rows > div > p`, app: '.set-usage > div > p', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'settings.language', surface: 'settings', mock: `${SI} > .rows:has(.lang) > div`, app: '.set-lang > div', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'settings.language-name', surface: 'settings', mock: `${SI} > .rows:has(.lang) b`, app: '.set-lang b', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'settings.language-note', surface: 'settings', mock: `${SI} > .rows:has(.lang) p`, app: '.set-lang p', checks: ['content', 'type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'settings.language-switch', surface: 'settings', mock: `${SI} .lang`, app: '.set-lang .lang', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'settings.language-button', surface: 'settings', mock: `${SI} .lang button`, app: '.set-lang .lang button', checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  // The connection sheet (mockup `connSheet()`), shown for Codex CLI: head, live state line, account sentence (COPY_CHANGES
+  // account-codex) and the two buttons. The checks and models below the buttons are the PLACEMENT settings-sheet-facts.
+  { id: 'settings-sheet.scrim', surface: 'settings-sheet', mock: '.sheet-scrim', app: '[data-slot=sheet-overlay]', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'settings-sheet.sheet', surface: 'settings-sheet', mock: 'aside.sheet', app: '.connection-sheet', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'settings-sheet.head', surface: 'settings-sheet', mock: 'aside.sheet .p-head', app: '.connection-sheet [data-slot=sheet-header]', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
+  { id: 'settings-sheet.title', surface: 'settings-sheet', mock: 'aside.sheet .p-head h2', app: '.connection-sheet [data-slot=sheet-title]', checks: ['type', 'icon'], icon: { mock: 'link', app: 'link' }, text: true, unordered: true, status: 'active' },
+  { id: 'settings-sheet.close', surface: 'settings-sheet', mock: 'aside.sheet .p-head .ib', app: '.connection-sheet [data-slot=sheet-close]', checks: ['chrome', 'icon'], icon: { mock: 'x', app: 'x' }, unordered: true, status: 'active' },
+  { id: 'settings-sheet.meta', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail > .dmeta', app: '.connection-body > .dmeta', checks: ['chrome', 'type'], text: false, unordered: true, status: 'active' },
+  { id: 'settings-sheet.account', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail > .foot-note', app: '.connection-body > .foot-note', checks: ['content', 'type', 'colour'], text: false, states: [], unordered: true, status: 'active' },
+  { id: 'settings-sheet.buttons', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail .acts button', app: '.connection-body > .acts button', checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], unordered: true, status: 'active' },
+]
+
 const TR = '.settings .rows > div'
 const trashPage: Pair[] = [
   { id: 'trash.title', surface: 'trash', mock: '.settings h1', app: '.trash-page > h1', checks: ['chrome', 'type', 'colour'], text: true, status: 'active' },
@@ -496,6 +572,7 @@ const trashPage: Pair[] = [
 ]
 
 export const PAIRS: Pair[] = [
+  ...settingsPage,
   ...trashPage,
   ...researchMenu,
   ...exportMenu,

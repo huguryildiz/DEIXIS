@@ -62,8 +62,11 @@ class BuiltinServer {
 }
 
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled' })
-const semanticSection = (page: Page) => page.locator('section.connections-group', { has: page.getByRole('heading', { name: 'Semantic search' }) })
-const option = (page: Page, name: string) => semanticSection(page).locator('.semantic-option', { has: page.locator('strong', { hasText: name }) })
+// The Settings page is one column since S24: the semantic choices are one radio group, each row named by its label.
+const semanticSection = (page: Page) => page.getByRole('radiogroup', { name: 'Semantic search provider' })
+const ROWS: Record<string, string> = { 'This computer · built-in': 'builtin', 'OpenAI embeddings': 'openai', 'Gemini embeddings': 'gemini', 'Local model server': 'server', Off: 'off' }
+const option = (page: Page, name: string) => semanticSection(page).locator(`.semantic-option[data-row="${ROWS[name]}"]`)
+const privacyNote = (page: Page) => page.locator('.semantic-privacy')
 
 async function openConnections(page: Page, server: BuiltinServer) {
   await page.goto(server.url('#/settings/connections'))
@@ -94,19 +97,23 @@ test.describe.serial('N: the built-in embedding model', () => {
   })
   test.afterAll(async () => { await page?.close(); await server.stop() })
 
-  test('Settings lists Gemini, the built-in model, OpenAI, Ollama, LM Studio and Off, with Gemini’s free-key path', async () => {
+  test('Settings lists the built-in model, OpenAI, Gemini, a local model server and Off (mockup order), with Gemini’s free-key path', async () => {
     await openConnections(page, server)
-    await expect(semanticSection(page).locator('.semantic-choice strong')).toHaveText([
-      'Gemini', 'This computer · built-in', 'OpenAI', 'This computer · Ollama', 'This computer · LM Studio', 'Off · keyword search only'])
-    const gemini = option(page, 'Gemini')
+    await expect(semanticSection(page).locator('.semantic-option > label > span:not(.st):not(.spin)')).toHaveText([
+      /^This computer · built-in/, /^OpenAI embeddings/, /^Gemini embeddings/, /^Local model server/, /^Off/])
+    const gemini = option(page, 'Gemini embeddings')
     await expect(gemini).toContainText('Reads the question in any language. Needs a Google AI Studio key; a free key works.')
     await expect(gemini).toContainText('Get a free key: sign in at aistudio.google.com/apikey, create a key, paste it under Cloud models → Gemini.')
     await expect(gemini.getByRole('link', { name: 'aistudio.google.com/apikey' })).toHaveAttribute('href', 'https://aistudio.google.com/apikey')
     await expect(semanticSection(page)).not.toContainText('Recommended')
     const builtin = option(page, 'This computer · built-in')
     await expect(builtin.getByRole('radio')).toBeDisabled()
-    await expect(builtin).toContainText('Not downloaded')
-    await expect(builtin).toContainText('For semantic search, no text leaves the computer')
+    await expect(builtin.locator('label .st')).toHaveText('Not downloaded')
+    await expect(builtin).toContainText('No key; for semantic search, no text leaves the computer.')
+    // A row that cannot be chosen says what it needs, from the options' own state (no key set in this fixture).
+    await expect(option(page, 'Gemini embeddings').locator('label .st')).toHaveText('Needs a Google AI key')
+    await expect(option(page, 'OpenAI embeddings').locator('label .st')).toHaveText('Needs an OpenAI key')
+    await expect(option(page, 'Off').locator('label .st')).toHaveCount(0)
     // The fixture's model files are SYNTHETIC and a few bytes long, but the sizes shown are the pinned model's.
     await expect(builtin).toContainText('Needs about 212 MB of disk (runtime about 145 MB installed, model 67 MB), plus about 74 MB if uv has to download Python 3.12, plus uv’s download cache (not measured).')
     await expect(builtin).toContainText('Measured on one Apple M1 Pro: 1,369 records took 51 seconds, 6,696 records about 4 minutes. Other computers were not measured.')
@@ -129,10 +136,13 @@ test.describe.serial('N: the built-in embedding model', () => {
     await shot(page, 'N-download-progress-desktop')
     await expect(builtin.locator('.semantic-builtin .status-chip')).toContainText('Ready · files checked', { timeout: 60_000 })
     await expect(builtin).toContainText('Files checked at install and each time the model starts.')
-    await builtin.getByRole('radio').check()
-    await expect(semanticSection(page)).toContainText('For semantic search, no text leaves the computer.')
-    await semanticSection(page).getByRole('button', { name: 'Save' }).click()
+    // A choice is saved at once; the note under the rows follows the saved setting.
+    // A ready built-in model can be the default with nothing saved yet; click (check() skips a checked radio) saves it.
+    await builtin.getByRole('radio').click()
+    await expect(builtin.getByRole('radio')).toBeChecked()
     await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+    await expect(privacyNote(page)).toHaveText('For semantic search, no text leaves the computer.')
+    await expect(builtin.locator('label .st')).toHaveCount(0)
     await builtin.scrollIntoViewIfNeeded()
     await shot(page, 'N-settings-ready-desktop')
     await page.setViewportSize({ width: 390, height: 844 })
@@ -182,13 +192,15 @@ test.describe.serial('N: Gemini’s free tier and the uploaded-PDF line', () => 
 
   test('choosing Gemini says the free tier may use the text and that DEIXIS cannot tell the tier', async () => {
     await openConnections(page, server)
-    const gemini = option(page, 'Gemini')
+    const gemini = option(page, 'Gemini embeddings')
     await expect(gemini).not.toContainText('Get a free key')
-    await gemini.getByRole('radio').check()
-    await expect(semanticSection(page)).toContainText('Passage text is sent to Google. If your key is on Google’s free tier, Google may use the text you send to improve its products. DEIXIS cannot tell which tier your key is on.')
-    await semanticSection(page).getByRole('button', { name: 'Save' }).click()
+    await expect(gemini.locator('label .st')).toHaveCount(0)
+    // Gemini is the default with a Google key and nothing saved yet; choosing it saves it (check() would skip a checked radio).
+    await expect(gemini.getByRole('radio')).toBeChecked()
+    await gemini.getByRole('radio').click()
     await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
-    await semanticSection(page).getByRole('button', { name: 'Save' }).scrollIntoViewIfNeeded()
+    await expect(privacyNote(page)).toHaveText('Passage text is sent to Google. If your key is on Google’s free tier, Google may use the text you send to improve its products. DEIXIS cannot tell which tier your key is on.')
+    await privacyNote(page).scrollIntoViewIfNeeded()
     await shot(page, 'N-gemini-free-tier-desktop')
   })
 
@@ -217,8 +229,7 @@ test.describe.serial('N: a failed passage ranking still says where uploaded text
 
   test('the semantic line of a failed step keeps the uploaded-PDF line (Sol r4, finding 3)', async () => {
     await openConnections(page, server)
-    await option(page, 'Gemini').getByRole('radio').check()
-    await semanticSection(page).getByRole('button', { name: 'Save' }).click()
+    await option(page, 'Gemini embeddings').getByRole('radio').click()
     await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
     // The fast path's own answer ranks passages by keyword alone (fast_path_lexical). The answer of an attached-files
     // research still ranks the attached PDF's passages by meaning, so a failed ranking is shown there.

@@ -683,15 +683,16 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     await reach(['9a settings defaults', '9b settings connections', '9c connection sheet'], async () => {
       await page.goto(main.url())
       await page.getByRole('button', { name: 'Settings', exact: true }).click()
-      await expect(page.getByRole('tab', { name: 'Connections' })).toBeVisible()
+      // One page since S24: the default models' selects are enabled once the models and defaults are read.
+      await expect(page.getByRole('combobox', { name: 'Literature model' })).toBeEnabled()
       await scan(page, '9a settings defaults', () => dismissToasts(page))
-      await page.getByRole('tab', { name: 'Connections' }).click()
-      await expect(page.getByRole('button', { name: 'OpenAlex No API key required' })).toBeVisible()
-      // The semantic-search block loads after the connection cards; its Save button starts disabled and is enabled when the data arrives.
+      await page.goto(main.url('#/settings/connections'))
+      await expect(page.getByRole('button', { name: /^OpenAlex No key needed/ })).toBeVisible()
+      // The semantic-search rows load after the tiles; the usage rows after their reads.
       await expect(page.locator('.semantic-option').first()).toBeVisible()
-      await expect(page.locator('.connections-tab .actions').last().getByRole('button', { name: 'Save' })).toBeEnabled()
+      await expect(page.locator('.set-usage [data-role="literature"] p')).toHaveText(/calls?$/)
       await scan(page, '9b settings connections', () => dismissToasts(page))
-      await page.getByRole('button', { name: 'OpenAlex No API key required' }).click()
+      await page.getByRole('button', { name: /^OpenAlex No key needed/ }).click()
       await expect(page.locator('.connection-sheet')).toBeVisible()
       await scan(page, '9c connection sheet', () => dismissToasts(page))
       await page.keyboard.press('Escape')
@@ -825,17 +826,16 @@ test.describe('X01-X04: verdicts on the scan output', () => {
 // `text-primary-foreground`) is measured here at rest and under the pointer in both themes, from computed colours composited over the page
 // colour (Tailwind mixes `bg-primary/90` in oklab, so a canvas does the conversion). The hover value was 4.25:1 in light at `/80`.
 test.describe('X01-X04: the default button at rest and on hover', () => {
-  for (const theme of ['light', 'dark'] as const) test(`contrast of the Save button, ${theme}`, async ({ browser }) => {
+  for (const theme of ['light', 'dark'] as const) test(`contrast of the default button, ${theme}`, async ({ browser }) => {
     test.setTimeout(120_000)
     await main.ensure()
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce', colorScheme: theme })
     const page = await context.newPage()
     try {
-      await page.goto(main.url())
-      await page.getByRole('button', { name: 'Settings', exact: true }).click()
-      await page.getByRole('tab', { name: 'Connections' }).click()
-      await page.locator('.semantic-option').first().waitFor()
-      const save = page.locator('.connections-tab .actions').last().getByRole('button', { name: 'Save' })
+      // The Settings page has no default Button since S24 (the semantic choice saves at once); the empty research page's
+      // "New research" is one.
+      await page.goto(main.url('#/research/'))
+      const save = page.locator('.research-empty').getByRole('button', { name: 'New research' })
       await expect(save).toBeEnabled()
       await page.addStyleTag({ content: NO_TRANSITIONS })
       const ratio = () => save.evaluate(el => {

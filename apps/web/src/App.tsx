@@ -29,7 +29,7 @@ import './research/queue.css'
 import './research/followup.css'
 import './Trash.css'
 
-type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: 'connections' } | { view: 'trash' } | { view: 'library' }
+type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: 'connections' | 'access' } | { view: 'trash' } | { view: 'library' }
 type ThemeChoice = 'system' | 'light' | 'dark'
 
 const activeRunStatuses = new Set<RunStatus>(['queued', 'running', 'pause_requested'])
@@ -52,6 +52,7 @@ function parseHash(): Route {
   // The old standalone Connections page now opens the Connections tab inside Settings.
   if (hash === 'connections') return { view: 'settings', tab: 'connections' }
   if (hash === 'settings/connections') return { view: 'settings', tab: 'connections' }
+  if (hash === 'settings/access') return { view: 'settings', tab: 'access' }
   if (hash === 'settings') return { view: 'settings' }
   if (hash === 'trash') return { view: 'trash' }
   if (hash === 'library') return { view: 'library' }
@@ -260,22 +261,41 @@ export default function App() {
   const [proxyFailed, setProxyFailed] = useState<string | null>(null)
   const [proxyReadFailed, setProxyReadFailed] = useState(false)
   const [proxyBusy, setProxyBusy] = useState(false)
+  // One test at a time, shared by the automatic check and Settings' Test: a test asked while one runs starts after it,
+  // so it measures the address saved by then. The address a failed request was for is remembered for the retry wait.
+  const proxyFlight = useRef<Promise<ProxySettings> | null>(null)
+  const proxyAddress = useRef<string | null>(null)
+  const runProxyTest = useCallback((address?: string): Promise<ProxySettings> => {
+    const start = () => {
+      if (address) proxyAddress.current = address
+      proxyTesting.current = true
+      setProxyBusy(true)
+      const flight: Promise<ProxySettings> = shellApi.testProxy().then(result => {
+        proxyFailedAt.current = null; setProxyFailed(null); setProxy(result); proxyAddress.current = result.address
+        return result
+      }, (error: Error) => {
+        const address = proxyAddress.current
+        if (address) { proxyFailedAt.current = { address, at: Date.now() }; setProxyFailed(address) }
+        throw error
+      }).finally(() => { if (proxyFlight.current === flight) { proxyFlight.current = null; proxyTesting.current = false; setProxyBusy(false) } })
+      proxyFlight.current = flight
+      return flight
+    }
+    const running = proxyFlight.current
+    return running ? running.then(start, start) : start()
+  }, [])
   const checkAccess = useCallback(() => {
     api.institutionalAccess().then(result => setInstitutionalStatus(result.status)).catch(() => setInstitutionalStatus('unknown'))
     shellApi.proxySettings().then(settings => {
       setProxy(settings)
       setProxyReadFailed(false)
+      if (!proxyTesting.current) proxyAddress.current = settings.address
       const failed = proxyFailedAt.current
       if (!settings.address || (settings.test && settings.test_is_current) || proxyTesting.current) return
       if (failed && failed.address === settings.address && Date.now() - failed.at < 60_000) return
-      proxyTesting.current = true
-      setProxyBusy(true)
-      const address = settings.address
-      shellApi.testProxy().then(result => { proxyFailedAt.current = null; setProxyFailed(null); setProxy(result) },
-        () => { proxyFailedAt.current = { address, at: Date.now() }; setProxyFailed(address) })
-        .finally(() => { proxyTesting.current = false; setProxyBusy(false) })
+      runProxyTest().catch(() => undefined)
     }, () => setProxyReadFailed(true))
-  }, [])
+  }, [runProxyTest])
   const retryAccess = () => { proxyFailedAt.current = null; setProxyFailed(null); setProxyReadFailed(false); checkAccess() }
   useEffect(() => {
     const check = checkAccess
@@ -465,7 +485,7 @@ export default function App() {
       <div className="sidebar-foot">
         <BackgroundJobs researches={researches} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />
         {/* The foot keeps one DOM shape while its reads arrive (profile, proxy, Scopus): only text, inline style and data attributes change. */}
-        <button type="button" className="access" onClick={() => go({ view: 'settings', tab: 'connections' })} aria-label={accessName} title={t('Institutional access settings')}>
+        <button type="button" className="access" onClick={() => go({ view: 'settings', tab: 'access' })} aria-label={accessName} title={t('Institutional access settings')}>
           <span className="access-label" style={proxy?.address ? undefined : { display: 'none' }}>{proxy?.address ? t('Institutional access · {label}', { label: proxyLabel }) : ''}</span>
           <span className="access-line"><i className="access-dot" data-tone={proxyState.tone} aria-hidden="true" /><span>{proxyState.text}</span></span>
           <span className="access-line" style={scopusState ? undefined : { display: 'none' }}><i className="access-dot" data-tone={scopusState?.tone ?? 'unc'} aria-hidden="true" /><span>{scopusState?.text ?? ''}</span></span>
@@ -490,7 +510,9 @@ export default function App() {
         {route.view === 'research' && (route.id ? <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />
           : <EmptyResearch opened={researches.length > 0} />)}
         {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={id => go({ view: 'research', id })} onStartResearch={() => go({ view: 'home' })} />}
-        {route.view === 'settings' && <SettingsPage key={route.tab ?? 'defaults'} dark={dark} tab={route.tab ?? 'defaults'} onTab={tab => go({ view: 'settings', tab: tab === 'connections' ? 'connections' : undefined })} />}
+        {route.view === 'settings' && <SettingsPage key={route.tab ?? 'page'} dark={dark} section={route.tab} language={language} onLanguage={chooseLanguage}
+          access={{ proxy, readFailed: proxyReadFailed, testing: proxyBusy, testFailed: !!proxy?.address && proxyFailed === proxy.address, scopus: institutionalStatus,
+            test: runProxyTest, reload: checkAccess }} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
       </main>
       <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} language={language} onLanguage={chooseLanguage}

@@ -29,7 +29,7 @@ import './research/queue.css'
 import './research/followup.css'
 import './Trash.css'
 
-type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: 'connections' | 'access' } | { view: 'trash' } | { view: 'library' }
+type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: 'connections' | 'access' | 'openalex' } | { view: 'trash' } | { view: 'library' }
 type ThemeChoice = 'system' | 'light' | 'dark'
 
 const activeRunStatuses = new Set<RunStatus>(['queued', 'running', 'pause_requested'])
@@ -53,6 +53,7 @@ function parseHash(): Route {
   if (hash === 'connections') return { view: 'settings', tab: 'connections' }
   if (hash === 'settings/connections') return { view: 'settings', tab: 'connections' }
   if (hash === 'settings/access') return { view: 'settings', tab: 'access' }
+  if (hash === 'settings/openalex') return { view: 'settings', tab: 'openalex' }
   if (hash === 'settings') return { view: 'settings' }
   if (hash === 'trash') return { view: 'trash' }
   if (hash === 'library') return { view: 'library' }

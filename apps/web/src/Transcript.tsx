@@ -283,6 +283,14 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     .map(s => [s.kind.split(':')[1] ?? '', providerName(s.kind.split(':')[1] ?? '')])).entries()]
   const retrying = run.kind === 'discovery' && !active && (run.status === 'completed' || run.status === 'paused')
     && steps.some(s => s.kind.startsWith('provider_search') && troubled(s))
+  // R19: requests a provider refused for its request budget (the service kind on the request's stored search row), and
+  // the requests that finished. The run went on with those; the notice says so and offers the retry and a key.
+  const searchSteps = steps.filter(s => s.kind.startsWith('provider_search'))
+  const budgetRefused = (s: Step) => ['quota_exhausted', 'rate_limited'].includes(searches.find(row => row.step_id === s.id)?.error?.service_kind ?? '')
+  const refused = searchSteps.filter(s => troubled(s) && budgetRefused(s))
+  const refusedBy = [...new Set(refused.map(s => s.kind.split(':')[1] ?? ''))]
+  const finishedSearches = searchSteps.filter(s => s.status === 'succeeded').length
+  const quotaNotice = retrying && run.status === 'completed' && refused.length > 0
   // The screening the run itself proposed on, and the sources the answer run reads.
   const screened = view.sources.filter(s => s.found_in_revision === run.scope_revision)
   const included = view.sources.filter(s => s.selection.state === 'included')
@@ -972,11 +980,21 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         </li>}
         {usageOpen && <RunUsageBox run={run} cursor={view.last_event_id} />}
         </ol>
-        {(callLimitReached || (retrying && onRetryFailedSearches)) && <div className="chat-run-foot">
+        {(callLimitReached || (retrying && !quotaNotice && onRetryFailedSearches)) && <div className="chat-run-foot">
           {callLimitReached && <p className="chat-run-limit"><TriangleAlert size={13} aria-hidden />{t('The model call limit for this run was reached.')}</p>}
-          {retrying && onRetryFailedSearches && <Button variant="outline" size="sm" onClick={() => void onRetryFailedSearches(run)}>
+          {retrying && !quotaNotice && onRetryFailedSearches && <Button variant="outline" size="sm" onClick={() => void onRetryFailedSearches(run)}>
             <RotateCw size={13} />{t('Retry failed searches')}
           </Button>}
+        </div>}
+        {quotaNotice && <div className="chat-note notice is-warning quota-notice">
+          <TriangleAlert size={16} aria-hidden />
+          <div className="notice-body">
+            <p>{t(refused.length === 1 ? '{n} search was refused ({service} budget).' : '{n} searches were refused ({service} budget).', { n: refused.length, service: refusedBy.map(providerName).join(', ') })} {t('The run went on with the {m} that finished.', { m: finishedSearches })}</p>
+            <div className="notice-actions">
+              {onRetryFailedSearches && <Button size="sm" disabled={busy} onClick={() => void onRetryFailedSearches(run)}><RotateCw size={14} aria-hidden />{t('Retry failed searches')}</Button>}
+              {refusedBy.includes('openalex') && <Button variant="outline" size="sm" className="notice-ghost" onClick={() => { window.location.hash = '#/settings/openalex' }}>{t('Add an OpenAlex key')}</Button>}
+            </div>
+          </div>
         </div>}
       </>}
     </div>

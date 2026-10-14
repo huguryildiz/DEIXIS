@@ -323,6 +323,43 @@ test.describe.serial('S9: the steps list', () => {
     await shot(page, 's27-usage-box')
   })
 
+  test('S28 (R19): searches a provider refused for its budget are counted from stored rows; Retry and Add an OpenAlex key', async () => {
+    test.setTimeout(150_000)
+    const rid = await create(api, `[oa-quota] ${MOLECULE}`)
+    await settled(api, rid)
+    type Search = { step_id: string; error: { service_kind?: string } | null }
+    type Steps = { id: string; kind: string; status: string }
+    const current = async () => (await (await api.context.get(`/api/researches/${rid}`)).json()) as { runs: Array<{ id: string; kind: string; status: string; steps?: Steps[] }>; search_runs: Search[] }
+    const stored = await current()
+    const discovery = stored.runs.find(r => r.kind === 'discovery')!
+    expect(discovery.status).toBe('completed')
+    const searches = (discovery.steps ?? []).filter(s => s.kind.startsWith('provider_search'))
+    const kindOf = (s: Steps) => stored.search_runs.find(row => row.step_id === s.id)?.error?.service_kind ?? ''
+    const refused = searches.filter(s => (s.status === 'failed' || s.status === 'outcome_unknown') && ['quota_exhausted', 'rate_limited'].includes(kindOf(s)))
+    const finished = searches.filter(s => s.status === 'succeeded').length
+    // The fixture's OpenAlex refuses every keyword page after the first: at least one refused, and some that finished.
+    expect(refused.length).toBeGreaterThan(0)
+    expect(finished).toBeGreaterThan(0)
+    expect(new Set(refused.map(s => s.kind.split(':')[1]))).toEqual(new Set(['openalex']))
+    await page.goto(`${server.url()}/#/research/${rid}`)
+    const notice = page.locator('.chat-note.quota-notice')
+    await expect(notice.locator('p')).toHaveText(`${refused.length} ${refused.length === 1 ? 'search was' : 'searches were'} refused (OpenAlex budget). The run went on with the ${finished} that finished.`)
+    // The notice carries the retry, so the run foot does not repeat it.
+    await expect(page.locator('.chat-run-foot').getByRole('button', { name: 'Retry failed searches' })).toHaveCount(0)
+    await shot(page, 's28-quota-notice')
+    // Retry failed searches queues the refused requests again on the same run.
+    const control = page.waitForRequest(r => r.method() === 'POST' && r.url().endsWith(`/api/runs/${discovery.id}/retry_failed`))
+    await notice.getByRole('button', { name: 'Retry failed searches' }).click()
+    await control
+    await expect(page.locator('.toast')).toContainText('Failed searches queued again.')
+    // Add an OpenAlex key opens Settings with the OpenAlex sheet open.
+    await notice.getByRole('button', { name: 'Add an OpenAlex key' }).click()
+    await expect(page).toHaveURL(/#\/settings\/openalex$/)
+    await expect(page.getByRole('dialog', { name: 'OpenAlex' })).toBeVisible()
+    // Let the queued retry settle before the next test reuses the server.
+    await expect.poll(async () => (await current()).runs.some(r => ACTIVE.has(r.status)), { timeout: 90_000 }).toBe(false)
+  })
+
   test('S27 (R20): Choose another model moves the stopped step’s role, recorded and shown; Retry this step sends it there', async () => {
     test.setTimeout(150_000)
     const rid = await create(api, `[model-down] ${MOLECULE}`)

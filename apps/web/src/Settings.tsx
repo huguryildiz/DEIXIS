@@ -38,7 +38,7 @@ export type AccessControl = {
 }
 
 export function SettingsPage({ dark, section, language, onLanguage, access }: {
-  dark: boolean; section?: 'connections' | 'access'; language: UiLanguage; onLanguage: (language: UiLanguage) => void; access: AccessControl
+  dark: boolean; section?: 'connections' | 'access' | 'openalex'; language: UiLanguage; onLanguage: (language: UiLanguage) => void; access: AccessControl
 }) {
   const toast = useToast()
   const [models, setModels] = useState<ConnectionModel[] | null>(null)
@@ -54,10 +54,11 @@ export function SettingsPage({ dark, section, language, onLanguage, access }: {
     api.settings().then(setDefaults).catch((e: Error) => setError(t('The default models could not be read: {message}', { message: e.message })))
   }, [])
 
-  // `#/settings/connections` opens the page at "On this computer", `#/settings/access` at "Institutional access" (ST1).
+  // `#/settings/connections` opens the page at "On this computer", `#/settings/access` at "Institutional access" (ST1);
+  // `#/settings/openalex` opens the OpenAlex sheet (R19's "Add an OpenAlex key"), which takes the focus itself.
   const scrolled = useRef(false)
   useEffect(() => {
-    if (!section || scrolled.current || !defaults) return
+    if (!section || section === 'openalex' || scrolled.current || !defaults) return
     scrolled.current = true
     const target = document.getElementById(section === 'access' ? 'institutional-access' : 'on-this-computer')
     target?.scrollIntoView({ block: 'start' })
@@ -123,7 +124,7 @@ export function SettingsPage({ dark, section, language, onLanguage, access }: {
       })}
     </div>
 
-    <ConnectionsTab dark={dark} access={<InstitutionalAccessBlock access={access} />} onConnections={onConnections} />
+    <ConnectionsTab dark={dark} access={<InstitutionalAccessBlock access={access} />} onConnections={onConnections} openProvider={section === 'openalex' ? 'openalex' : undefined} />
 
     <UsageThisMonth />
 

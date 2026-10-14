@@ -4837,4 +4837,9 @@ const tr: Record<string, string> = {
   '“{title}” is already in {project}.': '“{title}” zaten {project} içinde.',
   '“{title}” removed from every research that held it. It stays in All works.': '“{title}” onu tutan her araştırmadan çıkarıldı. Tüm eserler’de kalır.',
   '“{title}” removed from {project}. It stays in All works.': '“{title}” {project} içinden çıkarıldı. Tüm eserler’de kalır.',
+  // UI parity S28: the OpenAlex budget notice under the search steps (R19).
+  '{n} search was refused ({service} budget).': '{n} arama reddedildi ({service} bütçesi).',
+  '{n} searches were refused ({service} budget).': '{n} arama reddedildi ({service} bütçesi).',
+  'The run went on with the {m} that finished.': 'Çalışma, tamamlanan {m} aramayla devam etti.',
+  'Add an OpenAlex key': 'OpenAlex anahtarı ekle',
 }

@@ -427,7 +427,7 @@ function ReferenceFileImport() {
 // The sections of the Settings page that read connections (plan ST4–ST8 and the Cloud models placement of §2.2): Cloud
 // models, On this computer, Semantic search, the institutional access block given by the page, Scholarly sources and
 // Reference managers, with the connection sheet.
-export function ConnectionsTab({ dark, access, onConnections }: { dark: boolean; access: ReactNode; onConnections?: (connections: Connections) => void }) {
+export function ConnectionsTab({ dark, access, onConnections, openProvider }: { dark: boolean; access: ReactNode; onConnections?: (connections: Connections) => void; openProvider?: string }) {
   const [data, setData] = useState<Connections | null>(null)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Selected | null>(null)
@@ -520,6 +520,13 @@ export function ConnectionsTab({ dark, access, onConnections }: { dark: boolean;
     setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
   }).catch((e: Error) => { toast('error', t('Check failed: {message}', { message: e.message })); throw e })
   const show = (item: Selected) => { setSelected(item); setOpen(true); setSignIn(null) }
+  // A link to one provider's sheet (`#/settings/openalex`) opens it once the providers are read.
+  const opened = useRef(false)
+  useEffect(() => {
+    if (!openProvider || opened.current || !data?.providers?.some(p => p.id === openProvider)) return
+    opened.current = true
+    setSelected({ kind: 'provider', id: openProvider }); setOpen(true)
+  }, [openProvider, data])
   const isActive = (kind: Selected['kind'], id: string) => open && !gone && selected?.kind === kind && selected.id === id
   const check = (label: string, value: string) => <div className="legacy-check" key={label}><span>{label}</span><strong>{value}</strong></div>
 

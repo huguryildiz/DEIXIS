@@ -31,8 +31,9 @@ export const hasValue = (rev: CellRevision) => rev.state === 'value' || rev.stat
 export const revisionText = (column: TableColumn, rev: CellRevision) => (hasValue(rev) ? valueText(column, rev.value) : rev.state ? t(stateLabels[rev.state]) : '')
 
 // The table as CSV: one value column and one evidence column (quote and locator) per table column. Current values only;
-// proposals waiting for a decision are left out. The BOM lets spreadsheet apps read the file as UTF-8.
-function tableCsv(table: TableView, sources: Source[]) {
+// proposals waiting for a decision are left out. The BOM lets spreadsheet apps read the file as UTF-8. Exported for
+// tests/report/test_ooxml_exports.py, which runs it in node.
+export function tableCsv(table: TableView, sources: Source[]) {
   const byId = new Map(sources.map(s => [s.source_version_id, s]))
   const style = savedStyle()
   const cells = new Map(table.cells.map(c => [`${c.column_id}:${c.source_version_id}`, c]))

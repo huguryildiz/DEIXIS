@@ -4640,6 +4640,7 @@ const tr: Record<string, string> = {
   'Remove key': 'Anahtarı kaldır',
   'Remove the key for {name}?': '{name} anahtarı kaldırılsın mı?',
   'Contact email (sent as mailto)': 'İletişim e-postası (mailto olarak gönderilir)',
+  'While this field is empty, DEIXIS_CONTACT_EMAIL from the environment is sent.': 'Bu alan boşken ortamdaki DEIXIS_CONTACT_EMAIL gönderilir.',
   'Without an email, OpenAlex and Crossref answer more slowly at busy times. Searches still run.': 'E-posta olmadan OpenAlex ve Crossref yoğun saatlerde daha yavaş cevap verir. Aramalar yine çalışır.',
   'Without a key, DEIXIS uses the daily budget OpenAlex gives to requests without a key. When it runs out, requests wait until it resets, and a run can pause.': 'Anahtar yoksa DEIXIS, OpenAlex’in anahtarsız isteklere verdiği günlük bütçeyi kullanır. Bütçe bitince istekler sıfırlanmasını bekler ve araştırma duraklayabilir.',
   "bioRxiv is searched through OpenAlex, so without the OpenAlex key it shares the same keyless daily budget.": "bioRxiv OpenAlex üzerinden aranır; OpenAlex anahtarı yoksa aynı anahtarsız günlük bütçeyi paylaşır.",

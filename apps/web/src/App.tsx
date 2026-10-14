@@ -263,28 +263,38 @@ export default function App() {
   const [proxyBusy, setProxyBusy] = useState(false)
   // One test at a time, shared by the automatic check and Settings' Test: a test asked while one runs starts after it,
   // so it measures the address saved by then. The address a failed request was for is remembered for the retry wait.
-  const proxyFlight = useRef<Promise<ProxySettings> | null>(null)
+  const proxyFlight = useRef<Promise<ProxySettings | null> | null>(null)
   const proxyAddress = useRef<string | null>(null)
   // Reads, saves, removals and tests of the proxy share one version: a save or a test moves it on, so a read that was
-  // started before it, or while it ran, never replaces what the save or the test produced.
+  // started before it, or while it ran, never replaces what the save or the test produced (success or error). A test's
+  // answer counts only when no save or removal happened while it ran; otherwise it is dropped and the setting read again.
   const proxyVersion = useRef(0)
+  const proxyWriteVersion = useRef(0)
   const proxyRead = useRef(0)
   const proxyWrites = useRef(0)
-  const runProxyTest = useCallback((address?: string): Promise<ProxySettings> => {
+  const proxyReread = useRef<() => void>(() => {})
+  const runProxyTest = useCallback((address?: string): Promise<ProxySettings | null> => {
     const start = () => {
       if (address) proxyAddress.current = address
       proxyTesting.current = true
       proxyVersion.current++
+      const written = proxyWriteVersion.current
+      let stale = false
       setProxyBusy(true)
-      const flight: Promise<ProxySettings> = shellApi.testProxy().then(result => {
+      const flight: Promise<ProxySettings | null> = shellApi.testProxy().then(result => {
+        if (written !== proxyWriteVersion.current) { stale = true; return null }
         proxyVersion.current++
         proxyFailedAt.current = null; setProxyFailed(null); setProxy(result); proxyAddress.current = result.address
         return result
       }, (error: Error) => {
+        if (written !== proxyWriteVersion.current) { stale = true; return null }
         const address = proxyAddress.current
         if (address) { proxyFailedAt.current = { address, at: Date.now() }; setProxyFailed(address) }
         throw error
-      }).finally(() => { if (proxyFlight.current === flight) { proxyFlight.current = null; proxyTesting.current = false; setProxyBusy(false) } })
+      }).finally(() => {
+        if (proxyFlight.current === flight) { proxyFlight.current = null; proxyTesting.current = false; setProxyBusy(false) }
+        if (stale) proxyReread.current()
+      })
       proxyFlight.current = flight
       return flight
     }
@@ -294,8 +304,9 @@ export default function App() {
   const checkAccess = useCallback(() => {
     api.institutionalAccess().then(result => setInstitutionalStatus(result.status)).catch(() => setInstitutionalStatus('unknown'))
     const n = ++proxyRead.current, version = proxyVersion.current, busy = proxyWrites.current > 0 || proxyTesting.current
+    const current = () => n === proxyRead.current && version === proxyVersion.current && !busy
     shellApi.proxySettings().then(settings => {
-      if (n !== proxyRead.current || version !== proxyVersion.current || busy) return
+      if (!current()) return
       setProxy(settings)
       setProxyReadFailed(false)
       if (!proxyTesting.current) proxyAddress.current = settings.address
@@ -303,17 +314,22 @@ export default function App() {
       if (!settings.address || (settings.test && settings.test_is_current) || proxyTesting.current) return
       if (failed && failed.address === settings.address && Date.now() - failed.at < 60_000) return
       runProxyTest().catch(() => undefined)
-    }, () => setProxyReadFailed(true))
+    }, () => { if (current()) setProxyReadFailed(true) })
   }, [runProxyTest])
+  useEffect(() => { proxyReread.current = checkAccess }, [checkAccess])
   // Saves (or, with '', removes) the address. The read that follows starts after the save, so it holds the new address.
   const saveProxy = useCallback(async (address: string) => {
+    const written = ++proxyWriteVersion.current
     proxyVersion.current++
     proxyWrites.current++
     try {
       const saved = await api.saveInstitutionProxy(address)
-      proxyVersion.current++
-      proxyAddress.current = saved.address
-      setProxy(old => old && { ...old, address: saved.address, test: saved.address ? old.test : null, test_is_current: false })
+      if (written === proxyWriteVersion.current) {
+        proxyVersion.current++
+        proxyAddress.current = saved.address
+        setProxyReadFailed(false)
+        setProxy(old => old && { ...old, address: saved.address, test: saved.address ? old.test : null, test_is_current: false })
+      }
     } finally { proxyWrites.current-- }
     checkAccess()
   }, [checkAccess])

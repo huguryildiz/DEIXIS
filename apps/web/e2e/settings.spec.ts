@@ -61,11 +61,12 @@ class ProxyStore {
   gate: Promise<void> | null = null
   // The next settings read answers late, with the state it saw when it arrived (a read that started before a change).
   readHold: Promise<void> | null = null
+  readHoldFails = false  // the held read answers with an error instead
   held = 0
   posts = 0
-  view() {
-    return { address: this.address, label: this.address ? 'login.proxy.example.edu' : null, label_default: this.address ? 'login.proxy.example.edu' : null,
-      label_is_default: true, test: this.test, test_is_current: !!this.test && this.test.address === this.address }
+  view(address = this.address, test = this.test) {
+    return { address, label: address ? 'login.proxy.example.edu' : null, label_default: address ? 'login.proxy.example.edu' : null,
+      label_is_default: true, test, test_is_current: !!test && test.address === address }
   }
   async install(page: Page) {
     await page.route('**/api/institution-proxy/settings', async route => {
@@ -74,14 +75,19 @@ class ProxyStore {
       if (!hold) return route.fulfill({ json: seen })
       this.readHold = null; this.held++
       await hold
+      if (this.readHoldFails) return route.fulfill({ status: 500, json: { detail: 'SYNTHETIC late read failure' } })
       await route.fulfill({ json: seen })
     })
     await page.route('**/api/institution-proxy/test', async route => {
       this.posts++
+      // The test measures the address saved when it arrived; a removal or change while it runs does not undo it here,
+      // but its answer still names that address (as the backend's would).
+      const asked = this.address
       if (this.gate) await this.gate
       if (this.next === 'fail') return route.fulfill({ status: 500, json: { detail: 'SYNTHETIC test request failure' } })
-      this.test = { ...this.next, address: this.address }
-      await route.fulfill({ json: this.view() })
+      const result = { ...this.next, address: asked }
+      if (this.address === asked) this.test = result
+      await route.fulfill({ json: this.view(asked, result) })
     })
     await page.route('**/api/institution-proxy', async (route: Route) => {
       if (route.request().method() === 'GET') return route.fulfill({ json: { address: this.address } })
@@ -228,8 +234,9 @@ test.describe.serial('S24: the Settings page', () => {
     expect(store.address).toBe(NEW)
     release()
     await page.waitForTimeout(600)
-    await expect(field).toHaveValue(NEW)
-    await expect(state).toHaveText(`Proxy reachableArticle access not checked. The proxy host answered with HTTP 200 at ${time}.`)
+    // Read once, without retries: the next 5 s poll would repair a stale screen and hide the bug.
+    expect(await field.inputValue()).toBe(NEW)
+    expect(await state.textContent()).toBe(`Proxy reachableArticle access not checked. The proxy host answered with HTTP 200 at ${time}.`)
 
     // The same for a removal: the late read still holds the address.
     store.readHold = new Promise(resolve => { release = resolve })
@@ -240,8 +247,48 @@ test.describe.serial('S24: the Settings page', () => {
     expect(store.address).toBeNull()
     release()
     await page.waitForTimeout(600)
+    expect(await state.textContent()).toBe('Not set upWithout a proxy, publisher links open directly.')
+    expect(await field.inputValue()).toBe('')
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
+
+  test('a test answer for an address removed meanwhile, and a late read error after a save, change nothing (Sol r3)', async () => {
+    const store = new ProxyStore()
+    store.address = ADDRESS  // saved, not tested: opening the page starts an automatic test
+    let release!: () => void
+    store.gate = new Promise(resolve => { release = resolve })
+    await store.install(page)
+    await page.route('**/api/institutional-access**', route => route.fulfill({ json: { status: 'not_checked', via: 'scopus' } }))
+    await page.goto(server.url('#/settings/access'))
+    await page.reload()
+    const state = page.locator('.proxy-state').first()
+    const field = page.getByLabel('Proxy address (EZproxy or OpenAthens prefix)')
+    await expect(state).toHaveText('Checking: asking the proxy host…')
+    await expect.poll(() => store.posts).toBeGreaterThan(0)
+    // Remove while the automatic test is held; then the test answers for the removed address.
+    await page.locator('.proxy').getByRole('button', { name: 'Remove' }).click()
     await expect(state).toHaveText('Not set upWithout a proxy, publisher links open directly.')
-    await expect(field).toHaveValue('')
+    expect(store.address).toBeNull()
+    release(); store.gate = null
+    await page.waitForTimeout(600)
+    // Read once, without retries: the next 5 s poll would repair a stale screen and hide the bug.
+    expect(await state.textContent()).toBe('Not set upWithout a proxy, publisher links open directly.')
+    expect(await field.inputValue()).toBe('')
+
+    // A read that started before a save fails late: the saved address and its test stay, no "could not read" line.
+    store.readHold = new Promise(resolve => { release = resolve })
+    store.readHoldFails = true
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expect.poll(() => store.held).toBe(1)
+    await field.fill(ADDRESS)
+    await page.locator('.proxy').getByRole('button', { name: 'Test' }).click()
+    const time = await hhmm(page, PINNED)
+    await expect(state).toHaveText(`Proxy reachableArticle access not checked. The proxy host answered with HTTP 302 at ${time}.`)
+    release()
+    await page.waitForTimeout(600)
+    expect(await state.textContent()).toBe(`Proxy reachableArticle access not checked. The proxy host answered with HTTP 302 at ${time}.`)
+    expect(await page.locator('.proxy').textContent()).not.toContain('The proxy setting could not be read.')
+    expect(await field.inputValue()).toBe(ADDRESS)
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 

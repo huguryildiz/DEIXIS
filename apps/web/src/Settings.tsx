@@ -31,7 +31,7 @@ export type AccessControl = {
   testFailed: boolean
   scopus: InstitutionalAccess['status'] | null
   /** A fresh test after any running one; rejects when the request fails. */
-  test: (address?: string) => Promise<ProxySettings>
+  test: (address?: string) => Promise<ProxySettings | null>
   /** Saves the address ('' removes it) under the same version as reads and tests; rejects when the save fails. */
   save: (address: string) => Promise<void>
   reload: () => void

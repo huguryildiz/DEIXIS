@@ -637,6 +637,7 @@ test.describe.serial('S24: the Settings page', () => {
         timeout_seconds: 20, contact_email_sent: true, checked_at: PINNED } }))
     await sheet.getByRole('button', { name: 'Test' }).click()
     await expect(meta).toContainText('Did not answer · no reply in 20 s')
+    await expect(meta).toContainText(`checked ${await hhmm(page, PINNED)}`)  // the server's checked_at, not the browser clock
     await expect(sheet.getByText('Sent without a contact email; none is set in Profile.')).toHaveCount(0)
     next = 'fail'
     await sheet.getByRole('button', { name: 'Test' }).click()

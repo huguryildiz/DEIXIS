@@ -4,6 +4,17 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D18 — Parity with mockup v24 is closed; the parity check and its exceptions file stay as the gate for UI changes
+Status: accepted (UI parity S28, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
+Context: The parity campaign (slices S0–S28) brought the app to mockup v24 row by row. Each difference the app keeps on purpose is written in `apps/web/e2e/parity/exceptions.ts` with the rule behind it. S28 checked that every inventory row is compared with the mockup or covered by a behaviour test, and that every exception still describes a real difference.
+Decision:
+- The parity project (`npx playwright test --project=parity`) is part of the full Playwright run, and a UI change that breaks it is fixed, or it adds an exception with its rule. An exception is never added to make a gate pass when the app could match the mockup.
+- `DEFERRED_TARGETS` stays empty: nothing in the mockup waits for a later slice.
+- Each exception is as narrow as the measured difference: the pairs, axes and widths where it is needed. `DEIXIS_PARITY_AUDIT=<file>` with `e2e/parity/audit-summary.mjs` lists the entries a run never used or never needed, so stale ones can be found and removed.
+- A completed run whose search requests a provider refused for its budget says how many were refused and how many finished, counted from the stored search steps and rows, with Retry failed searches and, for OpenAlex, a way to the OpenAlex key (R19).
+- Tests never read the developer's `.env` (`tests/conftest.py`), so a local key or data folder cannot change a test's result.
+Limits: Parity compares layout, type, colour and icons on SYNTHETIC fixture records at 1280 and 390 px (and the 1024 breakpoint). States the parity research cannot hold (live, paused or failed runs and others) are checked by behaviour specs, not against the mockup's pixels; `.local/design/parity-coverage.md` lists them. Model quality and live providers are not measured.
+
 ## D17 — The Library counts from the stored list and reports only what the server did
 Status: accepted (UI parity S25, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
 Context: The mockup's Library page (L1–L10) shows fixed counts, a reading-depth bar and import and "New from selection" results that no route produced. A work can have several versions, and each version can belong to different researches, so "Remove from this research" needed a rule for which versions it touches.

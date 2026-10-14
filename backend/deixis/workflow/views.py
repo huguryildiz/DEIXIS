@@ -540,7 +540,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         # The models each step's calls went to, from its stored sessions (UI parity S27, D15): a step names the model it
         # ran on, never the role's model in effect now. The model that answered when known, else the one asked for, with
         # the reasoning effort the call was sent with (null when none was sent or the session predates migration 0009,
-        # D20); each model and effort once, ordered by its latest call, so the last entry is where the step's latest call
+        # D25); each model and effort once, ordered by its latest call, so the last entry is where the step's latest call
         # went (the model line compares the role's next calls with it).
         called: dict[str, list[dict[str, Any]]] = {}
         for session in conn.execute("SELECT step_id, connection, requested_model, resolved_model, reasoning_effort"

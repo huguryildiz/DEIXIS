@@ -4948,7 +4948,7 @@ class ResearchFlow:
         """
         attempts = 0
         # The effort this call carries, as the session records it: only an adapter that forwards one sends it (an
-        # OpenAI-compatible connection never does), and an empty choice sends none (D20).
+        # OpenAI-compatible connection never does), and an empty choice sends none (D25).
         sent_effort = (reasoning_effort or None) if getattr(adapter, "sends_reasoning_effort", False) else None
         while True:
             step_attempt = self.store.conn.execute("SELECT attempt FROM run_steps WHERE id = ?", (step_id,)).fetchone()[0]

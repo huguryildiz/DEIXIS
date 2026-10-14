@@ -71,7 +71,7 @@ class ModelAdapter(Protocol):
     connection: str
     enforces_schema: bool
     # Whether run_step puts a given reasoning effort in its request; the flow stores the effort with a call's session
-    # only when this is true (D20). An adapter without the attribute counts as one that sends none.
+    # only when this is true (D25). An adapter without the attribute counts as one that sends none.
     sends_reasoning_effort: bool
 
     async def health(self, refresh: bool = False) -> dict[str, Any]: ...

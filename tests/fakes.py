@@ -260,7 +260,7 @@ class FakeAdapter:
         self.before = before
         self.fail = fail
         self.enforces_schema = enforces_schema
-        self.sends_reasoning_effort = sends_reasoning_effort  # False: like an OpenAI-compatible connection (D20)
+        self.sends_reasoning_effort = sends_reasoning_effort  # False: like an OpenAI-compatible connection (D25)
         self.calls: list[dict[str, Any]] = []
         self.sent_efforts: list[str | None] = []
         self.sent: list[tuple[str, str | None, str | None]] = []  # (task type, requested model, reasoning effort) per call

@@ -1382,7 +1382,7 @@ class Store:
     def start_model_session(self, research_id: str, run_id: str, step_id: str, step_input_id: str,
                             connection: str, requested_model: str | None, reasoning_effort: str | None = None) -> str:
         """Open one model call's session. `reasoning_effort` is the effort the adapter sends with it, None when it sends
-        none; it is stored as given and never filled in from a setting (D20)."""
+        none; it is stored as given and never filled in from a setting (D25)."""
         msid = new_id("mss")
         with transaction(self.conn):
             self.conn.execute(

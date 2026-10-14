@@ -496,7 +496,7 @@ test.describe.serial('S9: the steps list', () => {
     await expect(literature).toHaveText(['Literature · Codex · fixture-model', 'Literature · Codex · fixture-model-b'])
   })
 
-  test('S27 (R20, Sol r2): a model changed while full text was being read is named for the full-text phase; the run names both, the new one with the effort its calls were sent with (D20)', async () => {
+  test('S27 (R20, Sol r2): a model changed while full text was being read is named for the full-text phase; the run names both, the new one with the effort its calls were sent with (D25)', async () => {
     test.setTimeout(180_000)
     const rid = await create(api, `[read-down] ${MOLECULE}`)
     await page.goto(`${server.url()}/#/research/${rid}`)

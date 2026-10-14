@@ -678,7 +678,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   // has no role entry), each model once, so a run that moved a role to another model names both. The answer and a
   // review by another model fall back to their own records. While the run can still send (active or paused), a phase not
   // finished also names the role's model set now, labelled as the one its next calls go to. A stored call names the
-  // reasoning effort it was sent with, and nothing when its session holds none (D20); `undefined` keeps modelText from
+  // reasoning effort it was sent with, and nothing when its session holds none (D25); `undefined` keeps modelText from
   // filling in the model's listed default.
   const canSend = active || run.status === 'paused'
   const shownModels: Array<{ key: string; role: string; connection: string; model: string | null; effort: string | null | undefined; next: boolean }> = []

@@ -267,3 +267,16 @@ def test_a_step_lists_each_model_and_effort_once_with_its_latest_call_last(tmp_p
     step = next(s for s in run["steps"] if s["id"] == first["step_id"])
     assert step["models"] == [{"connection": "fake", "model": "fake-model-2", "effort": "low"},
                               {"connection": "fake", "model": "fake-model-2", "effort": "high"}]
+
+
+def test_only_adapters_that_forward_an_effort_say_so():
+    """D25: the flow stores an effort only for an adapter that declares it sends one. Every OpenAI-compatible connection
+    (Qwen, Kimi, Mistral and D22's Grok, Copilot, GLM, Muse and Ollama) sends none, so its sessions store null."""
+    from deixis.models import openai_compat
+    from deixis.models.adapter import CodexAdapter
+    from deixis.models.claude import ClaudeCodeAdapter
+    from deixis.models.deepseek import DeepSeekAdapter
+    from deixis.models.gemini import GeminiAdapter
+    assert all(cls.sends_reasoning_effort for cls in (CodexAdapter, ClaudeCodeAdapter, DeepSeekAdapter, GeminiAdapter))
+    assert openai_compat.CONNECTIONS and all(
+        openai_compat.OpenAICompatAdapter(spec).sends_reasoning_effort is False for spec in openai_compat.CONNECTIONS.values())

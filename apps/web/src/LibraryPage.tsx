@@ -1,119 +1,88 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import {
-  Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Ellipsis, ExternalLink, Folder, GripVertical,
-  Plus, Search, Trash2, X,
+  ArrowUpDown, Check, ChevronLeft, ChevronRight, Download, Ellipsis, FileText, Filter, Folder, LibraryBig, Link2,
+  MessageSquare, Search, Table2, Trash2, Upload, X,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  api, ApiError, type AccessLevel, type LibraryEntry, type LibraryResearch, type LibraryView,
-  type LibraryWork,
+  api, ApiError, libraryApi, libraryImportsApi, type AccessLevel, type LibraryEntry, type LibraryResearch, type LibraryView,
+  type LibraryWork, type ModelRole, type RoleModelSetting,
 } from './api'
 import { ConfirmDialog } from './ConfirmDialog'
 import { SourceKey } from './SourceKey'
 import { PassageSheet } from './PassageSheet'
-import { versionText, versionTones } from './labels'
+import { ZoteroDialog, type ZoteroChoice } from './ZoteroDialog'
+import { connectionModels, modelKey, type ConnectionModel } from './Home'
+import { defaultEffort, listedEffort } from './modelEffort'
+import { versionText } from './labels'
 import { t, uiLocale } from './i18n'
 import { useToast } from './Toast'
 import './LibraryPage.css'
-import { Notice } from './Notice'
 
-type SortKey = 'added' | 'title' | 'year' | 'citations'
-type SortDir = 'asc' | 'desc'
-type Sort = { key: SortKey; dir: SortDir }
-type SortValue = 'added:desc' | 'added:asc' | 'title:asc' | 'year:desc' | 'citations:desc'
-type AccessFilter = AccessLevel | 'all'
-type Density = 'comfortable' | 'compact'
-type Grouping = 'project' | 'none'
-type Dragging = { workId: string; title: string; researchIds: string[] }
-// Removing works takes them out of one project, or out of every project that uses them in the all-works view (D50);
-// research = null is that library-wide scope. Picking in another project starts the selection again there.
-type Picked = { research: string | null; works: Set<string> }
+// The Library page (mockup `.lib`, plan L1–L10; UI parity S25): the head with Import from Zotero and Upload PDF, then three
+// panes: All works and the researches (200px), the table (search, Sort, PDF filter; Title, Year, Reading depth, Research,
+// row menu) and "New from selection" with the reading-depth box (260px). Below 1100px the third pane hides and its actions
+// move to a bar under the table; on a phone the left pane hides and a select chooses the research.
+//
+// Every number comes from the one list the page holds (`/api/library`): "All works" counts its entries, a research counts
+// the entries it holds (the rows shown when it is chosen), and the depth box counts every entry by its stored reading
+// depth. What an action reports comes from the server's answer, never from what was asked.
+
+type SortKey = 'added_new' | 'added_old' | 'cited' | 'year_new' | 'year_old' | 'title'
+type PdfFilter = 'all' | 'text' | 'no_text' | 'abstract' | 'metadata'
 type Pending = { research: string | null; works: string[] }
-// One project's rows. A work is listed under a single project, so the bands partition the list instead of repeating works.
-type Band = { id: string; title: string; research: LibraryResearch | null; entries: LibraryEntry[] }
-type DropProps = {
-  onDragOver?: (event: DragEvent) => void
-  onDragLeave?: (event: DragEvent) => void
-  onDrop?: (event: DragEvent) => void
-  'data-drop'?: string
-}
+type Mode = 'table' | 'ask'
+type Result = { tone: 'ok' | 'warn' | 'bad'; lines: string[]; open?: { id: string; tab?: string } }
 
-const DENSITY_KEY = 'deixis-library-density'
-const GROUPING_KEY = 'deixis-library-grouping'
-const FOLDED_KEY = 'deixis-library-folded'
 const SORT_KEY = 'deixis-library-sort'
 const PAGE_SIZE_KEY = 'deixis-library-page-size'
 const PAGE_SIZES = [25, 50, 100]
-// A project reveals its rows in steps, so a drop target stays reachable without a second pager to interpret.
-const BAND_STEP = 10
 const WORK_TYPE = 'application/x-deixis-work'
 
-// Reading depth, not quality: what DEIXIS actually stored for this version.
-const ACCESS_LABELS: Record<AccessLevel, string> = {
-  pdf_available: 'PDF text',
-  abstract: 'Abstract only',
-  metadata: 'Metadata only',
+// Reading depth is what DEIXIS stores for the work, not a claim about the work: a PDF text layer, an abstract, or the
+// bibliographic record alone.
+const ACCESS_LABELS: Record<AccessLevel, string> = { pdf_available: 'PDF text', abstract: 'Abstract only', metadata: 'Metadata only' }
+const SORTS: Record<SortKey, string> = {
+  added_new: 'Recently added', added_old: 'First added', cited: 'Most cited', year_new: 'Newest first', year_old: 'Oldest first', title: 'Title A–Z',
 }
-const ACCESS_PILLS: Record<AccessLevel, string> = {
-  pdf_available: 'is-text',
-  abstract: 'is-abstract',
-  metadata: 'is-unstated',
-}
-const SORT_OPTIONS: { value: SortValue; label: string }[] = [
-  { value: 'added:desc', label: 'Added, newest first' },
-  { value: 'added:asc', label: 'Added, oldest first' },
-  { value: 'title:asc', label: 'Title A–Z' },
-  { value: 'year:desc', label: 'Year, newest first' },
-  { value: 'citations:desc', label: 'Citations, most cited' },
-]
-const DEFAULT_SORT: Sort = { key: 'added', dir: 'desc' }
+const PDF_FILTERS: Record<PdfFilter, string> = { all: 'All', text: 'PDF text', no_text: 'No PDF text', abstract: 'Abstract only', metadata: 'Metadata only' }
+const passesPdf = (entry: LibraryEntry, filter: PdfFilter) => filter === 'all' ? true : filter === 'text' ? entry.access_level === 'pdf_available'
+  : filter === 'no_text' ? entry.access_level !== 'pdf_available' : filter === 'abstract' ? entry.access_level === 'abstract' : entry.access_level === 'metadata'
 
 function readStored(key: string): string | null {
   try { return localStorage.getItem(key) } catch { return null }
 }
 function writeStored(key: string, value: string) {
-  try { localStorage.setItem(key, value) } catch { /* the choice still applies for this tab */ }
+  try { localStorage.setItem(key, value) } catch { /* the choice still applies in this tab */ }
 }
-function readSort(): Sort {
-  const stored = readStored(SORT_KEY) as SortValue | null
-  const match = SORT_OPTIONS.find(option => option.value === stored)
-  if (!match) return DEFAULT_SORT
-  const [key, dir] = match.value.split(':') as [SortKey, SortDir]
-  return { key, dir }
+// The earlier Library stored its sort as `key:dir`; those values map to the same order here.
+const OLD_SORTS: Record<string, SortKey> = { 'added:desc': 'added_new', 'added:asc': 'added_old', 'title:asc': 'title', 'year:desc': 'year_new', 'citations:desc': 'cited' }
+function readSort(): SortKey {
+  const stored = readStored(SORT_KEY) ?? ''
+  return stored in SORTS ? stored as SortKey : OLD_SORTS[stored] ?? 'added_new'
 }
 function readPageSize(): number {
   const stored = Number(readStored(PAGE_SIZE_KEY))
   return PAGE_SIZES.includes(stored) ? stored : PAGE_SIZES[0]
 }
-function readFolded(): Set<string> {
-  try {
-    const parsed: unknown = JSON.parse(readStored(FOLDED_KEY) ?? '[]')
-    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [])
-  } catch { return new Set() }
-}
-function writeFolded(folded: Set<string>) {
-  writeStored(FOLDED_KEY, JSON.stringify([...folded]))
-}
 
-const compareTitle = (a: LibraryEntry, b: LibraryEntry) => a.title.localeCompare(b.title, uiLocale())
-const compareYear = (a: LibraryEntry, b: LibraryEntry) => (a.year ?? -1) - (b.year ?? -1)
-const compareCitations = (a: LibraryEntry, b: LibraryEntry) => (a.cited_by_count ?? -1) - (b.cited_by_count ?? -1)
-const compareAdded = (a: LibraryEntry, b: LibraryEntry) => a.newest_source_at.localeCompare(b.newest_source_at)
+// Works without the value (no year, no citation count) go last in either direction.
+const byNumber = (a: number | null, b: number | null, dir: 1 | -1) => a === null ? (b === null ? 0 : 1) : b === null ? -1 : dir * (a - b)
+const COMPARE: Record<SortKey, (a: LibraryEntry, b: LibraryEntry) => number> = {
+  added_new: (a, b) => b.newest_source_at.localeCompare(a.newest_source_at),
+  added_old: (a, b) => a.newest_source_at.localeCompare(b.newest_source_at),
+  cited: (a, b) => byNumber(a.cited_by_count, b.cited_by_count, -1),
+  year_new: (a, b) => byNumber(a.year, b.year, -1),
+  year_old: (a, b) => byNumber(a.year, b.year, 1),
+  title: (a, b) => a.title.localeCompare(b.title, uiLocale()),
+}
 
 const authorsText = (authors: string[]) => (authors.length ? authors.join(', ') : t('Authors not stated'))
-const yearText = (year: number | null) => (year ? String(year) : t('—'))
-const dateText = (iso: string) => (iso ? new Date(iso).toLocaleDateString(uiLocale(), { dateStyle: 'medium' }) : t('—'))
 const shortTitle = (title: string) => (title.length > 70 ? `${title.slice(0, 69)}…` : title)
-const pageCount = (total: number, size: number) => Math.max(1, Math.ceil(total / size))
-
-// How many of a project's rows are revealed: none while folded, otherwise a growing window capped at what it holds.
-function bandWindow(band: Band, folded: ReadonlySet<string>, shown: Record<string, number>): number {
-  return folded.has(band.id) ? 0 : Math.min(shown[band.id] ?? BAND_STEP, band.entries.length)
-}
+const num = (n: number) => n.toLocaleString(uiLocale())
+const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 // At most five numbered pages around the current one, with the ends kept a click away.
 function pagerItems(page: number, pages: number): (number | 'gap')[] {
@@ -127,101 +96,135 @@ function pagerItems(page: number, pages: number): (number | 'gap')[] {
   return items
 }
 
-const NO_PICKS: ReadonlySet<string> = new Set<string>()
+// The model a new research from the Library runs with: the default saved in Settings while its connection still lists
+// it, otherwise the connection's own default model, as the Home composer starts. The dialog names it before anything starts.
+type ModelChoice = { connection: string; model: string; effort: string | null; name: string; fromSettings: boolean }
+function startModel(models: ConnectionModel[], setting: RoleModelSetting | undefined): ModelChoice | null {
+  const saved = setting?.model ? modelKey(setting.model_connection, setting.model) : null
+  const preferred = models.find(m => m.is_default) ?? models[0]
+  const id = saved && models.some(m => m.id === saved) ? saved : preferred?.id
+  const chosen = models.find(m => m.id === id)
+  if (!chosen) return null
+  const effort = (id === saved ? listedEffort(models, chosen.id, setting?.reasoning_effort ?? null) : null) ?? defaultEffort(models, chosen.id)
+  return { connection: chosen.connection, model: chosen.model, effort, name: chosen.display_name ?? chosen.model, fromSettings: id === saved }
+}
 
-// `researchKey` changes when a research is trashed, restored or deleted elsewhere in the app, so the
-// Library reloads instead of keeping rows of a research that is no longer in the workspace.
-export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onStartResearch }: {
+// Counts the records of a bibliography file the server sent: one `@type{` per BibTeX entry, one `TY  -` per RIS record.
+const recordsIn = (text: string, format: 'bibtex' | 'ris') => (format === 'bibtex' ? text.match(/^\s*@(?!comment|preamble|string)\w+\s*[{(]/gim) : text.match(/^TY {2}- /gm))?.length ?? 0
+
+export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch }: {
   dark: boolean
   researchKey: string
   onChanged: () => void
-  onOpenResearch: (id: string) => void
-  onStartResearch?: () => void
+  onOpenResearch: (id: string, tab?: string) => void
 }) {
   const toast = useToast()
-  const [entries, setEntries] = useState<LibraryEntry[] | null>(null)
-  const [researches, setResearches] = useState<LibraryResearch[]>([])
-  const [counts, setCounts] = useState<{ works: number; versions: number; researches: number } | null>(null)
+  const [view, setView] = useState<LibraryView | null>(null)
   const [error, setError] = useState('')
+  const [project, setProject] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [access, setAccess] = useState<AccessFilter>('all')
-  const [sort, setSort] = useState<Sort>(readSort)
-  const [density, setDensity] = useState<Density>(() => (readStored(DENSITY_KEY) === 'compact' ? 'compact' : 'comfortable'))
-  const [grouping, setGrouping] = useState<Grouping>(() => (readStored(GROUPING_KEY) === 'none' ? 'none' : 'project'))
+  const [pdf, setPdf] = useState<PdfFilter>('all')
+  const [sort, setSort] = useState<SortKey>(readSort)
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(readPageSize)
-  // How many rows of each band are revealed. A band starts at one step and grows, so nothing is paged twice.
-  const [shown, setShown] = useState<Record<string, number>>({})
-  const [folded, setFolded] = useState<Set<string>>(readFolded)
-  const [dragging, setDragging] = useState<Dragging | null>(null)
-  const [dropTarget, setDropTarget] = useState<string | null>(null)
-  const [adding, setAdding] = useState(false)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [workVersion, setWorkVersion] = useState(0)
-  const [work, setWork] = useState<LibraryWork | null>(null)
-  const [workError, setWorkError] = useState('')
-  const [picked, setPicked] = useState<Picked>({ research: null, works: new Set() })
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  // The write that is running, by name; every write control is locked while one runs.
+  const [busy, setBusy] = useState<string | null>(null)
   const [pending, setPending] = useState<Pending | null>(null)
-  const [removing, setRemoving] = useState(false)
+  const [result, setResult] = useState<Result | null>(null)
+  const [zoteroOpen, setZoteroOpen] = useState(false)
+  const [asking, setAsking] = useState<{ mode: Mode; works: string[] } | null>(null)
+  const [dragging, setDragging] = useState<{ workId: string; held: string[] } | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [work, setWork] = useState<LibraryWork | null>(null)
+  const [workVersion, setWorkVersion] = useState(0)
   const searchRef = useRef<HTMLInputElement>(null)
   const sectionRef = useRef<HTMLElement>(null)
-  // The row whose title holds focus, so `x` can pick it without a second selection model to keep in sync.
-  const cursorRef = useRef<{ work: string; scope: string | null } | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const zoteroButton = useRef<HTMLButtonElement>(null)
+  const cursorRef = useRef<string | null>(null)
+  // One version for every read and write of the list (S24 lesson): a write bumps it when it starts and when it ends, and a
+  // read applies its answer (or its error) only when no write started, ran or ended meanwhile. The newest write's own
+  // answer is shown; an older write that ends later, or a write without a list in its answer, reads the list again.
+  const version = useRef(0)
+  const writes = useRef(0)
+  const writeSeq = useRef(0)
 
-  // The source sheet opens the PDF of a version a research still holds, else that version's abstract (D50).
-  const sheet = sheetTarget(work)
+  const entries = useMemo(() => view?.entries ?? [], [view])
+  const researches = useMemo(() => view?.researches ?? [], [view])
+  const byWork = useMemo(() => new Map(entries.map(entry => [entry.work_id, entry])), [entries])
 
-  // A metadata-only work has no stored text to inspect, so the row says so instead of opening an empty sheet.
-  function openWork(entry: LibraryEntry) {
-    if (entry.access_level === 'metadata') {
-      toast('warning', t('No abstract or PDF text is stored for “{title}”.', { title: shortTitle(entry.title) }))
-      return
-    }
-    setSelected(entry.work_id)
-  }
-
-  function show(view: LibraryView) {
-    setEntries(view.entries)
-    setResearches(view.researches)
-    setCounts(view.counts)
-    // A work whose only research left the workspace is gone; its open panel would show a stale record.
-    setSelected(current => (current && !view.entries.some(entry => entry.work_id === current) ? null : current))
-    // A folded project that is no longer in the Library would fold again if it came back under the same id.
-    setFolded(current => {
-      const next = new Set([...current].filter(id => view.researches.some(research => research.id === id)))
-      if (next.size === current.size) return current
-      writeFolded(next)
-      return next
+  function show(next: LibraryView) {
+    setView(next)
+    setError('')
+    const works = new Set(next.entries.map(entry => entry.work_id))
+    const ids = new Set(next.researches.map(research => research.id))
+    // A research that left the workspace (trashed elsewhere) is no longer a choice; its works stay in All works.
+    setProject(current => (current && !ids.has(current) ? null : current))
+    // Picks, a confirmation and the new-research dialog keep only works that are still in the Library; one with nothing
+    // left closes, so no action runs on works the screen no longer shows.
+    setPicked(current => {
+      const kept = new Set([...current].filter(id => works.has(id)))
+      return kept.size === current.size ? current : kept
     })
+    setPending(current => {
+      if (!current) return current
+      const kept = current.works.filter(id => works.has(id))
+      return !kept.length || (current.research && !ids.has(current.research)) ? null : kept.length === current.works.length ? current : { ...current, works: kept }
+    })
+    setAsking(current => {
+      if (!current) return current
+      const kept = current.works.filter(id => works.has(id))
+      return !kept.length ? null : kept.length === current.works.length ? current : { ...current, works: kept }
+    })
+    setSelected(current => (current && !works.has(current) ? null : current))
   }
+
   function load() {
-    api.library().then(show).catch((e: Error) => setError(e.message))
+    const seen = version.current
+    api.library().then(next => { if (version.current === seen && !writes.current) show(next) })
+      .catch((e: Error) => { if (version.current === seen && !writes.current) setError(e.message) })
   }
   useEffect(load, [researchKey])
+
+  async function write<T>(name: string, run: () => Promise<T>, listOf: (answer: T) => LibraryView | undefined = () => undefined): Promise<T> {
+    const seq = ++writeSeq.current
+    version.current++
+    writes.current++
+    setBusy(name)
+    let shown = false
+    try {
+      const answer = await run()
+      const list = listOf(answer)
+      if (list && seq === writeSeq.current) { show(list); shown = true }
+      return answer
+    } finally {
+      writes.current--
+      version.current++
+      if (!writes.current) setBusy(null)
+      if (!shown && !writes.current) load()
+    }
+  }
 
   useEffect(() => {
     if (!selected) return
     let current = true
     setWork(null)
-    setWorkError('')
     api.libraryWork(selected)
-      .then(result => { if (current) setWork(result) })
-      .catch((e: Error) => { if (current) setWorkError(e.message) })
+      .then(next => {
+        if (!current) return
+        if (sheetTarget(next)) { setWork(next); return }
+        // A work no research holds or held keeps its text only in the Library, and passages open through a research.
+        toast('warning', t('No research holds “{title}”, so its stored text cannot open here.', { title: shortTitle(next.title) }))
+        setSelected(null)
+      })
+      .catch((e: Error) => { if (current) { toast('error', t('Could not load this work: {message}', { message: e.message })); setSelected(null) } })
     return () => { current = false }
-  }, [selected, workVersion])
+  }, [selected, workVersion, toast])
 
-  // Escape clears the selection, as the bar's key hint promises. An open confirmation keeps the key for itself.
-  useEffect(() => {
-    if (!picked.works.size || pending) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) setPicked({ research: null, works: new Set() })
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [picked.works.size, pending])
-
-  // `/`, the arrow keys and `x` cover the same four moves the key strip names. Text fields keep their own keys,
-  // and a dialog or menu keeps every key while it is open.
+  // `/`, the arrow keys and `x` work as the key line under the table names. Text fields keep their own keys, and a dialog
+  // or menu keeps every key while it is open.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return
@@ -245,133 +248,80 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
         titles[((from < 0 ? (step > 0 ? -1 : 0) : from) + step + titles.length) % titles.length].focus()
         return
       }
-      // `x` picks the focused row; without focus on a title there is no row to pick.
       if (event.key === 'x' || event.key === 'X') {
         const cursor = cursorRef.current
         if (!cursor || !target || !target.classList.contains('library-title')) return
         event.preventDefault()
-        togglePick(cursor.work, cursor.scope)
+        togglePick(cursor)
       }
+      if (event.key === 'Escape' && !event.defaultPrevented) setPicked(current => (current.size ? new Set() : current))
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Any change to what the list contains or how it is ordered starts again from the first page and clears the picks.
+  // A change to what the table lists starts again from its first page and clears the picks.
   function resetList() {
     setPage(0)
-    setShown({})
-    setPicked({ research: null, works: new Set() })
+    setPicked(new Set())
   }
-  // Changing how many rows fit on a page moves nothing out of the Library, so the picks survive it.
-  function resetView() {
+  function chooseProject(next: string | null) {
+    setProject(next)
+    resetList()
+  }
+  function chooseSort(next: SortKey) {
+    setSort(next)
+    writeStored(SORT_KEY, next)
     setPage(0)
-    setShown({})
   }
-
-  function chooseGrouping(next: Grouping) {
-    setGrouping(next)
-    writeStored(GROUPING_KEY, next)
-    resetList()
-  }
-  function chooseDensity(next: Density) {
-    setDensity(next)
-    writeStored(DENSITY_KEY, next)
-  }
-  function chooseSort(value: string) {
-    const match = SORT_OPTIONS.find(option => option.value === value)
-    if (!match) return
-    const [key, dir] = match.value.split(':') as [SortKey, SortDir]
-    setSort({ key, dir })
-    writeStored(SORT_KEY, match.value)
-    resetList()
-  }
-  function chooseAccess(next: AccessFilter) {
-    setAccess(next)
+  function choosePdf(next: PdfFilter) {
+    setPdf(next)
     resetList()
   }
   function choosePageSize(size: number) {
     setPageSize(size)
     writeStored(PAGE_SIZE_KEY, String(size))
-    resetView()
+    setPage(0)
   }
-
-  function toggleFold(id: string) {
-    if (!id) return
-    setFolded(current => {
+  function togglePick(workId: string) {
+    setPicked(current => {
       const next = new Set(current)
-      if (next.has(id)) next.delete(id); else next.add(id)
-      writeFolded(next)
+      if (next.has(workId)) next.delete(workId); else next.add(workId)
       return next
     })
   }
-  function showMore(id: string, total: number) {
-    setShown(current => ({ ...current, [id]: Math.min((current[id] ?? BAND_STEP) + BAND_STEP, total) }))
-  }
 
-  // Adding a work makes one of its stored versions an included source of that research; the backend picks the version.
-  async function addToResearch(workId: string, research: LibraryResearch) {
-    const entry = entries?.find(e => e.work_id === workId)
-    if (!entry || adding) return
-    if (entry.researches.some(r => r.id === research.id)) {
-      toast('warning', t('“{title}” is already a source of {project}.', { title: shortTitle(entry.title), project: shortTitle(research.title) }))
+  const inProject = useMemo(() => (project ? entries.filter(entry => entry.researches.some(r => r.id === project)) : entries), [entries, project])
+  const needle = query.trim().toLocaleLowerCase(uiLocale())
+  const shown = useMemo(() => {
+    const list = inProject.filter(entry => passesPdf(entry, pdf) && (!needle || [entry.title, authorsText(entry.authors), entry.venue ?? '',
+      entry.year === null ? '' : String(entry.year), entry.doi ?? '', ...entry.researches.map(r => r.title)].join('\n').toLocaleLowerCase(uiLocale()).includes(needle)))
+    return [...list].sort(COMPARE[sort])
+  }, [inProject, pdf, needle, sort])
+  const pages = Math.max(1, Math.ceil(shown.length / pageSize))
+  const currentPage = Math.min(page, pages - 1)
+  const rows = shown.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+  const pickedWorks = useMemo(() => [...picked].map(id => byWork.get(id)).filter((e): e is LibraryEntry => Boolean(e)), [picked, byWork])
+  const projectTitle = (id: string | null) => (id ? researches.find(r => r.id === id)?.title ?? '' : '')
+  const projectName = project ? projectTitle(project) : t('All')
+  // Depth over every work in the Library (the box says "all works"), from the stored reading of each.
+  const depth = useMemo(() => {
+    const total = { pdf_available: 0, abstract: 0, metadata: 0 }
+    for (const entry of entries) total[entry.access_level]++
+    return total
+  }, [entries])
+  const citationsReadAt = useMemo(() => entries.reduce<string | null>(
+    (latest, entry) => (entry.cited_by_count_at && (!latest || entry.cited_by_count_at > latest) ? entry.cited_by_count_at : latest), null), [entries])
+  const heldBy = (researchId: string) => entries.filter(entry => entry.researches.some(r => r.id === researchId)).length
+  const narrowed = needle !== '' || pdf !== 'all'
+  const locked = busy !== null
+
+  function openWork(entry: LibraryEntry) {
+    if (entry.access_level === 'metadata') {
+      toast('warning', t('No abstract or PDF text is stored for “{title}”.', { title: shortTitle(entry.title) }))
       return
     }
-    setAdding(true)
-    try {
-      const result = await api.addLibrarySource(research.id, workId)
-      show(result.library)
-      if (selected === workId) setWorkVersion(v => v + 1)
-      toast('success', t('Added to {project} as a source you included ({depth}).', {
-        project: shortTitle(research.title), depth: t(ACCESS_LABELS[result.access_level]),
-      }))
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 409) { toast('warning', e.message); load() }
-      else toast('error', t('Could not add the work: {message}', { message: (e as Error).message }))
-    } finally {
-      setAdding(false)
-    }
-  }
-
-  // The bar's picker sends every picked work one by one. Works that fail keep their pick, so a retry sends exactly those.
-  async function addPicked(research: LibraryResearch) {
-    const works = [...picked.works]
-    if (!works.length || adding) return
-    setAdding(true)
-    const failed: string[] = []
-    let added = 0
-    let skipped = 0
-    let depth: AccessLevel | null = null
-    try {
-      for (const workId of works) {
-        const entry = entries?.find(item => item.work_id === workId)
-        if (!entry || entry.researches.some(r => r.id === research.id)) { skipped++; continue }
-        try {
-          const result = await api.addLibrarySource(research.id, workId)
-          show(result.library)
-          added++
-          depth = result.access_level
-        } catch (e) {
-          if (e instanceof ApiError && e.status === 409) skipped++
-          else failed.push(workId)
-        }
-      }
-    } finally {
-      setAdding(false)
-    }
-    setPicked(current => ({ research: current.research, works: new Set(failed) }))
-    if (failed.length) {
-      toast('warning', t('{n} works could not be added.', { n: failed.length }))
-      load()
-    } else if (!added) {
-      toast('warning', t('All {n} works were already sources in this project.', { n: works.length }))
-    } else if (added === 1) {
-      toast('success', t('Added to {project} as a source you included ({depth}).', {
-        project: shortTitle(research.title), depth: t(ACCESS_LABELS[depth ?? 'metadata']),
-      }))
-    } else {
-      toast('success', t('Added {n} works to {project} as sources you included.', { n: added, project: shortTitle(research.title) }))
-    }
+    setSelected(entry.work_id)
   }
 
   async function copyDoi(doi: string) {
@@ -379,7 +329,231 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
       await navigator.clipboard.writeText(doi)
       toast('success', t('DOI copied.'))
     } catch (e) {
-      toast('error', t('Could not copy the DOI: {message}', { message: (e as Error).message }))
+      toast('error', t('Could not copy the DOI: {message}', { message: errorText(e) }))
+    }
+  }
+
+  // Adding a work makes one stored version of it an included source of that research; the backend picks the version.
+  async function addWorks(workIds: string[], research: LibraryResearch) {
+    if (locked) return
+    const todo = workIds.filter(id => byWork.get(id) && !byWork.get(id)!.researches.some(r => r.id === research.id))
+    const already = workIds.length - todo.length
+    if (!todo.length) {
+      toast('warning', workIds.length === 1
+        ? t('“{title}” is already in {project}.', { title: shortTitle(byWork.get(workIds[0])?.title ?? ''), project: shortTitle(research.title) })
+        : t('All {n} works are already in {project}.', { n: workIds.length, project: shortTitle(research.title) }))
+      return
+    }
+    // Filled inside the write; a holder, so the counts read after it are the ones the requests produced.
+    const out = { added: 0, present: already, depth: null as AccessLevel | null, failed: [] as string[], last: undefined as LibraryView | undefined }
+    await write('add', async () => {
+      for (const workId of todo) {
+        try {
+          const answer = await api.addLibrarySource(research.id, workId)
+          out.last = answer.library
+          out.added++
+          out.depth = answer.access_level
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 409) out.present++
+          else out.failed.push(errorText(e))
+        }
+      }
+    }, () => out.last).catch(() => undefined)
+    if (selected && workIds.includes(selected)) setWorkVersion(v => v + 1)
+    setPicked(current => (current.size ? new Set() : current))
+    const name = shortTitle(research.title)
+    const { added, present, depth: depthOf, failed } = out
+    const parts = [
+      added === 1 && todo.length === 1 && depthOf ? t('Added to {project} as a source you included ({depth}).', { project: name, depth: t(ACCESS_LABELS[depthOf]) })
+        : added ? t('Added {n} works to {project} as sources you included.', { n: added, project: name }) : '',
+      present ? t('{n} were already in it.', { n: present }) : '',
+      failed.length ? t('{n} could not be added: {message}', { n: failed.length, message: failed[0] }) : '',
+    ].filter(Boolean)
+    toast(failed.length ? (added ? 'warning' : 'error') : added ? 'success' : 'warning', parts.join(' '))
+  }
+
+  // Removal takes every stored version of each work out of one research (or of every research that holds it, in All works).
+  // The records, files, answers and cells stay, and the work stays in All works; Undo in the notification puts it back.
+  async function removeWorks({ research, works }: Pending) {
+    const targets = new Map<string, string[]>()
+    for (const workId of works) {
+      const entry = byWork.get(workId)
+      if (!entry) continue
+      // Only the versions each research holds: a research that holds one version of a work does not hold the others.
+      for (const rid of research ? [research] : entry.researches.map(r => r.id)) {
+        const svids = entry.versions.filter(v => v.research_ids.includes(rid)).map(v => v.source_version_id)
+        if (svids.length) targets.set(rid, [...(targets.get(rid) ?? []), ...svids])
+      }
+    }
+    const undo: { research: string; svids: string[] }[] = []
+    try {
+      await write('remove', async () => {
+        for (const [rid, svids] of targets) {
+          const answer = await api.removeSources(rid, svids)
+          if (answer.changed_source_version_ids.length) undo.push({ research: rid, svids: answer.changed_source_version_ids })
+        }
+      })
+    } catch (e) {
+      setPending(null)
+      // Any removal that went through before the failure is still offered back.
+      toast('error', [t('Could not remove: {message}', { message: errorText(e) }), undo.length ? t('Some works were removed before the error.') : ''].filter(Boolean).join(' '),
+        undo.length ? { label: t('Undo'), run: () => void restore(undo) } : undefined)
+      return
+    }
+    setPending(null)
+    setPicked(new Set())
+    const changed = new Set(undo.flatMap(u => u.svids))
+    const removed = works.filter(id => byWork.get(id)?.versions.some(v => changed.has(v.source_version_id)))
+    if (!removed.length) { toast('warning', t('Nothing was removed: the works were no longer in that research.')); return }
+    const one = removed.length === 1 ? shortTitle(byWork.get(removed[0])?.title ?? '') : null
+    const where = research ? shortTitle(projectTitle(research)) : null
+    toast('success', where
+      ? (one ? t('“{title}” removed from {project}. It stays in All works.', { title: one, project: where })
+        : t('{n} works removed from {project}. They stay in All works.', { n: removed.length, project: where }))
+      : (one ? t('“{title}” removed from every research that held it. It stays in All works.', { title: one })
+        : t('{n} works removed from every research that held them. They stay in All works.', { n: removed.length })),
+    { label: t('Undo'), run: () => void restore(undo) })
+  }
+  async function restore(undo: { research: string; svids: string[] }[]) {
+    try {
+      await write('restore', () => Promise.all(undo.map(u => api.restoreSources(u.research, u.svids))))
+      toast('success', t('Put back.'))
+    } catch (e) {
+      toast('error', t('Could not put it back: {message}', { message: errorText(e) }))
+    }
+  }
+
+  function trashProject(research: LibraryResearch) {
+    if (locked) return
+    write('trash', () => api.moveToTrash(research.id)).then(() => {
+      onChanged()
+      toast('success', t('Moved to Trash.'), { label: t('Undo'), run: () => {
+        write('restore', () => api.restore(research.id)).then(() => { onChanged(); toast('success', t('Research restored.')) },
+          (e: Error) => toast('error', t('Could not restore research: {message}', { message: e.message })))
+      } })
+    }, (e: Error) => toast('error', t('Could not move to Trash: {message}', { message: e.message })))
+  }
+
+  // PDFs into the Library, one by one; each line says what the server did with that file.
+  async function upload(files: File[]) {
+    if (locked || !files.length) return
+    const added: string[] = []
+    const already: string[] = []
+    const noText: string[] = []
+    const failed: string[] = []
+    let last: LibraryView | undefined
+    await write('upload', async () => {
+      for (const file of files) {
+        try {
+          const answer = await libraryApi.upload(file)
+          last = answer.library
+          ;(answer.already_saved ? already : added).push(file.name)
+          const entry = answer.library.entries.find(e => e.work_id === answer.work_id)
+          if (!answer.already_saved && entry && entry.access_level !== 'pdf_available') noText.push(file.name)
+        } catch (e) {
+          failed.push(t('{file}: {message}', { file: file.name, message: errorText(e) }))
+        }
+      }
+    }, () => last).catch(() => undefined)
+    setResult({
+      tone: failed.length ? (added.length || already.length ? 'warn' : 'bad') : 'ok',
+      lines: [
+        added.length ? t(added.length === 1 ? '{n} PDF saved to the Library; it is listed in All works.' : '{n} PDFs saved to the Library; they are listed in All works.', { n: added.length }) : '',
+        noText.length ? t('No text layer could be read from {files}; reading depth there is not PDF text.', { files: noText.join(', ') }) : '',
+        already.length ? t('Already saved in the Library, nothing added: {files}.', { files: already.join(', ') }) : '',
+        ...failed.map(line => t('Not saved · {line}', { line })),
+      ].filter(Boolean),
+    })
+  }
+
+  async function importZotero(choice: ZoteroChoice) {
+    if (locked) return
+    try {
+      const answer = await write('zotero', () => libraryImportsApi.zotero(choice.source, choice.key), a => a.library)
+      setZoteroOpen(false)
+      const z = answer.zotero_import
+      setResult({
+        tone: z.notes.length ? 'warn' : 'ok',
+        lines: [
+          t('“{name}”: {items} Zotero items read. {saved} saved to the Library and listed in All works; {already} were already saved.', { name: choice.name, items: z.items, saved: z.saved.length, already: z.already_saved.length }),
+          t('{n} PDFs added. The titles, authors and years are Zotero’s, not checked against a provider.', { n: z.pdfs_added }),
+          ...z.notes.map(note => `${note.title}: ${t(note.note, note.vars)}.`),
+        ],
+      })
+    } catch (e) {
+      setZoteroOpen(false)
+      setResult({ tone: 'bad', lines: [t('Nothing was imported from Zotero: {message}', { message: errorText(e) })] })
+    }
+  }
+
+  // A real file from the stored records of the picked works; the line counts the records in the file the server sent.
+  async function exportBibliography(format: 'bibtex' | 'ris') {
+    const works = pickedWorks.map(entry => entry.work_id)
+    if (!works.length || locked) return
+    setBusy('export')
+    try {
+      const { blob, filename } = await libraryApi.bibliography({ format, work_ids: works })
+      const count = recordsIn(await blob.text(), format)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.click()
+      URL.revokeObjectURL(url)
+      setResult({ tone: count === works.length ? 'ok' : 'warn', lines: [t('{file} saved with {n} records, one per chosen work ({chosen} chosen).', { file: filename, n: count, chosen: works.length })] })
+    } catch (e) {
+      setResult({ tone: 'bad', lines: [t('The bibliography could not be exported: {message}', { message: errorText(e) })] })
+    } finally {
+      setBusy(current => (current === 'export' ? null : current))
+    }
+  }
+
+  // "Start evidence table" and "Ask about these works": a new research (scope `attached`) holding one stored version per
+  // work, then its study table's column suggestions or its answer. Each line reports what the server did.
+  async function startFromSelection(mode: Mode, works: string[], question: string, answer: ModelChoice, literature: ModelChoice) {
+    const lines: string[] = []
+    let open: Result['open']
+    let tone: Result['tone'] = 'ok'
+    try {
+      await write('create', async () => {
+        const created = await libraryApi.newResearchFromSet({
+          question, intent: mode === 'table' ? 'table' : 'report', effort: 'standard',
+          model_connection: answer.connection, requested_model: answer.model, reasoning_effort: answer.effort,
+          literature_connection: literature.connection, literature_model: literature.model, literature_reasoning_effort: literature.effort,
+          review_mode: 'default', review_connection: null, review_model: null, review_reasoning_effort: null, work_ids: works,
+        })
+        const id = created.research.id
+        open = { id }
+        lines.push(t('Research “{title}” created with {n} works from the Library.', { title: shortTitle(created.research.title || question), n: created.added_source_version_ids.length }))
+        onChanged()
+        if (mode === 'table') {
+          const table = (await api.tables(id).catch(() => [])).find(item => item.title)
+          if (!table) { tone = 'warn'; lines.push(t('No study table was made, so column suggestions did not start. Open the research to start a table.')); return }
+          open = { id, tab: 'table' }
+          lines.push(t('Its study table holds {n} rows.', { n: table.rows }))
+          try {
+            await api.suggestColumns(id, table.id, crypto.randomUUID())
+            lines.push(t('Column suggestions started; the table panel shows them when they are ready.'))
+          } catch (e) {
+            tone = 'warn'
+            lines.push(t('Column suggestions did not start: {message}', { message: errorText(e) }))
+          }
+        } else {
+          try {
+            await api.startRun(id, 'answer', crypto.randomUUID())
+            lines.push(t('The answer started; the research page shows its steps.'))
+          } catch (e) {
+            tone = 'warn'
+            lines.push(t('The answer did not start: {message}', { message: errorText(e) }))
+          }
+        }
+      })
+      setAsking(null)
+      setPicked(new Set())
+      setResult({ tone, lines, open })
+    } catch (e) {
+      setAsking(null)
+      setResult({ tone: 'bad', lines: [t('No research was created: {message}', { message: errorText(e) })] })
     }
   }
 
@@ -387,524 +561,392 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData(WORK_TYPE, entry.work_id)
     event.dataTransfer.setData('text/plain', entry.doi ? `${entry.title} (doi:${entry.doi})` : entry.title)
-    setDragging({ workId: entry.work_id, title: entry.title, researchIds: entry.researches.map(r => r.id) })
+    setDragging({ workId: entry.work_id, held: entry.researches.map(r => r.id) })
   }
-  function endDrag() {
-    setDragging(null)
-    setDropTarget(null)
-  }
-  // Drop handlers for one project: a work that is already its source is not a valid drop there. Research-less rows
-  // (a work no project holds any more) are not a target at all.
-  const dropProps = (research: LibraryResearch | null): DropProps => research === null ? {} : {
+  const endDrag = () => { setDragging(null); setDropTarget(null) }
+  // A research in the left pane takes a dragged work it does not hold yet.
+  const dropProps = (research: LibraryResearch) => ({
     onDragOver: (event: DragEvent) => {
-      if (!dragging || dragging.researchIds.includes(research.id)) return
+      if (!dragging || dragging.held.includes(research.id) || locked) return
       event.preventDefault()
       event.dataTransfer.dropEffect = 'copy'
       if (dropTarget !== research.id) setDropTarget(research.id)
     },
     onDragLeave: (event: DragEvent) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(current => current === research.id ? null : current)
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(current => (current === research.id ? null : current))
     },
     onDrop: (event: DragEvent) => {
       event.preventDefault()
       const workId = event.dataTransfer.getData(WORK_TYPE) || dragging?.workId
       endDrag()
-      if (workId) void addToResearch(workId, research)
+      if (workId) void addWorks([workId], research)
     },
-    'data-drop': !dragging ? undefined : dragging.researchIds.includes(research.id) ? 'present' : dropTarget === research.id ? 'over' : 'ready',
-  }
+    'data-drop': !dragging ? undefined : dragging.held.includes(research.id) ? 'present' : dropTarget === research.id ? 'over' : 'ready',
+  })
 
-  const picksIn = (researchId: string | null) => (picked.research === researchId ? picked.works : NO_PICKS)
-  const clearPicks = () => setPicked({ research: null, works: new Set() })
+  const sheet = sheetTarget(work)
 
-  function togglePick(workId: string, researchId: string | null) {
-    setPicked(current => {
-      const works = current.research === researchId ? new Set(current.works) : new Set<string>()
-      if (works.has(workId)) works.delete(workId); else works.add(workId)
-      return { research: researchId, works }
-    })
-  }
-  // The project's box picks every work it holds, or clears them when they are all picked already.
-  function togglePickAll(researchId: string | null, workIds: string[]) {
-    setPicked(current => {
-      const all = current.research === researchId && workIds.every(id => current.works.has(id))
-      return { research: researchId, works: new Set(all ? [] : workIds) }
-    })
-  }
-
-  const projectTitle = (researchId: string) => researches.find(r => r.id === researchId)?.title ?? t('this project')
-
-  // The one way to delete a project, wherever it is shown: the research goes to the Trash and every view drops it (D50).
-  function trashProject(research: LibraryResearch) {
-    // onChanged refreshes the research list the rest of the app renders, so the sidebar drops the row at once
-    // instead of on its next poll.
-    api.moveToTrash(research.id).then(() => {
-      load()
-      onChanged()
-      toast('success', t('Moved to Trash.'), { label: t('Undo'), run: () => {
-        api.restore(research.id).then(() => { load(); onChanged(); toast('success', t('Research restored.')) },
-          (e: Error) => toast('error', t('Could not restore research: {message}', { message: e.message })))
-      } })
-    }, (e: Error) => toast('error', t('Could not move to Trash: {message}', { message: e.message })))
-  }
-
-  // Every stored version of the work leaves the research's source list; nothing about the record or its files changes,
-  // so the notification's Undo, like the Trash page, puts it back (D50).
-  async function removeWorks({ research, works }: Pending) {
-    const targets = new Map<string, string[]>()
-    for (const workId of works) {
-      const entry = entries?.find(e => e.work_id === workId)
-      if (!entry) continue
-      const svids = entry.versions.map(v => v.source_version_id)
-      for (const rid of research ? [research] : entry.researches.map(r => r.id)) {
-        targets.set(rid, [...(targets.get(rid) ?? []), ...svids])
-      }
-    }
-    setRemoving(true)
-    const undo: { research: string; svids: string[] }[] = []
-    try {
-      for (const [rid, svids] of targets) {
-        const result = await api.removeSources(rid, svids)
-        if (result.changed_source_version_ids.length) undo.push({ research: rid, svids: result.changed_source_version_ids })
-      }
-      setPicked({ research: null, works: new Set() })
-      setPending(null)
-      if (selected && works.includes(selected)) setSelected(null)
-      load()
-      const restore = () => Promise.all(undo.map(u => api.restoreSources(u.research, u.svids)))
-        .then(load)
-        .catch((e: Error) => toast('error', t('Could not put it back: {message}', { message: e.message })))
-      const one = works.length === 1 ? shortTitle(entries?.find(e => e.work_id === works[0])?.title ?? '') : null
-      toast('success', research
-        ? (one ? t('“{title}” removed from {project}.', { title: one, project: shortTitle(projectTitle(research)) })
-          : t('{n} works removed from {project}.', { n: works.length, project: shortTitle(projectTitle(research)) }))
-        : (one ? t('“{title}” removed from every project that used it.', { title: one })
-          : t('{n} works removed from every project that used them.', { n: works.length })),
-        undo.length ? { label: t('Undo'), run: () => void restore() } : undefined)
-    } catch (e) {
-      toast('error', t('Could not remove: {message}', { message: (e as Error).message }))
-    } finally {
-      setRemoving(false)
-    }
-  }
-
-  const narrowed = query.trim() !== '' || access !== 'all'
-
-  const filtered = useMemo(() => {
-    const items = entries ?? []
-    const q = query.trim().toLowerCase()
-    const list = items.filter(entry => {
-      if (access !== 'all' && entry.access_level !== access) return false
-      if (!q) return true
-      return [entry.title, authorsText(entry.authors), entry.venue ?? '', entry.doi ?? '', ...entry.researches.map(r => r.title)]
-        .join('\n').toLowerCase().includes(q)
-    })
-    const dir = sort.dir === 'asc' ? 1 : -1
-    const compare = sort.key === 'title' ? compareTitle : sort.key === 'year' ? compareYear
-      : sort.key === 'citations' ? compareCitations : compareAdded
-    return [...list].sort((a, b) => compare(a, b) * dir)
-  }, [entries, query, access, sort])
-
-  // Each work is listed under one project: the one with the most recent activity that still holds it (the server
-  // sorts a work's researches by update time, newest first). A work no project holds keeps its own band, and the
-  // projects that match nothing stay visible so a drag still has somewhere to land.
-  const bands = useMemo<Band[]>(() => {
-    if (grouping !== 'project') return []
-    const byResearch: Band[] = researches.map(research => ({ id: research.id, title: research.title, research, entries: [] }))
-    const known = new Map(byResearch.map(band => [band.id, band]))
-    const loose: Band = { id: '', title: t('No project'), research: null, entries: [] }
-    for (const entry of filtered) {
-      const owner = entry.researches[0]?.id
-      const band = owner ? known.get(owner) : undefined
-      if (band) band.entries.push(entry)
-      else loose.entries.push(entry)
-    }
-    const visible = narrowed ? byResearch.filter(band => band.entries.length || dragging) : byResearch
-    return loose.entries.length ? [...visible, loose] : visible
-  }, [researches, filtered, grouping, narrowed, dragging])
-
-  const depths = useMemo(() => {
-    const total = { pdf_available: 0, abstract: 0, metadata: 0 }
-    for (const entry of entries ?? []) total[entry.access_level]++
-    return total
-  }, [entries])
-
-  // The provider reads a citation count on a date; the newest of those reads is the one the note can claim.
-  const citationsReadAt = useMemo(() => (entries ?? []).reduce<string | null>(
-    (latest, entry) => (entry.cited_by_count_at && (!latest || entry.cited_by_count_at > latest) ? entry.cited_by_count_at : latest),
-    null), [entries])
-
-  const pages = pageCount(filtered.length, pageSize)
-  const currentPage = Math.min(page, pages - 1)
-  const flatRows = useMemo(
-    () => (grouping === 'none' ? filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize) : []),
-    [filtered, grouping, currentPage, pageSize])
-
-  const windowSize = (band: Band) => bandWindow(band, folded, shown)
-
-  // A project's box picks every work it holds while only part of its rows is revealed, so the count in the bar can be
-  // larger than what is on screen. This is how many of the picked works the user cannot currently see.
-  const onScreen = useMemo(() => {
-    const ids = new Set<string>()
-    if (grouping === 'none') for (const entry of flatRows) ids.add(entry.work_id)
-    else for (const band of bands) for (const entry of band.entries.slice(0, bandWindow(band, folded, shown))) ids.add(entry.work_id)
-    return ids
-  }, [grouping, flatRows, bands, folded, shown])
-  const offScreenPicks = picked.works.size ? [...picked.works].filter(workId => !onScreen.has(workId)).length : 0
-
-  const renderRow = (entry: LibraryEntry, key: string, scope: string | null) => {
-    const picks = picksIn(scope)
-    const pickable = scope !== null
-    // Every project that could take this work, and the projects that already hold it.
-    const eligible = researches.filter(research => !entry.researches.some(held => held.id === research.id))
-    const owner = (scope ? researches.find(research => research.id === scope) : entry.researches[0]) ?? null
-    const added = dateText(entry.newest_source_at)
-    return <li key={key}
-      className={['library-record', picks.has(entry.work_id) ? 'is-picked' : '', dragging?.workId === entry.work_id ? 'is-dragging' : ''].join(' ').trim()}
-      draggable onDragStart={event => startDrag(event, entry)} onDragEnd={endDrag}>
-      <input type="checkbox" className="library-check" disabled={!pickable}
-        checked={pickable && picks.has(entry.work_id)}
-        onChange={() => togglePick(entry.work_id, scope)}
-        aria-label={t('Select “{title}”', { title: shortTitle(entry.title) })} />
-      <span className="library-grip" role="img" aria-label={t('Drag to add to another project')} title={t('Drag to add to another project')}><GripVertical size={16} aria-hidden /></span>
-      <div className="library-body">
-        <div className="library-title-row">
-          <SourceKey value={entry.source_key} className="library-source-key" />
-          <button type="button" className="library-title" onClick={() => openWork(entry)}
-            onFocus={() => { cursorRef.current = { work: entry.work_id, scope } }}
-            aria-expanded={entry.work_id === selected} title={t('Open the stored passages for this work')}>
-            <span>{entry.title}</span>
-          </button>
-        </div>
-        <span className="library-byline">
-          <span>{authorsText(entry.authors)}</span>
-          {entry.year !== null && <span> · {yearText(entry.year)}</span>}
-          {entry.venue && <span> · <em>{entry.venue}</em></span>}
-        </span>
-        <div className="library-row-facts">
-          <span className={`ref-pill library-depth ${ACCESS_PILLS[entry.access_level]}`}>
-            <i className="library-depth-dot" aria-hidden />{t(ACCESS_LABELS[entry.access_level])}
-          </span>
-          {entry.versions.map(version => <span key={version.source_version_id}
-            className={`ref-pill ${version.version_label ? versionTones[version.version_label] ?? 'is-unstated' : 'is-unstated'}`}>
-            {entry.versions.length > 1
-              ? `${versionText(version.version_label)} · ${t(ACCESS_LABELS[version.access_level])}`
-              : versionText(version.version_label)}</span>)}
-          <span className="source-fact is-plain">{t('Added {date}', { date: added })}</span>
-          {entry.researches.length > 1 && <span className="source-fact is-plain">{t('in {n} projects', { n: entry.researches.length })}</span>}
+  if (view && !entries.length && !error) {
+    return <section className="library-page lib-empty-page" ref={sectionRef}>
+      <div className="empty lib-empty">
+        <div>
+          <LibraryBig size={16} aria-hidden />
+          <h1 tabIndex={-1}>{t('No saved works yet')}</h1>
+          <p>{t('The sources of every research land here. You can also upload PDFs or import a Zotero collection.')}</p>
+          <div className="acts">
+            <button type="button" className="btn-teal" disabled={locked} onClick={() => fileInput.current?.click()}><Upload size={16} aria-hidden />{t('Upload PDF')}</button>
+            <button type="button" className="ghost" ref={zoteroButton} disabled={locked} onClick={() => setZoteroOpen(true)}>{t('Import from Zotero')}</button>
+          </div>
+          {result && <ResultNotice result={result} onOpen={target => onOpenResearch(target.id, target.tab)} onClose={() => setResult(null)} />}
         </div>
       </div>
-      <div className="library-tail">
-        {entry.cited_by_count === null
-          ? <span className="library-cites" title={t('No citation count recorded by the provider.')}>
-            <span className="library-cites-n">—</span><span className="library-cites-u">{t('Citations')}</span>
-          </span>
-          : <span className="library-cites">
-            <span className="library-cites-n">{entry.cited_by_count.toLocaleString(uiLocale())}</span>
-            <span className="library-cites-u">{t('Citations')}</span>
-          </span>}
-        <DropdownMenu>
-          <DropdownMenuTrigger className="library-more" aria-label={t('More actions for “{title}”', { title: shortTitle(entry.title) })} title={t('More actions')}>
-            <Ellipsis size={16} />
-          </DropdownMenuTrigger>
+      {fileInputEl()}
+      <ZoteroDialog open={zoteroOpen} onOpenChange={setZoteroOpen} destination="library" busy={busy === 'zotero'} returnFocus={zoteroButton} onImport={choice => void importZotero(choice)} />
+    </section>
+  }
+
+  function fileInputEl() {
+    return <input ref={fileInput} type="file" accept="application/pdf,.pdf" multiple hidden
+      onChange={event => { const files = [...(event.target.files ?? [])]; event.target.value = ''; void upload(files) }} />
+  }
+
+  const actions = <SelectionActions works={pickedWorks} researches={researches} project={project} locked={locked}
+    onTable={() => setAsking({ mode: 'table', works: pickedWorks.map(e => e.work_id) })}
+    onAsk={() => setAsking({ mode: 'ask', works: pickedWorks.map(e => e.work_id) })}
+    onAdd={research => void addWorks(pickedWorks.map(e => e.work_id), research)}
+    onExport={format => void exportBibliography(format)}
+    onRemove={() => setPending({ research: project, works: pickedWorks.map(e => e.work_id) })} />
+
+  return <section className="library-page" ref={sectionRef}>
+    <div className="lib">
+      <div className="lib-head">
+        <h1 tabIndex={-1}><span>{t('Library')} /</span> <span className="lib-crumb" title={projectName}>{projectName}</span></h1>
+        {project && <DropdownMenu>
+          <DropdownMenuTrigger className="ib lib-project-menu" aria-label={t('Actions for {title}', { title: projectName })} title={t('More actions')}><Ellipsis size={16} aria-hidden /></DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-auto library-menu">
-            <DropdownMenuLabel>{t('Add to a project')}</DropdownMenuLabel>
-            {!eligible.length && <p className="library-menu-note">{t('No project can take this work.')}</p>}
-            {eligible.map(research => <DropdownMenuItem key={research.id} disabled={adding} onClick={() => void addToResearch(entry.work_id, research)}>
-              <Folder size={15} /><span className="library-tx">{research.title}</span>
-            </DropdownMenuItem>)}
-            {entry.researches.map(research => <DropdownMenuItem key={research.id} disabled>
-              <Check size={15} /><span className="library-tx">{research.title}</span>
-              <span className="library-menu-hint">{t('already a source')}</span>
-            </DropdownMenuItem>)}
-            <DropdownMenuSeparator />
-            {owner && <DropdownMenuItem onClick={() => onOpenResearch(owner.id)}>
-              <ExternalLink size={15} /><span className="library-tx">{t('Open in {project}', { project: shortTitle(owner.title) })}</span>
-            </DropdownMenuItem>}
-            <DropdownMenuItem disabled={!entry.doi} onClick={() => { if (entry.doi) void copyDoi(entry.doi) }}>
-              <Copy size={15} /><span className="library-tx">{t('Copy DOI')}</span>
-              {!entry.doi && <span className="library-menu-hint">{t('no DOI stored')}</span>}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={() => setPending({ research: scope, works: [entry.work_id] })}>
-              <Trash2 size={15} /><span className="library-tx">{scope ? t('Remove from this project') : t('Remove from the Library')}</span>
+            <DropdownMenuItem onClick={() => onOpenResearch(project)}><FileText size={16} /><span className="library-tx">{t('Open research')}</span></DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" disabled={locked} onClick={() => { const r = researches.find(x => x.id === project); if (r) trashProject(r) }}>
+              <Trash2 size={16} /><span className="library-tx">{t('Move to Trash')}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu>
+        </DropdownMenu>}
+        <button type="button" className="ghost" ref={zoteroButton} disabled={locked} onClick={() => setZoteroOpen(true)}>{t('Import from Zotero')}</button>
+        <button type="button" className="btn-teal" disabled={locked} aria-busy={busy === 'upload'} onClick={() => fileInput.current?.click()}><Upload size={16} aria-hidden />{t('Upload PDF')}</button>
       </div>
-    </li>
-  }
+      <div className="lib-body">
+        <div className="pane lib-left">
+          <div className="cols-list" role="group" aria-label={t('Show works')}>
+            <button type="button" className={project === null ? 'on' : undefined} aria-pressed={project === null} onClick={() => chooseProject(null)}>
+              <span>{t('All works')}</span><em className="tnum">{view ? num(entries.length) : '–'}</em>
+            </button>
+            <h6>{t('Research')}</h6>
+            {researches.map(research => <button type="button" key={research.id} data-research={research.id} className={project === research.id ? 'on' : undefined} aria-pressed={project === research.id}
+              title={research.title} onClick={() => chooseProject(research.id)} {...dropProps(research)}>
+              <span>{research.title}</span><em className="tnum">{num(heldBy(research.id))}</em>
+            </button>)}
+            {view && !researches.length && <p className="lib-none">{t('No research yet.')}</p>}
+          </div>
+        </div>
 
-  const renderBand = (band: Band) => {
-    const research = band.research
-    const isFolded = folded.has(band.id)
-    const size = windowSize(band)
-    const rest = band.entries.length - size
-    const pdf = band.entries.filter(entry => entry.access_level === 'pdf_available').length
-    return <li className="library-band" key={band.id || 'none'} data-band={band.id || 'none'} {...dropProps(research)}>
-      <div className="library-band-head">
-        <input type="checkbox" className="library-band-pick"
-          checked={!!band.entries.length && band.entries.every(entry => picksIn(band.id).has(entry.work_id))}
-          ref={box => { if (box) box.indeterminate = picksIn(band.id).size > 0 && !band.entries.every(entry => picksIn(band.id).has(entry.work_id)) }}
-          disabled={!research || !band.entries.length}
-          onChange={() => togglePickAll(band.id, band.entries.map(entry => entry.work_id))}
-          aria-label={t('Select every work in {project}', { project: band.title })} />
-        <button type="button" className="library-fold" onClick={() => toggleFold(band.id)} disabled={!research}
-          aria-expanded={!isFolded} title={band.title}>
-          <span className="library-caret">{isFolded ? <ChevronRight size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}</span>
-          <span className="library-band-title">{band.title}</span>
-        </button>
-        {research && <span className="library-dropnote">{t('Drop to include as a source')}</span>}
-        {research && <span className="library-dropnote library-dropnote-has">{t('Already a source')}</span>}
-        <span className="library-band-facts">
-          <span>{narrowed
-            ? t('{n} matching works', { n: band.entries.length.toLocaleString(uiLocale()) })
-            : t('{n} works', { n: band.entries.length.toLocaleString(uiLocale()) })}</span>
-          <span>{t('{n} with PDF text', { n: pdf })}</span>
-        </span>
-        <span className="library-band-actions">
-          {research && <button type="button" className="library-open" onClick={() => onOpenResearch(research.id)}>{t('Open research')}</button>}
-          {research && <DropdownMenu>
-            <DropdownMenuTrigger className="library-more" aria-label={t('Actions for {title}', { title: band.title })} title={t('More actions')}><Ellipsis size={16} /></DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-auto library-menu">
-              <DropdownMenuItem onClick={() => onOpenResearch(research.id)}><ExternalLink size={15} /><span className="library-tx">{t('Open research')}</span></DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem variant="destructive" disabled={!!dragging} onClick={() => trashProject(research)}>
-                <Trash2 size={15} /><span className="library-tx">{t('Move to Trash')}</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>}
-        </span>
-      </div>
-      {!isFolded && !!band.entries.length && <ul className="library-records">
-        {band.entries.slice(0, size).map(entry => renderRow(entry, `${band.id || 'none'}:${entry.work_id}`, band.id || null))}
-      </ul>}
-      {!isFolded && !band.entries.length && <p className="library-bandmore">
-        {narrowed
-          ? t('No work in this project matches the current search and filter.')
-          : t('No rows here yet. Each work is listed under one project, the one most recently active that holds it.')}
-      </p>}
-      {!isFolded && rest > 0 && <p className="library-bandmore">
-        <span>{narrowed
-          ? t('Showing {shown} of {total} matching rows in this project', { shown: size, total: band.entries.length })
-          : t('Showing {shown} of {total} rows in this project', { shown: size, total: band.entries.length })}</span>
-        <Button variant="outline" size="sm" onClick={() => showMore(band.id, band.entries.length)}>
-          {t('Show {n} more', { n: Math.min(BAND_STEP, rest) })}
-        </Button>
-      </p>}
-    </li>
-  }
+        <div className="pane lib-main">
+          <div className="toolbar">
+            <label className="search lib-search"><Search size={16} aria-hidden />
+              <input ref={searchRef} type="search" value={query} placeholder={t('Title, author, venue or year')} aria-label={t('Search the library')}
+                onChange={event => { setQuery(event.target.value); resetList() }} /></label>
+            <DropdownMenu>
+              <DropdownMenuTrigger className={`ghost lib-sort${sort !== 'added_new' ? ' tint' : ''}`} aria-label={t('Sort works')}><ArrowUpDown size={16} aria-hidden />{t(SORTS[sort])}</DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-auto library-menu">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="lib-menu-h">{t('Sort')}</DropdownMenuLabel>
+                  {(Object.keys(SORTS) as SortKey[]).map(key => <DropdownMenuItem key={key} onClick={() => chooseSort(key)}>
+                    {sort === key ? <Check size={16} /> : <ArrowUpDown size={16} />}<span className="library-tx">{t(SORTS[key])}</span>
+                  </DropdownMenuItem>)}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger className={`ghost lib-pdf${pdf !== 'all' ? ' tint' : ''}`} aria-label={t('Filter works by PDF text')}><Filter size={16} aria-hidden />{t('PDF: {filter}', { filter: t(PDF_FILTERS[pdf]) })}</DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-auto library-menu">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="lib-menu-h">PDF</DropdownMenuLabel>
+                  {(['all', 'text', 'no_text'] as PdfFilter[]).map(key => <PdfItem key={key} value={key} current={pdf} count={inProject.filter(e => passesPdf(e, key)).length} onChoose={choosePdf} />)}
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="lib-menu-h">{t('Reading depth')}</DropdownMenuLabel>
+                  {(['abstract', 'metadata'] as PdfFilter[]).map(key => <PdfItem key={key} value={key} current={pdf} count={inProject.filter(e => passesPdf(e, key)).length} onChoose={choosePdf} />)}
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <select className="lib-project-select" aria-label={t('Research')} value={project ?? ''} onChange={event => chooseProject(event.target.value || null)}>
+              <option value="">{t('All works')} ({num(entries.length)})</option>
+              {researches.map(r => <option key={r.id} value={r.id}>{r.title} ({num(heldBy(r.id))})</option>)}
+            </select>
+          </div>
+          {error && <div className="notice bad lib-notice" role="alert"><X size={16} aria-hidden /><div className="nb">
+            <span>{view ? t('Could not read the Library again: {message}. The list below may be out of date.', { message: error }) : t('Could not load the Library: {message}', { message: error })}</span>
+            <div className="acts"><button type="button" className="ghost" onClick={() => { setError(''); load() }}>{t('Retry')}</button></div>
+          </div></div>}
+          {result && <ResultNotice result={result} onOpen={target => onOpenResearch(target.id, target.tab)} onClose={() => setResult(null)} />}
+          <div className="tbl-wrap"><table className="lib-table">
+            <thead><tr>
+              <th className="cb"><input type="checkbox" aria-label={t('Select all {n} works listed', { n: shown.length })} disabled={!shown.length}
+                checked={shown.length > 0 && shown.every(e => picked.has(e.work_id))}
+                ref={box => { if (box) box.indeterminate = shown.some(e => picked.has(e.work_id)) && !shown.every(e => picked.has(e.work_id)) }}
+                onChange={event => setPicked(event.target.checked ? new Set(shown.map(e => e.work_id)) : new Set())} /></th>
+              <th scope="col">{t('Title')}</th><th scope="col">{t('Year')}</th><th scope="col">{t('Reading depth')}</th><th scope="col">{t('Research')}</th><th aria-label={t('Actions')} />
+            </tr></thead>
+            <tbody>
+              {view === null && !error && <tr className="more-row"><td colSpan={6} role="status">{t('Loading Library…')}</td></tr>}
+              {rows.map(entry => <Row key={entry.work_id} entry={entry} project={project} researches={researches} picked={picked.has(entry.work_id)} locked={locked}
+                dragging={dragging?.workId === entry.work_id} onPick={() => togglePick(entry.work_id)} onOpen={() => openWork(entry)}
+                onFocusTitle={() => { cursorRef.current = entry.work_id }} onDragStart={event => startDrag(event, entry)} onDragEnd={endDrag}
+                onAdd={research => void addWorks([entry.work_id], research)} onOpenResearch={id => onOpenResearch(id, 'sources')}
+                onCopyDoi={doi => void copyDoi(doi)} onRemove={() => setPending({ research: project, works: [entry.work_id] })} />)}
+              {view !== null && !shown.length && <tr className="more-row lib-nomatch"><td colSpan={6}>
+                {narrowed
+                  ? <>{t(needle && pdf !== 'all' ? 'No works match “{q}” with {pdf}.' : needle ? 'No works match “{q}”.' : 'No works match with {pdf}.', { q: query.trim(), pdf: t(PDF_FILTERS[pdf]) })} <button type="button" className="link" onClick={() => { setQuery(''); choosePdf('all') }}>{t('Clear search and filter')}</button></>
+                  : t('No work of this research is in the Library now.')}
+              </td></tr>}
+            </tbody>
+          </table></div>
+          {pages > 1 && <div className="lib-pager">
+            <span className="lib-range tnum">{t('{first}–{last} of {total}', { first: currentPage * pageSize + 1, last: Math.min(shown.length, (currentPage + 1) * pageSize), total: num(shown.length) })}</span>
+            <div className="lib-pages">
+              <button type="button" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 0} aria-label={t('Previous page')}><ChevronLeft size={16} aria-hidden /></button>
+              {pagerItems(currentPage, pages).map((item, index) => item === 'gap'
+                ? <span className="lib-page-gap" key={`gap-${index}`} aria-hidden>…</span>
+                : <button type="button" key={item} onClick={() => setPage(item)} aria-current={item === currentPage ? 'page' : undefined}>{item + 1}</button>)}
+              <button type="button" onClick={() => setPage(currentPage + 1)} disabled={currentPage >= pages - 1} aria-label={t('Next page')}><ChevronRight size={16} aria-hidden /></button>
+              <DropdownMenu>
+                <DropdownMenuTrigger className="ghost lib-page-size" aria-label={t('Rows per page')}>{t('{n} / page', { n: pageSize })}</DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-auto library-menu">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>{t('Rows per page')}</DropdownMenuLabel>
+                    {PAGE_SIZES.map(size => <DropdownMenuItem key={size} onClick={() => choosePageSize(size)}>
+                      {size === pageSize ? <Check size={16} /> : <span className="library-menu-gap" aria-hidden />}<span className="library-tx">{t('{n} / page', { n: size })}</span>
+                    </DropdownMenuItem>)}
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>}
+          {picked.size > 0 && <div className="selbar lib-selbar" role="region" aria-label={t('Chosen works')}>
+            <b aria-live="polite">{t('{n} chosen', { n: pickedWorks.length })}</b>
+            <span className="spacer" />
+            <SelectionActions bar works={pickedWorks} researches={researches} project={project} locked={locked}
+              onTable={() => setAsking({ mode: 'table', works: pickedWorks.map(e => e.work_id) })}
+              onAsk={() => setAsking({ mode: 'ask', works: pickedWorks.map(e => e.work_id) })}
+              onAdd={research => void addWorks(pickedWorks.map(e => e.work_id), research)}
+              onExport={format => void exportBibliography(format)}
+              onRemove={() => setPending({ research: project, works: pickedWorks.map(e => e.work_id) })} />
+            <button type="button" className="ghost" onClick={() => setPicked(new Set())}>{t('Clear')}</button>
+          </div>}
+          <ul className="lib-keys" aria-label={t('Keys')}>
+            <li><kbd>/</kbd>{t('search')}</li>
+            <li><kbd>↑</kbd><kbd>↓</kbd>{t('move between works')}</li>
+            <li><kbd>x</kbd>{t('pick')}</li>
+            <li><kbd>↵</kbd>{t('inspect')}</li>
+          </ul>
+        </div>
 
-  // The projects a drag can still land on: the ones that do not already hold the work.
-  const draggable = dragging ? researches.filter(research => !dragging.researchIds.includes(research.id)) : []
-
-  return <section className="collection library-page" ref={sectionRef} data-density={density} data-grouping={grouping}>
-    <div className="library-mast">
-      <h1 tabIndex={-1}>{t('Library')}</h1>
-      <p className="library-lede">{t('Every work saved across your research, with its versions and the projects that use it. Citation counts come from OpenAlex and are metadata, not a quality judgment.')}</p>
-    </div>
-
-    {counts && <ul className="library-rail">
-      <li><span className="library-num">{counts.works.toLocaleString(uiLocale())}</span> {t('works')}</li>
-      <li><span className="library-num">{counts.versions.toLocaleString(uiLocale())}</span> {t('stored versions')}</li>
-      <li><span className="library-num">{counts.researches.toLocaleString(uiLocale())}</span> {t('projects')}</li>
-    </ul>}
-
-    {counts && counts.works > 0 && <div className="library-cover">
-      <div className="library-cover-bar" role="img"
-        aria-label={t('Reading depth across {total} works: {text} with PDF text, {abstract} abstract only, {metadata} metadata only.', {
-          total: counts.works.toLocaleString(uiLocale()),
-          text: depths.pdf_available.toLocaleString(uiLocale()),
-          abstract: depths.abstract.toLocaleString(uiLocale()),
-          metadata: depths.metadata.toLocaleString(uiLocale()),
-        })}>
-        {depths.pdf_available > 0 && <span className="library-c-text" style={{ flex: `${depths.pdf_available} 1 0` }} />}
-        {depths.abstract > 0 && <span className="library-c-abstract" style={{ flex: `${depths.abstract} 1 0` }} />}
-        {depths.metadata > 0 && <span className="library-c-meta" style={{ flex: `${depths.metadata} 1 0` }} />}
-      </div>
-      <ul className="library-cover-legend">
-        {depths.pdf_available > 0 && <li><i className="library-c-text" aria-hidden />{t('PDF text')} <span className="library-num">{depths.pdf_available.toLocaleString(uiLocale())}</span></li>}
-        {depths.abstract > 0 && <li><i className="library-c-abstract" aria-hidden />{t('Abstract only')} <span className="library-num">{depths.abstract.toLocaleString(uiLocale())}</span></li>}
-        {depths.metadata > 0 && <li><i className="library-c-meta" aria-hidden />{t('Metadata only')} <span className="library-num">{depths.metadata.toLocaleString(uiLocale())}</span></li>}
-      </ul>
-      <p className="library-cover-note">
-        {t('Depth is what DEIXIS holds for each work, not a claim about the work.')}
-        {citationsReadAt && ` ${t('Citation counts come from OpenAlex; the newest was read on {date}.', { date: dateText(citationsReadAt) })}`}
-      </p>
-    </div>}
-
-    <div className="library-commands">
-      <div className="library-search" role="search">
-        <Search size={15} aria-hidden />
-        <input ref={searchRef} type="search" value={query} onChange={event => { setQuery(event.target.value); resetList() }}
-          placeholder={t('Search by title, author, venue, DOI or project')} aria-label={t('Search the library')} />
-        <span className="library-slash" aria-hidden>{t('search')} <kbd>/</kbd></span>
-      </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger className="library-picker" aria-label={t('Sort works')}>
-          <span className="library-lead">{t('Sort')}</span>
-          <span className="library-value">{t(SORT_OPTIONS.find(option => option.value === `${sort.key}:${sort.dir}`)?.label ?? SORT_OPTIONS[0].label)}</span>
-          <ChevronDown size={14} aria-hidden />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-auto library-menu">
-          <DropdownMenuLabel>{t('Sort works')}</DropdownMenuLabel>
-          {SORT_OPTIONS.map(option => <DropdownMenuItem key={option.value} onClick={() => chooseSort(option.value)}>
-            {`${sort.key}:${sort.dir}` === option.value ? <Check size={15} /> : <span className="library-menu-gap" aria-hidden />}
-            <span className="library-tx">{t(option.label)}</span>
-          </DropdownMenuItem>)}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <DropdownMenu>
-        <DropdownMenuTrigger className="library-picker" aria-label={t('Filter by reading depth')}>
-          <span className="library-lead">{t('Reading depth')}</span>
-          <span className="library-value">{t(access === 'all' ? 'Any depth' : ACCESS_LABELS[access])}</span>
-          <ChevronDown size={14} aria-hidden />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-auto library-menu">
-          <DropdownMenuLabel>{t('Show works with')}</DropdownMenuLabel>
-          <DropdownMenuItem onClick={() => chooseAccess('all')}>
-            {access === 'all' ? <Check size={15} /> : <span className="library-menu-gap" aria-hidden />}
-            <span className="library-tx">{t('Any depth')}</span>
-          </DropdownMenuItem>
-          {(['pdf_available', 'abstract', 'metadata'] as AccessLevel[]).map(level => <DropdownMenuItem key={level} onClick={() => chooseAccess(level)}>
-            {access === level ? <Check size={15} /> : <span className="library-menu-gap" aria-hidden />}
-            <span className="library-tx">{t(ACCESS_LABELS[level])}</span>
-            <span className="library-menu-hint">{(entries ?? []).filter(entry => entry.access_level === level).length.toLocaleString(uiLocale())}</span>
-          </DropdownMenuItem>)}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <div className="library-seg" role="group" aria-label={t('Row density')}>
-        <button type="button" aria-pressed={density === 'comfortable'} onClick={() => chooseDensity('comfortable')} title={t('Comfortable rows')}>{t('Comfortable')}</button>
-        <button type="button" aria-pressed={density === 'compact'} onClick={() => chooseDensity('compact')} title={t('Compact rows')}>{t('Compact')}</button>
-      </div>
-      <div className="library-seg" role="group" aria-label={t('Group works')}>
-        <button type="button" aria-pressed={grouping === 'project'} onClick={() => chooseGrouping('project')}>{t('By project')}</button>
-        <button type="button" aria-pressed={grouping === 'none'} onClick={() => chooseGrouping('none')}>{t('All works')}</button>
+        <div className="pane lib-right">
+          <div className="pane-h">{t('New from selection')}{pickedWorks.length ? ` · ${num(pickedWorks.length)}` : ''}</div>
+          <div className="newsel">
+            {actions}
+            <p className="foot-note">{pickedWorks.length ? '' : t('Select works to start from them.')}</p>
+            <div className="box lib-depth">
+              <h5>{t('Reading depth, all works')}</h5>
+              <div className="bar" role="img" aria-label={t('Reading depth across {total} works: {text} with PDF text, {abstract} abstract only, {metadata} metadata only.', { total: num(entries.length), text: num(depth.pdf_available), abstract: num(depth.abstract), metadata: num(depth.metadata) })}>
+                {(['pdf_available', 'abstract', 'metadata'] as AccessLevel[]).map(level => depth[level] > 0 && <i key={level} className={`lib-d-${level}`} style={{ width: `${(depth[level] / Math.max(1, entries.length)) * 100}%` }} />)}
+              </div>
+              <div className="legend">
+                <span><i className="lib-d-pdf_available" />{t('PDF {n}', { n: num(depth.pdf_available) })}</span>
+                <span><i className="lib-d-abstract" />{t('Abstract {n}', { n: num(depth.abstract) })}</span>
+                <span><i className="lib-d-metadata" />{t('Metadata {n}', { n: num(depth.metadata) })}</span>
+              </div>
+              <p className="lib-depth-note">{t('Depth is what DEIXIS holds for each work, not a claim about the work.')}
+                {citationsReadAt && ` ${t('Citation counts come from OpenAlex; the newest was read on {date}.', { date: new Date(citationsReadAt).toLocaleDateString(uiLocale(), { dateStyle: 'medium' }) })}`}</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
-    {narrowed && <div className="library-chiprow">
-      <span className="library-chip">
-        {query.trim()}
-        <button type="button" className="library-chip-x" aria-label={t('Remove search term')} onClick={() => { setQuery(''); resetList() }}><X size={13} aria-hidden /></button>
-      </span>
-      {access !== 'all' && <span className="library-chip">
-        {t(ACCESS_LABELS[access])}
-        <button type="button" className="library-chip-x" aria-label={t('Remove reading-depth filter')} onClick={() => chooseAccess('all')}><X size={13} aria-hidden /></button>
-      </span>}
-      <span className="library-chip-count">{filtered.length === 1 ? t('1 work matches') : t('{n} works match', { n: filtered.length.toLocaleString(uiLocale()) })}</span>
-      <button type="button" className="library-clear" onClick={() => { setQuery(''); chooseAccess('all') }}>{t('Clear all')}</button>
-    </div>}
-
-    {error && <Notice tone="error">{t('Could not load the Library: {message}', { message: error })} <Button variant="outline" onClick={() => { setError(''); load() }}>{t('Retry')}</Button></Notice>}
-    {!error && entries === null && <p className="library-status" role="status">{t('Loading Library…')}</p>}
-    {!error && entries !== null && !filtered.length && (narrowed
-      ? <p className="library-status" role="status">{t('No work matches the current search and filter.')} <button type="button" className="library-clear" onClick={() => { setQuery(''); chooseAccess('all') }}>{t('Clear all')}</button></p>
-      : <div className="library-empty">
-        <p>{t('No works yet. Sources you save in a research will appear here.')}</p>
-        {onStartResearch && <Button variant="outline" onClick={onStartResearch}><Plus size={14} aria-hidden />{t('Start a research')}</Button>}
-      </div>)}
-
-    {dragging && <div className="library-dock">
-      <GripVertical size={16} className="library-dock-grip" aria-hidden />
-      <span className="library-dock-label">
-        <b>{shortTitle(dragging.title)}</b>
-        <span>{draggable.length
-          ? t('{n} projects can take it', { n: draggable.length })
-          : t('Already a source in every project')}</span>
-      </span>
-      {grouping === 'none' && <div className="library-dock-targets">
-        {draggable.map(research => <span key={research.id} className="library-dock-target" title={research.title} {...dropProps(research)}>{research.title}</span>)}
-      </div>}
-      {grouping === 'none' && <span className="library-drop-hint">{t('Drop it on a project')}</span>}
-    </div>}
-
-    {workError && <Notice tone="error">{t('Could not load this work: {message}', { message: workError })}</Notice>}
-
-    {!error && filtered.length > 0 && (grouping === 'none'
-      ? <ul className="library-records">
-        {flatRows.map(entry => renderRow(entry, entry.work_id, null))}
-      </ul>
-      : <ul className="library-bands">{bands.map(renderBand)}</ul>)}
-
-    {grouping === 'none' && filtered.length > 0 && pages > 1 && <div className="library-pager">
-      <span className="library-range">{t('{first}–{last} of {total}', {
-        first: currentPage * pageSize + 1,
-        last: Math.min(filtered.length, (currentPage + 1) * pageSize),
-        total: filtered.length.toLocaleString(uiLocale()),
-      })}</span>
-      <div className="library-pages">
-        <button type="button" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 0} aria-label={t('Previous page')}><ChevronLeft size={15} aria-hidden /></button>
-        {pagerItems(currentPage, pages).map((item, index) => item === 'gap'
-          ? <span className="library-page-gap" key={`gap-${index}`} aria-hidden>…</span>
-          : <button type="button" key={item} onClick={() => setPage(item)} aria-current={item === currentPage ? 'page' : undefined}>{item + 1}</button>)}
-        <button type="button" onClick={() => setPage(currentPage + 1)} disabled={currentPage >= pages - 1} aria-label={t('Next page')}><ChevronRight size={15} aria-hidden /></button>
-        <DropdownMenu>
-          <DropdownMenuTrigger className="library-more" aria-label={t('Rows per page')}>{t('{n} / page', { n: pageSize })}</DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-auto library-menu">
-            <DropdownMenuLabel>{t('Rows per page')}</DropdownMenuLabel>
-            {PAGE_SIZES.map(size => <DropdownMenuItem key={size} onClick={() => choosePageSize(size)}>
-              {size === pageSize ? <Check size={15} /> : <span className="library-menu-gap" aria-hidden />}
-              <span className="library-tx">{t('{n} / page', { n: size })}</span>
-            </DropdownMenuItem>)}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>}
-
-    <ul className="library-keystrip">
-      <li><kbd>/</kbd>{t('search')}</li>
-      <li><kbd>↑</kbd><kbd>↓</kbd>{t('move between works')}</li>
-      <li><kbd>x</kbd>{t('pick')}</li>
-      <li><kbd>↵</kbd>{t('inspect')}</li>
-    </ul>
-
-    {selected && sheet && <PassageSheet researchId={sheet.researchId} passageId={sheet.passageId} assetId={sheet.assetId}
-      dark={dark} onClose={() => setSelected(null)} />}
-
-    {picked.works.size > 0 && <div className="library-picked" role="status">
-      <span className="library-picked-count">{picked.works.size === 1 ? t('1 work picked') : t('{n} works picked', { n: picked.works.size })}</span>
-      <DropdownMenu>
-        <DropdownMenuTrigger className="library-picked-add" disabled={adding}>
-          <Plus size={14} aria-hidden />{t('Add to a project')}<ChevronDown size={14} aria-hidden />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-auto library-menu">
-          <DropdownMenuLabel>{t('Add to a project')}</DropdownMenuLabel>
-          {!researches.length && <p className="library-menu-note">{t('No project yet.')}</p>}
-          {researches.map(research => <DropdownMenuItem key={research.id} disabled={adding} onClick={() => void addPicked(research)}>
-            <Folder size={15} /><span className="library-tx">{research.title}</span>
-          </DropdownMenuItem>)}
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <Button variant="outline" size="sm" onClick={() => setPending({ research: picked.research, works: [...picked.works] })}>
-        <Trash2 size={14} aria-hidden />{picked.research ? t('Remove from the project') : t('Remove from the Library')}
-      </Button>
-      <Button variant="ghost" size="sm" onClick={clearPicks}>{t('Clear')}<kbd className="library-key">Esc</kbd></Button>
-      {picked.research
-        ? <span className="library-picked-scope" title={projectTitle(picked.research)}>
-          <Folder size={12} aria-hidden /><span className="sr-only">{t('Project')}</span><span>{projectTitle(picked.research)}</span>
-        </span>
-        : <span className="library-picked-scope">{t('across every project that uses them')}</span>}
-      <p className="library-picked-note">
-        {offScreenPicks > 0 && `${t('Shown rows only: {n} of the picked works are not on screen.', { n: offScreenPicks })} `}
-        {picked.research
-          ? t('Removing takes each work out of this project only; the record and its files stay in the Library.')
-          : t('Every project that uses them loses them as a source; the records and their files stay in the Library.')}
-      </p>
-    </div>}
-
-    <ConfirmDialog open={pending !== null} dark={dark} neutral busy={removing}
-      title={pending?.research ? t('Remove from this project?') : t('Remove from the Library?')}
+    {fileInputEl()}
+    {selected && sheet && <PassageSheet researchId={sheet.researchId} passageId={sheet.passageId} assetId={sheet.assetId} dark={dark} onClose={() => setSelected(null)} />}
+    <ZoteroDialog open={zoteroOpen} onOpenChange={setZoteroOpen} destination="library" busy={busy === 'zotero'} returnFocus={zoteroButton} onImport={choice => void importZotero(choice)} />
+    <NewResearchDialog request={asking} dark={dark} busy={busy === 'create'} count={asking?.works.length ?? 0}
+      onClose={() => setAsking(null)} onStart={(question, answer, literature) => { if (asking) void startFromSelection(asking.mode, asking.works, question, answer, literature) }} />
+    <ConfirmDialog open={pending !== null} dark={dark} neutral busy={busy === 'remove'}
+      title={pending?.research ? t('Remove from this research?') : t('Remove from every research?')}
       description={pending?.research
-        ? t('Every stored version leaves this project’s sources. The record, its PDFs and the answers and cells that cite it stay; Undo in the notification brings it back.')
-        : t('Every stored version leaves every project that uses the work. The record, its PDFs and the answers and cells that cite it stay; Undo in the notification brings it back.')}
-      context={pending ? (pending.works.length === 1
-        ? shortTitle(entries?.find(e => e.work_id === pending.works[0])?.title ?? '')
-        : t('{n} works', { n: pending.works.length })) : undefined}
+        ? t('Every stored version leaves this research’s sources. The work stays in All works; its record, PDFs and the answers and cells that cite it stay. Undo in the notification brings it back.')
+        : t('Every stored version leaves every research that holds the work. The work stays in All works; its record, PDFs and the answers and cells that cite it stay. Undo in the notification brings it back.')}
+      context={pending ? (pending.works.length === 1 ? shortTitle(byWork.get(pending.works[0])?.title ?? '') : t('{n} works', { n: pending.works.length })) : undefined}
       confirmLabel={t('Remove')} cancelLabel={t('Cancel')}
       onConfirm={() => { if (pending) void removeWorks(pending) }}
       onOpenChange={open => { if (!open) setPending(null) }} />
   </section>
+}
+
+function PdfItem({ value, current, count, onChoose }: { value: PdfFilter; current: PdfFilter; count: number; onChoose: (value: PdfFilter) => void }) {
+  return <DropdownMenuItem onClick={() => onChoose(value)}>
+    {current === value ? <Check size={16} /> : <FileText size={16} />}<span className="library-tx">{t(PDF_FILTERS[value])}</span>
+    <span className="library-menu-hint tnum">{num(count)}</span>
+  </DropdownMenuItem>
+}
+
+function ResultNotice({ result, onOpen, onClose }: { result: Result; onOpen: (target: NonNullable<Result['open']>) => void; onClose: () => void }) {
+  return <div className={`notice lib-result${result.tone === 'ok' ? ' info' : ` ${result.tone}`}`} role="status">
+    {result.tone === 'ok' ? <Check size={16} aria-hidden /> : <X size={16} aria-hidden />}
+    <div className="nb">
+      {result.lines.map((line, i) => <span key={i}>{line}</span>)}
+      {result.open && <div className="acts"><button type="button" className="ghost" onClick={() => onOpen(result.open!)}>{t('Open research')}</button></div>}
+    </div>
+    <button type="button" className="ib lib-result-close" aria-label={t('Close')} onClick={onClose}><X size={16} aria-hidden /></button>
+  </div>
+}
+
+// The four "New from selection" actions (mockup `.newsel`), and removal from the research shown (or from every research in
+// All works), a live action the mockup has no place for. In the pane each is a row with its icon on the right; in the bar
+// under the table (below 1100px) a ghost button.
+function SelectionActions({ works, researches, project, locked, bar = false, onTable, onAsk, onAdd, onExport, onRemove }: {
+  works: LibraryEntry[]; researches: LibraryResearch[]; project: string | null; locked: boolean; bar?: boolean
+  onTable: () => void; onAsk: () => void; onAdd: (research: LibraryResearch) => void; onExport: (format: 'bibtex' | 'ris') => void; onRemove: () => void
+}) {
+  const none = !works.length
+  const off = none || locked
+  const cls = bar ? 'ghost' : undefined
+  const item = (label: string, icon: ReactNode) => bar ? <>{icon}{t(label)}</> : <>{t(label)}{icon}</>
+  // What removal would take out: the works the shown research holds, or in All works every work some research holds.
+  const removable = works.filter(entry => (project ? entry.researches.some(r => r.id === project) : entry.researches.length > 0)).length
+  return <>
+    <button type="button" className={cls} disabled={off} onClick={onTable}>{item('Start evidence table', <Table2 size={16} aria-hidden />)}</button>
+    <button type="button" className={cls} disabled={off} onClick={onAsk}>{item('Ask about these works', <MessageSquare size={16} aria-hidden />)}</button>
+    <DropdownMenu>
+      <DropdownMenuTrigger disabled={off} render={<button type="button" className={cls} />}>{item('Add to a research', <Folder size={16} aria-hidden />)}</DropdownMenuTrigger>
+      <DropdownMenuContent align={bar ? 'start' : 'end'} className="w-auto library-menu">
+        <DropdownMenuGroup>
+        <DropdownMenuLabel className="lib-menu-h">{t('Add to a research')}</DropdownMenuLabel>
+        {!researches.length && <p className="library-menu-note">{t('No research yet.')}</p>}
+        {researches.map(research => {
+          const held = works.filter(entry => entry.researches.some(r => r.id === research.id)).length
+          const all = held === works.length && held > 0
+          return <DropdownMenuItem key={research.id} data-research={research.id} disabled={all || locked} onClick={() => onAdd(research)}>
+            {all ? <Check size={16} /> : <Folder size={16} />}
+            <span className="library-tx">{research.title}{all ? <small>{t('Already in it')}</small> : held ? <small>{t('{n} of {m} already in it', { n: held, m: works.length })}</small> : null}</span>
+          </DropdownMenuItem>
+        })}
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+    <DropdownMenu>
+      <DropdownMenuTrigger disabled={off} render={<button type="button" className={cls} />}>{item('Export .bib / .ris', <Download size={16} aria-hidden />)}</DropdownMenuTrigger>
+      <DropdownMenuContent align={bar ? 'start' : 'end'} className="w-auto library-menu">
+        <DropdownMenuItem onClick={() => onExport('bibtex')}><Download size={16} /><span className="library-tx">{t('BibTeX (.bib)')}</span></DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport('ris')}><Download size={16} /><span className="library-tx">{t('RIS (.ris)')}</span></DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+    {removable > 0 && <button type="button" className={`${cls ?? ''} lib-remove`.trim()} disabled={locked} onClick={onRemove}>
+      {item(project ? 'Remove from this research' : 'Remove from every research', <Trash2 size={16} aria-hidden />)}</button>}
+  </>
+}
+
+function Row({ entry, project, researches, picked, locked, dragging, onPick, onOpen, onFocusTitle, onDragStart, onDragEnd, onAdd, onOpenResearch, onCopyDoi, onRemove }: {
+  entry: LibraryEntry; project: string | null; researches: LibraryResearch[]; picked: boolean; locked: boolean; dragging: boolean
+  onPick: () => void; onOpen: () => void; onFocusTitle: () => void; onDragStart: (event: DragEvent) => void; onDragEnd: () => void
+  onAdd: (research: LibraryResearch) => void; onOpenResearch: (id: string) => void; onCopyDoi: (doi: string) => void; onRemove: () => void
+}) {
+  const owner = project ?? entry.researches[0]?.id ?? null
+  const removable = project ? entry.researches.some(r => r.id === project) : entry.researches.length > 0
+  return <tr className={[picked ? 'sel' : '', dragging ? 'is-dragging' : ''].filter(Boolean).join(' ') || undefined} draggable onDragStart={onDragStart} onDragEnd={onDragEnd}>
+    <td className="cb"><input type="checkbox" checked={picked} onChange={onPick} aria-label={t('Select “{title}”', { title: shortTitle(entry.title) })} /></td>
+    <td className="lib-title-cell">
+      <span className="lib-title-line"><SourceKey value={entry.source_key} className="lib-key" /><button type="button" className="src-t library-title" onClick={onOpen} onFocus={onFocusTitle}
+        title={t('Open the stored passages for this work')}>{entry.title}</button></span>
+      <div className="src-m">{authorsText(entry.authors)}{entry.cited_by_count !== null && ` · ${t(entry.cited_by_count === 1 ? '{n} citation' : '{n} citations', { n: num(entry.cited_by_count) })}`}</div>
+      {entry.versions.length > 1 && <div className="pills">{entry.versions.map(version => <span key={version.source_version_id} className="pill">
+        {versionText(version.version_label)} · {t(ACCESS_LABELS[version.access_level])}</span>)}</div>}
+    </td>
+    <td className="tnum">{entry.year ?? '—'}</td>
+    <td><span className="pill lib-depth-pill"><i className={`rd lib-d-${entry.access_level}`} aria-hidden />{t(ACCESS_LABELS[entry.access_level])}</span></td>
+    <td className="lib-research-cell">{entry.researches.length
+      ? <><span className="lib-first">{entry.researches[0].title}</span>{entry.researches.length > 1 && <span className="lib-more">{t('+{n} more', { n: entry.researches.length - 1 })}</span>}</>
+      : <span className="lib-more">{t('None')}</span>}</td>
+    <td className="lib-act">
+      <DropdownMenu>
+        <DropdownMenuTrigger className="ib" aria-label={t('More for “{title}”', { title: shortTitle(entry.title) })} title={t('More actions')}><Ellipsis size={16} aria-hidden /></DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-auto library-menu">
+          <DropdownMenuGroup>
+          <DropdownMenuLabel className="lib-menu-h">{t('Add to a research')}</DropdownMenuLabel>
+          {!researches.length && <p className="library-menu-note">{t('No research yet.')}</p>}
+          {researches.map(research => {
+            const held = entry.researches.some(r => r.id === research.id)
+            return <DropdownMenuItem key={research.id} data-research={research.id} disabled={held || locked} onClick={() => onAdd(research)}>
+              {held ? <Check size={16} /> : <Folder size={16} />}<span className="library-tx">{research.title}{held && <small>{t('Already in it')}</small>}</span>
+            </DropdownMenuItem>
+          })}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={!owner} onClick={() => { if (owner) onOpenResearch(owner) }}>
+            <FileText size={16} /><span className="library-tx">{t('Open in research')}{!owner && <small>{t('No research holds it')}</small>}</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={!entry.doi} onClick={() => { if (entry.doi) onCopyDoi(entry.doi) }}>
+            <Link2 size={16} /><span className="library-tx">{t('Copy DOI')}{!entry.doi && <small>{t('no DOI stored')}</small>}</span>
+          </DropdownMenuItem>
+          {removable && <DropdownMenuItem variant="destructive" disabled={locked} onClick={onRemove}>
+            <X size={16} /><span className="library-tx">{project ? t('Remove from this research') : t('Remove from every research')}<small>{t('Stays in All works')}</small></span>
+          </DropdownMenuItem>}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </td>
+  </tr>
+}
+
+// "Start evidence table" / "Ask about these works": the question the new research asks, and the models it runs with,
+// named before anything starts. Nothing is sent until Start.
+function NewResearchDialog({ request, dark, busy, count, onClose, onStart }: {
+  request: { mode: Mode; works: string[] } | null; dark: boolean; busy: boolean; count: number
+  onClose: () => void; onStart: (question: string, answer: ModelChoice, literature: ModelChoice) => void
+}) {
+  const [question, setQuestion] = useState('')
+  const [models, setModels] = useState<{ answer: ModelChoice | null; literature: ModelChoice | null } | null>(null)
+  const [failed, setFailed] = useState('')
+  const open = request !== null
+  const mode = request?.mode ?? 'ask'
+  useEffect(() => {
+    if (!open) return
+    let live = true
+    setQuestion('')
+    setModels(null)
+    setFailed('')
+    Promise.all([api.connections(), api.settings().catch(() => null)]).then(([connections, saved]) => {
+      if (!live) return
+      const list = connectionModels(connections)
+      const defaults = saved as Record<ModelRole, RoleModelSetting> | null
+      setModels({ answer: startModel(list, defaults?.answer), literature: startModel(list, defaults?.literature) })
+    }, (e: Error) => { if (live) setFailed(e.message) })
+    return () => { live = false }
+  }, [open])
+  const ready = Boolean(models?.answer && models.literature)
+  const line = (role: string, choice: ModelChoice | null) => choice
+    ? t(choice.fromSettings ? '{role}: {model} (the default in Settings)' : '{role}: {model} (the connection’s default; Settings has none)', { role: t(role), model: choice.name })
+    : t('{role}: no model is listed by any connection.', { role: t(role) })
+  return <ConfirmDialog open={open} dark={dark} neutral busy={busy} confirmDisabled={!ready || question.trim().length < 3}
+    title={t(mode === 'table' ? 'Start evidence table' : 'Ask about these works')}
+    description={t(mode === 'table'
+      ? 'A new research holds the {n} chosen works as its only sources, with a study table of them. Column suggestions start once it is made.'
+      : 'A new research holds the {n} chosen works as its only sources and answers your question from them. No search is run.', { n: count })}
+    confirmLabel={t('Start')} cancelLabel={t('Cancel')}
+    onConfirm={() => { if (models?.answer && models.literature) onStart(question.trim(), models.answer, models.literature) }}
+    onOpenChange={next => { if (!next) onClose() }}>
+    <label className="lib-question">{t(mode === 'table' ? 'What should the table compare?' : 'Your question')}
+      <textarea className="field" rows={3} maxLength={4000} value={question} onChange={event => setQuestion(event.target.value)} /></label>
+    {failed ? <p className="lib-models" role="alert">{t('Could not read the model connections: {message}', { message: failed })}</p>
+      : !models ? <p className="lib-models" role="status">{t('Reading the model connections…')}</p>
+      : <p className="lib-models">{line('Answer model', models.answer)}<br />{line('Literature model', models.literature)}</p>}
+  </ConfirmDialog>
 }
 
 function sheetTarget(work: LibraryWork | null) {

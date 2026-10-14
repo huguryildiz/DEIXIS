@@ -4,6 +4,17 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D17 — The Library counts from the stored list and reports only what the server did
+Status: accepted (UI parity S25, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
+Context: The mockup's Library page (L1–L10) shows fixed counts, a reading-depth bar and import and "New from selection" results that no route produced. A work can have several versions, and each version can belong to different researches, so "Remove from this research" needed a rule for which versions it touches.
+Decision:
+- Every count on the page (All works, each research, the PDF filter groups, the reading-depth box) is counted from the stored `/api/library` list. Reading depth uses the stored access level: PDF text, abstract only, metadata only.
+- `library_view` lists, for each version, the researches it actively belongs to (`research_ids`). "Add to a research" shows "Already in it" from that membership. "Remove from this research" removes only the versions that research holds, after a confirmation, keeps the work in All works, and offers Undo.
+- Upload PDF reports, per file, saved, already saved (`already_saved` in the upload answer) or refused with the server's reason. A Zotero import reports the import answer's counts.
+- New from selection: Ask creates a research with the chosen works as attached sources and starts its answer; Start evidence table creates one and starts its column suggestions. Both name the models they will use before starting and report only the steps the server confirmed. Export writes a real .bib or .ris file and says how many records it holds.
+- One version counter guards every Library read: a read started before or during a change never replaces the change's result, and a failed stale read shows no error.
+Limits: Tested on SYNTHETIC fixture records with mocked Zotero answers (e2e/library.spec.ts, parity surfaces library and library-empty) and a pytest on the upload and membership fields (tests/app/test_library_routes.py). No real model answered the Ask or table runs, and no real Zotero library was read.
+
 ## D16 — Settings shows only what was stored or measured, and a key is never shown again
 Status: accepted (UI parity S24, 14 Oct 2026) · Date: 2026-10-14 · Writer: Claude
 Context: The mockup's Settings page (ST1–ST11) marks every tile "Connected", says the proxy test "opened a test article", and offers a Save step for semantic search. The app has no route that opens an article through the proxy, and several tiles have nothing a page visit could test.

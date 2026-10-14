@@ -1007,12 +1007,16 @@ def library_view(store: Store) -> dict[str, Any]:
                 "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
                 "source_created_at": row["source_created_at"],
                 "access_level": _access_level(row["has_pdf_text"], row["has_abstract"]),
-                "library_item": saved.get(svid),
+                "library_item": saved.get(svid), "research_ids": [],
             }
         rid = row["research_id"]
         # A source removed from a research stays in the library but not in that research's project group (D50).
-        if rid is not None and row["removed_at"] is None and rid not in work["researches"]:
-            work["researches"][rid] = {"id": rid, "title": row["research_title"], "updated_at": row["research_updated_at"]}
+        if rid is not None and row["removed_at"] is None:
+            # Which researches hold this version now, so a removal names only versions the research holds (S25).
+            if rid not in work["versions"][svid]["research_ids"]:
+                work["versions"][svid]["research_ids"].append(rid)
+            if rid not in work["researches"]:
+                work["researches"][rid] = {"id": rid, "title": row["research_title"], "updated_at": row["research_updated_at"]}
 
     entries = []
     for work_id, work in works.items():
@@ -1031,7 +1035,7 @@ def library_view(store: Store) -> dict[str, Any]:
             "cited_by_count_at": representative["cited_by_count_at"],
             "versions": [{"source_version_id": v["source_version_id"], "version_label": v["version_label"],
                           "year": v["year"], "venue": v["venue"], "access_level": v["access_level"],
-                          "library_item": v["library_item"]} for v in versions],
+                          "library_item": v["library_item"], "research_ids": v["research_ids"]} for v in versions],
             # The version whose bibliographic fields the row shows; a bibliography of the row exports this record.
             "representative_source_version_id": representative["source_version_id"],
             "saved": any(v["library_item"] for v in versions),

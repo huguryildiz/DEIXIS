@@ -54,15 +54,23 @@ def test_library_upload_refuses_a_non_pdf_and_reuses_the_same_file(tmp_path):
         assert refused.status_code == 422 and refused.json()["code"] == "upload_not_pdf"
         first = client.post("/api/library/uploads", files=pdf_file("same.pdf"))
         assert first.status_code == 201, first.text
+        assert first.json()["already_saved"] is False
         second = client.post("/api/library/uploads", files=pdf_file("same-again.pdf"))
         assert second.json()["source_version_id"] == first.json()["source_version_id"]
+        assert second.json()["already_saved"] is True
         assert app.state.store.conn.execute("SELECT COUNT(*) FROM library_items").fetchone()[0] == 1
         # A file uploaded into a research before is the same record; saving it from the Library marks it uploaded.
         rid = create(client, source_scope="attached")
         held = client.post(f"/api/researches/{rid}/uploads", files=pdf_file("held.pdf", "SYNTHETIC held study."))
         svid = held.json()["uploaded_source_version_id"]
-        assert client.post("/api/library/uploads", files=pdf_file("held.pdf", "SYNTHETIC held study.")).json()[
-            "source_version_id"] == svid
+        from_research = client.post("/api/library/uploads", files=pdf_file("held.pdf", "SYNTHETIC held study.")).json()
+        assert (from_research["source_version_id"], from_research["already_saved"]) == (svid, False)
+        # Each listed version names the researches that hold it now (S25: a removal names only those versions).
+        version = next(v for e in from_research["library"]["entries"] for v in e["versions"] if v["source_version_id"] == svid)
+        assert version["research_ids"] == [rid]
+        assert client.request("DELETE", f"/api/researches/{rid}/sources", json={"source_version_ids": [svid]}).status_code == 200
+        after = client.get("/api/library").json()
+        assert next(v for e in after["entries"] for v in e["versions"] if v["source_version_id"] == svid)["research_ids"] == []
         assert app.state.store.conn.execute("SELECT origin, metadata_origin FROM library_items WHERE source_version_id = ?",
                                             (svid,)).fetchone()[:] == ("upload", "user_supplied")
 

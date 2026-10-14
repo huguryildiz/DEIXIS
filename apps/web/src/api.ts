@@ -732,7 +732,8 @@ export type SemanticSearch = { provider: SemanticSearchProvider; model: string |
 export type InstitutionalAccess = { status: 'institutional' | 'none' | 'unknown' | 'not_checked'; via?: string; reason?: string }
 // Reading depth of a stored source version: a PDF text layer, an abstract, or bare metadata.
 export type AccessLevel = 'pdf_available' | 'abstract' | 'metadata'
-export type LibraryVersion = { source_version_id: string; version_label: string | null; year: number | null; venue: string | null; access_level: AccessLevel }
+// `research_ids`: the researches that hold this version now (a removal names only versions the research holds).
+export type LibraryVersion = { source_version_id: string; version_label: string | null; year: number | null; venue: string | null; access_level: AccessLevel; research_ids: string[] }
 export type LibraryResearch = { id: string; title: string; updated_at: string }
 export type LibraryEntry = {
   work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
@@ -1548,7 +1549,7 @@ export const libraryApi = {
   upload: (file: File) => {
     const form = new FormData()
     form.append('file', file)
-    return request<{ source_version_id: string; work_id: string; library: LibraryItemsView; file_restore: FileRestoreReceipt | null }>(
+    return request<{ source_version_id: string; work_id: string; already_saved: boolean; library: LibraryItemsView; file_restore: FileRestoreReceipt | null }>(
       '/api/library/uploads', { method: 'POST', body: form })
   },
   bibliography: libraryBibliography,

@@ -440,7 +440,7 @@ export const APP_EXCLUDE = PLACEMENTS.flatMap(p => (p.app ? [p.app] : []))
 export const PROBE = [...new Set(COLOUR_EXCEPTIONS.flatMap(e => e.selectors))]
 
 /** Fixture facts a data list's expected count comes from (never the mockup's example count). */
-export type FixtureContext = { researches: number; suggestions: number }
+export type FixtureContext = { researches: number; suggestions: number; library: number }
 
 /** One item's checks: the pair's geometry, type, colour, fixed text and icon checks, on the item at `index`. */
 async function checkItem(pair: Pair, item: Pair, m: Side, v: Variant, mock: Page, app: Page, index: number, data: boolean, mockIndex = index): Promise<string[]> {

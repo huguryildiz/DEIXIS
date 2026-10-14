@@ -231,7 +231,7 @@ async function showApp(page: Page, base: string, surface: Surface, research: str
 
 type AnswerView = { status: string; created_at: string; applicability: string; source_text_changed: boolean; unanswered_aspects?: string[] }
 
-/** The fixture facts data lists count from. Suggestions follow S5a's rule (Q4): from each research only its latest
+/** The fixture facts data lists count from. `library` is the number of works /api/library lists (S25). Suggestions follow S5a's rule (Q4): from each research only its latest
  *  structurally valid answer, and only while it is current (same question and source selection, no source text
  *  changed); at most two in all. */
 async function fixtureContext(base: string): Promise<FixtureContext> {
@@ -245,7 +245,8 @@ async function fixtureContext(base: string): Promise<FixtureContext> {
       const latest = view.answers.filter(a => a.status === 'structurally_valid').sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
       if (latest && latest.applicability === 'current' && !latest.source_text_changed) suggestions += (latest.unanswered_aspects ?? []).length
     }
-    return { researches: researches.length, suggestions: Math.min(2, suggestions) }
+    const library = ((await (await api.get('/api/library')).json()) as { entries: unknown[] }).entries.length
+    return { researches: researches.length, suggestions: Math.min(2, suggestions), library }
   } finally {
     await api.dispose()
   }
@@ -258,7 +259,7 @@ test.describe('parity: app against the mockup v24', () => {
   let research = ''
   let report = ''
   let cand = ''
-  let ctx: FixtureContext = { researches: 0, suggestions: 0 }
+  let ctx: FixtureContext = { researches: 0, suggestions: 0, library: 0 }
 
   test.beforeAll(async () => {
     test.setTimeout(300_000)

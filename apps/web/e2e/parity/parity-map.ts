@@ -14,6 +14,7 @@ export type SurfaceId = 'home' | 'home-first' | 'home-guide' | 'research' | 'zot
   | 'sources-why' | 'sources-sel' | 'queue-panel' | 'pdfs-panel' | 'funnel-panel' | 'activity-panel'
   | 'table-panel' | 'cell-panel' | 'ereport-panel' | 'ecite-panel'
   | 'cands-panel' | 'cand-panel' | 'cev-panel' | 'review-dialog' | 'review-panel' | 'watch-panel' | 'schedule-dialog' | 'followup-turn' | 'plan-panel' | 'settings' | 'settings-sheet'
+  | 'library' | 'library-empty'
 export type Status = 'active' | `pending:${string}`
 
 export type Pair = {
@@ -316,6 +317,10 @@ export const SURFACES: Surface[] = [
     appAct: async page => { await page.locator('.research-topbar .research-export').click(); await page.locator('[data-slot=dropdown-menu-content]').waitFor() } },
   // S26: the Trash page. The app's /api/trash is answered with two SYNTHETIC rows shaped like the mockup's (a research,
   // then a source); the fixture server's own Trash is empty and nothing in the parity research is removed.
+  // S25: the Library of the fixture's three SYNTHETIC researches; the empty Library from an empty /api/library answer.
+  { id: 'library', mock: "setScenario('ok'); go('library')", app: '#/library', ready: '.lib-table tbody tr .src-t' },
+  { id: 'library-empty', mock: "setScenario('first'); go('library')", app: '#/library', ready: '.lib-empty h1',
+    prepare: page => page.route('**/api/library', route => route.fulfill({ json: { entries: [], researches: [], counts: { works: 0, versions: 0, researches: 0 } } })) },
   { id: 'trash', mock: "setScenario('ok'); go('trash')", app: '#/trash', ready: '.trash-rows', prepare: trashRows },
   { id: 'trash-confirm', mock: "setScenario('ok'); go('trash')", mockAct: 'st.trashAsk = 0; render()', app: '#/trash', ready: '.trash-rows', prepare: trashRows,
     appAct: page => page.locator('.trash-row .trash-delete').first().click() },
@@ -550,6 +555,57 @@ const settingsPage: Pair[] = [
   { id: 'settings-sheet.buttons', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail .acts button', app: '.connection-body > .acts button', checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], unordered: true, status: 'active' },
 ]
 
+// S25 Library (L1-L10). The researches' rows, the works' rows and their counts are the fixture's data; the sort button
+// names the Library's own default order (COPY_CHANGES library-sort-default). Table cells follow an auto table layout, so
+// they compare type and colour; their positions follow the rows' text (GEOMETRY_EXCEPTIONS library-table-cells-xy).
+const LB = '.lib-body'
+const libraryPage: Pair[] = [
+  { id: 'library.mobilebar', surface: 'library', mock: '.mobilebar', app: '.mobilebar', checks: ['chrome', 'colour'], widths: PHONE, use: 'decorative', status: 'active' },
+  { id: 'library.head', surface: 'library', mock: '.lib-head', app: '.library-page .lib-head', checks: ['chrome'], status: 'active' },
+  { id: 'library.title', surface: 'library', mock: '.lib-head h1', app: '.library-page .lib-head h1', checks: ['chrome', 'type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'library.head-buttons', surface: 'library', mock: '.lib-head > button', app: '.library-page .lib-head > button', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true,
+    states: ['hover'], status: 'active' },
+  { id: 'library.upload-icon', surface: 'library', mock: '.lib-head > .btn-teal', app: '.library-page .lib-head > .btn-teal', checks: ['icon'], icon: { mock: 'ul', app: 'upload' }, status: 'active' },
+  { id: 'library.body', surface: 'library', mock: LB, app: `.library-page ${LB}`, checks: ['chrome'], status: 'active' },
+  { id: 'library.panes', surface: 'library', mock: `${LB} > .pane`, app: `.library-page ${LB} > .pane`, checks: ['chrome', 'colour'], list: 'fixed', text: false, use: 'decorative', breakpoint: true, status: 'active' },
+  { id: 'library.all', surface: 'library', mock: `${LB} .cols-list > button:first-child`, app: `.library-page ${LB} .cols-list > button:first-child`, checks: ['chrome', 'type', 'colour'], text: true,
+    dataText: { mock: ['em'], app: ['em'] }, states: ['selected'], selected: { mock: `${LB} .cols-list > button.on`, app: `.library-page ${LB} .cols-list > button.on` }, widths: DESK, status: 'active' },
+  { id: 'library.all-count', surface: 'library', mock: `${LB} .cols-list > button:first-child em`, app: `.library-page ${LB} .cols-list > button:first-child em`, checks: ['type', 'colour'], states: [], widths: DESK, status: 'active' },
+  { id: 'library.research-heading', surface: 'library', mock: `${LB} .cols-list h6`, app: `.library-page ${LB} .cols-list h6`, checks: ['chrome', 'type', 'colour'], text: true, states: [], widths: DESK, status: 'active' },
+  { id: 'library.research-row', surface: 'library', mock: `${LB} .cols-list h6 ~ button`, app: `.library-page ${LB} .cols-list h6 ~ button`, checks: ['chrome', 'type', 'colour'], list: 'data',
+    expected: ctx => ctx.researches, states: ['hover'], widths: DESK, status: 'active' },
+  { id: 'library.toolbar', surface: 'library', mock: `${LB} .toolbar`, app: `.library-page ${LB} .lib-main .toolbar`, checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'library.search', surface: 'library', mock: `${LB} .toolbar .search`, app: `.library-page ${LB} .toolbar .search`, checks: ['chrome', 'type', 'colour', 'icon'],
+    icon: { mock: 'search', app: 'search' }, use: 'icon', states: [], status: 'active' },
+  { id: 'library.search-input', surface: 'library', mock: `${LB} .toolbar .search input`, app: `.library-page ${LB} .toolbar .search input`, checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'library.tools', surface: 'library', mock: `${LB} .toolbar > button`, app: `.library-page ${LB} .toolbar > button`, checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', text: false,
+    icon: [{ mock: 'sort', app: 'arrow-up-down' }, { mock: 'filter', app: 'funnel' }], states: ['hover'], status: 'active' },
+  { id: 'library.table', surface: 'library', mock: `${LB} .tbl-wrap`, app: `.library-page ${LB} .tbl-wrap`, checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'library.th', surface: 'library', mock: `${LB} .tbl-wrap thead th`, app: `.library-page ${LB} .lib-table thead th`, checks: ['type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  { id: 'library.row', surface: 'library', mock: `${LB} .tbl-wrap tbody tr`, app: `.library-page ${LB} .lib-table tbody tr`, checks: ['content', 'colour'], list: 'data',
+    expected: ctx => Math.min(25, ctx.library), use: 'decorative', states: [], status: 'active' },
+  { id: 'library.row-title', surface: 'library', mock: `${LB} tbody tr:first-child .src-t`, app: `.library-page ${LB} .lib-table tbody tr:first-child .src-t`, checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'library.row-meta', surface: 'library', mock: `${LB} tbody tr:first-child .src-m`, app: `.library-page ${LB} .lib-table tbody tr:first-child .src-m`, checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'library.row-year', surface: 'library', mock: `${LB} tbody tr:first-child td:nth-child(3)`, app: `.library-page ${LB} .lib-table tbody tr:first-child td:nth-child(3)`, checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'library.row-depth', surface: 'library', mock: `${LB} tbody tr:first-child td:nth-child(4) .pill`, app: `.library-page ${LB} .lib-table tbody tr:first-child td:nth-child(4) .pill`, checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'library.row-research', surface: 'library', mock: `${LB} tbody tr:first-child td:nth-child(5)`, app: `.library-page ${LB} .lib-table tbody tr:first-child td:nth-child(5)`, checks: ['type', 'colour'], states: [], status: 'active' },
+  { id: 'library.row-more', surface: 'library', mock: `${LB} tbody tr:first-child .ib`, app: `.library-page ${LB} .lib-table tbody tr:first-child .ib`, checks: ['chrome', 'colour', 'icon'],
+    icon: { mock: 'more', app: 'ellipsis' }, states: ['hover'], status: 'active' },
+  { id: 'library.newsel-head', surface: 'library', mock: `${LB} .pane:last-child .pane-h`, app: `.library-page ${LB} .lib-right .pane-h`, checks: ['chrome', 'type', 'colour'], text: true, states: [], widths: DESK, status: 'active' },
+  { id: 'library.newsel', surface: 'library', mock: `${LB} .newsel > button`, app: `.library-page ${LB} .lib-right .newsel > button`, checks: ['chrome', 'type', 'colour', 'icon'], list: 'fixed', text: true,
+    icon: [{ mock: 'table', app: 'table-2' }, { mock: 'chat', app: 'message-square' }, { mock: 'folder', app: 'folder' }, { mock: 'dl', app: 'download' }], states: [], widths: DESK, status: 'active' },
+  { id: 'library.newsel-note', surface: 'library', mock: `${LB} .newsel > .foot-note`, app: `.library-page ${LB} .lib-right .newsel > .foot-note`, checks: ['type', 'colour'], text: true, states: [], widths: DESK, status: 'active' },
+  { id: 'library.depth-box', surface: 'library', mock: `${LB} .newsel > .box`, app: `.library-page ${LB} .lib-right .newsel > .box`, checks: ['content', 'colour'], use: 'decorative', widths: DESK, status: 'active' },
+  { id: 'library.depth-title', surface: 'library', mock: `${LB} .newsel > .box h5`, app: `.library-page ${LB} .lib-right .box h5`, checks: ['type', 'colour'], text: true, states: [], widths: DESK, status: 'active' },
+  { id: 'library.depth-bar', surface: 'library', mock: `${LB} .newsel > .box .bar`, app: `.library-page ${LB} .lib-right .box .bar`, checks: ['chrome', 'colour'], use: 'decorative', states: [], widths: DESK, status: 'active' },
+  { id: 'library.depth-legend', surface: 'library', mock: `${LB} .newsel > .box .legend span`, app: `.library-page ${LB} .lib-right .box .legend span`, checks: ['type', 'colour'], list: 'fixed', text: false, states: [], widths: DESK, status: 'active' },
+  { id: 'library-empty.empty', surface: 'library-empty', mock: '.empty', app: '.library-page .lib-empty', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
+  { id: 'library-empty.icon', surface: 'library-empty', mock: '.empty svg.i', app: '.lib-empty > div > svg', checks: ['chrome', 'icon'], icon: { mock: 'lib', app: 'library-big' }, status: 'active' },
+  { id: 'library-empty.heading', surface: 'library-empty', mock: '.empty h2', app: '.lib-empty h1', checks: ['chrome', 'type', 'colour'], text: true, states: [], status: 'active' },
+  { id: 'library-empty.text', surface: 'library-empty', mock: '.empty p', app: '.lib-empty p', checks: ['content', 'type', 'colour'], text: false, states: [], status: 'active' },
+  { id: 'library-empty.buttons', surface: 'library-empty', mock: '.empty .acts button', app: '.lib-empty .acts button', checks: ['chrome', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], status: 'active' },
+]
+
 const TR = '.settings .rows > div'
 const trashPage: Pair[] = [
   { id: 'trash.title', surface: 'trash', mock: '.settings h1', app: '.trash-page > h1', checks: ['chrome', 'type', 'colour'], text: true, status: 'active' },
@@ -574,6 +630,7 @@ const trashPage: Pair[] = [
 export const PAIRS: Pair[] = [
   ...settingsPage,
   ...trashPage,
+  ...libraryPage,
   ...researchMenu,
   ...exportMenu,
   ...titleEdit,

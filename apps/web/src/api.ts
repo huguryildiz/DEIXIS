@@ -1578,7 +1578,7 @@ export type LibraryItemEntry = Omit<LibraryEntry, 'versions'> & {
 }
 export type LibraryItemsView = Omit<LibraryView, 'entries'> & { entries: LibraryItemEntry[] }
 export type LibraryItemWork = Omit<LibraryWork, 'versions'> & { versions: (LibraryWorkVersion & { library_item: LibraryItem | null })[] }
-export type LibraryBibliographyRequest = { format: 'bibtex' | 'ris'; work_ids?: string[]; source_version_ids?: string[] }
+export type LibraryBibliographyRequest = { format: 'bibtex' | 'ris'; work_ids?: string[]; source_version_ids?: string[]; every_work?: boolean }
 export type NewResearchFromSetBody = Omit<Parameters<typeof api.create>[0], 'source_scope' | 'seed_mode'> & { work_ids: string[] }
 
 // POST, so the set can be large; answers with the file, not JSON.
@@ -1811,10 +1811,25 @@ export type DataLocationPart = { key: 'database' | 'pdfs' | 'payloads' | 'tools'
 export type DataLocation = {
   path: string; is_default: boolean; set_outside_app: boolean; pending_path: string | null; pending_has_library: boolean
   size_bytes: number; breakdown: DataLocationPart[]; free_bytes: number | null; running_runs: number
+  last_backup: { path: string; at: string } | null; cache_bytes: number
 }
 export const dataLocationApi = {
   get: () => request<DataLocation>('/api/settings/data-location'),
   check: (path: string) => request<{ path: string; has_library: boolean }>('/api/settings/data-location', json('POST', { path, check: true })),
   change: (path: string) => request<DataLocation>('/api/settings/data-location', json('POST', { path })),
   choose: () => request<{ path: string | null }>('/api/settings/data-location/choose', { method: 'POST' }),
+  backup: () => request<DataLocation>('/api/settings/data/backup', { method: 'POST' }),
+  revealBackup: () => request<{ path: string }>('/api/settings/data/backup/reveal', { method: 'POST' }),
+  clearCache: () => request<DataLocation>('/api/settings/data/clear-cache', { method: 'POST' }),
+}
+
+// Settings → General → Research (api/preference_routes.py): stored values come before the ones DEIXIS started with.
+export type Preferences = {
+  default_effort: Effort; fulltext_fetch: 'auto' | 'off'; arxiv_source: 'auto' | 'off'; arxiv_route_possible: boolean
+  marker_present: boolean; model_concurrency: number; model_concurrency_max: number
+}
+export type PreferenceChange = Partial<Pick<Preferences, 'default_effort' | 'fulltext_fetch' | 'arxiv_source' | 'model_concurrency'>>
+export const preferencesApi = {
+  get: () => request<Preferences>('/api/settings/preferences'),
+  set: (change: PreferenceChange) => request<Preferences>('/api/settings/preferences', json('PUT', change)),
 }

@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
-import { api, ApiError, homeApi, type Connections, type Effort, type EffortLimits, type IntentOutcome, type ModelOption, type ModelRole, type ResearchIntent, type ResearchSummary, type RoleModelSetting, type SeedSelection, type SourceScope, type Suggestion } from './api'
+import { api, ApiError, homeApi, preferencesApi, type Connections, type Effort, type EffortLimits, type IntentOutcome, type ModelOption, type ModelRole, type ResearchIntent, type ResearchSummary, type RoleModelSetting, type SeedSelection, type SourceScope, type Suggestion } from './api'
 import { connectionName, fileRestoreNote, fileRestoreTone, reasoningLabel, scopeLabels } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroDialog, type ZoteroChoice } from './ZoteroDialog'
@@ -266,6 +266,9 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     return () => { current = false }
   }, [listKey])
   const [effort, setEffort] = useState<Effort>('standard')
+  // The depth chosen in Settings → General; a pick made here before it arrives is kept.
+  const effortPicked = useRef(false)
+  useEffect(() => { preferencesApi.get().then(p => { if (!effortPicked.current) setEffort(p.default_effort) }, () => {}) }, [])
   const [limits, setLimits] = useState<EffortLimits | null>(null)
   useEffect(() => { api.effortLimits().then(setLimits, () => setLimits(null)) }, [])
   const [connections, setConnections] = useState<Connections | null>(null)
@@ -521,7 +524,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
               </DropdownMenuContent>
             </DropdownMenu>
           : <button type="button" className="models-summary" disabled title={connections ? notReadyReasons(connections) : ''}><Cpu size={15} aria-hidden /><span className="models-summary-label">{t('Models')}</span><span className="sr-only">: {t(connections ? 'no connection ready' : 'checking…')}</span></button>}
-        <Select value={effort} onValueChange={value => { if (value) setEffort(value as Effort) }}>
+        <Select value={effort} onValueChange={value => { if (value) { effortPicked.current = true; setEffort(value as Effort) } }}>
           <SelectTrigger className="composer-depth" aria-label={t('Research depth')} title={t('How much searching and reading a run may do')}><SelectValue>{(value: string) => { const Icon = effortOptions[value as Effort].icon; return <><Icon size={15} aria-hidden />{t(effortLabels[value as Effort])}</> }}</SelectValue></SelectTrigger>
           <SelectContent className="home-menu" align="start" sideOffset={6} alignItemWithTrigger={false} collisionPadding={8} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }}>
             <div className="home-menu-heading" aria-hidden="true">{t('Depth')}</div>

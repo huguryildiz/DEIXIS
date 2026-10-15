@@ -38,6 +38,13 @@ class ModelCallLimiter:
             self._condition.notify_all()
             return self._limit
 
+    async def set_limit(self, limit: int) -> int:
+        """The ceiling the person chose in Settings; calls already granted a slot keep running."""
+        async with self._condition:
+            self._limit = max(1, limit)
+            self._condition.notify_all()
+            return self._limit
+
     async def run(self, key: str, factory: Callable[[], Awaitable[T]]) -> T:
         existing = self._by_key.get(key)
         if existing is not None:

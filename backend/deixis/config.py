@@ -31,6 +31,13 @@ def platform_data_dir() -> Path:
 
 
 CONTACT_EMAIL_SETTING = "contact_email"
+# Settings → General → Research: values the person set in the app. Each one, when stored, comes before the value this
+# process started with (its environment variable or default); unset, the start value stays.
+DEFAULT_EFFORT_SETTING = "default_effort"
+FULLTEXT_FETCH_SETTING = "fulltext_fetch"
+ARXIV_SOURCE_SETTING = "arxiv_source"
+MODEL_CONCURRENCY_SETTING = "model_concurrency"
+MODEL_CONCURRENCY_MAX = 16
 
 
 @dataclass(frozen=True)
@@ -65,6 +72,20 @@ class Settings:
 
     def bound_to(self, setting_reader: Callable[[str], Any]) -> "Settings":
         return replace(self, setting_reader=setting_reader)
+
+    def _stored(self, key: str, allowed: tuple[str, ...]) -> str | None:
+        value = self.setting_reader(key) if self.setting_reader else None
+        return value if value in allowed else None
+
+    def effective_fulltext_fetch(self) -> str:
+        return self._stored(FULLTEXT_FETCH_SETTING, ("auto", "off")) or self.fulltext_fetch
+
+    def effective_arxiv_source(self) -> str:
+        return self._stored(ARXIV_SOURCE_SETTING, ("auto", "off")) or self.arxiv_source
+
+    def effective_model_concurrency(self) -> int:
+        value = self.setting_reader(MODEL_CONCURRENCY_SETTING) if self.setting_reader else None
+        return value if isinstance(value, int) and 1 <= value <= MODEL_CONCURRENCY_MAX else self.model_concurrency
 
     @property
     def db_path(self) -> Path:

@@ -764,6 +764,7 @@ def create_app(
         store = Store(conn, clock=clock)
         store.recovery_dir = settings.recovery_dir
         settings = settings.bound_to(store.setting)  # the contact email set in Settings is read before the env var (F15)
+        app.state.settings = settings
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent(settings.contact_email)})
         # Requests to servers on this computer (Ollama and LM Studio embeddings, the local tool checks, Zotero's local
         # API) go through a client that ignores HTTP_PROXY/ALL_PROXY and follows no redirect (D34).
@@ -788,7 +789,7 @@ def create_app(
         equations = equation_service if equation_service is not None else EquationService(
             store, math_reader.MathReader(math_reader.runtime_paths(settings.data_dir)), settings.papers_dir)
         if equation_service is None:
-            equations.configure_arxiv_source(settings.arxiv_source, settings.data_dir)  # D104, off unless the flag says auto
+            equations.configure_arxiv_source(settings.effective_arxiv_source(), settings.data_dir)  # D104, off unless the flag says auto
         # The built-in embedding model (slice 21): a test injects its own embedder and never starts a real runner.
         builtin_paths = local_embedding.builtin_paths(settings.data_dir)
         embedder = local_embedder if local_embedder is not None else local_embedding.LocalEmbedder(builtin_paths)
@@ -796,8 +797,10 @@ def create_app(
         await builtin.start()  # recovers an install a closed DEIXIS left running, then checks the files in full
         local_embedding.register(builtin.integrity)
         from deixis.workflow.background_fetch import FetchSlots
+        limiter = ModelCallLimiter(settings.effective_model_concurrency())
+        app.state.limiter = limiter  # Settings → Research changes its ceiling while DEIXIS runs
         flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf, equations,
-                                     limiter=ModelCallLimiter(settings.model_concurrency), local_embedder=embedder,
+                                     limiter=limiter, local_embedder=embedder,
                                      fetch_xml=xml_fetcher or acquisition.fetch_xml, clock=store.clock, fetch_slots=FetchSlots(12),
                                      local_http=local_http))
         app.state.builtin = builtin
@@ -1035,6 +1038,7 @@ def create_app(
     from deixis.api.library_routes import register_library_routes
     register_library_routes(app, settings)
     from deixis.api.data_location_routes import register_data_location_routes; register_data_location_routes(app, settings)
+    from deixis.api.preference_routes import register_preference_routes; register_preference_routes(app)
     register_screen_more_routes(app)
     from deixis.api.followup_turns_routes import register_followup_turns_routes; register_followup_turns_routes(app)
     from deixis.api.search_plan_routes import register_search_plan_routes; register_search_plan_routes(app)
@@ -1606,7 +1610,7 @@ def create_app(
             extra += SEARCH_QUERY_CALLS if settings.search_query == "model" else 0
             # Citation chaining is the fast chain's, frozen with the rest of its policy below (`fast_path.freeze_budget`).
             budget = budget | {"max_model_calls": budget["max_model_calls"] + extra}
-            if settings.fulltext_fetch == "auto":
+            if settings.effective_fulltext_fetch() == "auto":
                 # The full text is fetched inside this run, beside its screening, with the room a retrieval run
                 # would have had (slice 17a); the mode is frozen here, so a run keeps the path it was queued with.
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])

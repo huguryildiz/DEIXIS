@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { FolderOpen } from 'lucide-react'
-import { ApiError, dataLocationApi, type DataLocation } from './api'
+import { ApiError, dataLocationApi, libraryApi, type DataLocation } from './api'
 import { ConfirmDialog } from './ConfirmDialog'
 import { Notice } from './Notice'
 import { useToast } from './Toast'
@@ -50,6 +50,32 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
     }).catch((e: Error) => { setConfirm(null); setError(e.message) }).finally(() => setBusy(false))
   }
 
+  // Back up, export and clear: each answers with a toast or the error line under the card.
+  const backUp = () => {
+    setBusy(true); setError('')
+    dataLocationApi.backup().then(v => { setView(v); toast('success', t('Backup written to {path}.', { path: v.last_backup?.path ?? '' })) })
+      .catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  const reveal = () => { dataLocationApi.revealBackup().catch((e: Error) => setError(e.message)) }
+  const exportLibrary = async (format: 'bibtex' | 'ris') => {
+    setBusy(true); setError('')
+    try {
+      const { blob, filename } = await libraryApi.bibliography({ format, every_work: true })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      link.click()
+      URL.revokeObjectURL(url)
+      toast('success', t('{file} saved.', { file: filename }))
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+  const clearCache = () => {
+    setBusy(true); setError('')
+    dataLocationApi.clearCache().then(v => { setView(v); toast('success', t('Download cache cleared.')) })
+      .catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+
   const parts = view?.breakdown.filter(p => p.bytes > 0) ?? []
   return <div className="data-location" data-group="data-location" data-panel="general">
     <div className="dl-head">
@@ -69,6 +95,23 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
         <button type="button" className="link" disabled={busy} onClick={() => save(view.path)}>{t('Keep current location')}</button></Notice>}
       {blocked && <p className="dl-reason">{blocked}</p>}
     </>}
+    {view && <div className="dl-actions">
+      <div>
+        <p><b>{t('Backup')}</b><small>{view.last_backup ? t('Last backup {time}, in Documents/DEIXIS backups.', { time: new Date(view.last_backup.at).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' }) })
+          : t('A full copy of the library and its PDFs, in Documents/DEIXIS backups.')}</small></p>
+        {view.last_backup && <button type="button" className="link" onClick={reveal}>{t('Show in Finder')}</button>}
+        <button type="button" className="ghost" disabled={busy} onClick={backUp}>{t('Back up now')}</button>
+      </div>
+      <div>
+        <p><b>{t('Export Library')}</b><small>{t('Every work in the Library as a reference file for Zotero, EndNote or LaTeX.')}</small></p>
+        <button type="button" className="ghost" disabled={busy} onClick={() => void exportLibrary('bibtex')}>BibTeX</button>
+        <button type="button" className="ghost" disabled={busy} onClick={() => void exportLibrary('ris')}>RIS</button>
+      </div>
+      <div>
+        <p><b>{t('Download cache')}</b><small>{view.cache_bytes ? t('{size} of installer downloads. Installed tools keep working; a later install downloads again.', { size: size(view.cache_bytes) }) : t('Empty. Tool installs keep their downloads here.')}</small></p>
+        <button type="button" className="ghost" disabled={busy || view.cache_bytes === 0} onClick={clearCache}>{t('Clear')}</button>
+      </div>
+    </div>}
     {typed !== null && <form className="dl-typed" onSubmit={e => { e.preventDefault(); if (typed.trim()) check(typed.trim()) }}>
       <label htmlFor="data-location-path">{t('Folder path')}</label>
       <input id="data-location-path" className="field" type="text" spellCheck={false} autoComplete="off" value={typed} disabled={busy}

@@ -17,6 +17,9 @@ from pydantic import BaseModel, Field
 
 from deixis import config, data_location
 from deixis.config import Settings
+from deixis.storage import backup
+
+LAST_BACKUP_SETTING = "last_backup"
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
 CHOOSE_PROMPT = "Choose where DEIXIS keeps its library"
@@ -47,7 +50,14 @@ def register_data_location_routes(app, settings: Settings) -> None:
         return {"path": str(current), "is_default": current == config.platform_data_dir(), "set_outside_app": outside,
                 "pending_path": str(pending) if pending else None,
                 "pending_has_library": bool(pending and (pending / "library.sqlite").exists()),
-                **sizes, "running_runs": running_runs(request)}
+                **sizes, "running_runs": running_runs(request), "last_backup": request.app.state.store.setting(LAST_BACKUP_SETTING),
+                "cache_bytes": await asyncio.to_thread(data_location.cache_size, current)}
+
+    def installing(request: Request) -> bool:
+        state = request.app.state
+        builtin, equations = getattr(state, "builtin", None), getattr(state, "equations", None)
+        job = getattr(builtin, "job", None) if builtin is not None else None
+        return bool(job and job.get("status") == "running") or bool(equations and equations.installing())
 
     @app.get("/api/settings/data-location")
     async def get_data_location(request: Request) -> dict[str, Any]:
@@ -76,6 +86,37 @@ def register_data_location_routes(app, settings: Settings) -> None:
         if body.check:
             return {"path": str(target), "has_library": has_library}
         data_location.write_pointer(target, current)
+        return await view(request)
+
+    @app.post("/api/settings/data/backup")
+    async def back_up(request: Request) -> dict[str, Any]:
+        """A consistent copy of the library and the files it references (`deixis backup`), in Documents/DEIXIS backups."""
+        destination = data_location.backup_dir()
+        try:
+            await asyncio.to_thread(destination.mkdir, parents=True, exist_ok=True)
+            target = await asyncio.to_thread(backup.create_backup, settings, destination)
+        except (backup.BackupError, OSError) as exc:
+            raise HTTPException(409, f"The backup was not written: {exc}") from exc
+        request.app.state.store.set_setting(LAST_BACKUP_SETTING, {"path": str(target), "at": data_location.now_iso()})
+        return await view(request)
+
+    @app.post("/api/settings/data/backup/reveal")
+    async def reveal_backup(request: Request) -> dict[str, Any]:
+        """Shows the last backup in Finder; only that folder, never a path the page names."""
+        last = request.app.state.store.setting(LAST_BACKUP_SETTING)
+        if sys.platform != "darwin":
+            raise HTTPException(501, "No file browser to open on this system")
+        if not last or not Path(last["path"]).exists():
+            raise HTTPException(404, "The last backup is no longer there")
+        await asyncio.to_thread(subprocess.run, ["open", "-R", last["path"]], capture_output=True)
+        return {"path": last["path"]}
+
+    @app.post("/api/settings/data/clear-cache")
+    async def clear_cache(request: Request) -> dict[str, Any]:
+        """Removes the download cache of the tool installs; an install downloads what it needs again."""
+        if installing(request):
+            raise HTTPException(409, "A tool is being installed. Clear the cache after it finishes.")
+        await asyncio.to_thread(data_location.clear_cache, current)
         return await view(request)
 
     @app.post("/api/settings/data-location/choose")

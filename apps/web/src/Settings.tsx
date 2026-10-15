@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Info, RotateCw } from 'lucide-react'
-import { api, shellApi, usageApi, type ContactEmailSetting, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
+import { api, preferencesApi, shellApi, usageApi, type ContactEmailSetting, type Effort, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
 import { connectionModels, modelKey, type ConnectionModel } from './Home'
 import { defaultEffort, exposesEffortControl } from './modelEffort'
 import { ConnectionsTab } from './Connections'
@@ -110,8 +110,11 @@ const SECTION_TAB: Record<SettingsSection, SettingsTab> = {
   connections: 'models', access: 'sources', openalex: 'sources', profile: 'general', models: 'models', sources: 'sources', usage: 'usage', general: 'general',
 }
 
-export function SettingsPage({ dark, section, language, onLanguage, onProfile, access }: {
+export type ThemeChoice = 'system' | 'light' | 'dark'
+
+export function SettingsPage({ dark, section, language, onLanguage, theme, onTheme, onProfile, access }: {
   dark: boolean; section?: SettingsSection; language: UiLanguage; onLanguage: (language: UiLanguage) => void
+  theme: ThemeChoice; onTheme: (theme: ThemeChoice) => void
   onProfile: (profile: Profile) => void; access: AccessControl
 }) {
   const toast = useToast()
@@ -246,6 +249,18 @@ export function SettingsPage({ dark, section, language, onLanguage, onProfile, a
         </span>
       </div>
     </div>
+
+    <h2 data-panel="general">{t('Appearance')}</h2>
+    <div className="rows set-lang" data-panel="general">
+      <div>
+        <b>{t('Theme')}</b>
+        <p>{t('System follows the light or dark setting of this computer.')}</p>
+        <Segment label={t('Theme')} value={theme} onPick={onTheme}
+          options={[{ id: 'system', label: t('System') }, { id: 'light', label: t('Light') }, { id: 'dark', label: t('Dark') }]} />
+      </div>
+    </div>
+
+    <ResearchPreferences />
 
     <footer className="settings-footer"><span>{t('© 2026 DEIXIS · Designed & built by')} <a href="https://huguryildiz.com" target="_blank" rel="noopener noreferrer">Hüseyin Uğur Yıldız</a><a className="footer-github" href="https://github.com/huguryildiz/DEIXIS" target="_blank" rel="noopener noreferrer" aria-label={t('DEIXIS on GitHub')} title={t('DEIXIS on GitHub')}><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /></svg></a></span></footer>
   </section>
@@ -405,5 +420,66 @@ function UsageThisMonth() {
       </div>
     </div>
     {month.value?.since && <p className="foot-note set-usage-note" data-panel="usage">{t(b?.source === 'live' ? 'Model calls counted since {date}. The OpenAlex figure is read from OpenAlex when this page opens.' : 'Model calls counted since {date}. The OpenAlex figure comes from its last response, not a live reading.', { date: new Date(month.value.since).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })}</p>}
+  </>
+}
+
+// A small switch of two or three choices, in the language switch's look.
+function Segment<T extends string>({ label, value, options, onPick, disabled }: {
+  label: string; value: T | null; options: { id: T; label: string }[]; onPick: (id: T) => void; disabled?: boolean
+}) {
+  return <span className="lang" role="group" aria-label={label}>
+    {options.map(o => <button key={o.id} type="button" className={value === o.id ? 'on' : ''} aria-pressed={value === o.id} disabled={disabled}
+      onClick={() => { if (value !== o.id) onPick(o.id) }}>{o.label}</button>)}
+  </span>
+}
+
+// Settings → General → Research (api/preference_routes.py). Each change is saved at once and applies to the next run.
+function ResearchPreferences() {
+  const [prefs, setPrefs] = useState<Preferences | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    let live = true
+    preferencesApi.get().then(p => { if (live) setPrefs(p) }, (e: Error) => { if (live) setError(t('Research settings could not be read: {message}', { message: e.message })) })
+    return () => { live = false }
+  }, [])
+  const change = (next: PreferenceChange) => {
+    setBusy(true); setError('')
+    preferencesApi.set(next).then(setPrefs).catch((e: Error) => setError(t('Not saved: {message}', { message: e.message }))).finally(() => setBusy(false))
+  }
+  const onOff: { id: 'auto' | 'off'; label: string }[] = [{ id: 'auto', label: t('On') }, { id: 'off', label: t('Off') }]
+  const arxivNote = !prefs ? '' : !prefs.arxiv_route_possible ? t('Not available on this system.')
+    : prefs.marker_present ? t('Not used now: the equation reader (Marker) is installed and reads equations itself.') : ''
+  const off = !prefs || busy
+  return <>
+    <h2 data-panel="general">{t('Research')}</h2>
+    <div className="rows set-research" data-panel="general">
+      <div>
+        <b>{t('Default depth')}</b>
+        <p>{t('New researches start at this depth. You can still change it for each question on the home page.')}</p>
+        <Segment<Effort> label={t('Default depth')} value={prefs?.default_effort ?? null} disabled={off} onPick={v => change({ default_effort: v })}
+          options={[{ id: 'quick', label: t('Quick') }, { id: 'standard', label: t('Standard') }, { id: 'detailed', label: t('Detailed') }]} />
+      </div>
+      <div>
+        <b>{t('Full text during search')}</b>
+        <p>{t('Downloads and reads the PDFs of promising works while the abstracts are screened. Off: searches judge abstracts only, so they finish sooner but include fewer sources.')}</p>
+        <Segment label={t('Full text during search')} value={prefs?.fulltext_fetch ?? null} disabled={off} onPick={v => change({ fulltext_fetch: v })} options={onOff} />
+      </div>
+      <div>
+        <b>{t('Equations from arXiv source')}</b>
+        <p>{t("For arXiv PDFs, takes the numbered equations from the authors' LaTeX source instead of the PDF text.")}{arxivNote && <> {arxivNote}</>}</p>
+        <Segment label={t('Equations from arXiv source')} value={prefs?.arxiv_source ?? null} disabled={off || !prefs?.arxiv_route_possible}
+          onPick={v => change({ arxiv_source: v })} options={onOff} />
+      </div>
+      <div>
+        <b>{t('Parallel model calls')}</b>
+        <p>{t('How many model requests run at the same time. Lower it for a local model or a plan with tight rate limits.')}</p>
+        <select className="select" aria-label={t('Parallel model calls')} disabled={off} value={prefs?.model_concurrency ?? ''}
+          onChange={e => change({ model_concurrency: Number(e.target.value) })}>
+          {prefs && Array.from({ length: prefs.model_concurrency_max }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </div>
+    </div>
+    {error && <Notice tone="error" panel="general">{error}</Notice>}
   </>
 }

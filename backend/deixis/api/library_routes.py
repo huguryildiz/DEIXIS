@@ -44,6 +44,7 @@ class BibliographyRequest(BaseModel):
     # A Library row exports the record it shows; a source version exports itself.
     work_ids: list[str] = Field(default_factory=list, max_length=MAX_SET)
     source_version_ids: list[str] = Field(default_factory=list, max_length=MAX_SET)
+    every_work: bool = False  # Settings → Data: the whole Library, with no selection
 
 
 class NewResearchFromSet(CreateResearch):
@@ -122,8 +123,10 @@ def register_library_routes(app, settings: Settings) -> None:
 
     @app.post("/api/library/bibliography")
     async def export_bibliography(body: BibliographyRequest, request: Request) -> Response:
+        if body.every_work:
+            body = body.model_copy(update={"work_ids": [e["work_id"] for e in library_view(store_of(request))["entries"]]})
         if not body.work_ids and not body.source_version_ids:
-            raise HTTPException(422, "Choose at least one work")
+            raise HTTPException(422, "The Library has no works" if body.every_work else "Choose at least one work")
         records = _export_records(store_of(request), body)
         text = bibliography.to_bibtex(records) if body.format == "bibtex" else bibliography.to_ris(records)
         name = f"deixis-library.{'bib' if body.format == 'bibtex' else 'ris'}"

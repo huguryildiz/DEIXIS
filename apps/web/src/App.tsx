@@ -369,11 +369,14 @@ export default function App() {
     return () => { window.clearInterval(timer); window.removeEventListener('focus', check) }
   }, [checkAccess])
 
-  function toggleTheme() {
-    const next = dark ? 'light' : 'dark'
+  function chooseTheme(next: ThemeChoice) {
     setTheme(next)
-    try { localStorage.setItem('deixis-theme', next) } catch { /* the choice still applies for this tab */ }
+    try {
+      if (next === 'system') localStorage.removeItem('deixis-theme')
+      else localStorage.setItem('deixis-theme', next)
+    } catch { /* the choice still applies for this tab */ }
   }
+  function toggleTheme() { chooseTheme(dark ? 'light' : 'dark') }
 
   // t() reads the module-level language, so it is set before the state change re-renders the tree.
   function chooseLanguage(next: UiLanguage) {
@@ -574,7 +577,7 @@ export default function App() {
         {route.view === 'research' && (route.id ? <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />
           : <EmptyResearch opened={researches.length > 0} />)}
         {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={(id, tab) => go({ view: 'research', id, tab })} onStartResearch={() => go({ view: 'home' })} />}
-        {route.view === 'settings' && <SettingsPage key={route.tab ?? 'page'} dark={dark} section={route.tab} language={language} onLanguage={chooseLanguage} onProfile={setProfile}
+        {route.view === 'settings' && <SettingsPage key={route.tab ?? 'page'} dark={dark} section={route.tab} language={language} onLanguage={chooseLanguage} theme={theme} onTheme={chooseTheme} onProfile={setProfile}
           access={{ proxy, readFailed: proxyReadFailed, testing: proxyBusy, testFailed: !!proxy?.address && proxyFailed === proxy.address, scopus: institutionalStatus,
             test: runProxyTest, save: saveProxy, saveLabel: saveProxyLabel, reload: checkAccess }} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}

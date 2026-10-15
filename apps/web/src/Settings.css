@@ -56,6 +56,7 @@
 .app .settings-page .lang button{padding:1px 6px;border:0;background:none;color:var(--muted);font:inherit;font-size:11px;line-height:1.5;cursor:pointer}
 .app .settings-page .lang button.on{background:var(--selected-surface);color:var(--ink);font-weight:600}
 .app .settings-page .lang button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.app .settings-page .lang button:disabled{cursor:default;opacity:.55}
 
 /* Status pill (mockup `.st`). */
 :is(.app .settings-page,.connection-sheet) .st{flex:none;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:500;line-height:1.5;white-space:nowrap}
@@ -272,6 +273,13 @@
 .app .settings-page .dl-free .tnum{margin-left:auto;color:var(--ink);font-weight:500}
 .app .settings-page .data-location .notice{margin:0}
 .app .settings-page .dl-reason{margin:0;color:var(--muted);font-size:12.5px}
+/* Back up, export and clear: one line each under the sizes. */
+.app .settings-page .dl-actions{display:grid;border-top:1px solid var(--line)}
+.app .settings-page .dl-actions>div{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
+.app .settings-page .dl-actions>div:first-child{border-top:0}
+.app .settings-page .dl-actions p{display:grid;gap:2px;flex:1 1 240px;min-width:0;margin:0}
+.app .settings-page .dl-actions b{color:var(--ink);font-size:13px;font-weight:500}
+.app .settings-page .dl-actions small{color:var(--muted);font-size:12.5px}
 .app .settings-page .dl-typed{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .app .settings-page .dl-typed label{flex-basis:100%;color:var(--muted);font-size:12px}
 .app .settings-page .dl-typed .field{flex:1;min-width:220px;height:27px;font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}

@@ -188,3 +188,28 @@ def usage(data_dir: Path) -> dict:
     labels = {key: label for key, label, _ in BREAKDOWN} | {"other": "Other"}
     return {"size_bytes": sum(sizes.values()), "free_bytes": free,
             "breakdown": [{"key": key, "label": labels[key], "bytes": sizes[key]} for key in labels]}
+
+
+# The download cache of the tool installs (uv's packages and wheels). Installed tools keep working without it.
+CACHE_PARTS = (("tools", "uv-cache"),)
+
+
+def cache_size(data_dir: Path) -> int:
+    return sum(_size(str(data_dir.joinpath(*parts))) for parts in CACHE_PARTS if data_dir.joinpath(*parts).exists())
+
+
+def clear_cache(data_dir: Path) -> None:
+    for parts in CACHE_PARTS:
+        folder = data_dir.joinpath(*parts)
+        if folder.is_dir() and not folder.is_symlink():
+            shutil.rmtree(folder)
+
+
+def backup_dir() -> Path:
+    return Path.home() / "Documents" / "DEIXIS backups"
+
+
+def now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")

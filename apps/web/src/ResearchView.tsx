@@ -476,6 +476,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     await api.rereadEquations(id, source.source_version_id, assetId)
     toast('success', t('The equations of this PDF are being read again in the background.'))
   })
+  const lookUpRecord = (source: Source) => act(async () => {
+    const { found } = await api.lookUpRecord(id, source.source_version_id)
+    if (found) toast('success', t('Found the paper’s record in OpenAlex: title, authors and abstract filled in.'))
+    else toast('warning', t('OpenAlex has no record whose title stands on this file’s first page; the file name stays its title.'))
+  })
   const importZotero = (source: ZoteroSource, key: string) => act(async () => {
     const { items, pdfs_added: pdfs, notes } = (await api.zoteroImport(id, source, key)).zotero_import
     setZoteroOpen(false)
@@ -983,7 +988,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <PassageSheet asPanel={!passageTarget?.reportCitation} researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} sourceVersionId={pdfTarget?.sourceVersionId ?? null} initialView={pdfTarget ? pdfTarget.view ?? 'pdf' : passageTarget?.view ?? 'text'}
       findOnOpen={Boolean(passageTarget?.find)} latestAnswer={answer?.status === 'structurally_valid' ? { version: answerVersion, claims: answer.claims } : null}
       actions={passageTarget?.reportCitation ? undefined : { busy, finding: pdfFinding, onFind: discoverPdf, onAttach: chooseSourcePdf, onReplace: chooseReplacement,
-        onRemove: source => { void askRemoval([source.source_version_id]) }, onReextract: (source, assetId) => { void reextract(source, assetId) }, onRereadEquations: (source, assetId) => { void rereadEquations(source, assetId) },
+        onRemove: source => { void askRemoval([source.source_version_id]) }, onReextract: (source, assetId) => { void reextract(source, assetId) }, onRereadEquations: (source, assetId) => { void rereadEquations(source, assetId) }, onLookUpRecord: source => { void lookUpRecord(source) },
         ocr: { tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } } }} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} citationLabels={passageTarget?.reportCitation ? { marked: t('Exact text cited in this report'), mark: t('Exact text cited in this report'), unmarked: t('This report citation has no located text anchor, so its passage opens without a mark.') } : undefined} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
       onRestoreSource={svid => { setPassageTarget(null); void act(() => api.restoreSources(id, [svid]), t('Restored to this research.')) }} />
   </section></PanelStackContext.Provider>

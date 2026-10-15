@@ -469,6 +469,8 @@ export type Source = {
   // True when any stored version of the work is flagged, e.g. the published article of this preprint.
   work_is_retracted: boolean | null
   origin: 'provider' | 'user_upload'; added_by: string; added_at: string; rank: number | null; similarity: number | null
+  // The scholarly record an uploaded PDF was identified as from its first page (D37); null when it was not.
+  record_match: { provider: string; work_id: string; basis: 'doi_title' | 'title'; filename_title: string; matched_at: string } | null
   found_in_revision: number | null; applicability: 'current' | 'stale_scope'; version_role: 'record' | 'other_version'
   // The other version of the work whose text answers read, when the record has no PDF text (D48).
   answer_reads_version_id: string | null
@@ -1255,6 +1257,8 @@ export const api = {
     form.append('file', file)
     return request<ResearchView & { file_restore: FileRestoreReceipt | null }>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}`, { method: 'PUT', body: form })
   },
+  lookUpRecord: (id: string, sourceId: string) =>
+    request<ResearchView & { found: boolean }>(`/api/researches/${id}/sources/${sourceId}/record-lookup`, { method: 'POST' }),
   reextractAsset: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView & { reextraction: Reextraction }>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/extractions`, { method: 'POST' }),
   retryText: (id: string, sourceId: string, assetId: string, body: TextRetryRequest) =>

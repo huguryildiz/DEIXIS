@@ -83,7 +83,6 @@
 .detail-sheet.source-sheet [data-slot=sheet-header]{padding-right:84px}
 .source-sheet .sheet-expand{position:absolute;top:8px;right:42px;width:30px;height:30px;border-radius:7px;color:var(--muted)}
 .source-sheet .sheet-expand:hover{background:var(--hover-surface);color:var(--ink)}
-.source-sheet.is-full:not(.is-pdf) .sheet-body>*{max-width:820px;margin-inline:auto}
 .source-sheet :is(h2,h3,[data-slot=sheet-title]){font-family:var(--font-sans);letter-spacing:0}
 .detail-sheet.source-sheet .sheet-body{padding:16px 20px 32px;font-size:13px;line-height:1.6;overflow-y:auto}
 .source-sheet .source-venue{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;margin:0 0 4px;color:var(--muted);font-size:12.5px;line-height:1.5;font-variant-numeric:tabular-nums}
@@ -308,7 +307,6 @@
 .split-panel-body:has(>.report-panel,>.source-panel){overflow:hidden}
 .split-panel-content:is(.report-panel,.source-panel){display:flex;flex-direction:column;height:100%;padding:0;font-size:13px;line-height:1.6}
 .split-panel .source-panel .sheet-body{flex:1;min-height:0;padding:16px 20px 32px;font-size:13px;line-height:1.6;overflow-y:auto}
-.split-panel.is-wide .source-panel .sheet-body>*{max-width:820px;margin-inline:auto}
 .split-panel.is-wide .report-document{margin-inline:auto}
 /* Phones: the panel covers the screen as a modal dialog. Full width stays in the head as drawn (mockup `.ib hide-s` is
    hidden only in the topbar). */

@@ -16,6 +16,15 @@ from test_fetch_overlap_flow import output, wait
 from test_fulltext_flow import Transport, work
 from test_small_batch_flow import app_for, client_of
 
+
+@pytest.fixture(autouse=True)
+def no_upload_lookup(monkeypatch):
+    """These tests count the seed lookup's own OpenAlex requests; an upload's record lookup (D37) is tested in
+    test_upload_record.py, so here it finds nothing and sends nothing."""
+    async def nothing(*_args, **_kwargs):
+        return False
+    monkeypatch.setattr("deixis.documents.upload_record.identify", nothing)
+
 SEED_TITLE = "SYNTHETIC deficit irrigation scheduling for greenhouse tomato yield"
 SEED_DOI = "10.1/seed.900"
 OTHER_DOI = "10.1/cited.901"

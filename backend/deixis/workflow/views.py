@@ -753,6 +753,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "year": row["year"], "venue": row["venue"], "volume": row["volume"], "issue": row["issue"],
             "pages": row["pages"], "doi": row["doi"], "landing_url": row["landing_url"],
             "version_label": row["version_label"], "publication_type": row["publication_type"], "origin": row["origin"],
+            # The record an uploaded PDF was identified as (D37); None for a provider record or an unmatched upload.
+            "record_match": json.loads(row["record_match_json"]) if row["record_match_json"] else None,
             "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
             # The version's own flag, and the work's: a preprint of a retracted article is marked too (D27).
             "is_retracted": _retracted(row["is_retracted"]), "work_is_retracted": work_flags.get(row["work_id"]),

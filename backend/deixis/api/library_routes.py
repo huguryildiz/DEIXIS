@@ -21,7 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from deixis.api.app import (CreateResearch, UploadRefused, ZoteroImport, attach_zotero_pdf, checked_research_models,
                             create_research_row, disk_full_refused, store_upload)
 from deixis.config import Settings
-from deixis.documents import pdf
+from deixis.documents import pdf, upload_record
+from deixis.providers.registry import CONNECTORS
 from deixis.imports import bibtex_ris
 from deixis.providers import zotero
 from deixis.storage.db import new_id
@@ -115,6 +116,8 @@ def register_library_routes(app, settings: Settings) -> None:
             store.add_asset_with_pages(svid, sha, size, path.name, "user_upload", None, filename,
                                        read.extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
                                        input_observation=read.observation)
+            await upload_record.identify(store, request.app.state.http, svid, CONNECTORS["openalex"].api_key(),
+                                         settings.contact_email)
         # The same file saved before stays the item it was; the answer says so, so the screen never counts it as added.
         already_saved = not library_items.save(store, [svid], "upload")
         return {"source_version_id": svid, "work_id": store.source(svid)["work_id"], "already_saved": already_saved,

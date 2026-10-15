@@ -64,6 +64,8 @@ export type SourceActions = {
   onRemove: (source: Source) => void
   onReextract: (source: Source, assetId: string) => void
   onRereadEquations: (source: Source, assetId: string) => void
+  // Identify an uploaded PDF as its scholarly record again (D37).
+  onLookUpRecord: (source: Source) => void
   ocr: OcrContext
 }
 
@@ -210,6 +212,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     finally { if (requestId === comparisonRequest.current) setLoadingCurrent(false) }
   }
   const row = source ? sources?.find(s => s.source_version_id === source.id) : undefined
+  // The work's citation fields as the research's source list holds them, so a record lookup shows without reopening.
+  const head = source && row ? { ...source, title: row.title, authors: row.authors, year: row.year, venue: row.venue, doi: row.doi, landing_url: row.landing_url, source_key: row.source_key, cited_by_count: row.cited_by_count } : source
   const removed = pdfRemoved || status === 'pdf_removed'
   // The PDF of the opened passage or file; an abstract (or a source opened for its details) shows the source's own PDF.
   const rowAssetId = row?.access.assets[0]?.id ?? null
@@ -305,7 +309,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const choose = (next: Tab) => { setTab(next); if (next === 'pdf' && hasPdf) setFull(true) }
   const pages = (doc: AssetText) => new Set(doc.passages.map(item => item.physical_page)).size
   const citedClaims = row && latestAnswer ? latestAnswer.claims.filter(c => c.evidence.some(e => e.source_version_id === row.source_version_id)).length : null
-  const doiHref = source?.doi ? `https://doi.org/${source.doi}` : source?.landing_url ?? null
+  const doiHref = head?.doi ? `https://doi.org/${head.doi}` : head?.landing_url ?? null
   const asSource = (): Source | null => row ?? (source ? { ...(source as unknown as Source), source_version_id: source.id, publication_type: null, volume: null, issue: null, pages: null } : null)
   const copyText = async (text: string, done: string) => {
     try { await writeClipboard(text); toast('success', done) } catch { toast('error', t('Could not copy to the clipboard.')) }
@@ -417,14 +421,14 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
       <div className="sheet-body source-detail">
         {error && <Notice tone="error">{error}</Notice>}
         {!passage && !assetText && !detailsOnly && !error && <p>{t(openAssetId ? 'Loading PDF text…' : 'Loading passage…')}</p>}
-        {(passage || assetText || detailsOnly) && source && <>
+        {(passage || assetText || detailsOnly) && source && head && <>
           {/* The work (mockup `.dhead`, P12): venue · year · citations, the title, the authors, then its pills. */}
           <div className="dhead">
-            {(source.source_key || source.venue || source.year || source.cited_by_count !== null) && <p className="source-venue venue"><SourceKey value={source.source_key} />{[source.venue, source.year, source.cited_by_count !== null ? citedText(source.cited_by_count) : null].filter(Boolean).map((part, i) => <Fragment key={i}>{i > 0 && <span aria-hidden className="source-dot" />}{i === 0 && source.venue ? <i>{part}</i> : <span>{part}</span>}</Fragment>)}</p>}
-            <h3 className="source-title">{source.title}</h3>
-            {source.authors.length > 0 && <p className="source-byline au">{source.authors.length > 3 && !allAuthors
-              ? <>{source.authors.slice(0, 2).join(', ')}, <button className="author-more" onClick={() => setAllAuthors(true)}>{t('and {n} more', { n: source.authors.length - 2 })}</button></>
-              : source.authors.join(', ')}</p>}
+            {(head.source_key || head.venue || head.year || head.cited_by_count !== null) && <p className="source-venue venue"><SourceKey value={head.source_key} />{[head.venue, head.year, head.cited_by_count !== null ? citedText(head.cited_by_count) : null].filter(Boolean).map((part, i) => <Fragment key={i}>{i > 0 && <span aria-hidden className="source-dot" />}{i === 0 && head.venue ? <i>{part}</i> : <span>{part}</span>}</Fragment>)}</p>}
+            <h3 className="source-title">{head.title}</h3>
+            {head.authors.length > 0 && <p className="source-byline au">{head.authors.length > 3 && !allAuthors
+              ? <>{head.authors.slice(0, 2).join(', ')}, <button className="author-more" onClick={() => setAllAuthors(true)}>{t('and {n} more', { n: head.authors.length - 2 })}</button></>
+              : head.authors.join(', ')}</p>}
             <div className="source-chips pills">
               {retractionNote(source) && <span className="ref-pill pill is-retracted" title={retractionNote(source) ?? undefined}>{t('Retracted')}</span>}
               {pdfText === 'text'
@@ -461,6 +465,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
                   : <DropdownMenuItem disabled={busy} onClick={() => actions.onAttach(row)}><FileUp size={15} aria-hidden /><span>{t('Attach PDF')}<small>{t('From this computer, up to 50 MB')}</small></span></DropdownMenuItem>)}
                 {row && actions && !asset && proxy && row.doi && <DropdownMenuItem render={<a href={proxied(proxy.address, `https://doi.org/${row.doi}`)} target="_blank" rel="noreferrer" />}><LinkIcon size={15} aria-hidden /><span>{t('Open via {proxy}', { proxy: proxy.label })}</span></DropdownMenuItem>}
                 <DropdownMenuItem onClick={copyBibtex}><Copy size={15} aria-hidden /><span>{t('Copy as BibTeX')}</span></DropdownMenuItem>
+                {row && actions && row.origin === 'user_upload' && !row.record_match && <DropdownMenuItem disabled={busy} onClick={() => actions.onLookUpRecord(row)}><Search size={15} aria-hidden /><span>{t('Find the paper’s record')}<small>{t('Title, authors and abstract from OpenAlex')}</small></span></DropdownMenuItem>}
                 {/* The text tools of the Sources rows (§2.2): extraction again, equations again, OCR. */}
                 {row && actions && asset?.current_extraction === false && <DropdownMenuItem className="source-text-tool" disabled={busy} onClick={() => actions.onReextract(row, asset.id)}><ScanText size={15} aria-hidden /><span>{t('Extract text again')}<small>{t('Text extracted as {version}. Extract it again with the current extractor.', { version: asset.extraction_version ?? '?' })}</small></span></DropdownMenuItem>}
                 {row && actions && asset?.equations?.state === 'failed' && <DropdownMenuItem className="source-text-tool" disabled={busy} onClick={() => actions.onRereadEquations(row, asset.id)}><Sigma size={15} aria-hidden /><span>{t('Read equations again')}</span></DropdownMenuItem>}
@@ -516,8 +521,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
             </> : empty('pdf')}
           </div>}
           {/* Where the source came from (mockup `.foot-note`, P20). */}
-          {row && (row.provider_records.length > 0 || row.added_at) && <p className="foot-note source-sheet-foot">
+          {row && (row.provider_records.length > 0 || row.added_at || row.record_match) && <p className="foot-note source-sheet-foot">
             {row.provider_records.length > 0 && <span>{t('Found via')} {row.provider_records.map((id, i) => <Fragment key={id}>{i > 0 && ' · '}{providerName(id)}</Fragment>)}</span>}
+            {row.record_match && <span>{t(row.record_match.basis === 'doi_title' ? 'Record from OpenAlex, matched by the DOI and title on the first page' : 'Record from OpenAlex, matched by the title on the first page')}</span>}
             {row.added_at && <span>{t(row.origin === 'user_upload' ? 'Uploaded {date}' : 'Added {date}', { date: new Date(row.added_at).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short', year: 'numeric' }) })}</span>}
           </p>}
         </>}

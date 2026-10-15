@@ -35,6 +35,7 @@ from deixis.documents import local_embedding, math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.documents import tool_updates
+from deixis.documents import upload_record
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
 from deixis.workflow import fast_path, intent, small_batch
@@ -1850,10 +1851,24 @@ def create_app(
             store.add_asset_with_pages(svid, sha, size, path.name, "user_upload", None, filename,
                                        extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
                                        input_observation=read.observation)
+            await upload_record.identify(store, request.app.state.http, svid, CONNECTORS["openalex"].api_key(),
+                                         settings.contact_email)
         store.add_to_corpus(research_id, svid, "user_upload", selection_state="included", selection_origin="user")
         intent.attached_ingested(store, research_id)
         return research_view(store, research_id) | {"uploaded_source_version_id": svid,
             "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
+
+    @app.post("/api/researches/{research_id}/sources/{source_version_id}/record-lookup")
+    async def look_up_upload_record(research_id: str, source_version_id: str, request: Request) -> dict[str, Any]:
+        """Identify an uploaded PDF as a scholarly record again (D37), for a file uploaded before the lookup existed or
+        one whose lookup found nothing; `found` says whether its citation fields were filled."""
+        store = store_of(request)
+        store.research(research_id)
+        if not store.is_active_member(research_id, source_version_id) or store.source(source_version_id)["origin"] != "user_upload":
+            raise HTTPException(404, "No uploaded file with this id in this research")
+        found = await upload_record.identify(store, request.app.state.http, source_version_id,
+                                             CONNECTORS["openalex"].api_key(), settings.contact_email)
+        return research_view(store, research_id) | {"found": found}
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/uploads", status_code=201)
     async def upload_to_source(research_id: str, source_version_id: str, request: Request,

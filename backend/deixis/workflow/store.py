@@ -870,7 +870,7 @@ class Store:
                 seeds.append({"source_version_id": svid, "asset_id": asset["id"],
                               "asset_sha256": asset["sha256"], "extraction_version": asset["extraction_version"],
                               "title": source["title"], "year": source["year"], "version_label": source["version_label"],
-                              "title_basis": "filename" if source["origin"] == "user_upload" else "record",
+                              "title_basis": "filename" if source["origin"] == "user_upload" and not source.get("record_match_json") else "record",
                               "page_count": asset["page_count"],
                               "text_pages": len({p["physical_page"] for p in passages}),
                               "passages": self._seed_excerpt(svid, passages, terms, len(usable)),
@@ -1726,6 +1726,32 @@ class Store:
             )
             self._assign_source_key(wid)
         return svid
+
+    def fill_upload_record(self, svid: str, record: Any, provider: str, basis: str) -> None:
+        """An uploaded PDF identified as a scholarly record (D37): the record's citation fields replace the file-name
+        title and fill the empty fields, and its abstract becomes the source's abstract. No identifier mapping is
+        written, so a search that later finds the same record keeps its own source version; the match is kept as
+        `record_match_json`, with the file-name title it replaced."""
+        source = self.source(svid)
+        if source["origin"] != "user_upload" or source.get("record_match_json"):
+            return
+        match = {"provider": provider, "work_id": record.provider_record_id, "basis": basis,
+                 "filename_title": source["title"], "matched_at": now()}
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE source_versions SET title = ?, authors_json = ?, year = ?, venue = ?, publication_type = ?, doi = ?,"
+                " landing_url = ?, volume = ?, issue = ?, pages = ?, cited_by_count = ?, cited_by_count_at = ?,"
+                " is_retracted = ?, is_retracted_at = ?, record_match_json = ? WHERE id = ?",
+                (record.title, dumps(record.authors), record.year, record.venue, record.publication_type, record.doi,
+                 record.landing_url, record.volume, record.issue, record.pages, record.cited_by_count,
+                 now() if record.cited_by_count is not None else None,
+                 None if record.is_retracted is None else int(record.is_retracted),
+                 now() if record.is_retracted is not None else None, dumps(match), svid))
+            has_abstract = self.conn.execute(
+                "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)).fetchone()
+            if record.abstract and not has_abstract:
+                self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, None, None, record.abstract)
+            self._assign_source_key(source["work_id"], replace_title_key=True)
 
     def _assign_source_key(self, work_id: str, replace_title_key: bool = False) -> None:
         """Give a work its short author–year key (D59): from its published record's authors when it has one, else from

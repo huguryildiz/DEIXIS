@@ -339,11 +339,13 @@ export type Asset = {
   current_extraction?: boolean; rejected_extraction?: { extraction_version: string; rejection_reason: string; created_at: string } | null
   // Sources only (D52): whether Marker has read the PDF's pages with mathematics.
   // A read's `equations_to_check` counts display equations that did not match the PDF's text layer, on pages `to_check`.
-  // Without Marker and with the arXiv source route on (D104), `route: 'arxiv_source'` and its own states/fields.
+  // Without Marker and with the arXiv source route on (D104), `route: 'arxiv_source'` and its own states/fields; with the
+  // Mathpix switch on (D40), `route: 'mathpix'` and its states (no_candidates, none_placed, keys_rejected, budget_reached).
   equations?: {
-    state: 'read' | 'no_math' | 'failed' | 'reading' | 'pending' | 'no_source' | 'source_waiting'
+    state: 'read' | 'no_math' | 'failed' | 'reading' | 'pending' | 'no_source' | 'source_waiting' | 'no_candidates' | 'none_placed' | 'keys_rejected' | 'budget_reached'
     reason?: string | null; attempts?: number; pages?: number; started_at?: string; to_check?: number[]; equations_to_check?: number
-    route?: 'arxiv_source'; next_at?: string
+    route?: 'arxiv_source' | 'mathpix'; next_at?: string
+    mathpix?: { placed: number; pages: number[]; refused: Record<string, number> }
     source?: {
       arxiv_id: string | null; version: number | null; version_from: 'url' | 'stamp' | 'both' | null; record_label: string | null
       placed: number; pages: number[]; not_placed: Record<string, number>
@@ -412,7 +414,7 @@ export type PassageFreshness = {
 export type AssetText = {
   occurrence: ExtractionOccurrence | null
   asset: Asset
-  passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source'; equations_to_check?: number; source_equations?: string[] }[]
+  passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr'; equations_to_check?: number; source_equations?: string[] }[]
   source: Passage['source']
 }
 // A figure found from its caption on a PDF page (D58); its picture is cut from the page by the server.
@@ -495,7 +497,7 @@ export type Evidence = {
   evidence_status: EvidenceStatus
   // null for abstracts; 'ocr' text was not checked against the page (D51); 'latex_source' holds the authors' LaTeX of
   // numbered display equations matched to the page by their numbers, from the arXiv source of this version (D104).
-  text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | null
+  text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr' | null
   removed_from_research: boolean  // the source was removed from this research later; the quote still opens (D50)
   // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
   rendition?: boolean
@@ -686,8 +688,8 @@ export type Trash = { researches: TrashedResearch[]; tables: TrashedTable[]; sou
 export type Passage = {
   occurrence: ExtractionOccurrence | null
   id: string; kind: Evidence['kind']; text: string; physical_page: number | null; printed_label: string | null
-  abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source'; equations_to_check?: number
-  // The equation numbers placed from the arXiv source in this passage (D104); empty outside a 'latex_source' passage.
+  abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr'; equations_to_check?: number
+  // The equation numbers placed in this passage from the arXiv source (D104) or by Mathpix (D40); empty otherwise.
   source_equations?: string[]
   reading_depth: string; asset_id: string | null
   // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
@@ -742,6 +744,14 @@ export type EquationReader = {
   reading: { asset_id: string; title: string | null; pages: number; started_at: string } | null
   pdfs: Partial<Record<'read' | 'no_math' | 'failed' | 'reading' | 'pending', number>>
 }
+// Mathpix (D40): the key pair (never shown), the switch, this month's requests against the budget and the PDFs it reads.
+export type Mathpix = {
+  pair: { configured: boolean; unreadable: boolean; app_id: string | null }; keys_rejected: boolean; switch: 'on' | 'off'
+  monthly_budget: number; month_requests: number; per_pdf_limit: number; marker_present: boolean
+  pdfs: Partial<Record<'read' | 'pending' | 'reading' | 'failed' | 'no_candidates' | 'none_placed' | 'keys_rejected' | 'budget_reached', number>>
+  reading: { asset_id: string; title: string | null; pages: number; started_at: string } | null
+}
+export type MathpixTest = { status: 'ok' | 'rejected' | 'failed'; detail: string; http_status: number | null; checked_at: string }
 export type LocalTools = { machine: { chip: string | null; memory_gb: number | null; disk_free_gb: number | null; disk_total_gb?: number | null }; tools: LocalTool[] }
 export type SemanticSearchProvider = 'gemini' | 'builtin' | 'openai' | 'ollama' | 'lm_studio' | 'off'
 export type SemanticSearchOption = {
@@ -825,7 +835,7 @@ export type CellValue = { option_ids?: string[]; number?: number; unit?: string 
 export type CellEvidence = {
   passage_id: string; anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null; kind: Evidence['kind']
   physical_page: number | null; printed_label: string | null; asset_id: string | null; evidence_status: EvidenceStatus
-  text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | null
+  text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr' | null
 }
 export type CellRevision = {
   id: string; kind: 'model_fill' | 'model_proposal' | 'system_fill' | 'human_edit' | 'accept_proposal' | 'dismiss_proposal'
@@ -1316,6 +1326,12 @@ export const api = {
   removeEquationReader: () => request<EquationReader>('/api/equation-reader', { method: 'DELETE' }),
   rereadEquations: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/equations`, { method: 'POST' }),
+  mathpix: () => request<Mathpix>('/api/mathpix'),
+  saveMathpixSettings: (change: { switch?: 'on' | 'off'; monthly_budget?: number }) => request<Mathpix>('/api/mathpix', json('PUT', change)),
+  mathpixEstimate: () => request<{ pdfs: number; upper_bound: number; crops: number }>('/api/mathpix/estimate'),
+  saveMathpixPair: (appId: string, appKey: string) => request<{ mathpix: Mathpix; test: MathpixTest }>('/api/credentials/mathpix', json('PUT', { app_id: appId, app_key: appKey })),
+  testMathpixPair: () => request<MathpixTest>('/api/credentials/mathpix/test', { method: 'POST' }),
+  removeMathpixPair: () => request<{ mathpix: Mathpix }>('/api/credentials/mathpix', { method: 'DELETE' }),
   ocr: () => request<OcrTool>('/api/ocr'),
   installOcr: () => request<{ job: OcrJob }>('/api/ocr/install', { method: 'POST' }),
   pdfReader: () => request<PdfReader>('/api/pdf-reader'),
@@ -1454,6 +1470,10 @@ const textFragment = (text: string) => encodeURIComponent(text.replace(/\s+/g, '
 
 export const figureUrl = (researchId: string, assetId: string, label: string) =>
   `/api/researches/${researchId}/assets/${assetId}/figures/${encodeURIComponent(label)}.png`
+
+// The page image Mathpix read a passage's equation from (D40), rendered again from the stored PDF.
+export const equationCropUrl = (researchId: string, passageId: string, number: string) =>
+  `/api/researches/${researchId}/passages/${passageId}/equations/${encodeURIComponent(number)}/crop`
 
 export const assetUrl = (researchId: string, assetId: string, page?: number | null, highlightText?: string | null) => {
   const openParams = page ? `page=${page}` : ''

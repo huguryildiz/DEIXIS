@@ -132,7 +132,7 @@ test.describe.serial('S24: the Settings page', () => {
     await page.locator('.co-fold').click()
     await expect(page.locator('.co-grid[data-group="others"] .co-name b')).toHaveText(['OpenRouter', 'Muse', 'MiMo', 'Qwen', 'GLM', 'DeepSeek'])
     await expect(page.locator('.co-grid[data-group="local"] .co-name b')).toHaveText(['Ollama', 'LM Studio', 'Another local server'])
-    await expect(page.locator('.doc-list b')).toHaveText(['PDF reader', 'Scanned PDF reader (OCR)', 'Equation reader'])
+    await expect(page.locator('.doc-list b')).toHaveText(['PDF reader', 'Scanned PDF reader (OCR)', 'Equation reader', 'Mathpix equation reader'])
     await page.getByRole('tab', { name: 'Sources' }).click()
     await expect(page).toHaveURL(/#\/settings\/sources$/)
     await expect(shown).toHaveText(['Institutional access', 'Scholarly sources', 'Reference managers'])
@@ -551,6 +551,42 @@ test.describe.serial('S24: the Settings page', () => {
     await find.click()
     await expect(sheet.locator('.dmeta')).toContainText(/checked \d/)
     await expect(sheet.locator('.check-failed')).toHaveCount(0)
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
+
+  test('Mathpix (D40): off without a pair; the switch asks first with the PDFs and an upper bound of requests; no key or env name shows', async () => {
+    // The fixture server has no Mathpix pair; a saved pair and the estimate are route-simulated with SYNTHETIC values.
+    await page.goto(server.url('#/settings'))
+    await page.reload()
+    await page.getByRole('button', { name: /^Mathpix equation reader/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'Mathpix equation reader' })
+    await expect(sheet).toContainText('DEIXIS does not send the PDF or its extracted text. For each numbered equation it sends an image of the area it takes to be the equation; that area can hold nearby content.')
+    await expect(sheet.getByRole('link', { name: 'Mathpix privacy policy' })).toHaveAttribute('href', 'https://mathpix.com/privacy-policy')
+    await expect(sheet.getByRole('button', { name: 'Turn on…' })).toBeDisabled()
+    await expect(sheet).not.toContainText(/MATHPIX|_KEY|app_key/)
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    const status = { pair: { configured: true, unreadable: false, app_id: 'SYNTHETIC-app' }, keys_rejected: false, switch: 'off', monthly_budget: 500,
+      month_requests: 12, per_pdf_limit: 60, marker_present: false, pdfs: { read: 2, pending: 3 }, reading: null }
+    let put: unknown = null
+    await page.route(url => url.pathname === '/api/mathpix', route => {
+      if (route.request().method() === 'PUT') { put = route.request().postDataJSON(); return route.fulfill({ json: { ...status, switch: 'on' } }) }
+      return route.fulfill({ json: status })
+    })
+    await page.route(url => url.pathname === '/api/mathpix/estimate', route => route.fulfill({ json: { pdfs: 3, upper_bound: 41, crops: 41 } }))
+    await page.reload()
+    await page.getByRole('button', { name: /^Mathpix equation reader/ }).click()
+    await expect(sheet.locator('#mathpix-app-id')).toHaveAttribute('placeholder', 'SYNTHETIC-app')
+    await expect(sheet.locator('#mathpix-app-key')).toHaveValue('')
+    await expect(sheet).toContainText('12 of 500 requests · at most 60 per PDF')
+    await sheet.getByRole('button', { name: 'Turn on…' }).click()
+    const confirm = page.getByRole('alertdialog').or(page.getByRole('dialog', { name: 'Turn on Mathpix?' }))
+    await expect(confirm).toContainText('3 PDFs in the library have numbered equations Mathpix would read now: at most 41 requests')
+    await shot(page, 'settings-mathpix-confirm')
+    await confirm.getByRole('button', { name: 'Turn on', exact: true }).click()
+    await expect.poll(() => put).toEqual({ switch: 'on' })
+    await expect(sheet.getByRole('button', { name: 'Turn off' })).toBeVisible()
+    await shot(page, 'settings-mathpix-on')
     await sheet.getByRole('button', { name: 'Close' }).click()
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })

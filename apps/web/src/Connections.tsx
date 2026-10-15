@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, BookOpenText, ChevronRight, CircleCheck, Copy, Cpu, Download, FileLock, FileText, HardDrive, Info, Laptop, MemoryStick, LoaderCircle, Package, Plus, RefreshCw, RotateCw, Save, ScanText, Server, ShieldCheck, Sigma, Trash2, TriangleAlert, Upload } from 'lucide-react'
+import { Ban, BookOpenText, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, HardDrive, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, Plus, RefreshCw, RotateCw, Save, ScanText, Server, ShieldCheck, Sigma, Trash2, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DataLocationCard } from './DataLocation'
-import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
@@ -120,12 +120,12 @@ const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocal
 // Settings icons, drawn in black and white (Settings.css): brand marks where connectionIcons.tsx has one, a plain glyph otherwise.
 const glyph = (icon: ReactNode) => <span className="connection-icon" aria-hidden="true">{icon}</span>
 const GLYPHS: Record<string, ReactNode> = {
-  ocr: glyph(<ScanText strokeWidth={1.8} />), marker: glyph(<Sigma strokeWidth={1.8} />), pymupdf: glyph(<BookOpenText strokeWidth={1.8} />), servers: glyph(<Server strokeWidth={1.8} />),
+  ocr: glyph(<ScanText strokeWidth={1.8} />), marker: glyph(<Sigma strokeWidth={1.8} />), mathpix: glyph(<Cloud strokeWidth={1.8} />), pymupdf: glyph(<BookOpenText strokeWidth={1.8} />), servers: glyph(<Server strokeWidth={1.8} />),
   server: glyph(<Server strokeWidth={1.8} />), 'reference-files': glyph(<FileText strokeWidth={1.8} />), off: glyph(<Ban strokeWidth={1.8} />),
 }
 const settingsIcon = (key: string) => GLYPHS[key] ?? <ConnectionIcon id={localToolIcon(key)} />
 
-type Selected = { kind: 'company' | 'local' | 'equation-reader' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'zotero' | 'reference-files'; id: string }
+type Selected = { kind: 'company' | 'local' | 'equation-reader' | 'mathpix' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'zotero' | 'reference-files'; id: string }
 type Tone = 'ok' | 'no' | 'warn'
 
 // Why a service refused a new key, in plain words, with the HTTP code it answered. The readings follow each
@@ -398,6 +398,113 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
     {reader.installed && !running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={() => setConfirm('remove')} disabled={busy || !!reader.reading} title={reader.reading ? t('It cannot be removed while a PDF is being read') : undefined}>{t('Remove')}</Button></div>}
     <ConfirmDialog open={confirm === 'install'} dark={dark} title={t('Install the equation reader?')} description={t('This downloads Marker and its models (about 4.4 GB) into the DEIXIS data folder, which can take several minutes. Your stored PDFs are then read in the background, which can take hours for a large library.')} context={reader.path} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installEquationReader)} onOpenChange={open => setConfirm(open ? 'install' : null)} />
     <ConfirmDialog open={confirm === 'remove'} dark={dark} title={t('Remove the equation reader?')} description={t('Marker and its models are deleted. Equations already read stay in the stored text; new PDFs are no longer read.')} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.removeEquationReader)} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
+  </div>
+}
+
+const MATHPIX_PRIVACY_URL = 'https://mathpix.com/privacy-policy'
+
+// Mathpix (D40): an online reader for numbered display equations, off until the person saves a key pair and turns it on.
+// The pair is tested against Mathpix's usage API before it is saved; the switch asks first, with an upper bound of requests.
+function MathpixDetails({ mathpix, keychain, dark, onChanged }: { mathpix: Mathpix; keychain: Keychain; dark: boolean; onChanged: (next?: Mathpix) => void }) {
+  const [appId, setAppId] = useState('')
+  const [appKey, setAppKey] = useState('')
+  const [budget, setBudget] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [formError, setFormError] = useState('')
+  const [asking, setAsking] = useState(false)
+  const [estimate, setEstimate] = useState<{ pdfs: number; upper_bound: number } | null>(null)
+  const toast = useToast()
+  const typed = !!(appId.trim() && appKey.trim())
+  const fail = (e: Error) => setFormError(e.message)
+  function savePair() {
+    setBusy(true); setFormError('')
+    api.saveMathpixPair(appId.trim(), appKey.trim()).then(result => {
+      setAppId(''); setAppKey(''); onChanged(result.mathpix)
+      toast(result.test.status === 'ok' ? 'success' : 'warning', result.test.status === 'ok'
+        ? t('Key pair saved. Mathpix accepted it.') : t('Key pair saved, but Mathpix could not be reached to test it.'))
+    }).catch((e: Error) => setFormError(e instanceof ApiError && e.code === 'credential_test_failed'
+      ? t('The key pair was not saved. Mathpix did not accept it (HTTP {code}).', { code: String(e.details?.http_status ?? '?') }) : e.message))
+      .finally(() => setBusy(false))
+  }
+  function test() {
+    setBusy(true); setFormError('')
+    api.testMathpixPair().then(result => {
+      toast(result.status === 'ok' ? 'success' : 'warning', result.status === 'ok' ? t('Mathpix accepted the key pair.')
+        : result.status === 'rejected' ? t('Mathpix did not accept the key pair (HTTP {code}).', { code: String(result.http_status ?? '?') })
+        : t('Mathpix could not be reached to test the key pair.'))
+      onChanged()
+    }).catch(fail).finally(() => setBusy(false))
+  }
+  function remove() {
+    setBusy(true); setFormError('')
+    api.removeMathpixPair().then(result => { setAsking(false); onChanged(result.mathpix); toast('success', t('Key pair removed.')) })
+      .catch(fail).finally(() => setBusy(false))
+  }
+  function askToTurnOn() {
+    setBusy(true); setFormError('')
+    api.mathpixEstimate().then(setEstimate).catch(fail).finally(() => setBusy(false))
+  }
+  function setSwitch(value: 'on' | 'off') {
+    setBusy(true); setFormError('')
+    api.saveMathpixSettings({ switch: value }).then(result => {
+      setEstimate(null); onChanged(result)
+      toast('success', value === 'on' ? t('Mathpix is on.') : t('Mathpix is off. Requests already sent finish; no new ones are sent.'))
+    }).catch(fail).finally(() => setBusy(false))
+  }
+  function saveBudget() {
+    const value = Number(budget)
+    if (!Number.isInteger(value) || value < 0) { setFormError(t('Type a whole number of requests.')); return }
+    setBusy(true); setFormError('')
+    api.saveMathpixSettings({ monthly_budget: value }).then(result => { setBudget(null); onChanged(result); toast('success', t('Monthly budget saved.')) })
+      .catch(fail).finally(() => setBusy(false))
+  }
+  const on = mathpix.switch === 'on'
+  const pdfs = mathpix.pdfs
+  const waiting = (pdfs.pending ?? 0) + (pdfs.reading ?? 0)
+  const notUsed = (pdfs.no_candidates ?? 0) + (pdfs.none_placed ?? 0)
+  const stopped = (pdfs.failed ?? 0) + (pdfs.keys_rejected ?? 0) + (pdfs.budget_reached ?? 0)
+  const where = t('stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })
+  return <div className="local-tool-details-panel tool-panel">
+    <p className="tool-lead">{t('Mathpix reads the numbered equations in your PDFs from an image of the page. DEIXIS keeps an equation only when its letters, scripts and signs match the PDF’s own text.')}</p>
+    <ToolTraits items={[[<Cloud key="c" />, 'Runs on Mathpix’s servers'], [<KeyRound key="k" />, 'Needs your own Mathpix key pair']]} />
+    <Notice tone="attention"><p>{t('DEIXIS does not send the PDF or its extracted text. For each numbered equation it sends an image of the area it takes to be the equation; that area can hold nearby content.')} <a href={MATHPIX_PRIVACY_URL} target="_blank" rel="noopener noreferrer">{t('Mathpix privacy policy')}</a></p></Notice>
+    {mathpix.marker_present && <p className="local-tool-note">{t('Marker is installed, so Marker reads the equations and Mathpix sends nothing.')}</p>}
+    {mathpix.pair.unreadable && <Notice tone="attention"><p>{t('The saved key pair could not be read. Save it again.')}</p></Notice>}
+    {mathpix.keys_rejected && <Notice tone="attention"><p>{t('Mathpix did not accept the saved key pair. No request is sent until a new pair is saved.')}</p></Notice>}
+    <form className="key-box" onSubmit={e => { e.preventDefault(); if (typed) savePair(); else if (mathpix.pair.configured) test() }}>
+      <label className="lbl" htmlFor="mathpix-app-id">{t('App ID')}
+        <input id="mathpix-app-id" className="field" type="text" spellCheck={false} value={appId} disabled={busy} autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
+          placeholder={mathpix.pair.app_id ?? t('Type your app ID')} onChange={e => { setAppId(e.target.value); setFormError('') }} />
+      </label>
+      <label className="lbl" htmlFor="mathpix-app-key">{t('App key')}
+        <input id="mathpix-app-key" className="field" type="password" spellCheck={false} value={appKey} disabled={busy} autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
+          placeholder={mathpix.pair.configured ? `•••••••••••• ${where}` : t('Paste your key')} onChange={e => { setAppKey(e.target.value); setFormError('') }} />
+      </label>
+      <p className="foot-note">{t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })} {t('A new pair is tested with Mathpix’s usage API before it is saved. The test shows that Mathpix accepted the pair, not that the account has credit for reading images.')}</p>
+      {formError && <Notice tone="error"><p>{formError}</p></Notice>}
+      <div className="acts">
+        {(typed || mathpix.pair.configured) && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : typed ? <Save aria-hidden /> : <CircleCheck aria-hidden />}{t(typed ? 'Save and test' : 'Test')}</button>}
+        {mathpix.pair.configured && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t('Remove key pair')}</button>}
+      </div>
+      {asking && <RemoveNotice busy={busy} onRemove={remove} onKeep={() => setAsking(false)} text={t('Remove the Mathpix key pair? No new request is sent; equations already read stay in the stored text.')} />}
+    </form>
+    <section className="tool-facts" aria-label={t('Mathpix use')}>
+      <dl>
+        <dt>{t('Reading')}</dt><dd>{t(on ? 'On' : 'Off')}{' '}
+          {on ? <button type="button" className="ghost" disabled={busy} onClick={() => setSwitch('off')}>{t('Turn off')}</button>
+            : <button type="button" className="ghost" disabled={busy || !mathpix.pair.configured || mathpix.keys_rejected} onClick={askToTurnOn}>{t('Turn on…')}</button>}</dd>
+        <dt>{t('This month')}</dt><dd>{t('{n} of {budget} requests · at most {limit} per PDF', { n: mathpix.month_requests, budget: mathpix.monthly_budget, limit: mathpix.per_pdf_limit })}</dd>
+        <dt><label htmlFor="mathpix-budget">{t('Requests per month')}</label></dt><dd>
+          <input id="mathpix-budget" className="field mathpix-budget" type="number" min={0} step={1} inputMode="numeric" value={budget ?? String(mathpix.monthly_budget)} disabled={busy} onChange={e => { setBudget(e.target.value); setFormError('') }} />
+          {budget !== null && <button type="button" className="ghost" disabled={busy} onClick={saveBudget}>{t('Save')}</button>}
+        </dd>
+        <dt>{t('PDFs')}</dt><dd>{t('{read} read · {waiting} waiting · {none} without a usable equation · {stopped} stopped', { read: pdfs.read ?? 0, waiting, none: notUsed, stopped })}</dd>
+      </dl>
+    </section>
+    <ToolCaveat>{t('DEIXIS has not measured how often Mathpix misreads an equation. An equation whose letters, scripts or signs differ from the PDF’s text is not used, but a misread that keeps all of them, such as a wrong digit, can pass. Check equations against the page.')}</ToolCaveat>
+    <ConfirmDialog open={estimate !== null} dark={dark} title={t('Turn on Mathpix?')}
+      description={estimate ? t('{pdfs} PDFs in the library have numbered equations Mathpix would read now: at most {n} requests, within this month’s budget. New PDFs are read as they arrive. Turning it off stops new requests; requests already sent finish.', { pdfs: estimate.pdfs, n: estimate.upper_bound }) : ''}
+      confirmLabel={t('Turn on')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => setSwitch('on')} onOpenChange={open => { if (!open) setEstimate(null) }} />
   </div>
 }
 
@@ -860,6 +967,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const [tools, setTools] = useState<LocalTools | null>(null)
   const [toolsError, setToolsError] = useState('')
   const [reader, setReader] = useState<EquationReader | null>(null)
+  const [mathpix, setMathpix] = useState<Mathpix | null>(null)
   const [ocrTool, setOcrTool] = useState<OcrTool | null>(null)
   const [pdfReader, setPdfReader] = useState<PdfReader | null>(null)
   const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
@@ -899,6 +1007,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   }, [])
   const loadReader = useCallback((strict = false): Promise<boolean> => api.equationReader().then(result => { setReader(result); return true })
     .catch((e: Error) => { setToolsError(e.message); if (strict) throw e; return false }), [])
+  const loadMathpix = useCallback((strict = false): Promise<boolean> => api.mathpix().then(result => { setMathpix(result); return true })
+    .catch((e: Error) => { setToolsError(e.message); if (strict) throw e; return false }), [])
   const loadOcr = useCallback((strict = false): Promise<boolean> => api.ocr().then(result => { setOcrTool(result); return true })
     .catch((e: Error) => { setToolsError(e.message); if (strict) throw e; return false }), [])
   const loadSemantic = useCallback((strict = false): Promise<boolean> => {
@@ -920,6 +1030,12 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   }, [builtin, loadBuiltin, loadSemantic])
   useEffect(() => { void loadReader() }, [loadReader])
   useEffect(() => { void loadOcr() }, [loadOcr])
+  useEffect(() => { void loadMathpix() }, [loadMathpix])
+  useEffect(() => {
+    if (!mathpix?.reading) return
+    const timer = window.setInterval(() => { void loadMathpix() }, 10000)
+    return () => window.clearInterval(timer)
+  }, [mathpix, loadMathpix])
   useEffect(() => {
     if (ocrTool?.job?.status !== 'running') return
     const timer = window.setInterval(() => { void loadOcr() }, 1500)
@@ -1035,6 +1151,9 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const pdfReaderStatus = (): [Tone, string] => pdfReader ? ['ok', t('Installed')] : toolsError ? unknown : loading
   const readerStatus = (): [Tone, string] => !reader ? (toolsError ? unknown : loading)
     : reader.job?.status === 'running' ? ['no', t('Installing…')] : reader.installed && reader.models_downloaded ? ['ok', t('Installed')] : ['no', t('Not installed')]
+  const mathpixStatus = (): [Tone, string] => !mathpix ? (toolsError ? unknown : loading)
+    : mathpix.keys_rejected ? ['warn', t('Key pair refused')] : !mathpix.pair.configured ? ['no', t('Not set up')]
+    : mathpix.switch === 'on' ? ['ok', t('On')] : ['no', t('Off')]
   const providerStatus = (mode: string | null): [Tone, string] => mode === 'api_key' ? ['ok', t('Key configured')] : mode === 'keyless' ? ['ok', t('No key needed')] : ['no', t('Not set up')]
   const zoteroStatus = (): [Tone, string] => !zotero ? (tools ? ['no', t('Not set up')] : toolsError ? unknown : loading)
     : zotero.running && zotero.local_api ? ['ok', t('Local API on')] : zotero.web_configured ? ['ok', t('zotero.org set')]
@@ -1083,6 +1202,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     { kind: 'pdf-reader', id: 'pymupdf', name: 'PDF reader', what: 'Reads the text of every PDF', status: pdfReaderStatus() },
     { kind: 'ocr-tool', id: 'tesseract', name: 'Scanned PDF reader (OCR)', what: 'Turns scanned pages into text', status: ocrStatus() },
     { kind: 'equation-reader', id: 'marker', name: 'Equation reader', what: 'Reads equations as LaTeX', status: readerStatus() },
+    { kind: 'mathpix', id: 'mathpix', name: 'Mathpix equation reader', what: 'Reads numbered equations online, with your key pair', status: mathpixStatus() },
   ]
   const saveLocalServer = (url: string) => {
     setServerBusy(true); setServerError('')
@@ -1157,6 +1277,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     : sel.kind === 'local' ? (sel.id === 'local_server' ? t('Another local server') : localToolNames[sel.id] ?? sel.id)
     : sel.kind === 'provider' ? providerNames[sel.id] ?? sel.id
     : sel.kind === 'equation-reader' ? t('Equation reader (Marker)')
+    : sel.kind === 'mathpix' ? t('Mathpix equation reader')
     : sel.kind === 'ocr-tool' ? t('OCR (Tesseract)')
     : sel.kind === 'pdf-reader' ? t('PDF reader (PyMuPDF)')
     : sel.kind === 'reference-files' ? t('BibTeX / RIS files')
@@ -1382,6 +1503,11 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     body = <>
       <div className="tool-status">{dmeta('equation-reader', readerStatus())}{checkButton('equation-reader', 'Find it on this computer', () => loadReader(true), false, true)}</div>
       {reader && <EquationReaderDetails reader={reader} dark={dark} onChanged={reloadReader} />}
+    </>
+  } else if (sel?.kind === 'mathpix') {
+    body = <>
+      <div className="tool-status">{dmeta('mathpix', mathpixStatus())}</div>
+      {mathpix && credentials && <MathpixDetails mathpix={mathpix} keychain={credentials.keychain} dark={dark} onChanged={next => { if (next) setMathpix(next); else void loadMathpix() }} />}
     </>
   } else if (sel?.kind === 'ocr-tool') {
     body = <>

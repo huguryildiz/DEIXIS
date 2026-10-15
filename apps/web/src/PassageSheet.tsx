@@ -3,7 +3,7 @@ import { AlignLeft, Check, ChevronLeft, ChevronRight, Copy, Ellipsis, FileText, 
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, assetUrl, shellApi, type Asset, type AssetText, type Claim, type Passage, type PdfDiscovery, type Source } from './api'
+import { api, assetUrl, equationCropUrl, shellApi, type Asset, type AssetText, type Claim, type Passage, type PdfDiscovery, type Source } from './api'
 import { citedText, locatorText, providerName, retractionNote, serviceErrors, serviceKind, versionText } from './labels'
 import { t, uiLocale } from './i18n'
 import { PassageMathText } from './PassageMathText'
@@ -441,6 +441,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
               {source.origin === 'user_upload' && <span className="ref-pill pill">{t('uploaded by you')}</span>}
               {(passage?.text_source === 'ocr' || row?.has_ocr_text) && <span className="ref-pill pill is-ocr warn"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
               {passage?.text_source === 'latex_source' && <span className="ref-pill pill is-text"><Sigma size={12} aria-hidden />{t('arXiv source')}</span>}
+              {passage?.text_source === 'equation_ocr' && <span className="ref-pill pill is-text"><Sigma size={12} aria-hidden />Mathpix</span>}
             </div>
           </div>
           {/* Where the source stands in this research (mockup `.dmeta`, P13): the decision and who made it, the latest
@@ -502,6 +503,20 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
                   ? 'Equation ({a}) in this passage is the authors’ LaTeX from the arXiv source, matched to the page by its number. The rest of this passage, including other mathematics, is the PDF’s own text.'
                   : 'Equations {numbers} in this passage are the authors’ LaTeX from the arXiv source, matched to the page by their numbers. The rest of this passage, including other mathematics, is the PDF’s own text.',
                 { a: passage.source_equations[0], numbers: passage.source_equations.map(n => `(${n})`).join(', ') })}</p>
+          ) : null}
+          {/* Mathpix (D40): numbered display equations read from an image of the page and kept only when they match the
+              PDF's own letters, scripts and signs. Each comes with the image that was sent, rendered again from the PDF. */}
+          {tab === 'text' && passage?.text_source === 'equation_ocr' && passage.source_equations?.length ? (
+            <div className="source-notice"><Info size={15} aria-hidden /><div>
+              <p>{t(passage.source_equations.length === 1
+                ? 'Equation ({a}) in this passage was read by Mathpix from the page image and matched to the PDF’s letters, scripts and signs. Check it against the page. The rest of this passage is the PDF’s own text.'
+                : 'Equations {numbers} in this passage were read by Mathpix from the page image and matched to the PDF’s letters, scripts and signs. Check them against the page. The rest of this passage is the PDF’s own text.',
+                { a: passage.source_equations[0], numbers: passage.source_equations.map(n => `(${n})`).join(', ') })}</p>
+              <ul className="equation-crops">{passage.source_equations.map(n => <li key={n}><figure>
+                <figcaption>({n})</figcaption>
+                <img src={equationCropUrl(researchId, passage.id, n)} alt={t('The page image Mathpix read equation ({n}) from', { n })} loading="lazy" />
+              </figure></li>)}</ul>
+            </div></div>
           ) : null}
           {/* OCR text (D51) is read from the page image and never checked against it; the PDF view opens on the same page. */}
           {tab === 'text' && passage?.text_source === 'ocr' && <p className="source-notice"><TriangleAlert size={15} aria-hidden /><span>{t('This page was read from its scanned image with OCR (Tesseract) on this computer. Letters, numbers and equations may be misread; check them against the PDF page.')}

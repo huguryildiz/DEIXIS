@@ -529,6 +529,28 @@ function arxivSourcePart(equations: NonNullable<Source['access']['assets'][numbe
   return { tone: 'unstated', text: t('Equations not read yet') }
 }
 
+// Mathpix (D40): why a read placed nothing or failed, by the reason code the backend stored.
+const mathpixReasons: Record<string, string> = {
+  keys_rejected: 'Mathpix did not accept the key pair', rate_limited: 'Mathpix asked to slow down', server_error: 'Mathpix answered with an error',
+  network: 'Mathpix could not be reached or its answer was not received', extraction_changed: 'the PDF’s text changed during the reading',
+  extraction_failed: 'the PDF’s text could not be extracted again within its time or memory limit', budget_reached: 'the request budget is used up',
+}
+const mathpixReasonText = (reason: string | null | undefined) => t(mathpixReasons[reason ?? ''] ?? reason ?? 'unavailable')
+
+function mathpixPart(equations: NonNullable<Source['access']['assets'][number]['equations']>): { tone: 'text' | 'unstated'; text: string } {
+  if (equations.state === 'read' && equations.mathpix) {
+    const { placed, pages } = equations.mathpix
+    return { tone: 'text', text: t(pages.length === 1 ? 'Equations read by Mathpix · {n} matched to {p} page · check against the page' : 'Equations read by Mathpix · {n} matched to {p} pages · check against the page', { n: placed, p: pages.length }) }
+  }
+  if (equations.state === 'reading') return { tone: 'unstated', text: t('Mathpix is reading the equations · {n} pages', { n: equations.pages ?? '?' }) }
+  if (equations.state === 'no_candidates') return { tone: 'unstated', text: t('No numbered equation found for Mathpix') }
+  if (equations.state === 'none_placed') return { tone: 'unstated', text: t('Mathpix’s equations did not match the PDF’s text · none used') }
+  if (equations.state === 'keys_rejected') return { tone: 'unstated', text: t('Equations not read · Mathpix did not accept the key pair') }
+  if (equations.state === 'budget_reached') return { tone: 'unstated', text: t('Equations not read · the Mathpix request budget is used up') }
+  if (equations.state === 'failed') return { tone: 'unstated', text: t('Mathpix could not read the equations · {reason}', { reason: mathpixReasonText(equations.reason) }) }
+  return { tone: 'unstated', text: t('Equations not read yet') }
+}
+
 // Why a PDF could not be read, from the asset's stored extraction_error; anything else reads as unreadable.
 export function pdfFailureText(error: string | null | undefined): string {
   if (error === 'password-protected PDF') return t('PDF is password-protected')
@@ -551,6 +573,7 @@ export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unst
   if (asset?.ocr?.ocr_pages) parts.push({ tone: 'ocr', text: t('OCR text on {k} of {n} pages · check against the page', { k: asset.ocr.ocr_pages, n: asset.page_count ?? '?' }) })
   const equations = asset?.equations
   if (equations?.route === 'arxiv_source') parts.push(arxivSourcePart(equations))
+  else if (equations?.route === 'mathpix') parts.push(mathpixPart(equations))
   else if (equations?.state === 'reading') parts.push({ tone: 'unstated', text: t('Reading equations · {n} pages', { n: equations.pages ?? '?' }) })
   else if (equations?.state === 'pending') parts.push({ tone: 'unstated', text: t('Equations not read yet') })
   else if (equations?.state === 'read') parts.push(equations.equations_to_check

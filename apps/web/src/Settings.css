@@ -189,6 +189,7 @@
 .detail-sheet.connection-sheet .status-chip{gap:0;margin-top:0;padding:1px 7px;border-color:transparent;font-size:11px;font-weight:500;line-height:1.5}
 .connection-sheet .status-chip::before{display:none}
 .connection-sheet .status-chip.is-configured{border-color:transparent;background:var(--hover-surface)}
+.connection-sheet .field.mathpix-budget{width:110px;max-width:100%;margin-right:6px}
 .connection-sheet .status-chip.is-status{gap:5px}
 .connection-sheet .status-chip.is-status::before{display:block}
 .connection-sheet .local-tool-note,.connection-sheet .local-tool-error{font-size:12.5px}

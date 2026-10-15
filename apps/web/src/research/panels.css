@@ -109,6 +109,11 @@
 .source-role dd.is-pending{color:var(--tone-uncertain)}
 .source-notice{display:flex;gap:9px;margin:12px 0 0;padding:9px 11px;border-radius:8px;background:var(--hover-surface);color:var(--ink-2);font-size:12.5px;line-height:1.5}
 .source-notice svg{flex:none;margin-top:2px;color:var(--tone-uncertain)}
+.source-notice p{margin:0}
+.equation-crops{display:grid;gap:6px;margin:8px 0 0;padding:0;list-style:none}
+.equation-crops figure{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;margin:0}
+.equation-crops figcaption{color:var(--muted);font-variant-numeric:tabular-nums}
+.equation-crops img{display:block;max-width:100%;max-height:96px;padding:4px;border:1px solid var(--line);border-radius:6px;background:#fff;object-fit:contain}
 .source-sheet-foot{display:flex;flex:none;flex-wrap:wrap;justify-content:flex-start;gap:2px 6px;padding:8px 20px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
 .source-sheet-foot>span+span::before{content:"·";margin-right:6px}
 .source-sheet-foot b{color:var(--muted);font-weight:400}

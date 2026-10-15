@@ -34,7 +34,7 @@ def test_extraction_drops_the_ieee_xplore_download_notice(tmp_path):
     text = pdf.extract_pdf(path).pages[0].text
     assert "Authorized licensed" not in text and "Restrictions apply" not in text and "IEEE Xplore" not in text
     assert "body line one about packet sizes." in text and "body line two about relays." in text
-    assert pdf.EXTRACTION_VERSION.endswith("-layout-v2")
+    assert pdf.EXTRACTION_VERSION.endswith("-layout-v3")
 
     one_line = ("ends here.\nAuthorized licensed use limited to: SYNTHETIC University. Downloaded on September 15,2026 at 19:45:08 UTC"
                 " from IEEE Xplore.  Restrictions apply. \nNext")
@@ -67,6 +67,46 @@ def test_layout_extraction_moves_small_type_after_the_body_and_drops_page_furnit
     assert paragraphs[-1].startswith("A. Author is with the Department")  # the note follows the body text
     assert "and ends in the second column." in " ".join(paragraphs[1:-1])
     assert "arXiv:2601" not in text and "SYNTHETIC JOURNAL" not in text and "7" not in text.split()
+
+
+def test_layout_extraction_drops_the_text_drawn_inside_a_plot_and_keeps_tables(tmp_path):
+    import math
+
+    import pymupdf
+
+    doc = pymupdf.open()
+    page = doc.new_page(width=612, height=792)
+    page.insert_text((72, 80), "SYNTHETIC body text before the figure about switch counts.", fontsize=10)
+    page.insert_text((72, 92), "It runs on for a second line of the column.", fontsize=10)
+    shape = page.new_shape()  # a plot: an axis box and a curve of sloped segments
+    shape.draw_rect(pymupdf.Rect(100, 120, 300, 220))
+    for i in range(40):
+        shape.draw_line((100 + 5 * i, 220 - 80 * math.sin(i / 13)), (105 + 5 * i, 220 - 80 * math.sin((i + 1) / 13)))
+    shape.finish(color=(0, 0, 0))
+    shape.commit()
+    for i, tick in enumerate(("30", "40", "50", "60")):
+        page.insert_text((110 + 55 * i, 226), tick, fontsize=4)
+    page.insert_text((150, 232), "Number of Switches N", fontsize=6)
+    page.insert_text((240, 135), "Q-PASS", fontsize=4)
+    page.insert_text((195, 239), "(a)", fontsize=7)  # 19 pt below the plot, as in the paper this was found on
+    page.insert_text((72, 268), "Fig. 4. (a) The SYNTHETIC selected pairs.", fontsize=7)
+    table = page.new_shape()  # a table: straight rules only
+    for y in (300, 315, 330):
+        table.draw_line((100, y), (300, y))
+    table.finish(color=(0, 0, 0))
+    table.commit()
+    page.insert_text((110, 312), "Alg 4", fontsize=7)
+    page.insert_text((200, 312), "0.93", fontsize=7)
+    page.insert_text((72, 360), "SYNTHETIC body text after the figure.", fontsize=10)
+    path = tmp_path / "plot.pdf"
+    doc.save(path)
+
+    text = pdf.extract_pdf(path).pages[0].text
+    for label in ("30", "60", "Number of Switches", "Q-PASS", "(a)\n"):
+        assert label not in text.replace("Fig. 4. (a)", ""), label
+    assert "Fig. 4. (a) The SYNTHETIC selected pairs." in text  # the caption stays
+    assert "Alg 4" in text and "0.93" in text  # table cells stay
+    assert "before the figure" in text and "after the figure" in text
 
 
 def test_a_numbered_reference_entry_is_one_paragraph():

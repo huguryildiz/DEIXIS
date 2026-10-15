@@ -16,7 +16,10 @@ footnotes) follow the page's body text as their own paragraphs, so a footnote no
 around it. Section headings become their own paragraph, and a word hyphenated at a line end is joined. From `layout-v2`
 a numbered reference entry ("[39] …") is one paragraph even when MuPDF splits its lines into several blocks or puts two
 entries in one block. The original page stays the reference; older passages keep their version until the asset is
-re-extracted (D45).
+re-extracted (D45). From `layout-v3` the text drawn inside a vector plot (tick values, axis titles, legend entries,
+the "(a)"/"(b)" panel marks) is dropped: a short small-type block that lies on or just around a cluster of drawings with sloped
+lines or curves. Rules and grids made only of straight horizontal and vertical lines (tables) do not count, and a caption
+("Fig. 4. …", "Table II …") or a section heading is never dropped.
 
 A page left without text is named: an image page (a scan, which `ocr.py` can read on request, D51) or a blank page.
 
@@ -52,7 +55,7 @@ from deixis.documents import child_guard, inline_math
 from deixis.documents.child_guard import _libproc, _resident_bytes  # re-export existing readers
 
 log = logging.getLogger("deixis.pdf")
-EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-layout-v2"
+EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-layout-v3"
 # MuPDF's default text flags without TEXT_PRESERVE_LIGATURES, so "ﬁ" is extracted as "fi".
 TEXT_FLAGS = pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_MEDIABOX_CLIP
 MAX_PAGES = 400
@@ -76,6 +79,10 @@ SMALL_TYPE = 0.87  # blocks below this share of the body size are small type (IE
 TOP_MARGIN = 0.07  # share of the page height where running heads sit
 # A numbered section heading ("I. INTRODUCTION", "3.2 Results", "A. Model") or an unnumbered standard one.
 HEADING = re.compile(r"(?:(?:[IVXL]+|\d+(?:\.\d+)*|[A-H])\.?\s+[A-Z][^.]{1,76}|Abstract|References|Acknowledge?ments?|Appendix)")
+PLOT_STROKES = 10  # sloped lines or curves a drawing cluster needs to count as a plot (a table's rules have none)
+PLOT_MARGIN = 22.0  # points around a plot where its tick labels, axis titles and panel marks ("(a)") sit
+PLOT_LABEL_LINES, PLOT_LABEL_CHARS = 8, 60  # a tick row comes as one line per value
+CAPTION = re.compile(r"(?:Fig\.?|Figure|Table|TABLE)\s*[\dIVXL]", re.I)
 
 
 @dataclass
@@ -137,6 +144,28 @@ def _blocks(page: pymupdf.Page, textpage: pymupdf.TextPage | None = None, spans:
     return blocks
 
 
+def _sloped(item: tuple) -> bool:
+    return item[0] == "c" or (item[0] == "l" and abs(item[1].x - item[2].x) > 0.5 and abs(item[1].y - item[2].y) > 0.5)
+
+
+def _mark_plot_labels(page: pymupdf.Page, blocks: list[dict]) -> None:
+    """Flag the short blocks drawn on or around a vector plot (layout-v3) so the page text leaves them out."""
+    drawings = page.get_drawings()
+    if not drawings:
+        return
+    strokes = [(pymupdf.Rect(d["rect"]), sum(_sloped(item) for item in d["items"])) for d in drawings]
+    plots = []
+    for cluster in page.cluster_drawings(drawings=drawings):
+        bounds = cluster + (-1, -1, 1, 1)
+        if sum(n for rect, n in strokes if n and bounds.contains(rect)) >= PLOT_STROKES:
+            plots.append(cluster + (-PLOT_MARGIN, -PLOT_MARGIN, PLOT_MARGIN, PLOT_MARGIN))
+    for block in blocks:
+        compact = re.sub(r"\s+", " ", " ".join(block["lines"])).strip()
+        if (len(block["lines"]) <= PLOT_LABEL_LINES and len(compact) <= PLOT_LABEL_CHARS and not CAPTION.match(compact)
+                and not HEADING.fullmatch(compact) and any(plot.contains(pymupdf.Rect(block["bbox"])) for plot in plots)):
+            block["plot_label"] = True
+
+
 def _body_size(layouts: list[tuple]) -> float:
     """The type size that carries most characters in the document, rounded to a quarter point."""
     sizes: dict[float, int] = {}
@@ -175,9 +204,11 @@ def _paragraphs(texts: list[str]) -> list[str]:
 
 
 def _block_kind(block: dict, height: float, body_size: float) -> str:
-    """page_number and running_head blocks are dropped; a heading is compacted; note blocks follow the body."""
+    """page_number, running_head and plot_label blocks are dropped; a heading is compacted; note blocks follow the body."""
     compact = re.sub(r"\s+", " ", _join_lines(block["lines"])).strip()
     small = body_size > 0 and block["size"] < body_size * SMALL_TYPE
+    if small and block.get("plot_label"):
+        return "plot_label"
     if re.fullmatch(r"\d{1,4}", compact):
         return "page_number"
     if small and block["bbox"][3] < height * TOP_MARGIN:
@@ -193,7 +224,7 @@ def _page_text(blocks: list[dict], height: float, body_size: float, lines: dict[
     body, notes = [], []
     for index, block in enumerate(blocks):
         kind = _block_kind(block, height, body_size)
-        if kind in ("page_number", "running_head"):
+        if kind in ("page_number", "running_head", "plot_label"):
             continue
         text = _join_lines(block["lines"] if lines is None or index not in lines else lines[index])
         if not text:
@@ -222,7 +253,7 @@ def _place(blocks: list[dict], height: float, body_size: float, placements: list
         keys = [tuple(k) for k in item["lines"]]
         number = tuple(item["number"])
         valid = all(0 <= b < len(blocks) and 0 <= ln < len(blocks[b]["lines"]) for b, ln in keys) and number in keys
-        if not valid or any(_block_kind(blocks[b], height, body_size) in ("page_number", "running_head", "heading") for b, _ in keys):
+        if not valid or any(_block_kind(blocks[b], height, body_size) in ("page_number", "running_head", "plot_label", "heading") for b, _ in keys):
             refused.append({"n": item["n"], "reason": "not_in_page_text"})
             continue
         if taken & set(keys):
@@ -257,6 +288,7 @@ def _extract_in_process(path: str, max_chars: int, placements: list[dict] | None
             try:
                 page = doc[index]
                 blocks = _blocks(page)
+                _mark_plot_labels(page, blocks)
                 label = page.get_label() or None
             except Exception:  # noqa: BLE001 - one bad page must not lose the rest
                 failed += 1

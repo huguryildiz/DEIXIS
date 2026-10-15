@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D41 — Text drawn inside a vector plot stays out of the page text (layout-v3)
+Status: accepted · Date: 2026-10-15 · Writer: Claude
+Context: On a paper with eight small vector plots (Q-PASS comparison, page 9) the page text held every tick value, axis title, legend entry and "(a)"/"(b)" panel mark as its own paragraph ("30 40 50 60", "Number of Switches N", "FER", "B1", "(a)"), between the funding note and the figure captions. The owner saw it in the reader (15 Oct).
+Decision: `pdf._mark_plot_labels` finds the page's drawing clusters (`Page.cluster_drawings`) that hold at least 10 sloped lines or curves, widens each by 22 pt, and flags a block lying inside one when it has at most 8 lines and 60 characters, is not a caption ("Fig. 4", "Table II") or a section heading. A flagged block is dropped only when it is also small type (below 0.87 of the body size). The extraction version becomes `layout-v3`; existing assets keep their version until re-extracted (D45 in the old log).
+Limits: Measured on that paper (all plot text gone, captions, headings and body kept) and on 60 random PDFs from the owner's disk (366 dropped blocks, nearly all plot or diagram text; a few were Wiley running heads next to a rule). Tables drawn only with straight rules are kept. Labels in a raster figure, or set at body size, are not caught; a label further than 22 pt from its plot stays.
+
 ## D40 — Without Marker, Mathpix can read numbered display equations from page images, behind a switch that starts off
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: Without Marker a PDF that is not an arXiv version with LaTeX source keeps its display equations as broken text layer. Marker needs 4.4 GB and hours on a large library. Mathpix's `v3/text` reads an equation image in one request, but it is a paid online service and its output is not checked against the page. Plan: `.local/equation-reader-plan-2026-10-15.md` (r1, with the r3 and r4 changes). Whether Mathpix-read equations may enter model inputs was decided jointly with gpt-6.1-sol (r4).

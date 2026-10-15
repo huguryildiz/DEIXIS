@@ -140,7 +140,9 @@ export const PLACEMENTS: Placement[] = [
   { id: 'table-live-parts', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S15a',
     container: 'Evidence table: the run line, the failed-rows notice, Add rows and the table picker when there is more than one table; the ⋯ menu also holds Save as template, Remove all columns, Add rows, Add development columns and Move to Trash; the foot counts rows, columns, cells and proposals', app: '.table-panel > .table-counts' },
   { id: 'cell-live-parts', rule: '§0 rule 5 / AGENTS.md (a person\'s edit stays separate from machine proposals)', slice: 'S15a',
-    container: 'Cell panel: "Edit value" beside Recheck, the Details toggle in the meta line, the stored flags, a proposal waiting for review, the edit form and the support note', app: '.cell-detail .dacts .ghost' },
+    container: 'Cell panel: "Edit value" beside Recheck, the two chips under the value (quotes found, semantic support not checked), the stored flags, a proposal waiting for review and the edit form', app: '.cell-detail .dacts .ghost, .cell-detail .cell-chips' },
+  { id: 'cell-folds', rule: '§2.2 (Q1) and the owner-approved cell panel mockup A (.local/design/cell-panel-mockup.html, 15 Oct 2026)', slice: 'cell-panel-A',
+    container: 'Cell panel, below the actions: the mockup\'s Source and Passage headings become one Evidence heading over the source line and the quotes; Column instruction, History and Details (model, column definition, reading depth, run and the support note) are closed disclosures under it', app: '.cell-detail .cell-source, .cell-detail details.cell-fold' },
   { id: 'ecite-source-details', rule: '§0 rule 5 (a report chip opened Source details at the cited passage)', slice: 'S15a',
     container: 'Evidence report Citation panel, under the anchor line: "Open in Source details"', app: '.ecite-detail .rowacts' },
   // S15b: every live candidate, review and follow-up feature stays (§0 rule 5).
@@ -342,7 +344,8 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'sources-why-example', rule: '§0 rule 2 (no example text that reads as a stored value)', mock: 'placeholder "e.g. terrestrial network only; no lifetime result"', app: '(no placeholder)' },
   { id: 'sources-proposal', rule: '§2.3 (Q2: built from the stored machine decision of the full-text, else abstract stage)', mock: 'include / passed abstract / uncertain / exclude / not screened + a written reason', app: 'the stored outcome word + its reason code in words + its basis (two full-text reads, or title and abstract); "not read in full" with no basis when the full text is missing, unreadable, waiting to be read or not yet confirmed as the work\'s; "not screened" when no decision exists' },
   // S15a: the Evidence table, cell and evidence report panels say only what the records hold.
-  { id: 'cell-history', rule: '§2.3 (the list holds earlier values, proposals and the current value, newest first)', mock: 'Earlier values', app: 'History' },
+  { id: 'cell-history', rule: '§2.3 (the list holds earlier values, proposals and the current value, newest first)', mock: 'Earlier values', app: 'History (N), a closed disclosure (PLACEMENTS cell-folds)' },
+  { id: 'cell-evidence-heading', rule: 'PLACEMENTS cell-folds (one heading over the source and its quotes)', mock: 'Source / Passage', app: 'Evidence (N quotes)' },
   { id: 'cell-recheck', rule: '§2.3 (the button rechecks this one cell; the column recheck is a separate button, see column-recheck-calls)', mock: 'Recheck', app: 'Recheck this cell' },
   { id: 'column-remove', rule: '§2.3 (a removed column\'s cells are kept and come back with Undo)', mock: 'Delete column', app: 'Remove column' },
   { id: 'suggest-count', rule: '§2.3 (the suggestion step returns up to eight columns, not three)', mock: 'Three proposals; you accept each one', app: 'Up to eight proposals; you accept each one' },
@@ -544,8 +547,8 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     note: 'A value column is as wide as its header and values, which are the fixture\'s. x, padding and line height are compared.' },
   { id: 'cell-recheck-label', rule: 'COPY_CHANGES cell-recheck', pairs: ['cell.recheck'], axes: ['width'],
     note: 'The button reads "Recheck this cell", so it is wider than the mockup\'s "Recheck". x, y and height are compared.' },
-  { id: 'cell-meta-phone', rule: 'PLACEMENTS cell-live-parts (the meta line also holds the Details toggle)', widths: [390], pairs: ['cell.recheck'], axes: ['y'],
-    note: 'At 390 the meta line (state, author and depth, model, date, Details) wraps to a second line, so the actions sit one line lower. Every axis is compared at 1280.' },
+  { id: 'cell-chips', rule: 'PLACEMENTS cell-live-parts (the two chips under the value)', pairs: ['cell.recheck'], axes: ['y'],
+    note: 'The chips line ("N quotes found in the source", "Semantic support not checked") sits between the value and the meta line, so the actions sit one line lower; at 390 the meta line (state, author and depth, model, date) also wraps. x, width and height are compared.' },
   { id: 'activity-runs-rows', rule: '§0 rule 1 (a list has as many rows as the data has)', pairs: ['activity.table'], axes: ['height'],
     note: 'The table has one row per run the research recorded. x, y and width are compared.' },
 ]

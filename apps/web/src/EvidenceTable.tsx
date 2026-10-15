@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { AlignLeft, ArchiveRestore, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, Copy, Download, Ellipsis, FileText, Gauge, Info, Lightbulb, ListChecks, ListPlus, Network, Pause, PencilLine, Play, Plus, RotateCw, Table2, Trash2, TriangleAlert, X, Zap, type LucideIcon } from 'lucide-react'
+import { AlignLeft, ArchiveRestore, ArrowUpRight, BookOpenText, Check, ChevronDown, Copy, Download, Ellipsis, FileText, Gauge, Info, Lightbulb, ListChecks, ListPlus, Network, Pause, PencilLine, Play, Plus, RotateCw, Table2, Trash2, TriangleAlert, X, Zap, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
@@ -76,7 +76,7 @@ const shortName = (row: Pick<TableRow, 'source_key' | 'title'>) => row.source_ke
 
 function revisionMeta(rev: CellRevision, modelText: ModelText) {
   const rest = [dateText(rev.created_at), t('column definition {n}', { n: rev.column_revision }),
-    rev.reading_depth && t('read from: {depth}', { depth: t(depthLabels[rev.reading_depth]) }), rev.run_id && t('run {id}', { id: rev.run_id })].filter(Boolean).join(' · ')
+    rev.reading_depth && t('read from: {depth}', { depth: t(depthLabels[rev.reading_depth]) })].filter(Boolean).join(' · ')
   return <>{t(authorLabels[rev.author])}{rev.model?.connection && rev.model.resolved_model && <> · <ModelName connection={rev.model.connection} text={modelText(rev.model.resolved_model)} /></>} · {rest}</>
 }
 
@@ -735,7 +735,6 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
   const [draftBase, setDraftBase] = useState<number | null>(null)
   const [problem, setProblem] = useState('')
   const [evidence, setEvidence] = useState<CellEvidence[] | null>(null)
-  const [details, setDetails] = useState(false)
   const sv = row.source_version_id
 
   const load = useCallback(() => api.cell(researchId, tableId, column.id, sv).then(c => { setCell(c); setError(''); return c }, e => { setError(errorText(e)); return null }), [researchId, tableId, column.id, sv])
@@ -792,19 +791,16 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           <h1 className={`evidence-current${value ? '' : ' is-state'}`}>{current ? revisionText(column, current) : t('Empty: no value recorded yet.')}</h1>
           {current?.value?.as_stated && <p className="foot-note">{t('As written in the source: {text}', { text: current.value.as_stated })}</p>}
         </div>
+        {value && current.evidence.length > 0 && <p className="cell-chips">
+          <span className="cell-chip is-ok">{t(quoteCount(current.evidence) === 1 ? '{n} quote found in the source' : '{n} quotes found in the source', { n: quoteCount(current.evidence) })}</span>
+          <span className="cell-chip is-warn">{t('Semantic support not checked')}</span>
+        </p>}
         {current && <p className="dmeta">
           <span className={current.state === 'not_verified' || current.state === 'unknown' ? 'warn-t' : undefined}>{current.state ? t(stateLabels[current.state]) : ''}</span>
           <span>{t(authorLabels[current.author])}{current.reading_depth ? ` · ${t(depthLabels[current.reading_depth])}` : ''}</span>
           {current.model?.connection && current.model.resolved_model && <span><ModelName connection={current.model.connection} text={modelText(current.model.resolved_model)} /></span>}
           <span>{dateText(current.created_at)}</span>
-          <span><button type="button" className="cell-details-toggle" aria-expanded={details} aria-controls="cell-details" onClick={() => setDetails(v => !v)}>{t('Details')}<ChevronRight size={12} aria-hidden /></button></span>
         </p>}
-        {details && current && <dl className="cell-details" id="cell-details">
-          {current.model?.resolved_model && <><dt>{t('Model')}</dt><dd><code>{current.model.resolved_model}</code></dd></>}
-          <dt>{t('Column definition')}</dt><dd>{t('revision {n}', { n: current.column_revision })}</dd>
-          {current.reading_depth && <><dt>{t('Read from')}</dt><dd>{t(depthLabels[current.reading_depth])}</dd></>}
-          {current.run_id && <><dt>{t('Run')}</dt><dd><code>{current.run_id}</code></dd></>}
-        </dl>}
         {!draft && <div className="dacts">
           <button type="button" className="btn-pri" disabled={recheckLocked} onClick={() => mutate(() => api.recheckCell(researchId, tableId, column.id, sv, cell.version, newKey()), t('Recheck started. Its result will wait as a proposal.'), onRunStarted)}><RotateCw size={14} aria-hidden />{t('Recheck this cell')}</button>
           <button type="button" className="ghost" disabled={busy} onClick={() => { setProblem(''); setDraft(draftFrom(column, current)); setDraftBase(cell?.version ?? null) }}><PencilLine size={14} aria-hidden />{t('Edit value')}</button>
@@ -868,11 +864,10 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           </form>
         </section>}
 
-        <h4 className="sub">{t('Source')}</h4>
-        <div>{source ? <button type="button" className="src-t" onClick={onOpenSource}>{row.title}</button> : <span className="src-t">{row.title}</span>}
+        <h4 className="sub" id="evidence-quotes-title">{t('Evidence')}{current && current.evidence.length > 0 && <small>{t(quoteCount(current.evidence) === 1 ? '{n} quote' : '{n} quotes', { n: quoteCount(current.evidence) })}</small>}</h4>
+        <div className="cell-source">{source ? <button type="button" className="src-t" onClick={onOpenSource}>{row.title}</button> : <span className="src-t">{row.title}</span>}
           <div className="src-m">{[row.source_key, row.year, versionText(row.version_label), t(accessLabels[row.access_level])].filter(Boolean).join(' · ')}</div></div>
 
-        <h4 className="sub" id="evidence-quotes-title">{t('Passage')}{current && current.evidence.length > 0 && <small>{t(quoteCount(current.evidence) === 1 ? '{n} quote' : '{n} quotes', { n: quoteCount(current.evidence) })}</small>}</h4>
         <div>
           {current && current.evidence.length > 0 && <EvidenceList items={current.evidence} onShow={showEvidence} />}
           {!current ? <p className="foot-note">{t('Not filled yet.')}</p>
@@ -880,18 +875,29 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
             : !value && current.state && passageNotes[current.state] ? <p className="foot-note">{t(passageNotes[current.state]!)}</p> : null}
         </div>
 
-        <h4 className="sub">{t('Column instruction')}</h4>
-        <p className="foot-note cell-instruction">{column.instruction}</p>
+        <details className="cell-fold"><summary>{t('Column instruction')}</summary>
+          <p className="foot-note cell-instruction">{column.instruction}</p>
+        </details>
 
-        <h4 className="sub">{t('History')}</h4>
+        <details className="cell-fold"><summary>{t('History ({n})', { n: cell.revisions.length })}</summary>
         {cell.revisions.length ? <ol className="hist evidence-history">{cell.revisions.slice().reverse().map(rev => <li key={rev.id}>
           <strong>{t(kindLabels[rev.kind])}{rev.decision ? ` · ${t(decisionLabels[rev.decision])}` : ''}{rev.output_status === 'unverified_draft' ? ` · ${t('failed validation')}` : ''}{rev.id === current?.id ? ` · ${t('current value')}` : ''}</strong>
           {rev.state && <span className="evidence-history-value">{revisionText(column, rev)}</span>}
           <small>{revisionMeta(rev, modelText)}</small>
-          {rev.note && <small>{rev.note}</small>}
-          {rev.evidence.length > 0 && <EvidenceList items={rev.evidence} onShow={showEvidence} />}
+          {rev.id !== current?.id && rev.note && <small>{rev.note}</small>}
+          {rev.id !== current?.id && rev.evidence.length > 0 && <EvidenceList items={rev.evidence} onShow={showEvidence} />}
         </li>)}</ol> : <p className="foot-note">{t('None. Nothing has been recorded for this cell yet.')}</p>}
-        <p className="foot-note cell-support"><Info size={13} aria-hidden />{t('Semantic support not checked. DEIXIS located each quote in a passage of this source version; it did not check that the passage supports the value.')}</p>
+        </details>
+
+        {current && <details className="cell-fold"><summary>{t('Details')}</summary>
+          <dl className="cell-details">
+            {current.model?.resolved_model && <><dt>{t('Model')}</dt><dd><code>{current.model.resolved_model}</code></dd></>}
+            <dt>{t('Column definition')}</dt><dd>{t('revision {n}', { n: current.column_revision })}</dd>
+            {current.reading_depth && <><dt>{t('Read from')}</dt><dd>{t(depthLabels[current.reading_depth])}</dd></>}
+            {current.run_id && <><dt>{t('Run')}</dt><dd><code>{current.run_id}</code></dd></>}
+          </dl>
+          <p className="foot-note cell-support"><Info size={13} aria-hidden />{t('Semantic support not checked. DEIXIS located each quote in a passage of this source version; it did not check that the passage supports the value.')}</p>
+        </details>}
       </>}
     </div>
     {evidence && <PassageSheet researchId={researchId} passageId={evidence[0].passage_id} highlightTexts={evidence.flatMap(e => e.anchor_text ? [e.anchor_text] : [])} expectHighlight pdfRemoved={evidence[0].evidence_status === 'pdf_removed'} sources={source ? [source] : undefined} dark={dark} onClose={() => setEvidence(null)} />}
@@ -911,7 +917,7 @@ function EvidenceList({ items, onShow }: { items: CellEvidence[]; onShow: (items
     const first = group[0]
     const quotes = group.flatMap(item => item.anchor_text ? [item.anchor_text] : [])
     return <li key={first.passage_id}>
-      {quotes.length ? <blockquote className="quote evidence-quotes">{quotes.map((quote, i) => <p key={i} className="evidence-quote"><mark>{quote}</mark></p>)}</blockquote>
+      {quotes.length ? <blockquote className="quote evidence-quotes">{quotes.map((quote, i) => <p key={i} className="evidence-quote"><mark>{quote}</mark>{/[.!?…:;)\]"”’]$/.test(quote.trim()) ? '' : '…'}</p>)}</blockquote>
         : <span className="foot-note">{t('No located quote for this passage.')}</span>}
       <span className="loc evidence-locator">{first.kind === 'abstract' ? <BookOpenText size={13} aria-hidden /> : <FileText size={13} aria-hidden />}{locatorText(first)}{first.evidence_status !== 'current' && <><TriangleAlert size={12} aria-hidden />{t(evidenceStatusLabels[first.evidence_status])}</>}{first.text_source === 'ocr' && <span className="evidence-ocr">{t(OCR_LABEL)}</span>}
         <button type="button" className="evidence-open" onClick={() => onShow(group)}>{t('Open in source')}<ArrowUpRight size={13} aria-hidden /></button></span>

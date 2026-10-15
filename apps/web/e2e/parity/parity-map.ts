@@ -1056,8 +1056,9 @@ export const PAIRS: Pair[] = [
   { id: 'table.cell', surface: 'table-panel', mock: '.panel tbody tr:first-child .cell', app: '.evidence-grid tbody tr:first-child .cell', checks: ['type', 'colour'], states: [], status: 'active' },
   { id: 'table.cell-note', surface: 'table-panel', mock: '.panel tbody tr:first-child .cell small', app: '.evidence-grid tbody tr:first-child .cell small', checks: ['type', 'colour'], states: [], status: 'active' },
   { id: 'table.foot', surface: 'table-panel', mock: '.panel .p-body > p.foot-note', app: '.table-panel > .evidence-footnote', checks: ['type', 'colour'], text: true, states: [], status: 'active' },
-  // S15a a cell's panel (P27): the value, how it was found, Recheck and the source, then Source, Passage, Column
-  // instruction and History (COPY_CHANGES cell-history).
+  // S15a a cell's panel (P27): the value, how it was found, Recheck and the source, then one Evidence heading over the
+  // source line and the quotes, with Column instruction, History and Details folded below (PLACEMENTS cell-folds,
+  // COPY_CHANGES cell-evidence-heading and cell-history). The heading is compared with the mockup's Passage heading.
   { id: 'cell.title', surface: 'cell-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
     icon: { mock: 'table', app: 'table-2' }, states: [], status: 'active' },
   { id: 'cell.back', surface: 'cell-panel', mock: '.panel .p-head [data-act="back"]', app: '.split-panel-head [aria-label="Back"]', checks: ['chrome', 'colour', 'icon'],
@@ -1073,7 +1074,7 @@ export const PAIRS: Pair[] = [
   // "Edit value" sits between Recheck and the source button (PLACEMENTS cell-live-parts), so the button is not placed by the mockup's x.
   { id: 'cell.open-source', surface: 'cell-panel', mock: '.detail .dacts .ib', app: '.cell-detail .dacts .ib', checks: ['colour', 'icon'],
     icon: { mock: 'file', app: 'file-text' }, unordered: true, states: [], status: 'active' },
-  { id: 'cell.sub', surface: 'cell-panel', mock: '.detail h4.sub', app: '.cell-detail h4.sub', checks: ['content', 'type', 'colour'], list: 'fixed', dataText: { app: ['small'] }, states: [], status: 'active' },
+  { id: 'cell.sub', surface: 'cell-panel', mock: '.detail h4.sub:nth-of-type(2)', app: '.cell-detail h4.sub', checks: ['content', 'type', 'colour'], dataText: { app: ['small'] }, states: [], status: 'active' },
   { id: 'cell.quote', surface: 'cell-panel', mock: '.detail .quote', app: '.cell-detail .quote', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
   { id: 'cell.loc', surface: 'cell-panel', mock: '.detail .loc', app: '.cell-detail .loc', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
   // S15a the evidence report (P28-P30): the head with Evidence view, Review with another model and Download, the title,

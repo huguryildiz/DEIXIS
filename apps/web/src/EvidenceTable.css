@@ -188,10 +188,21 @@
 .cell-limit{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;line-height:1.5;color:var(--ink-2)}
 .cell-limit svg{flex:none;margin-top:2px;color:var(--tone-uncertain)}
 .cell-limit strong{color:var(--ink);font-weight:550}
-.cell-details-toggle{display:inline-flex;align-items:center;gap:2px;color:var(--muted);font-size:12.5px;text-decoration:underline dotted;text-underline-offset:3px}
-.cell-details-toggle svg{transition:transform .2s ease}
-.cell-details-toggle[aria-expanded=true] svg{transform:rotate(90deg)}
-.cell-details-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+/* Variant A: the value's trust state sits under it as two chips. */
+.cell-detail .cell-chips{display:flex;flex-wrap:wrap;gap:6px}
+.cell-chip{display:inline-flex;align-items:center;padding:1px 9px;border-radius:999px;font-size:12px;line-height:1.6}
+.cell-chip.is-ok{color:var(--ok-ink);background:var(--ok-surface)}
+.cell-chip.is-warn{color:var(--warn-ink);background:var(--warn-surface)}
+.cell-detail .cell-source{margin-top:-2px}
+/* Column instruction, history and details open on demand. */
+.cell-fold{display:grid;gap:8px;border-top:1px solid var(--border);padding-top:10px}
+.cell-fold>summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;color:var(--ink-2);font-size:13px;font-weight:500}
+.cell-fold>summary::-webkit-details-marker{display:none}
+.cell-fold>summary::before{content:"";width:6px;height:6px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(-45deg);transition:transform .15s ease}
+.cell-fold[open]>summary::before{transform:rotate(45deg)}
+.cell-fold>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.cell-fold>:not(summary){margin:0 0 0 14px}
+@media (prefers-reduced-motion:reduce){.cell-fold>summary::before{transition:none}}
 .cell-details{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 14px;color:var(--muted);font-size:12px}
 .cell-details dt{margin:0;font-size:12px;color:var(--muted)}
 .cell-details dd{margin:0;color:var(--ink);font-size:12px;overflow-wrap:anywhere}

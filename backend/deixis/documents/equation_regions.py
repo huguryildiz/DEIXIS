@@ -450,7 +450,10 @@ def latex_marks(latex: str) -> dict[str, Any]:
             elif name in FRACTIONS:
                 out["fractions"] += 1
             elif name in DELIMITER_SIZERS:
-                if i + 1 < len(tokens) and tokens[i + 1] in PURE_DELIMITERS:
+                if i + 1 >= len(tokens):
+                    out["signs"]["?\\" + name] += 1  # a sizer with nothing to size: refused, not a crash (Sol code r3)
+                    return i + 1, False
+                if tokens[i + 1] in PURE_DELIMITERS:
                     return i + 2, False  # a sized bracket or bar prints no compared sign
                 return item(i + 1, level, loose, False)[0], False  # `\big/`: the sized sign is compared like any other
             elif name == "sqrt":

@@ -234,6 +234,17 @@ def test_a_sized_sign_is_compared_and_a_sized_bracket_is_not():
         assert er.gate(candidate(xy), answer(latex))["reason"] is None, latex
 
 
+def test_a_sizer_with_nothing_after_it_is_refused_not_a_crash():
+    # Sol code r3: `xy\\big` and `xy\\left` ended the token list inside the sizer branch and raised IndexError.
+    xy = [("x", "base"), ("y", "base")]
+    for latex in ("xy\\big", "xy\\left", "xy\\Bigl"):
+        assert er.gate(candidate(xy), answer(latex))["reason"] == "unknown_sign", latex
+    # Any prefix of a real reading is refused or placed, never raised.
+    full = "\\frac{x_{i}^{2}}{\\sqrt[3]{y}}+\\left(\\sum_{k=1}^{n}a_k\\right)\\big/ \\mathrm{d}t"
+    for k in range(len(full) + 1):
+        er.gate(candidate(xy), answer(full[:k]))
+
+
 def test_latex_spacing_is_not_a_sign():
     # Sol r2 finding 2: the tie `~` was recorded as an unknown sign and refused a correct reading.
     xy = [("x", "base"), ("y", "base")]

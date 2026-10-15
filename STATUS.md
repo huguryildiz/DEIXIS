@@ -1,6 +1,6 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 14 Ekim 2026. Ayrıntılı kararlar [docs/decisions.md](docs/decisions.md) içinde; eski D numaraları git'teki eski kayda gider (commit 26c8214).
+**Son güncelleme:** 15 Ekim 2026. Ayrıntılı kararlar [docs/decisions.md](docs/decisions.md) içinde; eski D numaraları git'teki eski kayda gider (commit 26c8214).
 
 ## Şu an
 
@@ -15,6 +15,8 @@
 - Ayarlar ve modeller (14 Eki, D19, D20, D22, ortak commit): API anahtarları artık sistemin anahtar deposunda (macOS Keychain, Windows Credential Locker); `.env`'deki anahtarlar açılışta oraya taşınıyor ve arayüzde `.env` geçmiyor. Grok, GitHub Copilot, GLM, Muse Spark, Muse Glimmer ve Ollama araştırma adımlarını çalıştırabiliyor; "planlanan" grubu kalktı. Yerleşik embedding modelinin paketleri hash'le sabitlendi. Ana sayfadaki model seçici geri geldi, başlangıç modeli yalnız hazır bağlantılardan seçiliyor. Testler sahte istemcilerle; altı yeni model bağlantısına canlı istek gönderilmedi.
 - Zotero ve TypeSafe anahtarları da Keychain'e taşınıyor (14 Eki, D19 eki): `ZOTERO_API_KEY`, `ZOTERO_LIBRARY_ID` ve `TYPESAFE_API_KEY` açılışta `.env`'den alınıyor. zotero.org anahtarı ve kullanıcı kimliği Ayarlar → Zotero kartından giriliyor; TypeSafe'in kartı yok. Grup kitaplığı için `ZOTERO_LIBRARY_TYPE=group` hâlâ ortamdan.
 - Veri konumu (15 Eki, D32): Ayarlar → Bu bilgisayar'da kütüphanenin klasörü, diskteki boyutu (veritabanı, PDF'ler, sağlayıcı yanıtları, araçlar), diskte kalan yer ve "Konumu değiştir" var. Yeni klasör bir sonraki açılışta kullanılıyor; taşıma açılışta, veritabanı açılmadan yapılıyor. Klasörde zaten kütüphane varsa o açılıyor, eskisi yerinde kalıyor. Testler geçici klasörlerle; gerçek harici diske taşıma ve macOS klasör seçici denenmedi.
+- Parite sonrası altı iş (14–15 Eki): eski arayüzün kullanılmayan CSS sınıfları, bileşeni, renk token'ları ve okunmayan 418 metin anahtarı silindi (P0). Arama planı, gönderilen sorgunun taşımadığı kelimeyi üstü çizili ve nedeniyle gösteriyor (P1, D26). Kullanım kutusu koşunun OpenAlex ve Semantic Scholar'a gönderdiği istekleri kayıtlı satırlardan sayıyor; bilinmeyen "bilinmiyor" (P2, D31). Her model çağrısı gönderilen düşünme düzeyini saklıyor, model satırı tahmin göstermiyor (P3, D25). Ayarlar'da proxy için kenar çubuğu adı alanı (P4). Anahtarsız kaynaklar için "Dene": tek istek, yalnız "cevap verdi / vermedi" (P5, D33). Hepsi sahte veriyle test edildi; canlı sağlayıcı ve gerçek modelle ölçülmedi.
+- Aynı gece diğer oturumlardan: geri çekilen makaleler "Geri çekildi" işaretli (D27), cevap yazım kuralları (D28), Codex/Claude Code için Ayarlar'dan "Sign in" (D21), Copilot CLI (D24) ve Gemini CLI (D23; sahibin ücretsiz Google hesabını Google reddediyor, uygulama bunu hata olarak gösteriyor), Ayarlar dört sekmede (D30, mockup tek sayfa kalıyor), Ayarlar'da kaydedilen anahtar terminaldekini eziyor (D29, D19'un o maddesini değiştirir), Zotero kartında anahtar ve kullanıcı kimliği, siyah-beyaz bağlantı ikonları. Toplu test (29f83fb): pytest 13.975/13.976, Playwright 601/603 (biri test seçicisi, düzeldi; biri yük kaynaklı, tek başına geçti).
 - Sahip uygulamayı gözle kontrol ediyor; bulduğu sorunlar sırayla düzeltilir. P10 (macOS paketi) bu kontrol bitene kadar bekliyor.
 
 ## Sıradaki

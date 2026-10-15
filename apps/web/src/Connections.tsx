@@ -112,10 +112,12 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
   const toast = useToast()
   if (!entry) return null
   const id = `key-${env}`
-  if (entry.source === 'environment') return <p className="foot-note">{t('This key comes from the terminal that started DEIXIS; change or remove it there.')}</p>
+  // A key saved here replaces one from the shell; removing it brings the shell key back.
+  const fromShell = entry.source === 'environment'
+  if (fromShell && !keychain.available) return <p className="foot-note">{t('This key comes from the terminal that started DEIXIS; change or remove it there.')}</p>
   const inDotenv = entry.source === 'dotenv'
   if (!entry.configured && !keychain.available) return <p className="foot-note">{t('No system keychain is available.')}</p>
-  const where = inDotenv ? '' : t('stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })
+  const where = inDotenv ? '' : fromShell ? t('from the terminal that started DEIXIS') : t('stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })
   const typed = value.trim()
 
   function test() {
@@ -147,15 +149,15 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
       <input id={id} className="field" type={plain ? 'text' : 'password'} inputMode={plain ? 'numeric' : undefined} autoComplete="off" spellCheck={false} value={value} disabled={busy}
         placeholder={entry.configured ? `•••••••••••• ${where}`.trim() : t(plain ? 'Type your user ID' : 'Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
     </label>
-    <p className="foot-note">{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
+    <p className="foot-note">{fromShell && `${t('This key comes from the terminal that started DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
       {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>
     {formError && <Notice tone="error"><p>{formError}</p></Notice>}
     <div className="acts">
       {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(busy ? (typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…') : primary)}</button>}
-      {entry.configured && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t(plain ? 'Remove ID' : 'Remove key')}</button>}
+      {entry.configured && !fromShell && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t(plain ? 'Remove ID' : 'Remove key')}</button>}
     </div>
     {asking && <RemoveNotice busy={busy} onRemove={remove} onKeep={() => setAsking(false)}
-      text={t(plain ? 'Remove the ID for {name}?' : 'Remove the key for {name}?', { name: service }) + ' ' + removeEffect} />}
+      text={t(plain ? 'Remove the ID for {name}?' : 'Remove the key for {name}?', { name: service }) + ' ' + (entry.shell_fallback ? t('DEIXIS goes back to the key from the terminal that started it.') : removeEffect)} />}
   </form>
 }
 

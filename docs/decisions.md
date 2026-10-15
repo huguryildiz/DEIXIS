@@ -4,6 +4,16 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D29 — A key saved in Settings wins over the same key set in the shell; removing it brings the shell key back
+Status: accepted (session coordinator, which the owner left the choice to, 15 Oct 2026) · Date: 2026-10-15 · Writer: Claude
+Context: D19 kept a key set in the shell ahead of everything, and Settings hid the key field for such a key ("change or remove it there"). The owner found Semantic Scholar's card with no way to enter a key. In the packaged app (P10) Settings is the normal place for keys, and a saved key that is silently not used reads as a bug.
+Decision:
+- A key from the shell shows the key field, with the note that a key saved here replaces it. Saving stores the key in the keychain and puts it into the process environment over the shell value; the shell value is remembered.
+- At startup a keychain key is loaded over a shell value too, but not over a key still kept in `.env` (no keychain, or the move failed).
+- Remove key deletes only the keychain copy and puts the remembered shell value back (`shell_fallback` in `/api/credentials` says one is waiting). A key that comes only from the shell has no Remove button, and `DELETE` on it is still refused (409): DEIXIS never changes or removes the shell key itself.
+- When no keychain is available, a shell key keeps the old note and cannot be replaced.
+Limits: Supersedes D19's "a key set in the shell still wins". Tested with an in-memory keychain and fake shell values; the real macOS Keychain and a real shell override were checked only by hand in the browser.
+
 ## D30 — Settings is split into four tabs; the mockup stays one page
 Status: accepted (owner, 15 Oct 2026) · Date: 2026-10-15 · Writer: Claude
 Context: Settings had grown to eleven sections on one page (S24 kept the mockup's single column, ST1). The owner found it hard to scan and chose tabs in the app only, keeping mockup v24 as it is.
@@ -120,7 +130,7 @@ Context: Before packaging, the owner asked that API keys not sit in a plain `.en
 Decision:
 - At startup `credentials.move_dotenv_keys_to_keychain()` writes each managed key read from `.env` into the keychain under the service `DEIXIS` and deletes its line from `.env`. The line is deleted only after the keychain returns the same value; other lines and the file mode are kept.
 - When no keychain is available, or it refuses a key, that key stays in `.env` and is still used and edited there.
-- A key set in the shell still wins and is never moved.
+- A key set in the shell still wins and is never moved. (Superseded by D29: a key saved in Settings now wins over the shell key.)
 Limits: Only the keys in `credentials.MANAGED_KEYS` move. `ZOTERO_API_KEY` and `TYPESAFE_API_KEY` (TypeSafe's Jev classifier, not used by DEIXIS yet) were added later the same day, then `ZOTERO_LIBRARY_ID`; all three move too. The zotero.org API key and user ID are entered on Settings' Zotero card (the ID is checked to be a number); `TYPESAFE_API_KEY` has no card. A group library still needs `ZOTERO_LIBRARY_TYPE=group` in the environment. The move was tested with an in-memory keychain; the real macOS Keychain was not exercised by the tests.
 
 ## D18 — Parity with mockup v24 is closed; the parity check and its exceptions file stay as the gate for UI changes

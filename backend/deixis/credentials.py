@@ -1,6 +1,7 @@
 """API keys set from Settings (D29, D53).
 
-A key set in the shell wins and cannot be changed from the app. A key read from `.env` is moved into the keychain at
+A key saved in Settings wins over one set in the shell; removing it brings the shell key back. A shell key itself is
+never changed or removed by the app. A key read from `.env` is moved into the keychain at
 startup and its line deleted (D19); only when no keychain is available, or the move fails, is it replaced or removed in
 that file. Otherwise a key saved in Settings is stored in the system keychain (macOS Keychain, Windows Credential Locker,
 Secret Service) under the service `DEIXIS`. Either way it is put into the process environment, where connectors already
@@ -64,6 +65,7 @@ MANAGED_KEYS = {k.env: k for k in (
 )}
 _from_keychain: set[str] = set()
 _from_dotenv: set[str] = set()
+_shell_values: dict[str, str] = {}  # shell keys a keychain key replaced, restored when that key is removed
 dotenv_path: Path | None = None
 
 
@@ -137,17 +139,19 @@ def move_dotenv_keys_to_keychain() -> None:
 
 
 def load_into_environment() -> None:
-    """Fill unset key variables from the keychain; called after .env is read."""
+    """Fill key variables from the keychain, over a shell value but not over `.env`; called after .env is read."""
     if keychain_name() is None:
         return
     for env in MANAGED_KEYS:
-        if os.environ.get(env):
+        if env in _from_dotenv or env in _from_keychain:
             continue
         try:
             value = keyring.get_password(SERVICE, env)
         except KeyringError:
             continue
         if value:
+            if os.environ.get(env):
+                _shell_values[env] = os.environ[env]
             os.environ[env] = value
             _from_keychain.add(env)
 
@@ -157,18 +161,18 @@ def status(env: str) -> dict[str, Any]:
     configured = bool(os.environ.get(env))
     source = ("keychain" if env in _from_keychain else "dotenv" if env in _from_dotenv else "environment") if configured else None
     return {"env": env, "group": key.group, "service": key.service, "configured": configured, "source": source,
-            "testable": key.testable}
+            "testable": key.testable, "shell_fallback": env in _shell_values}
 
 
 def save(env: str, value: str) -> None:
     source = status(env)["source"]
-    if source == "environment":
-        raise KeySourceConflict(f"{env} is set in the shell; change or remove it there")
     if source == "dotenv":
         _rewrite_dotenv(env, value)
         os.environ[env] = value
         return
     keyring.set_password(SERVICE, env, value)
+    if source == "environment":
+        _shell_values[env] = os.environ[env]
     os.environ[env] = value
     _from_keychain.add(env)
 
@@ -186,7 +190,10 @@ def delete(env: str) -> None:
         keyring.delete_password(SERVICE, env)
     except PasswordDeleteError:
         pass  # already absent from the keychain
-    os.environ.pop(env, None)
+    if env in _shell_values:
+        os.environ[env] = _shell_values.pop(env)
+    else:
+        os.environ.pop(env, None)
     _from_keychain.discard(env)
 
 

@@ -1247,8 +1247,6 @@ def create_app(
         if env != "ZOTERO_LIBRARY_ID" and len(body.value) < 8:
             raise HTTPException(422, "A key has at least 8 characters")
         source = credentials.status(env)["source"]
-        if source == "environment":
-            raise HTTPException(409, f"{env} is set in the shell; change or remove it there")
         if source != "dotenv" and credentials.keychain_name() is None:
             raise HTTPException(503, "No system keychain is available")
         result = await credentials.test(request.app.state.http, env, body.value) if key.testable else None

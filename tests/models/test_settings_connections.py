@@ -78,7 +78,7 @@ def test_a_model_key_is_tested_stored_in_the_keychain_and_never_returned(client,
     saved = client.put("/api/credentials/GEMINI_API_KEY", json={"value": GOOD_GEMINI})
     assert saved.status_code == 200 and saved.json()["test"]["status"] == "ok"
     assert saved.json()["key"] == {"env": "GEMINI_API_KEY", "group": "model", "service": "gemini", "configured": True,
-                                   "source": "keychain", "testable": True}
+                                   "source": "keychain", "testable": True, "shell_fallback": False}
     assert memory_keychain.items == {("DEIXIS", "GEMINI_API_KEY"): GOOD_GEMINI} and os.environ["GEMINI_API_KEY"] == GOOD_GEMINI
     listed = client.get("/api/credentials")
     assert GOOD_GEMINI not in listed.text and listed.json()["keychain"]["available"] is True
@@ -238,12 +238,15 @@ def test_the_zotero_org_pair_is_saved_from_settings(client, memory_keychain):
     assert tool["web_configured"] is True
 
 
-def test_keys_from_the_shell_are_left_alone_and_source_keys_are_not_tested(client, monkeypatch):
+def test_a_saved_key_replaces_the_shell_key_until_removed_and_source_keys_are_not_tested(client, monkeypatch):
     monkeypatch.setenv("OPENALEX_API_KEY", "openalex-from-env")
     entry = next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == "OPENALEX_API_KEY")
     assert (entry["configured"], entry["source"], entry["testable"]) == (True, "environment", False)
-    assert client.put("/api/credentials/OPENALEX_API_KEY", json={"value": "openalex-other-key"}).status_code == 409
-    assert client.delete("/api/credentials/OPENALEX_API_KEY").status_code == 409
+    assert client.delete("/api/credentials/OPENALEX_API_KEY").status_code == 409  # the shell key itself is never removed
+    saved = client.put("/api/credentials/OPENALEX_API_KEY", json={"value": "openalex-other-key"}).json()["key"]
+    assert (saved["source"], saved["shell_fallback"]) == ("keychain", True) and os.environ["OPENALEX_API_KEY"] == "openalex-other-key"
+    removed = client.delete("/api/credentials/OPENALEX_API_KEY").json()["key"]
+    assert (removed["source"], removed["shell_fallback"]) == ("environment", False) and os.environ["OPENALEX_API_KEY"] == "openalex-from-env"
 
     monkeypatch.setenv("S2_API_KEY", "")
     saved = client.put("/api/credentials/S2_API_KEY", json={"value": "s2-key-12345"}).json()
@@ -253,13 +256,15 @@ def test_keys_from_the_shell_are_left_alone_and_source_keys_are_not_tested(clien
     assert client.put("/api/credentials/GEMINI_API_KEY", json={"value": "has space inside"}).status_code == 422
 
 
-def test_saved_keys_are_loaded_at_startup_unless_the_environment_sets_them(monkeypatch, memory_keychain):
+def test_saved_keys_are_loaded_at_startup_over_the_shell_key(monkeypatch, memory_keychain):
     monkeypatch.setenv("SCOPUS_API_KEY", "")
     monkeypatch.setenv("IEEE_API_KEY", "ieee-from-env")
     memory_keychain.set_password("DEIXIS", "SCOPUS_API_KEY", "scopus-from-keychain")
     memory_keychain.set_password("DEIXIS", "IEEE_API_KEY", "ieee-from-keychain")
     credentials.load_into_environment()
     assert os.environ["SCOPUS_API_KEY"] == "scopus-from-keychain" and credentials.status("SCOPUS_API_KEY")["source"] == "keychain"
+    assert os.environ["IEEE_API_KEY"] == "ieee-from-keychain" and credentials.status("IEEE_API_KEY")["shell_fallback"]
+    credentials.delete("IEEE_API_KEY")
     assert os.environ["IEEE_API_KEY"] == "ieee-from-env" and credentials.status("IEEE_API_KEY")["source"] == "environment"
 
 

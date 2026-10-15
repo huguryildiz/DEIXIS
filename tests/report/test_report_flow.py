@@ -144,7 +144,7 @@ class ReportAdapter(FakeAdapter):
             "basis_cell_ids": [step_input["report_target"]["cells"][0]["cell_id"]],
             "nearest_match": {"status": "not_searched", "source_id": None, "cell_id": None},
         }] if section_id == "VI" else []
-        return json.dumps(envelope(step_input, "deixis.report_section_draft.v2") | {
+        return json.dumps(envelope(step_input, "deixis.report_section_draft.v3") | {
             "section_id": section_id,
             "claims": claims,
             "citation_anchors": anchors,

@@ -23,7 +23,7 @@ def _input(case: dict) -> dict:
 
 
 def _section_output(si: dict) -> dict:
-    return {"schema_version": "deixis.report_section_draft.v2", "step_input_id": si["step_input_id"],
+    return {"schema_version": "deixis.report_section_draft.v3", "step_input_id": si["step_input_id"],
             "scope_revision": si["scope_revision"], "skill_package_hash": si["skill_package_hash"],
             "section_id": si["report_target"]["section_id"], "claims": [], "citation_anchors": [],
             "subsections": [], "gaps": [], "insufficient_evidence": []}

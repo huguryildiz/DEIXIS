@@ -45,7 +45,7 @@ def packet(section="IV"):
         claim["body_refs"] = ["IV.9"]
     if section == "VII":
         claim["cell_ids"] = [CID]
-    draft = envelope(si, "deixis.report_section_draft.v2") | {"section_id": section, "claims": [claim],
+    draft = envelope(si, "deixis.report_section_draft.v3") | {"section_id": section, "claims": [claim],
         "citation_anchors": [{"claim_key": claim["claim_key"], "passage_id": PID, "cell_id": None,
                               "quote": si["passages"][0]["text"]}], "subsections": [], "gaps": [], "insufficient_evidence": []}
     if section == "VII":

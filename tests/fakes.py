@@ -152,7 +152,7 @@ def valid_response(si: dict[str, Any]) -> str:
     if task == "report_section":
         if si["report_target"]["section_id"] in {"abstract", "I", "IX"} and si["report_target"]["prior_summaries"]:
             summary = si["report_target"]["prior_summaries"][0]
-            return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
+            return json.dumps(envelope(si, "deixis.report_section_draft.v3") | {
                 "section_id": si["report_target"]["section_id"], "claims": [{
                     "claim_key": f"{si['report_target']['section_id']}.1", "text": "This report has shown that the SYNTHETIC claim is bounded.",
                     "support_type": summary["support_type"], "passage_ids": [], "cell_ids": [], "paragraph": 1,
@@ -161,12 +161,12 @@ def valid_response(si: dict[str, Any]) -> str:
                 }], "citation_anchors": [], "subsections": [], "gaps": [], "insufficient_evidence": [],
             })
         if si["report_target"]["section_id"] == "VII":
-            return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
+            return json.dumps(envelope(si, "deixis.report_section_draft.v3") | {
                 "section_id": "VII", "claims": [], "citation_anchors": [], "subsections": [], "gaps": [],
                 "insufficient_evidence": [{"context": "SYNTHETIC VII", "reason": "It is beyond the scope of this synthetic fixture to add a claim."}],
             })
         if si["report_target"]["section_id"] == "VIII":
-            return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
+            return json.dumps(envelope(si, "deixis.report_section_draft.v3") | {
                 "section_id": "VIII", "claims": [{
                     "claim_key": "VIII.1", "text": "These limits constrain interpretation of the synthesis.",
                     "support_type": "analyst_inference", "passage_ids": [], "cell_ids": [], "paragraph": 1,
@@ -175,14 +175,14 @@ def valid_response(si: dict[str, Any]) -> str:
                 }], "citation_anchors": [], "subsections": [], "gaps": [], "insufficient_evidence": [],
             })
         if not si["passages"]:
-            return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
+            return json.dumps(envelope(si, "deixis.report_section_draft.v3") | {
                 "section_id": si["report_target"]["section_id"], "claims": [], "citation_anchors": [],
                 "subsections": [], "gaps": [],
                 "insufficient_evidence": [{"context": si["report_target"]["section_id"],
                                            "reason": "It is beyond the scope of this synthetic fixture to add a claim."}],
             })
         first = si["passages"][0]
-        return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
+        return json.dumps(envelope(si, "deixis.report_section_draft.v3") | {
             "section_id": si["report_target"]["section_id"],
             "claims": [{"claim_key": f"{si['report_target']['section_id']}.1", "text": "It has been reported that the fake claim holds.",
                         "support_type": "source_stated", "passage_ids": [first["passage_id"]], "cell_ids": [], "paragraph": 1,

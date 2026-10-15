@@ -107,7 +107,7 @@ def _repair_case(tmp_path, original, replacement, *, repair_ready=True):
     adapter.ready = repair_ready
     section_input = STEP_INPUTS["C_report_section_IV"]
     passage = section_input["passages"][0]
-    draft = envelope(section_input, "deixis.report_section_draft.v2") | {
+    draft = envelope(section_input, "deixis.report_section_draft.v3") | {
         "section_id": "IV", "claims": [_claim("IV", passage_ids=[passage["passage_id"]]) | {"text": original}],
         "citation_anchors": [{"claim_key": "IV.1", "passage_id": passage["passage_id"], "cell_id": None,
                               "quote": passage["text"][:100]}],

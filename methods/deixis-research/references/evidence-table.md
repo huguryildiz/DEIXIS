@@ -67,6 +67,14 @@ Goal: answer every column in `extraction_target.columns` for the one source
    page by its number and letters and did not check that the source compiles to
    this page. Copy those equations as written. Everything else in the passage,
    including other mathematics, is the PDF's text layer.
+   `equation_ocr` is the PDF's own text of a passage in which one or more
+   displayed equations numbered on the page were replaced by LaTeX that Mathpix
+   read from an image of the page. Code checked that its letters, digits,
+   sub- and superscripts, signs and fraction bars agree with the PDF's own
+   text; a symbol can still be read in the wrong place. Quote a symbol from
+   such an equation only with the page as the check, and say so in `note`.
+   `equation_fallbacks` gives the PDF's raw text of the same equation for
+   comparison; it is not part of the passage and cannot be cited.
 6. Keep `note` to a short reason, or null. Do not put page, equation, table,
    figure or section numbers in it; the application shows locators from its own
    records.

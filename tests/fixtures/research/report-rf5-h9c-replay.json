@@ -143,7 +143,7 @@
     }
   ],
   "draft": {
-    "schema_version": "deixis.report_section_draft.v2",
+    "schema_version": "deixis.report_section_draft.v3",
     "section_id": "abstract",
     "claims": [
       {

@@ -783,7 +783,7 @@
     }
   },
   "synthetic_repair_output": {
-    "schema_version": "deixis.report_section_draft.v2",
+    "schema_version": "deixis.report_section_draft.v3",
     "step_input_id": "sti_S8OQlZcwQDLcRsSzcR6U",
     "scope_revision": 1,
     "section_id": "V",

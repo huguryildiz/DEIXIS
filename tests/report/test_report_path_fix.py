@@ -401,5 +401,5 @@ def test_m1_package_hash_changed_and_integrity_passes():
     assert package_hash != OLD_HASH
     # Current runtime identity includes D243's one-source claim instructions, the clean-start method cleanup (D1) and
     # the comparison frame rule of UI parity S5a, the follow-up method file of S22a, the D28 writing rules and the D27 retracted-source rules (answer and owner review).
-    assert package_hash == "sha256:30ba9721b8335c2591189211e690ac90a766cf97475a13ef667af0a96354ef8d"
+    assert package_hash == "sha256:11962824cdc065232a14735239e4af061edd1c07e8b3808aea94d473af38afab"
     assert skill.integrity_issues() == []

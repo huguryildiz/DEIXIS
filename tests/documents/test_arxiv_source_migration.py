@@ -1,4 +1,4 @@
-"""The contract changes of slice 22 (D104, decision 7): the `latex_source` value, `report_section_draft.v2` and the
+"""The contract changes of slice 22 (D104, decision 7): the `latex_source` value, `report_section_draft.v3` and the
 `equation_origin` check. Inputs are SYNTHETIC; no network is used."""
 
 import copy
@@ -32,10 +32,10 @@ def test_a_step_input_passage_may_carry_latex_source():
     assert [i.code for i in contracts.check_step_input(step_input)] == ["step_input_schema_invalid"]
 
 
-def test_the_report_section_draft_is_v2_and_its_equation_origin_is_checked():
-    assert contracts.SCHEMA_VERSIONS["ReportSectionDraft"] == "deixis.report_section_draft.v2"
+def test_the_report_section_draft_is_v3_and_its_equation_origin_is_checked():
+    assert contracts.SCHEMA_VERSIONS["ReportSectionDraft"] == "deixis.report_section_draft.v3"
     step_input, output = section_case()
-    assert output["schema_version"] == "deixis.report_section_draft.v2"
+    assert output["schema_version"] == "deixis.report_section_draft.v3"
     claim = output["claims"][0]
     passages = {p["passage_id"]: p for p in step_input["passages"]}
     cited = claim["passage_ids"][0]

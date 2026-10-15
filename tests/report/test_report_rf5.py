@@ -32,7 +32,7 @@ def _abstract_case(tmp_path, monkeypatch, *, draft=None, repairs=None):
     def response(si):
         if si["task_type"] == "report_section":
             return json.dumps(copy.deepcopy(draft or REPLAY["draft"]) |
-                              envelope(si, "deixis.report_section_draft.v2"), ensure_ascii=False)
+                              envelope(si, "deixis.report_section_draft.v3"), ensure_ascii=False)
         assert si["task_type"] == "report_phrase_repair"
         return json.dumps(envelope(si, "deixis.report_phrase_repair_draft.v1") |
                           {"repairs": copy.deepcopy(REPLAY["repairs"] if repairs is None else repairs)},
@@ -54,7 +54,7 @@ def _assert_rejected_original(case, original, expected):
         ["report_section", "report_phrase_repair"],
         ["report_section", "report_phrase_repair", "report_phrase_repair"],
     )
-    assert section["draft"] == original | envelope(first, "deixis.report_section_draft.v2")
+    assert section["draft"] == original | envelope(first, "deixis.report_section_draft.v3")
     stored_claims = list(store.conn.execute("SELECT text FROM report_claims WHERE report_section_id=? ORDER BY ordinal",
                                           (section["id"],)))
     assert [r["text"] for r in stored_claims] == [c["text"] for c in original["claims"]]
@@ -81,7 +81,7 @@ def test_h9c_synthetic_replay_retains_the_valid_model_abstract_and_records_rejec
     first_validation = json.loads(sessions[0]["validation_json"])
     assert first_validation["ok"] and first_validation["issues"] == []
     assert [w["code"] for w in first_validation["warnings"]] == ["sentence_without_phrasebank_frame"] * 4
-    assert json.loads(sessions[0]["raw_output"]) == REPLAY["draft"] | envelope(adapter.calls[0], "deixis.report_section_draft.v2")
+    assert json.loads(sessions[0]["raw_output"]) == REPLAY["draft"] | envelope(adapter.calls[0], "deixis.report_section_draft.v3")
     assert json.loads(sessions[1]["raw_output"])["repairs"] == REPLAY["repairs"]
 
 

@@ -1204,9 +1204,31 @@
               "ocr",
               "marker",
               "latex_source",
+              "equation_ocr",
               null
             ],
-            "description": "How a PDF passage's text was obtained: the PDF's own text layer, local OCR of a scanned page, Marker's reading of a page with mathematics (equations as LaTeX), or latex_source: the PDF's own text in which one or more displayed equations numbered on the page were replaced by the authors' LaTeX from the arXiv source of the same version, matched to the page by number and letters. OCR and Marker text can misread characters and symbols. Null for abstracts."
+            "description": "How a PDF passage's text was obtained: the PDF's own text layer, local OCR of a scanned page, Marker's reading of a page with mathematics (equations as LaTeX), latex_source: the PDF's own text in which one or more displayed equations numbered on the page were replaced by the authors' LaTeX from the arXiv source of the same version, matched to the page by number and letters, or equation_ocr: the PDF's own text in which one or more displayed equations numbered on the page were replaced by LaTeX that Mathpix read from an image of the page, checked against the PDF's letters, scripts, signs and fraction bars. OCR, Marker and equation_ocr text can misread characters and symbols. Null for abstracts."
+          },
+          "equation_fallbacks": {
+            "type": "array",
+            "description": "equation_ocr passages only: for each Mathpix equation in the passage, the PDF's own text-layer lines of the same equation, for comparison. Not part of the passage text: a citation anchor must still lie in text.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "n",
+                "text_layer"
+              ],
+              "properties": {
+                "n": {
+                  "type": "string",
+                  "description": "The equation's number, as in the $$ ... $$ (n) block of text."
+                },
+                "text_layer": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "text": {
             "type": "string"

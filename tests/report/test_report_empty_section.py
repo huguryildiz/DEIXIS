@@ -85,7 +85,7 @@ class EmptyVIAdapter(FakeAdapter):
             return json.dumps(plan)
         if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "VI":
             self.vi_calls += 1
-            return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
+            return json.dumps(envelope(si, "deixis.report_section_draft.v3") | {
                 "section_id": "VI", "claims": [], "citation_anchors": [], "subsections": [], "gaps": [],
                 "insufficient_evidence": [INSUFFICIENT] if self.vi_calls == 2 and not self.still_empty else [],
             })

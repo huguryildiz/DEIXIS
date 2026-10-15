@@ -91,7 +91,7 @@
           "requested_model": "gpt-5.6-luna"
         },
         "output_schema_versions": [
-          "deixis.report_section_draft.v2"
+          "deixis.report_section_draft.v3"
         ],
         "passages": [
           {
@@ -847,7 +847,7 @@
         "user_steering": []
       },
       "first_output": {
-        "schema_version": "deixis.report_section_draft.v2",
+        "schema_version": "deixis.report_section_draft.v3",
         "step_input_id": "sti_pvwPDX05J1rMSa3H3RiI",
         "scope_revision": 2,
         "skill_package_hash": "sha256:5ba2d214bd1122f9544aaa537226b6234123bf6be82b3e6e1c6d9ff99dcf75ff",
@@ -1402,7 +1402,7 @@
           "requested_model": "gpt-5.6-luna"
         },
         "output_schema_versions": [
-          "deixis.report_section_draft.v2"
+          "deixis.report_section_draft.v3"
         ],
         "passages": [
           {
@@ -2158,7 +2158,7 @@
         "user_steering": []
       },
       "repair_output": {
-        "schema_version": "deixis.report_section_draft.v2",
+        "schema_version": "deixis.report_section_draft.v3",
         "step_input_id": "sti_DlN8SoMvp1H71ATLrvC9",
         "scope_revision": 2,
         "skill_package_hash": "sha256:5ba2d214bd1122f9544aaa537226b6234123bf6be82b3e6c1c6d9ff99dcf75ff",
@@ -2842,7 +2842,7 @@
           "requested_model": "gpt-5.6-luna"
         },
         "output_schema_versions": [
-          "deixis.report_section_draft.v2"
+          "deixis.report_section_draft.v3"
         ],
         "passages": [
           {
@@ -3433,7 +3433,7 @@
         "user_steering": []
       },
       "first_output": {
-        "schema_version": "deixis.report_section_draft.v2",
+        "schema_version": "deixis.report_section_draft.v3",
         "step_input_id": "sti_8mleAWe3fnt4pttZZQWP",
         "scope_revision": 2,
         "skill_package_hash": "sha256:5ba2d214bd1122f9544aaa537226b6234123bf6be82b3e6e1c6d9ff99dcf75ff",
@@ -3813,7 +3813,7 @@
           "requested_model": "gpt-5.6-luna"
         },
         "output_schema_versions": [
-          "deixis.report_section_draft.v2"
+          "deixis.report_section_draft.v3"
         ],
         "passages": [
           {
@@ -4404,7 +4404,7 @@
         "user_steering": []
       },
       "repair_output": {
-        "schema_version": "deixis.report_section_draft.v2",
+        "schema_version": "deixis.report_section_draft.v3",
         "step_input_id": "sti_cbCVaseW0mj8a4WqwpBJ",
         "scope_revision": 2,
         "skill_package_hash": "sha256:5ba2d214bd1122f9544aaa537226b6234123bf6be82b3e6e1c6d9ff99dcf75ff",

@@ -395,7 +395,7 @@ def test_all_section_output_fields_are_resolved_before_storing_the_succeeded_res
         claim = _claim("IV", passage_ids=[pid], cell_ids=[cid]) | {
             "count": {"numerator_source_ids": [sid], "denominator_source_ids": [sid], "column_id": col},
             "equation_origin": {"passage_id": pid, "text_source": si["passages"][0]["text_source"]}}
-        return json.dumps(envelope(si, "deixis.report_section_draft.v2") | {
+        return json.dumps(envelope(si, "deixis.report_section_draft.v3") | {
             "section_id": "IV", "claims": [claim], "citation_anchors": [
                 {"claim_key": "IV.1", "passage_id": pid, "cell_id": None, "quote": passage["text"]},
                 {"claim_key": "IV.1", "passage_id": None, "cell_id": cid, "quote": target["cells"][0]["evidence"][0]["quote"]}],

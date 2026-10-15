@@ -27,7 +27,7 @@
     }
   },
   "output": {
-    "schema_version": "deixis.report_section_draft.v2",
+    "schema_version": "deixis.report_section_draft.v3",
     "step_input_id": "sti_SYNTHETICRF301",
     "scope_revision": 1,
     "skill_package_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",

@@ -66,7 +66,7 @@ SCHEMA_VERSIONS = {
     "AbstractScreening": "deixis.abstract_screening.v1",
     "FulltextAdjudication": "deixis.fulltext_adjudication.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
-    "ReportSectionDraft": "deixis.report_section_draft.v2",
+    "ReportSectionDraft": "deixis.report_section_draft.v3",
     "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
     "ReportReview": "deixis.report_review.v1",
     "LineageLinksDraft": "deixis.lineage_links_draft.v1",

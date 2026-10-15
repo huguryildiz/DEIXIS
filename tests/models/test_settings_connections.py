@@ -4,6 +4,7 @@ The keychain is an in-memory backend (conftest), the APIs and local model server
 script. These show the application's handling, not that a real keychain, package manager or model server behaves the same.
 """
 
+import asyncio
 import dataclasses
 import json
 import os
@@ -87,7 +88,8 @@ def paths(monkeypatch):
     monkeypatch.setattr(local_tools.shutil, "which", lambda name: found.get(name))
     monkeypatch.setattr(local_tools, "TOOLS", {k: dataclasses.replace(t, app=None) for k, t in local_tools.TOOLS.items()})
     monkeypatch.setattr(local_tools, "machine", lambda: {"chip": "SYNTHETIC chip", "memory_gb": 32, "disk_free_gb": 100, "disk_total_gb": 500})
-    monkeypatch.setattr(local_tools, "OLLAMA_MAC", False)  # the macOS app install has its own test
+    monkeypatch.setattr(local_tools, "OLLAMA_MAC", False)  # the macOS app installs have their own tests
+    monkeypatch.setattr(local_tools, "LMSTUDIO_MAC", False)
     return found
 
 
@@ -532,7 +534,7 @@ def test_the_ollama_card_downloads_only_the_fixed_embedding_model_and_reports_pr
         pull = ollama["pull"]
         assert sent == [{"model": "nomic-embed-text", "stream": True}]  # the request body's model is ignored
         assert (pull["status"], pull["model"], pull["completed"], pull["total"]) == ("succeeded", "nomic-embed-text", 274_011_000, 274_011_000)
-        assert all("pull" not in t for t in c.get("/api/local-tools").json()["tools"] if t["id"] != "ollama")
+        assert all("pull" not in t for t in c.get("/api/local-tools").json()["tools"] if t["id"] not in ("ollama", "lm_studio"))
 
 
 def test_the_ollama_card_pulls_a_chosen_model_and_deletes_only_a_listed_one(tmp_path, paths):
@@ -565,6 +567,34 @@ def test_the_ollama_card_pulls_a_chosen_model_and_deletes_only_a_listed_one(tmp_
         assert c.post("/api/local-tools/ollama/delete", json={"model": "llama3:70b"}).status_code == 404  # not listed
         assert c.post("/api/local-tools/ollama/delete", json={"model": "qwen3:8b"}).json() == {"deleted": "qwen3:8b"}
         assert sent == [("POST", "pull", {"model": "qwen3.5:35b", "stream": True}), ("DELETE", "delete", {"model": "qwen3:8b"})]
+
+
+def test_the_ollama_card_cancels_a_running_download(tmp_path, paths):
+    async def endless():
+        yield b'{"status":"pulling 970aa74c","digest":"sha256:970aa74c","total":1000,"completed":10}\n'
+        await asyncio.Event().wait()
+
+    def handler(request):
+        if str(request.url) == "http://127.0.0.1:11434/api/pull":
+            return httpx.Response(200, content=endless())
+        return remote(request)
+
+    app = create_app(Settings(data_dir=tmp_path / "pull-cancel", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        c.headers["x-deixis-csrf"] = c.get("/api/session").json()["csrf_token"]
+        assert c.post("/api/local-tools/ollama/pull/cancel").status_code == 409  # nothing running
+        assert c.post("/api/local-tools/ollama/pull", json={"model": "qwen3.5:4b"}).status_code == 202
+        for _ in range(50):
+            pull = next(t for t in c.get("/api/local-tools").json()["tools"] if t["id"] == "ollama")["pull"]
+            if pull["completed"]:
+                break
+            time.sleep(0.02)
+        assert c.post("/api/local-tools/ollama/pull/cancel").json()["job"]["status"] == "cancelled"
+        time.sleep(0.05)
+        pull = next(t for t in c.get("/api/local-tools").json()["tools"] if t["id"] == "ollama")["pull"]
+        assert (pull["status"], pull["model"]) == ("cancelled", "qwen3.5:4b") and pull["finished_at"]
+        assert c.post("/api/local-tools/ollama/pull", json={"model": "qwen3.5:4b"}).status_code == 202  # a new download may start
 
 
 def test_the_embedding_model_download_needs_a_running_ollama(client, monkeypatch):
@@ -616,6 +646,97 @@ def test_on_macos_ollama_installs_as_the_app_from_ollama_com(tmp_path, paths, mo
         assert (job["status"], job["completed"], job["total"]) == ("succeeded", 13, 13)
         assert copied == [b"SYNTHETIC dmg"] and opened == [app_path] and ollama()["app_installed"] is True
         assert c.post("/api/local-tools/ollama/install").status_code == 409
+
+
+def test_ollama_updates_compare_the_release_and_each_models_manifest(tmp_path, paths):
+    import hashlib
+    manifests = {"library/qwen3": b'{"SYNTHETIC": "new manifest"}', "library/nomic-embed-text": b'{"SYNTHETIC": "same"}'}
+
+    def handler(request):
+        url = str(request.url)
+        if url == "http://127.0.0.1:11434/api/version":
+            return httpx.Response(200, json={"version": "0.34.0"})
+        if url == "http://127.0.0.1:11434/api/tags":
+            return httpx.Response(200, json={"models": [
+                {"name": "qwen3:8b", "digest": hashlib.sha256(b"old manifest").hexdigest()},
+                {"name": "nomic-embed-text:latest", "digest": hashlib.sha256(manifests["library/nomic-embed-text"]).hexdigest()},
+                {"name": "gone:latest", "digest": "abc"}]})
+        if url == local_tools.OLLAMA_RELEASES:
+            return httpx.Response(200, json={"tag_name": "v0.40.4"})
+        if url.startswith("https://registry.ollama.ai/v2/"):
+            assert request.headers["accept"] == local_tools.OLLAMA_MANIFEST
+            name = url.removeprefix("https://registry.ollama.ai/v2/").split("/manifests/")[0]
+            return httpx.Response(200, content=manifests[name]) if name in manifests else httpx.Response(404)
+        return remote(request)
+
+    app = create_app(Settings(data_dir=tmp_path / "upd", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        updates = c.get("/api/local-tools/ollama/updates").json()
+    assert (updates["version"], updates["latest"], updates["update_available"]) == ("0.34.0", "0.40.4", True)
+    assert updates["models"] == {"qwen3:8b": True, "nomic-embed-text:latest": False, "gone:latest": None}
+
+
+def test_ollama_updates_need_a_running_ollama(client):
+    refused = client.get("/api/local-tools/ollama/updates")
+    assert refused.status_code == 409 and "not running" in refused.json()["detail"]
+
+
+def test_lm_studio_downloads_a_catalog_model_through_its_rest_api_and_follows_the_job(tmp_path, paths, monkeypatch):
+    monkeypatch.setattr(local_tools, "LMSTUDIO_POLL_SECONDS", 0)
+    sent, polls = [], iter([{"status": "downloading", "downloaded_bytes": 50, "total_size_bytes": 100},
+                            {"status": "completed", "downloaded_bytes": 100, "total_size_bytes": 100}])
+
+    def handler(request):
+        url = str(request.url)
+        if url == "http://127.0.0.1:1234/api/v0/models":
+            return httpx.Response(200, json={"data": [{"id": "SYNTHETIC-embed", "type": "embeddings"}]})
+        if url == "http://127.0.0.1:1234/api/v1/models/download":
+            sent.append(json.loads(request.content))
+            return httpx.Response(200, json={"job_id": "job_1", "status": "downloading", "total_size_bytes": 100})
+        if url == "http://127.0.0.1:1234/api/v1/models/download/status/job_1":
+            return httpx.Response(200, json={"job_id": "job_1", **next(polls)})
+        return remote(request)
+
+    app = create_app(Settings(data_dir=tmp_path / "lms", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        c.headers["x-deixis-csrf"] = c.get("/api/session").json()["csrf_token"]
+        assert c.post("/api/local-tools/lm_studio/pull", json={"model": "qwen3.5; rm -rf /"}).status_code == 400
+        assert c.post("/api/local-tools/lm_studio/pull", json={"model": "qwen/qwen3.5-9b"}).status_code == 202
+        for _ in range(50):
+            lms = next(t for t in c.get("/api/local-tools").json()["tools"] if t["id"] == "lm_studio")
+            if lms["pull"]["status"] != "running":
+                break
+            time.sleep(0.02)
+        assert sent == [{"model": "qwen/qwen3.5-9b"}]
+        assert (lms["pull"]["status"], lms["pull"]["completed"], lms["pull"]["total"]) == ("succeeded", 100, 100)
+        assert {"id": "google/gemma-4-12b", "name": "Gemma 4 · 12B", "maker": "Google", "purpose": "research",
+                "size_bytes": None, "memory_gb": 7} in lms["suggested"]
+
+
+def test_lm_studio_downloads_need_its_server(client):
+    refused = client.post("/api/local-tools/lm_studio/pull", json={"model": "qwen/qwen3.5-9b"})
+    assert refused.status_code == 409 and "not running" in refused.json()["detail"]
+
+
+def test_lm_studio_update_reads_the_version_its_download_link_redirects_to(tmp_path, paths, monkeypatch):
+    monkeypatch.setattr(local_tools, "LMSTUDIO_MAC", True)
+    monkeypatch.setattr(local_tools, "LMSTUDIO_MAC_APP", tmp_path / "LM Studio.app")
+    monkeypatch.setattr(local_tools, "_app_version", lambda app: "0.4.20")
+    (tmp_path / "LM Studio.app").mkdir()
+    monkeypatch.setattr(local_tools, "TOOLS", {**local_tools.TOOLS, "lm_studio": dataclasses.replace(local_tools.TOOLS["lm_studio"], app=str(tmp_path / "LM Studio.app"))})
+
+    def handler(request):
+        if str(request.url) == local_tools.LMSTUDIO_MAC_DMG:
+            return httpx.Response(302, headers={"location": "https://installers.lmstudio.ai/darwin/arm64/0.4.26-4/LM-Studio-0.4.26-4-arm64.dmg"})
+        return remote(request)
+
+    app = create_app(Settings(data_dir=tmp_path / "lmu", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        updates = c.get("/api/local-tools/lm_studio/updates").json()
+    assert (updates["version"], updates["latest"], updates["update_available"], updates["installed_with"]) == ("0.4.20", "0.4.26", True, "app")
 
 
 def test_zotero_reports_whether_its_local_api_is_on(client, monkeypatch):

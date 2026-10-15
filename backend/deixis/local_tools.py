@@ -9,6 +9,7 @@ is the one reference manager: its local API is where a collection import reads f
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import platform
@@ -37,6 +38,28 @@ OLLAMA_MAC = sys.platform == "darwin"
 OLLAMA_MAC_APP = Path("/Applications/Ollama.app")
 OLLAMA_MAC_DMG = "https://ollama.com/download/Ollama.dmg"
 DOWNLOAD_TRANSPORT: httpx.AsyncBaseTransport | None = None  # tests put a mock transport here
+# LM Studio ships for Apple silicon only on macOS; its latest-download link redirects to the versioned disk image.
+LMSTUDIO_MAC = OLLAMA_MAC and platform.machine() == "arm64"
+LMSTUDIO_MAC_APP = Path("/Applications/LM Studio.app")
+LMSTUDIO_MAC_DMG = "https://lmstudio.ai/download/latest/darwin/arm64"
+# LM Studio catalog ids (lmstudio.ai/models, 15 Oct 2026); the catalog lists the minimum memory, not the download size.
+LMSTUDIO_SUGGESTED = (
+    {"id": "qwen/qwen3.5-4b", "name": "Qwen 3.5 · 4B", "maker": "Alibaba", "purpose": "research", "size_bytes": None, "memory_gb": 4},
+    {"id": "qwen/qwen3.5-9b", "name": "Qwen 3.5 · 9B", "maker": "Alibaba", "purpose": "research", "size_bytes": None, "memory_gb": 7},
+    {"id": "google/gemma-4-12b", "name": "Gemma 4 · 12B", "maker": "Google", "purpose": "research", "size_bytes": None, "memory_gb": 7},
+    {"id": "openai/gpt-oss-20b", "name": "gpt-oss · 20B", "maker": "OpenAI", "purpose": "research", "size_bytes": None, "memory_gb": 12},
+    {"id": "mistralai/mistral-small-3.2", "name": "Mistral Small 3.2", "maker": "Mistral", "purpose": "research", "size_bytes": None, "memory_gb": 14},
+    {"id": "zai-org/glm-4.7-flash", "name": "GLM 4.7 Flash", "maker": "Zhipu", "purpose": "research", "size_bytes": None, "memory_gb": 16},
+    {"id": "google/gemma-4-31b", "name": "Gemma 4 · 31B", "maker": "Google", "purpose": "research", "size_bytes": None, "memory_gb": 19},
+    {"id": "qwen/qwen3.5-35b-a3b", "name": "Qwen 3.5 · 35B-A3B", "maker": "Alibaba", "purpose": "research", "size_bytes": None, "memory_gb": 21},
+    {"id": "google/embedding-gemma-300m", "name": "EmbeddingGemma", "maker": "Google", "purpose": "embedding", "size_bytes": 300_000_000, "memory_gb": None},
+)
+# A catalog id: publisher/model. It goes into a JSON body, never a command.
+LMSTUDIO_MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}/[A-Za-z0-9][A-Za-z0-9._@-]{0,119}")
+LMSTUDIO_POLL_SECONDS = 1.0
+OLLAMA_RELEASES = "https://api.github.com/repos/ollama/ollama/releases/latest"
+OLLAMA_REGISTRY = "https://registry.ollama.ai/v2/{name}/manifests/{tag}"
+OLLAMA_MANIFEST = "application/vnd.docker.distribution.manifest.v2+json"
 # The Ollama card's suggestions (sizes from ollama.com/library, 15 Oct 2026): two embedding models for semantic search
 # and the research-step models the Local models note names. Any other library name can be typed in.
 OLLAMA_SUGGESTED = (  # download sizes as ollama.com/library lists them (15 Oct 2026)
@@ -142,6 +165,15 @@ def _copy_mac_app(dmg: Path, target: Path) -> None:
         shutil.rmtree(mount, ignore_errors=True)
 
 
+def _mac_app(tool_id: str) -> tuple[Path, str, str] | None:
+    """The app bundle, its download link and site when DEIXIS installs this tool as a macOS app; read at call time."""
+    if tool_id == "ollama" and OLLAMA_MAC:
+        return OLLAMA_MAC_APP, OLLAMA_MAC_DMG, "ollama.com"
+    if tool_id == "lm_studio" and LMSTUDIO_MAC:
+        return LMSTUDIO_MAC_APP, LMSTUDIO_MAC_DMG, "lmstudio.ai"
+    return None
+
+
 def _open_mac_app(app: Path) -> None:
     subprocess.run(["open", "-a", str(app)], check=True, capture_output=True, text=True, timeout=30)
 
@@ -172,13 +204,16 @@ class LocalTools:
         self._procs: dict[str, asyncio.subprocess.Process] = {}
         self._pull: dict[str, Any] | None = None  # the Ollama embedding model download, while it runs and after
         self._pull_task: asyncio.Task | None = None
+        self._lms_pull: dict[str, Any] | None = None  # the LM Studio model download, while it runs and after
+        self._lms_task: asyncio.Task | None = None
 
     async def snapshot(self, refresh: bool = False) -> dict[str, Any]:
         if refresh or not self._cache or time.monotonic() - self._cache[0] > CACHE_SECONDS:
             tools = await asyncio.gather(*(self._detect(tool) for tool in TOOLS.values()))
             self._cache = (time.monotonic(), {"machine": await asyncio.to_thread(machine), "tools": list(tools)})
         data = self._cache[1]
-        return {**data, "tools": [{**t, "job": self._jobs.get(t["id"]), **({"pull": self._pull, "suggested": list(OLLAMA_SUGGESTED)} if t["id"] == "ollama" else {})}
+        return {**data, "tools": [{**t, "job": self._jobs.get(t["id"]), **({"pull": self._pull, "suggested": list(OLLAMA_SUGGESTED)} if t["id"] == "ollama" else
+                                     {"pull": self._lms_pull, "suggested": list(LMSTUDIO_SUGGESTED)} if t["id"] == "lm_studio" else {})}
                                   for t in data["tools"]]}
 
     async def _detect(self, tool: Tool) -> dict[str, Any]:
@@ -197,9 +232,9 @@ class LocalTools:
         }
         if tool.kind == "server":
             status |={"endpoint": tool.endpoint, "running": models is not None, "models": models or []}
-        if tool.id == "ollama" and OLLAMA_MAC:
-            status["app_installed"] = OLLAMA_MAC_APP.exists()
-            status["install"] = {"command": f"{OLLAMA_MAC_APP.name} from ollama.com", "available": True,
+        if mac := _mac_app(tool.id):
+            status["app_installed"] = mac[0].exists()
+            status["install"] = {"command": f"{mac[0].name} from {mac[2]}", "available": True,
                                  "unavailable_reason": None, "url": tool.url}
         if tool.kind == "app":
             local_api = await self._zotero_local_api(tool)
@@ -249,13 +284,13 @@ class LocalTools:
         if (self._jobs.get(tool_id) or {}).get("status") == "running":
             raise ToolError(409, f"{tool.name} is already being installed")
         current = next(t for t in (await self.snapshot(refresh=True))["tools"] if t["id"] == tool_id)
-        if tool_id == "ollama" and OLLAMA_MAC:
+        if _mac_app(tool_id):
             # Offered also when only Homebrew's CLI is there: without the app nothing starts the server.
             if current["app_installed"] or current["running"]:
                 raise ToolError(409, f"{tool.name} is already installed")
             return self._start(tool_id, {"status": "running", "command": current["install"]["command"], "started_at": now(),
                                          "finished_at": None, "output": "", "completed": 0, "total": 0},
-                               self._install_ollama_app)
+                               self._install_mac_app)
         if current["installed"]:
             raise ToolError(409, f"{tool.name} is already installed")
         manager = shutil.which(tool.install[0])
@@ -272,24 +307,26 @@ class LocalTools:
         task.add_done_callback(lambda t, tool_id=tool_id: self._tasks.pop(tool_id, None))
         return job
 
-    async def _install_ollama_app(self, tool_id: str, job: dict[str, Any]) -> None:
-        """Download Ollama's disk image from ollama.com, copy the app to /Applications and open it, which starts the server."""
-        folder = Path(tempfile.mkdtemp(prefix="deixis-ollama-"))
-        dmg = folder / "Ollama.dmg"
+    async def _install_mac_app(self, tool_id: str, job: dict[str, Any]) -> None:
+        """Download the app's disk image from its site, copy the app to /Applications and open it. Ollama's app starts
+        its server; LM Studio's server is started from the card afterwards."""
+        app, url, _site = _mac_app(tool_id)
+        folder = Path(tempfile.mkdtemp(prefix="deixis-app-"))
+        dmg = folder / "app.dmg"
         try:
-            # ollama.com redirects to the GitHub release; this download is not to this computer, so not the loopback client.
+            # Both sites redirect to the release file; this download is not to this computer, so not the loopback client.
             async with httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30, read=120),
                                          transport=DOWNLOAD_TRANSPORT) as client:
-                async with client.stream("GET", OLLAMA_MAC_DMG) as response:
+                async with client.stream("GET", url) as response:
                     response.raise_for_status()
                     job["total"] = int(response.headers.get("content-length") or 0)
                     with dmg.open("wb") as f:
                         async for chunk in response.aiter_bytes():
                             f.write(chunk)
                             job["completed"] += len(chunk)
-            job["output"] = f"Downloaded {OLLAMA_MAC_DMG}; copying {OLLAMA_MAC_APP.name} to {OLLAMA_MAC_APP.parent}"
-            await asyncio.to_thread(_copy_mac_app, dmg, OLLAMA_MAC_APP)
-            await asyncio.to_thread(_open_mac_app, OLLAMA_MAC_APP)
+            job["output"] = f"Downloaded {url}; copying {app.name} to {app.parent}"
+            await asyncio.to_thread(_copy_mac_app, dmg, app)
+            await asyncio.to_thread(_open_mac_app, app)
             job.update(status="succeeded", finished_at=now())
         except (httpx.HTTPError, OSError, subprocess.SubprocessError) as exc:
             detail = (getattr(exc, "stderr", None) or "").strip()
@@ -355,6 +392,16 @@ class LocalTools:
             job["finished_at"] = now()
             self._cache = None
 
+    def cancel_pull(self) -> dict[str, Any]:
+        """Stop the running model download; closing the stream makes Ollama stop it and keep the partial layers."""
+        job = self._pull
+        if not job or job["status"] != "running":
+            raise ToolError(409, "No model is being downloaded")
+        if self._pull_task:
+            self._pull_task.cancel()
+        job.update(status="cancelled", finished_at=now())
+        return job
+
     async def delete_model(self, model: str) -> None:
         """Remove one installed model from Ollama; only a name Ollama itself lists is sent."""
         ollama = await self._running_ollama()
@@ -370,6 +417,129 @@ class LocalTools:
             self._cache = None
         if response.status_code != 200:
             raise ToolError(502, f"Ollama answered {response.status_code}: {response.text[:300]}")
+
+    async def ollama_updates(self, http: httpx.AsyncClient) -> dict[str, Any]:
+        """Whether a newer Ollama is released and which installed models changed on ollama.com. A model's digest in
+        Ollama's list is the sha256 of its manifest, so it is compared with the registry's current manifest. Every
+        unanswered check is None: the card then shows nothing."""
+        from deixis.documents.tool_updates import newer
+
+        endpoint = TOOLS["ollama"].endpoint
+        try:
+            version = (await self._client.get(f"{endpoint}/api/version", timeout=2)).json().get("version")
+            tags = (await self._client.get(f"{endpoint}/api/tags", timeout=2)).json().get("models", [])
+        except (httpx.HTTPError, ValueError, AttributeError):
+            raise ToolError(409, "Ollama is not running: open the Ollama app or run `ollama serve`")
+
+        async def latest() -> str | None:
+            try:
+                response = await http.get(OLLAMA_RELEASES, timeout=10)
+                response.raise_for_status()
+                return str(response.json()["tag_name"]).lstrip("v")
+            except (httpx.HTTPError, ValueError, KeyError, TypeError):
+                return None
+
+        async def changed(model: dict[str, Any]) -> bool | None:
+            name, _, tag = str(model.get("name", "")).partition(":")
+            if not name or "." in name.split("/")[0] and "/" in name:  # a model from another registry is not checked
+                return None
+            try:
+                response = await http.get(OLLAMA_REGISTRY.format(name=name if "/" in name else f"library/{name}", tag=tag or "latest"),
+                                          headers={"Accept": OLLAMA_MANIFEST}, timeout=10)
+                if response.status_code != 200:
+                    return None
+            except httpx.HTTPError:
+                return None
+            return hashlib.sha256(response.content).hexdigest() != model.get("digest")
+
+        released, *models = await asyncio.gather(latest(), *(changed(m) for m in tags))
+        path = shutil.which("ollama")
+        real = os.path.realpath(path) if path else ""
+        how = "homebrew" if "/Cellar/" in real or "/homebrew/" in real else "app" if OLLAMA_MAC and OLLAMA_MAC_APP.exists() else None
+        return {"version": version, "latest": released, "update_available": newer(released, version), "installed_with": how,
+                "models": {m["name"]: c for m, c in zip(tags, models)}}
+
+    async def _running_lm_studio(self) -> None:
+        lm_studio = next(t for t in (await self.snapshot(refresh=True))["tools"] if t["id"] == "lm_studio")
+        if not lm_studio["running"]:
+            raise ToolError(409, "LM Studio's server is not running: start it from this card or in LM Studio's Developer tab")
+
+    async def lm_studio_pull(self, model: str) -> dict[str, Any]:
+        """Download one catalog model through LM Studio's REST API (POST /api/v1/models/download), then follow its job."""
+        model = model.strip()
+        if not LMSTUDIO_MODEL_NAME.fullmatch(model):
+            raise ToolError(400, "That is not an LM Studio catalog name, such as qwen/qwen3.5-9b")
+        if (self._lms_pull or {}).get("status") == "running":
+            raise ToolError(409, f"{self._lms_pull['model']} is already being downloaded")
+        await self._running_lm_studio()
+        endpoint = TOOLS["lm_studio"].endpoint
+        try:
+            response = await self._client.post(f"{endpoint}/api/v1/models/download", json={"model": model}, timeout=30)
+        except httpx.HTTPError as exc:
+            raise ToolError(502, f"LM Studio did not answer: {exc}") from exc
+        if response.status_code == 404:
+            raise ToolError(409, "This LM Studio cannot download through its server; update LM Studio to 0.4 or later")
+        if response.status_code != 200:
+            raise ToolError(502, f"LM Studio answered {response.status_code}: {response.text[:300]}")
+        started = response.json()
+        job = {"status": "running", "model": model, "step": "", "completed": 0, "total": int(started.get("total_size_bytes") or 0),
+               "started_at": now(), "finished_at": None, "output": ""}
+        self._lms_pull = job
+        if started.get("status") == "already_downloaded":
+            job.update(status="succeeded", finished_at=now(), step="already_downloaded")
+        elif started.get("status") == "failed" or not started.get("job_id"):
+            job.update(status="failed", finished_at=now(), output=str(started)[:OUTPUT_TAIL_CHARS])
+        else:
+            self._lms_task = asyncio.create_task(self._follow_lm_studio(job, str(started["job_id"])))
+        return job
+
+    async def _follow_lm_studio(self, job: dict[str, Any], job_id: str) -> None:
+        url = f"{TOOLS['lm_studio'].endpoint}/api/v1/models/download/status/{job_id}"
+        try:
+            while job["status"] == "running":
+                await asyncio.sleep(LMSTUDIO_POLL_SECONDS)
+                state = (await self._client.get(url, timeout=10)).json()
+                job.update(step=str(state.get("status", "")), completed=int(state.get("downloaded_bytes") or 0),
+                           total=int(state.get("total_size_bytes") or job["total"]))
+                if state.get("status") == "completed":
+                    job["status"] = "succeeded"
+                elif state.get("status") == "failed":
+                    job.update(status="failed", output=str(state)[:OUTPUT_TAIL_CHARS])
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            job.update(status="failed", output=f"{type(exc).__name__}: {exc}"[-OUTPUT_TAIL_CHARS:])
+        finally:
+            job["finished_at"] = now()
+            self._cache = None
+
+    async def start_lm_studio_server(self) -> None:
+        """Start LM Studio's local server with its own CLI (`lms server start`, a fixed command)."""
+        lms = shutil.which("lms") or str(Path.home() / ".lmstudio" / "bin" / "lms")
+        if not Path(lms).exists():
+            raise ToolError(409, "LM Studio's command-line tool is not set up yet: open LM Studio once, then try again")
+        try:
+            done = await asyncio.to_thread(subprocess.run, [lms, "server", "start"], capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ToolError(502, f"`lms server start` did not finish: {exc}") from exc
+        self._cache = None
+        if done.returncode != 0:
+            raise ToolError(502, ((done.stderr or done.stdout).strip() or f"`lms server start` exited with {done.returncode}")[-600:])
+
+    async def lm_studio_updates(self, http: httpx.AsyncClient) -> dict[str, Any]:
+        """The installed LM Studio version against the one its latest-download link redirects to; models are not checked."""
+        from deixis.documents.tool_updates import newer
+
+        lm_studio = next(t for t in (await self.snapshot())["tools"] if t["id"] == "lm_studio")
+        latest = None
+        if LMSTUDIO_MAC:
+            try:
+                response = await http.head(LMSTUDIO_MAC_DMG, timeout=10, follow_redirects=False)
+                found = re.search(r"/(\d+\.\d+\.\d+)(?:-\d+)?/", response.headers.get("location", ""))
+                latest = found.group(1) if found else None
+            except httpx.HTTPError:
+                latest = None
+        version = lm_studio["version"]
+        return {"version": version, "latest": latest, "update_available": newer(latest, version),
+                "installed_with": "app" if lm_studio.get("app_installed") else None, "models": {}}
 
     def cancel(self, tool_id: str) -> dict[str, Any]:
         tool = TOOLS.get(tool_id)

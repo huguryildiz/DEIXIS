@@ -1358,6 +1358,13 @@ def create_app(
         except local_tools.ToolError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
+    @app.post("/api/local-tools/ollama/pull/cancel")
+    async def cancel_ollama_pull(request: Request) -> dict[str, Any]:
+        try:
+            return {"job": request.app.state.local_tools.cancel_pull()}
+        except local_tools.ToolError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
     @app.post("/api/local-tools/ollama/delete")
     async def delete_ollama_model(body: OllamaModelBody, request: Request) -> dict[str, Any]:
         try:
@@ -1365,6 +1372,34 @@ def create_app(
         except local_tools.ToolError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
         return {"deleted": body.model}
+
+    @app.get("/api/local-tools/ollama/updates")
+    async def ollama_updates(request: Request) -> dict[str, Any]:
+        """A newer Ollama release and changed models: one GitHub request and one ollama.com request per installed model."""
+        try:
+            return await request.app.state.local_tools.ollama_updates(request.app.state.http)
+        except local_tools.ToolError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @app.post("/api/local-tools/lm_studio/pull", status_code=202)
+    async def pull_lm_studio_model(body: OllamaModelBody, request: Request) -> dict[str, Any]:
+        try:
+            return {"job": await request.app.state.local_tools.lm_studio_pull(body.model)}
+        except local_tools.ToolError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @app.post("/api/local-tools/lm_studio/start-server")
+    async def start_lm_studio_server(request: Request) -> dict[str, Any]:
+        try:
+            await request.app.state.local_tools.start_lm_studio_server()
+        except local_tools.ToolError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+        return {"started": True}
+
+    @app.get("/api/local-tools/lm_studio/updates")
+    async def lm_studio_updates(request: Request) -> dict[str, Any]:
+        """The installed LM Studio against its latest release: one request to lmstudio.ai."""
+        return await request.app.state.local_tools.lm_studio_updates(request.app.state.http)
 
     @app.post("/api/local-tools/{tool_id}/cancel")
     async def cancel_local_tool_install(tool_id: str, request: Request) -> dict[str, Any]:

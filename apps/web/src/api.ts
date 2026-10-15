@@ -360,6 +360,8 @@ export type OcrRead = {
 // PyMuPDF, which reads every PDF's text layer; it comes with DEIXIS.
 export type PdfReader = { available: boolean; version: string; mupdf_version: string }
 // An update check of a PDF tool, run only when asked; `tested` is the version DEIXIS pins (Marker, PyMuPDF).
+// A newer Ollama release and, per installed model, whether ollama.com has changed it; null where the check got no answer.
+export type OllamaUpdates = { version: string | null; latest: string | null; update_available: boolean | null; installed_with: 'homebrew' | 'app' | null; models: Record<string, boolean | null> }
 export type ToolUpdate = { tool: 'tesseract' | 'marker' | 'pymupdf'; installed: string | null; tested: string | null; latest: string | null; update_available: boolean | null; error: string | null }
 export type OcrJob = { status: 'running' | 'succeeded' | 'failed'; phase: 'preparing' | 'downloading' | 'installing'; output: string; started_at: string; finished_at: string | null }
 export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: string | null; can_install: boolean; job: OcrJob | null }
@@ -726,9 +728,9 @@ export type LocalTool = {
   install: LocalToolInstall; job: LocalToolJob
   app_installed?: boolean  // Ollama on macOS: whether Ollama.app is in /Applications
   // Ollama only: the embedding model download started from its card; completed and total are bytes over all layers.
-  pull?: { status: 'running' | 'succeeded' | 'failed'; model: string; step: string; completed: number; total: number; finished_at: string | null; output: string } | null
+  pull?: { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; model: string; step: string; completed: number; total: number; finished_at: string | null; output: string } | null
   // Ollama only: the models its card suggests, with their download size from ollama.com.
-  suggested?: { id: string; name: string; maker: string; purpose: 'embedding' | 'research'; size_bytes: number }[]
+  suggested?: { id: string; name: string; maker: string; purpose: 'embedding' | 'research'; size_bytes: number | null; memory_gb?: number | null }[]
 }
 // The optional equation reader (Marker, D52), installed under the data directory.
 export type EquationReader = {
@@ -1320,6 +1322,10 @@ export const api = {
   localTools: (refresh = false) => request<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`),
   installLocalTool: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/install`, { method: 'POST' }),
   pullOllamaModel: (model: string) => request<{ job: LocalTool['pull'] }>('/api/local-tools/ollama/pull', json('POST', { model })),
+  cancelOllamaPull: () => request<{ job: LocalTool['pull'] }>('/api/local-tools/ollama/pull/cancel', { method: 'POST' }),
+  localToolUpdates: (tool: 'ollama' | 'lm_studio') => request<OllamaUpdates>(`/api/local-tools/${tool}/updates`),
+  pullLmStudioModel: (model: string) => request<{ job: LocalTool['pull'] }>('/api/local-tools/lm_studio/pull', json('POST', { model })),
+  startLmStudioServer: () => request<{ started: boolean }>('/api/local-tools/lm_studio/start-server', { method: 'POST' }),
   deleteOllamaModel: (model: string) => request<{ deleted: string }>('/api/local-tools/ollama/delete', json('POST', { model })),
   cancelLocalToolInstall: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/cancel`, { method: 'POST' }),
   startAccountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`, { method: 'POST' }),

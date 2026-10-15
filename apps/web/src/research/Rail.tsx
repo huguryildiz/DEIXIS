@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { AlignLeft, Clock, Copy, File, Lightbulb, ListChecks, Table2, type LucideIcon } from 'lucide-react'
+import { Clock, Copy, File, FileText, Lightbulb, ListChecks, MessageSquareQuote, Table2, type LucideIcon } from 'lucide-react'
 import { api, type Answer, type QueueRow, type ResearchView, type Run, type TableSummary } from '../api'
 import { collectionProgress } from '../BackgroundJobs'
 import { queueKindLabels, runKindLabels } from '../labels'
@@ -94,14 +94,14 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
       {artifactCount === 0
         ? <span className="rail-empty">{t('The report appears here when it is written.')}</span>
         : <>
-          {reports.map(({ answer, version, title }) => <Row key={answer.id} icon={AlignLeft} label={title}
+          {reports.map(({ answer, version, title }) => <Row key={answer.id} icon={MessageSquareQuote} label={title}
             aside={`V${version}${answer.applicability !== 'current' || answer.late_revision_status?.status === 'published' ? ` · ${t('earlier')}` : ''}`} onClick={() => onOpenReport(answer.id)} />)}
           {tables?.map(table => {
             const label = t('Evidence table · {sources} · {columns}', {
               sources: t(table.rows === 1 ? '{n} source' : '{n} sources', { n: table.rows }), columns: t(table.columns === 1 ? '{n} column' : '{n} columns', { n: table.columns }) })
             return <Row key={table.id} icon={Table2} label={label} ariaLabel={`${label} · ${table.title}`} onClick={() => onOpenTable(table.id)} />
           })}
-          {view.reportRuns.map(item => <Row key={item.id} icon={AlignLeft} label={t('Evidence report')}
+          {view.reportRuns.map(item => <Row key={item.id} icon={FileText} label={t('Evidence report')}
             aside={item.status === 'valid' ? `V${item.report_version ?? ''}` : t(item.status === 'draft' ? 'draft' : 'being written')} onClick={() => onOpenEvidenceReport(item.id)} />)}
         </>}
     </div>

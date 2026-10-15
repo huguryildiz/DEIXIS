@@ -1380,6 +1380,7 @@ const tr: Record<string, string> = {
   'Models for this research: answer, literature and reviewer': 'Bu araştırmanın modelleri: yanıt, literatür ve inceleyici',
   'Change the defaults in Settings': 'Varsayılanları Ayarlar’da değiştirin',
   'no reviewer': 'inceleyici yok',
+  '{model} from Settings is not used: {connection} is not connected.': 'Ayarlar’daki {model} kullanılmıyor: {connection} bağlı değil.',
 
   // Library
   'Library': 'Kütüphane',

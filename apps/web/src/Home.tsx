@@ -506,10 +506,16 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
   // The Models menu shows, read-only, the models from Settings: one row per role, "model · effort" under its name
   // (mockup order: literature, answer, reviewer). A row opens Settings → Models, where the defaults are changed.
   const withEffort = (name: string, effort: string | null) => effort ? `${name} · ${reasoningLabel(effort)}` : name
-  const roleRows: { role: ModelRole; summary: string }[] = [
-    { role: 'literature', summary: withEffort(modelName(literature), listedEffort(models, literature, literatureReasoning)) },
-    { role: 'answer', summary: withEffort(modelName(model), efforts.some(e => e.id === reasoning) ? reasoning : null) },
-    { role: 'reviewer', summary: defaultName ? withEffort(defaultName, listedEffort(models, modelKey(defaults!.reviewer.model_connection, defaults!.reviewer.model!), defaults!.reviewer.reasoning_effort ?? null)) : t('no reviewer') },
+  // A Settings default whose connection is not ready is not used; the row says so instead of switching models silently.
+  const notReady = (role: ModelRole) => {
+    const saved = defaults?.[role]
+    if (!saved?.model || connections?.models[saved.model_connection]?.ready) return null
+    return t('{model} from Settings is not used: {connection} is not connected.', { model: modelName(modelKey(saved.model_connection, saved.model)), connection: connectionName(saved.model_connection) })
+  }
+  const roleRows: { role: ModelRole; summary: string; note: string | null }[] = [
+    { role: 'literature', summary: withEffort(modelName(literature), listedEffort(models, literature, literatureReasoning)), note: notReady('literature') },
+    { role: 'answer', summary: withEffort(modelName(model), efforts.some(e => e.id === reasoning) ? reasoning : null), note: notReady('answer') },
+    { role: 'reviewer', summary: defaultName ? withEffort(defaultName, listedEffort(models, modelKey(defaults!.reviewer.model_connection, defaults!.reviewer.model!), defaults!.reviewer.reasoning_effort ?? null)) : t('no reviewer'), note: notReady('reviewer') },
   ]
   const noModel = Boolean(connections) && !models.length
   const openModelSettings = () => { window.location.hash = '#/settings/models' }
@@ -550,12 +556,12 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
           ? <DropdownMenu>
               <DropdownMenuTrigger type="button" className="models-summary" title={t('Models for this research: answer, literature and reviewer')}>
                 <Cpu size={15} aria-hidden /><span className="models-summary-label">{t('Models')}<span className="sr-only">: </span></span>
-                {roleRows.map(row => <span className="sr-only" key={row.role}>{t(modelRoles[row.role].label)} {row.summary}. </span>)}
+                {roleRows.map(row => <span className="sr-only" key={row.role}>{t(modelRoles[row.role].label)} {row.summary}. {row.note} </span>)}
               </DropdownMenuTrigger>
               <DropdownMenuContent className="home-menu" align="start" sideOffset={6} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }}>
                 <DropdownMenuGroup>
                   <DropdownMenuLabel className="home-menu-heading">{t('Models')}</DropdownMenuLabel>
-                  {roleRows.map(row => <DropdownMenuItem key={row.role} className="home-menu-item" onClick={openModelSettings}><MenuRow icon={Cpu} title={t(modelRoles[row.role].label)} detail={row.summary} /></DropdownMenuItem>)}
+                  {roleRows.map(row => <DropdownMenuItem key={row.role} className="home-menu-item" onClick={openModelSettings}><MenuRow icon={Cpu} title={t(modelRoles[row.role].label)} detail={row.note ? <>{row.summary}<span className="home-menu-warn">{row.note}</span></> : row.summary} /></DropdownMenuItem>)}
                   <DropdownMenuItem className="home-menu-item" onClick={openModelSettings}><MenuRow icon={SlidersHorizontal} title={t('Change the defaults in Settings')} /></DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>

@@ -64,6 +64,7 @@
 .home-menu-row .connection-icon{flex:none;width:16px;height:16px;margin-top:2px;color:var(--muted)}
 .home-menu-text{flex:1;min-width:0;line-height:1.5}
 .home-menu-text small{display:block;margin-top:1px;color:var(--muted);font-size:11.5px;line-height:1.5}
+.home-menu-warn{display:block;max-width:300px;color:var(--warn-ink)}
 .home-menu-badge{flex:none;margin-left:auto;padding:0 5px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-size:10px;line-height:1.5;text-transform:uppercase}
 
 /* The PDF guide rows (H11, Q3): one check row per attached PDF in a mixed search, all guiding it (D3, at most five). */

@@ -161,7 +161,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
         : <>{t('Links open directly.')} <a href="#/settings/access">{t('Set your institution’s proxy address')}</a></>}</p>}
       {rows.length > 0 && <ol className="pdf-ready-rows waiting-rows" aria-label={t('Works waiting for your PDF, in reading order')}>
         {rows.map(row => <li key={row.work_id} className="prow">
-          <span className="waiting-place" title={t('Place in the reading order')}>{row.place}</span>
+          <span className="waiting-place" title={row.relevance?.rank != null && row.relevance.ranked != null ? t('Ranked {n} of {total}', { n: row.relevance.rank, total: row.relevance.ranked }) : t('Place in the reading order')}>{row.relevance?.rank ?? row.place}</span>
           <span className="t pdf-ready-head">
             <strong className="pdf-ready-title">{row.title}</strong>
             {(byline(row) || row.venue) && <small className="source-byline">

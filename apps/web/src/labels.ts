@@ -625,7 +625,7 @@ const waitingReasons: Record<string, string> = {
   human_pdf_wrong: 'You marked the PDF that was found as wrong.',
 }
 export const waitingReasonText = (code: string) => t(waitingReasons[code] ?? 'No PDF with text is in hand.')
-// Why a waiting work is where it is: the abstract verdict, its place in the ranking, and where the search found it.
+// Why a waiting work is where it is: the abstract verdict and where the search found it (its rank is in the ring).
 const waitingAbstract: Record<string, string> = {
   candidate: 'Passed the abstract stage',
   unresolved: 'The abstract stage could not decide',
@@ -636,9 +636,8 @@ const waitingOrigin: Record<string, string> = {
   chain: 'Found through citations',
   user: 'Added by you',
 }
-export const waitingRelevanceParts = (r: { origin: string | null; rank: number | null; ranked: number | null; abstract: string | null }) => [
+export const waitingRelevanceParts = (r: { origin: string | null; abstract: string | null }) => [
   t(r.abstract ? waitingAbstract[r.abstract] ?? 'The abstract was not read' : 'The abstract was not read'),
-  r.rank != null && r.ranked != null ? t('Ranked {n} of {total}', { n: r.rank, total: r.ranked }) : null,
   r.origin ? t(waitingOrigin[r.origin] ?? '') : null,
 ].filter((part): part is string => Boolean(part))
 // What became of a file the person added (slice 18b, decision 9), in plain words; the view adds the details.

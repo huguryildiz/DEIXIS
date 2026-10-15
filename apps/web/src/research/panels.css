@@ -243,9 +243,9 @@
 /* A waiting work: its place in a quiet ring, the title and byline at full width, then one footer line with the reason
    (a dot in the uncertain tone, the words say it) on the left and the actions on the right. */
 .waiting-rows{container-type:inline-size}
-.waiting-rows>.prow{display:grid;grid-template-columns:22px minmax(0,1fr) auto;grid-template-areas:'place head head' '. reason reason' '. acts acts';align-items:center;gap:10px 12px;padding:14px 16px;transition:background-color .12s}
+.waiting-rows>.prow{display:grid;grid-template-columns:28px minmax(0,1fr) auto;grid-template-areas:'place head head' '. reason reason' '. acts acts';align-items:center;gap:10px 12px;padding:14px 16px;transition:background-color .12s}
 .waiting-rows>.prow:hover{background:var(--sidebar-surface)}
-.waiting-rows .waiting-place{grid-area:place;align-self:start;display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11px;line-height:1;font-variant-numeric:tabular-nums}
+.waiting-rows .waiting-place{grid-area:place;align-self:start;justify-self:start;display:grid;place-items:center;box-sizing:border-box;min-width:22px;height:22px;padding:0 4px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11px;line-height:1;font-variant-numeric:tabular-nums}
 .waiting-rows .pdf-ready-head{grid-area:head;min-width:0;gap:2px}
 .waiting-rows .pdf-ready-title{font-size:13.5px;line-height:1.4;color:var(--ink)}
 .waiting-rows .pdf-ready-head .source-byline{margin-top:2px}

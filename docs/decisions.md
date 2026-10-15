@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D44 — A work that late full text excluded stays out of later answers
+Status: accepted · Date: 2026-10-15 · Writer: Claude
+Context: Abstract screening can admit a work that its full text, read after the cutoff (late lane, D255 in the old log), finds does not meet the criterion or is out of scope. When every late PDF came out that way, no revision was written; the answer was marked out of date (`stale_selection`) and offered a new answer, but `fast_answer.input_plan` rebuilt the input from the cutoff and read the excluded work from its abstract again. That new answer then showed as current. The owner asked whether a PDF can lower a source's standing (15 Oct).
+Decision: `late_revision.excluded_works` lists the works a late read excluded for the research and question revision, unless the person put them first. Every answer except the late revision itself drops those rows from its input with reason `fulltext_excluded_after_cutoff`. A person who includes the work again overrides this. The embedding ranking is not recomputed: it orders the reading only, and the frozen list keeps a run reproducible.
+Limits: Shown with SYNTHETIC records and a scripted model (`test_new_answer_after_late_exclusion_leaves_the_excluded_work_out`); not run on a live model. The exclusion reason is not shown in the UI. Exclusions found by full text read for other reasons (a person's own PDF outside the late lane) are not covered by this rule.
+
 ## D43 — Answers and reports are written in plain prose; the phrasebank leaves the package
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: With every sentence built on an Academic Phrasebank frame, the DBR/VBF report opened almost every claim with "It has been reported that …". The owner found it forced and asked for the phrasebank to go (15 Oct).

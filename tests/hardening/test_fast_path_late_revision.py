@@ -382,3 +382,27 @@ def test_crash_after_generation_or_publication_finishes_with_own_review(tmp_path
     assert row(lib)["status"] == "published"
     assert lib.store.next_queued_run()["target"]["answer_id"] == row(lib)["revision_answer_id"]
     assert lib.store.conn.execute("SELECT COUNT(*) FROM answers WHERE run_id = ?", (run_id,)).fetchone()[0] == 1
+
+
+def test_new_answer_after_late_exclusion_leaves_the_excluded_work_out(tmp_path):
+    # Abstract screening admitted the work; its late full text said it does not meet the criterion. The next answer
+    # the person starts must not read it from its abstract again.
+    lib = prepared(tmp_path, pdfs=2)
+    from fakes import FakeAdapter, valid_response
+    def respond(si):
+        output = json.loads(valid_response(si))
+        if si["task_type"] == "fulltext_adjudication":
+            for part in output["parts"]:
+                part.update(label="absent", quote="", passage_id=None)
+        return json.dumps(output)
+    lib.flow.deps.adapters["fake"] = FakeAdapter(respond)
+    read_late(lib)
+    late_revision.advance(lib.flow)
+    excluded = {i["work_id"] for i in json.loads(row(lib)["works_json"]) if i["late_outcome"] in ("criterion_not_met", "out_of_scope")}
+    assert excluded
+    base_works = {i["work_id"] for i in lib.store.existing_step(lib.base_run["id"], fast_answer.INPUT)["output"]["items"]}
+    assert excluded & base_works
+    run = lib.store.create_run(lib.rid, "answer", fast_answer.answer_run_budget(lib.store, lib.rid, lib.store.scope(lib.rid)), None)
+    lib.store.update_run(run["id"], status="running")
+    plan = fast_answer.input_plan(lib.flow, lib.store.run(run["id"]), lib.store.scope(lib.rid))
+    assert not excluded & {i["work_id"] for i in plan["items"]}

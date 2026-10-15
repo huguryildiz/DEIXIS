@@ -148,6 +148,18 @@ def outcomes(flow: Any, row: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
+def excluded_works(store: Any, rid: str, scope_revision: int) -> set[str]:
+    """Works the late full-text read found not to meet the criterion or out of scope (unless the person put them
+    first). A later answer must not read them from their abstract again."""
+    if not available(store):
+        return set()
+    return {i["work_id"] for r in store.conn.execute(
+                "SELECT works_json FROM fast_path_late_revisions WHERE research_id = ? AND scope_revision = ?"
+                " AND read_run_id IS NOT NULL", (rid, scope_revision))
+            for i in json.loads(r[0])
+            if i.get("late_outcome") in ("criterion_not_met", "out_of_scope") and not i["user_priority"]}
+
+
 def advance(flow: Any, rid: str | None = None) -> None:
     store = flow.store
     if not available(store):

@@ -258,6 +258,13 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
                            abstract_ids=found["abstract_ids"], screened_after_cutoff=found["run_id"],
                            evidence_basis="abstract_screening",
                            **({"head_after_cutoff": found["current_head"]} if found["current_head"] != row["head"] else {}))
+    # Late full text that excluded a work (D255) outranks the abstract screening that admitted it at the cutoff.
+    if not run["budget"].get("late_revision_id"):
+        from deixis.workflow import late_revision
+        late_excluded = late_revision.excluded_works(store, rid, run["scope_revision"])
+        for row in rows:
+            if row["work_id"] in late_excluded and not row["reason"] and not row["user_priority"]:
+                row["reason"] = "fulltext_excluded_after_cutoff"
     members = {r["id"]: dict(r) for r in store.conn.execute(
         "SELECT v.* FROM source_versions v JOIN corpus_memberships m ON m.source_version_id = v.id"
         " WHERE m.research_id = ? AND m.removed_at IS NULL", (rid,))}

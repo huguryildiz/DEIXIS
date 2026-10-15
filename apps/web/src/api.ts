@@ -710,7 +710,7 @@ export type ModelHealth = {
 }
 export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; providers: { id: string; implemented: boolean; access_mode: string | null; supplementary?: boolean; role?: string; note: string }[] }
 export type Keychain = { available: boolean; name: string | null }
-export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean; shell_fallback?: boolean }
+export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean; shell_fallback?: boolean; last4?: string | null }
 export type Credentials = { keychain: Keychain; keys: KeyEntry[] }
 export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed'; detail: string; checked_at: string; kind?: string; http_status?: number | null; reset_at?: string | null }
 // One request to a keyless source (P5): whether it answered, with its HTTP status, or why no answer came.

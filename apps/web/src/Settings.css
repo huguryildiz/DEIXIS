@@ -206,7 +206,8 @@
 /* A way to connect (mockup sheet boxes): account or key, each with its own connection's state; a way not built yet is
    dashed. The details hold the tool's name, its checks and the models it lists. */
 .connection-sheet .way{display:grid;gap:8px;padding:14px;border:1px solid var(--line);border-radius:10px}
-.connection-sheet .way.is-on{border-color:var(--accent-line);background:color-mix(in srgb,var(--accent-tint) 45%,transparent)}
+.connection-sheet .way.is-on{border-color:var(--ok-line);background:color-mix(in srgb,var(--ok-surface) 35%,transparent);box-shadow:inset 3px 0 0 var(--ok-ink)}
+.connection-sheet .sheet-mono{display:inline-grid;place-items:center;flex:none;width:20px;height:20px;border-radius:5px;background:var(--selected-surface);color:var(--ink);font-size:9.5px;font-weight:700;letter-spacing:.02em;line-height:1}
 .connection-sheet .way.is-soon{gap:4px;border-style:dashed;border-color:var(--strong-line)}
 .connection-sheet .way-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .connection-sheet .way-head h3{flex:1;min-width:0;margin:0;color:var(--ink);font-size:13.5px;font-weight:600}

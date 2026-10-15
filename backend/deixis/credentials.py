@@ -162,10 +162,12 @@ def load_into_environment() -> None:
 
 def status(env: str) -> dict[str, Any]:
     key = MANAGED_KEYS[env]
-    configured = bool(os.environ.get(env))
+    value = os.environ.get(env) or ""
+    configured = bool(value)
     source = ("keychain" if env in _from_keychain else "dotenv" if env in _from_dotenv else "environment") if configured else None
+    # The last four characters let the user tell which key is saved; a short value is not shown at all.
     return {"env": env, "group": key.group, "service": key.service, "configured": configured, "source": source,
-            "testable": key.testable, "shell_fallback": env in _shell_values}
+            "testable": key.testable, "shell_fallback": env in _shell_values, "last4": value[-4:] if len(value) >= 16 else None}
 
 
 def save(env: str, value: str) -> None:

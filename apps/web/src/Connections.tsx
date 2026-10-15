@@ -220,8 +220,10 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
   const primary = typed ? (entry.testable ? 'Save and test' : 'Save') : entry.configured && entry.testable ? 'Test' : null
   return <form className="key-box" onSubmit={e => { e.preventDefault(); if (typed) save(); else if (primary) test() }}>
     <label className="lbl" htmlFor={id}>{label}
-      <input id={id} className="field" type={plain ? 'text' : 'password'} inputMode={plain ? 'numeric' : undefined} autoComplete="off" spellCheck={false} value={value} disabled={busy}
-        placeholder={entry.configured ? `•••••••••••• ${where}`.trim() : t(plain ? 'Type your user ID' : 'Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
+      <input id={id} className="field" type={plain ? 'text' : 'password'} inputMode={plain ? 'numeric' : undefined} spellCheck={false} value={value} disabled={busy}
+        // A browser or password manager would fill a saved web password here and it would be saved as the key.
+        autoComplete={plain ? 'off' : 'new-password'} data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
+        placeholder={entry.configured ? `${entry.last4 ? `••••••••${entry.last4}` : '••••••••••••'} ${where}`.trim() : t(plain ? 'Type your user ID' : 'Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
     </label>
     {note && <p className="foot-note">{fromShell && `${t('This key comes from the terminal that started DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
       {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>}
@@ -1147,7 +1149,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const provider = sel?.kind === 'provider' ? data?.providers.find(p => p.id === sel.id) : undefined
   // The sheet title carries the same mark as the card or tile it opened from.
   const sheetIcon = !sel ? null
-    : company ? (company.icon ? <ConnectionIcon id={company.icon} /> : null)
+    : company ? (company.icon ? <ConnectionIcon id={company.icon} /> : company.mono ? <span className="sheet-mono" aria-hidden>{company.mono}</span> : null)
     : sel.kind === 'local' ? settingsIcon(sel.id === 'local_server' ? 'server' : sel.id)
     : settingsIcon(sel.kind === 'ocr-tool' ? 'ocr' : sel.kind === 'pdf-reader' ? 'pymupdf' : sel.kind === 'reference-files' ? 'reference-files' : sel.id)
   const name = !sel ? ''

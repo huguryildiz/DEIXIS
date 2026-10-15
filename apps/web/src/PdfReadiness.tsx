@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowRight, Download, FileClock, Pause, Play, ScanText, Upload } from 'lucide-react'
+import { ArrowRight, BookOpen, Download, FileClock, Pause, Play, ScanText, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, type OcrTool, type ResearchView, type Source, type ZoteroSource } from './api'
+import { api, type OcrTool, type PersonFiles, type ResearchView, type Source, type ZoteroSource } from './api'
 import { ConnectionIcon } from './connectionIcons'
 import { fetchReasonText, pdfFailureText } from './labels'
 import { OCR_LABEL, ocrOffer } from './ocr'
@@ -58,6 +58,17 @@ export function PdfReadiness({ researchId, view, busy, act, onUpload, ocrTool, o
   const touch = (ids: string[]) => setTouched(prev => new Set([...prev, ...ids]))
   const [zoteroSource, setZoteroSource] = useState<ZoteroSource>('local')
   const toast = useToast()
+  // The person's files behind the unread rows (slice 18b): read again on every view change, so a row shows whether its
+  // file is being read, waits in the queue, or needs a Read again.
+  const [files, setFiles] = useState<PersonFiles | null>(null)
+  const loadFiles = () => api.waiting(researchId).then(next => setFiles(next.files), () => setFiles(null))
+  useEffect(() => { if (unread.length) void loadFiles() }, [researchId, view, unread.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  const fileOf = (record: Source) => files?.rows.find(r => r.work_id === record.work_id)
+  const retryable = unread.map(fileOf).filter(f => f && (f.state === 'unread' || f.state === 'changed') && f.request_id)
+  const readAll = () => act(async () => {
+    for (const f of retryable) await api.retryPersonReading(researchId, f!.request_id!)
+    await loadFiles()
+  }, plural(retryable.length, 'Your file waits to be read again.', 'Your {n} files wait to be read again.'))
 
   const total = records.length
   const collect = () => act(() => api.startRun(researchId, 'pdf_collection', crypto.randomUUID()))
@@ -133,12 +144,15 @@ export function PdfReadiness({ researchId, view, busy, act, onUpload, ocrTool, o
     </div>
     {unread.length > 0 && <section className="plist pdf-unread" aria-labelledby="pdf-unread-title">
       <h4><span className="pdf-unread-title"><FileClock size={14} aria-hidden /><span id="pdf-unread-title">{t('Your PDF, not read yet')}</span></span><span className="pdf-unread-count tnum">{unread.length}</span></h4>
-      <UnreadNote n={unread.length} />
+      <UnreadNote n={unread.length} action={retryable.length > 0 && <Button variant="outline" size="sm" className="ghost" disabled={busy} onClick={() => void readAll()}><BookOpen size={13} aria-hidden />{plural(retryable.length, 'Read it', 'Read all {n}')}</Button>} />
       <ul className="pdf-ready-rows" aria-label={t('Your PDF, not read yet')}>
-        {unread.map(record => <li key={record.source_version_id} className="prow">
+        {unread.map(record => { const state = fileOf(record)?.state; return <li key={record.source_version_id} className="prow">
           <RowHead record={record} facts={[]} />
-          <span className="pdf-ready-side"><span className="pill warn" title={t(UNREAD_FACT)}>{t('Not read yet')}</span></span>
-        </li>)}
+          <span className="pdf-ready-side">{state === 'reading'
+            ? <span className="pill"><span className="pdf-spin" aria-hidden />{t('Being read')}</span>
+            : state === 'waiting' ? <span className="pill">{t('Queued')}</span>
+            : <span className="pill warn" title={t(UNREAD_FACT)}>{t('Not read yet')}</span>}</span>
+        </li> })}
       </ul>
     </section>}
     {needs.length > 0 && <section className="plist" aria-labelledby="pdf-needs-title">
@@ -187,11 +201,11 @@ function RowHead({ record, facts, note }: { record: Source; facts: Fact[]; note?
 const UNREAD_FACT = 'Your PDF is attached and not read yet: the answer leaves this work out until the model reads it.'
 
 // Where a person's unread file is followed: "Your files", further down this panel, which also offers Read again.
-function UnreadNote({ n }: { n: number }) {
-  return <p className="prow pdf-ready-lede">
+function UnreadNote({ n, action }: { n: number; action?: ReactNode }) {
+  return <div className="prow pdf-ready-lede"><p>
     {plural(n, '{n} source has your PDF, not read yet. The answer leaves it out until the model reads it.', '{n} sources have your PDF, not read yet. The answer leaves them out until the model reads them.')}{' '}
     <a href="#person-files-title" onClick={e => { e.preventDefault(); document.getElementById('person-files-title')?.scrollIntoView({ block: 'start' }) }}>{t('See it in Your files')}<ArrowRight size={13} aria-hidden /></a>
-  </p>
+  </p>{action}</div>
 }
 
 // Whether a collection run has anything to try for this work: an open link of the record's own version, or of another version.

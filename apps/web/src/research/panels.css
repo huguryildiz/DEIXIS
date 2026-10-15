@@ -251,6 +251,9 @@
 .pdf-unread-title>svg{color:var(--tone-uncertain)}
 .plist.pdf-unread>h4>.pdf-unread-count{min-width:22px;padding:1px 8px;border-radius:999px;background:color-mix(in srgb,var(--tone-uncertain) 14%,transparent);color:var(--warn-ink);font-size:12px;font-weight:600;text-align:center}
 .pdf-unread>.prow.pdf-ready-lede{padding:12px 14px;border-top:0;color:var(--ink-2);font-size:13px;line-height:1.6}
+.pdf-unread>.prow.pdf-ready-lede{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.pdf-unread>.prow.pdf-ready-lede>p{margin:0;flex:1 1 320px}
+.pdf-unread>.prow.pdf-ready-lede>button{flex:none}
 .pdf-unread .pdf-ready-lede a{display:inline-flex;align-items:center;gap:4px;font-weight:500;text-decoration:none}
 .pdf-unread .pdf-ready-lede a:hover{text-decoration:underline}
 .pdf-unread .pdf-ready-rows>.prow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:14px;padding:13px 14px;border-top:1px solid var(--line);transition:background-color .12s}

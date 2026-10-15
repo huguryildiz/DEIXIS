@@ -5,7 +5,8 @@
 .split-panel :is(.table-panel,.cell-detail) p{margin:0}
 .table-panel{display:flex;flex-direction:column;min-width:0;min-height:100%}
 .table-panel>.table-failed{margin:10px 12px 0}
-.table-panel>.table-reason{padding:8px 14px 0}
+.table-panel>.table-reason{display:flex;align-items:center;gap:8px;padding:10px 14px 0}
+.table-panel>.table-reason::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--tone-uncertain)}
 .table-panel .foot-note,.cell-panel .foot-note,.column-dialog .foot-note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
 .table-panel .notice.warn,.cell-panel .notice.warn{display:flex;align-items:flex-start;gap:10px;margin:0;padding:11px 13px;border:0;border-radius:10px;background:var(--warn-surface);color:var(--ink-2);font-size:13px;line-height:1.5}
 .table-panel .notice.warn>svg,.cell-panel .notice.warn>svg{flex:none;margin-top:2px;color:var(--tone-uncertain)}
@@ -24,13 +25,17 @@
 :is(.table-panel-box,.column-dialog) .ib:disabled{opacity:.45}
 :is(.table-panel-box,.column-dialog) :is(.ghost,.btn-pri,.ib):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* The toolbar (mockup .toolbar): one wrapping row on a hairline; the lock pill in amber on its tint. */
-.table-panel .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.table-panel .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .table-panel .toolbar .spacer{flex:1}
 .table-rows-count{color:var(--muted);font-size:12.5px}
 .table-panel .lockb{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:var(--warn-surface);color:var(--warn-ink);font-size:12px;white-space:nowrap}
 .evidence-table-choice{height:30px;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink);font-size:12.5px}
 .table-panel>.evidence-run,.table-panel>.table-notes,.table-panel>.evidence-inline-form,.table-panel>.evidence-add-rows{margin:10px 12px 0}
-.table-notes{display:grid;gap:6px}
+/* The notes about this fill and these columns: one quiet card on the side surface, one line each. */
+.table-notes{display:grid;gap:4px;padding:10px 12px 10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface)}
+.table-notes>*{position:relative;padding-left:14px}
+.table-notes>p{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.table-notes>*::before{content:"";position:absolute;left:0;top:.62em;width:5px;height:5px;border-radius:50%;background:var(--faint)}
 .table-notes .notice{margin:0}
 /* Menus of the toolbar, the column heads and the templates (mockup .menu: two-line rows). */
 .table-menu{min-width:250px}
@@ -63,43 +68,60 @@
 .table-panel .sugg-row p{flex:1;min-width:180px;margin:0;color:var(--ink)}
 .table-panel .sugg-row small{display:block;color:var(--muted);font-size:12px}
 .table-panel .sugg-notes{padding:8px 12px;border-top:1px solid var(--line)}
-/* The grid (mockup table): 13px cells on hairlines, sticky header row on the side surface, the open cell tinted. */
-.table-panel .tbl-wrap{overflow:auto}
-.evidence-grid{width:100%;border-collapse:collapse;font-size:13px}
-.evidence-grid th{position:sticky;top:0;z-index:1;padding:9px 12px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink-2);font-size:12.5px;font-weight:500;line-height:1.5;text-align:left;white-space:nowrap}
-.evidence-grid td{padding:10px 12px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);vertical-align:top}
+/* The grid: a card inset from the panel edge, a sticky header row and a sticky source column, cells that wrap up to
+   five lines, and a quiet row hover; the open cell is tinted. App.css sets nowrap on every th/td, so cells reset it. */
+.table-panel .tbl-wrap{margin:12px 12px 0;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--raised-surface)}
+.evidence-grid{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.evidence-grid th{position:sticky;top:0;z-index:2;padding:10px 14px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink-2);font-size:12.5px;font-weight:500;line-height:1.5;text-align:left;white-space:nowrap}
+.evidence-grid td{padding:0;border-bottom:1px solid var(--line);border-right:1px solid var(--line);vertical-align:top;white-space:normal;transition:background-color .12s ease}
+.evidence-grid tbody tr:last-child>*{border-bottom:0}
 .evidence-grid tr>:last-child{border-right:0}
-.evidence-grid tbody th{position:static;z-index:auto;background:transparent;color:var(--ink);font-size:13px;font-weight:400;white-space:normal;vertical-align:top}
-.evidence-grid .evidence-row-head{min-width:190px;padding:10px 12px}
-.evidence-grid td.is-open{background:var(--accent-tint)}
-.evidence-grid .th-b{display:inline-flex;align-items:center;gap:6px;color:inherit;font:inherit;text-align:left}
+.evidence-grid :is(thead th:first-child,tbody th){position:sticky;left:0;box-shadow:1px 0 0 var(--line),6px 0 10px -8px rgb(20 28 45/.18)}
+.evidence-grid thead th:first-child{z-index:3}
+.evidence-grid tbody th{z-index:1;background:var(--raised-surface);color:var(--ink);font-size:13px;font-weight:400;white-space:normal;vertical-align:top}
+.evidence-grid .evidence-row-head{min-width:210px;max-width:260px;padding:12px 14px}
+.evidence-grid tbody tr:hover>td{background:var(--hover-surface)}
+.evidence-grid td.is-open,.evidence-grid tbody tr:hover>td.is-open{background:var(--accent-tint);box-shadow:inset 0 0 0 1px var(--accent-line)}
+.evidence-grid .th-b{display:inline-flex;align-items:center;gap:7px;color:inherit;font:inherit;text-align:left}
 .evidence-grid .th-b>svg{flex:none;width:13px;height:13px;color:var(--muted)}
+.evidence-grid .th-b>svg:last-child{opacity:.7}
 .evidence-grid .th-b:hover:not(:disabled){color:var(--accent)}
+.evidence-grid .th-b:hover:not(:disabled)>svg{color:var(--accent)}
 .evidence-grid .th-add{color:var(--muted);font-weight:400}
-.evidence-grid .th-b:focus-visible,.evidence-cell:focus-visible,.evidence-row-menu:focus-visible,.evidence-row-open:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.evidence-grid .th-b:focus-visible,.evidence-row-menu:focus-visible,.evidence-row-open:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.evidence-cell:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:2px}
 .evidence-row-line{display:flex;align-items:flex-start;gap:6px}
-.evidence-grid .src-t{flex:1;min-width:0;color:var(--ink);font-weight:500;line-height:1.35;text-align:left;overflow-wrap:anywhere}
+.evidence-grid .src-t{flex:1;min-width:0;color:var(--ink);font-weight:550;line-height:1.35;text-align:left;overflow-wrap:anywhere}
 .evidence-grid button.src-t:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .evidence-grid .src-t .source-key{font:inherit;color:inherit;background:none;border:0;padding:0}
-.evidence-grid .src-m{display:block;margin-top:3px;color:var(--muted);font-size:12px;line-height:1.45}
-.evidence-row-menu{display:grid;flex:none;place-items:center;width:22px;height:22px;margin:-2px -4px 0 0;border-radius:6px;color:var(--muted)}
+.evidence-grid .src-m{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.45}
+.evidence-row-menu{display:grid;flex:none;place-items:center;width:22px;height:22px;margin:-2px -4px 0 0;border-radius:6px;color:var(--muted);opacity:.55;transition:opacity .12s ease}
+.evidence-grid tr:hover .evidence-row-menu,.evidence-row-menu:focus-visible,.evidence-row-menu[data-popup-open]{opacity:1}
 .evidence-row-menu:hover,.evidence-row-menu[data-popup-open]{background:var(--hover-surface);color:var(--ink)}
-/* A cell (mockup .cell): the value, then a small line; states in muted italics, never by colour alone. */
-.evidence-cell{display:grid;gap:3px;min-width:170px;max-width:280px;color:var(--ink);font-size:12.5px;line-height:1.45;text-align:left}
-.evidence-cell:hover .evidence-cell-value{color:var(--accent)}
-.evidence-cell-value{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow-wrap:anywhere}
-.evidence-cell small{color:var(--muted);font-size:11px}
+/* A cell: the value (up to five lines), then its provenance; states in muted italics, never by colour alone. The
+   button fills its cell, so the whole cell is the target. */
+.evidence-cell{display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;min-width:230px;max-width:320px;min-height:100%;padding:12px 14px;color:var(--ink);font-size:12.5px;line-height:1.5;text-align:left;white-space:normal;cursor:pointer}
+.evidence-cell-value{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow-wrap:break-word;text-wrap:pretty}
+.evidence-cell small{color:var(--muted);font-size:11px;line-height:1.4}
 .evidence-cell small.warn-t{color:var(--tone-uncertain)}
 .evidence-cell .nrc{color:var(--muted);font-style:italic}
 .evidence-cell-live{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
 .evidence-cell-flags{display:flex;flex-wrap:wrap;gap:4px}
-.evidence-flag{--flag:var(--tone-uncertain);display:inline-flex;align-items:center;padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--flag),transparent 88%);color:color-mix(in srgb,var(--flag),var(--ink) 30%);font-size:10.5px;line-height:1.5;font-style:normal}
+.evidence-flag{--flag:var(--tone-uncertain);display:inline-flex;align-items:center;gap:5px;padding:1px 7px 1px 6px;border-radius:999px;background:color-mix(in srgb,var(--flag),transparent 90%);color:color-mix(in srgb,var(--flag),var(--ink) 30%);font-size:10.5px;font-weight:500;line-height:1.5;font-style:normal}
+.evidence-flag::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--flag)}
 .evidence-flag.is-blocking{--flag:var(--tone-exclude)}
 .evidence-grid .th-add-cell{width:1%;white-space:nowrap}
-.table-panel>.evidence-footnote{padding:10px 14px 0}
-.table-panel>.table-counts{padding:2px 14px 14px}
+.evidence-grid tbody .th-add-cell{background:transparent}
+/* Under the grid: what a click shows, then the counts with a fill meter. */
+.table-panel>.evidence-footnote{padding:12px 14px 0}
+.table-panel>.table-counts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:6px 14px 16px;font-variant-numeric:tabular-nums}
+.evidence-meter{flex:none;width:96px;height:5px;overflow:hidden;border:0;border-radius:999px;background:var(--selected-surface);appearance:none;-webkit-appearance:none}
+.evidence-meter::-webkit-progress-bar{border-radius:999px;background:var(--selected-surface)}
+.evidence-meter::-webkit-progress-value{border-radius:999px;background:var(--accent)}
+.evidence-meter::-moz-progress-bar{border-radius:999px;background:var(--accent)}
 .table-panel .evidence-trash-link{display:flex;flex-wrap:wrap;align-items:center;gap:6px;color:var(--muted);font-size:12.5px}
 .table-panel .evidence-trash-link a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+@media (prefers-reduced-motion:reduce){.evidence-grid td,.evidence-row-menu{transition:none}}
 .table-panel>.empty-inline{padding:20px 14px}
 .lineage-panel-body{padding:16px 20px 32px}
 

@@ -532,7 +532,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
         <span id="evidence-grid-keys" className="sr-only">{t('Arrow keys move between cells; Enter opens one.')}</span>
       </>}
     <p className="foot-note evidence-footnote">{t('Click a cell to see its quote and earlier values. Whether a quote supports its value was not checked.')}</p>
-    <p className="foot-note table-counts">{t('{rows} rows · {columns} columns · {filled} cells with a value · {empty} empty · {pending} proposals waiting', { rows: table.counts.rows, columns: table.counts.columns, filled: table.counts.with_value, empty: table.counts.empty, pending: table.counts.pending_proposals })}{table.removed_rows.length ? ` · ${t('{n} removed rows keep their cells', { n: table.removed_rows.length })}` : ''}</p>
+    <p className="foot-note table-counts">{table.counts.rows * table.counts.columns > 0 && <progress className="evidence-meter" max={table.counts.rows * table.counts.columns} value={table.counts.with_value} aria-hidden />}{t('{rows} rows · {columns} columns · {filled} cells with a value · {empty} empty · {pending} proposals waiting', { rows: table.counts.rows, columns: table.counts.columns, filled: table.counts.with_value, empty: table.counts.empty, pending: table.counts.pending_proposals })}{table.removed_rows.length ? ` · ${t('{n} removed rows keep their cells', { n: table.removed_rows.length })}` : ''}</p>
 
     {editor && <ColumnEditor key={editor.mode === 'edit' ? editor.column.id : editor.mode} target={editor} busy={busy} dark={dark} locked={Boolean(activeRun)}
       onSave={spec => saveColumn(editor, spec)} onClose={() => setEditor(null)} onRemove={column => { setEditor(null); setRemoving(column) }} />}

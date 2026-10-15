@@ -150,12 +150,12 @@ export function DevelopmentLines({ researchId, tableId, tableVersion, eventCurso
       <p>{t('{live} live rows · {pdf} rows with stored PDF text · {complete} complete nodes · {partial} partial nodes · {missing} missing cells', { live: s.live_rows, pdf: s.pdf_text_rows, complete: s.nodes_complete, partial: s.nodes_partial, missing: s.missing_cells })}</p>
       <p>{t('{placed} placed rows · {unplaced} unplaced rows', { placed: s.placed_rows, unplaced: s.unplaced_rows })}</p>
       <div className="lineage-actions lineage-toolbar">
-        {missing.length > 0 && <Button variant="ghost" disabled={busy} onClick={async () => { setBusy(true); try { await api.addDevelopmentColumns(researchId, tableId, tableVersion, crypto.randomUUID()); toast('success', t('Development columns added.')); onColumnsAdded(); await load() } catch (e) { toast('error', errorText(e)) } finally { setBusy(false) } }}>{t('Add development columns')}</Button>}
+        {missing.length > 0 && <Button variant="outline" disabled={busy} onClick={async () => { setBusy(true); try { await api.addDevelopmentColumns(researchId, tableId, tableVersion, crypto.randomUUID()); toast('success', t('Development columns added.')); onColumnsAdded(); await load() } catch (e) { toast('error', errorText(e)) } finally { setBusy(false) } }}>{t('Add development columns')}</Button>}
         <Button disabled={busy || Boolean(reason)} aria-describedby={reason ? 'lineage-find-reason' : undefined} onClick={() => { setPlan(null); setPlanError(''); if (planOpen) void loadPlan(); else setPlanOpen(true) }}>{t('Find development links')}</Button>
         <label className="evidence-check"><input type="checkbox" checked={retry} onChange={e => { setPlan(null); setPlanError(''); setRetry(e.target.checked) }} />{t('Retry failed pairs')}</label>
-        <Button variant="ghost" onClick={() => openEditor({})}>{t('Add link')}</Button>
-        <Button variant="ghost" aria-expanded={baselineOpen} aria-controls="lineage-baseline-panel" onClick={() => setBaselineOpen(v => !v)}>{t('Field baseline')}</Button>
-        <Button variant="ghost" onClick={() => void refresh()}>{t('Refresh')}</Button>
+        <Button variant="outline" onClick={() => openEditor({})}>{t('Add link')}</Button>
+        <Button variant="outline" aria-expanded={baselineOpen} aria-controls="lineage-baseline-panel" onClick={() => setBaselineOpen(v => !v)}>{t('Field baseline')}</Button>
+        <Button variant="outline" onClick={() => void refresh()}>{t('Refresh')}</Button>
       </div>
       {reason && <p id="lineage-find-reason">{reason}</p>}
       {lineageRun && (['queued', 'running', 'pause_requested', 'paused'].includes(lineageRun.status)) && <p role="status">{t('Development links')} · {t(runStatusLabels[lineageRun.status])}</p>}
@@ -189,7 +189,7 @@ export function DevelopmentLines({ researchId, tableId, tableVersion, eventCurso
         <p>{t(reasonLabels[detail.reason])}</p><p>{detail.from && <WorkName id={detail.from} {...work} />}{detail.from && detail.to && ' → '}{detail.to && <WorkName id={detail.to} {...work} />}</p>
         <p>{detail.run_id && t('run {id}', { id: detail.run_id })}{detail.scope_revision != null && <> · {t('scope revision {n}', { n: detail.scope_revision })}</>}{detail.recorded_at && <> · {dateText(detail.recorded_at)}</>}</p><p className="lineage-currency">{currencyText(detail)}</p>
       </li>)}</ul> : <p>{t('None.')}</p>}</details>
-      <div className="lineage-actions"><Button variant="ghost" size="sm" onClick={() => openEditor({ to: item.source_version_id })}>{t('Add a link as later work')}</Button><Button variant="ghost" size="sm" onClick={() => openEditor({ from: item.source_version_id })}>{t('Add a link as earlier work')}</Button></div>
+      <div className="lineage-actions"><Button variant="outline" size="sm" onClick={() => openEditor({ to: item.source_version_id })}>{t('Add a link as later work')}</Button><Button variant="outline" size="sm" onClick={() => openEditor({ from: item.source_version_id })}>{t('Add a link as earlier work')}</Button></div>
     </li>)}</ul></ListSection>
     <ListSection title="Proposals not accepted" count={view.not_accepted.length} empty={!view.not_accepted.length}><ul>{view.not_accepted.map(item => <li key={item.revision_id}>
       <p><WorkName id={item.from} {...work} /> → <WorkName id={item.to} {...work} /></p><p>{t(rejectionLabels[item.rejection_code] ?? item.rejection_code)}</p>

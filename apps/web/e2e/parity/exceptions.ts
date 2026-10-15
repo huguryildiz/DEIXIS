@@ -399,6 +399,8 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
 // `widths`, when given, limits the exception to those viewport widths; every other width compares all axes.
 export type GeometryException = { id: string; rule: string; pairs: string[]; axes: Array<'x' | 'y' | 'width' | 'height'>; widths?: number[]; note: string }
 export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
+  { id: 'evidence-grid-card', rule: 'owner request 15 Oct 2026 (premium evidence table: the grid is a card inset 12px from the panel edge, roomier cells)', pairs: ['table.wrap', 'table.row-head', 'table.cell-box'], axes: ['x', 'width'],
+    note: 'The grid sits in a bordered card 12px in from the panel edge, so the wrap, the row head and the first cell start 12px further right and the wrap is 24px narrower; the source column is 210px wide instead of 190. y and height are compared.' },
   { id: 'settings-roles-y', rule: 'PLACEMENTS settings-default-note (the note under "Default models")', pairs: ['settings.roles', 'settings.role'], axes: ['y'],
     note: 'The default model rows sit under the note the mockup has no place for, so their top is lower by the note and one gap. x, width and height are compared.' },
   { id: 'settings-proxy-state-width', rule: '§2.3 (copy change proxy-working: the line names the HTTP status and the check time)', pairs: ['settings.proxy-state'], axes: ['width'], widths: [1280],
@@ -579,6 +581,10 @@ export const APP_ADDITIONS: Array<{ id: string; rule: string; app: string; slice
 /** Styles the app draws where the mockup draws none, kept for accessibility. The listed properties of the listed pairs
  *  are not compared; every other check of those pairs still runs. */
 export const STYLE_EXCEPTIONS: Array<{ id: string; rule: string; pairs: string[]; properties: string[]; note: string }> = [
+  { id: 'evidence-grid-card', rule: 'owner request 15 Oct 2026 (premium evidence table)', pairs: ['table.wrap', 'table.row-head', 'table.cell-box', 'table.source', 'table.cell', 'table.cell-note'],
+    properties: ['background-color', 'border-top-left-radius', 'border-top-right-radius', 'border-bottom-right-radius', 'border-bottom-left-radius', 'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+      'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'font-weight', 'line-height'],
+    note: 'The grid is a card on --raised-surface with a hairline border and a 10px radius; the source and value cells have 12px/14px padding, and the padding of a value cell moves from the td to the button inside it so the whole cell is the click target; the source title is 550; a value wraps at line-height 1.5 up to five lines and its note at 1.4.' },
   { id: 'menu-heading-case', rule: '.impeccable.md §2.4 (small caps labels are sentence-case text uppercased by CSS)', pairs: ['export-menu.headings', 'scope-menu.heading', 'models-menu.heading', 'depth-menu.heading', 'scope-menu.badge', 'add-menu.badge'], properties: ['text-transform'],
     note: 'The mockup writes REPORT, EVIDENCE TABLE, SOURCES, WORKFLOWS, MODELS, DEPTH and LATER in capitals; the app writes them in sentence case and uppercases them in CSS, so the Turkish labels case-fold correctly. The rendered text is the same.' },
   { id: 'palette-focus-line', rule: 'WCAG 2.4.7 (focus visible; a11y.spec X05 needs an indicator on every focus stop)', pairs: ['palette.field'], properties: ['box-shadow'],

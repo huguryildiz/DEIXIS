@@ -299,7 +299,9 @@ export function checkChrome(pair: Pair, m: Side, axes: Axis[] = ['x', 'y', 'widt
 export function checkContent(pair: Pair, m: Side): string[] {
   if (!m.mock || !m.app) return []
   const out = checkChrome(pair, m, ['x', 'width'])
+  const freeStyle = new Set(STYLE_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id))).flatMap(e => e.properties))
   for (const k of ['padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'line-height']) {
+    if (freeStyle.has(k)) { auditStyle(pair, k, m.mock.style[k] !== m.app.style[k]); continue }
     if (m.mock.style[k] !== m.app.style[k]) out.push(`${pair.id}: ${k} mockup ${m.mock.style[k]} app ${m.app.style[k]}`)
   }
   return out
@@ -388,8 +390,11 @@ function checkStateColour(pair: Pair, m: Side, v: Variant, state: string, fallba
 export function checkColour(pair: Pair, m: Side, v: Variant): string[] {
   if (!m.mock || !m.app) return []
   const out: string[] = []
+  // A declared style exception (exceptions.ts) leaves out only its properties.
+  const freeStyle = new Set(STYLE_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id))).flatMap(e => e.properties))
   for (const key of COLOUR_KEYS) {
     if (key === 'color') { out.push(...checkStateColour(pair, m, v, 'default')); continue }
+    if (key !== 'border-top-color' && freeStyle.has(key)) { auditStyle(pair, key, deltaE2000(m.mock.colours[key], m.app.colours[key]) > 1); continue }
     if (key === 'border-top-color' && !(m.mock.hasBorder && m.app.hasBorder)) continue
     const mc = m.mock.colours[key], ac = m.app.colours[key]
     if (mc[3] === 0 && ac[3] === 0) continue
@@ -403,11 +408,10 @@ export function checkColour(pair: Pair, m: Side, v: Variant): string[] {
     if (d > 1) out.push(`${pair.id}: ${key} mockup ${hex(mc)} app ${hex(ac)} (ΔE2000 ${Number.isFinite(d) ? d.toFixed(2) : 'alpha'} > 1)`)
   }
   for (const k of ['border-top-left-radius', 'border-top-right-radius', 'border-bottom-right-radius', 'border-bottom-left-radius', 'border-top-width']) {
+    if (freeStyle.has(k)) { auditStyle(pair, k, px(m.mock.style[k]) !== px(m.app.style[k])); continue }
     if (px(m.mock.style[k]) !== px(m.app.style[k])) out.push(`${pair.id}: ${k} mockup ${m.mock.style[k]} app ${m.app.style[k]}`)
   }
   const shadow = (s: string) => s.replace(/rgba?\([^)]*\)/g, c => c.replace(/\s+/g, '')).replace(/\s+/g, ' ').trim()
-  // A declared style exception (exceptions.ts) leaves out only its properties.
-  const freeStyle = new Set(STYLE_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id))).flatMap(e => e.properties))
   if (freeStyle.has('box-shadow')) auditStyle(pair, 'box-shadow', shadow(m.mock.style['box-shadow']) !== shadow(m.app.style['box-shadow']))
   else if (shadow(m.mock.style['box-shadow']) !== shadow(m.app.style['box-shadow'])) {
     out.push(`${pair.id}: box-shadow mockup ${m.mock.style['box-shadow']} app ${m.app.style['box-shadow']}`)

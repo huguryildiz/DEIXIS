@@ -1,37 +1,67 @@
-.lineage-view { width: 100%; min-width: 0; max-width: 100%; color: var(--ink); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
-.lineage-view h3 { font-size: 17px; font-weight: 600; margin: 0 0 10px; }
-.lineage-view h4, .lineage-editor h3, .lineage-editor h4 { font-size: 14px; font-weight: 600; margin: 12px 0 6px; text-wrap: balance; }
-.lineage-view p { margin: 6px 0; }
-.lineage-view ul, .lineage-view ol, .lineage-editor ul, .lineage-editor ol { margin: 10px 0; padding-left: 20px; min-width: 0; }
+/* Development lines (DevelopmentLines.tsx): a status card with the actions on top, then one section per list under a
+   small heading with its count. A work, a link or an outcome is one row on a hairline; empty lists read "None." quietly. */
+.lineage-view { width: 100%; min-width: 0; max-width: 820px; margin-inline: auto; color: var(--ink); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.lineage-view h3 { display: flex; align-items: baseline; gap: 6px; margin: 0 0 10px; color: var(--ink); font-family: var(--font-sans); font-size: 13.5px; font-weight: 600; line-height: 1.4; letter-spacing: 0; }
+.lineage-view h4, .lineage-editor h3, .lineage-editor h4 { font-size: 13px; font-weight: 600; margin: 12px 0 6px; text-wrap: balance; }
+.lineage-view p { margin: 4px 0; }
+.lineage-view ul, .lineage-view ol, .lineage-editor ul, .lineage-editor ol { margin: 8px 0; padding-left: 20px; min-width: 0; }
 .lineage-view li, .lineage-evidence-picker > li { padding: 10px 0; min-width: 0; }
-.lineage-section, .lineage-baseline { border-top: 1px solid var(--line); padding: 22px 0; }
+.lineage-section, .lineage-baseline { border-top: 1px solid var(--line); padding: 18px 0; }
+.lineage-section > h3 + p, .lineage-section > p:only-child, .lineage-view > p { color: var(--muted); font-size: 12.5px; }
 .lineage-section li + li, .lineage-evidence-picker > li + li { border-top: 1px solid var(--line); }
-.lineage-section .lineage-section { padding: 16px 0; }
-.lineage-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; max-width: 100%; }
-.lineage-actions button, .lineage-toolbar button { height: auto; min-height: 36px; white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
-.lineage-toolbar { margin: 14px 0; }
-.lineage-view .evidence-check { margin: 0; flex-wrap: wrap; }
-.lineage-plan { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 16px 0; margin: 18px 0; }
+.lineage-section .lineage-section { padding: 14px 0; }
+.lineage-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; max-width: 100%; }
+.lineage-actions button, .lineage-toolbar button { height: auto; min-height: 32px; white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
+.lineage-view .evidence-check { margin: 0 6px 0 2px; flex-wrap: wrap; align-items: center; color: var(--ink-2); }
+.lineage-view .evidence-check input { margin-top: 0; }
+
+/* The status card: title, the three state lines, then the actions on a hairline. */
+.lineage-status { margin-bottom: 18px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--raised-surface); }
+.lineage-status > h3 { margin-bottom: 6px; font-size: 15px; }
+.lineage-status > p { margin: 2px 0; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.lineage-toolbar { margin: 14px 0 0; padding-top: 14px; border-top: 1px solid var(--line); }
+.lineage-status > .lineage-limit { max-width: 76ch; margin-top: 12px; padding: 0; font-size: 12px; }
+.lineage-plan { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 16px 0; margin: 16px 0; }
 .lineage-limit, .lineage-currency, .lineage-counts, .lineage-link > p { color: var(--muted); }
 .lineage-limit { max-width: 76ch; padding-bottom: 16px; }
-.lineage-component { margin-top: 18px; }
+
+/* A list of works or pairs: rows on hairlines, no bullets; a work's reasons stay a small bulleted list. */
+.lineage-section > ul, .lineage-section > ol, .lineage-component > ol { padding-left: 0; list-style: none; }
+.lineage-section > ul > li > ul { margin: 6px 0 4px; padding-left: 18px; color: var(--ink-2); list-style: disc; }
+.lineage-section > ul > li > ul > li { padding: 1px 0; border: 0; }
+.lineage-section > ul > li > ul > li::marker { color: var(--faint); }
+.lineage-section > ul > li > .lineage-actions { margin-top: 8px; }
+.lineage-component { margin-top: 14px; }
 .lineage-link.is-branch { margin-left: 12px; }
 .lineage-link-open { display: block; text-align: left; width: 100%; min-height: 36px; color: var(--ink); padding: 6px 0; font-size: 14px; line-height: 1.6; white-space: normal; overflow-wrap: anywhere; cursor: pointer; }
 .lineage-link-open:hover { color: var(--accent); }
 .lineage-changed { display: block; margin-top: 8px; white-space: pre-wrap; }
 .lineage-work { display: inline; }
 .lineage-work > * { margin-right: 6px; }
-.lineage-source-title { color: var(--accent); text-align: left; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; white-space: normal; cursor: pointer; }
+.lineage-work > span:not(.source-key) { color: var(--muted); font-variant-numeric: tabular-nums; }
+.lineage-source-title { color: var(--accent); font-weight: 500; text-align: left; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent), transparent 60%); text-underline-offset: 3px; overflow-wrap: anywhere; white-space: normal; cursor: pointer; }
+.lineage-source-title:hover { text-decoration-color: currentColor; }
 .lineage-view .source-key { white-space: normal; overflow-wrap: anywhere; }
-.lineage-view summary { cursor: pointer; padding: 8px 0; }
+
+/* Disclosures: a small caret, muted until open. */
+.lineage-view summary { display: flex; align-items: center; gap: 8px; width: fit-content; padding: 6px 0; color: var(--ink-2); font-size: 12.5px; font-weight: 500; list-style: none; cursor: pointer; }
+.lineage-view summary::-webkit-details-marker { display: none; }
+.lineage-view summary::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); transition: transform .15s ease; }
+.lineage-view details[open] > summary::before { transform: rotate(45deg); }
+.lineage-view details > :not(summary) { margin-left: 14px; }
+.lineage-view summary:hover { color: var(--ink); }
+
 .lineage-stored { white-space: pre-wrap; overflow-wrap: anywhere; }
 .lineage-editor { overflow-wrap: anywhere; }
 .lineage-form { min-width: 0; }
 .lineage-form select, .lineage-form textarea { width: 100%; min-width: 0; max-width: 100%; }
 .lineage-passage-text { font-family: var(--font-sans); font-size: 16px; line-height: 1.68; white-space: pre-wrap; overflow-wrap: anywhere; border-block: 1px solid var(--line); padding: 14px 0; }
 .lineage-editor .cell-foot { color: var(--muted); font-size: 12px; }
+.lineage-counts > p { font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .lineage-view button:focus-visible, .lineage-view summary:focus-visible, .lineage-editor button:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) { .lineage-view summary::before { transition: none; } }
 @media (max-width: 760px) {
   .lineage-view { max-width: calc(100vw - 40px); }
+  .lineage-status { padding: 14px; }
   .lineage-link.is-branch { margin-left: 4px; }
 }

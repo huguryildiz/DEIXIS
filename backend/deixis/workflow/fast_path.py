@@ -48,10 +48,9 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
     call still has its own limit (openai_compat.LOCAL_TURN_TIMEOUT)."""
     bases, n, k, cap, seeds, backward, forward = MODES[effort]
-    enforced = ["search", "ranking"] if local_model else ["search", "ranking", "read", "answer"]
     policy = {
-        "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": list(enforced),
-        "enforced_stages": enforced, "background_fetch_slots": 4,
+        "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["search", "ranking", "read", "answer"],
+        "enforced_stages": ["search", "ranking", "read", "answer"], "background_fetch_slots": 4,
         "approval_mode": "unattended", "auto_answer": True,
         "late_revision": {"mode": "auto", "max_revisions": 1},
         "mode": "deep" if effort == "detailed" else effort,
@@ -63,6 +62,9 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
     }
+    if local_model:
+        # Still fast-path stages (`enforces` routes on them); only their deadline is gone.
+        policy["no_deadline_stages"] = ["read", "answer"]
     return policy | {"policy_hash": canonical.sha256_hex(policy)}
 
 
@@ -102,7 +104,7 @@ def enforces(budget: dict[str, Any], stage: str) -> bool:
 
 
 def stage_deadline(store: Any, run: dict[str, Any], stage: str) -> datetime | None:
-    if not enforces(run["budget"], stage):
+    if not enforces(run["budget"], stage) or stage in run["budget"]["fast_path"].get("no_deadline_stages", ()):
         return None
     ledger = run["budget"]["fast_path"].get("ledger_run_id", run["id"])
     row = store.conn.execute(

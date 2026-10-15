@@ -229,6 +229,8 @@ def test_a_local_model_run_keeps_no_read_or_answer_deadline(tmp_path, monkeypatc
         client.__exit__(None, None, None)
     assert frozen["fake"] == fast_path.freeze_budget({}, "quick")
     assert frozen["ollama"] == fast_path.freeze_budget({}, "quick", local_model=True)
-    assert frozen["ollama"]["enforced_stages"] == ["search", "ranking"]
-    budget = {"fast_path": frozen["ollama"]}
-    assert [fast_path.enforces(budget, s) for s in ("search", "ranking", "read", "answer")] == [True, True, False, False]
+    assert frozen["ollama"]["no_deadline_stages"] == ["read", "answer"] and "no_deadline_stages" not in frozen["fake"]
+    # Every stage stays a fast-path stage, so the answer still runs on the fast path; read and answer have no deadline.
+    run = {"id": "run_x", "budget": {"fast_path": frozen["ollama"]}}
+    assert all(fast_path.enforces(run["budget"], s) for s in ("search", "ranking", "read", "answer"))
+    assert fast_path.stage_deadline(None, run, "read") is None and fast_path.stage_deadline(None, run, "answer") is None

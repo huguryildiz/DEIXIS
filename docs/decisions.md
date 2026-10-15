@@ -10,7 +10,7 @@ Context: A Quick research on qwen3.5:9b through Ollama (15 Oct) passed 1 of 10 m
 Decision:
 - `OpenAICompatAdapter` on a keyless connection (Ollama, the local server that LM Studio uses) sends one call at a time and gives each call 1,200 s instead of 300 s.
 - Ollama steps go to its own `/api/chat` with `think: false`, the step schema as `format` and `num_ctx` sized to the input (characters / 3 + 8,192, in 8,192 steps, capped at the model's context length from `/api/show`). An input over that length fails before sending; nothing is cut silently.
-- A discovery run whose model connection is in `openai_compat.LOCAL_CONNECTIONS` freezes `enforced_stages = ["search", "ranking"]`: the read and answer stages have no deadline. Search and ranking do not wait on the model and keep theirs. Hosted connections freeze the same policy as before.
+- A discovery run whose model connection is in `openai_compat.LOCAL_CONNECTIONS` freezes `no_deadline_stages = ["read", "answer"]`: `fast_path.stage_deadline` gives those stages no deadline. They stay in `enforced_stages`, which also routes the answer onto the fast path (the first version dropped them there and the answer run failed with `answer_binding_unresolved`). Search and ranking do not wait on the model and keep theirs. Hosted connections freeze the same policy as before.
 Limits: LM Studio's thinking and context length cannot be set through the OpenAI-compatible endpoint; they are chosen when the model is loaded there. A local run can now take an hour or more on Quick; the per-call limit is the only bound on a stuck model. Pause and cancel still work. Home's depth text still shows the hosted minutes.
 
 ## D38 — Work keys read as first author, four-digit year and first title word, like "zeng2022multiparty"

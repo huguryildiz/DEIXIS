@@ -250,3 +250,9 @@ def test_a_child_left_holding_the_pipes_is_stopped_with_the_group(tmp_path, monk
         import time; time.sleep(0.1)
     else:
         raise AssertionError("the child kept running")
+
+
+def test_copilot_cli_has_the_terminal_sign_in():
+    """D21's Sign in button opens a terminal with `copilot login`; the adapter's health says when it is done."""
+    from deixis import account_signin
+    assert account_signin.TOOLS["copilot_cli"] == ("copilot", ["login"], "GitHub Copilot CLI")

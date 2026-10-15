@@ -169,7 +169,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
               {row.venue && <span><em>{row.venue}</em></span>}
             </small>}
           </span>
-          <span className="pill warn">{waitingReasonText(row.reason_code)}</span>
+          <span className="waiting-reason">{waitingReasonText(row.reason_code)}</span>
           <span className="pdf-ready-side waiting-actions">
             {row.links.doi && <a className="pdf-ready-link waiting-link" href={row.links.doi} target="_blank" rel="noopener noreferrer">{t('DOI')}<ExternalLink size={12} aria-hidden /><span className="sr-only">{t('(opens in a new tab)')}</span></a>}
             {row.links.landing && <a className="pdf-ready-link waiting-link" href={row.links.landing} target="_blank" rel="noopener noreferrer">{t('Publisher page')}<ExternalLink size={12} aria-hidden /><span className="sr-only">{t('(opens in a new tab)')}</span></a>}

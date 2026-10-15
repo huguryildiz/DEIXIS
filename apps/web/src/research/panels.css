@@ -240,10 +240,24 @@
 .pdf-ready-zotero .connection-icon{display:inline-flex}
 .pdf-ready-zotero .connection-icon svg{width:13px;height:13px}
 .pdfs-panel select{height:28px;max-width:100%;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,var(--paper));color:var(--ink);font:inherit;font-size:12.5px}
-.waiting-rows .waiting-place{align-self:flex-start;min-width:18px;padding-top:1px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;text-align:right}
+/* A waiting work: its place in a quiet ring, the title and byline at full width, then one footer line with the reason
+   (a dot in the uncertain tone, the words say it) on the left and the actions on the right. */
+.waiting-rows{container-type:inline-size}
+.waiting-rows>.prow{display:grid;grid-template-columns:22px minmax(0,1fr) auto;grid-template-areas:'place head head' '. reason reason' '. acts acts';align-items:center;gap:10px 12px;padding:14px 16px;transition:background-color .12s}
+.waiting-rows>.prow:hover{background:var(--sidebar-surface)}
+.waiting-rows .waiting-place{grid-area:place;align-self:start;display:grid;place-items:center;width:22px;height:22px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11px;line-height:1;font-variant-numeric:tabular-nums}
+.waiting-rows .pdf-ready-head{grid-area:head;min-width:0;gap:2px}
+.waiting-rows .pdf-ready-title{font-size:13.5px;line-height:1.4;color:var(--ink)}
+.waiting-rows .pdf-ready-head .source-byline{margin-top:2px}
+.waiting-reason{grid-area:reason;display:inline-flex;align-items:center;gap:7px;min-width:0;color:var(--muted);font-size:12px;line-height:1.4}
+.waiting-reason::before{content:'';flex:none;width:6px;height:6px;border-radius:999px;background:var(--tone-uncertain)}
+.waiting-rows .waiting-actions{grid-area:acts;justify-content:flex-start;gap:6px}
+.waiting-rows .waiting-actions .ghost{height:28px;padding:0 10px;font-size:12.5px}
+.waiting-link{display:inline-flex;align-items:center;gap:4px;margin-right:6px;padding:0;border:0;color:var(--muted);font-size:12.5px;text-decoration:none;white-space:nowrap}
+.waiting-link:hover{color:var(--accent)}
+.waiting-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 .waiting-rows .source-status .source-fact{min-height:19px}
-.waiting-actions{justify-content:flex-end}
-.waiting-link{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+@container (min-width:620px){.waiting-rows>.prow{grid-template-areas:'place head head' '. reason acts'}.waiting-rows .waiting-actions{justify-content:flex-end}}
 .waiting-match{display:grid;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}
 .waiting-matches>h4+.waiting-match,.waiting-matches>h4+p+.waiting-match{border-top:0}
 .waiting-match p{margin:0}

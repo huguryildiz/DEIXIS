@@ -227,7 +227,7 @@
 /* Each action keeps a 24px target (WCAG 2.5.8) when the actions wrap to several lines; the mockup's are 18px. */
 .source-table .rowacts{display:flex;flex-wrap:wrap;gap:0 10px;margin-top:3px;font-size:12px;line-height:1.5}
 .source-table .rowacts .source-asset-actions,.source-table .rowacts .rowact-slot{display:contents}
-.source-table .rowacts :is(a,button){display:inline-flex;align-items:center;gap:4px;min-height:24px;color:var(--accent);font-weight:500;text-decoration:none}
+.source-table .rowacts :is(a,button){display:inline-flex;align-items:center;gap:4px;min-height:24px;color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:2px}
 .source-table .rowacts :is(a,button):hover:not(:disabled):not([aria-disabled=true]){text-decoration:underline;text-underline-offset:2px}
 .source-table .rowacts :is(a,button)>svg{width:12px;height:12px}
 .source-table .rowacts :is(button:disabled,[aria-disabled=true]){color:var(--muted);cursor:default}

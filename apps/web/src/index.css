@@ -239,3 +239,12 @@ html {
         scroll-behavior: auto !important;
     }
 }
+
+/* Every text link is underlined at rest, not only on hover. Icon, chip and button-shaped links (.ib, .pdf-download,
+   .source-link-chip, .btn-link, .footer-github, .export-links) keep their own look. */
+a:not([class]),
+.link, .step-link, .revline-toggle, .queue-page-link, .evidence-open, .job-research, .followup-doi, .followup-publisher,
+.rowacts :is(a,button), .pdf-ready-lede a, .person-file-state a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}

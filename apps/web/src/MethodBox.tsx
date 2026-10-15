@@ -31,10 +31,13 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inR
   const abstractOnly = answer.inputs_given?.depth?.abstract ?? 0
   const queries = search.queries.length
   const found = selection.works_found
+  // An answer over attached PDFs only: nothing was searched or screened, so one sentence says so instead of three "not recorded".
+  const pdfOnly = queries === 0 && selection.abstract_read === 0 && selection.full_text_read === 0
   return <section className="methods" aria-labelledby={`methods-${answerId}`}>
     <h4 id={`methods-${answerId}`}><FileText size={16} aria-hidden />{t('Methods')}</h4>
     <p>
-      {queries === 0 ? t('No search was recorded for this question revision.')
+      {pdfOnly ? t('This answer was made only from the PDFs you attached; no search was run.')
+        : <>{queries === 0 ? t('No search was recorded for this question revision.')
         : <>{t(queries === 1 ? 'One search was sent to {providers}' : '{n} searches were sent to {providers}', { n: num(queries), providers: providers.join(', ') })}{search.chaining.ran ? t(', and citation chaining ran.') : t('; citation chaining did not run.')}</>}{' '}
       {selection.abstract_read > 0
         ? <>{found !== null ? t('The model read the abstracts of {read} of {found} works against the criterion', { read: num(selection.abstract_read), found: num(found) }) : t('The model read the abstracts of {read} works against the criterion', { read: num(selection.abstract_read) })}
@@ -42,7 +45,7 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inR
         : t('No model reading of abstracts is recorded.')}{' '}
       {selection.full_text_read > 0
         ? <>{t(selection.full_text_read === 1 ? '{n} work was read in its full text (selected pages)' : '{n} works were read in their full text (selected pages)', { n: num(selection.full_text_read) })}{selection.included !== null ? t('; included when the answer started: {n}.', { n: num(selection.included) }) : '.'}</>
-        : t('No model reading of full texts is recorded.')}{' '}
+        : t('No model reading of full texts is recorded.')}</>}{' '}
       {abstractOnly > 0 && <>{t(abstractOnly === 1 ? '{n} work was given to the answer from its abstract only; where cited it is labelled “From abstract”.' : '{n} works were given to the answer from their abstracts only; where cited they are labelled “From abstract”.', { n: num(abstractOnly) })}{' '}</>}
       <span className="ok">{t('Every citation resolves to a stored passage given to this step.')}</span>{' '}
       {answer.review?.status === 'completed' ? t('Claim support was reviewed by the reviewer model.')
@@ -54,7 +57,7 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inR
     <div className="method-detail">
       <section>
         <p className="flow-head">{t('Approach')}</p>
-        <p className="method-text">{t('{providers} searched.', { providers: providers.length ? providers.join(', ') : t('No provider was') })} {selection.abstract_read > 0 ? t('A model read {n} abstracts.', { n: num(selection.abstract_read) }) : t('No model reading of abstracts is recorded.')} {selection.full_text_read > 0 ? t('A model read selected passages from the full text of {n} works.', { n: num(selection.full_text_read) }) : t('No model reading of full texts is recorded.')} {selection.person_decisions > 0 ? t('You decided {n} works yourself.', { n: num(selection.person_decisions) }) : t('No decision by you is recorded.')}</p>
+        <p className="method-text">{pdfOnly ? t('This answer was made only from the PDFs you attached; no search was run.') : <>{providers.length ? t('{providers} searched.', { providers: providers.join(', ') }) : t('No provider was searched.')} {selection.abstract_read > 0 ? t('A model read {n} abstracts.', { n: num(selection.abstract_read) }) : t('No model reading of abstracts is recorded.')} {selection.full_text_read > 0 ? t('A model read selected passages from the full text of {n} works.', { n: num(selection.full_text_read) }) : t('No model reading of full texts is recorded.')}</>} {selection.person_decisions > 0 ? t('You decided {n} works yourself.', { n: num(selection.person_decisions) }) : pdfOnly ? '' : t('No decision by you is recorded.')}</p>
         <p className="flow-note">{t('This is not a PRISMA-compliant review.')}</p>
       </section>
       <section>

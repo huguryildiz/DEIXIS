@@ -651,13 +651,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const scope = view.scope
   const literature = { role: 'Literature', connection: scope.literature_model ? scope.literature_connection ?? scope.model_connection : scope.model_connection,
     model: scope.literature_model ?? scope.requested_model, effort: scope.literature_model ? scope.literature_reasoning_effort : scope.reasoning_effort }
-  const embeddingStep = steps.find(s => s.kind.startsWith('embedding:'))
-  const embeddingStoredModel = embeddingStep?.kind.slice('embedding:'.length) ?? ''
-  const { connection: embeddingConnection, model: embeddingModel } = embeddingOf(embeddingStoredModel)
-  const embeddingProviders: Record<string, string> = { gemini: 'Gemini', builtin: 'This computer · built-in', openai: 'OpenAI', ollama: 'Ollama', lm_studio: 'LM Studio' }
   const agents: Partial<Record<PhaseKey, { role: string; connection: string; model: string | null; effort: string | null }>> = {
     plan: run.kind === 'report' ? undefined : literature, screen: literature,
-    semantic: embeddingStep ? { role: embeddingProviders[embeddingConnection], connection: embeddingConnection, model: embeddingModel, effort: null } : undefined,
     answer: { role: 'Answer', connection: answer?.model?.connection ?? scope.model_connection, model: answer?.model?.resolved_model ?? answer?.model?.requested_model ?? scope.requested_model, effort: scope.reasoning_effort },
     review: run.kind === 'review' ? (ownerReview ? { role: 'Review', connection: ownerReview.card.requested_model.connection, model: ownerReview.card.requested_model.model, effort: ownerReview.card.requested_model.reasoning_effort } : undefined) : { role: 'Reviewer', connection: answer?.review?.model?.connection ?? view.reviewer.connection ?? scope.model_connection, model: answer?.review?.model?.resolved_model ?? view.reviewer.model, effort: view.reviewer.reasoning_effort },
   }

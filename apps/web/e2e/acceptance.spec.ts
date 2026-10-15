@@ -484,7 +484,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     const copiedReport = await page.evaluate(() => navigator.clipboard.readText())
     expect(copiedReport).toContain('# Synthetic evidence for release scheduling and optimization in constrained molecular communication networks')
     expect(copiedReport).toContain('## Cited passages')
-    expect(copiedReport).toMatch(/\[Synthetic(\d\d|nd)[a-z]{0,2}[\],]/)  // citations name the source key (D59)
+    expect(copiedReport).toMatch(/\(Synthetic, (\d{4}|n\.d\.)\)|\[[a-z]+(\d{4}|nd)[a-z]*[\],]/)  // citations name the author and year, or the source key (D59)
     const download = page.waitForEvent('download')
     await report.getByRole('button', { name: 'Download report' }).click()
     await page.getByRole('menuitem', { name: /^MD/ }).click()
@@ -495,7 +495,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
 
     const reference = report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule release scheduling with bisection' })
     for (const pill of [/PDF p\. \d/, 'published version']) await expect(reference.locator('.ref-pills')).toContainText(pill)
-    await expect(reference.locator('.ref-key')).toHaveText(/^Synthetic(\d\d|nd)[a-z]{0,2}$/)
+    await expect(reference.locator('.ref-key')).toHaveText(/^[a-z]+(\d{4}|nd)[a-z]*$/)
     await reference.scrollIntoViewIfNeeded()
     await shot(page, 'D59-answer-references')
     await reference.getByRole('button').click()
@@ -739,7 +739,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     // A row's source opens the source details panel; the row and the panel show the same source key (D59).
     const firstRow = page.locator('.evidence-grid tbody tr').first()
     const rowKey = (await firstRow.locator('.source-key').innerText()).trim()
-    expect(rowKey).toMatch(/^Synthetic(\d\d|nd)[a-z]{0,2}$/)
+    expect(rowKey).toMatch(/^[a-z]+(\d{4}|nd)[a-z]*$/)
     await firstRow.locator('.evidence-row-open').click()
     const details = page.getByRole('dialog', { name: 'Source details' })  // the table's own source sheet
     await expect(details.locator('.source-venue .source-key')).toHaveText(rowKey)

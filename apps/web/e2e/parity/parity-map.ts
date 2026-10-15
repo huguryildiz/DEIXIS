@@ -189,7 +189,7 @@ export const SURFACES: Surface[] = [
     appAct: async page => {
       await page.locator('.answer-thread .answer-prose .cite-chip[title*="PDF p."]').first().click()
       await page.locator('.cite-entry .rowacts button').first().click()
-      await page.locator('.source-detail .docnav').waitFor()
+      await page.locator('.source-detail .pdf-text-citation').waitFor()
     } },
   // S14: the queue (P39), Get more full text (P40), Search funnel (P41) and Activity (P34) panels, each opened fresh. The
   // queue is ready once its last card's detail is read (its answers turn on); the funnel once its unscreened page is in.
@@ -975,17 +975,17 @@ export const PAIRS: Pair[] = [
     icon: { mock: 'file', app: 'file-text' }, text: true, states: [], status: 'active' },
   { id: 'detail-panel.back', surface: 'detail-panel', mock: '.panel .p-head [data-act="back"]', app: '.split-panel-head [aria-label="Back"]', checks: ['chrome', 'colour', 'icon'],
     icon: { mock: 'left', app: 'chevron-left' }, unordered: true, states: [], status: 'active' },
-  { id: 'detail-panel.venue', surface: 'detail-panel', mock: '.detail .dhead .venue', app: '.source-detail .dhead .venue', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
-  { id: 'detail-panel.work', surface: 'detail-panel', mock: '.detail h1', app: '.source-detail .dhead .source-title', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
-  { id: 'detail-panel.authors', surface: 'detail-panel', mock: '.detail .dhead .au', app: '.source-detail .dhead .au', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
-  { id: 'detail-panel.pills', surface: 'detail-panel', mock: '.detail .dhead .pill', app: '.source-detail .dhead .pills .ref-pill', checks: ['chrome', 'type', 'colour'], list: 'data', expected: () => 2, states: [], status: 'active' },
-  { id: 'detail-panel.dmeta', surface: 'detail-panel', mock: '.detail .dmeta', app: '.source-detail .dmeta', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
+  { id: 'detail-panel.venue', surface: 'detail-panel', mock: '.detail .dhead .venue', app: '.source-detail .dhead .venue', checks: ['chrome', 'type', 'colour'], states: [], status: 'pending:source-detail-redesign', why: 'Owner-approved premium Source details (6d8cec9b): serif title, status pills and a restyled action row replace the v24 header; compared against the approved redesign mockup, not v24' },
+  { id: 'detail-panel.work', surface: 'detail-panel', mock: '.detail h1', app: '.source-detail .dhead .source-title', checks: ['chrome', 'type', 'colour'], states: [], status: 'pending:source-detail-redesign', why: 'Owner-approved premium Source details (6d8cec9b): serif title, status pills and a restyled action row replace the v24 header; compared against the approved redesign mockup, not v24' },
+  { id: 'detail-panel.authors', surface: 'detail-panel', mock: '.detail .dhead .au', app: '.source-detail .dhead .au', checks: ['chrome', 'type', 'colour'], states: [], status: 'pending:source-detail-redesign', why: 'Owner-approved premium Source details (6d8cec9b): serif title, status pills and a restyled action row replace the v24 header; compared against the approved redesign mockup, not v24' },
+  { id: 'detail-panel.pills', surface: 'detail-panel', mock: '.detail .dhead .pill', app: '.source-detail .dhead .pills .ref-pill', checks: ['chrome', 'type', 'colour'], list: 'data', expected: () => 2, states: [], status: 'pending:source-detail-redesign', why: 'Owner-approved premium Source details (6d8cec9b): serif title, status pills and a restyled action row replace the v24 header; compared against the approved redesign mockup, not v24' },
+  { id: 'detail-panel.dmeta', surface: 'detail-panel', mock: '.detail .dmeta', app: '.source-detail .dmeta', checks: ['chrome', 'type', 'colour'], states: [], status: 'pending:source-detail-redesign', why: 'Owner-approved premium Source details (6d8cec9b): the meta line became a row of status pills, so the v24 text line no longer applies' },
   { id: 'detail-panel.primary', surface: 'detail-panel', mock: '.detail .dacts .btn-pri', app: '.source-detail .dacts .btn-pri', checks: ['chrome', 'type', 'colour', 'icon'], text: true,
-    icon: { mock: 'file', app: 'file-text' }, states: ['hover'], status: 'active' },
+    icon: { mock: 'file', app: 'file-text' }, states: ['hover'], status: 'pending:source-detail-redesign', why: 'Owner-approved premium Source details (6d8cec9b): serif title, status pills and a restyled action row replace the v24 header; compared against the approved redesign mockup, not v24' },
   { id: 'detail-panel.icons', surface: 'detail-panel', mock: '.detail .dacts .ib', app: '.source-detail .dacts .ib', checks: ['chrome', 'colour', 'icon'], list: 'fixed', text: false,
-    icon: [{ mock: 'link', app: 'link' }, { mock: 'copy', app: 'copy' }, { mock: 'more', app: 'ellipsis' }], states: [], status: 'active' },
-  { id: 'detail-panel.tabs', surface: 'detail-panel', mock: '.detail .tabs button', app: '.source-detail [role=tablist] [role=tab]', checks: ['chrome', 'type'], list: 'fixed', states: [], status: 'active' },
-  { id: 'detail-panel.docnav', surface: 'detail-panel', mock: '.detail .docnav', app: '.source-detail .docnav', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
+    icon: [{ mock: 'link', app: 'link' }, { mock: 'copy', app: 'copy' }, { mock: 'more', app: 'ellipsis' }], states: [], status: 'pending:source-detail-redesign', why: 'Owner-approved premium Source details (6d8cec9b): serif title, status pills and a restyled action row replace the v24 header; compared against the approved redesign mockup, not v24' },
+  { id: 'detail-panel.tabs', surface: 'detail-panel', mock: '.detail .tabs button', app: '.source-detail [role=tablist] [role=tab]', checks: ['chrome', 'type'], list: 'fixed', states: [], status: 'pending:source-detail-redesign', why: 'Owner-approved premium Source details (6d8cec9b): serif title, status pills and a restyled action row replace the v24 header; compared against the approved redesign mockup, not v24' },
+  { id: 'detail-panel.docnav', surface: 'detail-panel', mock: '.detail .docnav', app: '.source-detail .pdf-text-citation', checks: ['chrome', 'type', 'colour'], states: [], status: 'pending:source-detail-redesign', why: 'Owner-approved premium Source details (6d8cec9b): the v24 document-nav strip is replaced by one cited-passage card with contents and citation-map rail' },
   { id: 'detail-panel.foot', surface: 'detail-panel', mock: '.detail > p.foot-note:last-child', app: '.source-detail .source-sheet-foot', checks: ['chrome', 'type', 'colour'], states: [], status: 'active' },
   // S14 queue panel (P39): the intro, then one card per row (the fixture's three), each with its head, title and answers.
   { id: 'queue.title', surface: 'queue-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],

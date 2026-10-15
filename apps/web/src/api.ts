@@ -360,8 +360,9 @@ export type OcrRead = {
 // PyMuPDF, which reads every PDF's text layer; it comes with DEIXIS.
 export type PdfReader = { available: boolean; version: string; mupdf_version: string }
 // An update check of a PDF tool, run only when asked; `tested` is the version DEIXIS pins (Marker, PyMuPDF).
-export type ToolUpdate = { tool: 'tesseract' | 'marker' | 'pymupdf'; installed: string | null; tested: string | null; latest: string | null; update_available: boolean | null; command: string | null; error: string | null }
-export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: string | null }
+export type ToolUpdate = { tool: 'tesseract' | 'marker' | 'pymupdf'; installed: string | null; tested: string | null; latest: string | null; update_available: boolean | null; error: string | null }
+export type OcrJob = { status: 'running' | 'succeeded' | 'failed'; phase: 'preparing' | 'downloading' | 'installing'; output: string; started_at: string; finished_at: string | null }
+export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: string | null; can_install: boolean; job: OcrJob | null }
 // What became of a cited passage's file since it was stored (D45).
 export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded'
 export type ReplacedAsset = { id: string; original_filename: string | null; removed_at: string; replaced_by_asset_id: string }
@@ -1301,6 +1302,7 @@ export const api = {
   rereadEquations: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/equations`, { method: 'POST' }),
   ocr: () => request<OcrTool>('/api/ocr'),
+  installOcr: () => request<{ job: OcrJob }>('/api/ocr/install', { method: 'POST' }),
   pdfReader: () => request<PdfReader>('/api/pdf-reader'),
   toolUpdate: (tool: ToolUpdate['tool']) => request<ToolUpdate>(`/api/tool-updates/${tool}`),
   // Starts a pdf_ocr run that reads the PDF's pages without text with the local Tesseract (D51).

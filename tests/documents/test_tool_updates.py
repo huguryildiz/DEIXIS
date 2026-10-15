@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import httpx
 from fastapi.testclient import TestClient
 
@@ -42,14 +44,35 @@ def test_each_tool_reports_its_installed_and_latest_version(tmp_path, monkeypatc
         client = session(raw)
         tesseract = client.get("/api/tool-updates/tesseract").json()
         assert (tesseract["installed"], tesseract["latest"], tesseract["update_available"]) == ("5.5.2", "5.5.3", True)
-        assert tesseract["command"] == tool_updates.UPGRADE_COMMAND
 
         marker = client.get("/api/tool-updates/marker").json()  # not installed in this data folder
         assert (marker["installed"], marker["tested"], marker["latest"], marker["update_available"]) == (None, "1.10.2", "2.0.0", None)
-        assert marker["command"] is None  # pinned: a newer Marker comes with a DEIXIS update
 
         pymupdf = client.get("/api/tool-updates/pymupdf").json()
         assert pymupdf["installed"] == client.get("/api/pdf-reader").json()["version"]
         assert pymupdf["latest"] is None and pymupdf["update_available"] is None and "503" in pymupdf["error"]
 
         assert client.get("/api/tool-updates/zotero").status_code == 404
+
+
+def test_tesseract_installs_with_the_fixed_homebrew_command_and_reports_its_step(tmp_path, monkeypatch):
+    brew = tmp_path / "brew"
+    brew.write_text('#!/bin/sh\necho "$@" > "$(dirname "$0")/args"\necho "==> Fetching tesseract"\necho "==> Pouring tesseract"\n')
+    brew.chmod(0o755)
+    monkeypatch.setattr(tool_updates, "brew", lambda: str(brew))
+    monkeypatch.setattr(ocr, "tesseract_status", lambda langs=ocr.LANGUAGES: {"available": True, "version": "5.5.2"})
+    with client_for(tmp_path) as raw:
+        client = session(raw)
+        assert client.get("/api/ocr").json()["job"] is None
+        assert client.post("/api/ocr/install").json()["job"]["status"] == "running"
+        for _ in range(100):
+            job = client.get("/api/ocr").json()["job"]
+            if job["status"] != "running":
+                break
+            time.sleep(0.05)
+        assert (job["status"], job["phase"]) == ("succeeded", "installing")
+        assert (tmp_path / "args").read_text().split() == list(tool_updates.INSTALL_ARGS)
+
+        monkeypatch.setattr(tool_updates, "brew", lambda: None)
+        missing = client.post("/api/ocr/install")
+        assert missing.status_code == 422 and client.get("/api/ocr").json()["can_install"] is False

@@ -127,7 +127,7 @@ def test_the_tool_status_and_each_pdf_s_ocr_state_are_shown_for_the_interface(tm
     fake_reader(monkeypatch)
     with TestClient(app_for(tmp_path)) as raw:
         client = session(raw)
-        assert client.get("/api/ocr").json() == READY
+        assert client.get("/api/ocr").json().items() >= READY.items()
         rid = create(client, source_scope="attached")
         svid, aid = upload(client, rid, SCAN)
 

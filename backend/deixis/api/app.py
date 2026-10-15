@@ -2181,10 +2181,23 @@ def create_app(
             raise HTTPException(404, "Asset is not the PDF in use for this source")
         return asset
 
+    tesseract_installer = tool_updates.TesseractInstaller()
+
     @app.get("/api/ocr")
     async def ocr_status() -> dict[str, Any]:
-        """The local Tesseract: installed or not, its version, the languages it can read and the install command (D51)."""
-        return await asyncio.to_thread(ocr.tesseract_status)
+        """The local Tesseract: installed or not, its version, the languages it can read, and its install job (D51)."""
+        status = await asyncio.to_thread(ocr.tesseract_status)
+        return status | {"can_install": tool_updates.brew() is not None, "job": tesseract_installer.job}
+
+    @app.post("/api/ocr/install", status_code=202)
+    async def install_ocr() -> dict[str, Any]:
+        """Install or update Tesseract and its language data with Homebrew; the panel polls `/api/ocr` for the step."""
+        try:
+            return {"job": tesseract_installer.start()}
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except LookupError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @app.get("/api/pdf-reader")
     async def pdf_reader_status() -> dict[str, Any]:

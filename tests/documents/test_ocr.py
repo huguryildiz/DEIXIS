@@ -50,7 +50,7 @@ def test_tesseract_status_reports_the_tool_and_the_languages_it_lacks(monkeypatc
     monkeypatch.setattr(ocr.shutil, "which", lambda name: None)
     missing = ocr.tesseract_status(("eng", "tur"))
     assert (missing["available"], missing["languages"]) == (False, [])
-    assert "brew install tesseract tesseract-lang" in missing["reason"]
+    assert "Settings → On this computer → OCR" in missing["reason"]
 
 
 @needs_tesseract

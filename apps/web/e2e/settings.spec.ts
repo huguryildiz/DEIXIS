@@ -138,7 +138,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.getByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true')
     await page.goto(server.url('#/settings/sources'))
     const computer = page.locator('.grid3[data-group="computer"] .conn-name')
-    await expect(computer).toHaveText(['Codex CLI', 'Claude Code', 'OCR (Tesseract)', 'Local model servers', 'Equation reader (Marker)'])
+    await expect(computer).toHaveText(['Codex CLI', 'Claude Code', 'OCR (Tesseract)', 'Local model servers', 'Equation reader (Marker)', 'PDF reader (PyMuPDF)'])
     // Scholarly sources: the mockup's five first, then the other registered connectors.
     const sources = page.locator('.grid3[data-group="sources"] .conn-name')
     await expect(sources.nth(0)).toHaveText('OpenAlex')
@@ -524,18 +524,18 @@ test.describe.serial('S24: the Settings page', () => {
 
   test('a failed check says it could not check and adds no new time (Sol r1)', async () => {
     let fail = false
-    await page.route(url => url.pathname === '/api/ocr', route => fail ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC OCR check failure' } }) : route.fallback())
+    await page.route(url => url.pathname === '/api/equation-reader', route => fail ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC reader check failure' } }) : route.fallback())
     await page.goto(server.url('#/settings'))
     await page.reload()
-    await page.getByRole('button', { name: /^OCR \(Tesseract\)/ }).click()
-    const sheet = page.getByRole('dialog', { name: 'OCR (Tesseract)' })
+    await page.getByRole('button', { name: /^Equation reader \(Marker\)/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'Equation reader (Marker)' })
     const find = sheet.getByRole('button', { name: 'Find it on this computer' })
     await find.click()
     await expect(sheet.locator('.dmeta')).toContainText(/checked \d/)
     const pill = await sheet.locator('.dmeta > span').first().innerText()
     fail = true
     await find.click()
-    await expect(sheet.locator('.check-failed')).toHaveText(/^Could not check: .*SYNTHETIC OCR check failure/)
+    await expect(sheet.locator('.check-failed')).toHaveText(/^Could not check: .*SYNTHETIC reader check failure/)
     await expect(sheet.locator('.dmeta')).not.toContainText(/checked \d/)
     // The state shown is still the last one read; nothing new is claimed.
     await expect(sheet.locator('.dmeta > span').first()).toHaveText(pill)

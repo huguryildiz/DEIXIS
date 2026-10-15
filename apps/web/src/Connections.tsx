@@ -208,14 +208,13 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true }: { tool: Loc
     </>}
     {!tool.installed && (tool.install.available
       ? <>
-        <div className="cmd"><code>{tool.install.command.split(' ').map((word, i) => <span key={i}>{i > 0 && ' '}<span>{word}</span></span>)}</code></div>
-        <div className="actions"><Button variant="outline" size="sm" onClick={() => setConfirmOpen(true)}>{t('Install')}</Button></div>
-        <ConfirmDialog open={confirmOpen} dark={dark} title={t('Install {name}?', { name })} description={t('This runs the command below on this computer.')} context={tool.install.command} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={install} onOpenChange={setConfirmOpen} />
+        {!running && <div className="actions"><Button size="sm" onClick={() => setConfirmOpen(true)}>{t('Install')}</Button></div>}
+        <ConfirmDialog open={confirmOpen} dark={dark} title={t('Install {name}?', { name })} description={t('DEIXIS installs it on this computer.')} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={install} onOpenChange={setConfirmOpen} />
       </>
       : <p className="local-tool-note">{tool.install.unavailable_reason}<br /><a href={tool.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
     {tool.job && <>
       {running
-        ? <p className="local-tool-note local-tool-progress-head"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Installing…')}</p>
+        ? <InstallProgress label={t('Installing…')} />
         : <p className="local-tool-note">{t(tool.job.status === 'succeeded' ? 'Install finished.' : tool.job.status === 'cancelled' ? 'Installation cancelled.' : 'Install failed.')}</p>}
       {tool.job.status === 'failed' && <>
         {errorLines(tool.job.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
@@ -317,33 +316,36 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
   </div>
 }
 
-// An update check for a PDF tool, sent only when the user asks. Tesseract is the user's own install, so the result names
-// the Homebrew command; Marker and PyMuPDF are pinned by DEIXIS and a newer release arrives with a DEIXIS update.
-function ToolUpdateCheck({ tool }: { tool: ToolUpdate['tool'] }) {
-  const [result, setResult] = useState<ToolUpdate | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const toast = useToast()
-  function check() {
-    setBusy(true); setError('')
-    api.toolUpdate(tool).then(setResult, (e: Error) => setError(e.message)).finally(() => setBusy(false))
-  }
-  const copy = (text: string) => { writeClipboard(text).then(() => toast('success', t('Command copied.')), () => toast('error', t('Could not copy; select the command and copy it.'))) }
-  const pinned = tool !== 'tesseract'
-  const line = !result ? null
-    : result.error || !result.latest ? t('Could not reach the release list: {message}', { message: result.error ?? '' })
-    : !result.installed ? t('Latest release: {latest}. It is not installed here.', { latest: result.latest })
-    : !result.update_available ? t('Up to date ({version}).', { version: result.installed })
-    : pinned ? t('{latest} is out; DEIXIS uses {tested}, the version its reading was tested with. It is updated with DEIXIS.', { latest: result.latest, tested: result.tested ?? result.installed })
-    : t('{latest} is out; this computer has {installed}. Run this in a terminal to update:', { latest: result.latest, installed: result.installed })
-  const stale = pinned && result?.installed && result.tested && result.installed !== result.tested
-  return <div className="tool-update">
-    <div className="actions"><Button variant="outline" size="sm" onClick={check} disabled={busy}>{busy ? <LoaderCircle className="chat-spin" aria-hidden /> : <RefreshCw aria-hidden />}{t('Check for updates')}</Button></div>
-    {error && <p className="local-tool-error">{error}</p>}
-    {line && <p className="local-tool-note" role="status">{line}</p>}
-    {stale && <p className="local-tool-note">{t('The installed Marker is {installed}, not {tested}. Remove it and install it again to get the tested version.', { installed: result.installed ?? '', tested: result.tested ?? '' })}</p>}
-    {result?.update_available && result.command && <div className="cmd-row"><code className="field mono">{result.command}</code><button type="button" className="ghost" onClick={() => copy(result.command!)}><Copy aria-hidden />{t('Copy')}</button></div>}
+// An indeterminate bar: the installers report the step they are on, not a fraction.
+function InstallProgress({ label }: { label: string }) {
+  return <div className="install-progress" role="status">
+    <span className="install-progress-label"><LoaderCircle size={14} className="chat-spin" aria-hidden />{label}</span>
+    <div className="install-progress-bar" aria-hidden><span /></div>
   </div>
+}
+
+// The release check for a PDF tool, sent when its panel opens; it answers in one quiet line. Marker and PyMuPDF are
+// pinned by DEIXIS, so a newer release arrives with a DEIXIS update. A failed check shows nothing.
+function useToolUpdate(tool: ToolUpdate['tool'], key: unknown = null) {
+  const [result, setResult] = useState<ToolUpdate | null>(null)
+  useEffect(() => {
+    let live = true
+    api.toolUpdate(tool).then(r => { if (live) setResult(r) }, () => { if (live) setResult(null) })
+    return () => { live = false }
+  }, [tool, key])
+  return result?.error || !result?.latest ? null : result
+}
+
+function ToolUpdateCheck({ tool }: { tool: 'marker' | 'pymupdf' }) {
+  const result = useToolUpdate(tool)
+  if (!result?.installed) return null
+  const stale = result.tested && result.installed !== result.tested
+  return <>
+    <p className="local-tool-note" role="status">{result.update_available
+      ? t('Version {latest} comes with the next DEIXIS update.', { latest: result.latest ?? '' })
+      : t('Up to date.')}</p>
+    {stale && <p className="local-tool-note">{t('The installed Marker is {installed}, not {tested}. Remove it and install it again to get the tested version.', { installed: result.installed, tested: result.tested ?? '' })}</p>}
+  </>
 }
 
 // PyMuPDF reads the text layer of every PDF; it comes with DEIXIS, so there is nothing to install.
@@ -360,19 +362,41 @@ function PdfReaderDetails({ reader }: { reader: PdfReader }) {
   </div>
 }
 
-// The local OCR tool (D51): detected, not installed by DEIXIS.
-function OcrToolDetails({ tool }: { tool: OcrTool }) {
+// The local OCR tool (D51). Install and Update run the one fixed Homebrew command on the server; the panel shows its step.
+function OcrToolDetails({ tool, onChanged }: { tool: OcrTool; onChanged: () => Promise<unknown> }) {
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
+  const job = tool.job
+  const running = job?.status === 'running'
+  const ready = tool.available && !tool.missing_languages.length
+  const update = useToolUpdate('tesseract', tool.version)
+  function install() {
+    setBusy(true)
+    api.installOcr().then(() => onChanged()).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
+  const phase = { preparing: 'Preparing…', downloading: 'Downloading…', installing: 'Installing…' }[job?.phase ?? 'preparing']
   return <div className="local-tool-details-panel">
-    <span className={`status-chip ${tool.available && !tool.missing_languages.length ? '' : 'is-configured'}`}>{t(!tool.available ? 'Not installed' : tool.missing_languages.length ? 'Installed · languages missing' : 'Installed')}</span>
     <p className="local-tool-note">{t('Tesseract reads scanned PDF pages that have no selectable text when you choose Read with OCR on a source. It runs on this computer, no file leaves it, and the PDF is not changed.')}</p>
     <p className="local-tool-note">{t('Text read by OCR is labelled wherever it is quoted. In a test on four scanned articles, 0.2–1.5% of characters were misread and equations were unusable, so check numbers and equations against the page.')}</p>
-    <dl className="local-tool-facts">
-      <dt>{t('Version')}</dt><dd>{tool.version ?? t('not found')}</dd>
-      {tool.available && <><dt>{t('Languages')}</dt><dd>{ocrLanguagesText(tool.languages)}</dd></>}
+    {tool.version && <dl className="local-tool-facts">
+      <dt>{t('Version')}</dt><dd>{tool.version}{ready && update && !update.update_available && <span className="local-tool-uptodate"> · {t('up to date')}</span>}</dd>
+      {tool.languages.length > 0 && <><dt>{t('Languages')}</dt><dd>{ocrLanguagesText(tool.languages)}</dd></>}
       {tool.missing_languages.length > 0 && <><dt>{t('Missing')}</dt><dd>{ocrLanguagesText(tool.missing_languages)}</dd></>}
-    </dl>
-    {tool.reason && <p className="local-tool-note">{tool.reason}</p>}
-    {tool.available && <ToolUpdateCheck tool="tesseract" />}
+    </dl>}
+    {running
+      ? <InstallProgress label={t(phase)} />
+      : !ready
+        ? (tool.can_install
+          ? <div className="actions"><Button size="sm" onClick={install} disabled={busy}>{t('Install')}</Button></div>
+          : <p className="local-tool-note">{t('Installing Tesseract needs Homebrew.')} <a href="https://brew.sh" target="_blank" rel="noopener noreferrer">brew.sh</a></p>)
+        : update?.update_available && tool.can_install && <div className="tool-update-row">
+          <span>{t('Version {latest} is available.', { latest: update.latest ?? '' })}</span>
+          <Button size="sm" onClick={install} disabled={busy}>{t('Update')}</Button>
+        </div>}
+    {job?.status === 'failed' && <>
+      <p className="local-tool-error">{t('Install failed.')}</p>
+      {job.output && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{job.output}</pre></details>}
+    </>}
   </div>
 }
 
@@ -571,6 +595,11 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   }, [builtin, loadBuiltin, loadSemantic])
   useEffect(() => { void loadReader() }, [loadReader])
   useEffect(() => { void loadOcr() }, [loadOcr])
+  useEffect(() => {
+    if (ocrTool?.job?.status !== 'running') return
+    const timer = window.setInterval(() => { void loadOcr() }, 1500)
+    return () => window.clearInterval(timer)
+  }, [ocrTool, loadOcr])
   useEffect(() => { api.pdfReader().then(setPdfReader, (e: Error) => setToolsError(e.message)) }, [])
   useEffect(() => {
     if (reader?.job?.status !== 'running' && !reader?.reading) return
@@ -930,9 +959,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   } else if (sel?.kind === 'ocr-tool') {
     body = <>
       {dmeta('ocr-tool', ocrStatus())}
-      <p className="foot-note is-ink">{t('Runs on this computer. Install it once, then test.')}</p>
-      <div className="acts">{checkButton('ocr-tool', 'Find it on this computer', () => loadOcr(true))}</div>
-      {ocrTool && <OcrToolDetails tool={ocrTool} />}
+      {ocrTool && <OcrToolDetails tool={ocrTool} onChanged={() => loadOcr()} />}
     </>
   } else if (sel?.kind === 'pdf-reader') {
     body = <>

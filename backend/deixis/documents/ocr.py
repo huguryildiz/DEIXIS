@@ -23,7 +23,6 @@ import pymupdf
 
 from deixis.documents import pdf
 
-INSTALL_COMMAND = "brew install tesseract tesseract-lang"
 LANGUAGES = ("eng", "tur")
 DPI = 300
 TIMEOUT_SECONDS = 60  # per page; provisional until measured on real scans
@@ -44,7 +43,7 @@ def tesseract_status(langs=LANGUAGES) -> dict:
     """Whether Tesseract is installed, its version, and which of `langs` have data."""
     missing = {"available": False, "version": None, "languages": [], "missing_languages": list(langs)}
     if shutil.which("tesseract") is None:
-        return missing | {"reason": f"Tesseract is not installed. Install it with: {INSTALL_COMMAND}"}
+        return missing | {"reason": "Tesseract is not installed. Install it in Settings → On this computer → OCR."}
     try:
         version = subprocess.run(["tesseract", "--version"], capture_output=True, text=True, timeout=10)
         listed = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, timeout=10)
@@ -54,7 +53,7 @@ def tesseract_status(langs=LANGUAGES) -> dict:
     installed = set(listed.stdout.split()[1:] if listed.returncode == 0 else [])  # the first line is a header
     languages = [lang for lang in langs if lang in installed]
     absent = [lang for lang in langs if lang not in installed]
-    reason = f"Tesseract has no data for {', '.join(absent)}. Install it with: {INSTALL_COMMAND}" if absent else None
+    reason = f"Tesseract has no data for {', '.join(absent)}. Install it in Settings → On this computer → OCR." if absent else None
     return {"available": bool(match and languages), "version": match.group(1) if match else None, "languages": languages,
             "missing_languages": absent, "reason": reason}
 

@@ -80,7 +80,7 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
       const chips = p.error_code && pdfStep ? [{ label: fetchReasonText(String(p.error_code), typeof p.http_status === 'number' ? p.http_status : null), tone: 'neutral' as const }] : errorChip
       return lucide(ListChecks, stepLabel(String(p.kind), String(p.operation_key)), [statusChip(p.status), ...chips])
     }
-    case 'model_call_started': return brand(String(p.connection), t('Model call sent to {connection}', { connection: String(p.connection) }), p.requested_model ? [{ label: String(p.requested_model), tone: 'neutral' }] : [])
+    case 'model_call_started': return brand(String(p.connection), t('Model call sent to {connection}', { connection: connectionName(String(p.connection)) }), p.requested_model ? [{ label: String(p.requested_model), tone: 'neutral' }] : [])
     case 'search_recorded': return brand(String(p.provider), t('{provider} search', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} records', { count: String(p.result_count) }), tone: 'neutral' }])
     case 'pdf_discovery_recorded': return brand(String(p.provider), t('{provider} PDF lookup', { provider: providerName(String(p.provider)) }), [statusChip(p.status), { label: t('{count} candidates', { count: String(p.result_count) }), tone: 'neutral' }, ...errorChip])
     case 'openalex_budget_exhausted': {
@@ -125,6 +125,51 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'asset_restored': return lucide(RotateCcw, t('PDF restored to a source'))
     case 'cell_revision_saved': return lucide(PencilLine, t('Cell revision saved'), [{ label: t(String(p.kind).replaceAll('_', ' ')), tone: 'neutral' }])
     case 'answer_reviewed': return lucide(ShieldCheck, t('Answer review saved'), [statusChip(p.status)])
-    default: return lucide(Activity, event.type)
+    default: return lucide(Activity, plainEventTexts[event.type] ? t(plainEventTexts[event.type]) : event.type.replaceAll('_', ' '))
   }
+}
+
+// Events with no detail of their own: one plain sentence each, so the log never shows a raw event code.
+const plainEventTexts: Record<string, string> = {
+  report_created: 'Report created',
+  report_plan_saved: 'Report outline saved',
+  report_section_created: 'Report section added',
+  report_section_saved: 'Report section saved',
+  report_claims_saved: 'Claims in a report section saved',
+  report_phrase_repair_saved: 'A wording fix in the report was applied',
+  report_phrase_repair_rejected: 'A wording fix in the report was not used',
+  report_finalized: 'Report finished',
+  report_review_saved: 'Report check saved',
+  report_gaps_saved: 'Gaps in the report saved',
+  report_snapshot_saved: 'A version of the report saved',
+  report_claim_edited: 'You edited a claim in the report',
+  report_edits_checked: 'Your report edits were checked',
+  report_changes_acknowledged: 'Report changes marked as seen',
+  report_repair_reverted: 'A report fix was undone',
+  report_repair_restoration_rejected: 'Undoing a report fix was refused',
+  english_question_saved: 'English version of the question saved',
+  followup_asked: 'Follow-up question asked',
+  followup_answered: 'Follow-up question answered',
+  protocol_frozen: 'Search plan fixed',
+  research_model_changed: 'Model for this research changed',
+  seed_selected: 'Starting PDF chosen',
+  read_cutoff: 'Reading stage closed',
+  auto_answer_skipped: 'Automatic answer skipped',
+  run_retry_failed_searches: 'Failed searches queued again.',
+  stage_decision_recorded: 'Source decision recorded',
+  stage_decision_undone: 'Source decision undone',
+  study_table_skipped: 'Study table skipped',
+  study_table_ready: 'Study table ready',
+  study_table_columns_accepted: 'Study table columns accepted',
+  study_table_stopped: 'Study table stopped',
+  fulltext_work_settled: 'Full text of a work settled',
+  screen_more_candidates: 'More works queued for screening',
+  arxiv_source_refused: 'arXiv LaTeX source not used',
+  arxiv_source_withdrawn: 'arXiv LaTeX source withdrawn',
+  pdf_identity_confirmed: 'PDF confirmed as the right paper',
+  pdf_identity_revoked: 'PDF no longer confirmed as the right paper',
+  person_pdf_request: 'PDF requested from a person',
+  waiting_pdf_attached: 'Awaited PDF attached',
+  lineage_changed: 'Development links changed',
+  lookup_version_opened: 'Source version opened',
 }

@@ -394,6 +394,15 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'model:cell_extraction') return t('Cell extraction (model)')
   if (kind === 'model:table_columns') return t('Column suggestions (model)')
   if (kind === 'model:research_title') return t('Research title (model)')
+  if (kind === 'model:report_plan') return t('Report outline (model)')
+  if (kind === 'model:report_section') return t('Writing a report section (model)')
+  if (kind === 'model:report_phrase_repair') return t('Fixing report wording (model)')
+  if (kind === 'model:report_section_anchor_repair') return t('Fixing report citations (model)')
+  if (kind === 'model:report_review') return t('Checking the report (model)')
+  if (kind === 'model:search_query') return t('Search query (model)')
+  if (kind === 'model:vocabulary_labels') return t('Grouping search words (model)')
+  if (kind === 'model:criterion_proposal') return t('Inclusion criterion proposal (model)')
+  if (kind === 'model:followup_answer') return t('Answer to a follow-up question (model)')
   if (kind === 'table_no_text') return t('Source without stored text')
   if (kind.startsWith('provider_search')) return t('{provider} search {n}', { provider: providerName(kind.split(':')[1] ?? ''), n: Number(key.split(':')[1]) + (candidate ? 0 : 1) })
   if (kind === 'code:fulltext_plan') return t('Retrieval plan (code)')
@@ -410,7 +419,41 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'ocr_pages') return t('Finding pages without text')
   if (kind === 'ocr_page') return t('OCR of PDF p. {page}', { page: key.split(':')[2] ?? '?' })
   if (kind === 'ocr_merge') return t('Storing the OCR text')
+  if (kind.startsWith('embedding:')) return t('Ranking passages by meaning ({model})', { model: kind.slice('embedding:'.length) })
+  if (kind.startsWith('code:') && codeStepLabels[kind.slice(5)]) return t(codeStepLabels[kind.slice(5)])
   return kind
+}
+
+// The other code steps, named for the activity log so it never shows a raw step code.
+const codeStepLabels: Record<string, string> = {
+  answer_start_snapshot: 'Preparing the answer input (code)',
+  chain_filter: 'Filtering citation-chain results (code)',
+  criterion: 'Inclusion criterion (code)',
+  external_links: 'External links (code)',
+  fast_chain_read_versions: 'Citation-chain record versions (code)',
+  fast_path_answer_input: 'Preparing the answer input (code)',
+  fast_path_cutoff: 'Closing the reading stage (code)',
+  fast_path_revision_input: 'Preparing the revised answer input (code)',
+  followup_passages: 'Passages for the follow-up question (code)',
+  followup_pool: 'Sources for the follow-up question (code)',
+  lookup_plan: 'Abstract lookup plan (code)',
+  protocol_approval: 'Search plan approval (code)',
+  ranking: 'Ranking the found works (code)',
+  screen_more_answer_out_of_date: 'Checking whether the answer is out of date (code)',
+  screen_more_summary: 'Extra screening summary (code)',
+  search_query: 'Search query (code)',
+  seed_match: 'Matching the starting PDF (code)',
+  seed_match_lookup: 'Looking up the starting PDF (code)',
+  small_batch_baseline: 'Reading baseline (code)',
+  small_batch_close: 'Closing the reading batches (code)',
+  small_batch_deferred: 'Works left for later reading (code)',
+  small_batch_list: 'Reading list (code)',
+  small_batch_plan: 'Reading batch plan (code)',
+  small_batch_summary: 'Reading batch summary (code)',
+  source_routing: 'Choosing the sources to search (code)',
+  user_search_query: 'Your search query (code)',
+  vocabulary: 'Search words from the question (code)',
+  vocabulary_expansion: 'Expanding the search words (code)',
 }
 
 // Why a PDF step gave no file, in plain words; the HTTP status stays in view for the record.

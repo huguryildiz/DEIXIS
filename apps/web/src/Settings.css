@@ -300,6 +300,7 @@
 .connection-sheet .ollama-other{margin-top:10px}
 .connection-sheet .ollama-update{padding:8px 10px;border-radius:8px;background:var(--warn-surface);color:var(--ink-2)}
 .connection-sheet .ollama-update code{font-size:12px}
+.connection-sheet div.ollama-update{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .connection-sheet .ollama-other>summary{cursor:pointer;font-size:12.5px;color:var(--muted)}
 .connection-sheet .ollama-other[open]>summary{margin-bottom:6px}
 .connection-sheet .ollama-pull-form{display:grid;gap:6px;margin:6px 0 0}

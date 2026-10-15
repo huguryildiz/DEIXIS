@@ -720,7 +720,7 @@ export type LocalToolModel = { id: string; size_bytes: number | null; embedding:
 export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; url: string }
 // 'failed' is set by the page itself when the terminal could not be opened (the server answered with an error).
 export type AccountSignIn = { state: 'idle' | 'waiting' | 'succeeded' | 'failed' | 'timed_out'; message: string | null }
-export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string; completed?: number; total?: number } | null
+export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string; completed?: number; total?: number; kind?: 'update' } | null
 export type LocalTool = {
   id: 'claude_code' | 'codex' | 'copilot_cli' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'
   installed: boolean; version: string | null; path: string | null; role: 'runs_steps' | 'detected' | 'imports'
@@ -1321,6 +1321,7 @@ export const api = {
     request<Run>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/ocr`, { method: 'POST' }),
   localTools: (refresh = false) => request<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`),
   installLocalTool: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/install`, { method: 'POST' }),
+  updateLocalTool: (id: 'ollama' | 'lm_studio') => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/update`, { method: 'POST' }),
   pullOllamaModel: (model: string) => request<{ job: LocalTool['pull'] }>('/api/local-tools/ollama/pull', json('POST', { model })),
   cancelOllamaPull: () => request<{ job: LocalTool['pull'] }>('/api/local-tools/ollama/pull/cancel', { method: 'POST' }),
   localToolUpdates: (tool: 'ollama' | 'lm_studio') => request<OllamaUpdates>(`/api/local-tools/${tool}/updates`),

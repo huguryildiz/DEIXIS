@@ -473,7 +473,10 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
   }, [status, onDone])
   // Checked once when the card opens and again after each download; a check that gets no answer shows nothing.
   const [updates, setUpdates] = useState<OllamaUpdates | null>(null)
-  const checkedAfter = pull?.finished_at ?? null
+  // The app's own update (Homebrew's `brew upgrade` or the newer macOS app copied over it) runs as the tool's job.
+  const job = tool.job?.kind === 'update' ? tool.job : null
+  const updating = job?.status === 'running'
+  const checkedAfter = `${pull?.finished_at ?? ''}|${job?.finished_at ?? ''}`
   useEffect(() => {
     let live = true
     api.localToolUpdates(tool.id === 'lm_studio' ? 'lm_studio' : 'ollama').then(u => { if (live) setUpdates(u) }, () => { if (live) setUpdates(null) })
@@ -488,6 +491,10 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
   const suggested = (tool.suggested ?? []).filter(s => !have.has(full(s.id)))
   const research = suggested.filter(s => s.purpose === 'research')
   const embedding = suggested.filter(s => s.purpose === 'embedding')
+  function updateApp() {
+    setBusy(true)
+    api.updateLocalTool(lms ? 'lm_studio' : 'ollama').then(onChanged).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
   function start(model: string) {
     setBusy(true)
     const pulled = lms ? api.pullLmStudioModel(model) : api.pullOllamaModel(model)
@@ -504,12 +511,23 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
     api.deleteOllamaModel(removing).then(() => { setRemoving(null); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
   }
   return <>
-    {updates?.update_available && <p className="local-tool-note ollama-update" role="status">
-      {t('{name} {latest} is available (this computer has {version}).', { name: product, latest: updates.latest ?? '', version: updates.version ?? '' })}{' '}
-      {updates.installed_with === 'homebrew' ? <>{t('Update it in a terminal:')} <code>brew upgrade ollama</code></>
-        : updates.installed_with === 'app' ? t(lms ? 'LM Studio updates itself: open it and choose “Check for Updates…” in its menu.' : 'The Ollama app updates itself: choose “Restart to update” in its menu bar icon.')
-        : <a href={lms ? 'https://lmstudio.ai/download' : 'https://ollama.com/download'} target="_blank" rel="noopener noreferrer">{lms ? 'lmstudio.ai/download' : 'ollama.com/download'}</a>}
-    </p>}
+    {updating
+      ? <InstallProgress percent={job!.total ? Math.min(100, Math.round((job!.completed ?? 0) / job!.total * 100)) : undefined}
+          label={job!.total && (job!.completed ?? 0) < job!.total
+            ? t('Downloading {name}: {done} of {total} MB', { name: product, done: aboutMb(job!.completed ?? 0), total: aboutMb(job!.total) })
+            : t('Updating {name}…', { name: product })} />
+      : updates?.update_available && (updates.installed_with ? <div className="local-tool-note ollama-update" role="status">
+        <span>{t('{name} {latest} is available (this computer has {version}).', { name: product, latest: updates.latest ?? '', version: updates.version ?? '' })}</span>
+        <Button size="sm" disabled={busy || pulling} onClick={updateApp}><RefreshCw size={14} aria-hidden />{t('Update')}</Button>
+      </div>
+      : <p className="local-tool-note ollama-update" role="status">
+        {t('{name} {latest} is available (this computer has {version}).', { name: product, latest: updates.latest ?? '', version: updates.version ?? '' })}{' '}
+        <a href={lms ? 'https://lmstudio.ai/download' : 'https://ollama.com/download'} target="_blank" rel="noopener noreferrer">{lms ? 'lmstudio.ai/download' : 'ollama.com/download'}</a>
+      </p>)}
+    {job?.status === 'failed' && <>
+      <p className="local-tool-error">{t('The update of {name} did not finish.', { name: product })}</p>
+      {errorLines(job.output).map((line, k) => <p key={k} className="local-tool-error">{line}</p>)}
+    </>}
     {pulling && <div className="server-pull">
       <InstallProgress percent={pull!.total ? Math.min(100, Math.round(pull!.completed / pull!.total * 100)) : undefined} label={pull!.total
         ? t('Downloading {model}: {done} of {total} MB', { model: pull!.model, done: aboutMb(pull!.completed), total: aboutMb(pull!.total) })

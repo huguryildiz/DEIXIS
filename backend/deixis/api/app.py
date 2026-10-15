@@ -1373,6 +1373,13 @@ def create_app(
             raise HTTPException(exc.status, str(exc)) from exc
         return {"deleted": body.model}
 
+    @app.post("/api/local-tools/{tool_id}/update", status_code=202)
+    async def update_local_tool(tool_id: str, request: Request) -> dict[str, Any]:
+        try:
+            return {"job": await request.app.state.local_tools.update(tool_id)}
+        except local_tools.ToolError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
     @app.get("/api/local-tools/ollama/updates")
     async def ollama_updates(request: Request) -> dict[str, Any]:
         """A newer Ollama release and changed models: one GitHub request and one ollama.com request per installed model."""

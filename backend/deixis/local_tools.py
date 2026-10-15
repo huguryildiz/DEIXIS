@@ -159,7 +159,15 @@ def _copy_mac_app(dmg: Path, target: Path) -> None:
     subprocess.run(["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", str(mount), str(dmg)],
                    check=True, capture_output=True, text=True, timeout=120)
     try:
-        subprocess.run(["ditto", str(mount / target.name), str(target)], check=True, capture_output=True, text=True, timeout=300)
+        # Copied beside the target and then swapped in, so an update never leaves the older app's files inside the new bundle.
+        fresh, old = target.with_name(f".{target.name}.new"), target.with_name(f".{target.name}.old")
+        shutil.rmtree(fresh, ignore_errors=True)
+        subprocess.run(["ditto", str(mount / target.name), str(fresh)], check=True, capture_output=True, text=True, timeout=300)
+        if target.exists():
+            shutil.rmtree(old, ignore_errors=True)
+            target.rename(old)
+        fresh.rename(target)
+        shutil.rmtree(old, ignore_errors=True)
     finally:
         subprocess.run(["hdiutil", "detach", "-force", str(mount)], capture_output=True, timeout=60)
         shutil.rmtree(mount, ignore_errors=True)
@@ -176,6 +184,12 @@ def _mac_app(tool_id: str) -> tuple[Path, str, str] | None:
 
 def _open_mac_app(app: Path) -> None:
     subprocess.run(["open", "-a", str(app)], check=True, capture_output=True, text=True, timeout=30)
+
+
+def _quit_mac_app(app: Path) -> None:
+    """Ask the app to quit so its files can be replaced; one that is not running is left as it is."""
+    subprocess.run(["osascript", "-e", f'quit app "{app.stem}"'], capture_output=True, timeout=30)
+    time.sleep(2)
 
 
 def machine() -> dict[str, Any]:
@@ -299,6 +313,39 @@ class LocalTools:
         job = {"status": "running", "command": " ".join(tool.install), "started_at": now(), "finished_at": None, "output": ""}
         argv = [manager, *tool.install[1:]]
         return self._start(tool_id, job, lambda tool_id, job: self._run(tool_id, job, argv))
+
+    async def update(self, tool_id: str) -> dict[str, Any]:
+        """Install a newer Ollama or LM Studio the way the installed one came: Homebrew's Ollama with `brew upgrade` (and its
+        service restarted when Homebrew runs it), the macOS app by quitting it and copying the newer app over it."""
+        tool = TOOLS.get(tool_id)
+        if tool_id not in ("ollama", "lm_studio") or tool is None:
+            raise ToolError(404, f"'{tool_id}' is not updated from DEIXIS")
+        if (self._jobs.get(tool_id) or {}).get("status") == "running":
+            raise ToolError(409, f"{tool.name} is already being installed or updated")
+        path = shutil.which(tool.binary)
+        real = os.path.realpath(path) if path else ""
+        brew = shutil.which("brew")
+        job: dict[str, Any] = {"status": "running", "started_at": now(), "finished_at": None, "output": "", "completed": 0, "total": 0,
+                               "kind": "update"}
+        if tool_id == "ollama" and brew and ("/Cellar/" in real or "/homebrew/" in real):
+            job["command"] = "brew upgrade ollama"
+
+            async def run(tool_id: str, job: dict[str, Any]) -> None:
+                await self._run(tool_id, job, [brew, "upgrade", "ollama"])
+                services = await asyncio.to_thread(_command_output, [brew, "services", "list"]) or ""
+                if job["status"] == "succeeded" and any(line.split()[:2] == ["ollama", "started"] for line in services.splitlines()):
+                    job["status"] = "running"
+                    await self._run(tool_id, job, [brew, "services", "restart", "ollama"])
+            return self._start(tool_id, job, run)
+        mac = _mac_app(tool_id)
+        if not mac or not mac[0].exists():
+            raise ToolError(422, f"{tool.name} was not installed by Homebrew or as the macOS app; update it from {tool.url}")
+        job["command"] = f"{mac[0].name} from {mac[2]}"
+
+        async def replace(tool_id: str, job: dict[str, Any]) -> None:
+            await asyncio.to_thread(_quit_mac_app, mac[0])
+            await self._install_mac_app(tool_id, job)
+        return self._start(tool_id, job, replace)
 
     def _start(self, tool_id: str, job: dict[str, Any], run) -> dict[str, Any]:
         self._jobs[tool_id] = job

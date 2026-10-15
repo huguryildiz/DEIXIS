@@ -677,6 +677,50 @@ def test_ollama_updates_compare_the_release_and_each_models_manifest(tmp_path, p
     assert updates["models"] == {"qwen3:8b": True, "nomic-embed-text:latest": False, "gone:latest": None}
 
 
+def test_ollama_from_homebrew_updates_with_brew_upgrade_and_restarts_its_service(client, paths, monkeypatch):
+    ran = []
+
+    async def run(self, tool_id, job, argv):
+        ran.append(argv[1:])
+        job.update(status="succeeded", finished_at="SYNTHETIC")
+
+    monkeypatch.setattr(local_tools.LocalTools, "_run", run)
+    monkeypatch.setattr(local_tools, "_command_output", lambda argv: "Name   Status  User\nollama started SYNTHETIC")
+    paths.update(ollama="/opt/homebrew/bin/ollama", brew="/opt/homebrew/bin/brew")
+    assert client.post("/api/local-tools/ollama/update").status_code == 202
+    for _ in range(50):
+        if len(ran) == 2:
+            break
+        time.sleep(0.02)
+    assert ran == [["upgrade", "ollama"], ["services", "restart", "ollama"]]
+    assert client.post("/api/local-tools/zotero/update").status_code == 404
+
+
+def test_the_ollama_app_updates_by_quitting_it_and_copying_the_newer_app_over_it(tmp_path, paths, monkeypatch):
+    app_path = tmp_path / "Applications" / "Ollama.app"
+    app_path.mkdir(parents=True)
+    events = []
+    monkeypatch.setattr(local_tools, "OLLAMA_MAC", True)
+    monkeypatch.setattr(local_tools, "OLLAMA_MAC_APP", app_path)
+    monkeypatch.setattr(local_tools, "DOWNLOAD_TRANSPORT", httpx.MockTransport(
+        lambda r: httpx.Response(200, content=b"SYNTHETIC dmg") if str(r.url) == local_tools.OLLAMA_MAC_DMG else httpx.Response(404)))
+    monkeypatch.setattr(local_tools, "_quit_mac_app", lambda app: events.append("quit"))
+    monkeypatch.setattr(local_tools, "_copy_mac_app", lambda dmg, target: events.append("copy"))
+    monkeypatch.setattr(local_tools, "_open_mac_app", lambda app: events.append("open"))
+    app = create_app(Settings(data_dir=tmp_path / "upd-app", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(remote)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        c.headers["x-deixis-csrf"] = c.get("/api/session").json()["csrf_token"]
+        job = c.post("/api/local-tools/ollama/update").json()["job"]
+        assert (job["kind"], job["command"]) == ("update", "Ollama.app from ollama.com")
+        for _ in range(50):
+            job = next(t for t in c.get("/api/local-tools").json()["tools"] if t["id"] == "ollama")["job"]
+            if job["status"] != "running":
+                break
+            time.sleep(0.02)
+    assert job["status"] == "succeeded" and events == ["quit", "copy", "open"]
+
+
 def test_ollama_updates_need_a_running_ollama(client):
     refused = client.get("/api/local-tools/ollama/updates")
     assert refused.status_code == 409 and "not running" in refused.json()["detail"]

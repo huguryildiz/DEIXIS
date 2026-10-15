@@ -46,8 +46,8 @@ def manual_answer(monkeypatch):
     """No automatic answer after discovery: it would hold the research's answer slot, and a later discovery or the
     person's own answer request would meet it."""
     freeze = fast_path.freeze_budget
-    def policy(*args):
-        frozen = freeze(*args)
+    def policy(*args, **kwargs):
+        frozen = freeze(*args, **kwargs)
         frozen.pop("policy_hash")
         frozen["auto_answer"] = False
         return frozen | {"policy_hash": canonical.sha256_hex(frozen)}
@@ -241,8 +241,8 @@ def test_fetch_limit_is_frozen_on_resume_and_later_discovery_takes_tail(tmp_path
     # The fast read's work limit is its frozen K; text already here counts in the same K slots.
     freeze = fast_path.freeze_budget
     limit = 2
-    def bounded(budget, effort):
-        policy = freeze(budget, effort)
+    def bounded(budget, effort, **kwargs):
+        policy = freeze(budget, effort, **kwargs)
         policy.pop("policy_hash")
         policy["K"] = limit
         policy["auto_answer"] = False  # no answer run queued between the two discoveries

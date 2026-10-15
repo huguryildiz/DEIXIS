@@ -42,11 +42,16 @@ def elapsed(start: str, end: str) -> int:
     return max(0, delta // timedelta(milliseconds=1))
 
 
-def freeze_budget(budget: dict[str, Any], effort: str) -> dict[str, Any]:
+def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False) -> dict[str, Any]:
+    """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
+    read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
+    leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
+    call still has its own limit (openai_compat.LOCAL_TURN_TIMEOUT)."""
     bases, n, k, cap, seeds, backward, forward = MODES[effort]
+    enforced = ["search", "ranking"] if local_model else ["search", "ranking", "read", "answer"]
     policy = {
-        "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["search", "ranking", "read", "answer"],
-        "enforced_stages": ["search", "ranking", "read", "answer"], "background_fetch_slots": 4,
+        "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": list(enforced),
+        "enforced_stages": enforced, "background_fetch_slots": 4,
         "approval_mode": "unattended", "auto_answer": True,
         "late_revision": {"mode": "auto", "max_revisions": 1},
         "mode": "deep" if effort == "detailed" else effort,

@@ -82,6 +82,8 @@ CONNECTIONS = {c.id: c for c in (QWEN, KIMI, MISTRAL, GROK, COPILOT, GLM, MUSE_S
 # llama.cpp, Jan, LocalAI, vLLM and the like: the address is set in Settings and read at each call, so this one is not
 # in CONNECTIONS, whose addresses are fixed.
 LOCAL_SERVER = CompatConnection("local_server", "Local server", "", None)
+# Connections whose model runs on this computer (Ollama; LM Studio and other servers through the local server).
+LOCAL_CONNECTIONS = frozenset({OLLAMA.id, LOCAL_SERVER.id})
 LOCAL_SERVER_SETTING = "local_server_url"
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 # One connection per key; the two Muse connections share Meta's key, and its check lists either's models.

@@ -49,7 +49,7 @@ from deixis.models.copilot_cli import CopilotCliAdapter
 from deixis.models.deepseek import DeepSeekAdapter
 from deixis.models.gemini_cli import GeminiCliAdapter
 from deixis.models.openai_compat import CONNECTIONS as COMPAT_CONNECTIONS, OpenAICompatAdapter
-from deixis.models.openai_compat import LOCAL_SERVER, LOCAL_SERVER_SETTING, loopback_client, loopback_url
+from deixis.models.openai_compat import LOCAL_CONNECTIONS, LOCAL_SERVER, LOCAL_SERVER_SETTING, loopback_client, loopback_url
 from deixis.models.anthropic_api import AnthropicAdapter
 from deixis.models.openai_api import OpenAIAdapter
 from deixis.models.gemini import GeminiAdapter
@@ -1623,7 +1623,8 @@ def create_app(
                 # would have had (slice 17a); the mode is frozen here, so a run keeps the path it was queued with.
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
             budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
-            budget["fast_path"] = fast_path.with_intent(fast_path.freeze_budget(budget, scope["effort"]),
+            budget["fast_path"] = fast_path.with_intent(fast_path.freeze_budget(
+                budget, scope["effort"], local_model=scope["model_connection"] in LOCAL_CONNECTIONS),
                                                         store.research(research_id)["intent"])
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.

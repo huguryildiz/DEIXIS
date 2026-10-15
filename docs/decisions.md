@@ -4,6 +4,15 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D39 — A local model gets calls one at a time and no read or answer deadline
+Status: accepted · Date: 2026-10-15 · Writer: Claude
+Context: A Quick research on qwen3.5:9b through Ollama (15 Oct) passed 1 of 10 model calls: parallel calls queued behind each other past the 300 s call limit, the model wrote long thinking text, the 53K-token answer input exceeded the 32K context Ollama loaded, and abstract screening was cut at the 60 s read stage. With calls sequential, thinking off and a sized context, the same research finished (10/10 planning calls, 5 claims on 5 sources, 41 min), but screening was still cut. The owner chose no time limit for local models (15 Oct).
+Decision:
+- `OpenAICompatAdapter` on a keyless connection (Ollama, the local server that LM Studio uses) sends one call at a time and gives each call 1,200 s instead of 300 s.
+- Ollama steps go to its own `/api/chat` with `think: false`, the step schema as `format` and `num_ctx` sized to the input (characters / 3 + 8,192, in 8,192 steps, capped at the model's context length from `/api/show`). An input over that length fails before sending; nothing is cut silently.
+- A discovery run whose model connection is in `openai_compat.LOCAL_CONNECTIONS` freezes `enforced_stages = ["search", "ranking"]`: the read and answer stages have no deadline. Search and ranking do not wait on the model and keep theirs. Hosted connections freeze the same policy as before.
+Limits: LM Studio's thinking and context length cannot be set through the OpenAI-compatible endpoint; they are chosen when the model is loaded there. A local run can now take an hour or more on Quick; the per-call limit is the only bound on a stuck model. Pause and cancel still work. Home's depth text still shows the hosted minutes.
+
 ## D38 — Work keys read as first author, four-digit year and first title word, like "zeng2022multiparty"
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: Keys were the first author's family name cut to 10 letters plus a two-digit year ("Nakano13"); a work with no author got its first title word ("Multipartynd"). The owner wants the Google Scholar / BibTeX form, e.g. `zeng2022multiparity` (15 Oct).

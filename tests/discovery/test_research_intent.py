@@ -209,3 +209,26 @@ def test_intent_outcome_shows_only_the_latest_discovery_of_the_question(tmp_path
     assert second["status"] == "completed" and second["scope_revision"] == first["scope_revision"]
     assert len(tables) == 1 and len(skipped) == 1  # the earlier skip is still stored, as history
     assert view["intent_outcome"] is None
+
+
+def test_a_local_model_run_keeps_no_read_or_answer_deadline(tmp_path, monkeypatch):
+    """Owner 15 Oct 2026: a research on Ollama or the local server (LM Studio) has no time limit on the stages where
+    the model works; search and ranking keep theirs, and a hosted connection's policy is unchanged."""
+    app = app_for(tmp_path, monkeypatch, Pool([work(n) for n in range(3)]))
+    client = client_of(app)
+    try:
+        app.state.adapters["ollama"] = app.state.adapters["fake"]
+        frozen = {}
+        for connection in ("fake", "ollama"):
+            rid = client.post("/api/researches", json={
+                "question": "How does irrigation scheduling affect marketable yield in greenhouse tomato production?",
+                "model_connection": connection, "requested_model": "fake-model", "effort": "quick"}).json()["research"]["id"]
+            run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+            frozen[connection] = app.state.store.run(run_id)["budget"]["fast_path"]
+    finally:
+        client.__exit__(None, None, None)
+    assert frozen["fake"] == fast_path.freeze_budget({}, "quick")
+    assert frozen["ollama"] == fast_path.freeze_budget({}, "quick", local_model=True)
+    assert frozen["ollama"]["enforced_stages"] == ["search", "ranking"]
+    budget = {"fast_path": frozen["ollama"]}
+    assert [fast_path.enforces(budget, s) for s in ("search", "ranking", "read", "answer")] == [True, True, False, False]

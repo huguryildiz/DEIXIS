@@ -74,6 +74,17 @@ def test_math_pages_are_read_into_a_new_extraction_and_other_pages_keep_their_te
     assert asyncio.run(service.read_asset(aid))["state"] == "read" and len(reader.calls) == 1  # never read twice
 
 
+def test_a_marker_reading_over_an_older_text_layer_stays_read_and_is_not_picked_again(tmp_path, monkeypatch):
+    # D48: after an extractor bump a Marker-read PDF keeps its older text; the reader's count must not show it as waiting.
+    store, svid, aid, papers = stored_pdf(tmp_path, ["SYNTHETIC introduction text.", "SYNTHETIC garbled x i c ( 1 )"])
+    monkeypatch.setattr(math_reader, "math_pages", lambda path: [1])
+    service = equations.EquationService(store, FakeReader(), papers)
+    asyncio.run(service.read_asset(aid))
+    monkeypatch.setattr(pdf, "EXTRACTION_VERSION", pdf.EXTRACTION_VERSION + "-newer")
+    assert equations.target_version(store.asset(aid)["extraction_version"]) != store.asset(aid)["extraction_version"]
+    assert equations.equation_state(store, aid)["state"] == "read" and service.next_asset() is None
+
+
 def test_a_pdf_without_math_pages_and_a_failed_read_are_recorded_once(tmp_path, monkeypatch):
     store, svid, aid, papers = stored_pdf(tmp_path, ["SYNTHETIC prose only."])
     monkeypatch.setattr(math_reader, "math_pages", lambda path: [])

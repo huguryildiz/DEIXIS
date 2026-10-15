@@ -308,7 +308,8 @@ def _source_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
 def _marker_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
     asset_id = asset["id"]
     version = target_version(asset["extraction_version"])
-    if asset["extraction_version"] == version:
+    # A Marker reading over an older text layer stays read (D48): `next_asset` does not pick it again, so it is not pending.
+    if asset["extraction_version"] == version or (asset["extraction_version"] or "").endswith("+" + math_reader.MATH_VERSION):
         row = store.conn.execute("SELECT math_json FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'", (asset_id,)).fetchone()
         to_check = json.loads(row["math_json"] or "{}").get("equations_to_check", []) if row else []
         return {"state": "read", "to_check": sorted({e["page"] for e in to_check}), "equations_to_check": len(to_check)}

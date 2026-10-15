@@ -4,6 +4,16 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D42 — The citation map reads links from stored OpenAlex reference lists and fills what is missing only when asked
+Status: accepted · Date: 2026-10-15 · Writer: Claude
+Context: The development-lines panel stays empty with one or two sources, and the owner wanted a citation map (mockup approved 15 Oct, plan `.local/citation-map-plan.md`). On the owner's library 672 of 684 fast-path sources already had their OpenAlex reference list read; single-PDF researches had no OpenAlex id at all.
+Decision:
+- `GET /api/researches/{id}/citation-map` (slice 1) lists each work's head record with its selection state, a link "A's stored list names B" between works of the research, and up to 40 outside works. A work's list is the union of its read versions' lists; an unread list gives no link. An outside work needs at least two included or undecided citers (one in a single-source research); excluded sources keep their links but do not count. It sends no provider request and calls no model.
+- A `citation_map` run (slice 2, migration 0015) fills the gaps only after the person starts it, with OpenAlex requests and no model call: an upload identified at upload time (D37) uses that id; otherwise a version with a DOI gets a DOI lookup (50 per request) and resolves only when exactly one work carries the DOI; missing lists are read 100 ids per request through the existing id lookup; the top outside works without metadata are described in one request and stored as provider sources that join no research.
+- A resolved id goes to `citation_map_resolutions`, not `identifier_mappings`, so a later OpenAlex search hit for the same work still becomes its own source.
+- A list is read only when every entry is an OpenAlex work id; one malformed entry leaves the whole list unread. A spent daily budget pauses the run (`openalex_budget_exhausted`) and keeps what was stored; a cancel that arrived during the request stays cancelled.
+Limits: Tests use scripted transports and SYNTHETIC records; no live OpenAlex call was made. A work without a DOI and without an upload match stays unresolved; no title search is done here. A link shows only that one reference list names the other work, not what it says about it. "Not in this research" does not mean the search missed the work. The UI (slice 4) and adding an outside work as a candidate (slice 3) are not built.
+
 ## D41 — Text drawn inside a vector plot stays out of the page text (layout-v3)
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: On a paper with eight small vector plots (Q-PASS comparison, page 9) the page text held every tick value, axis title, legend entry and "(a)"/"(b)" panel mark as its own paragraph ("30 40 50 60", "Number of Switches N", "FER", "B1", "(a)"), between the funding note and the figure captions. The owner saw it in the reader (15 Oct).

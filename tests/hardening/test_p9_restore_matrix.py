@@ -695,6 +695,7 @@ def rich_library(tmp_path: Path):
 EMPTY_BECAUSE = {
     "arxiv_sources": "arXiv source reading is off in the test settings",
     "asset_arxiv_versions": "written only by the optional equation reader (Marker), which is not installed",
+    "citation_map_resolutions": "written only by a citation map run, which a person starts and this flow does not",
     "fast_path_background_fetches": "written by fast-path background PDF fetches (D251); full-text fetch is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",
     "mathpix_requests": "written only by the optional Mathpix equation reader, which is off by default",

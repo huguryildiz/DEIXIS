@@ -466,6 +466,9 @@ class ResearchFlow:
             elif run["kind"] == "followup_answer":
                 from deixis.workflow import followup
                 await followup.answer(self, run, scope)
+            elif run["kind"] == "citation_map":
+                from deixis.workflow import citation_map_run
+                await citation_map_run.execute(self, run, scope)
             else:
                 self._fail(run_id, "unknown_run_kind", {"kind": run["kind"]})
         except RunStopped:

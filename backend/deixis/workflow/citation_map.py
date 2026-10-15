@@ -46,6 +46,11 @@ def build(store: Any, research_id: str) -> dict[str, Any]:
                             " WHERE r.scheme = 'openalex'", (research_id,)):
         if row["svid"] in version_work:
             own[version_work[row["svid"]]].add(normalize_openalex_id(row["value"]))
+    # A version the citation map run found in OpenAlex (0015); kept out of `identifier_mappings`, so dedupe never reads it.
+    for row in conn.execute(f"SELECT r.source_version_id AS svid, r.openalex_id AS value FROM citation_map_resolutions r {member}"
+                            " WHERE r.status = 'resolved'", (research_id,)):
+        if row["svid"] in version_work:
+            own[version_work[row["svid"]]].add(normalize_openalex_id(row["value"]))
     # A work's list is the union of its read versions' lists (D79): a preprint and its article cite the same works.
     for row in conn.execute(f"SELECT r.source_version_id AS svid, r.referenced_id AS value FROM record_references r {member}",
                             (research_id,)):

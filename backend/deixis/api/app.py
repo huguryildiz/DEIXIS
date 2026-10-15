@@ -81,7 +81,7 @@ from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound
                                    SeedUnavailable, Store, LegacyInspectionPolicyRemoved,
                                    RequestConflict, RecoveryConflict, NotRetryable)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
-from deixis.workflow import citation_map
+from deixis.workflow import citation_map, citation_map_run
 from deixis.workflow.lineage.run import LineagePlanner, stale_link_revisions
 from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
 from deixis.workflow.lineage.view import LineageView
@@ -1804,7 +1804,7 @@ def create_app(
             run = store.update_run(run_id, event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
             worker.flow.queue_person_reading(run["research_id"])
             worker.wake()
-            if worker.current_run_id == run_id and run["kind"] not in ("table_fill", "lineage_links"):
+            if worker.current_run_id == run_id and run["kind"] not in ("table_fill", "lineage_links", "citation_map"):
                 # Roles may use different connections; only the running step's connection has a call to interrupt.
                 # Candidate decomposition and kill-search calls are sequential, so both kinds interrupt here.
                 if run["kind"] == "kill_search":
@@ -1841,6 +1841,20 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         return citation_map.build(store, research_id)
+
+    @app.post("/api/researches/{research_id}/citation-map/prepare")
+    async def research_citation_map_prepare(research_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        return citation_map_run.prepare(store, research_id)  # what a run would ask; no request is sent
+
+    @app.post("/api/researches/{research_id}/citation-map/run", status_code=202)
+    async def research_citation_map_run(research_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        run = citation_map_run.request_run(store, research_id)
+        request.app.state.worker.wake()
+        return run
 
     @app.post("/api/researches/{research_id}/queue/{source_version_id}/decision")
     async def queue_decision(research_id: str, source_version_id: str, body: QueueDecision,

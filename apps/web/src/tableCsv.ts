@@ -1,6 +1,6 @@
 import { downloadName } from './downloadName'
 import { type CellRevision, type CellState, type CellValue, type ResearchView, type Source, type TableColumn, type TableRow, type TableSummary, type TableView } from './api'
-import { locatorText, versionText } from './labels'
+import { locatorText, tableTitle, versionText } from './labels'
 import { citationStyle, formatReferenceText, type CitationStyle } from './citations'
 import { t, uiLocale } from './i18n'
 
@@ -70,6 +70,6 @@ export function reportGate(view: ResearchView, summary: TableSummary | undefined
     ? t('Available when the active run finishes')
     : !columns ? t('Add a column and fill its cells before writing a report.')
     : ready?.cells_total === 0 ? t('A report needs included sources and a filled column.')
-    : !ready?.ready && !continueWithFailed ? t('A report needs a filled evidence table: {n} cells left in “{table}”.', { n: ready?.cells_left ?? 0, table: title }) : ''
+    : !ready?.ready && !continueWithFailed ? t('A report needs a filled evidence table: {n} cells left in “{table}”.', { n: ready?.cells_left ?? 0, table: tableTitle(title) }) : ''
   return { reason, continueWithFailed }
 }

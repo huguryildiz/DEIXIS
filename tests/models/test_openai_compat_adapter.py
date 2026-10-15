@@ -20,6 +20,10 @@ every_spec = pytest.mark.parametrize("spec", SPECS, ids=[c.id for c in SPECS])
 keyed_spec = pytest.mark.parametrize("spec", KEYED, ids=[c.id for c in KEYED])
 
 
+# OpenRouter keeps only listed models that take structured outputs; the other connections ignore the field.
+SO = {"supported_parameters": ["structured_outputs"]}
+
+
 def set_key(spec, monkeypatch):
     if spec.key_env:
         monkeypatch.setenv(spec.key_env, "test-key")
@@ -54,8 +58,11 @@ def test_the_connections_use_the_documented_endpoints_and_key_variables():
         "glm": ("https://api.z.ai/api/paas/v4", "ZAI_API_KEY"),
         "muse_spark": ("https://api.meta.ai/v1", "MODEL_API_KEY"),
         "muse_glimmer": ("https://api.meta.ai/v1", "MODEL_API_KEY"),
+        "openrouter": ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
+        "mimo": ("https://api.xiaomimimo.com/v1", "MIMO_API_KEY"),
         "ollama": ("http://127.0.0.1:11434/v1", None),
     }
+    assert "local_server" not in openai_compat.CONNECTIONS  # its address comes from Settings
     assert openai_compat.COPILOT.list_url == "https://models.github.ai/catalog/models"
     assert openai_compat.BY_KEY_ENV["MODEL_API_KEY"].base_url == "https://api.meta.ai/v1"
 
@@ -63,7 +70,7 @@ def test_the_connections_use_the_documented_endpoints_and_key_variables():
 @every_spec
 def test_identity_and_schema_enforcement(spec):
     a = openai_compat.OpenAICompatAdapter(spec)
-    assert (a.connection, a.enforces_schema) == (spec.id, False)
+    assert (a.connection, a.enforces_schema) == (spec.id, spec.id == "openrouter")
 
 
 @keyed_spec
@@ -79,7 +86,7 @@ def test_health_lists_models_and_offers_no_reasoning_effort(spec, monkeypatch):
 
     def handler(request):
         assert str(request.url) == spec.list_url and auth_ok(spec, request)
-        return httpx.Response(200, json={"object": "list", "data": [{"id": mid(spec, "a")}, {"id": mid(spec, "b")}, {"object": "x"}]})
+        return httpx.Response(200, json={"object": "list", "data": [{"id": mid(spec, "a"), **SO}, {"id": mid(spec, "b"), **SO}, {"object": "x"}]})
 
     status = asyncio.run(adapter(spec, handler).health(refresh=True))
     assert status["ready"] is True and status["connection"] == spec.id
@@ -139,7 +146,7 @@ def test_health_tries_again_once_after_a_transport_error(spec, monkeypatch):
         calls.append(request.url.path)
         if len(calls) == 1:
             raise httpx.ConnectTimeout("timed out", request=request)
-        return httpx.Response(200, json={"data": [{"id": mid(spec, "a")}]})
+        return httpx.Response(200, json={"data": [{"id": mid(spec, "a"), **SO}]})
 
     assert asyncio.run(adapter(spec, handler).health(refresh=True))["ready"] is True and len(calls) == 2
 
@@ -154,7 +161,7 @@ def test_health_tries_again_once_after_a_transport_error(spec, monkeypatch):
     assert status["ready"] is False and status["reason"] == unreachable and len(calls) == 2
 
 
-@every_spec
+@pytest.mark.parametrize("spec", [c for c in SPECS if not c.json_schema], ids=[c.id for c in SPECS if not c.json_schema])
 def test_run_step_sends_json_mode_no_tools_and_never_a_reasoning_effort(spec, monkeypatch):
     set_key(spec, monkeypatch)
     sent = []
@@ -272,3 +279,95 @@ def test_cancel_is_a_no_op_and_close_only_closes_an_owned_client():
     asyncio.run(b.close())
     assert shared.is_closed is False
     asyncio.run(shared.aclose())
+
+
+def test_openrouter_sends_the_schema_strictly_and_requires_providers_that_take_it(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return ok_response("openai/gpt-x")
+
+    schema = {"type": "object", "properties": {"note": {"type": "string", "maxLength": 9, "pattern": "^c[0-9]{1,3}$"},
+                                               "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 4}},
+              "required": ["note", "items"], "additionalProperties": False}
+    result = asyncio.run(adapter(openai_compat.OPENROUTER, handler).run_step("BASE", "DEV", "MSG", schema, "openai/gpt-x", "high"))
+    assert (result.status, result.resolved_model) == ("completed", "openai/gpt-x")
+    body = sent[0]
+    assert body["response_format"]["type"] == "json_schema" and body["response_format"]["json_schema"]["strict"] is True
+    # The portable subset: length and count bounds go, the pattern stays; DEIXIS still validates the full schema.
+    assert body["response_format"]["json_schema"]["schema"]["properties"] == {
+        "note": {"type": "string", "pattern": "^c[0-9]{1,3}$"}, "items": {"type": "array", "items": {"type": "string"}, "minItems": 1}}
+    assert body["provider"] == {"require_parameters": True}
+    assert "tools" not in body and "reasoning_effort" not in body
+    assert body["messages"][0]["content"] == "BASE\n\nDEV"
+
+
+def test_openrouter_keeps_only_models_that_take_structured_outputs_sorted_with_their_names(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    listed = {"data": [{"id": "z/model", "name": "Z: Model", **SO}, {"id": "a/plain", "name": "A: Plain", "supported_parameters": ["tools"]},
+                       {"id": "a/model", "name": "A: Model", **SO}, {"id": "b/none"}]}
+    status = asyncio.run(adapter(openai_compat.OPENROUTER, lambda r: httpx.Response(200, json=listed)).health(refresh=True))
+    assert [(m["id"], m["display_name"]) for m in status["models"]] == [("a/model", "A: Model"), ("z/model", "Z: Model")]
+
+
+def test_mimo_without_a_model_list_offers_its_documented_models(monkeypatch):
+    monkeypatch.setenv("MIMO_API_KEY", "test-key")
+    status = asyncio.run(adapter(openai_compat.MIMO, lambda r: httpx.Response(404)).health(refresh=True))
+    assert status["ready"] is True and [m["id"] for m in status["models"]] == ["mimo-v2.6-pro", "mimo-v2.6-flash"]
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("http://127.0.0.1:8080/v1/", "http://127.0.0.1:8080/v1"), ("http://localhost:1337/v1", "http://localhost:1337/v1"),
+    ("http://[::1]:8000/v1", "http://[::1]:8000/v1"), ("  ", None), (None, None)])
+def test_the_local_server_address_must_be_on_this_computer(value, expected):
+    assert openai_compat.loopback_url(value) == expected
+
+
+@pytest.mark.parametrize("value", ["http://192.168.1.5:8080/v1", "https://api.example.com/v1", "http://127.0.0.1.example.com/v1",
+                                   "http://user:pw@127.0.0.1:8080", "file:///etc/passwd", "http://127.0.0.1:99999",
+                                   "http://localhost:8080/v1?x=1", "127.0.0.1:8080"])
+def test_a_remote_or_malformed_local_server_address_is_refused(value):
+    with pytest.raises(ValueError):
+        openai_compat.loopback_url(value)
+
+
+def local(handler, address):
+    return openai_compat.OpenAICompatAdapter(openai_compat.LOCAL_SERVER, client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                                             base_url=lambda: address)
+
+
+def test_the_local_server_uses_the_address_set_in_settings_and_no_key():
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        assert "authorization" not in request.headers
+        if request.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "llama-3"}]})
+        return ok_response("llama-3")
+
+    status = asyncio.run(local(handler, "http://127.0.0.1:8080/v1").health(refresh=True))
+    assert status["ready"] is True and status["base_url"] == "http://127.0.0.1:8080/v1" and "key_configured" not in status
+    result = asyncio.run(local(handler, "http://127.0.0.1:8080/v1").run_step("b", "d", "m", {}, "llama-3"))
+    assert result.status == "completed" and seen == ["http://127.0.0.1:8080/v1/models", "http://127.0.0.1:8080/v1/chat/completions"]
+
+
+@pytest.mark.parametrize("address", [None, "http://10.0.0.2:8080/v1"])
+def test_the_local_server_without_a_loopback_address_sends_nothing(address):
+    def handler(request):
+        raise AssertionError("no request expected")
+
+    status = asyncio.run(local(handler, address).health(refresh=True))
+    assert (status["ready"], status["reason_code"], status["base_url"]) == (False, "needs_setup", None)
+    result = asyncio.run(local(handler, address).run_step("b", "d", "m", {}, "llama-3"))
+    assert (result.status, result.delivery_class) == ("unavailable", "before_send")
+
+
+def test_a_stopped_local_server_is_named_by_its_address():
+    def refused(request):
+        raise httpx.ConnectError("refused", request=request)
+
+    status = asyncio.run(local(refused, "http://localhost:1337/v1").health(refresh=True))
+    assert status["reason"] == "Local server is not running at http://localhost:1337/v1" and "ollama" not in status["reason"]

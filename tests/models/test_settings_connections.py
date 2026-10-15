@@ -35,6 +35,20 @@ def remote(request):
         if request.headers.get("authorization") == "Bearer deepseek-good-key":
             return httpx.Response(200, json={"object": "list", "data": []})
         return httpx.Response(401, json={"error": {"message": "invalid api key"}})
+    if url.startswith("https://api.anthropic.com/v1/models"):
+        if request.headers.get("x-api-key") == "anthropic-good-key" and request.headers.get("anthropic-version") == "2023-06-01":
+            return httpx.Response(200, json={"data": [], "has_more": False})
+        return httpx.Response(401, json={"type": "error", "error": {"message": "invalid x-api-key anthropic-bad-key"}})
+    if url == "https://openrouter.ai/api/v1/models":  # public: any key or none is answered
+        return httpx.Response(200, json={"data": []})
+    if url == "https://openrouter.ai/api/v1/key":
+        if request.headers.get("authorization") == "Bearer openrouter-good-key":
+            return httpx.Response(200, json={"data": {"label": "SYNTHETIC"}})
+        return httpx.Response(401, json={"error": {"message": "No auth credentials found"}})
+    if url == "https://api.xiaomimimo.com/v1/models":
+        if request.headers.get("authorization") == "Bearer mimo-good-key":
+            return httpx.Response(404)
+        return httpx.Response(401, json={"error": {"message": "invalid api key"}})
     compat = {"https://dashscope-intl.aliyuncs.com/compatible-mode/v1/models": "dashscope-good-key",
               "https://api.moonshot.ai/v1/models": "moonshot-good-key", "https://api.mistral.ai/v1/models": "mistral-good-key"}
     if url in compat:
@@ -127,6 +141,60 @@ def test_openai_compatible_connections_are_registered_and_report_a_missing_key(t
             assert (models[name]["ready"], models[name]["key_configured"]) == (False, False)
             assert "API key in Settings" in models[name]["reason"] and env not in models[name]["reason"] and "not implemented" not in models[name]["reason"]
         assert "key_configured" not in models["ollama"] and "not implemented" not in (models["ollama"].get("reason") or "")
+
+
+@pytest.mark.parametrize("env,service,good", [("ANTHROPIC_API_KEY", "anthropic", "anthropic-good-key"),
+                                               ("OPENROUTER_API_KEY", "openrouter", "openrouter-good-key"),
+                                               ("MIMO_API_KEY", "mimo", "mimo-good-key")])
+def test_d34_keys_are_tested_before_they_are_kept(client, memory_keychain, env, service, good):
+    """OpenRouter answers its model list to any key, so its key is checked on /key; MiMo has no model list (404)."""
+    refused = client.put(f"/api/credentials/{env}", json={"value": "anthropic-bad-key"})
+    assert refused.status_code == 422 and "anthropic-bad-key" not in refused.text and memory_keychain.items == {}
+    saved = client.put(f"/api/credentials/{env}", json={"value": good}).json()
+    assert saved["test"]["status"] == "ok" and saved["key"]["service"] == service and saved["key"]["group"] == "model"
+    assert memory_keychain.items == {("DEIXIS", env): good}
+
+
+def test_d34_connections_are_registered_and_report_what_is_missing(tmp_path, paths, monkeypatch):
+    for env in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY", "MIMO_API_KEY"):
+        monkeypatch.delenv(env, raising=False)
+    app = create_app(Settings(data_dir=tmp_path / "d34", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(remote)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        models = c.get("/api/connections").json()["models"]
+        for name in ("anthropic", "openai", "openrouter", "mimo"):
+            assert (models[name]["ready"], models[name]["key_configured"], models[name]["reason_code"]) == (False, False, "needs_key")
+        assert models["local_server"]["reason_code"] == "needs_setup" and models["local_server"]["base_url"] is None
+        assert "key_configured" not in models["local_server"]
+
+
+def test_the_local_server_address_is_saved_only_on_this_computer(tmp_path, paths):
+    def handler(request):
+        if str(request.url) == "http://127.0.0.1:8080/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "SYNTHETIC-llama"}]})
+        return remote(request)
+
+    app = create_app(Settings(data_dir=tmp_path / "local", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        c.headers["x-deixis-csrf"] = c.get("/api/session").json()["csrf_token"]
+        refused = c.put("/api/connections/local_server", json={"base_url": "http://192.168.1.20:8080/v1"})
+        assert refused.status_code == 422 and "this computer" in refused.json()["detail"]
+        assert c.get("/api/connections/local_server").json()["base_url"] is None
+        saved = c.put("/api/connections/local_server", json={"base_url": "http://127.0.0.1:8080/v1/"}).json()
+        assert saved["ready"] is True and saved["base_url"] == "http://127.0.0.1:8080/v1"
+        assert [m["id"] for m in saved["models"]] == ["SYNTHETIC-llama"]
+        assert c.get("/api/connections").json()["models"]["local_server"]["base_url"] == "http://127.0.0.1:8080/v1"
+        cleared = c.put("/api/connections/local_server", json={"base_url": ""}).json()
+        assert (cleared["ready"], cleared["base_url"]) == (False, None)
+
+
+def test_claude_code_runs_on_the_account_not_on_a_saved_api_key(tmp_path, monkeypatch):
+    """D34: the CLI inherits the app's environment; the key saved for the Anthropic API connection is emptied for it."""
+    from deixis.models.claude import ClaudeCodeAdapter
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "SYNTHETIC-api-key")
+    options = ClaudeCodeAdapter(workspace=tmp_path / "claude")._options("claude")
+    assert options.env["ANTHROPIC_API_KEY"] == ""
 
 
 def test_connections_name_the_codex_home_this_backend_uses(tmp_path, monkeypatch):

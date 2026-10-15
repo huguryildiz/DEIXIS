@@ -66,6 +66,9 @@ class ClaudeCodeAdapter:
             "env": {
                 "CLAUDE_CODE_SAFE_MODE": "1",
                 "CLAUDE_AGENT_SDK_CLIENT_APP": "deixis/0.1.0",
+                # The CLI inherits the app's environment, where a key saved for the Anthropic API connection lives;
+                # emptied here so this connection runs on the signed-in account, never on that key (D34).
+                "ANTHROPIC_API_KEY": "",
             },
         }
         options.update(overrides)

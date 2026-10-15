@@ -21,6 +21,7 @@ import httpx
 import keyring
 from keyring.errors import KeyringError, PasswordDeleteError
 
+from deixis.models.anthropic_api import API_URL as ANTHROPIC_API_URL, KEY_ENV as ANTHROPIC_KEY_ENV, headers as anthropic_headers
 from deixis.models.gemini import API_URL as GEMINI_API_URL
 from deixis.models.openai_compat import BY_KEY_ENV as COMPAT_BY_KEY_ENV
 from deixis.storage.db import now
@@ -50,6 +51,9 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("GITHUB_TOKEN", "model", "copilot", testable=True),
     ManagedKey("ZAI_API_KEY", "model", "glm", testable=True),
     ManagedKey("MODEL_API_KEY", "model", "muse_spark", testable=True),
+    ManagedKey("ANTHROPIC_API_KEY", "model", "anthropic", testable=True),
+    ManagedKey("OPENROUTER_API_KEY", "model", "openrouter", testable=True),
+    ManagedKey("MIMO_API_KEY", "model", "mimo", testable=True),
     ManagedKey("OPENALEX_API_KEY", "source", "openalex"),
     ManagedKey("S2_API_KEY", "source", "semantic_scholar"),
     ManagedKey("NCBI_API_KEY", "source", "pubmed"),
@@ -198,15 +202,18 @@ def delete(env: str) -> None:
 
 
 async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any]:
-    """One short request with the key: Gemini, DeepSeek and the OpenAI-compatible connections list models; OpenAI embeds one word, which also shows missing credit."""
+    """One short request with the key: Gemini, DeepSeek, Anthropic and the OpenAI-compatible connections list models (OpenRouter reads its key's limits); OpenAI embeds one word, which also shows missing credit."""
     try:
         if env == "GEMINI_API_KEY":
             response = await client.get(f"{GEMINI_API_URL}/models", params={"pageSize": 1},
                                         headers={"x-goog-api-key": value}, timeout=20)
         elif env == "DEEPSEEK_API_KEY":
             response = await client.get(f"{DEEPSEEK_API_URL}/models", headers={"Authorization": f"Bearer {value}"}, timeout=20)
-        elif env in COMPAT_BY_KEY_ENV:
-            response = await client.get(COMPAT_BY_KEY_ENV[env].list_url, headers={"Authorization": f"Bearer {value}"}, timeout=20)
+        elif env == ANTHROPIC_KEY_ENV:
+            response = await client.get(f"{ANTHROPIC_API_URL}/models", params={"limit": 1}, headers=anthropic_headers(value), timeout=20)
+        elif env in COMPAT_BY_KEY_ENV:  # OpenRouter's model list is public, so its key is checked where it is read
+            spec = COMPAT_BY_KEY_ENV[env]
+            response = await client.get(spec.key_url or spec.list_url, headers={"Authorization": f"Bearer {value}"}, timeout=20)
         else:
             response = await client.post(f"{OPENAI_API_URL}/embeddings", json={"model": "text-embedding-3-small", "input": ["test"]},
                                          headers={"Authorization": f"Bearer {value}"}, timeout=20)

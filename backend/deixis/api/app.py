@@ -47,6 +47,9 @@ from deixis.models.copilot_cli import CopilotCliAdapter
 from deixis.models.deepseek import DeepSeekAdapter
 from deixis.models.gemini_cli import GeminiCliAdapter
 from deixis.models.openai_compat import CONNECTIONS as COMPAT_CONNECTIONS, OpenAICompatAdapter
+from deixis.models.openai_compat import LOCAL_SERVER, LOCAL_SERVER_SETTING, loopback_url
+from deixis.models.anthropic_api import AnthropicAdapter
+from deixis.models.openai_api import OpenAIAdapter
 from deixis.models.gemini import GeminiAdapter
 from deixis.providers import scopus
 from deixis.providers import zotero
@@ -207,6 +210,10 @@ class KeyValue(BaseModel):
 
 class ProxyAddress(BaseModel):
     address: str | None = Field(default=None, max_length=4000)
+
+
+class LocalServerAddress(BaseModel):
+    base_url: str | None = Field(default=None, max_length=400)
 
 
 class SemanticChoice(BaseModel):
@@ -757,6 +764,9 @@ def create_app(
             "gemini_cli": GeminiCliAdapter(home=settings.data_dir / "gemini-cli-home"),
             "deepseek": DeepSeekAdapter(client=http),
             **{name: OpenAICompatAdapter(spec, client=http) for name, spec in COMPAT_CONNECTIONS.items()},
+            "anthropic": AnthropicAdapter(client=http),
+            "openai": OpenAIAdapter(client=http),
+            "local_server": OpenAICompatAdapter(LOCAL_SERVER, client=http, base_url=lambda: store.setting(LOCAL_SERVER_SETTING)),
         }
         package = skill.load_skill_package()
         equations = equation_service if equation_service is not None else EquationService(
@@ -1096,6 +1106,17 @@ def create_app(
             return await request.app.state.account_signin.state(tool)
         except account_signin.SignInError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
+
+    @app.put("/api/connections/local_server")
+    async def put_local_server(body: LocalServerAddress, request: Request) -> dict[str, Any]:
+        """The local OpenAI-compatible server's address (D34): loopback only; empty clears it."""
+        try:
+            address = loopback_url(body.base_url)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        store_of(request).set_setting(LOCAL_SERVER_SETTING, address)
+        adapter = request.app.state.adapters.get("local_server")
+        return await adapter.health(refresh=True) if adapter is not None else {"connection": "local_server", "base_url": address}
 
     @app.get("/api/connections/{connection}")
     async def model_connection(connection: str, request: Request, refresh: bool = False) -> dict[str, Any]:

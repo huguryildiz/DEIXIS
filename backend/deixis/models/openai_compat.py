@@ -1,23 +1,28 @@
 """One adapter for model APIs that speak the OpenAI chat-completions dialect (Qwen, Kimi, Mistral, Grok, GitHub
-Copilot through GitHub Models, GLM, Meta's Muse Spark and Muse Glimmer, and a local Ollama server).
+Copilot through GitHub Models, GLM, Meta's Muse Spark and Muse Glimmer, OpenRouter, Xiaomi MiMo, a local Ollama server
+and a local server at an address set in Settings).
 
 Same boundary as the DeepSeek adapter: no tools, JSON-object mode, one new request per step, no schema enforcement
 (the schema reaches the model in the stored developer text), and the answering model reported as `resolved_model`
-so the flow's mismatch check applies. No reasoning effort is sent: these providers' effort parameters are not known
-to match DeepSeek's, so none is offered or forwarded.
+so the flow's mismatch check applies. OpenRouter is the exception to JSON-object mode: it routes only to providers
+that take a strict JSON schema, and the schema is sent (D34). No reasoning effort is sent: these providers' effort
+parameters are not known to match DeepSeek's, so none is offered or forwarded.
 """
 
 from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
 from deixis.domain.limits import http_limit, service_error_kind, retry_at
 from deixis.models.adapter import ModelStepResult
+from deixis.models.schema_subset import portable_schema
 
 
 @dataclass(frozen=True)
@@ -32,6 +37,14 @@ class CompatConnection:
     model_prefix: str | None = None
     # Shown when the API lists no models (GLM has no model list endpoint).
     static_models: tuple[str, ...] = ()
+    # Send the step schema as a strict `json_schema` response format instead of JSON-object mode.
+    json_schema: bool = False
+    # Only listed models whose `supported_parameters` hold this belong to the connection (OpenRouter lists hundreds).
+    required_parameter: str | None = None
+    # Fields added to every chat request.
+    extra_body: tuple[tuple[str, Any], ...] = ()
+    # Where a key is checked when the model list is public and would accept any key.
+    key_url: str | None = None
 
     @property
     def list_url(self) -> str:
@@ -48,20 +61,51 @@ GLM = CompatConnection("glm", "GLM", "https://api.z.ai/api/paas/v4", "ZAI_API_KE
                        static_models=("glm-5.1", "glm-4.6", "glm-4.5-air"))
 MUSE_SPARK = CompatConnection("muse_spark", "Muse Spark", "https://api.meta.ai/v1", "MODEL_API_KEY", model_prefix="muse-spark")
 MUSE_GLIMMER = CompatConnection("muse_glimmer", "Muse Glimmer", "https://api.meta.ai/v1", "MODEL_API_KEY", model_prefix="muse-glimmer")
+# Routed only to providers that accept every parameter sent, the strict JSON schema included.
+OPENROUTER = CompatConnection("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY",
+                              json_schema=True, required_parameter="structured_outputs",
+                              extra_body=(("provider", {"require_parameters": True}),), key_url="https://openrouter.ai/api/v1/key")
+# Xiaomi's pay-as-you-go endpoint (mimo.mi.com, "First API Call", checked 2026-10-15); no model list is documented.
+MIMO = CompatConnection("mimo", "Xiaomi MiMo", "https://api.xiaomimimo.com/v1", "MIMO_API_KEY",
+                        static_models=("mimo-v2.6-pro", "mimo-v2.6-flash"))
 # Ollama's default address on macOS, Windows and Linux; 127.0.0.1 rather than localhost, which Windows may resolve to ::1.
 OLLAMA = CompatConnection("ollama", "Ollama", "http://127.0.0.1:11434/v1", None)
-CONNECTIONS = {c.id: c for c in (QWEN, KIMI, MISTRAL, GROK, COPILOT, GLM, MUSE_SPARK, MUSE_GLIMMER, OLLAMA)}
+CONNECTIONS = {c.id: c for c in (QWEN, KIMI, MISTRAL, GROK, COPILOT, GLM, MUSE_SPARK, MUSE_GLIMMER, OPENROUTER, MIMO, OLLAMA)}
+# llama.cpp, Jan, LocalAI, vLLM and the like: the address is set in Settings and read at each call, so this one is not
+# in CONNECTIONS, whose addresses are fixed.
+LOCAL_SERVER = CompatConnection("local_server", "Local server", "", None)
+LOCAL_SERVER_SETTING = "local_server_url"
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 # One connection per key; the two Muse connections share Meta's key, and its check lists either's models.
 BY_KEY_ENV = {c.key_env: c for c in CONNECTIONS.values() if c.key_env}
 
 
+def loopback_url(value: str | None) -> str | None:
+    """A local server's base URL, accepted only on this computer's loopback address; empty clears it (None)."""
+    value = (value or "").strip().rstrip("/")
+    if not value:
+        return None
+    try:
+        parts = urlsplit(value)
+        host, _ = parts.hostname, parts.port  # the port raises ValueError when out of range
+    except ValueError as exc:
+        raise ValueError("Not a valid address") from exc
+    if (parts.scheme not in ("http", "https") or host not in LOOPBACK_HOSTS or parts.username or parts.password
+            or parts.query or parts.fragment):
+        raise ValueError("Only a server on this computer is accepted: http://127.0.0.1, http://localhost or http://[::1]")
+    return value
+
+
 class OpenAICompatAdapter:
-    enforces_schema = False
     sends_reasoning_effort = False  # accepted for the protocol, never put in the request (module docstring)
 
-    def __init__(self, spec: CompatConnection, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):
+    def __init__(self, spec: CompatConnection, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0,
+                 base_url: Callable[[], str | None] | None = None):
         self.spec = spec
         self.connection = spec.id
+        self.enforces_schema = spec.json_schema
+        # The local server's address, read at each call and checked again, so only a loopback address is contacted.
+        self._base_url = base_url
         self._client = client
         self._owns_client = client is None
         self.turn_timeout = turn_timeout
@@ -72,6 +116,17 @@ class OpenAICompatAdapter:
 
     def _headers(self, key: str | None) -> dict[str, str]:
         return {"Authorization": f"Bearer {key}"} if key else {}
+
+    def _base(self) -> str | None:
+        if self._base_url is None:
+            return self.spec.base_url
+        try:
+            return loopback_url(self._base_url())
+        except ValueError:
+            return None
+
+    def _list_url(self, base: str) -> str:
+        return self.spec.list_url if self._base_url is None else f"{base}/models"
 
     def _http(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -93,17 +148,26 @@ class OpenAICompatAdapter:
             status["reason_code"] = "needs_key"
             status["reason"] = f"Add a {spec.name} API key in Settings"
             return status
+        base = self._base()
+        if self._base_url is not None:
+            status["base_url"] = base
+        if not base:
+            status["reason_code"] = "needs_setup"
+            status["reason"] = f"Set the {spec.name.lower()} address in Settings"
+            return status
         # A second try after a transport error, as for DeepSeek: one failed check pauses the whole run.
         for attempt in range(2):
             try:
-                response = await self._http().get(spec.list_url, headers=self._headers(key), timeout=20)
+                response = await self._http().get(self._list_url(base), headers=self._headers(key), timeout=20)
                 break
             except httpx.HTTPError as exc:
                 if attempt:
                     status["reason_code"] = service_error_kind(exc=exc)
-                    status["reason"] = (f"{spec.name} is not running: open the Ollama app or run `ollama serve`" if spec.key_env is None
+                    status["reason"] = (f"{spec.name} is not running: open the Ollama app or run `ollama serve`" if spec.id == "ollama"
+                                        else f"{spec.name} is not running at {base}" if spec.key_env is None
                                         else f"{spec.name} API unreachable: {type(exc).__name__}")
                     return status
+        names: dict[str, str] = {}
         if response.status_code == 404 and spec.static_models:
             # No model list endpoint: the key is not checked here; the first step shows a rejected key.
             ids = list(spec.static_models)
@@ -121,17 +185,24 @@ class OpenAICompatAdapter:
                 return status
             if isinstance(listed, dict):
                 listed = listed.get("data", [])
-            ids = [m["id"] for m in listed if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]]
+            entries = [m for m in listed if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]]
             if spec.model_prefix:
-                ids = [i for i in ids if i.lower().startswith(spec.model_prefix)]
-            ids = ids or list(spec.static_models)
+                entries = [m for m in entries if m["id"].lower().startswith(spec.model_prefix)]
+            if spec.required_parameter:
+                # OpenRouter lists hundreds of models; only those that take the parameter sent are kept, sorted by id,
+                # under the provider's own model name.
+                entries = sorted((m for m in entries if spec.required_parameter in (m.get("supported_parameters") or [])),
+                                 key=lambda m: m["id"])
+                names = {m["id"]: m["name"] for m in entries if isinstance(m.get("name"), str) and m["name"]}
+            ids = [m["id"] for m in entries] or list(spec.static_models)
         if not ids:
             status["reason_code"] = "no_models"
-            status["reason"] = (f"{spec.name} lists no models: pull one, for example `ollama pull qwen3`" if spec.key_env is None
+            status["reason"] = (f"{spec.name} lists no models: pull one, for example `ollama pull qwen3`" if spec.id == "ollama"
+                                else f"{spec.name} at {base} lists no models" if spec.key_env is None
                                 else f"{spec.name} API lists no models for this key")
             return status
         status["models"] = [
-            {"id": i, "display_name": i, "is_default": False, "description": "",
+            {"id": i, "display_name": names.get(i, i), "is_default": False, "description": "",
              "default_reasoning_effort": None, "reasoning_efforts": []}
             for i in ids
         ]
@@ -146,19 +217,30 @@ class OpenAICompatAdapter:
         if missing_key or not requested_model:
             return ModelStepResult("unavailable", error=f"{spec.key_env} is not set" if missing_key else "no model requested",
                                    delivery_class="before_send", error_kind="needs_key" if missing_key else "unknown")
+        url = self._base()
+        if not url:
+            return ModelStepResult("unavailable", error=f"no {spec.name.lower()} address set", delivery_class="before_send",
+                                   error_kind="unknown")
         # reasoning_effort is accepted for the protocol and deliberately not sent.
-        system = f"{base}\n\n{developer}\n\nReturn only a JSON object."
+        if spec.json_schema:
+            system = f"{base}\n\n{developer}"
+            response_format: dict[str, Any] = {"type": "json_schema", "json_schema": {
+                "name": "deixis_step", "strict": True, "schema": portable_schema(output_schema)}}
+        else:
+            system = f"{base}\n\n{developer}\n\nReturn only a JSON object."
+            response_format = {"type": "json_object"}
         body: dict[str, Any] = {
             "model": requested_model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": message},
             ],
-            "response_format": {"type": "json_object"},
+            "response_format": response_format,
             "stream": False,
+            **dict(spec.extra_body),
         }
         try:
-            response = await self._http().post(f"{spec.base_url}/chat/completions", json=body,
+            response = await self._http().post(f"{url}/chat/completions", json=body,
                                                headers=self._headers(key), timeout=self.turn_timeout)
         except httpx.ConnectError as exc:
             return ModelStepResult("unavailable", error=type(exc).__name__, delivery_class="before_send")

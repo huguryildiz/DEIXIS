@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -65,6 +66,14 @@ def is_rate_limited(result: ModelStepResult) -> bool:
     """Only temporary/unknown rate limits qualify for the workflow's bounded resend."""
     kind = getattr(result, "error_kind", None) or limit_kind(getattr(result, "error", None))
     return result.status == "failed" and kind == "rate_limited"
+
+
+def is_dated_snapshot(requested: str | None, resolved: str | None) -> bool:
+    """True when an API answered a model alias with that alias's own dated snapshot (`gpt-4o` →
+    `gpt-4o-2024-08-06`, `claude-haiku-4-5` → `claude-haiku-4-5-20251001`). Any other difference stays a mismatch."""
+    if not requested or not resolved or not resolved.startswith(f"{requested}-"):
+        return False
+    return re.fullmatch(r"\d{8}|\d{4}-\d{2}-\d{2}", resolved[len(requested) + 1:]) is not None
 
 
 class ModelAdapter(Protocol):

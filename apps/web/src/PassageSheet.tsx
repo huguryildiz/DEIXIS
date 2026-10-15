@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignLeft, Check, Copy, Ellipsis, FileText, FileUp, Info, Link as LinkIcon, ListMinus, LoaderCircle, Maximize2, Minimize2, Replace, RotateCcw, ScanText, Search, Sigma, Trash2, TriangleAlert } from 'lucide-react'
+import { AlignLeft, CalendarDays, Check, Copy, Database, Ellipsis, FileText, FileUp, Info, Link as LinkIcon, Link2, ListMinus, LoaderCircle, Maximize2, Minimize2, Replace, RotateCcw, ScanText, Search, Sigma, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -536,12 +536,14 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
               <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? initialPage} title={source.title} rendition={pdfRendition} />
             </> : empty('pdf')}
           </div>}
-          {/* Where the source came from (mockup `.foot-note`, P20). */}
-          {row && (row.provider_records.length > 0 || row.added_at || row.record_match) && <p className="foot-note source-sheet-foot">
-            {row.provider_records.length > 0 && <span>{t('Found via')} {row.provider_records.map((id, i) => <Fragment key={id}>{i > 0 && ' · '}{providerName(id)}</Fragment>)}</span>}
-            {row.record_match && <span>{t(row.record_match.basis === 'doi_title' ? 'Record from OpenAlex, matched by the DOI and title on the first page' : 'Record from OpenAlex, matched by the title on the first page')}</span>}
-            {row.added_at && <span>{t(row.origin === 'user_upload' ? 'Uploaded {date}' : 'Added {date}', { date: new Date(row.added_at).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short', year: 'numeric' }) })}</span>}
-          </p>}
+          {/* Where the source came from (mockup `.foot-note`, P20), laid out as a provenance card. */}
+          {row && (row.provider_records.length > 0 || row.added_at || row.record_match) && <div className="foot-note source-sheet-foot source-provenance">
+            {row.provider_records.length > 0 && <div className="prov-field"><span className="prov-label"><Database size={12} aria-hidden />{t('Found via')}</span>
+              <ul className="prov-chips">{row.provider_records.map(id => <li key={id}>{providerName(id)}</li>)}</ul></div>}
+            {row.added_at && <div className="prov-field"><span className="prov-label"><CalendarDays size={12} aria-hidden />{t(row.origin === 'user_upload' ? 'Uploaded' : 'Added on')}</span>
+              <time className="prov-value" dateTime={row.added_at}>{new Date(row.added_at).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short', year: 'numeric' })}</time></div>}
+            {row.record_match && <p className="prov-match"><Link2 size={13} aria-hidden />{t(row.record_match.basis === 'doi_title' ? 'Record from OpenAlex, matched by the DOI and title on the first page' : 'Record from OpenAlex, matched by the title on the first page')}</p>}
+          </div>}
         </>}
       </div>
   </>

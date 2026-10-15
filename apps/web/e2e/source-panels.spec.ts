@@ -347,7 +347,7 @@ test.describe('S12: report, Citation and Source details panels', () => {
     await details.getByRole('tab', { name: 'Abstract' }).click()
     await expect(details.locator('#source-abs-view')).toContainText(pdfSource.access.abstract_passage_id ? 'Abstract' : 'No abstract is stored for this source.')
     // P20: where the source came from.
-    if (pdfSource.provider_records.length) await expect(details.locator('.foot-note')).toContainText(`Found via ${pdfSource.provider_records.map(p => PROVIDERS[p] ?? p).join(' · ')}`)
+    if (pdfSource.provider_records.length) await expect(details.locator('.foot-note')).toContainText(`Found via${pdfSource.provider_records.map(p => PROVIDERS[p] ?? p).join('')}`)
     await page.keyboard.press('Escape')
     await expect(page.locator('[data-split-panel]')).toHaveCount(0)
   })

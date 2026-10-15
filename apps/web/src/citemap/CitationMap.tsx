@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Check, FileText, Plus, Search, TriangleAlert } from 'lucide-react'
+import { Check, FileText, Maximize, Plus, Search, TriangleAlert, ZoomIn, ZoomOut } from 'lucide-react'
 import { api, ApiError, type CitationMap as MapData, type CitationMapPlan, type Run } from '../api'
 import { ConnectionIcon } from '../connectionIcons'
 import { Notice } from '../Notice'
@@ -19,6 +19,28 @@ const KINDS: Kind[] = ['included', 'pending', 'excluded', 'outside']
 const KIND_LABELS: Record<Kind, string> = { included: 'Included', pending: 'Undecided', excluded: 'Excluded', outside: 'Not in this research' }
 // A large research shows its included works, its most-cited undecided works and the outside works; "Show all" adds the rest.
 const PENDING_SHOWN = 30
+const ZOOM_MIN = 0.5
+const ZOOM_MAX = 8
+type Zoom = { k: number; x: number; y: number }
+const WHOLE_MAP: Zoom = { k: 1, x: 0, y: 0 }
+
+// Scale by `factor` around point `p` (in the drawing's own units), so the point under the pointer stays put.
+function zoomAt(z: Zoom, p: { x: number; y: number }, factor: number): Zoom {
+  const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z.k * factor))
+  return { k, x: p.x - (p.x - z.x) * (k / z.k), y: p.y - (p.y - z.y) * (k / z.k) }
+}
+
+function svgPoint(el: SVGSVGElement, clientX: number, clientY: number) {
+  const m = el.getScreenCTM()
+  if (!m) return { x: 0, y: 0 }
+  const p = new DOMPoint(clientX, clientY).matrixTransform(m.inverse())
+  return { x: p.x, y: p.y }
+}
+
+// An outside work known only by its OpenAlex id: the map run has not asked for its record yet, or OpenAlex sent none.
+function titleOf(n: MapNode, describable: boolean): string {
+  return n.title ?? t(describable ? 'Title not fetched yet' : 'OpenAlex sent no record for this id')
+}
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const BUDGET_STOP = 'openalex_budget_exhausted'
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
@@ -135,6 +157,10 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
   const [starting, setStarting] = useState(false)
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const generation = useRef(0)
+  const [zoom, setZoom] = useState<Zoom>(WHOLE_MAP)
+  const [panning, setPanning] = useState(false)
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const pan = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
   const markerId = useId().replace(/[^a-zA-Z0-9]/g, '')
 
   // The mockup opens the map as a full-width panel; Exit full width still narrows it.
@@ -169,10 +195,18 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
     if (!graph || !visible.length) return null
     const links = graph.links.filter(([a, b]) => visibleSet.has(a) && visibleSet.has(b))
     const lay = layout === 'time' ? layoutTime(visible, graph.indeg) : layoutNet(visible, links)
-    // Each link's curve, computed once per layout: from the citing work's left side to the cited work's right side on the
-    // timeline, a slight arc ending at the cited work's rim in the network.
-    const r = (key: string) => radius(graph.indeg.get(key) ?? 0)
-    const paths = links.map(([s, d]) => {
+    return { links, layout: lay }
+    // visibleKey stands for `visible` and `visibleSet`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, visibleKey, layout])
+  // A zoom spreads the works apart but keeps circles and names at their size, so each link's curve is drawn again for
+  // the zoom: from the citing work's left side to the cited work's right side on the timeline, a slight arc ending at the
+  // cited work's rim in the network.
+  const paths = useMemo(() => {
+    if (!graph || !drawn) return []
+    const { links, layout: lay } = drawn
+    const r = (key: string) => radius(graph.indeg.get(key) ?? 0) / zoom.k
+    return links.map(([s, d]) => {
       const a = lay.pos.get(s)!, b = lay.pos.get(d)!
       const rb = r(d) + 3, dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy) || 1
       if (layout === 'time') {
@@ -182,10 +216,23 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
       const ex = b.x - dx / dist * rb, ey = b.y - dy / dist * rb, mx = (a.x + ex) / 2 - dy * 0.12, my = (a.y + ey) / 2 + dx * 0.12
       return `M${a.x},${a.y} Q${mx},${my} ${ex},${ey}`
     })
-    return { links, paths, layout: lay }
-    // visibleKey stands for `visible` and `visibleSet`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph, visibleKey, layout])
+  }, [graph, drawn, layout, zoom.k])
+  // A new drawing starts at the whole map.
+  useEffect(() => { setZoom(WHOLE_MAP) }, [drawn])
+  // ⌘/Ctrl + wheel, and a trackpad pinch (which arrives as a ctrl wheel), zoom around the pointer; a plain wheel still
+  // scrolls the page. The listener is not passive so the browser's own page zoom does not run as well.
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      const p = svgPoint(el, e.clientX, e.clientY)
+      setZoom(z => zoomAt(z, p, Math.exp(-e.deltaY * 0.01)))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [drawn])
 
   if (error && !map) return <div className="mk citemap"><Notice tone="error">{error}<button type="button" className="ghost" onClick={() => void reload()}>{t('Retry')}</button></Notice></div>
   if (!map || !graph) return <div className="mk citemap"><p role="status">{t('Loading the citation map…')}</p></div>
@@ -203,6 +250,8 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
   const budgetStop = paused?.pause_reason === BUDGET_STOP
   const resetAt = budgetStop ? (paused?.error as { reset_at?: string } | null)?.reset_at ?? null : null
   const single = map.nodes.length === 1
+  // Outside works still without a record can be described by the next map run; otherwise OpenAlex already sent none.
+  const describable = (plan?.outside_to_describe ?? 0) > 0
   const counts: Record<Kind, number> = { included: 0, pending: 0, excluded: 0, outside: 0 }
   graph.nodes.forEach(n => counts[n.kind]++)
   const outsideRanked = graph.nodes.filter(n => n.kind === 'outside')
@@ -298,7 +347,7 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
 
   // ---- the map ----------------------------------------------------------------------------------------------------
   const svg = drawn && (() => {
-    const { layout: lay, links, paths } = drawn
+    const { layout: lay, links } = drawn
     const edges = links.map(([s, d], i) => {
       let cls = 'e'
       if (s === focus) cls += ' out'; else if (d === focus) cls += ' in'; else if (focus) cls += ' dim'
@@ -313,25 +362,42 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
       if (n.key === selected) cls += ' sel'
       if (focus && !neighbours.has(n.key)) cls += ' dim'
       if (needle) cls += hits.has(n.key) ? ' hit' : ' dim'
-      const label = !lay.dense || n.key === selected || n.key === hover || hits.has(n.key) || (focus !== null && neighbours.has(n.key))
+      const label = !lay.dense || zoom.k >= 2 || n.key === selected || n.key === hover || hits.has(n.key) || (focus !== null && neighbours.has(n.key))
       const unread = n.kind !== 'outside' && !n.read
-      return <g key={n.key} className={cls} data-key={n.key} tabIndex={0} role="button" transform={`translate(${p.x.toFixed(1)},${p.y.toFixed(1)})`}
+      return <g key={n.key} className={cls} data-key={n.key} tabIndex={0} role="button" transform={`translate(${p.x.toFixed(1)},${p.y.toFixed(1)}) scale(${(1 / zoom.k).toFixed(3)})`}
         aria-label={`${nameOf(n)}, ${t(KIND_LABELS[n.kind])}, ${plural(indeg(n.key), 'cited by {n} source in this research', 'cited by {n} sources in this research')}`}
         aria-pressed={n.key === selected}
         onClick={() => select(n.key)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(n.key) } }}
         onMouseEnter={() => hoverTo(n.key)} onMouseLeave={() => hoverTo(null)}>
         <circle className="ring" r={rr + 5} />{unread && <circle className="noref" r={rr + 4} />}<circle className="c" r={rr} />
         {label && <text y={layout === 'time' && (p.col ?? 0) % 2 ? -(rr + 8) : rr + 15} textAnchor="middle">{n.short}{layout === 'net' && n.year ? ` ${n.year}` : ''}</text>}
-        <title>{n.title ?? t('title unknown')}</title>
+        <title>{titleOf(n, describable)}</title>
       </g>
     })
-    return <svg viewBox={`0 0 ${lay.W} ${lay.H}`} role="group" aria-label={t('Source citation map')} style={{ minWidth: lay.W > 920 ? Math.round(lay.W * 0.8) : 640 }}>
+    return <svg ref={svgRef} viewBox={`0 0 ${lay.W} ${lay.H}`} role="group" aria-label={t('Source citation map')} className={panning ? 'panning' : undefined}
+      style={{ minWidth: lay.W > 920 ? Math.round(lay.W * 0.8) : 640 }}
+      onPointerDown={e => {
+        // Dragging the background moves the drawing; a press on a work still selects it.
+        if (e.button !== 0 || (e.target as Element).closest('.n')) return
+        pan.current = { px: e.clientX, py: e.clientY, x: zoom.x, y: zoom.y }
+        e.currentTarget.setPointerCapture(e.pointerId)
+        setPanning(true)
+      }}
+      onPointerMove={e => {
+        const start = pan.current
+        if (!start) return
+        const scale = lay.W / e.currentTarget.getBoundingClientRect().width
+        setZoom(z => ({ ...z, x: start.x + (e.clientX - start.px) * scale, y: start.y + (e.clientY - start.py) * scale }))
+      }}
+      onPointerUp={() => { pan.current = null; setPanning(false) }} onPointerCancel={() => { pan.current = null; setPanning(false) }}>
       <defs>
         <marker id={markerId} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path className="arrow" d="M0,0 L8,4 L0,8 z" /></marker>
         <marker id={`${markerId}on`} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path className="arrow a-on" d="M0,0 L8,4 L0,8 z" /></marker>
       </defs>
+      <g transform={`translate(${zoom.x.toFixed(1)} ${zoom.y.toFixed(1)}) scale(${zoom.k.toFixed(3)})`}>
       {layout === 'time' && <g className="axis">{lay.axis.map(a => <g key={a.label}><line x1={a.x} x2={a.x} y1={22} y2={lay.H - 48} /><text x={a.x} y={lay.H - 28} textAnchor="middle">{a.label}</text></g>)}</g>}
       <g>{edges}</g><g>{nodes}</g>
+      </g>
     </svg>
   })()
   const anyUnread = visible.some(n => n.kind !== 'outside' && !n.read)
@@ -339,16 +405,25 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
     <span>{t('Circle size: how many sources in this research cite it')}</span>{layout === 'time' && <span>{t('Left to right: publication year')}</span>}
     {anyUnread && <span><b className="cm-noref-key" aria-hidden />{t('Dotted ring: reference list not read')}</span>}</div>
 
+  const centre = drawn ? { x: drawn.layout.W / 2, y: drawn.layout.H / 2 } : { x: 0, y: 0 }
+  const zoomBar = drawn && <div className="cm-zoom">
+    <button type="button" className="ib" aria-label={t('Zoom in')} title={t('Zoom in')} disabled={zoom.k >= ZOOM_MAX} onClick={() => setZoom(z => zoomAt(z, centre, 1.5))}><ZoomIn size={16} aria-hidden /></button>
+    <button type="button" className="ib" aria-label={t('Zoom out')} title={t('Zoom out')} disabled={zoom.k <= ZOOM_MIN} onClick={() => setZoom(z => zoomAt(z, centre, 1 / 1.5))}><ZoomOut size={16} aria-hidden /></button>
+    <button type="button" className="ib" aria-label={t('Show the whole map')} title={t('Show the whole map')} disabled={zoom === WHOLE_MAP} onClick={() => setZoom(WHOLE_MAP)}><Maximize size={16} aria-hidden /></button>
+    <span className="tnum">{Math.round(zoom.k * 100)}%</span>
+    <span className="cm-zoom-hint">{t('⌘ or Ctrl + scroll, or pinch, to zoom; drag to move')}</span>
+  </div>
+
   const node = selected ? graph.byKey.get(selected) ?? null : null
   const row = (n: MapNode) => {
     const c = indeg(n.key), w = Math.max(4, Math.round(60 * c / maxIn))
     const isAdded = n.openalexId !== null && added.has(n.openalexId)
     return <div className="cm-row" key={n.key}>
       <span className="k">{n.kind === 'outside' && !n.title && n.openalexId ? n.openalexId : nameOf(n)}</span>
-      <div className="t"><button type="button" onClick={() => select(n.key)}>{n.title ?? t('title unknown')}</button>
+      <div className="t"><button type="button" onClick={() => select(n.key)}>{titleOf(n, describable)}</button>
         <small className="tnum"><span className="bar" style={{ width: w }} />{plural(c, 'cited by {n} source', 'cited by {n} sources')}
           {n.kind === 'outside' ? n.removed && <> · {t('Removed from this research earlier')}</> : <> · <span className={`dot d-${n.kind}`} />{t(KIND_LABELS[n.kind])}</>}</small></div>
-      {n.kind === 'outside' && (isAdded
+      {n.kind === 'outside' && n.title !== null && (isAdded
         ? <span className="done"><Check size={15} aria-hidden />{t('In candidates')}</span>
         : <button type="button" className="ghost" disabled={adding !== null} onClick={() => void add(n)}>{t('Add to candidates')}</button>)}
     </div>
@@ -372,9 +447,9 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
       <label className="search"><Search size={16} aria-hidden /><input type="search" placeholder={t('Search sources')} aria-label={t('Search the map for a source')} value={query} onChange={e => setQuery(e.target.value)} /></label>
     </div>
     <div className="cm-stage">
-      <div className="cm-mapbox">{svg ?? <p className="cm-none">{t('No source matches the filters.')}</p>}{legend}</div>
+      <div className="cm-mapbox">{zoomBar}{svg ?? <p className="cm-none">{t('No source matches the filters.')}</p>}{legend}</div>
       <div className="cm-detail">{node ? <Detail node={node} graph={graph} budgetStop={budgetStop} added={node.openalexId !== null && added.has(node.openalexId)}
-        adding={adding !== null} onSelect={select} onOpen={onOpenSource} onAdd={add} /> : <p className="meta">{t('Choose a source on the map.')}</p>}</div>
+        adding={adding !== null} describable={describable} onSelect={select} onOpen={onOpenSource} onAdd={add} /> : <p className="meta">{t('Choose a source on the map.')}</p>}</div>
     </div>
     <div className="cm-cols">
       {!single && <section><h3>{t('The core of this research')}</h3><p className="sub">{t('The sources this research’s sources cite most.')}</p>{core.length ? core.map(row) : <p className="sub">{t('None.')}</p>}</section>}
@@ -385,8 +460,8 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
   </div>
 }
 
-function Detail({ node, graph, budgetStop, added, adding, onSelect, onOpen, onAdd }: {
-  node: MapNode; graph: Graph; budgetStop: boolean; added: boolean; adding: boolean
+function Detail({ node, graph, budgetStop, added, adding, describable, onSelect, onOpen, onAdd }: {
+  node: MapNode; graph: Graph; budgetStop: boolean; added: boolean; adding: boolean; describable: boolean
   onSelect: (key: string) => void; onOpen: (sourceVersionId: string) => void; onAdd: (node: MapNode) => void
 }) {
   const byYear = (a: MapNode, b: MapNode) => (b.year ?? 0) - (a.year ?? 0)
@@ -395,12 +470,12 @@ function Detail({ node, graph, budgetStop, added, adding, onSelect, onOpen, onAd
   const outside = node.kind === 'outside'
   const unread = !outside && !node.read
   const list = (items: MapNode[]) => items.length
-    ? items.map(m => <button type="button" key={m.key} onClick={() => onSelect(m.key)}><span className={`dot d-${m.kind}`} /><span>{nameOf(m)} · {m.title ?? t('title unknown')}</span></button>)
+    ? items.map(m => <button type="button" key={m.key} onClick={() => onSelect(m.key)}><span className={`dot d-${m.kind}`} /><span>{nameOf(m)} · {titleOf(m, describable)}</span></button>)
     : <p>{t('None.')}</p>
   const facts = [node.venue, node.year, node.citedBy !== null ? t('{n} citations (OpenAlex)', { n: node.citedBy.toLocaleString(uiLocale()) }) : null].filter(v => v !== null && v !== '')
   return <>
     <span className="cm-pill"><span className={`dot d-${node.kind}`} />{t(KIND_LABELS[node.kind])}</span>
-    <h3>{node.title ?? t('title unknown')}</h3>
+    <h3>{titleOf(node, describable)}</h3>
     <p className="meta">{node.authors.length > 0 && <>{node.authors.join(', ')}<br /></>}{facts.length > 0 ? <span className="tnum">{facts.join(' · ')}</span> : node.openalexId}</p>
     {node.removed && <p className="meta">{t('Removed from this research earlier')}</p>}
     <div className="cm-stats tnum">
@@ -409,7 +484,10 @@ function Detail({ node, graph, budgetStop, added, adding, onSelect, onOpen, onAd
     </div>
     {unread && <p className="meta cm-warn">{t(budgetStop ? 'Reference list not read (OpenAlex quota). The sources it cites are missing.' : 'Reference list not read. The sources it cites are missing.')}</p>}
     <div className="acts">
-      {outside
+      {outside && node.title === null
+        ? <p className="meta">{t(describable ? 'Press Read reference lists above to fetch its title and authors; it can be added after that.'
+          : 'Without a record it cannot be added to the research.')}</p>
+        : outside
         ? added ? <span className="cm-pill"><span className="dot d-included" />{t('In the candidate list')}</span>
           : <button type="button" className="btn-pri" disabled={adding} onClick={() => onAdd(node)}><Plus size={16} aria-hidden />{t('Add to candidates')}</button>
         : node.sourceVersionId && <button type="button" className="btn-pri" onClick={() => onOpen(node.sourceVersionId!)}><FileText size={16} aria-hidden />{t('Open source')}</button>}

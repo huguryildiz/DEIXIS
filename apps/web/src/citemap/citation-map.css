@@ -49,6 +49,15 @@
 .citemap .cm-stage{display:grid;grid-template-columns:minmax(0,1fr) 320px;overflow:hidden;border:1px solid var(--line);border-radius:12px}
 .citemap .cm-mapbox{position:relative;overflow-x:auto;border-right:1px solid var(--line);background:var(--paper)}
 .citemap .cm-mapbox svg{display:block;width:100%;height:auto}
+.citemap .cm-mapbox svg{cursor:grab}
+.citemap .cm-mapbox svg.panning{cursor:grabbing;user-select:none}
+.citemap svg .e,.citemap svg .n circle{vector-effect:non-scaling-stroke}
+.citemap .cm-zoom{position:sticky;left:0;z-index:1;display:flex;align-items:center;gap:4px;padding:8px 10px 0;color:var(--muted);font-size:12px}
+.citemap .cm-zoom .ib{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);cursor:pointer}
+.citemap .cm-zoom .ib:hover:not(:disabled){background:var(--hover-surface)}
+.citemap .cm-zoom .ib:disabled{opacity:.45;cursor:default}
+.citemap .cm-zoom .tnum{min-width:44px;text-align:right}
+.citemap .cm-zoom-hint{margin-left:8px;color:var(--muted)}
 .citemap .cm-none{padding:40px;color:var(--muted)}
 .citemap .cm-legend{position:sticky;left:0;display:flex;flex-wrap:wrap;gap:4px 14px;padding:0 14px 12px;color:var(--muted);font-size:11.5px}
 .citemap .cm-legend span{display:inline-flex;align-items:center;gap:6px}

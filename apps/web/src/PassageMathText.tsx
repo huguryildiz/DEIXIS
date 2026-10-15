@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 import { MathText } from './MathText'
+import { t } from './i18n'
 
 type FormulaRule = { pattern: RegExp; latex: string }
 
@@ -29,7 +30,18 @@ const FORMULAS: FormulaRule[] = [
 
 type Match = { start: number; end: number; latex: string }
 
+// The extractor's mark for lines whose symbol font has no Unicode map (backend pdf.UNREADABLE); the model reads it as is.
+const UNREADABLE = '[symbols not readable in the PDF]'
+
 export function PassageMathText({ text }: { text: string }) {
+  if (!text.includes(UNREADABLE)) return <PassageFormulas text={text} />
+  return <>{text.split(UNREADABLE).flatMap((part, i) => [
+    ...(i ? [<span key={`u${i}`} className="passage-unreadable">{t('Not readable in the PDF')}</span>] : []),
+    ...(part ? [<PassageFormulas key={`p${i}`} text={part} />] : []),
+  ])}</>
+}
+
+function PassageFormulas({ text }: { text: string }) {
   const matches: Match[] = []
   for (const { pattern, latex } of FORMULAS) {
     for (const match of text.matchAll(new RegExp(pattern.source, pattern.flags))) {

@@ -19,7 +19,8 @@ entries in one block. The original page stays the reference; older passages keep
 re-extracted (D45). From `layout-v3` the text drawn inside a vector plot (tick values, axis titles, legend entries,
 the "(a)"/"(b)" panel marks) is dropped: a short small-type block that lies on or just around a cluster of drawings with sloped
 lines or curves. Rules and grids made only of straight horizontal and vertical lines (tables) do not count, and a caption
-("Fig. 4. …", "Table II …") or a section heading is never dropped.
+("Fig. 4. …", "Table II …") or a section heading is never dropped. From `layout-v5` (D48) a line at least 30% U+FFFD (a symbol
+font without a Unicode map) is replaced by `UNREADABLE`; neighbouring marks become one.
 
 A page left without text is named: an image page (a scan, which `ocr.py` can read on request, D51) or a blank page.
 
@@ -55,7 +56,7 @@ from deixis.documents import child_guard, inline_math
 from deixis.documents.child_guard import _libproc, _resident_bytes  # re-export existing readers
 
 log = logging.getLogger("deixis.pdf")
-EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-layout-v3"
+EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-layout-v5"  # v5: unreadable symbol lines marked
 # MuPDF's default text flags without TEXT_PRESERVE_LIGATURES, so "ﬁ" is extracted as "fi".
 TEXT_FLAGS = pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_MEDIABOX_CLIP
 MAX_PAGES = 400
@@ -176,6 +177,21 @@ def _body_size(layouts: list[tuple]) -> float:
     return max(sizes, key=sizes.get) if sizes else 0.0
 
 
+# A font without a Unicode map gives MuPDF glyphs it can only report as U+FFFD; line OCR of such lines was measured on
+# two library PDFs and changed numbers ("10−2" → "10-77?"), so a line mostly made of them is marked, not guessed.
+UNREADABLE = "[symbols not readable in the PDF]"
+UNREADABLE_SHARE = 0.3
+# Neighbouring marks become one, and the mark takes the U+FFFD that opens the next line (a symbol's subscript is often
+# its own MuPDF line), so "[mark]\n�i: CURRENT ANGLE" reads "[mark]i: CURRENT ANGLE".
+_UNREADABLE_RUN = re.compile(rf"{re.escape(UNREADABLE)}(?:[\s\ufffd]*{re.escape(UNREADABLE)})*(?:\s*\ufffd[\ufffd ]*)?")
+
+
+def _readable(line: str) -> str:
+    """The line, or `UNREADABLE` when U+FFFD is at least `UNREADABLE_SHARE` of its visible characters."""
+    marks = line.count("\ufffd")
+    return UNREADABLE if marks and marks >= UNREADABLE_SHARE * len("".join(line.split())) else line
+
+
 def _join_lines(lines: list[str], lower=re.compile(r"[a-z]").fullmatch) -> str:
     """Lines of a block; a word hyphenated at a line end is joined when `lower` accepts the letters around the hyphen.
     The text layer keeps ASCII letters (changing that changes its extraction version); OCR text passes any lowercase letter."""
@@ -226,7 +242,7 @@ def _page_text(blocks: list[dict], height: float, body_size: float, lines: dict[
         kind = _block_kind(block, height, body_size)
         if kind in ("page_number", "running_head", "plot_label"):
             continue
-        text = _join_lines(block["lines"] if lines is None or index not in lines else lines[index])
+        text = _join_lines([_readable(line) for line in (block["lines"] if lines is None or index not in lines else lines[index])])
         if not text:
             continue  # every line of the block was an equation region placed at another block's number line
         if kind == "heading":
@@ -235,7 +251,7 @@ def _page_text(blocks: list[dict], height: float, body_size: float, lines: dict[
             notes.append(text)
         else:
             body.append(text)
-    return "\n\n".join(_paragraphs(body) + _paragraphs(notes))
+    return _UNREADABLE_RUN.sub(UNREADABLE, "\n\n".join(_paragraphs(body) + _paragraphs(notes)))
 
 
 def display_block(latex: str, number: str) -> str:

@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D48 — Lines of unmapped PDF symbols are marked, not guessed
+Status: accepted · Date: 2026-10-16 · Writer: Claude
+Context: Some PDFs draw symbols (Greek letters, minus signs, subscripts in algorithms and equations) with a font that has no Unicode map, and MuPDF reports each glyph as U+FFFD. On the owner's library 19 of 35 PDFs had such passages (204), shown and sent to the model as rows of "�". Tesseract was tried on the two worst PDFs (DFR, Khan 2020): reading the whole line brought back some names (`CURRENT_ANGLE`) but changed numbers (`10−2T2` → `10-77?`); reading only the unmapped glyphs gave nothing or junk.
+Decision: Extraction `layout-v5` replaces a line whose visible characters are at least 30% U+FFFD by `[symbols not readable in the PDF]`; neighbouring marks become one and take the U+FFFD that opens the next line. The model reads the mark as written; the passage view shows it as a note ("PDF'ten okunamadı"). No OCR text enters a text-layer page.
+Limits: The symbols are lost, not recovered; a line under 30% keeps its "�". Re-extracted on the owner's library only for the 6 affected PDFs with a plain text layer; the 13 with a Marker equation reading keep `layout-v3` text until their equations are read again. Mathpix (D40), which could recover the formulas, is still untried live.
+
 ## D47 — The Library shows the works a research kept, and all works on request
 Status: accepted · Date: 2026-10-16 · Writer: Claude
 Context: A discovery run puts every search result in the research's corpus. On the owner's library one research held 742 works in the Library, of which the reading included 31 and kept 48 as abstract candidates; about 530 were never read because they ranked below the reading cap. The Library listed all of them with the same weight.

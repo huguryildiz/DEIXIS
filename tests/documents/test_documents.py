@@ -34,7 +34,7 @@ def test_extraction_drops_the_ieee_xplore_download_notice(tmp_path):
     text = pdf.extract_pdf(path).pages[0].text
     assert "Authorized licensed" not in text and "Restrictions apply" not in text and "IEEE Xplore" not in text
     assert "body line one about packet sizes." in text and "body line two about relays." in text
-    assert pdf.EXTRACTION_VERSION.endswith("-layout-v3")
+    assert pdf.EXTRACTION_VERSION.endswith("-layout-v5")
 
     one_line = ("ends here.\nAuthorized licensed use limited to: SYNTHETIC University. Downloaded on September 15,2026 at 19:45:08 UTC"
                 " from IEEE Xplore.  Restrictions apply. \nNext")
@@ -346,3 +346,16 @@ def test_redirect_to_a_private_address_is_blocked(monkeypatch):
 
     result = asyncio.run(run())
     assert result.status == "blocked_url" and result.final_url == "http://intranet.example/secret.pdf"
+
+
+def test_lines_mostly_unmapped_glyphs_become_one_marker():
+    # SYNTHETIC: an algorithm block whose symbol font has no Unicode map, as MuPDF reports it (U+FFFD).
+    block = {"bbox": (50, 300, 500, 400), "size": 10.0, "chars": 120, "lines": [
+        "\ufffd \ufffd: a received packet", "if \ufffd \ufffd \ufffd", "\ufffd\ufffd \ufffd \ufffdthen", "\ufffd", "else discard"]}
+    other = {"bbox": (50, 420, 500, 440), "size": 10.0, "chars": 10, "lines": ["\ufffd\ufffd \ufffd"]}
+    text = pdf._page_text([block, other], 800, 10.0)
+    assert text == f"\ufffd \ufffd: a received packet\n{pdf.UNREADABLE}\nelse discard\n\n{pdf.UNREADABLE}"
+    # The U+FFFD a mark's next line opens with is taken into the mark.
+    subscript = dict(block, lines=["\ufffd\ufffd", "\ufffd i: CURRENT ANGLE of node i"])
+    assert pdf._page_text([subscript], 800, 10.0) == f"{pdf.UNREADABLE}i: CURRENT ANGLE of node i"
+    assert pdf._readable("We start from the small base angle 2u, that is, 30\ufffd") .endswith("30\ufffd")

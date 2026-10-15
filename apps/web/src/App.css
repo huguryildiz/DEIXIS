@@ -283,26 +283,45 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .detail-sheet.jobs-sheet{width:min(420px,100vw)}
 .jobs-sheet [data-slot=sheet-title]{display:flex;align-items:center;gap:8px}
 .jobs-sheet [data-slot=sheet-title] svg{flex:none;color:var(--muted)}
-.jobs-body{display:grid;align-content:start;padding:18px 22px 40px;overflow:auto}
-.job{display:grid;gap:5px;padding:12px 0;border-top:1px solid var(--line);font-size:14px;line-height:1.5}
-.job:first-child{border-top:0}
-.job b{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500}
-.job b>svg{flex:none;color:var(--muted)}
-.job-name{min-width:0}
-.job-count{margin-left:auto;color:var(--muted);font-size:12.5px;font-weight:400;font-variant-numeric:tabular-nums;white-space:nowrap}
-.job small{min-width:0;overflow:hidden;color:var(--muted);font-size:12.5px;white-space:nowrap;text-overflow:ellipsis}
+.jobs-body{display:grid;align-content:start;gap:10px;padding:20px 20px 40px;overflow:auto}
+/* A job is a card: a 32px tone tile, the name and its count, the source line with Pause/Resume, then the bar and its percentage. */
+.job{display:grid;gap:8px;padding:14px 16px 15px;border:1px solid var(--line);border-radius:12px;background:var(--raised-surface);box-shadow:0 1px 2px rgb(16 24 40 / .04);font-size:14px;line-height:1.45}
+.job b{display:flex;align-items:center;gap:10px;min-width:0;font-size:14px;font-weight:550;color:var(--ink)}
+.job-icon{display:grid;flex:none;place-items:center;width:30px;height:30px;border-radius:9px;background:var(--accent-tint);color:var(--accent)}
+.job-icon .spin{width:14px;height:14px}
+.job-icon svg{stroke-width:1.8}
+.job.is-paused .job-icon{background:var(--warn-surface);color:var(--tone-uncertain)}
+.job.is-ok .job-icon{background:var(--ok-surface);color:var(--ok-ink)}
+.job.is-bad .job-icon{background:var(--error-surface);color:var(--error-ink)}
+.job.is-unknown .job-icon{background:var(--selected-surface);color:var(--muted)}
+.job-name{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.job-count{flex:none;margin-left:auto;padding:2px 8px;border-radius:999px;background:var(--hover-surface);color:var(--ink-2);font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+.job.is-ended{padding:11px 14px;box-shadow:none}
+.job.is-ended .job-icon{width:26px;height:26px;border-radius:8px}
+.job.is-ended small{padding-left:36px}
+.job-sub{display:flex;align-items:center;gap:10px;min-width:0;padding-left:40px}
+.job small{min-width:0;overflow:hidden;color:var(--muted);font-size:13px;white-space:nowrap;text-overflow:ellipsis}
+.job-sub small{flex:1}
 .job-research{max-width:100%;overflow:hidden;color:var(--accent);text-align:left;white-space:nowrap;text-overflow:ellipsis}
 .job-research:hover{text-decoration:underline}
-.job-action{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border:1px solid var(--strong-line);border-radius:6px;color:var(--ink-2);font-size:12px;font-weight:400}
+.job-action{display:inline-flex;flex:none;align-items:center;gap:5px;height:26px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12px;font-weight:500}
 .job-action:hover:not(:disabled){background:var(--hover-surface)}
-.job-bar{display:flex;height:6px;overflow:hidden;border-radius:3px;background:var(--selected-surface)}
-.job-bar i{display:block;height:100%;transition:width .3s}
-.job-bar .is-done{background:var(--accent)}
+.job-action:disabled{opacity:.55}
+.job-progress{display:flex;align-items:center;gap:10px;padding-left:40px}
+.job-bar{position:relative;display:flex;flex:1;height:6px;overflow:hidden;border-radius:999px;background:var(--selected-surface)}
+.job-bar i{display:block;height:100%;transition:width .4s cubic-bezier(.2,.7,.2,1)}
+.job-bar .is-done{position:relative;overflow:hidden;border-radius:999px;background:linear-gradient(90deg,var(--accent-deep),var(--accent))}
+.job.is-live:not(.is-paused) .job-bar .is-done::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgb(255 255 255 / .35),transparent);transform:translateX(-100%);animation:job-sheen 1.8s ease-in-out infinite}
+@keyframes job-sheen{to{transform:translateX(100%)}}
+@media(prefers-reduced-motion:reduce){.job-bar .is-done::after{animation:none!important;display:none}}
+.job.is-paused .job-bar .is-done{background:var(--tone-uncertain)}
 .job-bar .is-checked{background:var(--accent-line)}
-.jobs-paused{color:var(--tone-uncertain)}
-.jobs-body h3{margin:6px 0 0;font-size:14px;font-weight:600}
-.jobs-body .jobs-none{margin:0;color:var(--muted);font-size:13.5px}
-.jobs-body .foot-note{margin:14px 0 0;color:var(--muted);font-size:13px;line-height:1.5}
+.job-pct{flex:none;min-width:34px;color:var(--muted);font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;text-align:right}
+.jobs-body h3{margin:10px 2px 0;color:var(--muted);font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.jobs-body .jobs-none{margin:0;padding:14px 16px;border:1px dashed var(--strong-line);border-radius:12px;color:var(--muted);font-size:13.5px}
+.jobs-note{display:flex;gap:10px;margin-top:8px;padding:12px 14px;border-radius:10px;background:var(--sidebar-surface);color:var(--muted)}
+.jobs-note>svg{flex:none;margin-top:2px}
+.jobs-body .foot-note{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
 
 /* Search palette (mockup `.scrim > .pal`, O1, parity S3): 560px, 14vh from the top; groups with letter keys on the right;
    a foot with the list keys. Group headings are uppercase by CSS over sentence-case text. Mockup `--faint` text is `--muted`. */

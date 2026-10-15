@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Circle, CirclePause, Clock, Pause, Play, TriangleAlert } from 'lucide-react'
+import { Check, Circle, CirclePause, Clock, Info, Pause, Play, TriangleAlert } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { api, type EquationReader, type ResearchSummary, type ResearchView, type Run, type RunStatus, type Source } from './api'
 import { t } from './i18n'
@@ -137,30 +137,34 @@ export function BackgroundJobs({ researches, dark, onOpenResearch }: {
         <div className="jobs-body">
           {/* "Nothing is running" only when every read answered; after a failed read the state is unknown. */}
           {!jobs.length && <p className="jobs-none">{t(readerFailed || viewsFailed ? 'Background work could not be read; its status is unknown.' : 'Nothing is running.')}</p>}
-          {jobs.map(job => <div key={job.key} className="job">
-            <b>{job.paused ? <CirclePause size={14} className="jobs-paused" aria-hidden="true" /> : <span className="spin" aria-hidden="true" />}<span className="job-name">{job.label}</span>
-              <span className="job-count">{progress(job)}</span>
+          {jobs.map(job => <div key={job.key} className={`job is-live${job.paused ? ' is-paused' : ''}`}>
+            <b><span className="job-icon" aria-hidden="true">{job.paused ? <CirclePause size={15} /> : <span className="spin" />}</span><span className="job-name">{job.label}</span>
+              <span className="job-count">{progress(job)}</span></b>
+            <div className="job-sub">
+              {job.research
+                ? <small><button type="button" className="job-research" onClick={() => { setOpen(false); onOpenResearch(job.research!.id) }}>{job.sub}</button></small>
+                : <small title={job.sub}>{job.sub}</small>}
               {job.run && (job.run.status !== 'paused'
                 ? <button type="button" className="job-action" disabled={busy || job.run.status === 'pause_requested'} onClick={() => act(() => api.controlRun(job.run!.id, 'pause'))}><Pause size={13} aria-hidden="true" />{t('Pause')}</button>
                 : <button type="button" className="job-action" disabled={busy} onClick={() => act(() => api.controlRun(job.run!.id, 'resume'))}><Play size={13} aria-hidden="true" />{t('Resume')}</button>)}
-            </b>
-            {job.research
-              ? <small><button type="button" className="job-research" onClick={() => { setOpen(false); onOpenResearch(job.research!.id) }}>{job.sub}</button></small>
-              : <small>{job.sub}</small>}
-            <div className="job-bar" aria-hidden="true"><i className="is-done" style={{ width: pct(job.done, job.total) }} />{job.extra > 0 && <i className="is-checked" style={{ width: pct(job.extra, job.total) }} />}</div>
+            </div>
+            <div className="job-progress" aria-hidden="true">
+              <div className="job-bar"><i className="is-done" style={{ width: pct(job.done, job.total) }} />{job.extra > 0 && <i className="is-checked" style={{ width: pct(job.extra, job.total) }} />}</div>
+              {job.total > 0 && <span className="job-pct">{Math.round((100 * job.done) / job.total)}%</span>}
+            </div>
           </div>)}
           {finished.length > 0 && <>
             <h3>{t('Finished')}</h3>
-            {finished.map(item => <div key={item.key} className="job"><b><Check size={14} aria-hidden="true" />{item.label}</b><small>{item.sub} · {item.detail}</small></div>)}
+            {finished.map(item => <div key={item.key} className="job is-ended is-ok"><b><span className="job-icon" aria-hidden="true"><Check size={14} /></span><span className="job-name">{item.label}</span></b><small>{item.sub} · {item.detail}</small></div>)}
           </>}
           {unconfirmed.length > 0 && <>
             <h3>{t('Not confirmed as finished')}</h3>
-            {unconfirmed.map(item => <div key={item.key} className="job">
-              <b>{item.outcome === 'unknown' ? <Circle size={14} aria-hidden="true" /> : <TriangleAlert size={14} aria-hidden="true" />}{item.label}<span className="job-count">{outcomeText(item.outcome)}</span></b>
+            {unconfirmed.map(item => <div key={item.key} className={`job is-ended ${item.outcome === 'unknown' ? 'is-unknown' : 'is-bad'}`}>
+              <b><span className="job-icon" aria-hidden="true">{item.outcome === 'unknown' ? <Circle size={14} /> : <TriangleAlert size={14} />}</span><span className="job-name">{item.label}</span><span className="job-count">{outcomeText(item.outcome)}</span></b>
               <small>{item.detail ? `${item.sub} · ${item.detail}` : item.sub}</small>
             </div>)}
           </>}
-          <p className="foot-note">{t('Keeps running while you are on another page. Text read in the background can be used in the next answer if it qualifies.')}</p>
+          <div className="jobs-note"><Info size={15} aria-hidden="true" /><p className="foot-note">{t('Keeps running while you are on another page. Text read in the background can be used in the next answer if it qualifies.')}</p></div>
         </div>
       </SheetContent>
     </Sheet>

@@ -697,6 +697,7 @@ EMPTY_BECAUSE = {
     "asset_arxiv_versions": "written only by the optional equation reader (Marker), which is not installed",
     "fast_path_background_fetches": "written by fast-path background PDF fetches (D251); full-text fetch is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",
+    "mathpix_requests": "written only by the optional Mathpix equation reader, which is off by default",
     "openalex_budget_runs": "written only when OpenAlex's daily budget refuses a PDF lookup; the fake providers never do",
     "owner_review_snapshots": "no review can be started until B2",
     "owner_reviews": "no review can be started until B2",

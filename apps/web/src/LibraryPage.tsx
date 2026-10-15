@@ -983,7 +983,7 @@ function Row({ entry, project, researches, picked, locked, dragging, onPick, onO
     <td className="lib-title-cell">
       <span className="lib-title-line"><SourceKey value={entry.source_key} className="lib-key" /><button type="button" className="src-t library-title" onClick={onOpen} onFocus={onFocusTitle}
         title={t('Open the stored passages for this work')}>{entry.title}</button></span>
-      <div className="src-m">{authorsText(entry.authors)}{entry.cited_by_count !== null && ` · ${t(entry.cited_by_count === 1 ? '{n} citation' : '{n} citations', { n: num(entry.cited_by_count) })}`}</div>
+      <div className="src-m">{authorsText(entry.authors)}{entry.cited_by_count !== null && ` · ${t(entry.cited_by_count === 1 ? '{n} citation' : '{n} citations', { n: num(entry.cited_by_count) })}`}{entry.is_retracted && <> · <span className="lib-retracted" title={t('OpenAlex lists this paper as retracted. Check the retraction notice before relying on it.')}>{t('Retracted')}</span></>}</div>
       {entry.versions.length > 1 && <div className="pills">{entry.versions.map(version => <span key={version.source_version_id} className="pill">
         {versionText(version.version_label)} · {t(ACCESS_LABELS[version.access_level])}</span>)}</div>}
     </td>

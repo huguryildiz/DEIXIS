@@ -244,7 +244,9 @@ def _snapshot_sources(reader, content):
         content["sources"].append({"source_id": sid, **{k: source[k] for k in
             ("work_id", "title", "authors", "year", "doi", "version_label")},
             "reading_depth": max(depths, key={"metadata": 0, "abstract": 1, "selected_sections": 2, "full_text": 3}.__getitem__) if depths else "metadata",
-            "access_level": reader.source_access(sid)})
+            "access_level": reader.source_access(sid)}
+            # Frozen with the snapshot, and only for a flagged work, so other sources keep their shape (D27).
+            | ({"is_retracted": True} if reader.work_retracted(source["work_id"]) else {}))
 
 
 def review_step_input_parts(snapshot_id, content, *, focus, owner_note, group_index=1, group_count=1, claim_refs=None, source_ids=None):
@@ -290,7 +292,9 @@ def review_step_input_parts(snapshot_id, content, *, focus, owner_note, group_in
                  "whole_claim_quotes": [quote(e) for e in m["whole_claim_quotes"]]})
         context = {k: copy.deepcopy(content[k]) for k in ("candidate_version", "conditions", "critical_assumption", "nearest_simple_explanation")}
         context.update(kill_search={k: v for k, v in content["kill_search"].items() if k not in {"id", "run_id"}}, status=status, matrix=matrix)
+    # A snapshot made before D27 has no flag and reads as unflagged.
     sources = [{k: s[k] for k in ("source_id", "work_id", "title", "year", "version_label", "access_level")}
+               | ({"is_retracted": True} if s.get("is_retracted") is True else {})
                for s in content["sources"] if s["source_id"] in sids]
     refs = {c["section_ref"] for c in claims}
     sections = [{k: s[k] for k in ("section_ref", "title", "status")} for s in content["sections"]

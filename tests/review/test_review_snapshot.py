@@ -132,3 +132,25 @@ def test_resolved_finding_stores_source_owned_words_and_snapshot_target(review_l
 def test_candidate_snapshot_missing_version_is_not_found(review_lib):
     with pytest.raises(NotFound):
         build_snapshot(review_lib["reader"], review_lib["rid"], "candidate", "candidate")
+
+
+def test_retracted_flag_is_frozen_in_the_snapshot_and_a_snapshot_without_it_still_loads(review_lib):
+    """D27: an owner-review snapshot carries the work's flag only for a flagged work; one stored before D27 has no
+    flag and still validates and builds its step input."""
+    from deixis.workflow.review.store import _snapshot_source_ids
+    lib = review_lib
+    lib["conn"].execute("UPDATE source_versions SET is_retracted = 1 WHERE id = ?", (lib["source_id"],))
+    saved = snapshot(lib, "report")
+    flagged = {s["source_id"] for s in saved["content"]["sources"] if s.get("is_retracted") is True}
+    assert flagged == {lib["source_id"]}
+    assert all("is_retracted" not in s for s in saved["content"]["sources"] if s["source_id"] != lib["source_id"])
+    # The flag is frozen: clearing it in the library after the snapshot does not change the step input built from it.
+    lib["conn"].execute("UPDATE source_versions SET is_retracted = 0 WHERE id = ?", (lib["source_id"],))
+    payload = step_payload(lib, saved)
+    assert {s["source_id"] for s in payload["sources"] if s.get("is_retracted")} == {lib["source_id"]}
+    old = copy.deepcopy(saved["content"])
+    for source in old["sources"]:
+        source.pop("is_retracted", None)
+    assert lib["source_id"] in _snapshot_source_ids(saved["id"], json.dumps(old))
+    parts = review_step_input_parts(saved["id"], old, focus="source_support", owner_note=None)
+    assert all("is_retracted" not in s for s in parts["sources"])

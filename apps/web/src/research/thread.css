@@ -349,6 +349,7 @@
 .ref-pill{--pill:var(--muted);display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--pill),transparent 88%);color:color-mix(in srgb,var(--pill),var(--ink) 25%);font-size:11px;line-height:1.5}
 .ref-pill.is-abstract{--pill:var(--attr-abstract)}
 .ref-pill.is-ocr{--pill:var(--tone-uncertain)}
+.ref-pill.is-retracted,:is(.split-panel-content,.detail-sheet) .ref-pill.is-retracted{--pill:var(--tone-uncertain);color:var(--warn-ink)}
 .ref-pill.is-text{--pill:var(--attr-text)}
 .ref-pill.is-published{--pill:var(--tone-include)}
 .ref-pill.is-accepted{--pill:var(--attr-accepted)}

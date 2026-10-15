@@ -52,7 +52,7 @@
 /* Neutral pills inside sheets: grey text on a hairline, the reading depth or version shown only by a coloured dot. */
 .detail-sheet .ref-pill{gap:5px;padding:0 6px;border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);font-size:11.5px;font-weight:400;line-height:19px}
 .detail-sheet .ref-pill>svg{display:none}
-.detail-sheet .ref-pill:is(.is-abstract,.is-text,.is-ocr,.is-published,.is-accepted,.is-submitted,.is-removed,.is-cited,.is-similarity)::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pill)}
+.detail-sheet .ref-pill:is(.is-abstract,.is-text,.is-ocr,.is-retracted,.is-published,.is-accepted,.is-submitted,.is-removed,.is-cited,.is-similarity)::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pill)}
 .report-sheet .export-links{height:30px;border-radius:7px}
 .report-sheet .reference-head [data-slot=select-trigger]{height:30px;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12.5px}
 .report-sheet .reference-head [data-slot=select-trigger]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -407,7 +407,7 @@
 /* Neutral pills inside the panels, as inside the sheets: grey text on a hairline, the depth or version as a dot. */
 .split-panel-content .ref-pill{gap:5px;padding:0 6px;border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);font-size:11.5px;font-weight:400;line-height:19px}
 .split-panel-content .ref-pill>svg{display:none}
-.split-panel-content .ref-pill:is(.is-abstract,.is-text,.is-ocr,.is-published,.is-accepted,.is-submitted,.is-removed,.is-cited,.is-similarity)::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pill)}
+.split-panel-content .ref-pill:is(.is-abstract,.is-text,.is-ocr,.is-retracted,.is-published,.is-accepted,.is-submitted,.is-removed,.is-cited,.is-similarity)::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--pill)}
 .split-panel-content .pills,.source-sheet .pills{display:flex;flex-wrap:wrap;gap:5px}
 .split-panel-content .pill:not(.ref-pill),.source-sheet .pill:not(.ref-pill){display:inline-flex;align-items:center;gap:4px;padding:0 6px;border:1px solid var(--line);border-radius:5px;color:var(--muted);font-size:11.5px;line-height:19px;white-space:nowrap}
 .split-panel-content .pill.ok,.source-sheet .pill.ok{color:var(--tone-include)}

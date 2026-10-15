@@ -2103,7 +2103,8 @@ def create_app(
                          for passage in passages],
             "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
                                                 "cited_by_count", "cited_by_count_at")}
-            | {"source_key": store.source_key(source["work_id"])},
+            | {"source_key": store.source_key(source["work_id"]), "is_retracted": None if source["is_retracted"] is None else bool(source["is_retracted"]),
+               "work_is_retracted": store.work_retracted(source["work_id"])},
         }
 
     figure_cache: dict[str, list[dict[str, Any]]] = {}  # by PDF sha256; figures are found again after a restart (D58)

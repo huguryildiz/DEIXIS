@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, assetUrl, shellApi, type Asset, type AssetText, type Claim, type Passage, type PdfDiscovery, type Source } from './api'
-import { citedText, locatorText, providerName, serviceErrors, serviceKind, versionText } from './labels'
+import { citedText, locatorText, providerName, retractionNote, serviceErrors, serviceKind, versionText } from './labels'
 import { t, uiLocale } from './i18n'
 import { PassageMathText } from './PassageMathText'
 import { PdfViewer } from './PdfViewer'
@@ -426,6 +426,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
               ? <>{source.authors.slice(0, 2).join(', ')}, <button className="author-more" onClick={() => setAllAuthors(true)}>{t('and {n} more', { n: source.authors.length - 2 })}</button></>
               : source.authors.join(', ')}</p>}
             <div className="source-chips pills">
+              {retractionNote(source) && <span className="ref-pill pill is-retracted" title={retractionNote(source) ?? undefined}>{t('Retracted')}</span>}
               {pdfText === 'text'
                 ? <span className="ref-pill pill is-text">{(() => { const doc = shownDocument ?? otherText; const n = doc ? pages(doc) : fileAsset?.page_count ?? null; return n ? t('PDF text · {n} pp.', { n }) : t('PDF text') })()}</span>
                 : pdfText === 'none' ? <span className="ref-pill pill is-text">{t('PDF without extracted text')}</span>

@@ -45,7 +45,7 @@ def test_reader_public_methods_are_named_reads_only():
                      "report_claim_revisions", "report_original_links",
                      "candidate_version", "candidate", "candidate_elements", "latest_kill_search", "kill_search",
                      "kill_search_rows", "latest_override", "assessment_input", "run_scope_revision",
-                     "source", "source_access", "passage", "included_sources", "selection_stamp", "included_rows", "cells", "columns", "evidence_dependency", "evidence_exists"}
+                     "source", "source_access", "work_retracted", "passage", "included_sources", "selection_stamp", "included_rows", "cells", "columns", "evidence_dependency", "evidence_exists"}
     assert not any(name.startswith(("save", "write", "edit", "delete", "insert", "update", "purge")) for name in names)
 
 

@@ -3,6 +3,12 @@ import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
 export const LATE_REVISION_LABEL = 'Updated with full text'
+
+// The "Retracted" mark's note (D27): the version's own OpenAlex flag, else another version of its work; null for none.
+export function retractionNote(source: { is_retracted: boolean | null; work_is_retracted: boolean | null }): string | null {
+  if (source.is_retracted) return t('OpenAlex lists this paper as retracted. Check the retraction notice before relying on it.')
+  return source.work_is_retracted ? t('OpenAlex lists another version of this work as retracted. Check the retraction notice before relying on it.') : null
+}
 export const LATE_REVISION_DETAIL = 'Full text added for {n} sources since V{v}.'
 export const LATE_REVISION_PENDING = 'Full text that arrived later is being read; an updated version may follow.'
 export const LATE_REVISION_QUEUED = 'Late full-text reading queued'

@@ -32,6 +32,10 @@ Location establishes that the quote is in the passage, not that your assessment
 is correct. Other findings may have no evidence; state them as reviewer
 inferences with their limits.
 
+A source marked `is_retracted` belongs to a work that OpenAlex flags as
+retracted in at least one of its versions; when a shown claim rests on it
+without saying so, record that as a finding.
+
 Use the typed target refs in this call's allowlist. Claim and section refs are
 local labels; source, passage and cell handles must be copied exactly. Do not
 infer absent equations, results, evidence or source metadata.

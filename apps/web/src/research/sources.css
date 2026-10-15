@@ -50,6 +50,8 @@
 .source-fact.is-submitted{--fact:var(--attr-submitted)}
 .source-fact.is-abstract{--fact:var(--attr-abstract)}
 .source-fact.is-ocr{--fact:var(--tone-uncertain)}
+.source-fact.is-retracted{--fact:var(--tone-uncertain)}
+.source-status .source-fact.is-retracted{color:var(--warn-ink)}
 .source-fact.is-cited{--fact:var(--accent)}
 .source-fact.is-unstated{--fact:var(--muted)}
 .source-fact.is-similarity{--fact:var(--attr-similarity);font-variant-numeric:tabular-nums;cursor:help}

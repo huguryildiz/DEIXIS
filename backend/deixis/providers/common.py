@@ -96,6 +96,8 @@ class ProviderRecord:
     raw: dict[str, Any] = field(repr=False)
     other_versions: list[OtherVersion] = field(default_factory=list)
     cited_by_count: int | None = None
+    # OpenAlex's retraction flag (D27). `None` means unknown: another provider, or OpenAlex sent no boolean.
+    is_retracted: bool | None = None
     # How many works the record's own bibliography lists. A paper's bibliography does not change, so the first count
     # read stands; a record whose source names none has no count, which is not the same as a count of zero (SW5.1).
     reference_count: int | None = None

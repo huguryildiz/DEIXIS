@@ -1486,6 +1486,10 @@ class Store:
                     # A citation count changes over time; the latest retrieval replaces it, with its date.
                     self.conn.execute("UPDATE source_versions SET cited_by_count = ?, cited_by_count_at = ? WHERE id = ?",
                                       (record.cited_by_count, now(), svid))
+                if record.is_retracted is not None:
+                    # Same rule (D27): only an explicit OpenAlex answer replaces the flag; an unknown read never clears it.
+                    self.conn.execute("UPDATE source_versions SET is_retracted = ?, is_retracted_at = ? WHERE id = ?",
+                                      (int(record.is_retracted), now(), svid))
             else:
                 svid, wid = self._insert_provider_record(provider, record, payload_path)
             self._store_author_keywords(svid, record)
@@ -1610,12 +1614,14 @@ class Store:
         self.conn.execute(
             "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label, publication_type, doi,"
             " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at, cited_by_count, cited_by_count_at,"
-            " volume, issue, pages)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?, ?, ?, ?, ?, ?)",
+            " volume, issue, pages, is_retracted, is_retracted_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (svid, wid, record.title, dumps(record.authors), record.year, record.venue, record.version_label,
              record.publication_type, record.doi, record.landing_url, record.oa_pdf_url, record.oa_pdf_version, payload_path, ts,
              record.cited_by_count, ts if record.cited_by_count is not None else None,
-             record.volume, record.issue, record.pages),
+             record.volume, record.issue, record.pages,
+             None if record.is_retracted is None else int(record.is_retracted),
+             ts if record.is_retracted is not None else None),
         )
         self._insert_mappings(svid, provider, record, ts)
         if record.abstract:
@@ -2431,6 +2437,22 @@ class Store:
             found.update({row[0]: row[1] for row in self.conn.execute(
                 f"SELECT id, work_id FROM source_versions WHERE id IN ({', '.join('?' * len(chunk))})", chunk)})
         return found
+
+    def work_retracted(self, work_id: str) -> bool | None:
+        """OpenAlex's flag for a whole work (D27), over every stored version whether or not any research shows it.
+
+        True when OpenAlex flags any version, False when some version was read unflagged and none is flagged, None
+        when no version has an OpenAlex answer. False means only that OpenAlex does not flag it.
+        """
+        row = self.conn.execute("SELECT MAX(is_retracted) FROM source_versions WHERE work_id = ?", (work_id,)).fetchone()
+        return None if row[0] is None else bool(row[0])
+
+    def research_works_retracted(self, research_id: str) -> dict[str, bool | None]:
+        """`work_retracted` for every work a research holds, in one statement; a work with no answer is absent."""
+        return {row[0]: bool(row[1]) for row in self.conn.execute(
+            "SELECT work_id, MAX(is_retracted) FROM source_versions WHERE work_id IN (SELECT s.work_id FROM"
+            " corpus_memberships m JOIN source_versions s ON s.id = m.source_version_id WHERE m.research_id = ?"
+            " AND m.removed_at IS NULL) GROUP BY work_id HAVING MAX(is_retracted) IS NOT NULL", (research_id,))}
 
     def source(self, svid: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT * FROM source_versions WHERE id = ?", (svid,)).fetchone()

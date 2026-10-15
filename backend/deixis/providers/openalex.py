@@ -55,6 +55,7 @@ SELECT = ",".join(
     [
         "id", "doi", "ids", "display_name", "publication_year", "type", "authorships",
         "primary_location", "best_oa_location", "locations", "open_access", "abstract_inverted_index", "cited_by_count",
+        "is_retracted",
     ]
 )
 ABSTRACT_ORIGIN = "provider_openalex_inverted_index"
@@ -122,6 +123,8 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
         raw=work,
         other_versions=other_versions,
         cited_by_count=work.get("cited_by_count") if isinstance(work.get("cited_by_count"), int) else None,
+        # Only a boolean OpenAlex answered counts; an absent or malformed field is unknown, never "not retracted" (D27).
+        is_retracted=work.get("is_retracted") if isinstance(work.get("is_retracted"), bool) else None,
         # Absent unless this read asked for the field; an absent count is unknown, never zero.
         reference_count=(work.get(REFERENCE_COUNT_FIELD)
                          if isinstance(work.get(REFERENCE_COUNT_FIELD), int) else None),

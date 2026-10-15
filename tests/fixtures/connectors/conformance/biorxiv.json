@@ -41,6 +41,7 @@
                 "oa_pdf_url": null,
                 "oa_pdf_version": null,
                 "cited_by_count": null,
+                "is_retracted": null,
                 "reference_count": 1
               }
             ]
@@ -350,6 +351,7 @@
                 "oa_pdf_url": null,
                 "oa_pdf_version": null,
                 "cited_by_count": null,
+                "is_retracted": null,
                 "reference_count": null
               }
             ]
@@ -400,6 +402,7 @@
                 "oa_pdf_url": null,
                 "oa_pdf_version": null,
                 "cited_by_count": 0,
+                "is_retracted": null,
                 "reference_count": 0
               }
             ]
@@ -1465,7 +1468,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
           ]
         ],
         "next_page": [
@@ -1491,7 +1494,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
           ]
         ],
         "unpaged": [
@@ -1513,7 +1516,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
           ]
         ]
       }

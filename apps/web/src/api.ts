@@ -457,6 +457,10 @@ export type Source = {
   volume: string | null; issue: string | null; pages: string | null
   doi: string | null; landing_url: string | null; version_label: string | null; publication_type: string | null
   cited_by_count: number | null; cited_by_count_at: string | null
+  // OpenAlex's retraction flag (D27): null when unknown (no OpenAlex read, or no answer), never "not retracted".
+  is_retracted: boolean | null
+  // True when any stored version of the work is flagged, e.g. the published article of this preprint.
+  work_is_retracted: boolean | null
   origin: 'provider' | 'user_upload'; added_by: string; added_at: string; rank: number | null; similarity: number | null
   found_in_revision: number | null; applicability: 'current' | 'stale_scope'; version_role: 'record' | 'other_version'
   // The other version of the work whose text answers read, when the record has no PDF text (D48).
@@ -681,7 +685,7 @@ export type Passage = {
   rendition?: boolean
   evidence_status: EvidenceStatus
   removed_from_research: boolean
-  source: { id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string; cited_by_count: number | null; cited_by_count_at: string | null }
+  source: { id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; landing_url: string | null; version_label: string | null; origin: string; cited_by_count: number | null; cited_by_count_at: string | null; is_retracted: boolean | null; work_is_retracted: boolean | null }
 }
 export type ModelOption = {
   id: string; display_name: string; is_default: boolean; description?: string
@@ -749,7 +753,7 @@ export type LibraryResearch = { id: string; title: string; updated_at: string }
 export type LibraryEntry = {
   work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
   publication_type: string | null; doi: string | null; landing_url: string | null
-  cited_by_count: number | null; cited_by_count_at: string | null; access_level: AccessLevel
+  cited_by_count: number | null; cited_by_count_at: string | null; is_retracted: boolean | null; access_level: AccessLevel
   versions: LibraryVersion[]; researches: LibraryResearch[]; first_research_id: string | null; newest_source_at: string
 }
 export type LibraryView = { entries: LibraryEntry[]; researches: LibraryResearch[]; counts: { works: number; versions: number; researches: number } }
@@ -757,7 +761,7 @@ export type LibraryAddition = { work_id: string; research_id: string; source_ver
 export type LibraryWorkVersion = {
   source_version_id: string; version_label: string | null; year: number | null; venue: string | null
   doi: string | null; landing_url: string | null; publication_type: string | null; authors: string[]
-  cited_by_count: number | null; added_at: string; access_level: AccessLevel
+  cited_by_count: number | null; is_retracted: boolean | null; added_at: string; access_level: AccessLevel
   abstract: string | null; abstract_origin: string | null; abstract_passage_id: string | null
   asset: { id: string; page_count: number | null; original_filename: string | null; extraction_status: string } | null
   // A research that holds this version now, and — when none does — the one it was removed from, which still opens its text (D50).
@@ -766,6 +770,7 @@ export type LibraryWorkVersion = {
 export type LibraryWork = {
   work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
   doi: string | null; landing_url: string | null; publication_type: string | null; cited_by_count: number | null
+  is_retracted: boolean | null
   versions: LibraryWorkVersion[]; researches: LibraryResearch[]
 }
 export type QuickFindResult = {

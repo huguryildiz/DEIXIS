@@ -1117,6 +1117,10 @@
               "pdf_available",
               "inaccessible"
             ]
+          },
+          "is_retracted": {
+            "const": true,
+            "description": "Present only when OpenAlex flagged the work as retracted at its last read (D27). Absence means not flagged or unknown, never confirmed sound."
           }
         }
       }

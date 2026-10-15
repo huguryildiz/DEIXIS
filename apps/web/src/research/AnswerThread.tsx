@@ -2,7 +2,7 @@ import { type ReactNode } from 'react'
 import { ArrowUp, ArrowUpRight, BadgeCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, MessageSquare, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { type Answer, type Claim, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
-import { locatorText, pauseReasonText, verdictLabels, versionText, versionTones } from '../labels'
+import { locatorText, pauseReasonText, retractionNote, verdictLabels, versionText, versionTones } from '../labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../labels'
 import { MathText } from '../MathText'
 import { writeClipboard } from '../clipboard'
@@ -214,6 +214,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
           <span className="ref-body">
             <span className="ref-text cf">{source ? formatReference(style, source) : e.title}</span>
             <span className="ref-pills pills">
+              {source && retractionNote(source) && <span className="ref-pill pill is-retracted" title={retractionNote(source) ?? undefined}>{t('Retracted')}</span>}
               <span className={`ref-pill pill ${e.kind === 'abstract' ? 'is-abstract' : 'is-text'}`}>{e.kind === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{locator.charAt(0).toUpperCase() + locator.slice(1)}</span>
               <span className={`ref-pill pill is-${versionTones[e.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(e.version_label)}</span>
               {e.text_source === 'ocr' && <span className="ref-pill pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}

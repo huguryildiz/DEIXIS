@@ -4848,7 +4848,10 @@ class ResearchFlow:
                 kinds = {p["kind"] for p in passage_rows if p["source_version_id"] == svid}
             access = "pdf_available" if "pdf_page" in kinds else "abstract" if "abstract" in kinds else "metadata"
             sources.append({"source_id": svid, "work_id": source["work_id"], "title": source["title"], "year": source["year"],
-                            "version_label": source["version_label"], "access_level": access})
+                            "version_label": source["version_label"], "access_level": access}
+                           # Only a flagged work carries the field, so an unflagged source keeps its shape. Any
+                           # flagged version marks the work: a preprint of a retracted paper is not sound evidence (D27).
+                           | ({"is_retracted": True} if self.store.work_retracted(source["work_id"]) else {}))
         passages = [{
             "passage_id": p["id"], "source_id": p["source_version_id"],
             "reading_depth": "abstract" if p["kind"] == "abstract" else "selected_sections",

@@ -697,6 +697,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     similarity_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None
     answered_in_queue = queue_answers(store, research_id)
     sources = []
+    work_flags = store.research_works_retracted(research_id)
     for row in conn.execute(
         "SELECT m.added_by, m.created_at AS added_at, s.*, sel.state, sel.origin AS selection_origin, sel.version AS selection_version, sel.proposal,"
         " (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key,"
@@ -753,6 +754,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "pages": row["pages"], "doi": row["doi"], "landing_url": row["landing_url"],
             "version_label": row["version_label"], "publication_type": row["publication_type"], "origin": row["origin"],
             "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
+            # The version's own flag, and the work's: a preprint of a retracted article is marked too (D27).
+            "is_retracted": _retracted(row["is_retracted"]), "work_is_retracted": work_flags.get(row["work_id"]),
             "added_by": row["added_by"], "added_at": row["added_at"], "rank": row["rank"], "similarity": row["similarity"],
             # Whether an answer can read this version's PDF pages rather than its abstract (D49).
             "has_pdf_text": bool(assets) and store.has_pdf_text(svid),
@@ -961,6 +964,11 @@ def _access_level(has_pdf_text: int, has_abstract: int) -> str:
     return "pdf_available" if has_pdf_text else "abstract" if has_abstract else "metadata"
 
 
+def _retracted(value: int | None) -> bool | None:
+    """One version's stored OpenAlex flag (D27): None is unknown; False means only that OpenAlex does not flag it."""
+    return None if value is None else bool(value)
+
+
 # Rank one version of a work as the representative shown in the library table: richer bibliographic
 # records first, so a bare preprint never hides the published version's metadata.
 def _library_representative_score(row: dict[str, Any]) -> tuple[int, ...]:
@@ -1048,6 +1056,7 @@ def library_view(store: Store) -> dict[str, Any]:
             "landing_url": representative["landing_url"],
             "cited_by_count": max((v["cited_by_count"] for v in versions if v["cited_by_count"] is not None), default=None),
             "cited_by_count_at": representative["cited_by_count_at"],
+            "is_retracted": store.work_retracted(work_id),
             "versions": [{"source_version_id": v["source_version_id"], "version_label": v["version_label"],
                           "year": v["year"], "venue": v["venue"], "access_level": v["access_level"],
                           "library_item": v["library_item"], "research_ids": v["research_ids"]} for v in versions],
@@ -1095,7 +1104,7 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
     conn = store.conn
     rows = conn.execute(
         "SELECT v.id AS source_version_id, v.work_id, v.title, v.authors_json, v.year, v.venue, v.doi,"
-        " v.landing_url, v.version_label, v.publication_type, v.cited_by_count, v.cited_by_count_at,"
+        " v.landing_url, v.version_label, v.publication_type, v.cited_by_count, v.cited_by_count_at, v.is_retracted,"
         f" v.created_at AS source_created_at, {_HAS_PDF_TEXT} AS has_pdf_text, {_HAS_ABSTRACT} AS has_abstract"
         " FROM source_versions v WHERE v.work_id = ?"
         " AND (EXISTS (SELECT 1 FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
@@ -1129,7 +1138,8 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
             "source_version_id": svid, "version_label": row["version_label"], "year": row["year"],
             "venue": row["venue"], "doi": row["doi"], "landing_url": row["landing_url"],
             "publication_type": row["publication_type"], "authors": json.loads(row["authors_json"]),
-            "cited_by_count": row["cited_by_count"], "added_at": row["source_created_at"],
+            "cited_by_count": row["cited_by_count"], "is_retracted": _retracted(row["is_retracted"]),
+            "added_at": row["source_created_at"],
             "access_level": _access_level(row["has_pdf_text"], row["has_abstract"]),
             "abstract": abstract["text"] if abstract else None,
             "abstract_origin": abstract["abstract_origin"] if abstract else None,
@@ -1155,6 +1165,7 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
         "year": representative["year"], "venue": representative["venue"], "doi": representative["doi"],
         "landing_url": representative["landing_url"], "publication_type": representative["publication_type"],
         "cited_by_count": max((v["cited_by_count"] for v in versions if v["cited_by_count"] is not None), default=None),
+        "is_retracted": store.work_retracted(work_id),
         "versions": versions,
         "researches": sorted(researches.values(), key=lambda r: r["updated_at"] or "", reverse=True),
     }
@@ -1237,5 +1248,6 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
         "removed_from_research": not store.is_active_member(research_id, passage["source_version_id"]),
         "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
                                             "cited_by_count", "cited_by_count_at")}
-        | {"source_key": store.source_key(source["work_id"])},
+        | {"source_key": store.source_key(source["work_id"]), "is_retracted": _retracted(source["is_retracted"]),
+           "work_is_retracted": store.work_retracted(source["work_id"])},
     }

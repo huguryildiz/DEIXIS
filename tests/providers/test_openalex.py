@@ -97,3 +97,14 @@ def test_auth_and_parse_errors():
     assert run(lambda r: httpx.Response(403, text="forbidden"), api_key="k").status == "entitlement_missing"
     assert run(lambda r: httpx.Response(200, text="<html>")).status == "parse_error"
     assert run(lambda r: httpx.Response(200, content=json.dumps({"meta": {}}).encode())).status == "parse_error"
+
+
+def test_retraction_flag_is_read_only_from_a_boolean():
+    """D27: True and False come from OpenAlex's boolean; an absent or malformed field stays unknown."""
+    assert "is_retracted" in openalex.SELECT.split(",") and "is_retracted" in openalex.CHAIN_SELECT.split(",")
+    assert "is_retracted" not in openalex.COUNT_SELECT
+    assert openalex._record({**WORK, "is_retracted": True}).is_retracted is True
+    assert openalex._record({**WORK, "is_retracted": False}).is_retracted is False
+    assert openalex._record(WORK).is_retracted is None
+    assert openalex._record({**WORK, "is_retracted": "true"}).is_retracted is None
+    assert openalex._record({**WORK, "is_retracted": None}).is_retracted is None

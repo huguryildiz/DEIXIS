@@ -47,6 +47,7 @@
                 "oa_pdf_url": null,
                 "oa_pdf_version": null,
                 "cited_by_count": null,
+                "is_retracted": null,
                 "reference_count": 1
               }
             ]
@@ -356,6 +357,7 @@
                 "oa_pdf_url": null,
                 "oa_pdf_version": null,
                 "cited_by_count": null,
+                "is_retracted": null,
                 "reference_count": null
               }
             ]
@@ -406,6 +408,7 @@
                 "oa_pdf_url": null,
                 "oa_pdf_version": null,
                 "cited_by_count": 0,
+                "is_retracted": null,
                 "reference_count": 0
               }
             ]
@@ -1467,7 +1470,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,referenced_works_count,referenced_works"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,referenced_works_count,referenced_works"
           ]
         ],
         "next_page": [
@@ -1489,7 +1492,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,referenced_works_count,referenced_works"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,referenced_works_count,referenced_works"
           ]
         ],
         "unpaged": [
@@ -1507,7 +1510,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
           ]
         ]
       }
@@ -1530,6 +1533,7 @@
                 "oa_pdf_url": null,
                 "oa_pdf_version": null,
                 "cited_by_count": null,
+                "is_retracted": null,
                 "reference_count": 1
               }
             ]
@@ -1839,6 +1843,7 @@
                 "oa_pdf_url": null,
                 "oa_pdf_version": null,
                 "cited_by_count": null,
+                "is_retracted": null,
                 "reference_count": null
               }
             ]
@@ -1889,6 +1894,7 @@
                 "oa_pdf_url": null,
                 "oa_pdf_version": null,
                 "cited_by_count": 0,
+                "is_retracted": null,
                 "reference_count": 0
               }
             ]
@@ -2946,7 +2952,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,referenced_works_count,referenced_works"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,referenced_works_count,referenced_works"
           ]
         ],
         "next_page": [
@@ -2964,7 +2970,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,referenced_works_count,referenced_works"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,referenced_works_count,referenced_works"
           ]
         ],
         "unpaged": [
@@ -2982,7 +2988,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
           ]
         ],
         "kill_search": [
@@ -3000,7 +3006,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
           ]
         ]
       }

@@ -94,6 +94,9 @@ class ReviewReader:
     def source(self, source_id):
         return self._store.source(source_id)
 
+    def work_retracted(self, work_id):
+        return self._store.work_retracted(work_id)
+
     def source_access(self, source_id):
         if self._store.has_pdf_text(source_id):
             return "pdf_available"

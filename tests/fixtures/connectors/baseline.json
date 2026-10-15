@@ -521,7 +521,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,referenced_works_count,referenced_works"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,referenced_works_count,referenced_works"
               ]
             ],
             "headers": [
@@ -573,6 +573,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {},
                   "issue": null,
@@ -648,7 +649,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -755,7 +756,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,referenced_works_count,referenced_works"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,referenced_works_count,referenced_works"
               ]
             ],
             "headers": [
@@ -807,6 +808,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.2",
                   "identifiers": {},
                   "issue": null,
@@ -882,7 +884,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -982,7 +984,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -1088,7 +1090,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -1137,7 +1139,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -1191,6 +1193,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {},
                   "issue": null,
@@ -1266,7 +1269,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -1318,6 +1321,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {},
                   "issue": null,
@@ -1393,7 +1397,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -1441,6 +1445,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {},
                   "issue": null,
@@ -1527,7 +1532,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,referenced_works_count,referenced_works,publication_date"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,referenced_works_count,referenced_works,publication_date"
               ],
               [
                 "sort",
@@ -1583,6 +1588,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {},
                   "issue": null,
@@ -1715,6 +1721,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"
@@ -1941,6 +1948,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.2",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.2"
@@ -2311,6 +2319,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"
@@ -2436,6 +2445,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"
@@ -2557,6 +2567,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"
@@ -2751,6 +2762,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"
@@ -2879,6 +2891,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"
@@ -3110,6 +3123,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.2",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.2"
@@ -3487,6 +3501,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"
@@ -3611,6 +3626,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"
@@ -3745,6 +3761,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1"
@@ -3977,6 +3994,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.2",
                   "identifiers": {
                     "doi": "10.9999/synthetic.2"
@@ -4361,6 +4379,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1"
@@ -4488,6 +4507,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1"
@@ -4615,6 +4635,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1"
@@ -4811,6 +4832,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.48550/arxiv.2101.00001",
                   "identifiers": {
                     "arxiv": "2101.00001",
@@ -5042,6 +5064,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.48550/arxiv.2101.00002",
                   "identifiers": {
                     "arxiv": "2101.00002",
@@ -5331,6 +5354,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.48550/arxiv.2101.00001",
                   "identifiers": {
                     "arxiv": "2101.00001",
@@ -5461,6 +5485,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.48550/arxiv.2101.00001",
                   "identifiers": {
                     "arxiv": "2101.00001",
@@ -5591,6 +5616,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.48550/arxiv.2101.00001",
                   "identifiers": {
                     "arxiv": "2101.00001",
@@ -5742,7 +5768,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -5794,6 +5820,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {},
                   "issue": null,
@@ -5873,7 +5900,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -5982,7 +6009,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -6034,6 +6061,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.2",
                   "identifiers": {},
                   "issue": null,
@@ -6113,7 +6141,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -6217,7 +6245,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -6327,7 +6355,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -6380,7 +6408,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -6434,6 +6462,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {},
                   "issue": null,
@@ -6513,7 +6542,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -6565,6 +6594,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {},
                   "issue": null,
@@ -6644,7 +6674,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -6692,6 +6722,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {},
                   "issue": null,
@@ -7068,6 +7099,7 @@
                     "Synthetic Group"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": null,
                   "identifiers": {
                     "pmid": "900001"
@@ -7385,6 +7417,7 @@
                     "Synthetic Group"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": null,
                   "identifiers": {
                     "pmid": "900002"
@@ -7878,6 +7911,7 @@
                     "Synthetic Group"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": null,
                   "identifiers": {
                     "pmid": "900001"
@@ -8078,6 +8112,7 @@
                     "Synthetic Group"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": null,
                   "identifiers": {
                     "pmid": "900001"
@@ -8270,6 +8305,7 @@
                     "Synthetic Group"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": null,
                   "identifiers": {
                     "pmid": "900001"
@@ -8466,6 +8502,7 @@
                   ],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1",
@@ -8738,6 +8775,7 @@
                   ],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.2",
                   "identifiers": {
                     "doi": "10.9999/synthetic.2",
@@ -9125,6 +9163,7 @@
                   ],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1",
@@ -9255,6 +9294,7 @@
                   ],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1",
@@ -9454,6 +9494,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1",
@@ -9729,6 +9770,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.2",
                   "identifiers": {
                     "doi": "10.9999/synthetic.2",
@@ -10115,6 +10157,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1",
@@ -10244,6 +10287,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1",
@@ -10436,6 +10480,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "core_work_id": "1",
@@ -10694,6 +10739,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.2",
                   "identifiers": {
                     "core_work_id": "2",
@@ -11047,6 +11093,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "core_work_id": "1",
@@ -11167,6 +11214,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "core_work_id": "1",
@@ -11362,6 +11410,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "google_scholar_result_id": "synthetic1"
@@ -11631,6 +11680,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.2",
                   "identifiers": {
                     "google_scholar_result_id": "synthetic2"
@@ -12015,6 +12065,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "google_scholar_result_id": "synthetic1"
@@ -12142,6 +12193,7 @@
                   "author_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "google_scholar_result_id": "synthetic1"
@@ -12332,6 +12384,7 @@
                   ],
                   "authors": [],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "doi": "10.9999/synthetic.1",
@@ -12616,7 +12669,7 @@
               ],
               [
                 "select",
-                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count"
+                "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted"
               ]
             ],
             "headers": [
@@ -13083,6 +13136,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.48550/arxiv.2101.00001",
                   "identifiers": {
                     "arxiv": "2101.00001",
@@ -13132,6 +13186,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.48550/arxiv.2101.00001",
                   "identifiers": {
                     "arxiv": "2101.00001",
@@ -13382,6 +13437,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"
@@ -13430,6 +13486,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"
@@ -13478,6 +13535,7 @@
                     "Synthetic Author"
                   ],
                   "cited_by_count": null,
+                  "is_retracted": null,
                   "doi": "10.9999/synthetic.1",
                   "identifiers": {
                     "DOI": "10.9999/synthetic.1"

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { BookOpenText, ChevronRight, FileText, FileUp, Link2, LoaderCircle, Replace, ScanText, Search, Sigma, Trash2, UserPen } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { type Source } from '../api'
-import { serviceErrorSentence, serviceKind, accessParts, citedText, providerName, queueAnsweredText, versionText, versionTones } from '../labels'
+import { serviceErrorSentence, serviceKind, accessParts, citedText, providerName, retractionNote, queueAnsweredText, versionText, versionTones } from '../labels'
 import { TextRecovery } from '../TextRecovery'
 import { Elapsed } from '../EvidenceTable'
 import { ConnectionIcon } from '../connectionIcons'
@@ -41,6 +41,7 @@ export function SourceRow({ source, busy, picked, onPick, readsVersion, citedCla
   // The citation count keeps its provider, as everywhere else (OpenAlex counts it; it is metadata, not quality).
   const venueLine = [source.venue, source.year, citationDetails, citedText(source.cited_by_count)].filter(Boolean)
   const authors = source.authors.join(', ')
+  const retraction = retractionNote(source)
   const discoveries = source.access.pdf_discoveries
   const candidates = source.access.pdf_candidates
   const unusable = candidates.filter(c => c.access_status !== 'downloaded').length
@@ -66,6 +67,7 @@ export function SourceRow({ source, busy, picked, onPick, readsVersion, citedCla
           : <span>{t(source.origin === 'user_upload' ? 'Uploaded PDF' : 'No bibliographic details from the provider')}</span>}
       </div>
       <div className="pills source-status">
+        {retraction && <Tooltip content={retraction}><span className="pill source-fact is-retracted" tabIndex={0}>{t('Retracted')}</span></Tooltip>}
         {source.doi && <span className="pill source-fact is-plain"><Link2 size={12} aria-hidden />DOI</span>}
         {source.version_label && <span className={`pill source-fact is-${versionTones[source.version_label] ?? 'unstated'}`}>{versionText(source.version_label)}</span>}
         {accessParts(source).map(part => <span key={part.text} className={`pill source-fact is-${part.tone}`}>{part.text}</span>)}

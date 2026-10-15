@@ -199,7 +199,7 @@ def test_open_copy_counts_before_and_after_are_equal_and_a_pending_migration_is_
     monkeypatch.setattr(db, "MIGRATIONS_DIR", newer)
     result = uc.open_copy(str(work))
     assert result["applied_before"] == uc.compact(packaged) and result["pending"] == str(pending)
-    assert result["applied_after"] == f"1-{pending}"
+    assert result["applied_after"] == uc.compact([*packaged, pending])  # numbers may have gaps (0009 is free, D27)
     assert result["applied_by_open"] == 1 and result["unknown"] == "none"
     assert result["sql_before"] == result["sql_after"] and result["sql_before"]["researches"] == 1
 

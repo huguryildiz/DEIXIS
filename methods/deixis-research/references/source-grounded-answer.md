@@ -123,8 +123,9 @@ did.
    source's finding, not an established result. When a passage states the
    setting of a result (simulation, testbed, field trial, clinical trial,
    cohort), say it in the claim; never name a setting the passage does not
-   state. Two record fields may be used in claim text without a passage
-   stating them: a source's `year`, and a `version_label` of
+   state. Three record fields may be used in claim text without a passage
+   stating them: a source's `year`, its `is_retracted` flag (rule below), and a
+   `version_label` of
    `submittedVersion`, written as "the submitted version" or "a preprint
    version" and never as unpublished or not peer reviewed. No finding, setting
    or relation between sources may come from record fields. When one source
@@ -134,6 +135,11 @@ did.
    relation to another work is that a `source_stated` claim citing that
    passage alone. A later year alone does not show that one result replaced
    another.
+   A source marked `is_retracted` belongs to a work that OpenAlex flags as
+   retracted in at least one of its versions, which may be another version than
+   the one supplied. Cite it only together with saying in the claim that
+   OpenAlex flags this work as retracted, never that this version was
+   retracted, and never as support for a claim on its own.
 11. Put parts of the question the passages do not answer in `unanswered_aspects`.
    An empty claim list with a clear statement of what is missing is a valid answer.
 12. A structured report of what the supplied passages state is supported. If the

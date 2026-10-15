@@ -896,7 +896,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
     </div>
 
     {fileInputEl()}
-    {selected && sheet && <PassageSheet researchId={sheet.researchId} passageId={sheet.passageId} assetId={sheet.assetId} dark={dark} onClose={() => setSelected(null)} />}
+    {selected && sheet && <PassageSheet researchId={sheet.researchId} passageId={sheet.passageId} assetId={sheet.assetId} abstractPassageId={sheet.abstractPassageId} dark={dark} onClose={() => setSelected(null)} />}
     <ZoteroDialog open={zoteroOpen} onOpenChange={setZoteroOpen} destination="library" busy={busy === 'zotero'} returnFocus={zoteroButton} onImport={choice => void importZotero(choice)} />
     <NewResearchDialog request={asking} dark={dark} busy={busy === 'create'} count={asking?.works.length ?? 0}
       onClose={() => setAsking(null)} onStart={(question, answer, literature) => { if (asking) void startFromSelection(asking.mode, asking.works, question, answer, literature) }} />
@@ -1094,8 +1094,8 @@ function NewResearchDialog({ request, dark, busy, count, onClose, onStart }: {
 
 function sheetTarget(work: LibraryWork | null) {
   const withPdf = work?.versions.find(version => version.research_id && version.asset)
-  if (withPdf) return { researchId: withPdf.research_id as string, assetId: (withPdf.asset as { id: string }).id, passageId: null }
+  if (withPdf) return { researchId: withPdf.research_id as string, assetId: (withPdf.asset as { id: string }).id, passageId: null, abstractPassageId: withPdf.abstract_passage_id }
   const withAbstract = work?.versions.find(version => version.abstract_passage_id && (version.research_id ?? version.removed_research_id))
-  if (withAbstract) return { researchId: (withAbstract.research_id ?? withAbstract.removed_research_id) as string, assetId: null, passageId: withAbstract.abstract_passage_id }
+  if (withAbstract) return { researchId: (withAbstract.research_id ?? withAbstract.removed_research_id) as string, assetId: null, passageId: withAbstract.abstract_passage_id, abstractPassageId: null }
   return null
 }

@@ -116,8 +116,8 @@ function markGroups(root: HTMLElement | null) {
 // text is opened for something other than an answer's citation (the human queue, slice 17).
 // latestAnswer: the research's latest valid answer, whose claims the details line counts ("cited in N claims of Vn").
 // actions: what the research page lets the panel do (P14); findOnOpen starts the open-copy lookup once on open (the
-// Citation panel's Find PDF).
-export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource, asPanel = false, latestAnswer = null, actions, findOnOpen = false }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void; asPanel?: boolean; latestAnswer?: { version: number; claims: Claim[] } | null; actions?: SourceActions; findOnOpen?: boolean }) {
+// Citation panel's Find PDF). abstractPassageId: the source's abstract when no `sources` row names it (the Library page).
+export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource, asPanel = false, latestAnswer = null, actions, findOnOpen = false, abstractPassageId = null }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void; asPanel?: boolean; latestAnswer?: { version: number; claims: Claim[] } | null; actions?: SourceActions; findOnOpen?: boolean; abstractPassageId?: string | null }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   // The whole extracted text of the PDF a cited passage comes from: undefined while it loads, null when the passage opens alone.
@@ -233,7 +233,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   // The arXiv source version a 'latex_source' passage's equations came from (D104); omitted gracefully if not found.
   const sourceAsset = passage?.asset_id ? row?.access.assets.find(a => a.id === passage.asset_id) : undefined
   const arxivVersion = sourceAsset?.equations?.route === 'arxiv_source' ? sourceAsset.equations.source?.version ?? null : null
-  const abstractId = abstract ? passage!.id : row?.access.abstract_passage_id ?? opened?.access.abstract_passage_id ?? null
+  const abstractId = abstract ? passage!.id : row?.access.abstract_passage_id ?? opened?.access.abstract_passage_id ?? abstractPassageId ?? null
   const abstractShown = abstract ? passage : abstractPassage || null
   // The text the Plain text tab reads when the opened passage is not a PDF page: the opened file's, else the source's PDF.
   const otherText = assetText ?? (extra || null)

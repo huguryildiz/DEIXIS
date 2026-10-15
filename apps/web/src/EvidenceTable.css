@@ -5,10 +5,12 @@
 .split-panel :is(.table-panel,.cell-detail) p{margin:0}
 .table-panel{display:flex;flex-direction:column;min-width:0;min-height:100%}
 .table-panel>.table-failed{margin:10px 12px 0}
-.table-panel>.evidence-new-rows{--notice:var(--accent);align-items:center;flex-wrap:wrap;margin:10px 12px 0}
+.table-panel>.evidence-new-rows{--notice:var(--accent);align-items:center;flex-wrap:wrap;gap:10px 12px;margin:10px 12px 0;padding:10px 10px 10px 14px;border:1px solid var(--accent-line);border-radius:10px;background:var(--accent-tint)}
+.evidence-new-rows>svg{flex:none;color:var(--accent)}
+.evidence-new-rows>button.ghost{border-color:var(--accent-line)}
 .evidence-new-rows>span{flex:1 1 220px}
 .evidence-new-rows>button{flex:none}
-.table-panel>.table-reason{display:flex;align-items:center;gap:8px;padding:10px 14px 0}
+.table-panel>.table-reason{display:flex;align-items:center;gap:8px;padding:14px 16px 2px;color:var(--ink-2);font-size:12.5px}
 .table-panel>.table-reason::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--tone-uncertain)}
 .table-panel .foot-note,.cell-panel .foot-note,.column-dialog .foot-note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
 .table-panel .notice.warn,.cell-panel .notice.warn{display:flex;align-items:flex-start;gap:10px;margin:0;padding:11px 13px;border:0;border-radius:10px;background:var(--warn-surface);color:var(--ink-2);font-size:13px;line-height:1.5}
@@ -28,11 +30,11 @@
 :is(.table-panel-box,.column-dialog) .ib:disabled{opacity:.45}
 :is(.table-panel-box,.column-dialog) :is(.ghost,.btn-pri,.ib):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* The toolbar (mockup .toolbar): one wrapping row on a hairline; the lock pill in amber on its tint. */
-.table-panel .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.table-panel .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;padding:10px 12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .table-panel .toolbar .spacer{flex:1}
 .table-rows-count{color:var(--muted);font-size:12.5px}
 .table-panel .lockb{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:var(--warn-surface);color:var(--warn-ink);font-size:12px;white-space:nowrap}
-.evidence-table-choice{height:30px;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink);font-size:12.5px}
+.evidence-table-choice{max-width:320px;text-overflow:ellipsis;height:30px;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink);font-size:12.5px}
 .table-panel>.evidence-run,.table-panel>.table-notes,.table-panel>.evidence-inline-form,.table-panel>.evidence-add-rows{margin:10px 12px 0}
 /* The notes about this fill and these columns: one quiet card on the side surface, one line each. */
 .table-notes{display:grid;gap:4px;padding:10px 12px 10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface)}
@@ -73,17 +75,17 @@
 .table-panel .sugg-notes{padding:8px 12px;border-top:1px solid var(--line)}
 /* The grid: a card inset from the panel edge, a sticky header row and a sticky source column, cells that wrap up to
    five lines, and a quiet row hover; the open cell is tinted. App.css sets nowrap on every th/td, so cells reset it. */
-.table-panel .tbl-wrap{margin:12px 12px 0;overflow:auto;border:1px solid var(--line);border-radius:10px;background:var(--raised-surface)}
+.table-panel .tbl-wrap{margin:10px 12px 0;overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--raised-surface)}
 .evidence-grid{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
-.evidence-grid th{position:sticky;top:0;z-index:2;padding:10px 14px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink-2);font-size:12.5px;font-weight:500;line-height:1.5;text-align:left;white-space:nowrap}
+.evidence-grid th{position:sticky;top:0;z-index:2;padding:9px 16px;border-bottom:1px solid var(--strong-line);border-right:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink-2);font-size:12.5px;font-weight:550;letter-spacing:.005em;line-height:1.5;text-align:left;white-space:nowrap}
 .evidence-grid td{padding:0;border-bottom:1px solid var(--line);border-right:1px solid var(--line);vertical-align:top;white-space:normal;transition:background-color .12s ease}
 .evidence-grid tbody tr:last-child>*{border-bottom:0}
 .evidence-grid tr>:last-child{border-right:0}
 .evidence-grid :is(thead th:first-child,tbody th){position:sticky;left:0;box-shadow:1px 0 0 var(--line),6px 0 10px -8px rgb(20 28 45/.18)}
 .evidence-grid thead th:first-child{z-index:3}
 .evidence-grid tbody th{z-index:1;background:var(--raised-surface);color:var(--ink);font-size:13px;font-weight:400;white-space:normal;vertical-align:top}
-.evidence-grid .evidence-row-head{min-width:210px;max-width:260px;padding:12px 14px}
-.evidence-grid tbody tr:hover>td{background:var(--hover-surface)}
+.evidence-grid .evidence-row-head{min-width:220px;max-width:260px;padding:14px 16px}
+.evidence-grid tbody tr:hover>:is(td,th){background:var(--hover-surface)}
 .evidence-grid td.is-open,.evidence-grid tbody tr:hover>td.is-open{background:var(--accent-tint);box-shadow:inset 0 0 0 1px var(--accent-line)}
 .evidence-grid .th-b{display:inline-flex;align-items:center;gap:7px;color:inherit;font:inherit;text-align:left}
 .evidence-grid .th-b>svg{flex:none;width:13px;height:13px;color:var(--muted)}
@@ -94,18 +96,18 @@
 .evidence-grid .th-b:focus-visible,.evidence-row-menu:focus-visible,.evidence-row-open:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 .evidence-cell:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:2px}
 .evidence-row-line{display:flex;align-items:flex-start;gap:6px}
-.evidence-grid .src-t{flex:1;min-width:0;color:var(--ink);font-weight:550;line-height:1.35;text-align:left;overflow-wrap:anywhere}
+.evidence-grid .src-t{flex:1;min-width:0;color:var(--ink);font-size:13.5px;font-weight:600;letter-spacing:-.005em;line-height:1.35;text-align:left;overflow-wrap:anywhere}
 .evidence-grid button.src-t:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .evidence-grid .src-t .source-key{font:inherit;color:inherit;background:none;border:0;padding:0}
-.evidence-grid .src-m{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.45}
+.evidence-grid .src-m{display:block;margin-top:5px;color:var(--muted);font-size:12px;line-height:1.5}
 .evidence-row-menu{display:grid;flex:none;place-items:center;width:22px;height:22px;margin:-2px -4px 0 0;border-radius:6px;color:var(--muted);opacity:.55;transition:opacity .12s ease}
 .evidence-grid tr:hover .evidence-row-menu,.evidence-row-menu:focus-visible,.evidence-row-menu[data-popup-open]{opacity:1}
 .evidence-row-menu:hover,.evidence-row-menu[data-popup-open]{background:var(--hover-surface);color:var(--ink)}
 /* A cell: the value (up to five lines), then its provenance; states in muted italics, never by colour alone. The
    button fills its cell, so the whole cell is the target. */
-.evidence-cell{display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;min-width:230px;max-width:320px;min-height:100%;padding:12px 14px;color:var(--ink);font-size:12.5px;line-height:1.5;text-align:left;white-space:normal;cursor:pointer}
+.evidence-cell{display:flex;flex-direction:column;align-items:flex-start;gap:7px;width:100%;min-width:240px;max-width:320px;min-height:100%;padding:14px 16px;color:var(--ink);font-size:13px;line-height:1.55;text-align:left;white-space:normal;cursor:pointer}
 .evidence-cell-value{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow-wrap:break-word;text-wrap:pretty}
-.evidence-cell small{color:var(--muted);font-size:11px;line-height:1.4}
+.evidence-cell small{color:var(--muted);font-size:11px;letter-spacing:.01em;line-height:1.4}
 .evidence-cell small.warn-t{color:var(--tone-uncertain)}
 .evidence-cell .nrc{color:var(--muted);font-style:italic}
 .evidence-cell-live{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
@@ -185,28 +187,32 @@
 /* The cell panel (mockup `cellPanel`, `.pad.detail`): the value as the head, one meta line, the actions, then the
    source, the passage, the column instruction and the history under small headings. */
 .split-panel-content.cell-panel{padding:0}
-.cell-detail{display:grid;gap:10px;max-width:720px;padding:16px 20px 32px;font-size:13px;line-height:21px}
+.cell-detail{display:grid;gap:14px;max-width:720px;padding:24px 24px 40px;font-size:13px;line-height:21px}
 .split-panel.is-wide .cell-detail{margin-inline:auto}
 .cell-detail>*{margin:0}
-.cell-detail .dhead{display:grid;gap:4px}
-.cell-detail .venue{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;line-height:1.5}
+.cell-detail .dhead{display:grid;gap:8px}
+.cell-detail .venue{display:inline-flex;align-items:center;gap:6px;width:fit-content;padding:2px 10px 2px 8px;border:1px solid var(--line);border-radius:999px;background:var(--sidebar-surface);color:var(--ink-2);font-size:12px;font-weight:500;line-height:1.5}
+.cell-detail .venue svg{width:14px;height:14px;color:var(--muted)}
 .cell-detail .venue svg{flex:none}
-.split-panel .cell-detail h1{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:17px;font-weight:600;line-height:1.35;letter-spacing:-.1px;text-wrap:balance;overflow-wrap:anywhere}
-.split-panel .cell-detail h1.is-state{color:var(--muted);font-size:15px;font-weight:450;font-style:normal}
-.cell-detail .dmeta{display:flex;flex-wrap:wrap;gap:0 6px;color:var(--muted);font-size:13px;line-height:1.5}
+.split-panel .cell-detail h1{margin:0;color:var(--ink);font-family:var(--font-sans);font-size:20px;font-weight:600;line-height:1.3;letter-spacing:-.2px;text-wrap:balance;overflow-wrap:anywhere}
+.split-panel .cell-detail h1.is-state{color:var(--ink-2);font-size:18px;font-weight:500;font-style:normal}
+.cell-detail .dmeta{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px;margin-top:-6px;color:var(--muted);font-size:12.5px;line-height:1.5}
 .cell-detail .dmeta>span+span::before{content:"·";margin-right:6px;color:var(--faint)}
 .cell-detail .warn-t{color:var(--tone-uncertain)}
-.cell-detail .dacts{display:flex;align-items:center;gap:2px;flex-wrap:wrap}
+.cell-detail .dacts{display:flex;align-items:center;gap:2px;flex-wrap:wrap;margin-top:2px}
+.cell-detail .cell-scope{margin-top:-6px;font-size:12px}
 .cell-detail .dacts .btn-pri{margin-right:6px}
 .cell-detail .dacts .ghost{margin-right:4px}
-.cell-detail h4.sub{display:flex;align-items:baseline;gap:8px;margin:6px 0 -4px;color:var(--muted);font-family:var(--font-sans);font-size:12px;font-weight:500;line-height:1.5;letter-spacing:0}
-.cell-detail h4.sub small{font-size:12px;font-weight:400}
-.cell-detail .src-t{color:var(--ink);font-weight:500;line-height:1.35;text-align:left}
+.cell-detail h4.sub{display:flex;align-items:center;gap:8px;margin:10px 0 -4px;padding-top:18px;border-top:1px solid var(--line);color:var(--ink-2);font-family:var(--font-sans);font-size:12.5px;font-weight:600;line-height:1.5;letter-spacing:0}
+.cell-detail h4.sub small{padding:0 8px;border-radius:999px;background:var(--selected-surface);color:var(--muted);font-size:11.5px;font-weight:500;line-height:1.6}
+.cell-detail .evidence-block h4.sub,.cell-detail .evidence-form h4.sub{padding-top:0;border-top:0;margin-top:0}
+.cell-detail .src-t{color:var(--ink);font-size:14px;font-weight:600;line-height:1.4;letter-spacing:-.005em;text-align:left}
 .cell-detail button.src-t:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .cell-detail .src-m{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.45}
 .cell-detail .cell-instruction{color:var(--ink-2)}
 .cell-detail .evidence-block{display:grid;gap:8px;padding:0}
-.cell-detail .evidence-note{color:var(--ink);font-size:12.5px;overflow-wrap:anywhere}
+.cell-detail .evidence-note{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface);color:var(--ink);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.cell-detail .evidence-note span{margin-bottom:3px;font-size:11.5px;font-weight:500}
 .cell-detail .cell-support{display:flex;align-items:flex-start;gap:7px;margin-top:8px}
 .cell-detail .cell-support svg{flex:none;margin-top:2px}
 .cell-detail .cell-live{display:inline-flex;align-items:center;gap:7px;margin-left:auto;color:var(--accent);font-size:12px;font-weight:500}
@@ -224,8 +230,10 @@
 .cell-chip.is-warn{color:var(--warn-ink);background:var(--warn-surface)}
 .cell-detail .cell-source{margin-top:-2px}
 /* Column instruction, history and details open on demand. */
-.cell-fold{display:grid;gap:8px;border-top:1px solid var(--border);padding-top:10px}
-.cell-fold>summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;color:var(--ink-2);font-size:13px;font-weight:500}
+.cell-fold{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:12px}
+.cell-detail .cell-fold+.cell-fold{margin-top:-2px}
+.cell-fold>summary{display:flex;align-items:center;gap:10px;margin:-4px -8px;padding:4px 8px;border-radius:7px;cursor:pointer;list-style:none;color:var(--ink-2);font-size:13px;font-weight:500}
+.cell-fold>summary:hover{background:var(--hover-surface);color:var(--ink)}
 .cell-fold>summary::-webkit-details-marker{display:none}
 .cell-fold>summary::before{content:"";width:6px;height:6px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(-45deg);transition:transform .15s ease}
 .cell-fold[open]>summary::before{transform:rotate(45deg)}
@@ -239,12 +247,14 @@
 /* Quotes (mockup .quote and .loc). */
 .evidence-list{display:grid;gap:12px;margin:0;padding:0;list-style:none}
 .evidence-list li{display:grid;gap:4px}
-.cell-detail .quote{display:grid;gap:6px;min-width:0;margin:0;padding:2px 0 2px 12px;border:0;border-left:2px solid var(--strong-line);color:var(--ink-2);font-size:13px;line-height:1.55}
+.cell-detail>div>.evidence-list>li{gap:10px;padding:14px 16px 12px;border:1px solid var(--line);border-radius:12px;background:var(--raised-surface)}
+.cell-detail .quote{display:grid;gap:6px;min-width:0;margin:0;padding:2px 0 2px 14px;border:0;border-left:2px solid var(--accent-line);color:var(--ink-2);font-size:13.5px;line-height:1.65}
 .cell-detail .evidence-quote{margin:0;color:var(--ink-2);overflow-wrap:anywhere}
 .evidence-quote mark{padding:.05em .1em;border-radius:3px;background:var(--mark,color-mix(in srgb,var(--accent),transparent 82%));color:var(--ink);box-decoration-break:clone;-webkit-box-decoration-break:clone}
-.cell-detail .loc{display:flex;flex-wrap:wrap;align-items:center;gap:5px 8px;color:var(--muted);font-size:11.5px;line-height:1.5}
-.evidence-open{display:inline-flex;align-items:center;gap:3px;margin-left:auto;color:var(--accent);font-size:12px;font-weight:500}
-.evidence-open:hover{text-decoration:underline;text-underline-offset:2px}
+.cell-detail .loc{display:flex;flex-wrap:wrap;align-items:center;gap:5px 8px;color:var(--muted);font-size:12px;line-height:1.5}
+.cell-detail>div>.evidence-list>li>.loc{padding-top:10px;border-top:1px solid var(--line)}
+.evidence-open{display:inline-flex;align-items:center;gap:3px;margin-left:auto;padding:2px 8px;border-radius:6px;color:var(--accent);font-size:12px;font-weight:500}
+.evidence-open:hover{background:var(--accent-tint)}
 .evidence-open:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .evidence-ocr{color:color-mix(in srgb,var(--tone-uncertain),var(--ink) 25%)}
 /* The history (mockup .hist): one hairline-led entry per revision, newest first. */

@@ -472,8 +472,8 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
       {tables.length > 1 && <select className="evidence-table-choice" aria-label={t('Table')} value={tableId} onChange={e => setChosen(e.target.value)}>{tables.map(x => {
         // Tables come oldest first; tables sharing a title are told apart as v1, v2, …
         const same = tables.filter(y => y.title === x.title)
-        const name = tableTitle(x.title)
-        return <option key={x.id} value={x.id}>{same.length > 1 ? `${name} · v${same.indexOf(x) + 1}` : name}</option>
+        const name = tableTitle(x.title, researchHeading(view))
+        return <option key={x.id} value={x.id}>{same.length > 1 ? `v${same.indexOf(x) + 1} · ${name}` : name}</option>
       })}</select>}
     </div>
     {runLine(fillProgress ? [t('{done} / {n} sources', fillProgress)] : columnProgress ? [t('{column}: {done} / {n} cells', { column: columns.find(c => c.id === columnRecheck?.target?.column_id)?.name ?? '', ...columnProgress })] : suggesting ? [t('From the question and the rows’ abstracts')] : [])}

@@ -157,8 +157,11 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
         abstract = next((d for d in reversed(fresh) if d["stage"] == "abstract"
                          and d["source_version_id"] == svid and d["outcome"] == "candidate"), None)
         route = "fulltext" if asset and full["outcome"] == "include" else "abstract"
+        # A PDF the person attached and the model read stays in the answer whatever the new ranking says.
+        uploaded = bool(asset) and store.conn.execute(
+            "SELECT 1 FROM source_assets WHERE id = ? AND origin = 'user_upload'", (asset,)).fetchone() is not None
         reason = None
-        if wid not in present:
+        if wid not in present and not uploaded:
             reason = "outside_read_window"
         elif wid in unread:
             reason = "not_screened_at_cutoff"

@@ -397,6 +397,18 @@ def test_old_scope_does_not_launch_auto_answer(tmp_path):
     assert json.loads(event[0])["reason"] == "scope_revised"
 
 
+@pytest.mark.parametrize("origin", ["user_upload", "download"])
+def test_read_uploaded_pdf_outside_read_window_stays_in_answer(tmp_path, origin):
+    lib = setup(tmp_path, n=26, pdf=True)
+    svid, item = inspected_pdf(lib)
+    lib.store.conn.execute("UPDATE source_assets SET origin = ? WHERE id = ?", (origin, item["asset_id"]))
+    row = cutoff(lib)["items"][-1]
+    assert row["source_version_id"] == svid and row["route"] == "fulltext"
+    assert row["reason"] == (None if origin == "user_upload" else "outside_read_window")
+    plan = fast_answer.input_plan(lib.flow, answer_run(lib), lib.store.scope(lib.rid))
+    assert any(lib.store.passage(pid)["source_version_id"] == svid for pid in plan["passage_ids"]) == (origin == "user_upload")
+
+
 def test_top_n_bound_can_only_expand_through_recorded_user_choice(tmp_path):
     lib = setup(tmp_path, n=26)
     frozen = cutoff(lib)

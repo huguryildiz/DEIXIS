@@ -1861,7 +1861,8 @@ def create_app(
     async def research_citation_map_run(research_id: str, request: Request) -> dict[str, Any]:
         store = store_of(request)
         store.research(research_id)
-        run = citation_map_run.request_run(store, research_id)
+        titles_only = request.query_params.get("titles_only") == "1"
+        run = citation_map_run.request_run(store, research_id, titles_only=titles_only)
         request.app.state.worker.wake()
         return run
 

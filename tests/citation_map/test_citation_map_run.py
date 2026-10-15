@@ -390,3 +390,25 @@ def test_an_empty_answer_in_one_research_does_not_skip_the_work_in_another(lib):
         svid = lib.store.find_source_by_identifier("openalex", oid)
         lib.store.add_to_corpus(other, svid, "library", selection_state="pending", selection_origin="user")
     assert citation_map_run.prepare(lib.store, other)["outside_to_describe"] == 1
+
+
+def test_a_titles_only_run_asks_only_for_the_outside_works(lib):
+    provider(lib, "W40", refs=["W77"])
+    provider(lib, "W41", refs=["W77"])
+    lib.api.work("W77", refs=[], title="SYNTHETIC outside work")
+    run = citation_map_run.request_run(lib.store, lib.rid, titles_only=True)
+    assert run["target"]["titles_only"] and run["budget"]["max_provider_requests"] == 1 + citation_map_run.RATE_LIMIT_RETRIES
+    # A source added after the request is not read by this run.
+    late = provider(lib, "W42")
+    lib.store.update_run(run["id"], status="running")
+    assert execute(lib, run)["status"] == "completed"
+    assert lib.api.sent("openalex") == [["W77"]] and refs(lib, late)[0] is False
+    [w77] = [o for o in citation_map.build(lib.store, lib.rid)["outside"] if o["openalex_id"] == "W77"]
+    assert w77["title"] == "SYNTHETIC outside work"
+
+
+def test_a_titles_only_run_is_refused_when_lists_are_missing(lib):
+    mixed(lib)
+    with pytest.raises(RevisionConflict, match="More than"):
+        citation_map_run.request_run(lib.store, lib.rid, titles_only=True)
+    assert lib.api.requests == []

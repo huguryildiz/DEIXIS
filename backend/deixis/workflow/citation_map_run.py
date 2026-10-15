@@ -175,8 +175,10 @@ def prepare(store: Any, research_id: str) -> dict[str, Any]:
             "unresolvable_without_doi": targets["unresolvable_without_doi"]}
 
 
-def request_run(store: Any, research_id: str) -> dict[str, Any]:
-    """Queue the run, or return the one already queued or running for this research."""
+def request_run(store: Any, research_id: str, *, titles_only: bool = False) -> dict[str, Any]:
+    """Queue the run, or return the one already queued or running for this research. A titles-only run (the panel's
+    own request when it opens) asks only for the outside works' metadata: one request, refused when anything else is
+    missing, and it never resolves or reads lists, even if sources are added before it runs."""
     with transaction(store.conn):
         active = store.conn.execute(
             "SELECT id, status FROM runs WHERE research_id = ? AND kind = 'citation_map'"
@@ -189,6 +191,10 @@ def request_run(store: Any, research_id: str) -> dict[str, Any]:
         plan = prepare(store, research_id)
         if not plan["requests"]:
             raise RevisionConflict("Nothing is missing from the citation map that OpenAlex can fill")
+        if titles_only:
+            if plan["works_to_resolve"] or plan["sources_to_read"] or not plan["outside_to_describe"]:
+                raise RevisionConflict("More than the outside works' titles is missing from the citation map")
+            plan = plan | {"requests": 1, "titles_only": True}
         return store.create_run(research_id, "citation_map", {
             "max_model_calls": 0, "max_provider_requests": plan["requests"] * (1 + RATE_LIMIT_RETRIES)}, None, plan)
 
@@ -196,6 +202,12 @@ def request_run(store: Any, research_id: str) -> dict[str, Any]:
 # ---- the run -------------------------------------------------------------------------------------------------------
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     store, run_id, rid = flow.store, run["id"], run["research_id"]
+    if (run.get("target") or {}).get("titles_only"):
+        describe = _frozen(store, run_id, "citation_map:describe_plan", lambda: {"ids": outside_targets(store, rid)})
+        if describe["ids"]:
+            await _request(flow, run, "citation_map:describe", _id_send(flow, describe["ids"]),
+                           lambda outcome, step: _apply_outside(flow, step, outcome))
+        return
     plan = _frozen(store, run_id, "citation_map:resolve_plan", lambda: _resolve_plan(store, run_id, rid))
     for i, batch in enumerate(plan["doi_batches"]):
         await _request(flow, run, f"citation_map:doi:{i}", _doi_send(flow, [t["doi"] for t in batch]),

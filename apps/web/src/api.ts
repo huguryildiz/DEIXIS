@@ -190,6 +190,7 @@ export type RunTarget = {
   target_kind?: ReviewTargetKind; target_id?: string
   pipeline?: { id: string; rounds?: number; round?: number }
   table_id?: string; column_id?: string; source_version_id?: string; cell_version?: number
+  titles_only?: boolean
   candidate_id?: string; candidate_version_id?: string; expected_version?: number
   model?: CandidatePlan['model']; providers?: string[]; transport?: CandidatePlan['transport']; limits?: CandidatePlan['limits']
   version?: number; scope_revision?: number; skill_package_hash?: string; plan_version?: number; preview_fingerprint?: string
@@ -1445,7 +1446,7 @@ export const api = {
   citationMap: (id: string) => request<CitationMap>(`/api/researches/${id}/citation-map`),
   // What a reading run would ask OpenAlex now; no request is sent.
   prepareCitationMap: (id: string) => request<CitationMapPlan>(`/api/researches/${id}/citation-map/prepare`, { method: 'POST' }),
-  runCitationMap: (id: string) => request<Run>(`/api/researches/${id}/citation-map/run`, { method: 'POST' }),
+  runCitationMap: (id: string, titlesOnly = false) => request<Run>(`/api/researches/${id}/citation-map/run${titlesOnly ? '?titles_only=1' : ''}`, { method: 'POST' }),
   // Adds an outside work of the map as an undecided source the person added; 409 with a `code` when it cannot.
   addOutsideWork: (id: string, openalexId: string) =>
     request<ResearchView & { source_version_id: string; work_id: string; restored: boolean; changed_source_version_ids: string[] }>(`/api/researches/${id}/outside-works`, json('POST', { openalex_id: openalexId })),

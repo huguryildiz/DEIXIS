@@ -178,6 +178,18 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
   const runStatus = run?.status
   useEffect(() => { void reload() }, [reload, eventCursor, run?.id, runStatus])
   useEffect(() => () => clearTimeout(hoverTimer.current), [])
+  // When the only thing missing is the outside works' titles, that is one OpenAlex request and no model call, so the
+  // panel asks for them itself, once per opening (D42). Missing reference lists can cost more requests and wait for the
+  // person's "Read reference lists".
+  const autoTitles = useRef(false)
+  useEffect(() => {
+    if (autoTitles.current || !plan || plan.outside_to_describe === 0 || plan.works_to_resolve > 0 || plan.sources_to_read > 0) return
+    if (run && ['queued', 'running', 'paused'].includes(run.status)) return
+    autoTitles.current = true
+    // A refusal (409) means the plan changed meanwhile; the fresh plan row then offers Read reference lists.
+    api.runCitationMap(researchId, true).then(() => onChanged())
+      .catch(e => { if (e instanceof ApiError && e.status === 409) void reload(); else toast('error', errorText(e)) })
+  }, [plan, run, researchId, onChanged, reload, toast])
 
   const graph = useMemo(() => (map ? toGraph(map) : null), [map])
   const pendingRanked = useMemo(() => (graph ? graph.nodes.filter(n => n.kind === 'pending')
@@ -251,10 +263,12 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
   const resetAt = budgetStop ? (paused?.error as { reset_at?: string } | null)?.reset_at ?? null : null
   const single = map.nodes.length === 1
   // Outside works still without a record can be described by the next map run; otherwise OpenAlex already sent none.
-  const describable = (plan?.outside_to_describe ?? 0) > 0
+  // Without a plan nothing is known, so an untitled work reads as not fetched yet rather than as unknown to OpenAlex.
+  const describable = plan === null || plan.outside_to_describe > 0
   const counts: Record<Kind, number> = { included: 0, pending: 0, excluded: 0, outside: 0 }
   graph.nodes.forEach(n => counts[n.kind]++)
-  const outsideRanked = graph.nodes.filter(n => n.kind === 'outside')
+  const outsideRanked = graph.nodes.filter(n => n.kind === 'outside' && n.title !== null)
+  const untitled = graph.nodes.filter(n => n.kind === 'outside' && n.title === null).length
   const maxIn = Math.max(1, ...graph.nodes.map(n => indeg(n.key)))
   const noOpenAlex = map.nodes.length > 0 && map.nodes.every(n => !n.openalex_ids.length) && !map.outside.length && (!plan || plan.requests === 0)
 
@@ -314,10 +328,11 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
   ].filter((part): part is string => Boolean(part)) : []
   const noDoi = plan && plan.unresolvable_without_doi > 0
     ? plural(plan.unresolvable_without_doi, '{n} uploaded PDF has no DOI and cannot be matched', '{n} uploaded PDFs have no DOI and cannot be matched') : null
+  const titlesOnly = run?.target?.titles_only === true
   const planRow = running
-    ? <div className="cm-plan" role="status"><span className="spin" aria-hidden /><p>{t('Reading reference lists…')}</p></div>
+    ? <div className="cm-plan" role="status"><span className="spin" aria-hidden /><p>{t(titlesOnly ? 'Fetching titles from OpenAlex…' : 'Reading reference lists…')}</p></div>
     : paused && !budgetStop
-      ? <div className="cm-plan"><p>{t('Reference list reading is paused.')}</p><button type="button" className="ghost" disabled={starting} onClick={() => void resume()}>{t('Resume')}</button></div>
+      ? <div className="cm-plan"><p>{t(titlesOnly ? 'Title fetching is paused.' : 'Reference list reading is paused.')}</p><button type="button" className="ghost" disabled={starting} onClick={() => void resume()}>{t('Resume')}</button></div>
       : !paused && (planParts.length || noDoi)
         ? <div className="cm-plan"><p className="tnum">{sentence([...planParts, noDoi].filter(Boolean).join(' · '))}{planParts.length > 0 && <>{' · '}<span className="cm-plan-free">{t('no model call')}</span></>}</p>
           {plan && plan.requests > 0 && <button type="button" className="btn-pri" disabled={starting} onClick={() => void start()}>{t('Read reference lists')}</button>}</div>
@@ -454,7 +469,12 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
     <div className="cm-cols">
       {!single && <section><h3>{t('The core of this research')}</h3><p className="sub">{t('The sources this research’s sources cite most.')}</p>{core.length ? core.map(row) : <p className="sub">{t('None.')}</p>}</section>}
       <section><h3>{t('Often-cited works outside this research')}</h3><p className="sub">{t('They appear often in the reference lists of its sources but are not in this research. They may be worth a look.')}</p>
-        {outsideRanked.length ? outsideRanked.map(row) : <p className="sub">{t('None.')}</p>}</section>
+        {outsideRanked.length ? outsideRanked.map(row) : !untitled && <p className="sub">{t('None.')}</p>}
+        {untitled > 0 && <p className="sub cm-untitled">{run && ['queued', 'running'].includes(run.status)
+          ? plural(untitled, 'The title of {n} more work is being fetched from OpenAlex.', 'The titles of {n} more works are being fetched from OpenAlex.')
+          : plan && !describable
+            ? plural(untitled, 'OpenAlex sent no record for {n} more work; it is left out of this list.', 'OpenAlex sent no record for {n} more works; they are left out of this list.')
+            : plural(untitled, '{n} more work has no title yet; it is left out of this list.', '{n} more works have no title yet; they are left out of this list.')}</p>}</section>
     </div>
     {foot}
   </div>
@@ -485,7 +505,7 @@ function Detail({ node, graph, budgetStop, added, adding, describable, onSelect,
     {unread && <p className="meta cm-warn">{t(budgetStop ? 'Reference list not read (OpenAlex quota). The sources it cites are missing.' : 'Reference list not read. The sources it cites are missing.')}</p>}
     <div className="acts">
       {outside && node.title === null
-        ? <p className="meta">{t(describable ? 'Press Read reference lists above to fetch its title and authors; it can be added after that.'
+        ? <p className="meta">{t(describable ? 'Its title and authors are not fetched yet; it can be added after that.'
           : 'Without a record it cannot be added to the research.')}</p>
         : outside
         ? added ? <span className="cm-pill"><span className="dot d-included" />{t('In the candidate list')}</span>

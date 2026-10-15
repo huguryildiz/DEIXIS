@@ -192,7 +192,7 @@ def math_pages(path: Path) -> list[int]:
     with pymupdf.open(path, filetype="pdf") as doc:
         for index, page in enumerate(doc):
             font_chars = symbols = 0
-            for block in page.get_text("dict")["blocks"]:
+            for block in page.get_text("dict", flags=pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES)["blocks"]:
                 for line in block.get("lines", []):
                     for span in line["spans"]:
                         text = span["text"].strip()
@@ -221,7 +221,7 @@ def inline_math_marks(path: Path, pages: list[int]) -> tuple[dict[str, list[list
                 image_pages.append(index)
                 continue
             found = []
-            for block in page.get_text("rawdict")["blocks"]:
+            for block in page.get_text("rawdict", flags=pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES)["blocks"]:
                 for line in block.get("lines", []):
                     size = max((span["size"] for span in line["spans"]), default=0)
                     for span in line["spans"]:

@@ -19,11 +19,13 @@ MIN_AREA = 900  # square points; smaller graphics are rules, bullets or logos
 GAP = 60  # the largest distance, in points, between a caption and its graphics
 REACH = 16  # small type this close to the graphics belongs to the figure
 MAX_PAGES = 400
+# Text lines only: without this, get_text("dict") encodes every picture on the page as a PNG it never uses.
+DICT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
 
 
 def _body_size(page: pymupdf.Page) -> float:
     sizes: dict[float, int] = {}
-    for block in page.get_text("dict")["blocks"]:
+    for block in page.get_text("dict", flags=DICT_FLAGS)["blocks"]:
         for line in block.get("lines", []):
             for span in line["spans"]:
                 key = round(span["size"], 1)
@@ -40,7 +42,7 @@ def _is_prose(block: dict, body: float) -> bool:
 
 def _grow(page: pymupdf.Page, region: pymupdf.Rect, captions: list[pymupdf.Rect], body: float) -> pymupdf.Rect:
     """Take in text inside the region and small type just around it; paragraphs and captions stay out."""
-    blocks = [b for b in page.get_text("dict")["blocks"]
+    blocks = [b for b in page.get_text("dict", flags=DICT_FLAGS)["blocks"]
               if not any(pymupdf.Rect(b["bbox"]).intersects(c) for c in captions) and not _is_prose(b, body)]
     for _ in range(2):
         reach = region + (-REACH, -REACH, REACH, REACH)
@@ -73,7 +75,7 @@ def find_figures(path: Path) -> list[dict]:
                 pass
             graphics = [g & page.rect for g in graphics if (g & page.rect).get_area() >= MIN_AREA]
             body = _body_size(page)
-            barriers = [pymupdf.Rect(b["bbox"]) for b in page.get_text("dict")["blocks"] if _is_prose(b, body)]
+            barriers = [pymupdf.Rect(b["bbox"]) for b in page.get_text("dict", flags=DICT_FLAGS)["blocks"] if _is_prose(b, body)]
             barriers += [c for c, _ in captions]
 
             def clear(a: float, b: float, x0: float, x1: float) -> bool:

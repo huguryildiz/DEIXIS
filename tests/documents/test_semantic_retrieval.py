@@ -76,7 +76,7 @@ def rank(store, rid, svid, run, handler):
     async def go():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             flow = object.__new__(ResearchFlow)
-            flow.store, flow.deps = store, SimpleNamespace(http=client)
+            flow.store, flow.deps = store, SimpleNamespace(http=client, local_http=client)
             return await flow._semantic_ranking(run, store.scope(rid), [svid])
     return asyncio.run(go())
 
@@ -189,7 +189,7 @@ def score_sources(store, rid, run, handler):
     async def go():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             flow = object.__new__(ResearchFlow)
-            flow.store, flow.deps = store, SimpleNamespace(http=client)
+            flow.store, flow.deps = store, SimpleNamespace(http=client, local_http=client)
             await flow._source_similarity(run, store.scope(rid), store.candidates(rid, run["scope_revision"]))
     asyncio.run(go())
 

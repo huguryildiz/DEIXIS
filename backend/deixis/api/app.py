@@ -47,7 +47,7 @@ from deixis.models.copilot_cli import CopilotCliAdapter
 from deixis.models.deepseek import DeepSeekAdapter
 from deixis.models.gemini_cli import GeminiCliAdapter
 from deixis.models.openai_compat import CONNECTIONS as COMPAT_CONNECTIONS, OpenAICompatAdapter
-from deixis.models.openai_compat import LOCAL_SERVER, LOCAL_SERVER_SETTING, loopback_url
+from deixis.models.openai_compat import LOCAL_SERVER, LOCAL_SERVER_SETTING, loopback_client, loopback_url
 from deixis.models.anthropic_api import AnthropicAdapter
 from deixis.models.openai_api import OpenAIAdapter
 from deixis.models.gemini import GeminiAdapter
@@ -654,6 +654,11 @@ def disk_full_refused() -> Iterator[None]:
         raise
 
 
+def zotero_http(request: Request, source: str) -> httpx.AsyncClient:
+    """Zotero's local API is on this computer and gets the loopback client (D34); zotero.org gets the shared one."""
+    return request.app.state.local_http if source == "local" else request.app.state.http
+
+
 async def attach_zotero_pdf(store: Store, settings: Settings, http: httpx.AsyncClient, library: zotero.Library,
                             item: zotero.ZoteroItem, svid: str, fetch_pdf: Callable[[str], Awaitable[Any]],
                             research_id: str | None) -> tuple[bool, list[dict[str, Any]]]:
@@ -756,6 +761,9 @@ def create_app(
         store.recovery_dir = settings.recovery_dir
         settings = settings.bound_to(store.setting)  # the contact email set in Settings is read before the env var (F15)
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent(settings.contact_email)})
+        # Requests to servers on this computer (Ollama and LM Studio embeddings, the local tool checks, Zotero's local
+        # API) go through a client that ignores HTTP_PROXY/ALL_PROXY and follows no redirect (D34).
+        local_http = http_client or loopback_client()
         adapter_map = adapters if adapters is not None else {
             "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace"),
             "claude": ClaudeCodeAdapter(workspace=settings.data_dir / "claude-workspace"),
@@ -786,7 +794,8 @@ def create_app(
         from deixis.workflow.background_fetch import FetchSlots
         flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf, equations,
                                      limiter=ModelCallLimiter(settings.model_concurrency), local_embedder=embedder,
-                                     fetch_xml=xml_fetcher or acquisition.fetch_xml, clock=store.clock, fetch_slots=FetchSlots(12)))
+                                     fetch_xml=xml_fetcher or acquisition.fetch_xml, clock=store.clock, fetch_slots=FetchSlots(12),
+                                     local_http=local_http))
         app.state.builtin = builtin
         worker = Worker(store, flow, settings.lock_path)
         owner = start_worker and worker.acquire()
@@ -796,12 +805,13 @@ def create_app(
         app.state.store, app.state.worker, app.state.adapters = store, worker, adapter_map
         app.state.package, app.state.owner = package, owner
         app.state.http, app.state.fetch_pdf = http, fetcher or fetch_module.fetch_pdf
+        app.state.local_http = local_http
         # A connection opened now, for a check that must not ride a pooled one from before a network change (VPN).
         app.state.fresh_http = lambda: (nullcontext(http_client) if http_client else
                                         httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent(settings.contact_email)}))
         app.state.fetch_xml = xml_fetcher or acquisition.fetch_xml  # Europe PMC's full text (SW21)
         app.state.institutional_access = None
-        app.state.local_tools = local_tools.LocalTools(http)
+        app.state.local_tools = local_tools.LocalTools(local_http)
 
         def signed_in(tool: str) -> None:
             app.state.local_tools._cache = None
@@ -875,6 +885,7 @@ def create_app(
             await builtin.stop()
             if http_client is None:
                 await http.aclose()
+                await local_http.aclose()
             for adapter in adapter_map.values():
                 await adapter.close()
             conn.close()
@@ -1956,7 +1967,7 @@ def create_app(
 
     @app.get("/api/zotero/collections")
     async def zotero_collections(request: Request, source: Literal["local", "web"] = "local") -> dict[str, Any]:
-        return {"source": source, "collections": await zotero.collections(request.app.state.http, zotero.library(source))}
+        return {"source": source, "collections": await zotero.collections(zotero_http(request, source), zotero.library(source))}
 
     @app.post("/api/researches/{research_id}/zotero-imports", status_code=201)
     async def zotero_import(research_id: str, body: ZoteroImport, request: Request) -> dict[str, Any]:
@@ -1964,7 +1975,7 @@ def create_app(
         store = store_of(request)
         if store.scope(research_id)["source_scope"] == "academic":
             raise HTTPException(422, "Attached files are not part of this research's source scope")
-        library, http = zotero.library(body.source), request.app.state.http
+        library, http = zotero.library(body.source), zotero_http(request, body.source)
         items, rows = await zotero.collection_items(http, library, body.collection_key)
         payload_path = f"{db.new_id('zot')}.json"
         with disk_full_refused():
@@ -1999,7 +2010,7 @@ def create_app(
         """
         store = store_of(request)
         store.research(research_id)
-        library, http = zotero.library(body.source), request.app.state.http
+        library, http = zotero.library(body.source), zotero_http(request, body.source)
         missing = [head for head in store.included_works(research_id)
                    if not store.has_pdf_text(store.answer_version(research_id, head) or head) and not store.has_asset(head)]
         added, notes = 0, []

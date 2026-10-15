@@ -50,7 +50,7 @@ class Consumer:
     async def _embed(self, texts, kind):
         token = local_embedding.RUNNER_THREADS.set(self.identity.get("threads"))
         try:
-            return await self.embedder.embed(self.flow.deps.http, texts, kind, self.budget,
+            return await self.embedder.embed(embeddings.client_for(self.embedder.provider, self.flow.deps), texts, kind, self.budget,
                                              lambda: self.flow._checkpoint(self.run["id"], self.run["scope_revision"]))
         finally:
             local_embedding.RUNNER_THREADS.reset(token)

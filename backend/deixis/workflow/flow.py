@@ -320,6 +320,7 @@ class FlowDeps:
     fetch_xml: Callable[[str], Awaitable[fetch_module.FetchResult]] = acquisition.fetch_xml  # Europe PMC (SW21)
     clock: fast_path.Clock | None = None
     fetch_slots: Any = None
+    local_http: httpx.AsyncClient | None = None  # servers on this computer: no proxy, no redirects (D34)
 
 
 class ResearchFlow:
@@ -1984,13 +1985,13 @@ class ResearchFlow:
             return
         budget, stop = self._rate_budget(step["id"], identity), lambda: self._checkpoint(run_id, revision)
         try:
-            (query_vector,) = await embedder.embed(self.deps.http, [query_text], "RETRIEVAL_QUERY", budget, stop)
+            (query_vector,) = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [query_text], "RETRIEVAL_QUERY", budget, stop)
             progress["dimensions"] = self._query_dimensions(query_vector, prior)
             while missing:
                 batch = missing[:embedder.batch]
                 texts = ["\n\n".join([self.store.source(svid)["title"], *(p["text"] for p in self.store.passages_for(svid) if p["kind"] == "abstract")])
                          for svid in batch]
-                vectors = await embedder.embed(self.deps.http, texts, "RETRIEVAL_DOCUMENT", budget, stop)
+                vectors = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), texts, "RETRIEVAL_DOCUMENT", budget, stop)
                 embeddings.same_dimension(vectors, progress["dimensions"])
                 missing = missing[len(batch):]
                 progress["embedded"] += len(batch)
@@ -3747,7 +3748,7 @@ class ResearchFlow:
         vectors = {pid: embeddings.from_blob(blob) for pid, blob in stored.items()}
         failure = None
         try:
-            (query_vector,) = await embedder.embed(self.deps.http, [query_text], "RETRIEVAL_QUERY", budget, stop)
+            (query_vector,) = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [query_text], "RETRIEVAL_QUERY", budget, stop)
             progress["dimensions"] = self._query_dimensions(query_vector, prior)
         except embeddings.EmbeddingError as exc:
             self._finish_embedding_step(step["id"], "failed", counts() | budget.counts(), identity,
@@ -3777,7 +3778,7 @@ class ResearchFlow:
                 progress["uploaded_pending_passage_ids"] = sorted(p["id"] for p in from_uploads)
                 self._merge_step_output(step["id"], counts(), identity)
             try:
-                fresh = await embedder.embed(self.deps.http, [p["text"] for p in batch], "RETRIEVAL_DOCUMENT", budget, stop,
+                fresh = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [p["text"] for p in batch], "RETRIEVAL_DOCUMENT", budget, stop,
                                              on_sent=attempted)
                 embeddings.same_dimension(fresh, progress["dimensions"])
             except embeddings.EmbeddingError as exc:

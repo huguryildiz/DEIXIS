@@ -58,3 +58,62 @@ def test_extra_unindexed_embedding_is_a_typed_bad_reply(provider):
     })))
     with pytest.raises(e.EmbeddingError, match="bad_reply"):
         asyncio.run(e.Embedder(provider, "synthetic").embed(client, ["a"], "RETRIEVAL_QUERY"))
+
+
+def test_a_local_embedding_request_never_goes_through_a_proxy_from_the_environment(monkeypatch):
+    """D34 follow-up: passage text sent to Ollama or LM Studio must not leave the computer through HTTP_PROXY/ALL_PROXY.
+    Two real servers on loopback, the embedding server and a proxy; the environment points every proxy at the latter."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from types import SimpleNamespace
+
+    hits = {"server": [], "proxy": []}
+
+    def serve(name, reply):
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                hits[name].append(self.path)
+                body = json.dumps(reply).encode()
+                self.send_response(200 if name == "server" else 502)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        return httpd
+
+    server = serve("server", {"data": [{"index": 0, "embedding": [3, 4]}]})
+    proxy = serve("proxy", {"error": "SYNTHETIC proxy"})
+    try:
+        proxy_url = f"http://127.0.0.1:{proxy.server_address[1]}"
+        for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "all_proxy"):
+            monkeypatch.setenv(name, proxy_url)
+        for name in ("NO_PROXY", "no_proxy"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setitem(e.LOCAL_URLS, "ollama", f"http://127.0.0.1:{server.server_address[1]}/v1")
+
+        async def go():
+            async with httpx.AsyncClient() as shared:  # the app's shared client honours the proxy variables
+                control = await shared.post(e.LOCAL_URLS["ollama"] + "/embeddings", json={})
+                assert control.status_code == 502 and hits["proxy"]  # without the fix the request would go this way
+                hits["proxy"].clear()
+                deps = SimpleNamespace(http=shared)
+                assert e.client_for("openai", deps) is shared  # remote APIs keep the person's proxy
+                client = e.client_for("ollama", deps)
+                assert client is not shared and client is e.client_for("lm_studio", deps)
+                assert client.trust_env is False and client.follow_redirects is False
+                try:
+                    return await e.Embedder("ollama", "synthetic").embed(client, ["passage"], "RETRIEVAL_DOCUMENT")
+                finally:
+                    await client.aclose()
+
+        (vector,) = asyncio.run(go())
+        assert list(vector) == pytest.approx([.6, .8])
+        assert hits == {"server": ["/v1/embeddings"], "proxy": []}
+    finally:
+        server.shutdown()
+        proxy.shutdown()

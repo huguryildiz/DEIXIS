@@ -28,6 +28,7 @@ from deixis.documents import local_embedding
 import httpx
 
 from deixis.models.gemini import API_URL, error_message
+from deixis.models.openai_compat import loopback_client
 from deixis.providers.common import redact
 
 MODEL = "gemini-embedding-2"
@@ -238,6 +239,17 @@ async def embed_openai_compatible(client: httpx.AsyncClient, base_url: str, key:
             raise EmbeddingError(f"bad_reply: the reply's indexes are not 0 to {len(chunk) - 1}")
         vectors += _checked([_vector(item.get("embedding")) for item in sorted(items, key=lambda d: d["index"])], len(chunk))
     return vectors
+
+
+def client_for(provider: str, deps: Any) -> httpx.AsyncClient:
+    """The client an embedding request goes through. Ollama and LM Studio run on this computer and their requests carry
+    passage text, so they use the loopback client (D34: no proxy from the environment, no redirects), never the shared
+    one, which honours HTTP_PROXY/ALL_PROXY. `deps` is the flow's FlowDeps; one without a loopback client gets one."""
+    if provider not in LOCAL_URLS:
+        return deps.http
+    if getattr(deps, "local_http", None) is None:
+        deps.local_http = loopback_client()
+    return deps.local_http
 
 
 def chosen(setting: dict[str, Any] | None) -> tuple[str, str | None]:

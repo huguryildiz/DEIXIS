@@ -299,6 +299,11 @@ def _footer(text_width: int) -> str:
                 f'</w:pPr>{mark}{name}{page}</w:p></w:ftr>')
 
 
+# Without a compatibility setting Word opens the file in "Compatibility Mode" (Word 2007 layout rules).
+_SETTINGS = _xml(f'<w:settings xmlns:w="{_W}"><w:compat><w:compatSetting w:name="compatibilityMode" '
+                 'w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat></w:settings>')
+
+
 def docx(blocks: Sequence[Block], *, title: str = "", landscape: bool = False) -> bytes:
     """The bytes of a .docx file holding the blocks in order (A4, portrait unless `landscape`)."""
     width, height = (16838, 11906) if landscape else (11906, 16838)
@@ -334,15 +339,17 @@ def docx(blocks: Sequence[Block], *, title: str = "", landscape: bool = False) -
         ("[Content_Types].xml", _content_types(_DEFAULTS | {"png": "image/png"}, {
             "/word/document.xml": f"{main}.document.main+xml", "/word/styles.xml": f"{main}.styles+xml",
             "/word/numbering.xml": f"{main}.numbering+xml", "/word/footer1.xml": f"{main}.footer+xml",
+            "/word/settings.xml": f"{main}.settings+xml",
             "/docProps/core.xml": _CORE_TYPE})),
         ("_rels/.rels", _rels([(f"{_DOC_REL}/officeDocument", "word/document.xml"), (_CORE_REL, "docProps/core.xml")])),
         ("word/document.xml", document),
         ("word/_rels/document.xml.rels", _rels([(f"{_DOC_REL}/styles", "styles.xml"), (f"{_DOC_REL}/numbering", "numbering.xml"),
-                                                (f"{_DOC_REL}/footer", "footer1.xml")])),
+                                                (f"{_DOC_REL}/footer", "footer1.xml"), (f"{_DOC_REL}/settings", "settings.xml")])),
         ("word/footer1.xml", _footer(text_width)),
         ("word/_rels/footer1.xml.rels", _rels([(f"{_DOC_REL}/image", "media/deixis-mark.png")])),
         ("word/media/deixis-mark.png", _MARK.read_bytes()),
         ("word/styles.xml", _styles_docx()),
+        ("word/settings.xml", _SETTINGS),
         ("word/numbering.xml", _numbering(ordered)),
         ("docProps/core.xml", _core(title)),
     ])

@@ -41,7 +41,7 @@ S = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 SPECIAL = "A & B < C > D \"q\" 'a' 🧪 İstanbul ğüşöçı ĞÜŞÖÇ $\\alpha_{1} < \\beta^{2}$ \\& x"
 DOCX_PARTS = {"[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/_rels/document.xml.rels",
               "word/styles.xml", "word/numbering.xml", "word/footer1.xml", "word/_rels/footer1.xml.rels",
-              "word/media/deixis-mark.png", "docProps/core.xml"}
+              "word/media/deixis-mark.png", "word/settings.xml", "docProps/core.xml"}
 XLSX_PARTS = {"[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/styles.xml",
               "xl/worksheets/sheet1.xml", "docProps/core.xml"}
 
@@ -456,19 +456,34 @@ def test_table_xlsx_is_the_browser_csv_plus_source_state_and_warnings(lang, styl
 
 
 def test_table_docx_has_the_values_sources_states_warnings_and_quotes():
-    data = table_export.docx(SYNTHETIC_TABLE, SYNTHETIC_SOURCES, language="en", style="apa")
+    data = table_export.docx(SYNTHETIC_TABLE, SYNTHETIC_SOURCES, language="en", style="apa", research_title="SYNTHETIC research")
     items = docx_items(data)
-    assert items[0] == "SYNTHETIC tablo ğ & <x>"
-    grid = items[1]
-    assert grid[0] == ["Key", "Reference", "Title", "Authors", "Year", "Version", "Access", "Size", "Kind", "Note"]
-    assert grid[1][:7] == ["Lov21", "Lovelace, A. (2021). SYNTHETIC routing.", "SYNTHETIC routing", "Ada Lovelace; B C", "2021",
-                           "accepted manuscript", "PDF text"]
-    assert grid[1][7:] == [f"1,234.5 kB\nModel · Full text\n{STALE}\n{OCR}\n“size is 1,234.5 kB” — PDF p. 4 (printed 12)\nabstract",
+    assert items[:2] == ["SYNTHETIC research", "SYNTHETIC tablo ğ & <x> · V4"]
+    grid = items[2]
+    assert grid[0] == ["Source", "Size", "Kind", "Note"]
+    # The seven source fields share one cell: key, reference, then version and access.
+    assert grid[1][0] == "Lov21\nLovelace, A. (2021). SYNTHETIC routing.\naccepted manuscript\nPDF text"
+    assert grid[2][0].endswith("\nAbstract only") and "version not stated" not in grid[2][0]
+    assert grid[1][1:] == [f"1,234.5 kB\nModel · Full text\n{STALE}\n{OCR}\n“size is 1,234.5 kB” — PDF p. 4 (printed 12)\nabstract",
                            "Slow, zz\nYou · no linked evidence\nState: Value without linked evidence",
                            f"{SPECIAL}\nModel · Abstract\n{REPLACED}\n{SUPERSEDED}\n“{SPECIAL}” — abstract"]
-    assert grid[2][7:] == [f"7\nModel · Abstract\n{REMOVED}", "Not reported\nSystem · Metadata", ""]
-    size = parts(data, DOCX_PARTS)["word/document.xml"].find(f"{W}body/{W}sectPr/{W}pgSz")
-    assert size.get(W + "orient") == "landscape"
+    assert grid[2][1:] == [f"7\nModel · Abstract\n{REMOVED}", "Not reported\nSystem · Metadata", ""]
+    document = parts(data, DOCX_PARTS)
+    assert document["word/document.xml"].find(f"{W}body/{W}sectPr/{W}pgSz").get(W + "orient") == "landscape"
+    # Word opens the file in its current mode, not "Compatibility Mode".
+    assert document["word/settings.xml"].find(f"{W}compat/{W}compatSetting").get(W + "val") == "15"
+
+
+def test_table_docx_splits_many_columns_into_tables_that_repeat_the_source():
+    columns = [{"id": f"c{i}", "name": f"Column {i}", "options": None} for i in range(1, 10)]
+    view = {**SYNTHETIC_TABLE, "table": {"title": table_export.DEFAULT_TITLE, "version": 9}, "columns": columns}
+    items = docx_items(table_export.docx(view, SYNTHETIC_SOURCES, language="tr", style="apa"))
+    assert items[:2] == ["Kanıt tablosu", "V9"]
+    tables = [item for item in items if isinstance(item, list)]
+    assert [t[0] for t in tables] == [["Kaynak", *(f"Column {i}" for i in range(a, b))] for a, b in ((1, 5), (5, 9), (9, 10))]
+    assert {t[1][0] for t in tables} == {tables[0][1][0]} and tables[0][1][0].startswith("Lov21\n")
+    assert table_export.filename(view, "docx", research_title="Kuantum: ağlar", language="tr") == \
+        "DEIXIS - Kuantum - ağlar - Kanıt tablosu - V9.docx"
 
 
 def test_table_routes_on_a_filled_synthetic_table(tmp_path):
@@ -486,7 +501,9 @@ def test_table_routes_on_a_filled_synthetic_table(tmp_path):
         xlsx = client.get(base + "/xlsx")
         assert xlsx.status_code == 200, xlsx.text
         assert xlsx.headers["content-type"] == ooxml.XLSX_MEDIA_TYPE
-        name = f'DEIXIS - {view["table"]["title"]} - V{view["table"]["version"]}.xlsx'
+        research_title = client.get(f"/api/researches/{rid}").json()["research"]["title"]
+        name = table_export.filename(view, "xlsx", research_title=research_title)
+        assert name.startswith("DEIXIS - ") and name.endswith(f' - V{view["table"]["version"]}.xlsx')
         assert xlsx.headers["content-disposition"] == f"attachment; filename=\"{name}\"; filename*=UTF-8''{quote(name, safe='')}"
         rows = xlsx_rows(xlsx.content)
         expected = _csv(browser_exports(lang="en", style="apa", sources=sources, table=view)["csv"])

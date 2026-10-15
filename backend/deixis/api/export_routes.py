@@ -55,10 +55,14 @@ def register_export_routes(app) -> None:
         table = TableStore(store).table_view(research_id, table_id)
         if not table["columns"] or not table["rows"]:
             raise HTTPException(422, "The table has no columns or no rows to export")
-        sources = research_view(store, research_id)["sources"]
-        writer = table_export.xlsx if fmt == "xlsx" else table_export.docx
-        media = ooxml.XLSX_MEDIA_TYPE if fmt == "xlsx" else ooxml.DOCX_MEDIA_TYPE
-        return _download(writer(table, sources, language=lang, style=style), media, table_export.filename(table, fmt))
+        research = research_view(store, research_id)
+        sources, research_title = research["sources"], research["research"]["title"]
+        if fmt == "xlsx":
+            data, media = table_export.xlsx(table, sources, language=lang, style=style), ooxml.XLSX_MEDIA_TYPE
+        else:
+            data = table_export.docx(table, sources, language=lang, style=style, research_title=research_title)
+            media = ooxml.DOCX_MEDIA_TYPE
+        return _download(data, media, table_export.filename(table, fmt, research_title=research_title, language=lang))
 
     @app.get("/api/researches/{research_id}/reports/{report_id}/export/docx")
     async def export_report_docx(research_id: str, report_id: str, request: Request) -> Response:

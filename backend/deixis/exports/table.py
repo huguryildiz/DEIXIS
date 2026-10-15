@@ -47,8 +47,23 @@ class CellText:
     warnings: tuple[str, ...]
 
 
-def filename(view: dict[str, Any], extension: str) -> str:
-    return download_name(view["table"]["title"], f"V{view['table']['version']}", extension=extension, fallback="Evidence table")
+# The title every automatic table gets (workflow/intent.py TABLE_TITLE); the files name it as the screen does.
+DEFAULT_TITLE = "Study table"
+# A Word page holds the source cell and this many table columns; more columns continue in another table below.
+DOCX_COLUMNS_PER_TABLE = 4
+
+
+def title(view: dict[str, Any], language: Language) -> str:
+    name = view["table"]["title"]
+    return translator(language)("Evidence table") if name == DEFAULT_TITLE else name
+
+
+def filename(view: dict[str, Any], extension: str, *, research_title: str = "", language: Language = "en") -> str:
+    """`DEIXIS - <research title> - <table title> - V<n>.<ext>`; without a research title, the table title leads."""
+    name, version = title(view, language), f"V{view['table']['version']}"
+    if research_title.strip():
+        return download_name(research_title, name, version, extension=extension)
+    return download_name(name, version, extension=extension, fallback="Evidence table")
 
 
 def _value(t: Translate, language: Language, column: dict[str, Any], value: dict[str, Any] | None) -> str | int | float:
@@ -111,12 +126,23 @@ def xlsx(view: dict[str, Any], sources: list[dict[str, Any]], *, language: Langu
     return ooxml.xlsx([ooxml.Sheet(view["table"]["title"], tuple(header), body, widths)], title=view["table"]["title"])
 
 
-def docx(view: dict[str, Any], sources: list[dict[str, Any]], *, language: Language, style: CitationStyle) -> bytes:
+def docx(view: dict[str, Any], sources: list[dict[str, Any]], *, language: Language, style: CitationStyle,
+         research_title: str = "") -> bytes:
+    """Landscape A4. The seven source fields share one cell, and the table columns come in groups of
+    DOCX_COLUMNS_PER_TABLE, each group a table of its own that repeats the source cell, so no column gets too narrow
+    to read however many columns the table has."""
     t = translator(language)
     info_header, names, data = rows(view, sources, language=language, style=style)
-    body = []
-    for info, cells in data:
-        row: list[Any] = ["" if item is None else str(item) for item in info]
+    sources_cells = []
+    for info in [info for info, _ in data]:
+        key, reference, row_title, authors, year, version, access = ("" if item is None else str(item) for item in info)
+        lines = [ooxml.paragraph(ooxml.Run(key, bold=True))] if key else []
+        lines.append(ooxml.paragraph(reference or " · ".join(part for part in (row_title, authors, year) if part)))
+        lines += [ooxml.paragraph(part, style="Small") for part in (version, access) if part and part != t("version not stated")]
+        sources_cells.append(lines)
+    values = []
+    for _, cells in data:
+        row: list[Any] = []
         for cell in cells:
             text = number_text(cell.value, language) if isinstance(cell.value, (int, float)) else cell.value
             # A state other than a plain value is named on its own line unless the value text already is that name.
@@ -125,6 +151,15 @@ def docx(view: dict[str, Any], sources: list[dict[str, Any]], *, language: Langu
             row.append([ooxml.paragraph(text), *([ooxml.paragraph(cell.source, style="Small")] if cell.source else []), *state,
                         *(ooxml.paragraph(ooxml.Run(w, bold=True), style="Small") for w in cell.warnings),
                         *(ooxml.paragraph(item, style="Small") for item in cell.evidence)])
-        body.append(tuple(row))
-    table = ooxml.Table(tuple(info_header + names), tuple(body), (1.0, 3.0, 2.4, 1.8, 0.6, 1.2, 1.0) + (2.6,) * len(names))
-    return ooxml.docx([ooxml.heading(0, view["table"]["title"]), table], title=view["table"]["title"], landscape=True)
+        values.append(row)
+    name = title(view, language)
+    heading = research_title.strip() or name
+    blocks: list[Any] = [ooxml.heading(0, heading)]
+    blocks.append(ooxml.paragraph(" · ".join(part for part in (name if heading != name else "", f"V{view['table']['version']}") if part),
+                                  style="Small"))
+    step = DOCX_COLUMNS_PER_TABLE
+    for start in range(0, len(names), step):
+        group = names[start:start + step]
+        body = tuple((source, *row[start:start + step]) for source, row in zip(sources_cells, values))
+        blocks.append(ooxml.Table((t("Source"), *group), body, (2.2,) + (3.0,) * len(group)))
+    return ooxml.docx(blocks, title=" - ".join(part for part in (research_title.strip(), name) if part), landscape=True)

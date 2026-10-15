@@ -50,6 +50,8 @@ TR: dict[str, str] = {
     "PDF p. {page} (printed {label})": "PDF s. {page} (basılı {label})",
     "Europe PMC text, rendered p. {page}": "Europe PMC metni, çizilmiş s. {page}",
     "Key": "Anahtar",
+    "Source": "Kaynak",
+    "Evidence table": "Kanıt tablosu",
     "Reference": "Künye",
     "Title": "Başlık",
     "Authors": "Yazarlar",

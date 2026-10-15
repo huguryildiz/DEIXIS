@@ -204,7 +204,7 @@ class OpenAICompatAdapter:
                 status["reason"] = f"{spec.name} API returned an unreadable model list"
                 return status
             if isinstance(listed, dict):
-                listed = listed.get("data", [])
+                listed = listed.get("data") or []  # Ollama with no models answers "data": null
             entries = [m for m in listed if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]]
             if spec.model_prefix:
                 entries = [m for m in entries if m["id"].lower().startswith(spec.model_prefix)]

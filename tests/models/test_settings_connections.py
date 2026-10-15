@@ -87,6 +87,7 @@ def paths(monkeypatch):
     monkeypatch.setattr(local_tools.shutil, "which", lambda name: found.get(name))
     monkeypatch.setattr(local_tools, "TOOLS", {k: dataclasses.replace(t, app=None) for k, t in local_tools.TOOLS.items()})
     monkeypatch.setattr(local_tools, "machine", lambda: {"chip": "SYNTHETIC chip", "memory_gb": 32, "disk_free_gb": 100, "disk_total_gb": 500})
+    monkeypatch.setattr(local_tools, "OLLAMA_MAC", False)  # the macOS app install has its own test
     return found
 
 
@@ -502,6 +503,119 @@ def test_version_is_the_output_line_that_names_one(tmp_path):
     tool.write_text('#!/bin/sh\necho "Warning: could not connect to a running Ollama instance"\necho "Warning: client version is 0.34.0"\n')
     tool.chmod(0o755)
     assert local_tools._command_output([str(tool), "--version"]) == "client version is 0.34.0"
+
+
+def test_the_ollama_card_downloads_only_the_fixed_embedding_model_and_reports_progress(tmp_path, paths):
+    sent = []
+
+    def handler(request):
+        if str(request.url) == "http://127.0.0.1:11434/api/pull":
+            sent.append(json.loads(request.content))
+            lines = [{"status": "pulling manifest"},
+                     {"status": "pulling 970aa74c", "digest": "sha256:970aa74c", "total": 274_000_000, "completed": 137_000_000},
+                     {"status": "pulling c71d239d", "digest": "sha256:c71d239d", "total": 11_000, "completed": 11_000},
+                     {"status": "pulling 970aa74c", "digest": "sha256:970aa74c", "total": 274_000_000, "completed": 274_000_000},
+                     {"status": "success"}]
+            return httpx.Response(200, content="\n".join(json.dumps(line) for line in lines).encode())
+        return remote(request)
+
+    app = create_app(Settings(data_dir=tmp_path / "pull", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        c.headers["x-deixis-csrf"] = c.get("/api/session").json()["csrf_token"]
+        assert c.post("/api/local-tools/ollama/pull-embedding-model", json={"model": "qwen3"}).status_code == 202
+        for _ in range(50):
+            ollama = next(t for t in c.get("/api/local-tools").json()["tools"] if t["id"] == "ollama")
+            if ollama["pull"]["status"] != "running":
+                break
+            time.sleep(0.02)
+        pull = ollama["pull"]
+        assert sent == [{"model": "nomic-embed-text", "stream": True}]  # the request body's model is ignored
+        assert (pull["status"], pull["model"], pull["completed"], pull["total"]) == ("succeeded", "nomic-embed-text", 274_011_000, 274_011_000)
+        assert all("pull" not in t for t in c.get("/api/local-tools").json()["tools"] if t["id"] != "ollama")
+
+
+def test_the_ollama_card_pulls_a_chosen_model_and_deletes_only_a_listed_one(tmp_path, paths):
+    sent = []
+
+    def handler(request):
+        url = str(request.url)
+        if url in ("http://127.0.0.1:11434/api/pull", "http://127.0.0.1:11434/api/delete"):
+            sent.append((request.method, url.rsplit("/", 1)[1], json.loads(request.content)))
+            if url.endswith("/pull"):
+                return httpx.Response(200, content=b'{"status":"pulling manifest"}\n{"status":"success"}')
+            return httpx.Response(200)
+        return remote(request)
+
+    app = create_app(Settings(data_dir=tmp_path / "pull-any", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        c.headers["x-deixis-csrf"] = c.get("/api/session").json()["csrf_token"]
+        ollama = next(t for t in c.get("/api/local-tools").json()["tools"] if t["id"] == "ollama")
+        assert {"id": "qwen3.5:35b", "name": "Qwen 3.5 · 35B", "maker": "Alibaba", "purpose": "research", "size_bytes": 22_000_000_000} in ollama["suggested"]
+        for bad in ("qwen3.5; rm -rf /", "../etc", "Qwen", "-x"):
+            assert c.post("/api/local-tools/ollama/pull", json={"model": bad}).status_code == 400
+        assert c.post("/api/local-tools/ollama/pull", json={"model": "qwen3.5:35b"}).status_code == 202
+        for _ in range(50):
+            pull = next(t for t in c.get("/api/local-tools").json()["tools"] if t["id"] == "ollama")["pull"]
+            if pull["status"] != "running":
+                break
+            time.sleep(0.02)
+        assert (pull["status"], pull["model"]) == ("succeeded", "qwen3.5:35b")
+        assert c.post("/api/local-tools/ollama/delete", json={"model": "llama3:70b"}).status_code == 404  # not listed
+        assert c.post("/api/local-tools/ollama/delete", json={"model": "qwen3:8b"}).json() == {"deleted": "qwen3:8b"}
+        assert sent == [("POST", "pull", {"model": "qwen3.5:35b", "stream": True}), ("DELETE", "delete", {"model": "qwen3:8b"})]
+
+
+def test_the_embedding_model_download_needs_a_running_ollama(client, monkeypatch):
+    async def down(url, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(client.app.state.local_tools._client, "get", down)
+    refused = client.post("/api/local-tools/ollama/pull-embedding-model")
+    assert refused.status_code == 409 and "not running" in refused.json()["detail"]
+
+
+def test_on_macos_ollama_installs_as_the_app_from_ollama_com(tmp_path, paths, monkeypatch):
+    """The CLI from Homebrew alone starts no server, so the app is offered until it is there or a server answers."""
+    app_path = tmp_path / "Applications" / "Ollama.app"
+    copied, opened = [], []
+    monkeypatch.setattr(local_tools, "OLLAMA_MAC", True)
+    monkeypatch.setattr(local_tools, "OLLAMA_MAC_APP", app_path)
+    monkeypatch.setattr(local_tools, "DOWNLOAD_TRANSPORT", httpx.MockTransport(
+        lambda r: httpx.Response(200, content=b"SYNTHETIC dmg") if str(r.url) == local_tools.OLLAMA_MAC_DMG else httpx.Response(404)))
+
+    def copy(dmg, target):
+        copied.append(dmg.read_bytes())
+        target.mkdir(parents=True)
+
+    monkeypatch.setattr(local_tools, "_copy_mac_app", copy)
+    monkeypatch.setattr(local_tools, "_open_mac_app", opened.append)
+    paths.update(ollama="/opt/homebrew/bin/ollama")  # Homebrew's CLI is on PATH, its server is not running
+
+    def down(request):
+        if ":11434/" in str(request.url):
+            raise httpx.ConnectError("connection refused", request=request)
+        return remote(request)
+
+    app = create_app(Settings(data_dir=tmp_path / "mac", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(down)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        c.headers["x-deixis-csrf"] = c.get("/api/session").json()["csrf_token"]
+        ollama = lambda: next(t for t in c.get("/api/local-tools?refresh=true").json()["tools"] if t["id"] == "ollama")
+        before = ollama()
+        assert (before["installed"], before["running"], before["app_installed"]) == (True, False, False)
+        assert before["install"] == {"command": "Ollama.app from ollama.com", "available": True, "unavailable_reason": None,
+                                     "url": "https://ollama.com/download"}
+        assert c.post("/api/local-tools/ollama/install").status_code == 202
+        for _ in range(50):
+            job = ollama()["job"]
+            if job["status"] != "running":
+                break
+            time.sleep(0.02)
+        assert (job["status"], job["completed"], job["total"]) == ("succeeded", 13, 13)
+        assert copied == [b"SYNTHETIC dmg"] and opened == [app_path] and ollama()["app_installed"] is True
+        assert c.post("/api/local-tools/ollama/install").status_code == 409
 
 
 def test_zotero_reports_whether_its_local_api_is_on(client, monkeypatch):

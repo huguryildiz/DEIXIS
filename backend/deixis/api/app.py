@@ -216,6 +216,10 @@ class LocalServerAddress(BaseModel):
     base_url: str | None = Field(default=None, max_length=400)
 
 
+class OllamaModelBody(BaseModel):
+    model: str = Field(min_length=1, max_length=200)
+
+
 class SemanticChoice(BaseModel):
     provider: Literal["gemini", "builtin", "openai", "ollama", "lm_studio", "off"]
     model: str | None = Field(default=None, min_length=1, max_length=200)
@@ -1339,6 +1343,28 @@ def create_app(
             return {"job": await request.app.state.local_tools.install(tool_id)}
         except local_tools.ToolError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
+
+    @app.post("/api/local-tools/ollama/pull-embedding-model", status_code=202)
+    async def pull_ollama_embedding_model(request: Request) -> dict[str, Any]:
+        try:
+            return {"job": await request.app.state.local_tools.pull_embedding_model()}
+        except local_tools.ToolError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @app.post("/api/local-tools/ollama/pull", status_code=202)
+    async def pull_ollama_model(body: OllamaModelBody, request: Request) -> dict[str, Any]:
+        try:
+            return {"job": await request.app.state.local_tools.pull_model(body.model)}
+        except local_tools.ToolError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @app.post("/api/local-tools/ollama/delete")
+    async def delete_ollama_model(body: OllamaModelBody, request: Request) -> dict[str, Any]:
+        try:
+            await request.app.state.local_tools.delete_model(body.model)
+        except local_tools.ToolError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+        return {"deleted": body.model}
 
     @app.post("/api/local-tools/{tool_id}/cancel")
     async def cancel_local_tool_install(tool_id: str, request: Request) -> dict[str, Any]:

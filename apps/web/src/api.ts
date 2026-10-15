@@ -718,12 +718,17 @@ export type LocalToolModel = { id: string; size_bytes: number | null; embedding:
 export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; url: string }
 // 'failed' is set by the page itself when the terminal could not be opened (the server answered with an error).
 export type AccountSignIn = { state: 'idle' | 'waiting' | 'succeeded' | 'failed' | 'timed_out'; message: string | null }
-export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string } | null
+export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string; completed?: number; total?: number } | null
 export type LocalTool = {
   id: 'claude_code' | 'codex' | 'copilot_cli' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'
   installed: boolean; version: string | null; path: string | null; role: 'runs_steps' | 'detected' | 'imports'
   running?: boolean; endpoint?: string; models?: LocalToolModel[]; local_api?: boolean; web_configured?: boolean
   install: LocalToolInstall; job: LocalToolJob
+  app_installed?: boolean  // Ollama on macOS: whether Ollama.app is in /Applications
+  // Ollama only: the embedding model download started from its card; completed and total are bytes over all layers.
+  pull?: { status: 'running' | 'succeeded' | 'failed'; model: string; step: string; completed: number; total: number; finished_at: string | null; output: string } | null
+  // Ollama only: the models its card suggests, with their download size from ollama.com.
+  suggested?: { id: string; name: string; maker: string; purpose: 'embedding' | 'research'; size_bytes: number }[]
 }
 // The optional equation reader (Marker, D52), installed under the data directory.
 export type EquationReader = {
@@ -1314,6 +1319,8 @@ export const api = {
     request<Run>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/ocr`, { method: 'POST' }),
   localTools: (refresh = false) => request<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`),
   installLocalTool: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/install`, { method: 'POST' }),
+  pullOllamaModel: (model: string) => request<{ job: LocalTool['pull'] }>('/api/local-tools/ollama/pull', json('POST', { model })),
+  deleteOllamaModel: (model: string) => request<{ deleted: string }>('/api/local-tools/ollama/delete', json('POST', { model })),
   cancelLocalToolInstall: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/cancel`, { method: 'POST' }),
   startAccountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`, { method: 'POST' }),
   accountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, BookOpenText, ChevronRight, CircleCheck, Copy, Cpu, FileText, HardDrive, MemoryStick, LoaderCircle, Plus, RefreshCw, RotateCw, Save, ScanText, Server, Sigma, TriangleAlert, Upload } from 'lucide-react'
+import { Ban, BookOpenText, ChevronRight, CircleCheck, Copy, Cpu, Download, FileText, HardDrive, MemoryStick, LoaderCircle, Plus, RefreshCw, RotateCw, Save, ScanText, Server, Sigma, Trash2, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -248,6 +248,9 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
   const toast = useToast()
   const name = tool.name || localToolNames[tool.id] || tool.id
   const running = tool.job?.status === 'running'
+  // Ollama on macOS: Homebrew's CLI alone starts no server, so the app from ollama.com is offered until one answers.
+  const offerApp = tool.app_installed === false && !tool.running
+  const offerInstall = !tool.installed || offerApp
   function install() {
     setBusy(true)
     api.installLocalTool(tool.id).then(() => { setConfirmOpen(false); onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
@@ -276,19 +279,22 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
           ? <ul className="local-tool-models">{tool.models.map(m => <li key={m.id}><span>{m.id}</span><span className="local-tool-model-meta">{m.size_bytes != null && formatBytes(m.size_bytes)}{m.embedding && <span className="status-chip is-configured">{t('Embedding')}</span>}</span></li>)}</ul>
           : <p className="local-tool-note">{t('No models found.')}</p>}
       </>
-      : <p className="local-tool-note">{t(tool.id === 'ollama' ? 'Start it with `ollama serve`' : 'Open LM Studio and start its local server')}</p>)}
+      : <p className="local-tool-note">{t(offerApp ? 'Only the command-line version is installed. Install the Ollama app to run it without a terminal.' : tool.id === 'ollama' ? 'Start it with `ollama serve`' : 'Open LM Studio and start its local server')}</p>)}
     {tool.kind === 'app' && tool.installed && <>
       <p className="local-tool-note">{!tool.running ? t('Not answering. Open Zotero and close any dialog it shows, then turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.') : tool.local_api ? t('Local API on · {endpoint}', { endpoint: tool.endpoint ?? '' }) : t('Running, but its local API is off. Turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.')}</p>
     </>}
-    {!tool.installed && (tool.install.available
+    {offerInstall && (tool.install.available
       ? <>
-        {!running && <div className="actions"><Button size="sm" onClick={() => setConfirmOpen(true)}>{t('Install')}</Button></div>}
-        <ConfirmDialog open={confirmOpen} dark={dark} title={t('Install {name}?', { name })} description={t('DEIXIS installs it on this computer.')} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={install} onOpenChange={setConfirmOpen} />
+        {!running && <div className="actions"><Button size="sm" onClick={() => setConfirmOpen(true)}>{t(offerApp ? 'Install the Ollama app' : 'Install')}</Button></div>}
+        <ConfirmDialog open={confirmOpen} dark={dark} title={t('Install {name}?', { name })} description={t(tool.app_installed === false ? 'DEIXIS downloads the Ollama app from ollama.com (about 200 MB), copies it to Applications and opens it.' : 'DEIXIS installs it on this computer.')} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={install} onOpenChange={setConfirmOpen} />
       </>
       : <p className="local-tool-note">{tool.install.unavailable_reason}<br /><a href={tool.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
     {tool.job && <>
       {running
-        ? <InstallProgress label={t('Installing…')} />
+        ? tool.job.total
+          ? <InstallProgress percent={Math.min(100, Math.round((tool.job.completed ?? 0) / tool.job.total * 100))}
+              label={tool.job.completed! < tool.job.total ? t('Downloading: {done} of {total} MB', { done: aboutMb(tool.job.completed ?? 0), total: aboutMb(tool.job.total) }) : t('Installing…')} />
+          : <InstallProgress label={t('Installing…')} />
         : <p className="local-tool-note">{t(tool.job.status === 'succeeded' ? 'Install finished.' : tool.job.status === 'cancelled' ? 'Installation cancelled.' : 'Install failed.')}</p>}
       {tool.job.status === 'failed' && <>
         {errorLines(tool.job.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
@@ -391,11 +397,142 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
 }
 
 // An indeterminate bar: the installers report the step they are on, not a fraction.
-function InstallProgress({ label }: { label: string }) {
+function InstallProgress({ label, percent }: { label: string; percent?: number }) {
   return <div className="install-progress" role="status">
     <span className="install-progress-label"><LoaderCircle size={14} className="chat-spin" aria-hidden />{label}</span>
-    <div className="install-progress-bar" aria-hidden><span /></div>
+    <div className={`install-progress-bar${percent != null ? ' is-determinate' : ''}`} aria-hidden><span style={percent != null ? { width: `${percent}%` } : undefined} /></div>
   </div>
+}
+
+// Ollama not answering: install it, on macOS as the app from ollama.com (Homebrew's CLI alone starts no server). The job is
+// the tool's install job, polled with the other tools; its bytes give the bar while the disk image downloads.
+function OllamaAppInstall({ tool, dark, onChanged, onDone }: { tool: LocalTool; dark: boolean; onChanged: () => Promise<void>; onDone: () => void }) {
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
+  const job = tool.job
+  const status = job?.status
+  const previous = useRef(status)
+  useEffect(() => {
+    if (previous.current === 'running' && status === 'succeeded') onDone()
+    previous.current = status
+  }, [status, onDone])
+  const app = tool.app_installed === false
+  if (!tool.install.available || (tool.installed && !app && status !== 'running')) return null
+  function install() {
+    setBusy(true)
+    api.installLocalTool(tool.id).then(() => { setConfirmOpen(false); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
+  return <div className="server-pull">
+    {status === 'running'
+      ? job!.total
+        ? <InstallProgress percent={Math.min(100, Math.round((job!.completed ?? 0) / job!.total * 100))}
+            label={(job!.completed ?? 0) < job!.total ? t('Downloading: {done} of {total} MB', { done: aboutMb(job!.completed ?? 0), total: aboutMb(job!.total) }) : t('Installing…')} />
+        : <InstallProgress label={t('Installing…')} />
+      : <>
+        {status === 'failed' && <>
+          <p className="local-tool-error">{t('Install failed.')}</p>
+          {errorLines(job!.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
+        </>}
+        {tool.installed && app && <p className="local-tool-note">{t('Only the command-line version is installed. Install the Ollama app to run it without a terminal.')}</p>}
+        <div className="actions"><Button size="sm" onClick={() => setConfirmOpen(true)}><Download size={14} aria-hidden />{t(app ? 'Install the Ollama app' : 'Install')}</Button></div>
+      </>}
+    <ConfirmDialog open={confirmOpen} dark={dark} title={t('Install {name}?', { name: 'Ollama' })}
+      description={t(app ? 'DEIXIS downloads the Ollama app from ollama.com (about 200 MB), copies it to Applications and opens it.' : 'DEIXIS installs it on this computer.')}
+      confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={install} onOpenChange={setConfirmOpen} />
+  </div>
+}
+
+// The Ollama card's models: what is installed (each can be removed), a short list of suggested models and a name box for
+// any other library model. One download runs at a time; Ollama reports bytes per layer, summed into one bar.
+function OllamaModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalTool; dark: boolean; memoryGb: number | null; onChanged: () => Promise<void>; onDone: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [name, setName] = useState('')
+  const [removing, setRemoving] = useState<string | null>(null)
+  const toast = useToast()
+  const pull = tool.pull
+  const status = pull?.status
+  const pulling = status === 'running'
+  const previous = useRef(status)
+  useEffect(() => {
+    if (previous.current === 'running' && status === 'succeeded') onDone()
+    previous.current = status
+  }, [status, onDone])
+  const installed = tool.models ?? []
+  const full = (id: string) => id.includes(':') ? id : `${id}:latest`
+  const have = new Set(installed.map(m => full(m.id)))
+  const suggested = (tool.suggested ?? []).filter(s => !have.has(full(s.id)))
+  const research = suggested.filter(s => s.purpose === 'research')
+  const embedding = suggested.filter(s => s.purpose === 'embedding')
+  function start(model: string) {
+    setBusy(true)
+    api.pullOllamaModel(model).then(() => { setName(''); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
+  function remove() {
+    if (!removing) return
+    setBusy(true)
+    api.deleteOllamaModel(removing).then(() => { setRemoving(null); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
+  return <>
+    {pulling && <div className="server-pull">
+      <InstallProgress percent={pull!.total ? Math.min(100, Math.round(pull!.completed / pull!.total * 100)) : undefined} label={pull!.total
+        ? t('Downloading {model}: {done} of {total} MB', { model: pull!.model, done: aboutMb(pull!.completed), total: aboutMb(pull!.total) })
+        : t('Preparing the download of {model}…', { model: pull!.model })} />
+    </div>}
+    {status === 'succeeded' && <p className="local-tool-note">{t('{model} is downloaded.', { model: pull!.model })}</p>}
+    {status === 'failed' && <>
+      <p className="local-tool-error">{t('The download of {model} did not finish.', { model: pull!.model })}</p>
+      {errorLines(pull!.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
+    </>}
+
+    <h3 className="source-section">{t('Installed models')}</h3>
+    {installed.length > 0
+      ? <ul className="local-tool-models ollama-models">{installed.map(m => <li key={m.id}>
+        <span>{m.id}</span>
+        <span className="local-tool-model-meta">{[m.size_bytes != null && formatBytes(m.size_bytes), m.embedding && t('embedding')].filter(Boolean).join(' · ')}
+          <button type="button" className="ghost icon-only" aria-label={t('Remove {model}', { model: m.id })} title={t('Remove')} disabled={busy} onClick={() => setRemoving(m.id)}><Trash2 size={14} aria-hidden /></button>
+        </span>
+      </li>)}</ul>
+      : <p className="local-tool-note">{t('No models found.')}</p>}
+
+    {research.length > 0 && <>
+      <h3 className="source-section">{t('Suggested models')}</h3>
+      <ul className="ollama-cards">{research.map(s => {
+        // A model needs about its download size plus a few GB of memory to run; one that does not fit is shown faded.
+        const need = Math.ceil((s.size_bytes / 1e9 + 4) / 4) * 4
+        const tight = memoryGb != null && memoryGb < need
+        return <li key={s.id} className={`ollama-card${tight ? ' is-tight' : ''}`}>
+          <b>{s.name}</b>
+          <small title={s.id}>{s.maker} · <code>{s.id}</code></small>
+          <span className="ollama-card-size" title={tight ? t('More than this computer’s {memory} GB of memory', { memory: memoryGb! }) : undefined}>{tight && <TriangleAlert size={12} aria-hidden />}{t('{size} · {need} GB memory', { size: formatBytes(s.size_bytes), need })}</span>
+          <button type="button" className="ghost" disabled={busy || pulling} onClick={() => start(s.id)}><Download size={14} aria-hidden />{t('Download')}</button>
+        </li>
+      })}</ul>
+    </>}
+    {embedding.length > 0 && <>
+      <h3 className="source-section">{t('Embedding models')}</h3>
+      <ul className="local-tool-models ollama-models">{embedding.map(s => <li key={s.id}>
+        <span title={s.id}>{s.name}</span>
+        <span className="local-tool-model-meta">{formatBytes(s.size_bytes)}
+          <button type="button" className="ghost" disabled={busy || pulling} onClick={() => start(s.id)}><Download size={14} aria-hidden />{t('Download')}</button>
+        </span>
+      </li>)}</ul>
+    </>}
+
+    <details className="ollama-other">
+      <summary>{t('Another model')}</summary>
+      <form className="ollama-pull-form" onSubmit={e => { e.preventDefault(); if (name.trim()) start(name.trim()) }}>
+        <span className="ollama-pull-row">
+          <input className="field mono" aria-label={t('Another model')} value={name} onChange={e => setName(e.target.value)} placeholder="qwen3.5:9b" spellCheck={false} autoCapitalize="off" autoComplete="off" />
+          <button type="submit" className="ghost" disabled={busy || pulling || !name.trim()}><Download size={14} aria-hidden />{t('Download')}</button>
+        </span>
+        <p className="foot-note">{t('Names are listed at')} <a href="https://ollama.com/library" target="_blank" rel="noopener noreferrer">ollama.com/library</a>.</p>
+      </form>
+    </details>
+
+    <ConfirmDialog open={removing !== null} dark={dark} title={t('Remove {model}?', { model: removing ?? '' })} description={t('Ollama deletes it from this computer. You can download it again later.')}
+      confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={remove} onOpenChange={open => { if (!open) setRemoving(null) }} />
+  </>
 }
 
 // The release check for a PDF tool, sent when its panel opens; it answers in one quiet line. Marker and PyMuPDF are
@@ -695,8 +832,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     return () => window.clearInterval(timer)
   }, [reader, loadReader])
   useEffect(() => {
-    if (!tools?.tools.some(tool => tool.job?.status === 'running')) return
-    const timer = window.setInterval(() => { void loadTools(false) }, 2000)
+    if (!tools?.tools.some(tool => tool.job?.status === 'running' || tool.pull?.status === 'running')) return
+    const timer = window.setInterval(() => { void loadTools(false) }, tools.tools.some(tool => tool.pull?.status === 'running') ? 1000 : 2000)
     return () => window.clearInterval(timer)
   }, [tools, loadTools])
 
@@ -1041,19 +1178,20 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     {server.endpoint && <div className="lbl">{t('Server address')}<code className="field mono">{server.endpoint}</code></div>}
     <LocalToolDetails tool={server} dark={dark} onChanged={reloadTools} refresh={false} />
     {server.endpoint && <p className="foot-note">{t('The address is the one the app uses by default; this version of DEIXIS cannot change it.')}</p>}
-    {/* The same choice as the Local model server row under Semantic search: choosing a model saves it as the provider. */}
-    {(() => {
-      const choices = serverChoices.filter(c => c.provider === server.id)
-      const mine = serverChosen && chosen!.provider === server.id
-      return <label className="lbl">{t('Embedding model for semantic search')}
-        <select className="select server-embedding" disabled={saving || !choices.length} value={mine ? `${chosen!.provider}|${chosen!.model ?? ''}` : ''}
-          onChange={e => { if (!e.target.value) return; const [p, ...m] = e.target.value.split('|'); chooseSemantic(p as SemanticSearchProvider, m.join('|')) }}>
-          {!mine && <option value="">{t(choices.length ? 'Not used for semantic search' : 'No embedding model listed')}</option>}
-          {choices.map(c => <option key={`${c.provider}|${c.model}`} value={`${c.provider}|${c.model}`}>{c.label}</option>)}
-        </select>
-      </label>
-    })()}
+    {embeddingChoice(server.id)}
   </section>
+  // The same choice as the Local model server row under Semantic search: choosing a model saves it as the provider.
+  const embeddingChoice = (provider: string) => {
+    const choices = serverChoices.filter(c => c.provider === provider)
+    const mine = serverChosen && chosen!.provider === provider
+    return <label className="lbl">{t('Embedding model for semantic search')}
+      <select className="select server-embedding" disabled={saving || !choices.length} value={mine ? `${chosen!.provider}|${chosen!.model ?? ''}` : ''}
+        onChange={e => { if (!e.target.value) return; const [p, ...m] = e.target.value.split('|'); chooseSemantic(p as SemanticSearchProvider, m.join('|')) }}>
+        {!mine && <option value="">{t(choices.length ? 'Not used for semantic search' : 'No embedding model listed')}</option>}
+        {choices.map(c => <option key={`${c.provider}|${c.model}`} value={`${c.provider}|${c.model}`}>{c.label}</option>)}
+      </select>
+    </label>
+  }
   const localCheck = (conn: string | null) => Promise.all([...(conn ? [refreshModel(conn)] : []), loadTools(true, true), loadSemantic(true)])
   let body: ReactNode = null
   if (company) {
@@ -1068,12 +1206,19 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   } else if (sel?.kind === 'local' && sel.id === 'ollama') {
     const model = data?.models.ollama
     const tool = toolOf('ollama')
+    // One status line (address and version beside it), the embedding choice and the installed models; the path, role and
+    // the fixed address field stay out, since none of them is something to act on here.
+    const version = tool?.version?.match(/\d+(\.\d+)+/)?.[0]
+    const where = [tool?.running && tool.endpoint?.replace(/^https?:\/\//, ''), version && t('version {v}', { v: version })].filter(Boolean).join(' · ')
     body = <>
-      {dmeta('local:ollama', model ? modelStatus(model) : data ? unknown : loading, undefined, model && !model.ready ? healthReasonText(model) : undefined)}
-      <p className="foot-note is-ink">{t('DEIXIS uses Ollama on this computer, so no key is needed. Open the Ollama app or run `ollama serve`, then download a model with `ollama pull`.')}</p>
-      <div className="acts">{checkButton('local:ollama', 'Test', () => localCheck(model ? 'ollama' : null))}</div>
-      {tool && serverBlock(tool)}
-      {model && <ModelCatalogue model={model} />}
+      {dmeta('local:ollama', model ? modelStatus(model) : data ? unknown : loading, where ? <span>{where}</span> : undefined, model && !model.ready ? healthReasonText(model) : undefined)}
+      <p className="foot-note">{t(tool && !tool.installed ? 'Ollama is not installed on this computer.' : tool && !tool.running ? 'Open the Ollama app or run `ollama serve`.' : 'No key is needed; DEIXIS uses Ollama on this computer.')}</p>
+      <div className="acts">{checkButton('local:ollama', 'Test', () => localCheck(model ? 'ollama' : null), false, true)}</div>
+      {tool?.running && <section className="server-block" aria-label="Ollama">
+        {embeddingChoice('ollama')}
+        <OllamaModels tool={tool} dark={dark} memoryGb={machine?.memory_gb ?? null} onChanged={reloadTools} onDone={() => { void localCheck('ollama') }} />
+      </section>}
+      {tool && !tool.running && <OllamaAppInstall tool={tool} dark={dark} onChanged={reloadTools} onDone={() => { void localCheck('ollama') }} />}
     </>
   } else if (sel?.kind === 'local' && sel.id === 'lm_studio') {
     const status: [Tone, string] = lmStudioInUse && localServer ? modelStatus(localServer) : !lmStudio ? (toolsError ? unknown : loading)

@@ -126,6 +126,9 @@ def test_ollama_needs_no_key_and_says_when_it_is_not_running():
     assert status["ready"] is False and "key_configured" not in status and "ollama serve" in status["reason"]
     empty = asyncio.run(adapter(openai_compat.OLLAMA, lambda r: httpx.Response(200, json={"data": []})).health(refresh=True))
     assert empty["ready"] is False and "ollama pull" in empty["reason"]
+    # Ollama 0.34 with no models answers "data": null; that is the same empty list, not a crash.
+    null = asyncio.run(adapter(openai_compat.OLLAMA, lambda r: httpx.Response(200, json={"object": "list", "data": None})).health(refresh=True))
+    assert null["ready"] is False and "ollama pull" in null["reason"]
 
 
 @every_spec

@@ -9,6 +9,7 @@ is the one reference manager: its local API is where a collection import reads f
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import platform
 import plistlib
@@ -16,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +30,30 @@ from deixis.storage.db import now
 CACHE_SECONDS = 30
 INSTALL_TIMEOUT_SECONDS = 20 * 60
 OUTPUT_TAIL_CHARS = 4000
+# The model the Ollama card offers first when no embedding model is installed: a small one semantic search can use.
+OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
+# On macOS Ollama installs as the app from ollama.com (it runs the server in the menu bar), not Homebrew's bare CLI.
+OLLAMA_MAC = sys.platform == "darwin"
+OLLAMA_MAC_APP = Path("/Applications/Ollama.app")
+OLLAMA_MAC_DMG = "https://ollama.com/download/Ollama.dmg"
+DOWNLOAD_TRANSPORT: httpx.AsyncBaseTransport | None = None  # tests put a mock transport here
+# The Ollama card's suggestions (sizes from ollama.com/library, 15 Oct 2026): two embedding models for semantic search
+# and the research-step models the Local models note names. Any other library name can be typed in.
+OLLAMA_SUGGESTED = (  # download sizes as ollama.com/library lists them (15 Oct 2026)
+    {"id": "qwen3.5:4b", "name": "Qwen 3.5 · 4B", "maker": "Alibaba", "purpose": "research", "size_bytes": 3_300_000_000},
+    {"id": "qwen3.5:9b", "name": "Qwen 3.5 · 9B", "maker": "Alibaba", "purpose": "research", "size_bytes": 6_600_000_000},
+    {"id": "gemma4:12b", "name": "Gemma 4 · 12B", "maker": "Google", "purpose": "research", "size_bytes": 7_700_000_000},
+    {"id": "gpt-oss:20b", "name": "gpt-oss · 20B", "maker": "OpenAI", "purpose": "research", "size_bytes": 14_000_000_000},
+    {"id": "mistral-small3.2", "name": "Mistral Small 3.2", "maker": "Mistral", "purpose": "research", "size_bytes": 15_000_000_000},
+    {"id": "glm-4.7-flash", "name": "GLM 4.7 Flash", "maker": "Zhipu", "purpose": "research", "size_bytes": 19_000_000_000},
+    {"id": "gemma4:31b", "name": "Gemma 4 · 31B", "maker": "Google", "purpose": "research", "size_bytes": 19_000_000_000},
+    {"id": "qwen3.5:35b", "name": "Qwen 3.5 · 35B", "maker": "Alibaba", "purpose": "research", "size_bytes": 22_000_000_000},
+    {"id": "nomic-embed-text", "name": "Nomic Embed Text", "maker": "Nomic", "purpose": "embedding", "size_bytes": 274_000_000},
+    {"id": "embeddinggemma", "name": "EmbeddingGemma", "maker": "Google", "purpose": "embedding", "size_bytes": 622_000_000},
+    {"id": "mxbai-embed-large", "name": "mxbai Embed Large", "maker": "Mixedbread", "purpose": "embedding", "size_bytes": 670_000_000},
+)
+# An Ollama model name: library or namespace/model, an optional :tag. It goes into a JSON body, never a command.
+OLLAMA_MODEL_NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,79}(/[a-z0-9][a-z0-9._-]{0,79})?(:[A-Za-z0-9][A-Za-z0-9._-]{0,79})?")
 
 
 @dataclass(frozen=True)
@@ -104,6 +130,22 @@ def _app_version(app: str) -> str | None:
         return None
 
 
+def _copy_mac_app(dmg: Path, target: Path) -> None:
+    """Mount the downloaded disk image, copy its app to target and unmount it."""
+    mount = Path(tempfile.mkdtemp(prefix="deixis-ollama-mount-"))
+    subprocess.run(["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", str(mount), str(dmg)],
+                   check=True, capture_output=True, text=True, timeout=120)
+    try:
+        subprocess.run(["ditto", str(mount / target.name), str(target)], check=True, capture_output=True, text=True, timeout=300)
+    finally:
+        subprocess.run(["hdiutil", "detach", "-force", str(mount)], capture_output=True, timeout=60)
+        shutil.rmtree(mount, ignore_errors=True)
+
+
+def _open_mac_app(app: Path) -> None:
+    subprocess.run(["open", "-a", str(app)], check=True, capture_output=True, text=True, timeout=30)
+
+
 def machine() -> dict[str, Any]:
     chip = memory = None
     if sys.platform == "darwin":
@@ -128,13 +170,16 @@ class LocalTools:
         self._jobs: dict[str, dict[str, Any]] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self._procs: dict[str, asyncio.subprocess.Process] = {}
+        self._pull: dict[str, Any] | None = None  # the Ollama embedding model download, while it runs and after
+        self._pull_task: asyncio.Task | None = None
 
     async def snapshot(self, refresh: bool = False) -> dict[str, Any]:
         if refresh or not self._cache or time.monotonic() - self._cache[0] > CACHE_SECONDS:
             tools = await asyncio.gather(*(self._detect(tool) for tool in TOOLS.values()))
             self._cache = (time.monotonic(), {"machine": await asyncio.to_thread(machine), "tools": list(tools)})
         data = self._cache[1]
-        return {**data, "tools": [{**t, "job": self._jobs.get(t["id"])} for t in data["tools"]]}
+        return {**data, "tools": [{**t, "job": self._jobs.get(t["id"]), **({"pull": self._pull, "suggested": list(OLLAMA_SUGGESTED)} if t["id"] == "ollama" else {})}
+                                  for t in data["tools"]]}
 
     async def _detect(self, tool: Tool) -> dict[str, Any]:
         path = shutil.which(tool.binary)
@@ -152,6 +197,10 @@ class LocalTools:
         }
         if tool.kind == "server":
             status |={"endpoint": tool.endpoint, "running": models is not None, "models": models or []}
+        if tool.id == "ollama" and OLLAMA_MAC:
+            status["app_installed"] = OLLAMA_MAC_APP.exists()
+            status["install"] = {"command": f"{OLLAMA_MAC_APP.name} from ollama.com", "available": True,
+                                 "unavailable_reason": None, "url": tool.url}
         if tool.kind == "app":
             local_api = await self._zotero_local_api(tool)
             status["installed"] = status["installed"] or local_api is not None
@@ -200,17 +249,127 @@ class LocalTools:
         if (self._jobs.get(tool_id) or {}).get("status") == "running":
             raise ToolError(409, f"{tool.name} is already being installed")
         current = next(t for t in (await self.snapshot(refresh=True))["tools"] if t["id"] == tool_id)
+        if tool_id == "ollama" and OLLAMA_MAC:
+            # Offered also when only Homebrew's CLI is there: without the app nothing starts the server.
+            if current["app_installed"] or current["running"]:
+                raise ToolError(409, f"{tool.name} is already installed")
+            return self._start(tool_id, {"status": "running", "command": current["install"]["command"], "started_at": now(),
+                                         "finished_at": None, "output": "", "completed": 0, "total": 0},
+                               self._install_ollama_app)
         if current["installed"]:
             raise ToolError(409, f"{tool.name} is already installed")
         manager = shutil.which(tool.install[0])
         if not manager:
             raise ToolError(422, current["install"]["unavailable_reason"])
         job = {"status": "running", "command": " ".join(tool.install), "started_at": now(), "finished_at": None, "output": ""}
+        argv = [manager, *tool.install[1:]]
+        return self._start(tool_id, job, lambda tool_id, job: self._run(tool_id, job, argv))
+
+    def _start(self, tool_id: str, job: dict[str, Any], run) -> dict[str, Any]:
         self._jobs[tool_id] = job
-        task = asyncio.create_task(self._run(tool_id, job, [manager, *tool.install[1:]]))
+        task = asyncio.create_task(run(tool_id, job))
         self._tasks[tool_id] = task
         task.add_done_callback(lambda t, tool_id=tool_id: self._tasks.pop(tool_id, None))
         return job
+
+    async def _install_ollama_app(self, tool_id: str, job: dict[str, Any]) -> None:
+        """Download Ollama's disk image from ollama.com, copy the app to /Applications and open it, which starts the server."""
+        folder = Path(tempfile.mkdtemp(prefix="deixis-ollama-"))
+        dmg = folder / "Ollama.dmg"
+        try:
+            # ollama.com redirects to the GitHub release; this download is not to this computer, so not the loopback client.
+            async with httpx.AsyncClient(follow_redirects=True, timeout=httpx.Timeout(30, read=120),
+                                         transport=DOWNLOAD_TRANSPORT) as client:
+                async with client.stream("GET", OLLAMA_MAC_DMG) as response:
+                    response.raise_for_status()
+                    job["total"] = int(response.headers.get("content-length") or 0)
+                    with dmg.open("wb") as f:
+                        async for chunk in response.aiter_bytes():
+                            f.write(chunk)
+                            job["completed"] += len(chunk)
+            job["output"] = f"Downloaded {OLLAMA_MAC_DMG}; copying {OLLAMA_MAC_APP.name} to {OLLAMA_MAC_APP.parent}"
+            await asyncio.to_thread(_copy_mac_app, dmg, OLLAMA_MAC_APP)
+            await asyncio.to_thread(_open_mac_app, OLLAMA_MAC_APP)
+            job.update(status="succeeded", finished_at=now())
+        except (httpx.HTTPError, OSError, subprocess.SubprocessError) as exc:
+            detail = (getattr(exc, "stderr", None) or "").strip()
+            job.update(status="failed", finished_at=now(), output=f"{type(exc).__name__}: {exc}" + (f"\n{detail}" if detail else ""))
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+            self._cache = None
+
+    async def _running_ollama(self) -> dict[str, Any]:
+        ollama = next(t for t in (await self.snapshot(refresh=True))["tools"] if t["id"] == "ollama")
+        if not ollama["running"]:
+            raise ToolError(409, "Ollama is not running: open the Ollama app or run `ollama serve`")
+        return ollama
+
+    async def pull_embedding_model(self) -> dict[str, Any]:
+        return await self.pull_model(OLLAMA_EMBEDDING_MODEL)
+
+    async def pull_model(self, model: str) -> dict[str, Any]:
+        """Download one model through the running Ollama server, one download at a time."""
+        model = model.strip()
+        if not OLLAMA_MODEL_NAME.fullmatch(model):
+            raise ToolError(400, "That is not an Ollama model name, such as qwen3.5:35b")
+        if (self._pull or {}).get("status") == "running":
+            raise ToolError(409, f"{self._pull['model']} is already being downloaded")
+        await self._running_ollama()
+        job = {"status": "running", "model": model, "step": "", "completed": 0, "total": 0,
+               "started_at": now(), "finished_at": None, "output": ""}
+        self._pull = job
+        self._pull_task = asyncio.create_task(self._run_pull(job))
+        return job
+
+    async def _run_pull(self, job: dict[str, Any]) -> None:
+        # Ollama streams one JSON line per event; a layer's events carry its digest with bytes done and its size.
+        done: dict[str, int] = {}
+        sizes: dict[str, int] = {}
+        try:
+            async with self._client.stream("POST", f"{TOOLS['ollama'].endpoint}/api/pull",
+                                           json={"model": job["model"], "stream": True},
+                                           timeout=httpx.Timeout(30, read=300)) as response:
+                if response.status_code != 200:
+                    body = (await response.aread()).decode("utf-8", "replace")
+                    job.update(status="failed", output=f"Ollama answered {response.status_code}: {body}"[-OUTPUT_TAIL_CHARS:])
+                    return
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    event = json.loads(line)
+                    if event.get("error"):
+                        job.update(status="failed", output=str(event["error"])[-OUTPUT_TAIL_CHARS:])
+                        return
+                    job["step"] = str(event.get("status", ""))
+                    if event.get("digest") and event.get("total"):
+                        sizes[event["digest"]] = int(event["total"])
+                        done[event["digest"]] = int(event.get("completed") or 0)
+                        job.update(completed=sum(done.values()), total=sum(sizes.values()))
+                    if event.get("status") == "success":
+                        job["status"] = "succeeded"
+            if job["status"] == "running":
+                job.update(status="failed", output="Ollama ended the download without reporting success.")
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            job.update(status="failed", output=f"{type(exc).__name__}: {exc}"[-OUTPUT_TAIL_CHARS:])
+        finally:
+            job["finished_at"] = now()
+            self._cache = None
+
+    async def delete_model(self, model: str) -> None:
+        """Remove one installed model from Ollama; only a name Ollama itself lists is sent."""
+        ollama = await self._running_ollama()
+        if model not in {m["id"] for m in ollama.get("models") or []}:
+            raise ToolError(404, f"{model} is not installed in Ollama")
+        if (self._pull or {}).get("status") == "running" and self._pull["model"] in (model, model.removesuffix(":latest")):
+            raise ToolError(409, f"{model} is being downloaded")
+        try:
+            response = await self._client.request("DELETE", f"{TOOLS['ollama'].endpoint}/api/delete", json={"model": model}, timeout=30)
+        except httpx.HTTPError as exc:
+            raise ToolError(502, f"Ollama did not answer: {type(exc).__name__}") from exc
+        finally:
+            self._cache = None
+        if response.status_code != 200:
+            raise ToolError(502, f"Ollama answered {response.status_code}: {response.text[:300]}")
 
     def cancel(self, tool_id: str) -> dict[str, Any]:
         tool = TOOLS.get(tool_id)

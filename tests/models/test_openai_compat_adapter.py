@@ -18,6 +18,9 @@ SPECS = list(openai_compat.CONNECTIONS.values())
 KEYED = [c for c in SPECS if c.key_env]
 every_spec = pytest.mark.parametrize("spec", SPECS, ids=[c.id for c in SPECS])
 keyed_spec = pytest.mark.parametrize("spec", KEYED, ids=[c.id for c in KEYED])
+# Ollama answers steps through its own /api/chat (tested below); every other connection through /chat/completions.
+CHAT = [c for c in SPECS if c.id != "ollama"]
+chat_spec = pytest.mark.parametrize("spec", CHAT, ids=[c.id for c in CHAT])
 
 
 # OpenRouter keeps only listed models that take structured outputs; the other connections ignore the field.
@@ -164,7 +167,7 @@ def test_health_tries_again_once_after_a_transport_error(spec, monkeypatch):
     assert status["ready"] is False and status["reason"] == unreachable and len(calls) == 2
 
 
-@pytest.mark.parametrize("spec", [c for c in SPECS if not c.json_schema], ids=[c.id for c in SPECS if not c.json_schema])
+@pytest.mark.parametrize("spec", [c for c in CHAT if not c.json_schema], ids=[c.id for c in CHAT if not c.json_schema])
 def test_run_step_sends_json_mode_no_tools_and_never_a_reasoning_effort(spec, monkeypatch):
     set_key(spec, monkeypatch)
     sent = []
@@ -200,7 +203,7 @@ def test_run_step_without_key_or_model_sends_nothing(spec, monkeypatch):
     assert (result.status, result.error, result.delivery_class) == ("unavailable", "no model requested", "before_send")
 
 
-@every_spec
+@chat_spec
 @pytest.mark.parametrize("status,message,limited,quota", [
     (401, "Authentication Fails", False, False),
     (402, "Insufficient Balance", False, True),
@@ -223,7 +226,7 @@ def test_run_step_reports_http_errors_without_retrying(spec, monkeypatch, status
     assert calls == [httpx.URL(f"{spec.base_url}/chat/completions").path]
 
 
-@every_spec
+@chat_spec
 @pytest.mark.parametrize("exception,status,delivery", [
     (httpx.ConnectError, "unavailable", "before_send"),
     (httpx.ReadTimeout, "failed", "after_send_unknown"),
@@ -243,7 +246,7 @@ def test_run_step_reports_transport_errors_without_retrying(spec, monkeypatch, e
     assert len(calls) == 1
 
 
-@every_spec
+@chat_spec
 def test_run_step_reports_malformed_json_and_truncated_answers(spec, monkeypatch):
     set_key(spec, monkeypatch)
     result = asyncio.run(adapter(spec, lambda r: httpx.Response(200, text="not JSON")).run_step("b", "d", "m", {}, "model-a"))
@@ -253,7 +256,7 @@ def test_run_step_reports_malformed_json_and_truncated_answers(spec, monkeypatch
         assert (result.status, result.raw_text, result.error) == ("failed", content or None, f"finish reason {finish}")
 
 
-@every_spec
+@chat_spec
 @pytest.mark.parametrize("model_fields", [{}, {"model": None}, {"model": ""}])
 def test_a_missing_answering_model_is_not_inferred(spec, monkeypatch, model_fields):
     set_key(spec, monkeypatch)
@@ -266,7 +269,7 @@ def test_a_missing_answering_model_is_not_inferred(spec, monkeypatch, model_fiel
     assert (result.status, result.resolved_model, result.requested_model_verified) == ("completed", None, False)
 
 
-@every_spec
+@chat_spec
 def test_a_different_answering_model_is_reported_for_the_flow_to_reject(spec, monkeypatch):
     set_key(spec, monkeypatch)
     result = asyncio.run(adapter(spec, lambda r: ok_response("another-model")).run_step("b", "d", "m", {}, "model-a"))
@@ -276,7 +279,7 @@ def test_a_different_answering_model_is_reported_for_the_flow_to_reject(spec, mo
 TOOL_CALL = [{"id": "call_1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]
 
 
-@every_spec
+@chat_spec
 @pytest.mark.parametrize("message_extra,finish,expected", [
     ({"tool_calls": TOOL_CALL}, "stop", ["function"]),          # a tool call next to usable content, finish "stop"
     ({"tool_calls": TOOL_CALL}, "tool_calls", ["function"]),
@@ -416,3 +419,89 @@ def test_a_stopped_local_server_is_named_by_its_address():
 
     status = asyncio.run(local(refused, "http://localhost:1337/v1").health(refresh=True))
     assert status["reason"] == "Local server is not running at http://localhost:1337/v1" and "ollama" not in status["reason"]
+
+
+def ollama_chat(content='{"claims": []}', done="stop", context_length=40960, **message):
+    """A fake Ollama: /api/show gives the model's context length, /api/chat answers with one message."""
+    sent = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        sent.append((request.url.path, body))
+        if request.url.path == "/api/show":
+            return httpx.Response(200, json={"model_info": {"qwen35.context_length": context_length}})
+        return httpx.Response(200, json={"model": body["model"], "done_reason": done, "prompt_eval_count": 120,
+                                         "eval_count": 30, "message": {"role": "assistant", "content": content, **message}})
+    return sent, adapter(openai_compat.OLLAMA, handler)
+
+
+def test_ollama_steps_go_to_its_own_chat_with_thinking_off_the_schema_and_a_sized_context():
+    sent, ollama = ollama_chat()
+    schema = {"type": "object", "properties": {"claims": {"type": "array"}}, "required": ["claims"]}
+    result = asyncio.run(ollama.run_step("base", "dev", "x" * 30_000, schema, "qwen3.5:9b"))
+    assert (result.status, result.raw_text, result.resolved_model) == ("completed", '{"claims": []}', "qwen3.5:9b")
+    assert result.token_usage == {"prompt_tokens": 120, "completion_tokens": 30, "num_ctx": 24576}
+    (show, _), (path, body) = sent
+    assert (show, path) == ("/api/show", "/api/chat")
+    assert (body["stream"], body["think"], body["options"]) == (False, False, {"num_ctx": 24576})
+    assert body["format"]["required"] == ["claims"] and "tools" not in body
+    assert [m["role"] for m in body["messages"]] == ["system", "user"]
+
+
+def test_an_ollama_input_larger_than_the_model_context_is_not_sent():
+    sent, ollama = ollama_chat(context_length=8192)
+    result = asyncio.run(ollama.run_step("b", "d", "x" * 30_000, {}, "qwen3.5:9b"))
+    assert (result.status, result.delivery_class) == ("failed", "before_send")
+    assert "larger than qwen3.5:9b's context window (8192)" in result.error
+    assert [path for path, _ in sent] == ["/api/show"]
+
+
+def test_an_ollama_context_window_is_capped_at_the_model_limit():
+    sent, ollama = ollama_chat(context_length=20000)
+    asyncio.run(ollama.run_step("b", "d", "x" * 30_000, {}, "qwen3.5:9b"))
+    assert sent[-1][1]["options"] == {"num_ctx": 20000}
+
+
+@pytest.mark.parametrize(("done", "message", "status"), [("length", {}, "failed"),
+                                                         ("stop", {"tool_calls": [{"function": {"name": "x"}}]}, "isolation_violation")])
+def test_an_ollama_cut_off_answer_fails_and_a_tool_call_is_an_isolation_violation(done, message, status):
+    _, ollama = ollama_chat(done=done, **message)
+    assert asyncio.run(ollama.run_step("b", "d", "m", {}, "qwen3.5:9b")).status == status
+
+
+def test_ollama_reports_http_errors_and_transport_errors():
+    ollama = adapter(openai_compat.OLLAMA, lambda r: httpx.Response(500, text="boom"))
+    result = asyncio.run(ollama.run_step("b", "d", "m", {}, "qwen3.5:9b"))
+    assert (result.status, result.error, result.http_status) == ("failed", "HTTP 500: API request failed", 500)
+
+    def refused(request):
+        raise httpx.ConnectError("refused", request=request)
+    result = asyncio.run(adapter(openai_compat.OLLAMA, refused).run_step("b", "d", "m", {}, "qwen3.5:9b"))
+    assert (result.status, result.delivery_class) == ("unavailable", "before_send")
+
+
+@pytest.mark.parametrize("spec", [openai_compat.OLLAMA, openai_compat.LOCAL_SERVER], ids=["ollama", "local_server"])
+def test_a_local_connection_sends_one_call_at_a_time_with_a_longer_limit(spec, monkeypatch):
+    monkeypatch.setenv("DEIXIS_LOCAL_SERVER_URL", "http://127.0.0.1:1234/v1")
+    state = {"open": 0, "most": 0}
+
+    async def handler(request):
+        if request.url.path == "/api/show":
+            return httpx.Response(200, json={"model_info": {}})
+        state["open"] += 1
+        state["most"] = max(state["most"], state["open"])
+        await asyncio.sleep(0.01)
+        state["open"] -= 1
+        if request.url.path == "/api/chat":
+            return httpx.Response(200, json={"model": "m", "done_reason": "stop", "message": {"content": "{}"}})
+        return ok_response("m", "{}")
+
+    local = openai_compat.OpenAICompatAdapter(spec, client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                                              base_url=lambda: "http://127.0.0.1:1234/v1")
+    assert local.turn_timeout == openai_compat.LOCAL_TURN_TIMEOUT
+
+    async def three():
+        return await asyncio.gather(*(local.run_step("b", "d", "m", {}, "m") for _ in range(3)))
+    assert [r.status for r in asyncio.run(three())] == ["completed"] * 3 and state["most"] == 1
+    hosted = openai_compat.OpenAICompatAdapter(openai_compat.CONNECTIONS["qwen"])
+    assert hosted.turn_timeout == 300.0 and hosted._turns is None

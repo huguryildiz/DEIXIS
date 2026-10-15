@@ -11,6 +11,8 @@ parameters are not known to match DeepSeek's, so none is offered or forwarded.
 
 from __future__ import annotations
 
+import asyncio
+
 import os
 import time
 from collections.abc import Callable
@@ -70,6 +72,12 @@ MIMO = CompatConnection("mimo", "Xiaomi MiMo", "https://api.xiaomimimo.com/v1", 
                         static_models=("mimo-v2.6-pro", "mimo-v2.6-flash"))
 # Ollama's default address on macOS, Windows and Linux; 127.0.0.1 rather than localhost, which Windows may resolve to ::1.
 OLLAMA = CompatConnection("ollama", "Ollama", "http://127.0.0.1:11434/v1", None)
+# A local model answers one call at a time and slower than a hosted one: its calls queue and get a longer limit, counted
+# from the moment the call is sent (local-models-fix plan, 15 Oct 2026).
+LOCAL_TURN_TIMEOUT = 1200.0
+# Ollama's context window per call: the input estimated high (characters / 3) plus room for the answer, in 8K steps.
+OLLAMA_ANSWER_TOKENS = 8192
+OLLAMA_CONTEXT_STEP = 8192
 CONNECTIONS = {c.id: c for c in (QWEN, KIMI, MISTRAL, GROK, COPILOT, GLM, MUSE_SPARK, MUSE_GLIMMER, OPENROUTER, MIMO, OLLAMA)}
 # llama.cpp, Jan, LocalAI, vLLM and the like: the address is set in Settings and read at each call, so this one is not
 # in CONNECTIONS, whose addresses are fixed.
@@ -119,7 +127,7 @@ def loopback_url(value: str | None) -> str | None:
 class OpenAICompatAdapter:
     sends_reasoning_effort = False  # accepted for the protocol, never put in the request (module docstring)
 
-    def __init__(self, spec: CompatConnection, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0,
+    def __init__(self, spec: CompatConnection, client: httpx.AsyncClient | None = None, turn_timeout: float | None = None,
                  base_url: Callable[[], str | None] | None = None):
         self.spec = spec
         self.connection = spec.id
@@ -128,7 +136,11 @@ class OpenAICompatAdapter:
         self._base_url = base_url
         self._client = client
         self._owns_client = client is None
-        self.turn_timeout = turn_timeout
+        local = spec.key_env is None
+        self.turn_timeout = turn_timeout if turn_timeout is not None else LOCAL_TURN_TIMEOUT if local else 300.0
+        # One call at a time on a model this computer runs; hosted APIs take calls side by side.
+        self._turns = asyncio.Semaphore(1) if local else None
+        self._context_limits: dict[str, int | None] = {}
         self._health: tuple[float, dict[str, Any]] | None = None
 
     def _key(self) -> str | None:
@@ -241,6 +253,16 @@ class OpenAICompatAdapter:
         if not url:
             return ModelStepResult("unavailable", error=f"no {spec.name.lower()} address set", delivery_class="before_send",
                                    error_kind="unknown")
+        if self._turns is None:
+            return await self._send(url, key, base, developer, message, output_schema, requested_model)
+        async with self._turns:
+            if spec.id == "ollama":
+                return await self._send_ollama(url, base, developer, message, output_schema, requested_model)
+            return await self._send(url, key, base, developer, message, output_schema, requested_model)
+
+    async def _send(self, url: str, key: str | None, base: str, developer: str, message: str, output_schema: dict[str, Any],
+                    requested_model: str) -> ModelStepResult:
+        spec = self.spec
         # reasoning_effort is accepted for the protocol and deliberately not sent.
         if spec.json_schema:
             system = f"{base}\n\n{developer}"
@@ -288,6 +310,58 @@ class OpenAICompatAdapter:
         if choice.get("finish_reason") != "stop" or not content:
             return ModelStepResult("failed", raw_text=content or None,
                                    error=f"finish reason {choice.get('finish_reason')}", **common)
+        return ModelStepResult("completed", raw_text=content, **common)
+
+    async def _context_limit(self, root: str, model: str) -> int | None:
+        """The model's own context length from Ollama's /api/show (model_info '<arch>.context_length'); None if unknown."""
+        if model not in self._context_limits:
+            try:
+                shown = await self._http().post(f"{root}/api/show", json={"model": model}, timeout=20)
+                info = shown.json().get("model_info", {}) if shown.status_code == 200 else {}
+                limits = [v for k, v in info.items() if k.endswith(".context_length") and isinstance(v, int)]
+                self._context_limits[model] = limits[0] if limits else None
+            except (httpx.HTTPError, ValueError, AttributeError):
+                return None
+        return self._context_limits[model]
+
+    async def _send_ollama(self, url: str, base: str, developer: str, message: str, output_schema: dict[str, Any],
+                           requested_model: str) -> ModelStepResult:
+        """Ollama's own /api/chat: thinking off, the step schema as the output format and a context window sized to the
+        input, so nothing is cut silently. An input larger than the model's window is not sent."""
+        root = url.removesuffix("/v1")
+        system = f"{base}\n\n{developer}"
+        estimate = (len(system) + len(message)) // 3 + OLLAMA_ANSWER_TOKENS
+        num_ctx = -(-estimate // OLLAMA_CONTEXT_STEP) * OLLAMA_CONTEXT_STEP
+        limit = await self._context_limit(root, requested_model)
+        if limit is not None and estimate > limit:
+            return ModelStepResult("failed", delivery_class="before_send", error_kind="unknown",
+                                   error=f"input of about {estimate} tokens is larger than {requested_model}'s context window ({limit})")
+        if limit is not None:
+            num_ctx = min(num_ctx, limit)
+        body = {"model": requested_model, "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}],
+                "stream": False, "think": False, "format": portable_schema(output_schema), "options": {"num_ctx": num_ctx}}
+        try:
+            response = await self._http().post(f"{root}/api/chat", json=body, timeout=self.turn_timeout)
+        except httpx.ConnectError as exc:
+            return ModelStepResult("unavailable", error=type(exc).__name__, delivery_class="before_send")
+        except httpx.HTTPError as exc:
+            return ModelStepResult("failed", error=type(exc).__name__, delivery_class="after_send_unknown")
+        if response.status_code != 200:
+            return ModelStepResult("failed", error=f"HTTP {response.status_code}: API request failed", **http_limit(response))
+        try:
+            data = response.json()
+        except ValueError:
+            return ModelStepResult("failed", error="Invalid JSON response", delivery_class="after_send_unknown")
+        reply = data.get("message") or {}
+        content = reply.get("content")
+        common = {"resolved_model": data.get("model") or None, "external_thread_id": None,
+                  "token_usage": {"prompt_tokens": data.get("prompt_eval_count"), "completion_tokens": data.get("eval_count"),
+                                  "num_ctx": num_ctx}}
+        if reply.get("tool_calls"):
+            return ModelStepResult("isolation_violation", raw_text=content or None, tool_item_types=["tool_calls"],
+                                   error=f"{self.spec.name} returned a tool call", **common)
+        if data.get("done_reason") != "stop" or not content:
+            return ModelStepResult("failed", raw_text=content or None, error=f"done reason {data.get('done_reason')}", **common)
         return ModelStepResult("completed", raw_text=content, **common)
 
     async def cancel(self) -> bool:

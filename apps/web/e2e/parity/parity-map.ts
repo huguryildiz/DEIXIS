@@ -926,7 +926,7 @@ export const PAIRS: Pair[] = [
   { id: 'report-panel.version', surface: 'report-panel', widths: DESK, mock: '.panel .p-head select[data-ver]', app: '.split-panel-head .report-select[aria-label="Version"]', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
   { id: 'report-panel.style', surface: 'report-panel', widths: DESK, mock: '.panel .p-head select[data-cstyle]', app: '.split-panel-head .report-select[aria-label="Citation style"]', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
   { id: 'report-panel.review', surface: 'report-panel', widths: DESK, mock: '.panel .p-head [data-act="review"]', app: '.split-panel-head .report-review', checks: ['chrome', 'colour', 'icon'],
-    icon: { mock: 'shield', app: 'shield-check' }, states: ['hover'], unordered: true, status: 'active' },
+    icon: { mock: 'shield', app: 'file-check-corner' }, states: ['hover'], unordered: true, status: 'active' },
   { id: 'report-panel.download', surface: 'report-panel', widths: DESK, mock: '.panel .p-head [data-menu="rexport"]', app: '.split-panel-head .report-download', checks: ['chrome', 'colour', 'icon'],
     icon: { mock: 'dl', app: 'download' }, states: ['hover'], unordered: true, status: 'active' },
   // S21: Show changes (P4), between Version and Citation style. At 390 the app draws it as a 30px eye icon with its name
@@ -936,7 +936,7 @@ export const PAIRS: Pair[] = [
   { id: 'report-panel.version@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head select[data-ver]', app: '.split-panel-head .report-select[aria-label="Version"]', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
   { id: 'report-panel.style@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head select[data-cstyle]', app: '.split-panel-head .report-select[aria-label="Citation style"]', checks: ['chrome', 'type', 'colour'], unordered: true, states: [], status: 'active' },
   { id: 'report-panel.review@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head [data-act="review"]', app: '.split-panel-head .report-review', checks: ['chrome', 'colour', 'icon'],
-    icon: { mock: 'shield', app: 'shield-check' }, states: [], unordered: true, status: 'active' },
+    icon: { mock: 'shield', app: 'file-check-corner' }, states: [], unordered: true, status: 'active' },
   { id: 'report-panel.download@390', surface: 'report-panel', widths: PHONE, mock: '.panel .p-head [data-menu="rexport"]', app: '.split-panel-head .report-download', checks: ['chrome', 'colour', 'icon'],
     icon: { mock: 'dl', app: 'download' }, states: [], unordered: true, status: 'active' },
   // The document: the serif title, the meta line, the section headings, the claim badges, the references, the check line.
@@ -1082,7 +1082,7 @@ export const PAIRS: Pair[] = [
   { id: 'ereport.title', surface: 'ereport-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
     icon: { mock: 'doc', app: 'text-align-start' }, states: [], status: 'active' },
   { id: 'ereport.actions', surface: 'ereport-panel', mock: '.panel .p-head .ib:not([data-act="wide"]):not([data-act="close"])', app: '.split-panel-head .report-toolbar-actions .ib', checks: ['chrome', 'colour', 'icon'], list: 'fixed', text: false,
-    icon: [{ mock: 'table', app: 'table-2' }, { mock: 'shield', app: 'shield-check' }, { mock: 'dl', app: 'download' }], unordered: true, states: [], status: 'active' },
+    icon: [{ mock: 'table', app: 'table-2' }, { mock: 'shield', app: 'file-check-corner' }, { mock: 'dl', app: 'download' }], unordered: true, states: [], status: 'active' },
   { id: 'ereport.document', surface: 'ereport-panel', mock: '.panel .report', app: '.erep-panel .evidence-report-document', checks: ['content'], use: 'decorative', states: [], status: 'active' },
   { id: 'ereport.h1', surface: 'ereport-panel', mock: '.report h1', app: '.evidence-report-document .report-document-head h1', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
   { id: 'ereport.meta', surface: 'ereport-panel', mock: '.report .meta', app: '.evidence-report-document .report-document-head .meta', checks: ['content', 'type', 'colour'], states: [], status: 'active' },
@@ -1137,7 +1137,7 @@ export const PAIRS: Pair[] = [
   { id: 'rvdlg.scrim', surface: 'review-dialog', mock: '.scrim', app: '.dialog-scrim', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
   { id: 'rvdlg.dialog', surface: 'review-dialog', mock: '.pal.dlg', app: '.review-dialog', checks: ['content', 'colour'], use: 'decorative', unordered: true, status: 'active' },
   { id: 'rvdlg.head', surface: 'review-dialog', mock: '.pal.dlg .pal-in', app: '.review-dialog .dialog-head', checks: ['chrome', 'colour', 'icon'], use: 'decorative',
-    icon: { mock: 'shield', app: 'shield-check' }, unordered: true, status: 'active' },
+    icon: { mock: 'shield', app: 'file-check-corner' }, unordered: true, status: 'active' },
   { id: 'rvdlg.title', surface: 'review-dialog', mock: '.pal.dlg .pal-in b', app: '.review-dialog .dialog-title', checks: ['type'], text: true, unordered: true, status: 'active' },
   { id: 'rvdlg.close', surface: 'review-dialog', mock: '.pal.dlg .pal-in .ib', app: '.review-dialog .dialog-close', checks: ['chrome', 'icon'], icon: { mock: 'x', app: 'x' }, unordered: true, status: 'active' },
   { id: 'rvdlg.option', surface: 'review-dialog', mock: '.pal.dlg .opts label', app: '.review-dialog .opts label', checks: ['content', 'type', 'colour'], list: 'fixed', text: true, unordered: true, states: [], status: 'active' },
@@ -1150,7 +1150,7 @@ export const PAIRS: Pair[] = [
   // S15b the review panel (P33): the head, the meta line, the first finding with its kind, its located quote and the
   // Accept / Dismiss / Defer row, and the closing summary line.
   { id: 'rvpanel.title', surface: 'review-panel', mock: '.panel .p-head h2', app: '.split-panel-head h2', checks: ['chrome', 'type', 'colour', 'icon'],
-    icon: { mock: 'shield', app: 'shield-check' }, text: true, states: [], status: 'active' },
+    icon: { mock: 'shield', app: 'file-check-corner' }, text: true, states: [], status: 'active' },
   { id: 'rvpanel.back', surface: 'review-panel', mock: '.panel .p-head [data-act="back"]', app: '.split-panel-head [aria-label="Back"]', checks: ['chrome', 'colour', 'icon'],
     icon: { mock: 'left', app: 'chevron-left' }, unordered: true, states: [], status: 'active' },
   { id: 'rvpanel.dmeta', surface: 'review-panel', mock: '.detail > .dmeta', app: '.review-detail > .dmeta', checks: ['content', 'type', 'colour'], states: [], status: 'active' },

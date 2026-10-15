@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CircleX, ShieldCheck } from 'lucide-react'
+import { CircleX, FileCheck2 } from 'lucide-react'
 import { api, type CandidateCard, type CandidateVersion, type ResearchView, type ReviewDetail } from '../api'
 import { t } from '../i18n'
 import { ReviewSummary } from '../review/ReviewSummary'
@@ -30,7 +30,7 @@ export function CandidateReviewEntry({ card, version, view, current, active, sur
   const reason = unavailable(card, version, active)
   if (card.trashed_at) return null
   return <>
-    {current && <button type="button" className="ghost candidate-review-open" aria-haspopup="dialog" disabled={Boolean(reason)} aria-describedby={reason ? reasonId : undefined} onClick={e => { onTarget(version); surface.openDialog(e.currentTarget) }}><ShieldCheck aria-hidden />{t('Review with another model')}</button>}
+    {current && <button type="button" className="ghost candidate-review-open" aria-haspopup="dialog" disabled={Boolean(reason)} aria-describedby={reason ? reasonId : undefined} onClick={e => { onTarget(version); surface.openDialog(e.currentTarget) }}><FileCheck2 aria-hidden />{t('Review with another model')}</button>}
     {current && reason && <span id={reasonId} className="foot-note candidate-review-reason">{reason}</span>}
     {error && <div className="notice bad" role="alert"><CircleX aria-hidden /><span>{error}</span></div>}
     <ReviewSummary reviews={reviews} open={() => { onTarget(version); surface.openPanel() }} />

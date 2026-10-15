@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react'
-import { AlignLeft, Check, Copy, Download, Eye, EyeOff, ShieldCheck } from 'lucide-react'
+import { AlignLeft, Check, Copy, Download, Eye, EyeOff, FileCheck2 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
@@ -63,7 +63,7 @@ export function ReportPanel({ open, onOpenChange, dark, title, version, latestVe
         </SelectContent>
       </Select>
       <button type="button" className="ib report-review" aria-label={reviewLabel} title={reviewLabel} aria-haspopup="dialog" onClick={e => onReview(e.currentTarget)}>
-        <ShieldCheck size={15} aria-hidden />
+        <FileCheck2 size={15} aria-hidden />
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger render={<button type="button" className="ib report-download" aria-label={t('Download report')} title={t('Download')} />}><Download size={15} aria-hidden /></DropdownMenuTrigger>

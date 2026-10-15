@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ShieldCheck } from 'lucide-react'
+import { FileCheck2 } from 'lucide-react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api, ApiError, researchModelApi, type ModelRole, type ResearchView, type ReviewCard, type ReviewFocus, type ReviewTargetKind, type Run } from '../api'
@@ -144,7 +144,7 @@ function ReviewAgainDialog({ target, review, view, dark, onClose, onStarted }: {
       : t('A new review started. The stopped review keeps its model and stays as it was.'))
   }
   return <Dialog open onOpenChange={next => { if (!next) close() }}>
-    <DialogContent className={`review-dialog${dark ? ' dark' : ''}`} icon={<ShieldCheck size={16} aria-hidden />} title={t('Review again with another model')}>
+    <DialogContent className={`review-dialog${dark ? ' dark' : ''}`} icon={<FileCheck2 size={16} aria-hidden />} title={t('Review again with another model')}>
       {request ? <ReviewRequest researchId={rid} targetKind={request.kind} targetId={request.id} version={request.version} initial={request}
         runActive={view.runs.some(r => ['queued', 'running', 'pause_requested'].includes(r.status))} sectionLabel={ref => ref}
         lead={<p className="foot-note review-again-lead">{t('This review keeps the model it was requested with ({model}); Retry sends it there again. Start review begins a new review of the same target on the model you choose, with the same focus and note; the stopped review stays as it is.', { model: review.card.requested_model.model })}</p>}

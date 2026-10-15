@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlignLeft, ChevronDown, ChevronRight, Copy, Download, FileText, Link, RotateCw, ShieldCheck, Table2, TriangleAlert } from 'lucide-react'
+import { AlignLeft, ChevronDown, ChevronRight, Copy, Download, FileText, Link, RotateCw, FileCheck2, Table2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
@@ -341,7 +341,7 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
   const actions = report ? <div className="report-toolbar-actions">
     <button type="button" className="ib report-evidence-view" aria-label={t('Evidence view')} title={t('Evidence view: show the cited cells')} aria-pressed={evidenceView} onClick={() => setEvidenceView(on => !on)}><Table2 size={15} aria-hidden /></button>
     <button type="button" className="ib report-review" aria-label={reviewLabel} title={reviewLabel} aria-haspopup="dialog" onClick={e => reviews.openDialog(e.currentTarget)}>
-      <ShieldCheck size={15} aria-hidden />
+      <FileCheck2 size={15} aria-hidden />
     </button>
     <DropdownMenu>
       <DropdownMenuTrigger render={<button type="button" className="ib report-download" aria-label={t('Download report')} title={exportTitle ?? t('Download')} disabled={exportBlocked || exportBusy} />}><Download size={15} aria-hidden /></DropdownMenuTrigger>

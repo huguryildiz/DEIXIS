@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { ShieldCheck } from 'lucide-react'
+import { FileCheck2 } from 'lucide-react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import type { ReviewDetail, ReviewTargetKind, Source } from '../api'
 import { StackPanel } from '../research/SplitPanel'
@@ -43,14 +43,14 @@ export function ReviewSurface({ surface, researchId, targetKind, targetId, versi
   }
   return <>
     {!readOnly && <Dialog open={surface.dialog} onOpenChange={next => { if (!next) close() }}>
-      <DialogContent className={`review-dialog${dark ? ' dark' : ''}`} icon={<ShieldCheck size={16} aria-hidden />} title={t('Review with another model')} finalFocus={() => !started.current}>
+      <DialogContent className={`review-dialog${dark ? ' dark' : ''}`} icon={<FileCheck2 size={16} aria-hidden />} title={t('Review with another model')} finalFocus={() => !started.current}>
         <ReviewRequest researchId={researchId} targetKind={targetKind} targetId={targetId} version={version} runActive={runActive} unavailableReason={unavailableReason}
           sectionLabel={sectionLabel} sourceName={sourceName} started={onStarted} cancel={close} />
       </DialogContent>
     </Dialog>}
     {/* Keyed by its target: another answer version or candidate version mounts a new panel instead of renaming this one,
         which the stack would read as this panel closing. */}
-    <StackPanel key={`${name}:${version}`} name={name} open={Boolean(surface.panel)} onClose={surface.closePanel} title={t('Review with another model')} icon={ShieldCheck} className={`mk-detail-box review-panel-box${dark ? ' dark' : ''}`}>
+    <StackPanel key={`${name}:${version}`} name={name} open={Boolean(surface.panel)} onClose={surface.closePanel} title={t('Review with another model')} icon={FileCheck2} className={`mk-detail-box review-panel-box${dark ? ' dark' : ''}`}>
       {surface.panel && <ReviewPane key={surface.panel.id ?? 'latest'} researchId={researchId} targetKind={targetKind} targetId={targetId} eventCursor={eventCursor} initial={surface.panel.id}
         sources={sources} sectionLabel={sectionLabel} open={open} changed={changed} apply={apply} />}
     </StackPanel>

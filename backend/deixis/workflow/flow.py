@@ -2287,10 +2287,13 @@ class ResearchFlow:
 
         self._checkpoint(run_id)
         self.store.update_run(run_id, stage="answer")
-        semantic = await self._semantic_ranking(run, scope, included)
+        limit = run["budget"]["max_answer_passages"]
+        # A short attached PDF goes to the answer whole, so nothing is ranked and no passage is embedded.
+        whole = self._whole_attached_passages(scope, included, limit)
+        semantic = None if whole is not None else await self._semantic_ranking(run, scope, included)
         # Part of the input comes from the cue phrases the criterion was approved with (D84).
         patterns = self._criterion_phrases(run, scope)
-        passages = self._retrieve(rid, scope, included, run["budget"]["max_answer_passages"], semantic, patterns)
+        passages = whole if whole is not None else self._retrieve(rid, scope, included, limit, semantic, patterns)
         if not passages:
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                    {"ok": True, "issues": [], "note": "No accessible passages for the included sources."},
@@ -3826,6 +3829,24 @@ class ResearchFlow:
                 terms += [t for t in re.findall(r"\w+", phrase.lower()) if len(t) > 2 and t not in STOPWORDS]
         return list(dict.fromkeys(terms))[:40]
 
+    def _whole_attached_passages(self, scope: dict[str, Any], included: list[str], limit: int) -> list[dict[str, Any]] | None:
+        """Every passage of a single short attached PDF, or None when the answer input has to be chosen.
+
+        A short attached document can fit in the answer input in its entirety. Do not discard relevant later pages
+        merely because the multi-source six-passage cap was reached; keep that cap for larger or mixed corpora.
+        """
+        if len(included) != 1 or scope.get("source_scope") not in ("attached", "attached_and_academic"):
+            return None
+        all_passages = self.store.passages_for(included[0])
+        asset_ids = {p["asset_id"] for p in all_passages if p["kind"] == "pdf_page"}
+        if (len(asset_ids) != 1 or len(all_passages) > limit
+                or sum(len(p["text"]) for p in all_passages) > MAX_SMALL_PDF_CHARS):
+            return None
+        asset = self.store.asset(next(iter(asset_ids)))
+        if asset["page_count"] is None or asset["page_count"] > MAX_SMALL_PDF_PAGES:
+            return None
+        return all_passages
+
     def _retrieve(self, research_id: str, scope: dict[str, Any], included: list[str], limit: int,
                   semantic: list[dict[str, Any]] | None = None,
                   patterns: list[tuple[str, re.Pattern[str]]] = ()) -> list[dict[str, Any]]:
@@ -3834,17 +3855,9 @@ class ResearchFlow:
         Part of the room is filled from the criterion order of the approved cue `patterns` (D84); with none, the
         whole input comes from the topic order.
         """
-        # A short attached document can fit in the answer input in its entirety. Do not discard relevant later pages
-        # merely because the multi-source six-passage cap was reached; keep that cap for larger or mixed corpora.
-        if len(included) == 1 and scope.get("source_scope") in ("attached", "attached_and_academic"):
-            all_passages = self.store.passages_for(included[0])
-            pdf_passages = [p for p in all_passages if p["kind"] == "pdf_page"]
-            asset_ids = {p["asset_id"] for p in pdf_passages}
-            if (len(asset_ids) == 1 and len(all_passages) <= limit
-                    and sum(len(p["text"]) for p in all_passages) <= MAX_SMALL_PDF_CHARS):
-                asset = self.store.asset(next(iter(asset_ids)))
-                if asset["page_count"] is not None and asset["page_count"] <= MAX_SMALL_PDF_PAGES:
-                    return all_passages
+        whole = self._whole_attached_passages(scope, included, limit)
+        if whole is not None:
+            return whole
         unique_terms = self._topic_terms(research_id, scope)
         fts = " OR ".join(f'"{t}"' for t in unique_terms)
         ranked = self.store.search_passages(included, fts, limit * 3)

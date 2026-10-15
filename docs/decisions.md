@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D36 — arXiv PDFs take their numbered equations from the authors' LaTeX source by default
+Status: accepted · Date: 2026-10-15 · Writer: Claude
+Context: Without Marker a PDF's display equations show as broken text layer (the owner's screenshot of a source's details panel, 15 Oct). The arXiv source route (old D104, slice 22) places the authors' numbered display equations on the page, needs no model and took a median 0.47 s per paper in its acceptance, where 40 of 40 sampled placements read right by eye. It shipped behind `DEIXIS_ARXIV_SOURCE`, off until a later measurement that never came.
+Decision: `load_settings` now defaults `DEIXIS_ARXIV_SOURCE` to `auto`, so the route runs whenever Marker is neither installed nor installing (POSIX only). `off` still turns it off. The `Settings` dataclass keeps `off`, so tests that build settings by hand request no source.
+Limits: Only arXiv versions whose source has `.tex` benefit, and only numbered display equations; inline math and unnumbered displays stay as text layer. Each arXiv PDF now costs one or two requests to arxiv.org (3 s apart). The route's accuracy numbers are the slice 22 ones (one library, one reader); nothing was measured again for this change.
+
 ## D35 — OpenAI API reasoning efforts come from a fixed per-model table
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: D34 offered no reasoning effort on the OpenAI API connection because `/v1/models` does not say which efforts a model takes. The owner asked for efforts on every model that has them. A live probe on 15 Oct sent each effort (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) to each listed model: the API refuses an effort a model does not take with HTTP 400 before checking credit, so the accepted set was read off without a paid answer (the account had no credit and answered 429 to the rest).

@@ -55,9 +55,9 @@ class Settings:
     # slice 13g alone, with no model call, for a measurement or a test that needs the code path only.
     search_query: str = "model"
     # Whether PDFs that are arXiv versions get the numbered display equations of their authors' LaTeX source while the
-    # equation reader (Marker) is not installed (D104, slice 22). `off` in this dataclass and in `load_settings` until
-    # slice 24 measures it; `auto` turns the route on (POSIX only). With `off` no source is requested and no PDF
-    # extraction changes; readings already stored stay.
+    # equation reader (Marker) is not installed (D104, slice 22). `load_settings` defaults to `auto` (D36), which turns
+    # the route on (POSIX only); this dataclass stays `off` so tests that build Settings by hand request no source. With
+    # `off` no source is requested and no PDF extraction changes; readings already stored stay.
     arxiv_source: str = "off"
     # Reads one `app_settings` value by key; `create_app` binds it to the store so the contact email the person set
     # in Settings is found before the environment variable. Unset (tests that build Settings by hand): env only.
@@ -142,7 +142,7 @@ def load_settings() -> Settings:
     search_query = os.environ.get("DEIXIS_SEARCH_QUERY", "model")
     if search_query not in ("model", "code"):
         raise ValueError("DEIXIS_SEARCH_QUERY must be model or code")
-    arxiv_source = os.environ.get("DEIXIS_ARXIV_SOURCE", "off")
+    arxiv_source = os.environ.get("DEIXIS_ARXIV_SOURCE", "auto")
     if arxiv_source not in ("auto", "off"):
         raise ValueError("DEIXIS_ARXIV_SOURCE must be auto or off")
     return Settings(

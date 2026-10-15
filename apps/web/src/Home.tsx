@@ -30,13 +30,17 @@ export const effortOptions: Record<Effort, { icon: LucideIcon }> = {
 }
 
 // The depth text, from the fast path's modes (`fast_path.MODES`): the same numbers the run is given, so a changed mode
-// cannot leave this text behind. Without an answer from the server the depth carries no text at all.
-function effortDetail(effort: Effort, limits: EffortLimits | null | undefined): string | undefined {
+// cannot leave this text behind. Without an answer from the server the depth carries no text at all. A model this
+// computer runs has no read or answer deadline (D39), so its time depends on the computer and no minutes are shown.
+function effortDetail(effort: Effort, limits: EffortLimits | null | undefined, local = false): string | undefined {
   const e = limits?.efforts?.[effort]
   if (!e) return undefined
   const number = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
+  if (local) return t('Local model: no time limit, it depends on this computer · up to {papers} papers', { papers: number(e.papers) })
   return t('About {minutes} min · up to {papers} papers', { minutes: number(e.minutes), papers: number(e.papers) })
 }
+// Connections whose model runs on this computer (backend `openai_compat.LOCAL_CONNECTIONS`).
+const LOCAL_CONNECTIONS = new Set(['ollama', 'local_server'])
 
 // A row of the Home menus (mockup: icon, title, a grey line under it, an optional LATER badge at the right).
 function MenuRow({ icon: Icon, title, detail, later }: { icon: LucideIcon; title: string; detail?: ReactNode; later?: boolean }) {
@@ -561,7 +565,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
           <SelectTrigger className="composer-depth" aria-label={t('Research depth')} title={t('How much searching and reading a run may do')}><SelectValue>{(value: string) => { const Icon = effortOptions[value as Effort].icon; return <><Icon size={15} aria-hidden />{t(effortLabels[value as Effort])}</> }}</SelectValue></SelectTrigger>
           <SelectContent className="home-menu" align="start" sideOffset={6} alignItemWithTrigger={false} collisionPadding={8} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }}>
             <div className="home-menu-heading" aria-hidden="true">{t('Depth')}</div>
-            {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d} className="home-menu-item"><MenuRow icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={effortDetail(d, limits)} /></SelectItem>)}
+            {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d} className="home-menu-item"><MenuRow icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={effortDetail(d, limits, LOCAL_CONNECTIONS.has(models.find(m => m.id === model)?.connection ?? ''))} /></SelectItem>)}
           </SelectContent>
         </Select>
         <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero) || noGuide} aria-label={t('Start research')} title={noModel ? t('Connect a model to start') : undefined}><ArrowUp size={17} /></Button>

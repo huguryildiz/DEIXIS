@@ -99,7 +99,7 @@ test.describe.serial('N: the built-in embedding model', () => {
 
   test('Settings lists the built-in model, OpenAI, Gemini, a local model server and Off (mockup order), with Gemini’s free-key path', async () => {
     await openConnections(page, server)
-    await expect(semanticSection(page).locator('.semantic-option > label > span:not(.st):not(.spin)')).toHaveText([
+    await expect(semanticSection(page).locator('.semantic-option > label > span:not(.st):not(.spin):not(.connection-icon)')).toHaveText([
       /^This computer · built-in/, /^OpenAI embeddings/, /^Gemini embeddings/, /^Local model server/, /^Off/])
     const gemini = option(page, 'Gemini embeddings')
     await expect(gemini).toContainText('Reads the question in any language. Needs a Google AI Studio key; a free key works.')

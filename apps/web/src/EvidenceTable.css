@@ -320,3 +320,10 @@
   .evidence-cell{min-width:150px}
   .evidence-number{grid-template-columns:1fr}
 }
+/* View-only sort and filter over the grid's rows. */
+.evidence-view-bar{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:12px 12px 0}
+.evidence-view-bar::before{content:"";position:absolute;left:10px;top:8px;width:14px;height:14px;background:var(--faint);pointer-events:none;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") center/contain no-repeat}
+.evidence-filter{height:30px;width:min(280px,100%);padding:0 10px 0 31px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink);font-size:12.5px}
+.evidence-filter:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.evidence-view-note{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:12.5px}
+.evidence-grid th[aria-sort] .th-b>svg:nth-last-child(2){color:var(--accent);opacity:1}

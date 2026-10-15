@@ -95,8 +95,6 @@ export type AccessControl = {
   test: (address?: string) => Promise<ProxySettings | null>
   /** Saves the address ('' removes it) under the same version as reads and tests; rejects when the save fails. */
   save: (address: string) => Promise<void>
-  /** Saves the sidebar name ('' returns to the proxy host) under the same version; rejects when the save fails. */
-  saveLabel: (label: string) => Promise<void>
   reload: () => void
 }
 
@@ -277,7 +275,6 @@ function InstitutionalAccessBlock({ access }: { access: AccessControl }) {
           {saved && <button type="button" className="ghost" disabled={busy} onClick={remove}>{t('Remove')}</button>}
         </div>
       </form>
-      {p?.address && <ProxyNameRow access={access} proxy={p} />}
       <div className="row proxy-state" role="status">
         {line.tone === 'checking' ? <span className="spin" aria-hidden /> : <span className={`st ${line.tone}`}>{line.pill}</span>}
         <span>{line.text}</span>
@@ -287,35 +284,6 @@ function InstitutionalAccessBlock({ access }: { access: AccessControl }) {
       <p className="foot-note">{t('Publisher links open through this address in your browser, and DEIXIS never stores your library password. Test saves the address and checks once that the proxy answers; it does not open an article.')}</p>
     </div></div>
   </>
-}
-
-/** The name the sidebar's access line shows for the proxy: typed here, else the proxy's host. An empty field returns to
- *  the host. The save goes through the shell's proxy version, so a read that arrives late never shows the old name. */
-function ProxyNameRow({ access, proxy }: { access: AccessControl; proxy: ProxySettings }) {
-  const toast = useToast()
-  const [draft, setDraft] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const current = proxy.label_is_default ? '' : proxy.label ?? ''
-  const field = draft ?? current
-  const changed = field.trim().split(/\s+/).join(' ') !== current
-  const save = () => {
-    if (busy || !changed) return
-    setBusy(true); setError('')
-    access.saveLabel(field.trim()).then(() => {
-      setDraft(null)
-      toast('success', t(field.trim() ? 'Sidebar name saved.' : 'Sidebar name reset to the proxy host.'))
-    }).catch((e: Error) => setError(t('Not saved: {message}', { message: e.message }))).finally(() => setBusy(false))
-  }
-  return <form className="proxy-name" onSubmit={e => { e.preventDefault(); save() }}>
-    <label htmlFor="proxy-name">{t('Name shown in the sidebar')}</label>
-    <div className="row">
-      <input id="proxy-name" className="field" type="text" spellCheck={false} autoComplete="off" maxLength={80} value={field} disabled={busy}
-        placeholder={proxy.label_default ?? ''} onChange={e => { setDraft(e.target.value); setError('') }} />
-      <button type="submit" className="ghost" disabled={busy || !changed}>{t(busy ? 'Saving…' : 'Save')}</button>
-      {error && <span className="key-form-error" role="alert">{error}</span>}
-    </div>
-  </form>
 }
 
 // Usage this month (plan ST9, F7/F8): model calls per Settings role, counted from the stored model sessions of this

@@ -538,19 +538,14 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         run = store.run(row["id"])
         run["steps"] = store.run_steps(run["id"])
         # The models each step's calls went to, from its stored sessions (UI parity S27, D15): a step names the model it
-        # ran on, never the role's model in effect now. The model that answered when known, else the one asked for, with
-        # the reasoning effort the call was sent with (null when none was sent or the session predates migration 0009,
-        # D25); each model and effort once, ordered by its latest call, so the last entry is where the step's latest call
-        # went (the model line compares the role's next calls with it).
+        # ran on, never the role's model in effect now. The model that answered when known, else the one asked for;
+        # each model once, in call order. Reasoning effort is not stored per call, so it is not named here.
         called: dict[str, list[dict[str, Any]]] = {}
-        for session in conn.execute("SELECT step_id, connection, requested_model, resolved_model, reasoning_effort"
-                                    " FROM model_sessions WHERE run_id = ? ORDER BY rowid", (run["id"],)):
-            entry = {"connection": session["connection"], "model": session["resolved_model"] or session["requested_model"],
-                     "effort": session["reasoning_effort"]}
-            seen = called.setdefault(session["step_id"], [])
-            if entry in seen:
-                seen.remove(entry)
-            seen.append(entry)
+        for session in conn.execute("SELECT step_id, connection, requested_model, resolved_model FROM model_sessions"
+                                    " WHERE run_id = ? ORDER BY rowid", (run["id"],)):
+            entry = {"connection": session["connection"], "model": session["resolved_model"] or session["requested_model"]}
+            if entry not in called.setdefault(session["step_id"], []):
+                called[session["step_id"]].append(entry)
         for step in run["steps"]:
             step["models"] = called.get(step["id"], [])
         run["service_wait"] = service_waits.get(run["id"])

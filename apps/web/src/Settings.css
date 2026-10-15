@@ -74,7 +74,7 @@
 .app .settings-page .opts label{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-top:0;color:var(--ink);font-size:13.5px;line-height:1.5;cursor:pointer}
 .app .settings-page .opts label:has(input:checked){background:none}
 .app .settings-page .opts label.is-disabled{cursor:default}
-.app .settings-page .opts label>span:not(.st):not(.spin):not(.connection-icon){flex:1;min-width:0}
+.app .settings-page .opts label>span:not(.st):not(.spin){flex:1;min-width:0}
 .app .settings-page .opts label small{display:block;color:var(--muted);font-size:12.5px}
 .app .settings-page .opts label .st,.app .settings-page .opts label .spin{align-self:center;margin-left:auto}
 .app .settings-page .opts input{flex:none;margin:3px 0 0;accent-color:var(--accent)}
@@ -92,9 +92,6 @@
 .app .settings-page .proxy .proxy-state{gap:8px;color:var(--muted);font-size:12.5px}
 .app .settings-page .proxy .proxy-state>span:not(.st):not(.spin){flex:1;min-width:0}
 .app .settings-page .proxy .proxy-scopus{flex-basis:100%}
-.app .settings-page .proxy .proxy-name{display:grid;flex-basis:100%;gap:4px;margin:0;color:var(--muted);font-size:12px;line-height:1.5}
-.app .settings-page .proxy .proxy-name .field{flex:0 1 240px;min-width:0;height:27px;color:var(--ink-2);font-family:inherit;font-size:12.5px}
-.app .settings-page .proxy .proxy-name .key-form-error{color:var(--error-ink);font-size:12.5px}
 .app .settings-page .proxy>.foot-note{flex:1 1 0;min-width:180px}
 
 /* ── Copyright line ────────────────────────────────────────────────────────────────────────────────────── */
@@ -121,7 +118,6 @@
 .connection-sheet .key-box .notice{margin:0;color:var(--error-ink)}
 .connection-sheet .ghost.is-danger{color:var(--error-ink)}
 .connection-sheet .signin-cmd{display:grid;gap:6px}
-.connection-sheet .signin-wait{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .connection-sheet .cmd-row{display:flex;align-items:center;gap:8px}
 .connection-sheet .cmd-row code{flex:1;min-width:0;padding:6px 8px;overflow-wrap:anywhere;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
 .connection-sheet .server-block{display:grid;gap:8px;padding-top:10px;border-top:1px solid var(--line)}
@@ -129,7 +125,8 @@
 .connection-sheet .server-block .lbl code{padding:6px 8px;font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
 .connection-sheet .reference-result{display:grid;gap:6px;color:var(--ink-2);font-size:13px}
 .connection-sheet .reference-result ul{display:grid;gap:3px;margin:0;padding-left:18px;color:var(--muted);font-size:12.5px}
-.connection-sheet .status-chip{gap:0;margin-top:0;padding:1px 7px;border-color:transparent;font-size:11px;font-weight:500;line-height:1.5}
+/* .detail-sheet raises it above the older sheet chip rule in research/panels.css, which loads later. */
+.detail-sheet.connection-sheet .status-chip{gap:0;margin-top:0;padding:1px 7px;border-color:transparent;font-size:11px;font-weight:500;line-height:1.5}
 .connection-sheet .status-chip::before{display:none}
 .connection-sheet .status-chip.is-configured{border-color:transparent;background:var(--hover-surface)}
 .connection-sheet .status-chip.is-status{gap:5px}
@@ -152,16 +149,3 @@
 .app .settings-page .machine-cell b{color:var(--ink);font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .app .settings-page .machine-disk .bar{margin-top:4px}
 @media (max-width:620px){.app .settings-page .machine-cell+.machine-cell{border-left:0;border-top:1px solid var(--line)}}
-
-/* ── Icons (black and white) ───────────────────────────────────────────────────────────────────────────── */
-/* Brand marks keep their shapes but lose their colours: coloured parts take the ink, white cut-outs take the page,
-   so the status pill stays the only colour on a tile. The SerpApi mark is a bitmap and is greyed instead. */
-.app .settings-page .conn-title{display:flex;align-items:center;gap:8px;min-width:0}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon{width:16px;height:16px;color:var(--ink);opacity:.85}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [fill]:not([fill=none]){fill:currentColor}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [stroke]:not([stroke=none]){stroke:currentColor}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon :is([fill="#fff"],[data-icon=gemini] [fill="#1E1E2E"]){fill:var(--paper)}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [stroke="#fff"]{stroke:var(--paper)}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon img{filter:grayscale(1) contrast(1.2)}
-.app .settings-page .opts .connection-icon{margin-top:3px}
-.app .settings-page .opts label.is-disabled .connection-icon{opacity:.4}

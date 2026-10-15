@@ -1380,15 +1380,13 @@ class Store:
             )
 
     def start_model_session(self, research_id: str, run_id: str, step_id: str, step_input_id: str,
-                            connection: str, requested_model: str | None, reasoning_effort: str | None = None) -> str:
-        """Open one model call's session. `reasoning_effort` is the effort the adapter sends with it, None when it sends
-        none; it is stored as given and never filled in from a setting (D25)."""
+                            connection: str, requested_model: str | None) -> str:
         msid = new_id("mss")
         with transaction(self.conn):
             self.conn.execute(
-                "INSERT INTO model_sessions (id, research_id, run_id, step_id, step_input_id, connection, requested_model,"
-                " reasoning_effort, status, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'started', ?)",
-                (msid, research_id, run_id, step_id, step_input_id, connection, requested_model, reasoning_effort, now()),
+                "INSERT INTO model_sessions (id, research_id, run_id, step_id, step_input_id, connection, requested_model, status, started_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, 'started', ?)",
+                (msid, research_id, run_id, step_id, step_input_id, connection, requested_model, now()),
             )
             run = self.run(run_id)
             usage = run["usage"]

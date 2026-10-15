@@ -30,7 +30,6 @@ def error_message(response: httpx.Response) -> str:
 class DeepSeekAdapter:
     connection = "deepseek"
     enforces_schema = False
-    sends_reasoning_effort = True  # the body's `reasoning_effort`
 
     def __init__(self, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):
         self._client = client

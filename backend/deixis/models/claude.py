@@ -40,7 +40,6 @@ def _model_matches(actual: str | None, expected: str) -> bool:
 class ClaudeCodeAdapter:
     connection = "claude"
     enforces_schema = True
-    sends_reasoning_effort = True  # ClaudeAgentOptions(effort=...)
 
     def __init__(self, workspace: Path, turn_timeout: float = 300.0):
         self.workspace = workspace

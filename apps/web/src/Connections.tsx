@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, ChevronRight, Copy, Cpu, FileText, HardDrive, MemoryStick, Link, LoaderCircle, RefreshCw, RotateCw, ScanText, Server, Sigma, TriangleAlert, Upload } from 'lucide-react'
+import { ChevronRight, Copy, Cpu, HardDrive, MemoryStick, Link, LoaderCircle, RefreshCw, RotateCw, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
-import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, libraryImportsApi, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
-import { serviceErrorSentence, healthReasonText, compatConnectionKeys, connectionNames as modelNames, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
-import { ConnectionIcon } from './connectionIcons'
+import { serviceErrorSentence, healthReasonText, compatConnectionKeys, connectionNames as modelNames, localToolNames, providerRole, reasoningLabel } from './labels'
 import { writeClipboard } from './clipboard'
 import { Notice } from './Notice'
 
@@ -43,14 +42,6 @@ const SERVER_IDS = ['ollama', 'lm_studio']
 const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
 const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
 
-// Settings icons, drawn in black and white (Settings.css): brand marks where connectionIcons.tsx has one, a plain glyph otherwise.
-const glyph = (icon: ReactNode) => <span className="connection-icon" aria-hidden="true">{icon}</span>
-const GLYPHS: Record<string, ReactNode> = {
-  ocr: glyph(<ScanText strokeWidth={1.8} />), marker: glyph(<Sigma strokeWidth={1.8} />), servers: glyph(<Server strokeWidth={1.8} />),
-  server: glyph(<Server strokeWidth={1.8} />), 'reference-files': glyph(<FileText strokeWidth={1.8} />), off: glyph(<Ban strokeWidth={1.8} />),
-}
-const settingsIcon = (key: string) => GLYPHS[key] ?? <ConnectionIcon id={localToolIcon(key)} />
-
 type Selected = { kind: 'account' | 'model' | 'cli' | 'servers' | 'equation-reader' | 'ocr-tool' | 'provider' | 'api-key' | 'zotero' | 'reference-files'; id: string }
 type Tone = 'ok' | 'no' | 'warn'
 
@@ -73,9 +64,9 @@ function keyRefusal(service: string, env: string, status: unknown): string | nul
 }
 
 // A tile (mockup `.conn`): the name with its status pill, then one line on what it is. Green only when it can be used.
-function Tile({ icon, name, desc, tone, status, active, onClick }: { icon: ReactNode; name: string; desc: string; tone: Tone; status: string; active: boolean; onClick: () => void }) {
+function Tile({ name, desc, tone, status, active, onClick }: { name: string; desc: string; tone: Tone; status: string; active: boolean; onClick: () => void }) {
   return <button type="button" className={`conn ${active ? 'on' : ''}`} onClick={onClick}>
-    <b><span className="conn-title">{icon}<span className="conn-name">{name}</span></span><span className={`st ${tone}`}>{status}</span></b>
+    <b><span className="conn-name">{name}</span><span className={`st ${tone}`}>{status}</span></b>
     <small>{desc}</small>
   </button>
 }
@@ -469,8 +460,6 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const [checked, setChecked] = useState<Record<string, number>>({})
   const [checkFailed, setCheckFailed] = useState<Record<string, string>>({})
   const [signIn, setSignIn] = useState<string | null>(null)
-  // The sign-in DEIXIS started for a tool (D21); it is polled while the person finishes it in the terminal window that opened.
-  const [signInRun, setSignInRun] = useState<{ tool: string; run: AccountSignIn } | null>(null)
   const toast = useToast()
   // A later read wins: an answer to an earlier request that arrives after it is dropped. Semantic search reads and saves
   // share one version: a save moves it on, so a read started before or during the save never replaces the saved result.
@@ -544,30 +533,6 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const refreshModel = (id: string) => api.modelConnection(id, true).then(result => {
     setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
   }).catch((e: Error) => { toast('error', t('Check failed: {message}', { message: e.message })); throw e })
-  const settleSignIn = useCallback((tool: string, run: AccountSignIn) => {
-    setSignInRun(current => current && current.tool !== tool ? current : { tool, run })
-    if (run.state !== 'succeeded') return
-    toast('success', t('Signed in to {name}.', { name: ACCOUNT_TOOLS[tool]?.name ?? tool }))
-    void api.modelConnection(tool, true).then(result => {
-      setData(current => current ? { ...current, models: { ...current.models, [tool]: result } } : current)
-    }).catch(() => undefined)
-    void loadTools(true)
-  }, [toast, loadTools])
-  const startSignIn = (tool: string) => {
-    api.startAccountSignIn(tool).then(run => settleSignIn(tool, run), (e: Error) => {
-      setSignInRun({ tool, run: { state: 'failed', message: e.message } })
-      setSignIn(tool)
-      toast('error', t('Could not start the sign-in: {message}', { message: e.message }))
-    })
-  }
-  const signInTool = signInRun?.run.state === 'waiting' ? signInRun.tool : null
-  useEffect(() => {
-    if (!signInTool) return
-    const timer = window.setInterval(() => {
-      api.accountSignIn(signInTool).then(run => settleSignIn(signInTool, run), () => undefined)
-    }, 2000)
-    return () => window.clearInterval(timer)
-  }, [signInTool, settleSignIn])
   const show = (item: Selected) => { setSelected(item); setOpen(true); setSignIn(null) }
   // A link to one provider's sheet (`#/settings/openalex`) opens it once the providers are read.
   const opened = useRef(false)
@@ -630,7 +595,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     : zotero.installed ? ['no', t(zotero.running ? 'Local API off' : 'Not running')] : ['no', t('Not set up')]
   const modelDesc = (id: string) => id === 'gemini' ? t('API key · models and semantic search') : id === 'ollama' ? t('This computer · no key') : compatConnectionKeys[id] ? t('API key · not tested with the real service yet') : t('API key')
   const tile = (key: string, kind: Selected['kind'], id: string, name: string, desc: string, [tone, status]: [Tone, string]) =>
-    <Tile key={key} icon={settingsIcon(key)} name={name} desc={desc} tone={tone} status={status} active={isActive(kind, id)} onClick={() => show({ kind, id })} />
+    <Tile key={key} name={name} desc={desc} tone={tone} status={status} active={isActive(kind, id)} onClick={() => show({ kind, id })} />
 
   // Semantic search rows (plan ST5): the mockup's five, one "Local model server" for Ollama and LM Studio. A row that
   // cannot be chosen says what it needs, from the options' own state. A choice is saved at once; choosing the row that
@@ -688,8 +653,6 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const model = sel?.kind === 'model' ? data?.models[sel.id] : accountId ? data?.models[accountId] : undefined
   const provider = sel?.kind === 'provider' ? data?.providers.find(p => p.id === sel.id) : undefined
   const cliTool = sel?.kind === 'cli' ? toolOf(sel.id) : accountId ? toolOf(ACCOUNT_TOOLS[accountId].tool) : undefined
-  // The sheet title carries the same icon as the tile it opened from.
-  const sheetIconKey = !sel ? '' : sel.kind === 'api-key' ? 'openai' : sel.kind === 'ocr-tool' ? 'ocr' : sel.kind === 'reference-files' ? 'reference-files' : sel.id
   const name = !sel ? ''
     : sel.kind === 'account' ? ACCOUNT_TOOLS[sel.id]?.name ?? sel.id
     : sel.kind === 'model' ? modelNames[sel.id] ?? sel.id
@@ -717,7 +680,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     <button type="button" className="btn-pri" disabled={disabled || checking !== null} onClick={() => runCheck(key, run)}>{checking === key ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
   // The Codex home this backend uses (DEIXIS_CODEX_HOME or the data folder's), single-quoted for a POSIX shell.
   const codexLogin = data?.codex_home ? `CODEX_HOME='${data.codex_home.replaceAll("'", "'\\''")}' codex login` : null
-  const signInCommand = accountId === 'codex' ? codexLogin : accountId === 'claude' ? 'claude auth login' : null
+  const signInCommand = accountId === 'codex' ? codexLogin : accountId === 'claude' ? 'claude' : null
   const copy = (text: string) => { writeClipboard(text).then(() => toast('success', t('Command copied.')), () => toast('error', t('Could not copy; select the command and copy it.'))) }
 
   const keyedSheet = (env: string, service: string, effect: string) => credentials && <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain}
@@ -726,7 +689,6 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   let body: ReactNode = null
   if (sel?.kind === 'account' && accountId) {
     const key = `account:${accountId}`
-    const ownRun = signInRun?.tool === accountId ? signInRun.run : null
     body = <>
       {dmeta(key, accountStatus(accountId), undefined, model && !model.ready ? healthReasonText(model) : undefined)}
       <p className="foot-note is-ink">{t(accountId === 'codex'
@@ -734,18 +696,10 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
         : 'Uses the account you are signed in with in Claude Code. DEIXIS keeps no password or token of its own.')}</p>
       <div className="acts">
         {checkButton(key, 'Test the connection', () => refreshModel(accountId), !model)}
-        {signInCommand && <button type="button" className="ghost" disabled={ownRun?.state === 'waiting'} onClick={() => startSignIn(accountId)}>
-          {ownRun?.state === 'waiting' && <span className="spin" aria-hidden />}
-          {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') ? t('Try again') : model?.signed_in ? t('Sign in again') : t('Sign in')}
-        </button>}
+        {signInCommand && <button type="button" className="ghost" aria-expanded={signIn === accountId} onClick={() => setSignIn(signIn === accountId ? null : accountId)}>{t('Sign in again')}</button>}
       </div>
-      {ownRun?.state === 'waiting' && <p className="foot-note signin-wait" role="status">
-        <span className="spin" aria-hidden />{t('A terminal window opened. Finish signing in there; this updates by itself.')}
-      </p>}
-      {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && ownRun.message && <p className="foot-note warn-t" role="alert">{ownRun.message}</p>}
-      {signInCommand && <button type="button" className="ghost" aria-expanded={signIn === accountId} onClick={() => setSignIn(signIn === accountId ? null : accountId)}>{t('Or run this in a terminal')}</button>}
       {signIn === accountId && signInCommand && <div className="signin-cmd">
-        <p className="foot-note">{t('Run this in a terminal, then test the connection:')}</p>
+        <p className="foot-note">{t(accountId === 'codex' ? 'Run this in a terminal, then test the connection:' : 'Run this in a terminal, type /login, then test the connection:')}</p>
         <div className="cmd-row"><code className="field mono">{signInCommand}</code><button type="button" className="ghost" onClick={() => copy(signInCommand)}><Copy aria-hidden />{t('Copy')}</button></div>
       </div>}
       {model && accountId === 'codex' && <>
@@ -921,7 +875,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
           <label className={!available ? 'is-disabled' : undefined}>
             <input type="radio" name="semantic-provider" checked={isChosen} disabled={!available || saving} onChange={pick}
               onClick={() => { if (isChosen && semantic && !semantic.explicit) pick() }} />
-            {settingsIcon(row.id)}<span>{row.label}{row.desc && <small>{row.desc}</small>}</span>
+            <span>{row.label}{row.desc && <small>{row.desc}</small>}</span>
             {saving && isChosen && <span className="spin" aria-label={t('Saving…')} />}
             {need && <span className="st no">{need}</span>}
           </label>
@@ -951,7 +905,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
 
     <Sheet open={open && !gone} onOpenChange={setOpen}>
       <SheetContent className={`detail-sheet connection-sheet ${dark ? 'dark' : ''}`}>
-        <SheetHeader><SheetTitle>{(sheetIconKey && settingsIcon(sheetIconKey)) || <Link size={16} aria-hidden />}<span>{name}</span></SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
+        <SheetHeader><SheetTitle><Link size={16} aria-hidden /><span>{name}</span></SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
         <div className="connection-body mk pad detail">{body}</div>
       </SheetContent>
     </Sheet>

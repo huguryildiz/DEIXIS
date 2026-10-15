@@ -64,12 +64,9 @@ class ProxyStore {
   readHoldFails = false  // the held read answers with an error instead
   held = 0
   posts = 0
-  // The sidebar name typed in Settings (null: the proxy host); the next save can fail.
-  label: string | null = null
-  labelFails = false
-  view(address = this.address, test = this.test, label = this.label) {
-    const host = address ? 'login.proxy.example.edu' : null
-    return { address, label: label || host, label_default: host, label_is_default: !label, test, test_is_current: !!test && test.address === address }
+  view(address = this.address, test = this.test) {
+    return { address, label: address ? 'login.proxy.example.edu' : null, label_default: address ? 'login.proxy.example.edu' : null,
+      label_is_default: true, test, test_is_current: !!test && test.address === address }
   }
   async install(page: Page) {
     await page.route('**/api/institution-proxy/settings', async route => {
@@ -85,17 +82,12 @@ class ProxyStore {
       this.posts++
       // The test measures the address saved when it arrived; a removal or change while it runs does not undo it here,
       // but its answer still names that address (as the backend's would).
-      const asked = this.address, label = this.label  // the name as it was when the test arrived
+      const asked = this.address
       if (this.gate) await this.gate
       if (this.next === 'fail') return route.fulfill({ status: 500, json: { detail: 'SYNTHETIC test request failure' } })
       const result = { ...this.next, address: asked }
       if (this.address === asked) this.test = result
-      await route.fulfill({ json: this.view(asked, result, label) })
-    })
-    await page.route('**/api/institution-proxy/label', async route => {
-      if (this.labelFails) { this.labelFails = false; return route.fulfill({ status: 500, json: { detail: 'SYNTHETIC label save failure' } }) }
-      this.label = (route.request().postDataJSON() as { label: string | null }).label || null
-      await route.fulfill({ json: this.view() })
+      await route.fulfill({ json: this.view(asked, result) })
     })
     await page.route('**/api/institution-proxy', async (route: Route) => {
       if (route.request().method() === 'GET') return route.fulfill({ json: { address: this.address } })
@@ -297,70 +289,6 @@ test.describe.serial('S24: the Settings page', () => {
     expect(await state.textContent()).toBe(`Proxy reachableArticle access not checked. The proxy host answered with HTTP 302 at ${time}.`)
     expect(await page.locator('.proxy').textContent()).not.toContain('The proxy setting could not be read.')
     expect(await field.inputValue()).toBe(ADDRESS)
-    await page.unrouteAll({ behavior: 'ignoreErrors' })
-  })
-
-  test('the sidebar name: saved under the proxy address, kept against a late read and a crossing test answer; a failed save says so (P4)', async () => {
-    const store = new ProxyStore()
-    store.address = ADDRESS
-    store.test = { ...tested(), address: ADDRESS }
-    await store.install(page)
-    await page.route('**/api/institutional-access**', route => route.fulfill({ json: { status: 'not_checked', via: 'scopus' } }))
-    await page.goto(server.url('#/settings/access'))
-    await page.reload()
-    const name = page.getByLabel('Name shown in the sidebar')
-    const save = page.locator('.proxy-name').getByRole('button', { name: 'Save' })
-    const sidebar = page.locator('.access-label')
-    await expect(sidebar).toHaveText('Institutional access · login.proxy.example.edu')
-    await expect(name).toHaveValue('')
-    await expect(name).toHaveAttribute('placeholder', 'login.proxy.example.edu')
-    await expect(save).toBeDisabled()
-
-    // A read starts and is held with the host name; the person saves a name; the late read changes nothing.
-    let release!: () => void
-    store.readHold = new Promise(resolve => { release = resolve })
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
-    await expect.poll(() => store.held).toBe(1)
-    await name.fill('SYNTHETIC library')
-    await save.click()
-    await expect(page.getByText('Sidebar name saved.')).toBeVisible()
-    await expect(sidebar).toHaveText('Institutional access · SYNTHETIC library')
-    expect(store.label).toBe('SYNTHETIC library')
-    release()
-    await page.waitForTimeout(600)
-    // Read once, without retries: the next 5 s poll would repair a stale screen and hide the bug.
-    expect(await sidebar.textContent()).toBe('Institutional access · SYNTHETIC library')
-    expect(await name.inputValue()).toBe('SYNTHETIC library')
-
-    // A test that arrived before the next save answers after it, with the name it saw: the saved name stays.
-    store.gate = new Promise(resolve => { release = resolve })
-    await page.locator('.proxy').getByRole('button', { name: 'Test' }).click()
-    await expect.poll(() => store.posts).toBe(1)
-    await name.fill('SYNTHETIC campus')
-    await save.click()
-    await expect(sidebar).toHaveText('Institutional access · SYNTHETIC campus')
-    release(); store.gate = null
-    const time = await hhmm(page, PINNED)
-    await expect(page.locator('.proxy-state').first()).toHaveText(`Proxy reachableArticle access not checked. The proxy host answered with HTTP 302 at ${time}.`)
-    await page.waitForTimeout(600)
-    expect(await sidebar.textContent()).toBe('Institutional access · SYNTHETIC campus')
-    expect(await name.inputValue()).toBe('SYNTHETIC campus')
-
-    // A failed save keeps the typed text, says it was not saved and leaves the stored name in the sidebar.
-    store.labelFails = true
-    await name.fill('SYNTHETIC lost')
-    await save.click()
-    await expect(page.locator('.proxy-name [role="alert"]')).toContainText('Not saved:')
-    expect(await name.inputValue()).toBe('SYNTHETIC lost')
-    expect(await sidebar.textContent()).toBe('Institutional access · SYNTHETIC campus')
-    expect(store.label).toBe('SYNTHETIC campus')
-
-    // An empty field returns to the proxy host.
-    await name.fill('')
-    await save.click()
-    await expect(page.getByText('Sidebar name reset to the proxy host.')).toBeVisible()
-    await expect(sidebar).toHaveText('Institutional access · login.proxy.example.edu')
-    expect(store.label).toBeNull()
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
@@ -601,13 +529,11 @@ test.describe.serial('S24: the Settings page', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
-  test('Sign in has a button; the terminal command with Copy is the collapsed fallback', async () => {
+  test('Sign in again shows the command with Copy; it opens nothing', async () => {
     await page.goto(server.url('#/settings/connections'))
     await page.getByRole('button', { name: /^Codex CLI / }).click()
     const sheet = page.getByRole('dialog', { name: 'Codex CLI' })
-    await expect(sheet.getByRole('button', { name: /^Sign in( again)?$/ })).toBeVisible()
-    await expect(sheet.locator('.cmd-row')).toHaveCount(0)
-    await sheet.getByRole('button', { name: 'Or run this in a terminal' }).click()
+    await sheet.getByRole('button', { name: 'Sign in again' }).click()
     // The command names the Codex home this backend runs with (here the fixture data folder's), never a fixed macOS path.
     const home = (await (await page.request.get(server.url('api/connections'))).json() as { codex_home: string }).codex_home
     expect(home.endsWith(`${path.basename(server.dataDir)}/codex-home`)).toBe(true)

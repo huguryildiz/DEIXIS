@@ -292,25 +292,47 @@
 .install-progress-bar span{position:absolute;inset:0 auto 0 0;width:40%;border-radius:99px;background:var(--accent);animation:install-sweep 1.4s ease-in-out infinite}
 .install-progress-bar.is-determinate span{animation:none;transition:width .4s ease}
 .server-pull{display:flex;flex-direction:column;gap:8px}
-.connection-sheet .ollama-models li{font-size:12.5px;padding:6px 0}
-.connection-sheet .ollama-models .local-tool-model-meta{display:inline-flex;align-items:center;gap:8px;color:var(--muted);white-space:nowrap;flex:none}
-.connection-sheet .ollama-models li>span:first-child{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .connection-sheet .server-block>*{min-width:0}
+/* Local model servers (Ollama, LM Studio): installed models in one framed list, suggestions as cards with a memory-fit meter. */
+.connection-sheet .source-section .ollama-count{display:inline-grid;place-items:center;min-width:18px;height:18px;margin-left:7px;padding:0 5px;border-radius:99px;background:var(--hover-surface);color:var(--muted);font-size:11px;font-weight:500;vertical-align:1px}
+.connection-sheet .ollama-models{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.connection-sheet .ollama-models li{display:flex;align-items:center;gap:10px;margin:0;padding:8px 10px 8px 12px;font-size:13px;border-top:1px solid var(--line)}
+.connection-sheet .ollama-models li:first-child{border-top:0}
+.connection-sheet .ollama-models li:hover{background:var(--hover-surface)}
+.connection-sheet .ollama-models li>span:first-child:not(.ollama-model-ico),.connection-sheet .ollama-model-name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.connection-sheet .ollama-model-name{font-size:13px;font-weight:500}
+.connection-sheet .ollama-model-ico{display:inline-grid;place-items:center;flex:none;width:26px;height:26px;border-radius:7px;background:var(--accent-tint);color:var(--accent)}
+.connection-sheet .ollama-models .local-tool-model-meta{display:inline-flex;align-items:center;gap:8px;color:var(--muted);white-space:nowrap;flex:none;font-size:12px}
+.connection-sheet .ollama-size{font-variant-numeric:tabular-nums}
+.connection-sheet .ollama-tag{padding:1px 7px;border:1px solid var(--line);border-radius:99px;color:var(--ink-2);font-size:11px}
 .connection-sheet .ollama-models button,.connection-sheet .ollama-pull-row button{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;font-size:12px}
-.connection-sheet .ollama-models button.icon-only{padding:3px 5px}
-.connection-sheet .ollama-cards{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px}
-.connection-sheet .ollama-card{display:flex;flex-direction:column;gap:2px;padding:9px 10px;min-width:0;border:1px solid var(--line);border-radius:10px;font-size:12.5px}
-.connection-sheet .ollama-card b{font-size:13px;color:var(--ink)}
-.connection-sheet .ollama-card small{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.connection-sheet .ollama-models button.icon-only{padding:4px 5px;border-color:transparent;color:var(--muted)}
+.connection-sheet .ollama-models button.icon-only:hover:not(:disabled){border-color:var(--line);color:var(--error-ink)}
+.connection-sheet .ollama-cards{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px}
+.connection-sheet .ollama-card{display:flex;flex-direction:column;gap:3px;padding:12px 12px 11px;min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--card);font-size:12.5px;transition:border-color .15s,box-shadow .15s}
+.connection-sheet .ollama-card:hover{border-color:var(--accent-line);box-shadow:0 2px 10px -4px color-mix(in srgb,var(--ink),transparent 82%)}
+.connection-sheet .ollama-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;min-width:0}
+.connection-sheet .ollama-card b{min-width:0;overflow-wrap:anywhere;font-size:13.5px;font-weight:600;line-height:1.3;color:var(--ink)}
+.connection-sheet .ollama-card-param{flex:none;padding:1px 6px;border-radius:6px;background:var(--accent-tint);color:var(--accent);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.5}
+.connection-sheet .ollama-card small{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .connection-sheet .ollama-card small code,.connection-sheet .ollama-models code{font-size:11px;color:var(--muted)}
-.connection-sheet .ollama-card-size{display:inline-flex;align-items:center;gap:4px;color:var(--muted)}
-.connection-sheet .ollama-card button{align-self:flex-start;margin-top:6px;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;font-size:12px}
-.connection-sheet .ollama-card.is-tight{opacity:.6}
-.connection-sheet .ollama-card.is-tight .ollama-card-size{color:var(--warn-ink)}
+.connection-sheet .ollama-card-foot{display:grid;gap:7px;margin-top:auto;padding-top:10px}
+.connection-sheet .ollama-card-size{display:inline-flex;align-items:center;gap:5px;color:var(--ink-2);font-size:12px;font-variant-numeric:tabular-nums}
+.connection-sheet .ollama-card-size svg{flex:none;color:var(--muted)}
+.connection-sheet .ollama-card-meter{position:relative;height:4px;overflow:hidden;border-radius:99px;background:color-mix(in srgb,var(--ink),transparent 92%)}
+.connection-sheet .ollama-card-meter span{position:absolute;inset:0 auto 0 0;border-radius:99px;background:var(--accent)}
+.connection-sheet .ollama-card button{justify-content:center;display:inline-flex;align-items:center;gap:5px;width:100%;padding:5px 8px;font-size:12px}
+.connection-sheet .ollama-card button:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-tint);color:var(--accent)}
+.connection-sheet .ollama-card.is-tight{opacity:.62}
+.connection-sheet .ollama-card.is-tight .ollama-card-size,.connection-sheet .ollama-card.is-tight .ollama-card-size svg{color:var(--warn-ink)}
+.connection-sheet .ollama-card.is-tight .ollama-card-meter span{background:var(--warn-ink)}
 .connection-sheet .ollama-other{margin-top:10px}
-.connection-sheet .ollama-update{padding:8px 10px;border-radius:8px;background:var(--warn-surface);color:var(--ink-2)}
+.connection-sheet .ollama-update{padding:10px 12px;border:1px solid var(--accent-line);border-radius:10px;background:var(--accent-tint);color:var(--ink)}
 .connection-sheet .ollama-update code{font-size:12px}
 .connection-sheet div.ollama-update{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.connection-sheet div.ollama-update>span{display:inline-flex;align-items:flex-start;gap:8px;font-size:12.5px;line-height:1.5}
+.connection-sheet div.ollama-update>span>svg{flex:none;margin-top:2px;color:var(--accent)}
+.connection-sheet div.ollama-update button{flex:none}
 .connection-sheet .ollama-other>summary{cursor:pointer;font-size:12.5px;color:var(--muted)}
 .connection-sheet .ollama-other[open]>summary{margin-bottom:6px}
 .connection-sheet .ollama-pull-form{display:grid;gap:6px;margin:6px 0 0}

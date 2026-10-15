@@ -527,7 +527,7 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
             ? t('Downloading {name}: {done} of {total} MB', { name: product, done: aboutMb(job!.completed ?? 0), total: aboutMb(job!.total) })
             : t('Updating {name}…', { name: product })} />
       : updates?.update_available && (updates.installed_with ? <div className="local-tool-note ollama-update" role="status">
-        <span>{t('{name} {latest} is available (this computer has {version}).', { name: product, latest: updates.latest ?? '', version: updates.version ?? '' })}</span>
+        <span><RefreshCw size={15} aria-hidden />{t('{name} {latest} is available (this computer has {version}).', { name: product, latest: updates.latest ?? '', version: updates.version ?? '' })}</span>
         <Button size="sm" disabled={busy || pulling} onClick={updateApp}><RefreshCw size={14} aria-hidden />{t('Update')}</Button>
       </div>
       : <p className="local-tool-note ollama-update" role="status">
@@ -551,11 +551,14 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
       {errorLines(pull!.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
     </>}
 
-    <h3 className="source-section">{t('Installed models')}</h3>
+    <h3 className="source-section">{t('Installed models')}{installed.length > 0 && <span className="ollama-count">{installed.length}</span>}</h3>
     {installed.length > 0
-      ? <ul className="local-tool-models ollama-models">{installed.map(m => <li key={m.id}>
-        <span>{m.id}</span>
-        <span className="local-tool-model-meta">{[m.size_bytes != null && formatBytes(m.size_bytes), m.embedding && t('embedding')].filter(Boolean).join(' · ')}
+      ? <ul className="local-tool-models ollama-models is-installed">{installed.map(m => <li key={m.id}>
+        <span className="ollama-model-ico" aria-hidden>{m.embedding ? <Sigma size={14} /> : <Cpu size={14} />}</span>
+        <span className="ollama-model-name" title={m.id}>{m.id}</span>
+        <span className="local-tool-model-meta">
+          {m.embedding && <span className="ollama-tag">{t('embedding')}</span>}
+          {m.size_bytes != null && <span className="ollama-size">{formatBytes(m.size_bytes)}</span>}
           {updates?.models[m.id] && <button type="button" className="ghost" title={t('ollama.com has a newer version of this model')} disabled={busy || pulling} onClick={() => start(m.id)}><RefreshCw size={14} aria-hidden />{t('Update')}</button>}
           {!lms && <button type="button" className="ghost icon-only" aria-label={t('Remove {model}', { model: m.id })} title={t('Remove')} disabled={busy} onClick={() => setRemoving(m.id)}><Trash2 size={14} aria-hidden /></button>}
         </span>
@@ -569,11 +572,16 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
         // A model needs about its download size plus a few GB of memory to run; one that does not fit is shown faded.
         const need = s.memory_gb ?? Math.ceil(((s.size_bytes ?? 0) / 1e9 + 4) / 4) * 4
         const tight = memoryGb != null && memoryGb < need
+        // The catalog names a model "family · size"; the size goes in its own badge.
+        const [title, params] = s.name.split(' · ')
         return <li key={s.id} className={`ollama-card${tight ? ' is-tight' : ''}`}>
-          <b>{s.name}</b>
+          <div className="ollama-card-head"><b>{title}</b>{params && <span className="ollama-card-param">{params}</span>}</div>
           <small title={s.id}>{s.maker && `${s.maker} · `}<code>{s.id}</code></small>
-          <span className="ollama-card-size" title={tight ? t('More than this computer’s {memory} GB of memory', { memory: memoryGb! }) : undefined}>{tight && <TriangleAlert size={12} aria-hidden />}{s.size_bytes != null ? t('{size} · {need} GB memory', { size: formatBytes(s.size_bytes), need }) : t('{need} GB memory', { need })}</span>
-          <button type="button" className="ghost" disabled={busy || pulling} onClick={() => start(s.id)}><Download size={14} aria-hidden />{t('Download')}</button>
+          <div className="ollama-card-foot">
+            <span className="ollama-card-size" title={tight ? t('More than this computer’s {memory} GB of memory', { memory: memoryGb! }) : undefined}>{tight ? <TriangleAlert size={12} aria-hidden /> : <MemoryStick size={12} aria-hidden />}{s.size_bytes != null ? t('{size} · {need} GB memory', { size: formatBytes(s.size_bytes), need }) : t('{need} GB memory', { need })}</span>
+            {memoryGb != null && <span className="ollama-card-meter" aria-hidden><span style={{ width: `${Math.min(100, need / memoryGb * 100)}%` }} /></span>}
+            <button type="button" className="ghost" disabled={busy || pulling} onClick={() => start(s.id)}><Download size={14} aria-hidden />{t('Download')}</button>
+          </div>
         </li>
       })}</ul>
     </>}

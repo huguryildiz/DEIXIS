@@ -1206,8 +1206,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     </section>
 
     {machine && (machine.chip || machine.memory_gb != null || machine.disk_free_gb != null) && <>
-      <h2 data-panel="models">{t('This computer')}</h2>
-      <div className="machine-card" data-group="machine" data-panel="models">
+      <h2 data-panel="general">{t('This computer')}</h2>
+      <div className="machine-card" data-group="machine" data-panel="general">
         {machine.chip && <div className="machine-cell"><Cpu size={16} aria-hidden /><p><small>{t('Processor')}</small><b>{machine.chip}</b></p></div>}
         {machine.memory_gb != null && <div className="machine-cell"><MemoryStick size={16} aria-hidden /><p><small>{t('Memory')}</small><b>{machine.memory_gb} GB</b></p></div>}
         {machine.disk_free_gb != null && <div className="machine-cell machine-disk"><HardDrive size={16} aria-hidden /><p><small>{t('Disk')}</small><b>{t('{gb} GB free', { gb: machine.disk_free_gb })}</b>

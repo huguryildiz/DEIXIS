@@ -123,7 +123,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(tabs).toHaveText(['Models', 'Sources', 'Usage', 'General'])
     await expect(page.getByRole('tab', { name: 'Models' })).toHaveAttribute('aria-selected', 'true')
     const shown = page.locator('.settings-page h2:visible')
-    await expect(shown).toHaveText(['Model connections', /^Other models · \d+/, 'Local models', 'This computer', 'Default models', 'Semantic search', 'Document reading'])
+    await expect(shown).toHaveText(['Model connections', /^Other models · \d+/, 'Local models', 'Default models', 'Semantic search', 'Document reading'])
     // No command-line or key names on the cards (owner-approved connection mockup, 15 Oct 2026); other models start folded.
     await expect(page.locator('.co-grid[data-group="main"] .co-name b')).toHaveText(['Claude', 'ChatGPT', 'Gemini', 'GitHub Copilot', 'Grok', 'Mistral'])
     await expect(page.locator('.co-grid[data-group="main"]')).not.toContainText(/CLI|_API_KEY|Codex/)
@@ -141,7 +141,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.getByRole('tab', { name: 'Usage' })).toBeFocused()
     await expect(shown).toHaveText(['Usage this month'])
     await page.keyboard.press('ArrowRight')
-    await expect(shown).toHaveText(['Profile', 'Language'])
+    await expect(shown).toHaveText(['Profile', 'This computer', 'Language'])
     await expect(page.locator('.data-location')).toBeVisible()
     await page.reload()
     await expect(page.getByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true')

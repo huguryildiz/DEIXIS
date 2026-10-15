@@ -163,7 +163,7 @@ const SCREENS = [
   '6a source panel PDF tab', '6b source panel plain-text document',
   '7a evidence panel empty', '7b evidence panel filled', '7c evidence cell panel',
   '8a library', '8b trash', '8c trash delete confirmation',
-  '9a settings defaults', '9b settings connections', '9c connection sheet',
+  '9a settings defaults', '9b settings connections', '9c connection sheet', '9d settings usage', '9e settings general',
   '10a human queue list', '10b human queue open row',
   '11a quick find', '11c error toast',
 ]
@@ -691,22 +691,27 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     test.setTimeout(240_000)
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
-    await reach(['9a settings defaults', '9b settings connections', '9c connection sheet'], async () => {
+    await reach(['9a settings defaults', '9b settings connections', '9c connection sheet', '9d settings usage', '9e settings general'], async () => {
       await page.goto(main.url())
       await page.getByRole('button', { name: 'Settings', exact: true }).click()
-      // One page since S24: the default models' selects are enabled once the models and defaults are read.
+      // Settings opens on its Models tab (D30): the default models' selects are enabled once the models and defaults are
+      // read, and the semantic-search rows load after the tiles.
       await expect(page.getByRole('combobox', { name: 'Literature model' })).toBeEnabled()
-      await scan(page, '9a settings defaults', () => dismissToasts(page))
-      await page.goto(main.url('#/settings/connections'))
-      await expect(page.getByRole('button', { name: /^OpenAlex No key needed/ })).toBeVisible()
-      // The semantic-search rows load after the tiles; the usage rows after their reads.
       await expect(page.locator('.semantic-option').first()).toBeVisible()
-      await expect(page.locator('.set-usage [data-role="literature"] p')).toHaveText(/calls?$/)
+      await scan(page, '9a settings defaults', () => dismissToasts(page))
+      await page.goto(main.url('#/settings/sources'))
+      await expect(page.getByRole('button', { name: /^OpenAlex No key needed/ })).toBeVisible()
       await scan(page, '9b settings connections', () => dismissToasts(page))
       await page.getByRole('button', { name: /^OpenAlex No key needed/ }).click()
       await expect(page.locator('.connection-sheet')).toBeVisible()
       await scan(page, '9c connection sheet', () => dismissToasts(page))
       await page.keyboard.press('Escape')
+      await page.goto(main.url('#/settings/usage'))
+      await expect(page.locator('.set-usage [data-role="literature"] p')).toHaveText(/calls?$/)
+      await scan(page, '9d settings usage', () => dismissToasts(page))
+      await page.goto(main.url('#/settings/general'))
+      await expect(page.locator('.data-location')).toBeVisible()
+      await scan(page, '9e settings general', () => dismissToasts(page))
     })
   })
 

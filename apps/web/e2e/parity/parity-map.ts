@@ -128,6 +128,14 @@ async function settingsState(page: Page) {
     reset_at: at, as_of: at, source: 'last_stored_response' } }))
 }
 
+/** D30: the app splits Settings into tabs; the mockup is one page. Parity compares the page with every tab's sections
+ *  shown (the page without its data-tab), so each section is still measured against the mockup in the mockup's order. */
+async function allSettingsTabs(page: Page) {
+  const settings = page.locator('.settings-page')
+  await settings.waitFor()
+  await settings.evaluate(el => el.removeAttribute('data-tab'))
+}
+
 /** S13: the Sources panel on "Cited in answer", where the mockup opens it. */
 async function citedTab(page: Page) {
   await page.locator('.source-filters button').filter({ hasText: 'Cited in answer' }).click()
@@ -341,8 +349,8 @@ export const SURFACES: Surface[] = [
     appAct: async page => { await page.locator('.research-topbar .research-revise').click(); await page.locator('#revise-question').blur() } },
   // S24: the Settings page (ST1–ST11), one column in the mockup's order with the Cloud models block (PLACEMENTS) after
   // Default models.
-  { id: 'settings', mock: "setScenario('ok'); go('settings')", app: '#/settings', ready: '.settings-page .set-usage [data-role="openalex"] small', prepare: settingsState },
-  { id: 'settings-sheet', mock: "setScenario('ok'); go('settings')", mockAct: "st.conn = 'Codex CLI'; render()", app: '#/settings', ready: '.settings-page .set-usage', prepare: settingsState,
+  { id: 'settings', mock: "setScenario('ok'); go('settings')", app: '#/settings', ready: '.settings-page .set-usage [data-role="openalex"] small', prepare: settingsState, open: allSettingsTabs },
+  { id: 'settings-sheet', mock: "setScenario('ok'); go('settings')", mockAct: "st.conn = 'Codex CLI'; render()", app: '#/settings', ready: '.settings-page .set-usage', prepare: settingsState, open: allSettingsTabs,
     appAct: async page => {
       await page.locator('.grid3[data-group="computer"] .conn').filter({ hasText: /^Codex CLI/ }).click()
       await page.locator('.connection-sheet .connection-body .acts').waitFor()

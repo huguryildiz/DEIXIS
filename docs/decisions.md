@@ -4,6 +4,16 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D30 — Settings is split into four tabs; the mockup stays one page
+Status: accepted (owner, 15 Oct 2026) · Date: 2026-10-15 · Writer: Claude
+Context: Settings had grown to eleven sections on one page (S24 kept the mockup's single column, ST1). The owner found it hard to scan and chose tabs in the app only, keeping mockup v24 as it is.
+Decision:
+- Four tabs under the title: Models (default models, cloud models, On this computer, This computer, semantic search), Sources (institutional access, scholarly sources, reference managers), Usage (usage this month) and General (profile, data location, language). The page opens on Models; the footer shows under every tab.
+- Each section is rendered once and carries `data-panel`; the page's `data-tab` shows one tab's sections. Connections, an open sheet and half-typed fields keep their state across tabs, and the sections keep the mockup's order inside each tab.
+- `#/settings/models|sources|usage|general` open a tab; a tab click rewrites the hash without a history entry. The older links keep their places: `connections` opens Models at On this computer, `access` and `openalex` open Sources, `profile` opens General. The first-run card's sources row now opens Sources, and the waiting-for-PDF proxy link opens Institutional access.
+- Parity (D18) compares the page with every tab's sections shown (`allSettingsTabs` removes `data-tab`); the tab bar is the APP_ADDITIONS entry `settings-tabs`. `settings.spec` checks which section sits in which tab, the arrow keys and the hash.
+Limits: The tab bar has no `role=tabpanel` element, because the sections stay direct children of the page so the parity selectors and the page grid keep working; each tab button has `aria-selected` and a roving tab stop. Measured: settings.spec, parity -g settings, the a11y Settings screens, at 1280 and 390 px on SYNTHETIC fixtures.
+
 ## D33 — A keyless source's Test sends one request without a key and reports only whether the service answered
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: The mockup gives Crossref, arXiv and the OpenAlex sheet a Test button. Settings had none for a source used without a key: `credentials.test()` tests model keys only, and source keys are saved untested.

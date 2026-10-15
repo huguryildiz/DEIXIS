@@ -887,7 +887,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   return <>
     {error && <Notice tone="error">{error}</Notice>}
 
-    <div className="cloud-models">
+    <div className="cloud-models" data-panel="models">
     <h2>{t('Cloud models')}</h2>
     <div className="grid3" data-group="cloud">
       {cloudModels.map(([id, m]) => tile(id, 'model', id, modelNames[id] ?? id, modelDesc(id), modelStatus(m)))}
@@ -895,16 +895,16 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     </div>
     </div>
 
-    <h2 id="on-this-computer" tabIndex={-1}>{t('On this computer')}</h2>
-    {toolsError && <Notice tone="error">{toolsError}</Notice>}
-    <div className="grid3" data-group="computer">
+    <h2 id="on-this-computer" tabIndex={-1} data-panel="models">{t('On this computer')}</h2>
+    {toolsError && <Notice tone="error" panel="models">{toolsError}</Notice>}
+    <div className="grid3" data-group="computer" data-panel="models">
       {tile('codex', 'account', 'codex', 'Codex CLI', t('Account sign-in'), accountStatus('codex'))}
       {tile('claude', 'account', 'claude', 'Claude Code', t('Account sign-in'), accountStatus('claude'))}
       {tile('ocr', 'ocr-tool', 'tesseract', t('OCR (Tesseract)'), t('Scanned PDFs'), ocrStatus())}
       {tile('servers', 'servers', 'servers', t('Local model servers'), t('Ollama or LM Studio · no account'), serversStatus())}
       {tile('marker', 'equation-reader', 'marker', t('Equation reader (Marker)'), t('Reads equations as LaTeX'), readerStatus())}
     </div>
-    {otherCli.length > 0 && <div className="computer-more">
+    {otherCli.length > 0 && <div className="computer-more" data-panel="models">
       {otherCli.length > 0 && <details className="planned-connections"><summary><ChevronRight size={14} aria-hidden />{t('Other command-line tools · {n}', { n: otherCli.length })}</summary>
         <p className="foot-note">{t('Only Claude Code and Codex CLI run research steps. The other tools are detected only: finding one here does not mean DEIXIS supports it.')}</p>
         <div className="grid3">{otherCli.map(tool => tile(tool.id, 'cli', tool.id, tool.name || localToolNames[tool.id] || tool.id, t('Detected only'), ['no', t(tool.job?.status === 'running' ? 'Installing…' : tool.installed ? 'Installed' : 'Not installed')]))}</div>
@@ -912,8 +912,8 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     </div>}
 
     {machine && (machine.chip || machine.memory_gb != null || machine.disk_free_gb != null) && <>
-      <h2>{t('This computer')}</h2>
-      <div className="machine-card" data-group="machine">
+      <h2 data-panel="models">{t('This computer')}</h2>
+      <div className="machine-card" data-group="machine" data-panel="models">
         {machine.chip && <div className="machine-cell"><Cpu size={16} aria-hidden /><p><small>{t('Processor')}</small><b>{machine.chip}</b></p></div>}
         {machine.memory_gb != null && <div className="machine-cell"><MemoryStick size={16} aria-hidden /><p><small>{t('Memory')}</small><b>{machine.memory_gb} GB</b></p></div>}
         {machine.disk_free_gb != null && <div className="machine-cell machine-disk"><HardDrive size={16} aria-hidden /><p><small>{t('Disk')}</small><b>{t('{gb} GB free', { gb: machine.disk_free_gb })}</b>
@@ -925,10 +925,10 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     </>}
     <DataLocationCard dark={dark} />
 
-    <h2>{t('Semantic search')}</h2>
-    <p className="foot-note">{t('Ranks search results by meaning, not only by shared words. Changing the provider scores the passages again; earlier scores are kept.')}</p>
-    {semError && <Notice tone="error">{semError}</Notice>}
-    <div className="rows opts semantic-choices" role="radiogroup" aria-label={t('Semantic search provider')} aria-busy={saving || undefined}>
+    <h2 data-panel="models">{t('Semantic search')}</h2>
+    <p className="foot-note" data-panel="models">{t('Ranks search results by meaning, not only by shared words. Changing the provider scores the passages again; earlier scores are kept.')}</p>
+    {semError && <Notice tone="error" panel="models">{semError}</Notice>}
+    <div className="rows opts semantic-choices" data-panel="models" role="radiogroup" aria-label={t('Semantic search provider')} aria-busy={saving || undefined}>
       {semanticRows.map(row => {
         const isChosen = !!chosen && row.providers.includes(chosen.provider)
         const available = !!semantic && (row.id === 'server' ? serverChoices.length > 0 : !!option(row.providers[0])?.available)
@@ -955,16 +955,16 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
         </div>
       })}
     </div>
-    {privacy && <p className="foot-note semantic-privacy">{privacy}</p>}
+    {privacy && <p className="foot-note semantic-privacy" data-panel="models">{privacy}</p>}
 
     {access}
 
-    <h2>{t('Scholarly sources')}</h2>
-    <div className="grid3" data-group="sources">{providers.map(p => tile(p.id, 'provider', p.id, providerNames[p.id] ?? p.id, providerUse[p.id] ? t(providerUse[p.id]) : providerRole(p.role), providerStatus(p.access_mode)))}</div>
-    <p className="foot-note sources-note">{t('New researches use every source that has the access it needs.')}</p>
+    <h2 data-panel="sources">{t('Scholarly sources')}</h2>
+    <div className="grid3" data-group="sources" data-panel="sources">{providers.map(p => tile(p.id, 'provider', p.id, providerNames[p.id] ?? p.id, providerUse[p.id] ? t(providerUse[p.id]) : providerRole(p.role), providerStatus(p.access_mode)))}</div>
+    <p className="foot-note sources-note" data-panel="sources">{t('New researches use every source that has the access it needs.')}</p>
 
-    <h2>{t('Reference managers')}</h2>
-    <div className="grid3" data-group="references">
+    <h2 data-panel="sources">{t('Reference managers')}</h2>
+    <div className="grid3" data-group="references" data-panel="sources">
       {tile('zotero', 'zotero', 'zotero', 'Zotero', t('Read-only collections'), zoteroStatus())}
       {tile('reference-files', 'reference-files', 'files', t('BibTeX / RIS files'), t('Import a .bib or .ris file'), ['ok', t('Available')])}
     </div>

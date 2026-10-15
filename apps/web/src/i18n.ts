@@ -1363,6 +1363,7 @@ const tr: Record<string, string> = {
   'Use light theme': 'Açık temayı kullan',
   'Use dark theme': 'Koyu temayı kullan',
   'Interface language': 'Arayüz dili',
+  'General': 'Genel',
   '© 2026 DEIXIS · Designed & built by': '© 2026 DEIXIS · Tasarım ve geliştirme:',
   'DEIXIS on GitHub': 'GitHub’da DEIXIS',
   'Close': 'Kapat',

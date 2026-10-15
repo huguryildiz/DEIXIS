@@ -245,7 +245,7 @@ function SetupCard({ connections, reasons, proxy }: { connections: Connections; 
     <div className="home-setup-row">{num(1, false)}<p>{t('Answer and literature models')}<small>{t('Not connected. Use Codex CLI, Claude Code, or an API key.')}</small>{reasons && <small className="home-setup-reason">{reasons}</small>}</p>
       <button type="button" className="setup-connect" onClick={settings}>{t('Connect')}</button></div>
     <div className="home-setup-row">{num(2, sourcesReady)}<p>{t('Scholarly sources')}<small>{t('OpenAlex and Crossref work without a key. Configured · not tested live.')}</small></p>
-      {sourcesReady ? <span className="st ok">{t('Ready')}</span> : <button type="button" className="setup-add" onClick={settings}>{t('Connect')}</button>}</div>
+      {sourcesReady ? <span className="st ok">{t('Ready')}</span> : <button type="button" className="setup-add" onClick={() => { window.location.hash = '/settings/sources' }}>{t('Connect')}</button>}</div>
     <div className="home-setup-row">{num(3, Boolean(proxy))}<p>{t('Institution proxy (optional)')}<small>{t('Lets you open PDFs your library pays for, through its sign-in.')}</small></p>
       {proxy ? <span className="st no">{t('Address saved')}</span> : <button type="button" className="setup-add" onClick={() => { window.location.hash = '/settings/access' }}>{t('Add')}</button>}</div>
   </section>

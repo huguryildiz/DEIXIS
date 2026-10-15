@@ -5,7 +5,7 @@ import { api, ApiError, shellApi, type InstitutionalAccess, type Profile, type P
 import { runStatusLabels } from './labels'
 import { Home } from './Home'
 import { EmptyResearch, ResearchPage } from './ResearchView'
-import { SettingsPage } from './Settings'
+import { SettingsPage, type SettingsSection } from './Settings'
 import { LibraryPage } from './LibraryPage'
 import { QuickFind, type PaletteCommand } from './QuickFind'
 import { KeysDialog } from './KeysDialog'
@@ -29,7 +29,7 @@ import './research/queue.css'
 import './research/followup.css'
 import './Trash.css'
 
-type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: 'connections' | 'access' | 'openalex' | 'profile' } | { view: 'trash' } | { view: 'library' }
+type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: SettingsSection } | { view: 'trash' } | { view: 'library' }
 type ThemeChoice = 'system' | 'light' | 'dark'
 
 const activeRunStatuses = new Set<RunStatus>(['queued', 'running', 'pause_requested'])
@@ -55,6 +55,7 @@ function parseHash(): Route {
   if (hash === 'settings/access') return { view: 'settings', tab: 'access' }
   if (hash === 'settings/openalex') return { view: 'settings', tab: 'openalex' }
   if (hash === 'settings/profile') return { view: 'settings', tab: 'profile' }
+  if (/^settings\/(models|sources|usage|general)$/.test(hash)) return { view: 'settings', tab: hash.slice('settings/'.length) as SettingsSection }
   if (hash === 'settings') return { view: 'settings' }
   if (hash === 'trash') return { view: 'trash' }
   if (hash === 'library') return { view: 'library' }

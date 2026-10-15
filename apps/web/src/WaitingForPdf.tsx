@@ -158,7 +158,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
         : list.has_plan ? t('Every work the full-text retrieval tried has its text, or is decided another way.') : t('The full-text retrieval has not run for this question yet.')}</p>
       {rows.length > 0 && <p className="prow foot-note">{list.via_proxy
         ? t('Links open through your institution’s proxy in your browser; DEIXIS sends nothing through it.')
-        : <>{t('Links open directly.')} <a href="#/settings/connections">{t('Set your institution’s proxy address')}</a></>}</p>}
+        : <>{t('Links open directly.')} <a href="#/settings/access">{t('Set your institution’s proxy address')}</a></>}</p>}
       {rows.length > 0 && <ol className="pdf-ready-rows waiting-rows" aria-label={t('Works waiting for your PDF, in reading order')}>
         {rows.map(row => <li key={row.work_id} className="prow">
           <span className="waiting-place" title={t('Place in the reading order')}>{row.place}</span>

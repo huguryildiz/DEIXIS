@@ -51,7 +51,7 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
   }
 
   const parts = view?.breakdown.filter(p => p.bytes > 0) ?? []
-  return <div className="data-location" data-group="data-location">
+  return <div className="data-location" data-group="data-location" data-panel="general">
     <div className="dl-head">
       <FolderOpen size={16} aria-hidden />
       <p><b>{t('Data location')}</b><small>{t('Where DEIXIS keeps your library, PDFs and history on this computer')}</small></p>

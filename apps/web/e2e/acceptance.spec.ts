@@ -173,6 +173,8 @@ test('connections separate model connections from configured scholarly access', 
     await expect(sheet.locator('.dmeta')).toHaveText(/^(Installed|Not installed|Ready|Not signed in)/)
     await expect(sheet.getByRole('button', { name: /^Sign in( again)?$/ })).toBeVisible()
     await sheet.getByRole('button', { name: 'Close' }).click()
+    // The scholarly sources are on the Sources tab (D30).
+    await page.getByRole('tab', { name: 'Sources' }).click()
     await expect(page.getByRole('button', { name: 'OpenAlex No key needed Search and citation chain' })).toBeVisible()
     await expect(page.locator('.settings-page')).not.toContainText('Connected')
     await shot(page, 'connections-desktop')
@@ -193,6 +195,7 @@ test('connections separate model connections from configured scholarly access', 
     // Crossref carries what it is asked for on the tile: abstracts and metadata checks, not record search (D87).
     await expect(page.getByRole('button', { name: 'Crossref No key needed Abstracts and metadata checks' })).toBeVisible()
     await shot(page, 'connections-key-configured-desktop')
+    await page.getByRole('tab', { name: 'Models' }).click()
     await planned.locator('summary').click()
     await expect(planned).toHaveAttribute('open', '')
     await expect(planned.locator('.conn').first()).toBeVisible()

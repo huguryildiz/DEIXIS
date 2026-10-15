@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Info, RotateCw } from 'lucide-react'
 import { api, shellApi, usageApi, type ContactEmailSetting, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
 import { connectionModels, modelKey, type ConnectionModel } from './Home'
@@ -100,8 +100,18 @@ export type AccessControl = {
   reload: () => void
 }
 
+export type SettingsTab = 'models' | 'sources' | 'usage' | 'general'
+export type SettingsSection = 'connections' | 'access' | 'openalex' | 'profile' | SettingsTab
+const TABS: { id: SettingsTab; label: string }[] = [
+  { id: 'models', label: 'Models' }, { id: 'sources', label: 'Sources' }, { id: 'usage', label: 'Usage' }, { id: 'general', label: 'General' },
+]
+// The older section links open the tab that holds their section.
+const SECTION_TAB: Record<SettingsSection, SettingsTab> = {
+  connections: 'models', access: 'sources', openalex: 'sources', profile: 'general', models: 'models', sources: 'sources', usage: 'usage', general: 'general',
+}
+
 export function SettingsPage({ dark, section, language, onLanguage, onProfile, access }: {
-  dark: boolean; section?: 'connections' | 'access' | 'openalex' | 'profile'; language: UiLanguage; onLanguage: (language: UiLanguage) => void
+  dark: boolean; section?: SettingsSection; language: UiLanguage; onLanguage: (language: UiLanguage) => void
   onProfile: (profile: Profile) => void; access: AccessControl
 }) {
   const toast = useToast()
@@ -110,6 +120,8 @@ export function SettingsPage({ dark, section, language, onLanguage, onProfile, a
   const [defaults, setDefaults] = useState<Record<ModelRole, RoleModelSetting> | null>(null)
   const [savingRole, setSavingRole] = useState<ModelRole | null>(null)
   const [error, setError] = useState('')
+  const [tab, setTab] = useState<SettingsTab>(section ? SECTION_TAB[section] : 'models')
+  const tabRefs = useRef<Partial<Record<SettingsTab, HTMLButtonElement | null>>>({})
 
   // The model choices come from the connections answer the sections below read, so a key change or a connection test
   // there updates them too (the sections show their own read error).
@@ -122,7 +134,7 @@ export function SettingsPage({ dark, section, language, onLanguage, onProfile, a
   // `#/settings/openalex` opens the OpenAlex sheet (R19's "Add an OpenAlex key"), which takes the focus itself.
   const scrolled = useRef(false)
   useEffect(() => {
-    if (!section || section === 'openalex' || scrolled.current || !defaults) return
+    if (!section || section === 'openalex' || TABS.some(x => x.id === section) || scrolled.current || !defaults) return
     scrolled.current = true
     const target = document.getElementById(section === 'access' ? 'institutional-access' : section === 'profile' ? 'profile' : 'on-this-computer')
     target?.scrollIntoView({ block: 'start' })
@@ -141,20 +153,41 @@ export function SettingsPage({ dark, section, language, onLanguage, onProfile, a
       .finally(() => setSavingRole(null))
   }
 
-  return <section className="settings-page mk">
-    <h1 tabIndex={-1}>{t('Settings')}</h1>
-    {error && <Notice tone="error">{error}</Notice>}
-    {anyReady === false && <div className="notice info"><Info aria-hidden /><span>{t('Connect Codex CLI or Claude Code below to start.')}</span></div>}
+  // The URL names the open tab without a new history entry and without the hashchange that would remount the page.
+  function pick(next: SettingsTab, focus = false) {
+    setTab(next)
+    history.replaceState(null, '', `#/settings/${next}`)
+    if (focus) tabRefs.current[next]?.focus()
+  }
+  function onTabKey(e: KeyboardEvent) {
+    const i = TABS.findIndex(x => x.id === tab)
+    const to = e.key === 'ArrowRight' ? (i + 1) % TABS.length : e.key === 'ArrowLeft' ? (i + TABS.length - 1) % TABS.length
+      : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : -1
+    if (to < 0) return
+    e.preventDefault()
+    pick(TABS[to].id, true)
+  }
 
-    <h2 id="profile" tabIndex={-1}>{t('Profile')}</h2>
-    <div className="rows set-profile">
+  // Every section is rendered once; `data-panel` names its tab and the page's `data-tab` shows one tab's sections, so the
+  // connections, the open sheet and the forms keep their state when the tab changes.
+  return <section className="settings-page mk" data-tab={tab}>
+    <h1 tabIndex={-1}>{t('Settings')}</h1>
+    <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')} onKeyDown={onTabKey}>
+      {TABS.map(x => <button key={x.id} ref={el => { tabRefs.current[x.id] = el }} type="button" role="tab" id={`settings-tab-${x.id}`}
+        aria-selected={tab === x.id} tabIndex={tab === x.id ? 0 : -1} className={tab === x.id ? 'on' : ''} onClick={() => pick(x.id)}>{t(x.label)}</button>)}
+    </div>
+    {error && <Notice tone="error" panel="models">{error}</Notice>}
+    {anyReady === false && <div className="notice info" data-panel="models"><Info aria-hidden /><span>{t('Connect Codex CLI or Claude Code below to start.')}</span></div>}
+
+    <h2 id="profile" tabIndex={-1} data-panel="general">{t('Profile')}</h2>
+    <div className="rows set-profile" data-panel="general">
       <ProfileNameRow onProfile={onProfile} />
       <ContactEmailRow />
     </div>
 
-    <h2>{t('Default models')}</h2>
-    <p className="foot-note set-roles-note">{t('Defaults apply to new researches. Each research keeps the models it was created with.')}</p>
-    <div className="rows set-roles">
+    <h2 data-panel="models">{t('Default models')}</h2>
+    <p className="foot-note set-roles-note" data-panel="models">{t('Defaults apply to new researches. Each research keeps the models it was created with.')}</p>
+    <div className="rows set-roles" data-panel="models">
       {ROLES.map(({ role, label, desc }) => {
         const current = defaults?.[role]
         const list = models ?? []
@@ -198,8 +231,8 @@ export function SettingsPage({ dark, section, language, onLanguage, onProfile, a
 
     <UsageThisMonth />
 
-    <h2>{t('Language')}</h2>
-    <div className="rows set-lang">
+    <h2 data-panel="general">{t('Language')}</h2>
+    <div className="rows set-lang" data-panel="general">
       <div>
         <b>{t('Interface')}</b>
         <p>{t('Research content (questions, answers, quotes) stays in the language it was written in.')}</p>
@@ -266,8 +299,8 @@ function InstitutionalAccessBlock({ access }: { access: AccessControl }) {
     : null
 
   return <>
-    <h2 id="institutional-access" tabIndex={-1}>{t('Institutional access')}</h2>
-    <div className="rows"><div className="proxy">
+    <h2 id="institutional-access" tabIndex={-1} data-panel="sources">{t('Institutional access')}</h2>
+    <div className="rows" data-panel="sources"><div className="proxy">
       <form className="lbl" onSubmit={e => { e.preventDefault(); void test() }}>
         <label htmlFor="proxy-address">{t('Proxy address (EZproxy or OpenAthens prefix)')}</label>
         <div className="row">
@@ -348,10 +381,10 @@ function UsageThisMonth() {
     : t(b.remaining === 1 ? '{n} credit left today' : '{n} credits left today', { n: number(b.remaining) })
   const failed = month.failed || budget.failed
   return <>
-    <h2>{t('Usage this month')}</h2>
-    {failed && <div className="notice warn" role="alert"><Info aria-hidden /><div className="nb"><span>{t('Usage could not be read: {message}', { message: failed })}</span>
+    <h2 data-panel="usage">{t('Usage this month')}</h2>
+    {failed && <div className="notice warn" role="alert" data-panel="usage"><Info aria-hidden /><div className="nb"><span>{t('Usage could not be read: {message}', { message: failed })}</span>
       <div className="acts"><button type="button" className="ghost" disabled={loading} onClick={() => read()}>{t('Try again')}</button></div></div></div>}
-    <div className="rows set-usage">
+    <div className="rows set-usage" data-panel="usage">
       {order.map(role => {
         const row = month.value?.roles.find(r => r.role === role)
         return <div key={role} data-role={role}>
@@ -367,6 +400,6 @@ function UsageThisMonth() {
           <small>{b?.as_of ? t('Last stored response, {time}', { time: clock(b.as_of) }) : b ? t('No OpenAlex response stored today') : ''}</small></p>
       </div>
     </div>
-    {month.value?.since && <p className="foot-note set-usage-note">{t('Model calls counted since {date}. The OpenAlex figure comes from its last response, not a live reading.', { date: new Date(month.value.since).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })}</p>}
+    {month.value?.since && <p className="foot-note set-usage-note" data-panel="usage">{t('Model calls counted since {date}. The OpenAlex figure comes from its last response, not a live reading.', { date: new Date(month.value.since).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })}</p>}
   </>
 }

@@ -117,11 +117,26 @@ test.describe.serial('S24: the Settings page', () => {
   })
   test.afterAll(async () => { await page?.close(); await server.stop() })
 
-  test('one page in the mockup order; the old Connections link opens it at "On this computer"', async () => {
+  test('four tabs (D30) keep the mockup order inside each; the old Connections link opens Models at "On this computer"', async () => {
     await page.goto(server.url('#/settings'))
-    await expect(page.locator('.settings-page h2')).toHaveText(['Profile', 'Default models', 'Cloud models', 'On this computer', 'This computer', 'Semantic search', 'Institutional access',
-      'Scholarly sources', 'Reference managers', 'Usage this month', 'Language'])
-    await expect(page.getByRole('tab')).toHaveCount(0)
+    const tabs = page.getByRole('tab')
+    await expect(tabs).toHaveText(['Models', 'Sources', 'Usage', 'General'])
+    await expect(page.getByRole('tab', { name: 'Models' })).toHaveAttribute('aria-selected', 'true')
+    const shown = page.locator('.settings-page h2:visible')
+    await expect(shown).toHaveText(['Default models', 'Cloud models', 'On this computer', 'This computer', 'Semantic search'])
+    await page.getByRole('tab', { name: 'Sources' }).click()
+    await expect(page).toHaveURL(/#\/settings\/sources$/)
+    await expect(shown).toHaveText(['Institutional access', 'Scholarly sources', 'Reference managers'])
+    // Arrow keys move between tabs.
+    await page.keyboard.press('ArrowRight')
+    await expect(page.getByRole('tab', { name: 'Usage' })).toBeFocused()
+    await expect(shown).toHaveText(['Usage this month'])
+    await page.keyboard.press('ArrowRight')
+    await expect(shown).toHaveText(['Profile', 'Language'])
+    await expect(page.locator('.data-location')).toBeVisible()
+    await page.reload()
+    await expect(page.getByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true')
+    await page.goto(server.url('#/settings/sources'))
     const computer = page.locator('.grid3[data-group="computer"] .conn-name')
     await expect(computer).toHaveText(['Codex CLI', 'Claude Code', 'OCR (Tesseract)', 'Local model servers', 'Equation reader (Marker)'])
     // Scholarly sources: the mockup's five first, then the other registered connectors.
@@ -371,7 +386,7 @@ test.describe.serial('S24: the Settings page', () => {
     let usageFails = false
     await page.route('**/api/usage?period=month', route => usageFails ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC usage failure' } }) : route.fulfill({ json: usage }))
     await page.route('**/api/openalex/budget-today', route => route.fulfill({ json: budget }))
-    await page.goto(server.url('#/settings'))
+    await page.goto(server.url('#/settings/usage'))
     const time = await hhmm(page, PINNED)
     for (const row of usage.roles) {
       const line = page.locator(`.set-usage [data-role="${row.role}"]`)
@@ -407,7 +422,7 @@ test.describe.serial('S24: the Settings page', () => {
   })
 
   test('language row: English / Türkçe switches the interface', async () => {
-    await page.goto(server.url('#/settings'))
+    await page.goto(server.url('#/settings/general'))
     const group = page.getByRole('group', { name: 'Interface language' })
     await expect(group.getByRole('button', { name: 'English' })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('.settings-page .rows').last()).toContainText('Research content (questions, answers, quotes) stays in the language it was written in.')
@@ -619,7 +634,7 @@ test.describe.serial('S24: the Settings page', () => {
 
   test('a keyless source\'s Test says only whether the service answered: HTTP code or why not; a failed test shows no old answer (P5)', async () => {
     // Crossref goes to the fixture server's mocked transport, which answers HTTP 200; the fixture has no contact email.
-    await page.goto(server.url('#/settings'))
+    await page.goto(server.url('#/settings/sources'))
     await page.reload()
     await page.getByRole('button', { name: /^Crossref / }).click()
     const sheet = page.getByRole('dialog', { name: 'Crossref' })
@@ -654,7 +669,7 @@ test.describe.serial('S24: the Settings page', () => {
   })
 
   test('BibTeX / RIS files import into the Library and report what the server stored', async () => {
-    await page.goto(server.url('#/settings'))
+    await page.goto(server.url('#/settings/sources'))
     await page.getByRole('button', { name: /^BibTeX \/ RIS files/ }).click()
     const sheet = page.getByRole('dialog', { name: 'BibTeX / RIS files' })
     const bib = '@article{syn1,\n  title = {SYNTHETIC imported settings work one},\n  author = {Doe, Jane},\n  year = {2021}\n}\n\n@article{syn2,\n  title = {SYNTHETIC imported settings work two},\n  author = {Roe, Rick},\n  year = {2022}\n}\n'

@@ -668,7 +668,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         answers.append({
             **late_revision.answer_view(store, a["id"]),
             "id": a["id"], "run_id": a["run_id"], "status": a["status"], "scope_revision": a["scope_revision"],
-            # A report keeps the number and title it was saved with; later answers and title changes do not rewrite them.
+            # A report keeps the number it was saved with; later answers do not rewrite it. The title is V1's (below).
             "report_version": a["report_version"],
             "report_title": (draft or {}).get("title") if a["status"] == "structurally_valid" else None,
             "applicability": result_applicability(a["scope_revision"], research["current_scope_revision"],
@@ -702,6 +702,12 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                 if e["kind"] != "abstract"})} if fast_answer else {}),
         })
         answers[-1]["applicability"] = late_applicability(answers[-1], answers[-1]["applicability"])
+    # A research keeps one report title: every version carries the title V1 was saved with.
+    first = min((a for a in answers if a["report_title"] is not None and a["report_version"] is not None),
+                key=lambda a: a["report_version"], default=None)
+    for a in answers:
+        if first and a["report_title"] is not None:
+            a["report_title"] = first["report_title"]
     # Similarity from the chosen semantic search model only; with semantic search off, no source has one (D30).
     provider, model = embeddings.chosen(store.setting("semantic_search"))
     similarity_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None

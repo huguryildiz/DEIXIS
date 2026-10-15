@@ -782,7 +782,7 @@ def test_selection_change_marks_existing_answer_stale(tmp_path):
         assert client.get(f"/api/researches/{rid}").json()["answers"][0]["applicability"] == "stale_selection"
 
 
-def test_reports_keep_their_own_number_and_title_and_all_are_listed(tmp_path):
+def test_reports_keep_their_own_number_carry_v1_title_and_all_are_listed(tmp_path):
     app = app_for(tmp_path)
     with TestClient(app) as client:
         session(client)
@@ -802,7 +802,8 @@ def test_reports_keep_their_own_number_and_title_and_all_are_listed(tmp_path):
         assert len(answers) == 13  # older answers are no longer cut off at ten
         reports = [a for a in answers if a["status"] == "structurally_valid"]
         assert [a["report_version"] for a in reports] == list(range(12, 0, -1))
-        assert reports[-1]["report_title"] == "Saved title" and reports[0]["report_title"] == "Later title"
+        # Every version carries the title V1 was saved with; a later version's own title does not rename the report.
+        assert {a["report_title"] for a in reports} == {"Saved title"}
         assert next(a for a in answers if a["status"] == "clarification")["report_version"] is None
 
 

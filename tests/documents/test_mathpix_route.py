@@ -229,7 +229,8 @@ def test_a_pdf_at_its_budget_is_read_again_from_stored_answers_alone(tmp_path, o
     fake = FakeMathpix()
     svc = service(store, papers, tmp_path, fake)
     store.set_setting(equations.MATHPIX_BUDGET, 1)
-    assert equations.equation_state(store, aid)["state"] == "budget_reached" and svc.next_asset() is None
+    before = equations.equation_state(store, aid)
+    assert before["state"] == "budget_reached" and before["stored_answers"] is True and svc.next_asset() is None
     state = read(svc, aid, retry=True)
     assert fake.requests == []
     assert state["state"] == "read" and state["mathpix"] == {"placed": 1, "pages": [1], "refused": {"budget_reached": 1}}
@@ -242,7 +243,8 @@ def test_a_pdf_at_its_budget_without_stored_answers_is_not_read_again(tmp_path, 
     fake = FakeMathpix()
     svc = service(store, papers, tmp_path, fake)
     store.set_setting(equations.MATHPIX_BUDGET, 0)
-    assert read(svc, aid, retry=True) == {"state": "budget_reached", "month": 0, "budget": 0, "asset": 0, "route": "mathpix"}
+    assert read(svc, aid, retry=True) == {"state": "budget_reached", "month": 0, "budget": 0, "asset": 0, "stored_answers": False,
+                                             "route": "mathpix"}
     assert fake.requests == [] and mathpix_extraction(store, aid) is None
 
 

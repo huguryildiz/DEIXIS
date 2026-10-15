@@ -259,7 +259,9 @@ def _mathpix_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
         return {"state": "keys_rejected"} | route
     counts = mathpix_counts(store, asset["id"])
     if counts["month"] >= counts["budget"] or counts["asset"] >= MAX_ASSET_REQUESTS:
-        return {"state": "budget_reached", "month": counts["month"], "budget": counts["budget"], "asset": counts["asset"]} | route
+        # `stored_answers`: a read again would place from Mathpix's saved answers alone, sending nothing (the UI's retry).
+        return {"state": "budget_reached", "month": counts["month"], "budget": counts["budget"], "asset": counts["asset"],
+                "stored_answers": mathpix_answered(store, asset["id"])} | route
     return {"state": "pending"} | route
 
 

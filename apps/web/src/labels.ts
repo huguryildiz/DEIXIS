@@ -551,6 +551,14 @@ function mathpixPart(equations: NonNullable<Source['access']['assets'][number]['
   return { tone: 'unstated', text: t('Equations not read yet') }
 }
 
+// The label of the "read equations again" action, or null when the server would refuse it: a failed reading, or a Mathpix
+// PDF at its request budget whose saved answers can still be placed without a new request (D40).
+export function rereadEquationsLabel(equations: Source['access']['assets'][number]['equations']): string | null {
+  if (equations?.state === 'failed') return t('Read equations again')
+  if (equations?.route === 'mathpix' && equations.state === 'budget_reached' && equations.stored_answers) return t('Read again from saved results · no new requests')
+  return null
+}
+
 // Why a PDF could not be read, from the asset's stored extraction_error; anything else reads as unreadable.
 export function pdfFailureText(error: string | null | undefined): string {
   if (error === 'password-protected PDF') return t('PDF is password-protected')

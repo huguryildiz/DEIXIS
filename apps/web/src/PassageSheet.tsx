@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, assetUrl, equationCropUrl, shellApi, type Asset, type AssetText, type Claim, type Passage, type PdfDiscovery, type Source } from './api'
-import { citedText, locatorText, providerName, retractionNote, serviceErrors, serviceKind, versionText } from './labels'
+import { citedText, locatorText, providerName, rereadEquationsLabel, retractionNote, serviceErrors, serviceKind, versionText } from './labels'
 import { t, uiLocale } from './i18n'
 import { PassageMathText } from './PassageMathText'
 import { PdfViewer } from './PdfViewer'
@@ -469,7 +469,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
                 {row && actions && row.origin === 'user_upload' && !row.record_match && <DropdownMenuItem disabled={busy} onClick={() => actions.onLookUpRecord(row)}><Search size={15} aria-hidden /><span>{t('Find the paper’s record')}<small>{t('Title, authors and abstract from OpenAlex')}</small></span></DropdownMenuItem>}
                 {/* The text tools of the Sources rows (§2.2): extraction again, equations again, OCR. */}
                 {row && actions && asset?.current_extraction === false && <DropdownMenuItem className="source-text-tool" disabled={busy} onClick={() => actions.onReextract(row, asset.id)}><ScanText size={15} aria-hidden /><span>{t('Extract text again')}<small>{t('Text extracted as {version}. Extract it again with the current extractor.', { version: asset.extraction_version ?? '?' })}</small></span></DropdownMenuItem>}
-                {row && actions && asset?.equations?.state === 'failed' && <DropdownMenuItem className="source-text-tool" disabled={busy} onClick={() => actions.onRereadEquations(row, asset.id)}><Sigma size={15} aria-hidden /><span>{t('Read equations again')}</span></DropdownMenuItem>}
+                {row && actions && asset && rereadEquationsLabel(asset.equations) && <DropdownMenuItem className="source-text-tool" disabled={busy} onClick={() => actions.onRereadEquations(row, asset.id)}><Sigma size={15} aria-hidden /><span>{rereadEquationsLabel(asset.equations)}</span></DropdownMenuItem>}
                 {row && actions && asset && ocr && ocr.kind !== 'reading' && <DropdownMenuItem className="source-text-tool" disabled={busy || ocr.kind === 'off' || ocr.blocked} onClick={() => actions.ocr.onRead(row, asset.id)}><ScanText size={15} aria-hidden /><span>{t('Read with OCR')}{ocr.kind === 'off' && <small>{ocr.reason}</small>}</span></DropdownMenuItem>}
                 {row && actions && <><DropdownMenuSeparator />
                   <DropdownMenuItem variant="destructive" disabled={busy} onClick={() => actions.onRemove(row)}><Trash2 size={15} aria-hidden /><span>{t('Remove from research')}<small>{t('Moves it to Trash; restore it there')}</small></span></DropdownMenuItem></>}

@@ -223,6 +223,24 @@ def test_a_dropped_slash_or_a_changed_big_operator_is_refused():
     assert er.latex_marks("\\bigcup_{i} x")["signs"] == Counter({"⋃": 1})
 
 
+def test_a_sized_sign_is_compared_and_a_sized_bracket_is_not():
+    # Sol r2 finding 1: `\big/` skipped the sign it sized, so `x\big/ y` passed against a text layer `xy`.
+    xy = [("x", "base"), ("y", "base")]
+    for latex in ("x\\big/ y", "x\\Big/ y", "x\\bigm/ y", "x\\middle/ y"):
+        assert er.gate(candidate(xy), answer(latex))["reason"] == "operators_differ", latex
+        assert er.gate(candidate(xy, {"/": 1}), answer(latex))["reason"] is None, latex
+    assert er.gate(candidate(xy), answer("x\\big\\uparrow y"))["reason"] == "unknown_sign"
+    for latex in ("\\left( x y \\right)", "\\big| x y \\big|", "\\Bigl\\{ x y \\Bigr\\}", "\\left\\langle x y \\right.", "\\bigl[x y\\bigr]"):
+        assert er.gate(candidate(xy), answer(latex))["reason"] is None, latex
+
+
+def test_latex_spacing_is_not_a_sign():
+    # Sol r2 finding 2: the tie `~` was recorded as an unknown sign and refused a correct reading.
+    xy = [("x", "base"), ("y", "base")]
+    for latex in ("x~y", "x\\,y", "x\\;y", "x\\!y", "x\\ y", "x\\quad y", "x\\qquad y", "x\\:y"):
+        assert er.gate(candidate(xy), answer(latex))["reason"] is None, latex
+
+
 def test_a_sign_the_table_does_not_know_refuses_the_region_on_either_side():
     x = [("x", "base"), ("y", "base")]
     assert er.gate(candidate(x, {"?⊲": 1}), answer("x y"))["reason"] == "unknown_sign"  # the text layer's ⊲

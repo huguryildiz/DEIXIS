@@ -89,7 +89,12 @@ OPERATOR_NAMES = inline_math.WORDS | LIMIT_NAMES | {"sinh", "cosh", "tanh", "cot
                                                     "arctan", "deg", "ker", "gcd", "lg", "hom", "exp", "log"}
 FRACTIONS = {"frac", "dfrac", "tfrac", "cfrac", "over"}
 DELIMITER_SIZERS = {"left", "right", "middle", "big", "Big", "bigg", "Bigg", "bigl", "bigr", "Bigl", "Bigr", "biggl", "biggr",
-                    "Biggl", "Biggr"}
+                    "Biggl", "Biggr", "bigm", "Bigm", "biggm", "Biggm"}
+# What a sizer may size and still print no compared sign: brackets and bars, which neither side compares. Anything else it
+# sizes (`\big/`, `\Big\backslash`, an arrow) is read as the sign it prints (Sol r2).
+PURE_DELIMITERS = {"(", ")", "[", "]", "\\{", "\\}", "|", "\\|", ".", "<", ">", "\\langle", "\\rangle", "\\lvert", "\\rvert",
+                   "\\lVert", "\\rVert", "\\vert", "\\Vert", "\\lfloor", "\\rfloor", "\\lceil", "\\rceil", "\\lbrace", "\\rbrace",
+                   "\\lgroup", "\\rgroup", "\\lbrack", "\\rbrack", "\\mid"}
 TOKEN = re.compile(r"\\[A-Za-z]+\*?|\\.|[^\s]", re.S)
 GREEK = math_reader.GREEK
 
@@ -445,7 +450,9 @@ def latex_marks(latex: str) -> dict[str, Any]:
             elif name in FRACTIONS:
                 out["fractions"] += 1
             elif name in DELIMITER_SIZERS:
-                return i + 2, False  # the delimiter after it prints no letter or sign
+                if i + 1 < len(tokens) and tokens[i + 1] in PURE_DELIMITERS:
+                    return i + 2, False  # a sized bracket or bar prints no compared sign
+                return item(i + 1, level, loose, False)[0], False  # `\big/`: the sized sign is compared like any other
             elif name == "sqrt":
                 out["signs"]["√"] += 1
                 if i + 1 < len(tokens) and tokens[i + 1] == "[":
@@ -454,7 +461,9 @@ def latex_marks(latex: str) -> dict[str, Any]:
                 out["signs"]["?\\" + name] += 1  # a command the gate cannot compare: the region is refused
             return i + 1, False
         if token.startswith("\\"):
-            return i + 1, False  # a control symbol: spacing, escaped braces
+            return i + 1, False  # a control symbol: spacing (`\,` `\;` `\!` `\ `), escaped braces
+        if token == "~":
+            return i + 1, False  # a tie: a space, not a sign
         emit(token, level, loose)
         return i + 1, False
 

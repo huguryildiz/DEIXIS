@@ -346,6 +346,8 @@ export type Asset = {
     reason?: string | null; attempts?: number; pages?: number; started_at?: string; to_check?: number[]; equations_to_check?: number
     route?: 'arxiv_source' | 'mathpix'; next_at?: string
     mathpix?: { placed: number; pages: number[]; refused: Record<string, number> }
+    // Mathpix at its request budget: whether a read again would place from saved answers alone, sending nothing.
+    stored_answers?: boolean
     source?: {
       arxiv_id: string | null; version: number | null; version_from: 'url' | 'stamp' | 'both' | null; record_label: string | null
       placed: number; pages: number[]; not_placed: Record<string, number>

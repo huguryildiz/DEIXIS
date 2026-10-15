@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { BookOpenText, ChevronRight, FileText, FileUp, Link2, LoaderCircle, Replace, ScanText, Search, Sigma, Trash2, UserPen } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { type Source } from '../api'
-import { serviceErrorSentence, serviceKind, accessParts, citedText, providerName, retractionNote, queueAnsweredText, versionText, versionTones } from '../labels'
+import { serviceErrorSentence, serviceKind, accessParts, rereadEquationsLabel, citedText, providerName, retractionNote, queueAnsweredText, versionText, versionTones } from '../labels'
 import { TextRecovery } from '../TextRecovery'
 import { Elapsed } from '../EvidenceTable'
 import { ConnectionIcon } from '../connectionIcons'
@@ -95,7 +95,7 @@ export function SourceRow({ source, busy, picked, onPick, readsVersion, citedCla
           <button type="button" disabled={busy} onClick={() => a.onReplaceAsset(asset.id)} title={t('Use another file for this source version; evidence that cites the current file keeps it')}><FileUp size={14} aria-hidden />{t('Replace PDF')}</button>
           <button type="button" disabled={busy} onClick={() => a.onRemoveAsset(asset.id)} title={asset.original_filename ?? undefined}><Trash2 size={14} aria-hidden />{t('Remove PDF')}</button>
           {asset.current_extraction === false && <button type="button" disabled={busy} onClick={() => a.onReextract(asset.id)} title={t('Text extracted as {version}. Extract it again with the current extractor.', { version: asset.extraction_version ?? '?' })}><ScanText size={14} aria-hidden />{t('Extract text again')}</button>}
-          {asset.equations?.state === 'failed' && <button type="button" disabled={busy} onClick={() => a.onRereadEquations(asset.id)} title={asset.equations.reason ?? undefined}><Sigma size={14} aria-hidden />{t('Read equations again')}</button>}
+          {rereadEquationsLabel(asset.equations) && <button type="button" disabled={busy} onClick={() => a.onRereadEquations(asset.id)} title={asset.equations?.reason ?? undefined}><Sigma size={14} aria-hidden />{rereadEquationsLabel(asset.equations)}</button>}
           {ocrOffers.get(asset.id) && <OcrButton offer={ocrOffers.get(asset.id)!} busy={busy} onRead={() => ocr.onRead(source, asset.id)} />}
           <span className="rowact-slot" ref={slotRefs[asset.id]} />
         </span>)}

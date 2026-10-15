@@ -230,6 +230,38 @@ def test_an_anchor_found_only_in_a_fallback_is_a_contract_error():
     assert [i.code for i in contracts.check_step_input(step_input)] == ["step_input_schema_invalid"]
 
 
+def test_the_read_again_action_is_offered_for_saved_mathpix_answers_with_an_honest_label():
+    # Sol r2 finding 3: the retry route accepts a Mathpix PDF at its budget with saved answers; the UI offered it only on
+    # `failed`. The label says nothing new is sent; without saved answers, or for a reading, it is not offered.
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    script = r"""
+const fs = require('fs'), ts = require('typescript'), assert = require('assert');
+require.extensions['.ts'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
+}).outputText, file);
+const labels = require('./src/labels.ts'), i18n = require('./src/i18n.ts');
+const at = { state: 'budget_reached', route: 'mathpix', month: 5, budget: 5, asset: 2 };
+i18n.setUiLanguage('en');
+assert.strictEqual(labels.rereadEquationsLabel({ ...at, stored_answers: true }), 'Read again from saved results · no new requests');
+assert.strictEqual(labels.rereadEquationsLabel({ ...at, stored_answers: false }), null);
+assert.strictEqual(labels.rereadEquationsLabel({ state: 'read', route: 'mathpix', mathpix: { placed: 1, pages: [1], refused: {} } }), null);
+assert.strictEqual(labels.rereadEquationsLabel({ state: 'failed', route: 'mathpix', reason: 'network', attempts: 1 }), 'Read equations again');
+assert.strictEqual(labels.rereadEquationsLabel(undefined), null);
+i18n.setUiLanguage('tr');
+assert.strictEqual(labels.rereadEquationsLabel({ ...at, stored_answers: true }), 'Kayıtlı sonuçlardan yeniden oku · yeni istek gönderilmez');
+for (const file of ['src/PassageSheet.tsx', 'src/research/SourceRow.tsx']) {
+  const source = fs.readFileSync(file, 'utf8');
+  assert(source.includes('rereadEquationsLabel(asset.equations)'), file);
+  assert(!/equations\?\.state === 'failed' && <(DropdownMenuItem|button)/.test(source), file);
+}
+"""
+    result = subprocess.run(["node", "-e", script], cwd=root / "apps/web", capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
 def test_every_step_that_takes_passages_accepts_their_equation_fallbacks():
     # Sol r1 (fallback scope): `_step_input` builds passages for every model step, so each one carries the field for an
     # equation_ocr passage. Every task shares the one StepInput passage schema; this checks each fixture task accepts it.

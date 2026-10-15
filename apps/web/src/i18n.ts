@@ -1649,6 +1649,7 @@ const tr: Record<string, string> = {
   'Turn on Mathpix?': 'Mathpix açılsın mı?',
   '{pdfs} PDFs in the library have numbered equations Mathpix would read now: at most {n} requests, within this month’s budget. New PDFs are read as they arrive. Turning it off stops new requests; requests already sent finish.': 'Kütüphanedeki {pdfs} PDF’te Mathpix’in şimdi okuyacağı numaralı denklemler var: bu ayın bütçesi içinde en çok {n} istek. Yeni PDF’ler geldikçe okunur. Kapatmak yeni istekleri durdurur; gönderilmiş istekler tamamlanır.',
   'Key pair refused': 'Anahtar çifti reddedildi',
+  'Read again from saved results · no new requests': 'Kayıtlı sonuçlardan yeniden oku · yeni istek gönderilmez',
   'Mathpix equation reader': 'Mathpix denklem okuyucu',
   'Reads numbered equations online, with your key pair': 'Numaralı denklemleri çevrimiçi okur, anahtar çiftinizle',
   'Reading the arXiv source · {n} pages': 'arXiv kaynağı okunuyor · {n} sayfa',

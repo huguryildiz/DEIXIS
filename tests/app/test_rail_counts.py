@@ -109,3 +109,20 @@ def test_reading_depth_is_what_the_answer_was_given_and_does_not_move_with_a_lat
     lib.text(abstract, ["SYNTHETIC page one of the abstract-only work."])
     lib.text(bare, ["SYNTHETIC page one of the bare work."])
     assert view(lib)["answers"][0]["inputs_given"]["depth"] == {"pdf": 1, "abstract": 1, "metadata": 1}
+
+
+def test_the_latest_answer_run_and_discovery_stay_listed_after_ten_later_runs(store):
+    """The transcript draws an answer inside its own run: later full-text reads must not push it out of `runs`."""
+    lib = Lib(store)
+    discovery = lib.new_run("discovery")
+    run = lib.new_run("answer")
+    step = lib.store.step(run, "answer", "model:answer")
+    lib.store.save_answer(lib.rid, run, step["id"], None, 1, "structurally_valid",
+                          {"title": "SYNTHETIC", "limitations": [], "unanswered_aspects": []}, {})
+    for _ in range(11):
+        lib.new_run("fulltext_adjudication")
+    shown = view(lib)
+    listed = [r["id"] for r in shown["runs"]]
+    assert shown["answers"][0]["run_id"] == run
+    assert run in listed and discovery in listed and len(listed) == 12
+    assert listed[-2:] == [run, discovery]

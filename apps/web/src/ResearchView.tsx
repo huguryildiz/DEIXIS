@@ -851,9 +851,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
          While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */}
       {      active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
         {!answerOffersNew && <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>}
-        {/* Searching again is a quiet text action; the first search of a research is still a button of its own. */}
+        {/* Searching again is a secondary pill with the accent icon; the first search of a research is an outline button. */}
         {hasAcademic && (view.search_runs.length
-          ? <Button className="quiet-action" variant="ghost" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}>{t('Search again')}</Button>
+          ? <Button className="search-again" variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} aria-hidden />{t('Search again')}</Button>
           : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
       </div><UploadedTextNote semantic={view.semantic} /></>}
       {/* Follow-up questions and their answers, oldest first (R31), then the sticky composer (R30). */}

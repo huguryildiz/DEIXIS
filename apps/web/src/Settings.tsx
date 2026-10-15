@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Info, RotateCw } from 'lucide-react'
-import { api, preferencesApi, shellApi, usageApi, type ContactEmailSetting, type Effort, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
+import { api, preferencesApi, shellApi, usageApi, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
 import { connectionModels, modelKey, type ConnectionModel } from './Home'
 import { defaultEffort, exposesEffortControl } from './modelEffort'
 import { ConnectionsTab } from './Connections'
@@ -438,6 +438,8 @@ function ResearchPreferences() {
   const [prefs, setPrefs] = useState<Preferences | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [limits, setLimits] = useState<EffortLimits | null>(null)
+  useEffect(() => { api.effortLimits().then(setLimits, () => setLimits(null)) }, [])
   useEffect(() => {
     let live = true
     preferencesApi.get().then(p => { if (live) setPrefs(p) }, (e: Error) => { if (live) setError(t('Research settings could not be read: {message}', { message: e.message })) })
@@ -451,14 +453,26 @@ function ResearchPreferences() {
   const arxivNote = !prefs ? '' : !prefs.arxiv_route_possible ? t('Not available on this system.')
     : prefs.marker_present ? t('Not used now: the equation reader (Marker) is installed and reads equations itself.') : ''
   const off = !prefs || busy
+  // What each depth is for, with the numbers the run is given (`fast_path.MODES`, the same text as Home's depth menu).
+  const depths: { id: Effort; label: string; use: string }[] = [
+    { id: 'quick', label: t('Quick'), use: t('A first look at a question.') },
+    { id: 'standard', label: t('Standard'), use: t('Suits most questions.') },
+    { id: 'detailed', label: t('Detailed'), use: t('Wider coverage for a broad topic; takes longest.') },
+  ]
+  const number = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
   return <>
     <h2 data-panel="general">{t('Research')}</h2>
     <div className="rows set-research" data-panel="general">
       <div>
         <b>{t('Default depth')}</b>
-        <p>{t('New researches start at this depth. You can still change it for each question on the home page.')}</p>
+        <p>{t('New researches start at this depth. You can still change it for each question on the home page.')}
+          {depths.map(d => {
+            const e = limits?.efforts?.[d.id]
+            return <span key={d.id} className="set-depth"><strong>{d.label}</strong> · {d.use}
+              {e && <> {t('About {minutes} min · up to {papers} papers · {fulltext} in full text', { minutes: number(e.minutes), papers: number(e.papers), fulltext: number(e.fulltext ?? 0) })}</>}</span>
+          })}</p>
         <Segment<Effort> label={t('Default depth')} value={prefs?.default_effort ?? null} disabled={off} onPick={v => change({ default_effort: v })}
-          options={[{ id: 'quick', label: t('Quick') }, { id: 'standard', label: t('Standard') }, { id: 'detailed', label: t('Detailed') }]} />
+          options={depths} />
       </div>
       <div>
         <b>{t('Full text during search')}</b>

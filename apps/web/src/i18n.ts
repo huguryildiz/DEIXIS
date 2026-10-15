@@ -4373,7 +4373,6 @@ const tr: Record<string, string> = {
   'Sign in again': 'Yeniden oturum aç',
   'Sign in': 'Oturum aç',
   'A terminal window opened. Finish signing in there; this updates by itself.': 'Bir terminal penceresi açıldı. Oturum açmayı orada tamamlayın; bu sayfa kendiliğinden güncellenir.',
-  'Or run this in a terminal': 'Ya da bunu bir terminalde çalıştırın',
   'Signed in to {name}.': '{name} oturumu açıldı.',
   'Could not start the sign-in: {message}': 'Oturum açma başlatılamadı: {message}',
   'Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.': 'Anahtarsız da çalışır. openalex.org’dan alınan ücretsiz bir anahtar DEIXIS’e kendi günlük bütçesini verir.',

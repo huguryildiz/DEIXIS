@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, BookOpenText, ChevronRight, CircleCheck, Copy, Cpu, FileText, HardDrive, MemoryStick, LoaderCircle, Plus, RefreshCw, RotateCw, Save, ScanText, Server, Sigma, SquareTerminal, TriangleAlert, Upload } from 'lucide-react'
+import { Ban, BookOpenText, ChevronRight, CircleCheck, Copy, Cpu, FileText, HardDrive, MemoryStick, LoaderCircle, Plus, RefreshCw, RotateCw, Save, ScanText, Server, Sigma, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -633,7 +633,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const [checking, setChecking] = useState<string | null>(null)
   const [checked, setChecked] = useState<Record<string, number>>({})
   const [checkFailed, setCheckFailed] = useState<Record<string, string>>({})
-  const [signIn, setSignIn] = useState<string | null>(null)
   // The sign-in DEIXIS started for a tool (D21); it is polled while the person finishes it in the terminal window that opened.
   const [signInRun, setSignInRun] = useState<{ tool: string; run: AccountSignIn } | null>(null)
   // The last answer to each keyless source's Test; shown only while its check's time is (the same check's answer).
@@ -736,7 +735,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const startSignIn = (tool: string) => {
     api.startAccountSignIn(tool).then(run => settleSignIn(tool, run), (e: Error) => {
       setSignInRun({ tool, run: { state: 'failed', message: e.message } })
-      setSignIn(tool)
       toast('error', t('Could not start the sign-in: {message}', { message: e.message }))
     })
   }
@@ -748,7 +746,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     }, 2000)
     return () => window.clearInterval(timer)
   }, [signInTool, settleSignIn])
-  const show = (item: Selected) => { setSelected(item); setOpen(true); setSignIn(null) }
+  const show = (item: Selected) => { setSelected(item); setOpen(true) }
   // A link to one provider's sheet (`#/settings/openalex`) opens it once the providers are read.
   const opened = useRef(false)
   useEffect(() => {
@@ -973,8 +971,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
         <span className="spin" aria-hidden />{t('A terminal window opened. Finish signing in there; this updates by itself.')}
       </p>}
       {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && ownRun.message && <p className="foot-note warn-t" role="alert">{ownRun.message}</p>}
-      {signInCommand && <button type="button" className="ghost way-terminal" aria-expanded={signIn === accountId} onClick={() => setSignIn(signIn === accountId ? null : accountId)}><SquareTerminal aria-hidden />{t('Or run this in a terminal')}</button>}
-      {signIn === accountId && signInCommand && <div className="signin-cmd">
+      {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && signInCommand && <div className="signin-cmd">
         <p className="foot-note">{t('Run this in a terminal, then test the connection:')}</p>
         <div className="cmd-row"><code className="field mono">{signInCommand}</code><button type="button" className="ghost" onClick={() => copy(signInCommand)}><Copy aria-hidden />{t('Copy')}</button></div>
       </div>}

@@ -624,18 +624,13 @@ test.describe.serial('S24: the Settings page', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
-  test('Sign in has a button; the terminal command with Copy is the collapsed fallback', async () => {
+  test('Sign in has a button; the terminal command shows only after a failed sign-in', async () => {
     await page.goto(server.url('#/settings/connections'))
     await page.locator('.co-card').filter({ hasText: /^ChatGPT/ }).click()
     const sheet = page.getByRole('dialog', { name: 'ChatGPT' })
     await expect(sheet.getByRole('button', { name: /^Sign in( again)?$/ })).toBeVisible()
     await expect(sheet.locator('.cmd-row')).toHaveCount(0)
-    await sheet.getByRole('button', { name: 'Or run this in a terminal' }).click()
-    // The command names the Codex home this backend runs with (here the fixture data folder's), never a fixed macOS path.
-    const home = (await (await page.request.get(server.url('api/connections'))).json() as { codex_home: string }).codex_home
-    expect(home.endsWith(`${path.basename(server.dataDir)}/codex-home`)).toBe(true)
-    await expect(sheet.locator('.cmd-row code')).toHaveText(`CODEX_HOME='${home}' codex login`)
-    await expect(sheet.locator('.cmd-row').getByRole('button', { name: 'Copy' })).toBeVisible()
+    await expect(sheet.getByRole('button', { name: 'Or run this in a terminal' })).toHaveCount(0)
     await shot(page, 'S24-codex-sheet-desktop')
     await sheet.getByRole('button', { name: 'Close' }).click()
   })

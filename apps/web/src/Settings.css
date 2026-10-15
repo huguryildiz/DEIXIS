@@ -212,7 +212,6 @@
 .connection-sheet .way-desc a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .connection-sheet .way .acts{margin:0}
 .connection-sheet .way .key-box{gap:6px}
-.connection-sheet .way-terminal{justify-self:start}
 .connection-sheet .way-more>summary{display:flex;align-items:center;gap:6px;width:fit-content;color:var(--muted);font-size:12.5px;font-weight:500;cursor:pointer;list-style:none}
 .connection-sheet .way-more>summary::-webkit-details-marker{display:none}
 .connection-sheet .way-more>summary>svg{flex:none;transition:transform .15s ease}

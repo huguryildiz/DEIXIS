@@ -99,6 +99,10 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .intake-option strong,.intake-option small{display:block;line-height:1.35}
 .intake-option strong{font-size:13px;font-weight:600}
 .intake-option small{margin-top:3px;color:var(--muted-foreground);font-size:11px}
+:has(>.citation-style-option){flex-shrink:1;min-width:0}
+.citation-style-option{display:block;flex:1;min-width:0;overflow:hidden}
+.citation-style-option strong{display:block;font-size:13px;font-weight:600;line-height:1.35}
+.citation-style-option small{display:block;margin-top:3px;overflow:hidden;color:var(--muted-foreground);font-size:11px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
 .app .composer-options [data-slot=select-trigger] [data-slot=select-value] svg{color:var(--muted)}
 
 /* Collapsible sidebar: a 56px icon strip on wide screens; phones keep the drawer. */

@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react'
-import { AlignLeft, Check, Copy, Download, Eye, EyeOff, Quote, ShieldCheck } from 'lucide-react'
+import { AlignLeft, Check, Copy, Download, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
@@ -9,8 +9,7 @@ import { MathText } from '../MathText'
 import { BASIS_BADGES, type AnswerDiff, type Basis, type ComparisonBase } from './answerDiff'
 import { verdictLabels } from '../labels'
 import { verdictTones } from './reportMarkdown'
-import { Option } from '../Home'
-import { citationStyles, type CitationStyle } from '../citations'
+import { citationStyles, formatReference, SAMPLE_REFERENCE, type CitationStyle, type ReferenceFields } from '../citations'
 import { t, uiLanguage, uiLocale } from '../i18n'
 
 // The report panel (mockup `panel()` for `report`, P2/P3). Its head: the version select (when the question has more than
@@ -24,11 +23,11 @@ export type ReportVersion = { id: string; version: number }
 
 const count = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
 
-export function ReportPanel({ open, onOpenChange, dark, title, version, latestVersion, versions, onVersion, researchId, answer, style, onStyle, onReview, onCopy, onDownload, onPrint, compare, changes, children }: {
+export function ReportPanel({ open, onOpenChange, dark, title, version, latestVersion, versions, onVersion, researchId, answer, style, onStyle, sample, onReview, onCopy, onDownload, onPrint, compare, changes, children }: {
   open: boolean; onOpenChange: (open: boolean) => void; dark: boolean; title: string; version: number; latestVersion: number
   versions: ReportVersion[]; onVersion: (answerId: string) => void
   researchId: string; answer: Answer
-  style: CitationStyle; onStyle: (style: CitationStyle) => void
+  style: CitationStyle; onStyle: (style: CitationStyle) => void; sample?: ReferenceFields
   onReview: (opener: HTMLElement) => void; onCopy: () => void; onDownload: () => void; onPrint: () => void
   compare?: { on: boolean; onToggle: () => void }; changes?: ReactNode; children: ReactNode
 }) {
@@ -36,6 +35,8 @@ export function ReportPanel({ open, onOpenChange, dark, title, version, latestVe
   const cited = new Set(answer.claims.flatMap(c => c.evidence.map(e => e.work_id))).size
   const verdicts = (Object.keys(verdictLabels) as Verdict[]).map(v => [v, answer.claims.filter(c => c.review?.verdict === v).length] as const).filter(([, n]) => n > 0)
   const lang = uiLanguage() === 'tr' ? 'tr' : 'en'
+  // Each style is previewed on one line, without the link, which would fill it.
+  const preview = { ...(sample ?? SAMPLE_REFERENCE), doi: null, landing_url: null }
   const reviewLabel = t('Review with another model')
   const fmt = (format: string, detail: string) => <><FileTypeIcon format={format} /><b>{format}</b><span>{detail}</span></>
   return <StackPanel name={`report:${answer.id}`} open={open} onClose={() => onOpenChange(false)} title={title} icon={AlignLeft}
@@ -58,7 +59,7 @@ export function ReportPanel({ open, onOpenChange, dark, title, version, latestVe
         </span>}</SelectValue></SelectTrigger>
         <SelectContent className="intake-select-content has-details" align="end" alignItemWithTrigger={false}>
           <div className="intake-select-heading" aria-hidden="true">{t('Citation style')}</div>
-          {(Object.keys(citationStyles) as CitationStyle[]).map(k => <SelectItem key={k} value={k}><Option icon={Quote} title={t(citationStyles[k].label)} detail={t(citationStyles[k].detail)} /></SelectItem>)}
+          {(Object.keys(citationStyles) as CitationStyle[]).map(k => <SelectItem key={k} value={k}><span className="citation-style-option"><strong>{t(citationStyles[k].label)}</strong><small>{formatReference(k, preview)}</small></span></SelectItem>)}
         </SelectContent>
       </Select>
       <button type="button" className="ib report-review" aria-label={reviewLabel} title={reviewLabel} aria-haspopup="dialog" onClick={e => onReview(e.currentTarget)}>

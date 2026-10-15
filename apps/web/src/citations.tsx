@@ -3,11 +3,19 @@ import type { Source } from './api'
 
 export type CitationStyle = 'apa' | 'ieee' | 'mla' | 'chicago'
 
-export const citationStyles: Record<CitationStyle, { label: string; detail: string }> = {
-  apa: { label: 'APA 7', detail: 'Author, A. A., & Author, B. B. (Year). Title. Venue.' },
-  ieee: { label: 'IEEE', detail: 'A. A. Author and B. B. Author, “Title,” Venue, Year.' },
-  mla: { label: 'MLA 9', detail: 'Author, Given, and Given Author. “Title.” Venue, Year.' },
-  chicago: { label: 'Chicago (author-date)', detail: 'Author, Given, and Given Author. Year. “Title.” Venue.' },
+export const citationStyles: Record<CitationStyle, { label: string }> = {
+  apa: { label: 'APA 7' },
+  ieee: { label: 'IEEE' },
+  mla: { label: 'MLA 9' },
+  chicago: { label: 'Chicago (author-date)' },
+}
+
+// The fields a reference is written from. The style menu previews each style on the report's first cited source with
+// authors (the styles differ mostly in how they write names), or on this real article when there is none.
+export type ReferenceFields = Pick<Source, 'title' | 'authors' | 'year' | 'venue' | 'doi' | 'landing_url' | 'publication_type'>
+export const SAMPLE_REFERENCE: ReferenceFields = {
+  title: 'Molecular structure of nucleic acids: A structure for deoxyribose nucleic acid', authors: ['James D. Watson', 'Francis H. C. Crick'],
+  year: 1953, venue: 'Nature', doi: null, landing_url: null, publication_type: 'article',
 }
 
 // The citation style chosen on a report: one value for the whole page, kept across reloads. The report panel, the
@@ -43,7 +51,7 @@ const series = (items: string[], and: string) => (items.length < 2 ? items.join(
 const commas = (parts: ReactNode[]) => parts.map((part, i) => <Fragment key={i}>{i > 0 && ', '}{part}</Fragment>)
 const italicTitle = (title: string) => <><em>{title}</em>{/[.?!]$/.test(title) ? '' : '.'}</>
 
-export function formatReference(style: CitationStyle, s: Source): ReactNode {
+export function formatReference(style: CitationStyle, s: ReferenceFields): ReactNode {
   const names = s.authors.map(parse)
   const book = s.publication_type === 'book'
   const link = s.doi ? `https://doi.org/${s.doi}` : s.landing_url

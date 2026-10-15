@@ -2100,10 +2100,6 @@ const tr: Record<string, string> = {
 
   // Citation styles
   'Chicago (author-date)': 'Chicago (yazar-tarih)',
-  'Author, A. A., & Author, B. B. (Year). Title. Venue.': 'Yazar, A. A., & Yazar, B. B. (Yıl). Başlık. Yayın yeri.',
-  'A. A. Author and B. B. Author, “Title,” Venue, Year.': 'A. A. Yazar and B. B. Yazar, “Başlık,” Yayın yeri, Yıl.',
-  'Author, Given, and Given Author. “Title.” Venue, Year.': 'Soyadı, Ad, and Ad Soyadı. “Başlık.” Yayın yeri, Yıl.',
-  'Author, Given, and Given Author. Year. “Title.” Venue.': 'Soyadı, Ad, and Ad Soyadı. Yıl. “Başlık.” Yayın yeri.',
 
   // Connections
   'No default reviewer': 'Varsayılan inceleyici yok',

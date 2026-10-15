@@ -144,6 +144,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     </div>
   }
   const { refs, citeLabel, sections, suggestion, limits } = reportParts(answer, sources, style)
+  const sample = [...refs.values()].map(({ e }) => sources.find(s => s.source_version_id === e.source_version_id)).find(s => !!s?.authors.length)
   const numeric = style === 'ieee'
   const markdown = () => reportMarkdown(answer, sources, title, version, style)
   const copyReport = async () => {
@@ -318,7 +319,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   return <>
     {threadPart}
     <ReportPanel open={reportOpen} onOpenChange={onReportOpenChange} dark={dark} title={title} version={version} latestVersion={latestVersion}
-      versions={versions} onVersion={id => onVersion?.(id)} researchId={researchId} answer={answer} style={style} onStyle={chooseStyle}
+      versions={versions} onVersion={id => onVersion?.(id)} researchId={researchId} answer={answer} style={style} onStyle={chooseStyle} sample={sample}
       onReview={requestReview} onCopy={() => { void copyReport() }} onDownload={downloadReport} onPrint={() => { void printReport(answer.id, toast) }}
       compare={changes && { on: changes.on, onToggle: changes.onToggle }} changes={changes?.on ? <ChangesBox version={version} base={changes.base} diff={diff} /> : null}>
       {report}

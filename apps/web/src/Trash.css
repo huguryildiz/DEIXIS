@@ -1,68 +1,108 @@
 /* Trash, removal from a research and undo (D50): the Trash page, the Undo action in a notification, choosing sources
    on the Sources tab, and the "removed from this research" labels. Loaded after workspace.css and reuses its tokens. */
 
-/* Trash page (mockup `.settings` > `.rows`, S26): a 760px column, one bordered list of rows. A row is the kind, "title
-   · note", Restore and Delete permanently (danger colour); a delete asks inside its row in a warn notice. */
+/* Trash page: a 808px column. A head (title and the "nothing expires" line), a toolbar, then one raised list. A row is
+   a kind tile, the title over "kind · note", and Restore / Delete permanently; a delete asks inside its row. */
 .app .main-shell main:has(>.trash-page){padding-top:0}
-.app .trash-page{display:grid;align-content:start;gap:18px;max-width:808px;margin:0 auto;padding:28px 24px 48px;font-size:14px;line-height:1.5}
-.app .trash-page>h1{margin:0;font-size:20px;font-weight:600;letter-spacing:0;line-height:1.5}
+.app .trash-page{display:grid;align-content:start;gap:0;max-width:808px;margin:0 auto;padding:36px 24px 56px;font-size:14px;line-height:1.5}
+.app .trash-page>h1{margin:0;color:var(--ink);font-size:24px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
 .app .trash-page>p{margin:0;color:var(--muted);font-size:13.5px}
-.app .trash-rows{border:1px solid var(--line);border-radius:10px}
-.app .trash-row{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
-.app .trash-row:first-child{border-top:0}
-.app .trash-row>b{min-width:120px;font-size:13.5px;font-weight:500}
-.app .trash-row>p{flex:1;min-width:180px;margin:0;color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.app .trash-page>.trash-sub{margin:4px 0 22px;font-size:13px}
+.app .trash-page>*+.trash-message,.app .trash-page>.trash-tools+*{margin-top:0}
+.app .trash-page>.trash-message{margin-bottom:16px}
+.app .trash-page>.trash-tools{margin-bottom:14px}
+.app .trash-page>.trash-showmore,.app .trash-page>.selection-bar,.app .trash-page>.trash-bar-notice{margin-top:12px}
+.app .trash-page>.trash-foot:not(.trash-sub){margin-top:12px;font-size:12.5px}
+
+/* The list */
+.app .trash-rows{overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--raised-surface,var(--paper));box-shadow:0 1px 2px rgb(24 31 45/.04),0 8px 24px -16px rgb(24 31 45/.14)}
+.app .trash-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:14px 16px;border-top:1px solid var(--line);transition:background-color .12s}
+.app .trash-row:first-child,.app .trash-group:first-child>.trash-row:first-child{border-top:0}
+.app .trash-row:not(.trash-notice):not(.trash-group-head):hover{background:var(--hover-surface)}
+.app .trash-row.is-picked,.app .trash-row.is-picked:hover{background:var(--accent-tint)}
+/* An item row: the kind tile, title over "kind · note", then the actions. `b` dissolves so its checkbox and tile take
+   grid cells; its kind text stays for screen readers, and the meta line shows it. */
+.app .trash-row:not(.trash-notice):not(.trash-group-head){display:grid;grid-template-columns:var(--pick,) 36px minmax(0,1fr) auto auto var(--more,);column-gap:14px}
+.app .trash-row:not(.trash-notice):not(.trash-group-head):has(>b>.trash-pick){--pick:15px}
+.app .trash-row:not(.trash-notice):not(.trash-group-head):has(>.trash-sq){--more:auto}
+.app .trash-row:not(.trash-notice):not(.trash-group-head)>b{display:contents}
+.app .trash-row>b>.trash-pick{align-self:center}
+.app .trash-kind-icon{display:grid;place-items:center;width:36px;height:36px;border:1px solid color-mix(in srgb,var(--accent),transparent 82%);border-radius:9px;background:color-mix(in srgb,var(--accent),transparent 92%);color:color-mix(in srgb,var(--accent),var(--ink) 15%)}
+.app .trash-row:not(.trash-notice):not(.trash-group-head)>b>.trash-kind{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.app .trash-row:not(.trash-notice):not(.trash-group-head)>p{display:grid;margin:0;min-width:0;color:var(--muted);font-size:12.5px;line-height:1.45}
+.app .trash-row-kind{color:var(--ink-2);font-weight:500}
+.app .trash-row-title{color:var(--ink);font-size:14px;font-weight:500;line-height:1.4;overflow-wrap:anywhere}
+.app .trash-row-sep{display:none}
+.app .trash-row-note{margin-top:2px;overflow-wrap:anywhere}
 .app .trash-title{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.app .trash-title:hover{color:var(--ink);text-decoration:underline;text-underline-offset:3px}
-/* The mockup's `.ghost` button. */
-.app .trash-ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:5px 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font:inherit;font-size:13px;white-space:nowrap;cursor:pointer}
-.app .trash-ghost:hover:not(:disabled){background:var(--hover-surface)}
-.app .trash-ghost:disabled{opacity:.5;cursor:default}
-.app .trash-ghost.trash-sq{width:30px;height:30px;padding:5px}
-.app .trash-ghost.trash-delete{color:var(--destructive)}
+.app .trash-title:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+
+/* Buttons (the mockup's `.ghost`) */
+.app .trash-ghost{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--strong-line);border-radius:8px;background:var(--paper);color:var(--ink-2);font:inherit;font-size:13px;font-weight:500;white-space:nowrap;cursor:pointer;transition:background-color .12s,border-color .12s,color .12s}
+.app .trash-ghost:hover:not(:disabled){border-color:color-mix(in srgb,var(--strong-line),var(--ink) 12%);background:var(--hover-surface);color:var(--ink)}
+.app .trash-ghost:focus-visible{outline:2px solid color-mix(in srgb,var(--accent),transparent 50%);outline-offset:2px}
+.app .trash-ghost:disabled{opacity:.45;cursor:default}
+.app .trash-ghost>svg{flex:none;opacity:.8}
+.app .trash-ghost.trash-sq{width:32px;padding:0}
+.app .trash-ghost.trash-delete{border-color:color-mix(in srgb,var(--destructive),transparent 75%);background:transparent;color:var(--destructive)}
+.app .trash-ghost.trash-delete:hover:not(:disabled){border-color:color-mix(in srgb,var(--destructive),transparent 55%);background:color-mix(in srgb,var(--destructive),transparent 93%);color:var(--destructive)}
 .app .trash-showmore{justify-self:start}
-/* The mockup's `.notice.warn`, here as a row of the list. */
-.app .trash-notice{display:flex;align-items:center;gap:12px;border:1px solid transparent;border-radius:0;background:var(--warn-surface);color:var(--ink-2);font-size:13px}
+
+/* The confirm notice (the mockup's `.notice.warn`), here as a row of the list. */
+.app .trash-notice{display:flex;align-items:flex-start;gap:12px;border:1px solid transparent;border-radius:0;background:var(--warn-surface);color:var(--ink-2);font-size:13px}
 .app .trash-notice>svg{flex:none;margin-top:2px;color:var(--tone-uncertain)}
-.app .trash-notice-body{display:grid;flex:1;gap:8px;min-width:0}
+.app .trash-notice-body{display:grid;flex:1;gap:10px;min-width:0}
 .app .trash-acts{display:flex;flex-wrap:wrap;gap:6px}
-.app .trash-acts .trash-ghost{border-radius:999px}
-.app .trash-message{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface);color:var(--ink-2);font-size:13px}
-.app .trash-message>svg{flex:none;margin-top:2px}
-.app .trash-empty{display:grid;place-items:center;padding:40px 24px;text-align:center}
-.app .trash-empty>div{display:grid;justify-items:center;gap:10px;max-width:380px}
-.app .trash-empty h2{margin:6px 0 0;color:var(--ink);font-family:var(--font-sans);font-size:14px;font-weight:600;letter-spacing:0;line-height:1.5}
+.app .trash-acts .trash-delete{border-color:transparent;background:var(--destructive);color:#fff}
+.app .trash-acts .trash-delete:hover:not(:disabled){border-color:transparent;background:color-mix(in srgb,var(--destructive),#000 12%);color:#fff}
+.app .trash-bar-notice{border-color:color-mix(in srgb,var(--tone-uncertain),transparent 70%);border-radius:12px;padding:14px 16px}
+
+/* The status line after an action */
+.app .trash-message{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border:1px solid color-mix(in srgb,var(--accent),transparent 80%);border-radius:10px;background:color-mix(in srgb,var(--accent),transparent 94%);color:var(--ink-2);font-size:13px}
+.app .trash-message>svg{flex:none;margin-top:2px;color:var(--accent)}
+
+/* Empty */
+.app .trash-empty{display:grid;place-items:center;padding:56px 24px;border:1px dashed var(--strong-line);border-radius:12px;text-align:center}
+.app .trash-empty>div{display:grid;justify-items:center;gap:8px;max-width:380px}
+.app .trash-empty svg{width:40px;height:40px;padding:10px;border-radius:999px;background:var(--sidebar-surface);color:var(--muted)}
+.app .trash-empty h2{margin:6px 0 0;color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:600;letter-spacing:0;line-height:1.5}
 .app .trash-empty p{margin:0;color:var(--muted);font-size:13.5px}
-.app .trash-page>.trash-foot{color:var(--muted);font-size:12px}
-/* The toolbar above the list (filter, scope, research, sort, grouping, select shown) and the grouped head rows: the
-   removed-source tools the mockup list has no place for (PLACEMENTS trash-tools). */
-.app .trash-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-.app .trash-select{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px}
-.app .trash-select [data-slot=select-trigger]{height:28px;max-width:230px;padding:0 9px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);box-shadow:none;color:var(--ink);font-size:12.5px}
-.app .trash-scope{display:flex;flex-wrap:wrap;gap:6px}
-.app .trash-scope button{height:28px;padding:0 12px;border:1px solid var(--strong-line);border-radius:999px;background:transparent;color:var(--muted);font-size:12.5px;font-weight:500}
-.app .trash-scope button:hover{background:var(--hover-surface);color:var(--ink)}
-.app .trash-scope button[aria-pressed=true],.app .trash-tools .trash-ghost[aria-pressed=true]{border-color:transparent;background:color-mix(in srgb,var(--accent),transparent 88%);color:color-mix(in srgb,var(--accent),var(--ink) 25%);font-weight:600}
-.app .trash-tools .trash-ghost{height:28px;padding:0 12px;font-size:12.5px}
-.app .trash-pick-all{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px;cursor:pointer}
-.app .trash-pick{flex:none;width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}
-.app .trash-row>b{display:flex;align-items:center;gap:8px}
-.app .trash-row.is-picked{background:var(--accent-tint)}
-.app .trash-group-head{background:var(--sidebar-surface)}
-.app .trash-group-head>b{min-width:0;flex:1 1 180px}
-.app .trash-group-head>p{flex:none;min-width:0}
-.app .trash-fold{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:6px;color:var(--muted)}
-.app .trash-fold:hover{background:var(--hover-surface);color:var(--ink)}
-.app .trash-bar-notice{border-radius:10px;padding:12px 14px}
-.app .trash-page>.selection-bar{bottom:20px}
-.app .trash-page .selection-bar>strong>span{display:block;margin-top:2px;color:var(--muted);font-size:12px;font-weight:400}
-/* A long Trash is filtered (the mockup list has no filter; it appears only past 50 rows). */
-.app .trash-search{flex:0 1 300px;min-width:200px;display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface);color:var(--muted)}
-.app .trash-search:focus-within{border-color:var(--accent)}
+
+/* The toolbar: filter, All / Deletable / Still cited as one segmented control, research, sort, grouping, select shown. */
+.app .trash-tools{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.app .trash-search{flex:1 1 360px;min-width:200px;display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:1px solid var(--strong-line);border-radius:9px;background:var(--field-surface);color:var(--muted);transition:border-color .12s,box-shadow .12s}
+.app .trash-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent),transparent 85%)}
 .app .trash-search svg{flex:none}
 .app .trash-search input{flex:1;min-width:0;height:100%;border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;outline:none}
 .app .trash-search input::placeholder{color:var(--muted)}
-@media(max-width:760px){.app .trash-page{padding-inline:24px}}
+.app .trash-scope{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface)}
+.app .trash-scope button{height:28px;padding:0 11px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:12.5px;font-weight:500;white-space:nowrap;transition:background-color .12s,color .12s}
+.app .trash-scope button:hover{color:var(--ink)}
+.app .trash-scope button[aria-pressed=true]{background:var(--paper);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgb(24 31 45/.08),0 0 0 1px var(--line)}
+.app .trash-select{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px}
+.app .trash-select [data-slot=select-trigger]{height:32px;max-width:230px;padding:0 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);box-shadow:none;color:var(--ink);font-size:12.5px}
+.app .trash-tools .trash-ghost{height:32px;padding:0 12px;font-size:12.5px}
+.app .trash-tools .trash-ghost[aria-pressed=true]{border-color:color-mix(in srgb,var(--accent),transparent 70%);background:color-mix(in srgb,var(--accent),transparent 90%);color:color-mix(in srgb,var(--accent),var(--ink) 25%);font-weight:600}
+.app .trash-pick-all{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px;cursor:pointer}
+.app .trash-pick{flex:none;width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}
+
+/* Grouped by research: a fold head row per research. */
+.app .trash-group-head{gap:10px;padding:10px 16px;background:var(--sidebar-surface)}
+.app .trash-group-head>b{flex:1 1 180px;min-width:0;color:var(--ink);font-size:13px;font-weight:600}
+.app .trash-group-head>p{flex:none;min-width:0;margin:0;color:var(--muted);font-size:12px}
+.app .trash-group+.trash-group>.trash-group-head{border-top:1px solid var(--line)}
+.app .trash-fold{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:6px;color:var(--muted)}
+.app .trash-fold:hover{background:var(--hover-surface);color:var(--ink)}
+.app .trash-page>.selection-bar{bottom:20px}
+.app .trash-page .selection-bar>strong>span{display:block;margin-top:2px;color:var(--muted);font-size:12px;font-weight:400}
+
+@media(max-width:640px){
+  .app .trash-page{padding:28px 16px 48px}
+  .app .trash-row:not(.trash-notice):not(.trash-group-head){display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:10px 12px}
+  .app .trash-row:not(.trash-notice):not(.trash-group-head)>p{flex:1 1 200px}
+  .app .trash-row:not(.trash-notice):not(.trash-group-head)>.trash-restore{margin-left:48px}
+  .app .trash-row:not(.trash-notice):not(.trash-group-head):has(>b>.trash-pick)>.trash-restore{margin-left:75px}
+}
 
 /* Choosing sources */
 .app .source-row.is-picked{background:color-mix(in srgb,var(--accent),transparent 96%)}

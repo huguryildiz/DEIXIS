@@ -93,19 +93,20 @@ test.describe('S26: the Trash page', () => {
     // Kinds in date order: research, source, table, source, source, template.
     await expect(rows(page).locator('> b')).toHaveText(['Research', 'Source', 'Evidence table', 'Source', 'Source', 'Table template'])
     const first = rows(page).first()
-    await expect(first.locator('p')).toHaveText('SYNTHETIC trashed research · Moved to Trash Oct 9, 2026')
+    await expect(first.locator('p')).toHaveText('SYNTHETIC trashed research · Research · Moved to Trash Oct 9, 2026')
     // Restore, then Delete permanently, then (sources only) the ⋯ menu.
     await expect(first.locator('button')).toHaveText(['Restore', 'Delete permanently'])
     await expect(rows(page).nth(1).locator('button').last()).toHaveAccessibleName(/^Actions for SYNTHETIC removed source 1/)
     await expect(rows(page).nth(1).locator('p')).toContainText('removed from SYNTHETIC research that lost sources on Oct 8, 2026 · Your note: wrong topic')
     await expect(rows(page).nth(2).locator('p')).toContainText('2 rows · 1 column · 2 cells with a value · 1 edit of yours')
     await expect(page.locator('.trash-foot')).toHaveText('Nothing in the Trash expires.')
-    // Sizes of the mockup: a 760px list, 20px heading, 12px/14px row padding, 13.5px kind and 12.5px note.
+    // Sizes: a 760px list, 24px heading, 14px/16px row padding, a 36px kind tile, a 14px title over a 12.5px meta line.
     const box = await page.locator('.trash-rows').boundingBox()
     expect(Math.round(box!.width)).toBe(760)
-    expect(await page.locator('.trash-page h1').evaluate(e => getComputedStyle(e).fontSize)).toBe('20px')
-    expect(await first.evaluate(e => { const s = getComputedStyle(e); return [s.paddingTop, s.paddingLeft, s.columnGap] })).toEqual(['12px', '14px', '12px'])
-    expect(await first.locator('b').evaluate(e => [getComputedStyle(e).fontSize, getComputedStyle(e).fontWeight])).toEqual(['13.5px', '500'])
+    expect(await page.locator('.trash-page h1').evaluate(e => getComputedStyle(e).fontSize)).toBe('24px')
+    expect(await first.evaluate(e => { const s = getComputedStyle(e); return [s.paddingTop, s.paddingLeft, s.columnGap] })).toEqual(['14px', '16px', '14px'])
+    expect(await first.locator('.trash-kind-icon').evaluate(e => getComputedStyle(e).width)).toBe('36px')
+    expect(await first.locator('.trash-row-title').evaluate(e => [getComputedStyle(e).fontSize, getComputedStyle(e).fontWeight])).toEqual(['14px', '500'])
     expect(await first.locator('p').evaluate(e => getComputedStyle(e).fontSize)).toBe('12.5px')
     // Delete permanently is the danger colour; Restore is not.
     const colour = (loc: ReturnType<Page['locator']>) => loc.evaluate(e => getComputedStyle(e).color)

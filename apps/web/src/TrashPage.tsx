@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Ellipsis, Info, Search, Trash2, TriangleAlert } from 'lucide-react'
+import { ChevronDown, ChevronRight, Ellipsis, FileText, FlaskConical, Info, LayoutTemplate, RotateCcw, Search, Table2, Trash2, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, type RemovedSource, type Trash } from './api'
-import { versionText } from './labels'
+import { tableTitle, versionText } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { t, uiLocale } from './i18n'
 
@@ -20,7 +20,7 @@ const sortLabels: Record<Sort, string> = { removed: 'Recently removed', title: '
 // The row opened in the source sheet, on the abstract this research can still read (D50).
 type OpenSource = { key: string; researchId: string; researchTitle: string; passageId: string }
 type Entry = {
-  key: string; at: string; kind: string; title: string; titleNode?: ReactNode; note: string
+  key: string; at: string; kind: string; icon: LucideIcon; title: string; titleNode?: ReactNode; note: string
   restore: () => void; remove: Pending | null; deleteTitle?: string
   researchId: string | null; researchTitle: string | null; year: number
   source?: SourceTarget
@@ -155,7 +155,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
   if (trash) {
     for (const r of trash.researches) {
       entries.push({
-        key: r.id, at: r.trashed_at, kind: t('Research'), title: r.title, researchId: r.id, researchTitle: r.title, year: 0, note: t('Moved to Trash {date}', { date: dateText(r.trashed_at) }),
+        key: r.id, at: r.trashed_at, kind: t('Research'), icon: FlaskConical, title: r.title, researchId: r.id, researchTitle: r.title, year: 0, note: t('Moved to Trash {date}', { date: dateText(r.trashed_at) }),
         restore: () => void run(r.id, async () => { await api.restore(r.id); return t('Research restored.') }, 'Could not restore research: {message}'),
         remove: {
           key: r.id, question: t('Delete “{title}” permanently?', { title: r.title }),
@@ -171,14 +171,14 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     }
     for (const table of trash.tables) {
       entries.push({
-        key: table.id, at: table.trashed_at, kind: t('Evidence table'), title: table.title, researchId: table.research_id, researchTitle: table.research_title, year: 0,
+        key: table.id, at: table.trashed_at, kind: t('Evidence table'), icon: Table2, title: tableTitle(table.title), researchId: table.research_id, researchTitle: table.research_title, year: 0,
         note: [table.research_title, t(table.rows === 1 ? '{n} row' : '{n} rows', { n: table.rows }), t(table.columns === 1 ? '{n} column' : '{n} columns', { n: table.columns }),
           t(table.cells === 1 ? '{n} cell with a value' : '{n} cells with a value', { n: table.cells }),
           table.human_edits > 0 && t(table.human_edits === 1 ? '{n} edit of yours' : '{n} edits of yours', { n: table.human_edits }),
           t('Moved to Trash {date}', { date: dateText(table.trashed_at) })].filter(Boolean).join(' · '),
         restore: () => void run(table.id, async () => { await api.restoreTable(table.research_id, table.id, table.version); return t('Table restored to {research}.', { research: table.research_title }) }, 'Could not restore the table: {message}'),
         remove: {
-          key: table.id, question: t('Delete “{title}” permanently?', { title: table.title }),
+          key: table.id, question: t('Delete “{title}” permanently?', { title: tableTitle(table.title) }),
           detail: t('Its rows, columns, {cells} cells with a value and {edits} edits of yours are deleted. Passages, files and answers stay. This cannot be undone.', { cells: table.cells, edits: table.human_edits }),
           confirm: () => void run(table.id, async () => { await api.purgeTable(table.id); return t('Table permanently deleted.') }, 'Could not delete the table: {message}'),
         },
@@ -204,7 +204,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
           first.removal_note && t('Your note: {note}', { note: first.removal_note }),
         ].filter(Boolean).join(' · ')
         entries.push({
-          key, at: first.removed_at, kind: t('Source'), title: first.title, note: parts, researchId: group.id, researchTitle: group.title, year: first.year ?? 0,
+          key, at: first.removed_at, kind: t('Source'), icon: FileText, title: first.title, note: parts, researchId: group.id, researchTitle: group.title, year: first.year ?? 0,
           source: { researchId: group.id, versions },
           titleNode: openable
             ? <button type="button" className="trash-title" title={first.title}
@@ -228,7 +228,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     }
     for (const template of trash.templates) {
       entries.push({
-        key: template.id, at: template.trashed_at, kind: t('Table template'), title: template.name, researchId: null, researchTitle: null, year: 0,
+        key: template.id, at: template.trashed_at, kind: t('Table template'), icon: LayoutTemplate, title: template.name, researchId: null, researchTitle: null, year: 0,
         note: `${t(template.columns === 1 ? '{n} column' : '{n} columns', { n: template.columns })} · ${t('Moved to Trash {date}', { date: dateText(template.trashed_at) })}`,
         restore: () => void run(template.id, async () => { await api.restoreTemplate(template.id); return t('Template restored.') }, 'Could not restore the template: {message}'),
         remove: {
@@ -278,12 +278,12 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     </div>
     : <div className={`trash-row${picked.has(entry.key) ? ' is-picked' : ''}`} key={entry.key} data-trash-key={entry.key}>
       <b>{entry.source && <input type="checkbox" className="trash-pick" checked={picked.has(entry.key)} aria-label={t('Select {title}', { title: entry.title })}
-        onChange={() => setPicked(toggled(picked, entry.key))} />}{entry.kind}</b>
-      <p>{entry.titleNode ?? entry.title} · {entry.note}</p>
-      <button type="button" className="trash-ghost trash-restore" disabled={busy === entry.key} aria-label={t('Restore {title}', { title: entry.title })} onClick={entry.restore}>{t('Restore')}</button>
+        onChange={() => setPicked(toggled(picked, entry.key))} />}<span className="trash-kind-icon" aria-hidden><entry.icon size={16} /></span><span className="trash-kind">{entry.kind}</span></b>
+      <p><span className="trash-row-title">{entry.titleNode ?? entry.title}</span><span className="trash-row-sep"> · </span><span className="trash-row-note"><span className="trash-row-kind" aria-hidden>{entry.kind}</span> · {entry.note}</span></p>
+      <button type="button" className="trash-ghost trash-restore" disabled={busy === entry.key} aria-label={t('Restore {title}', { title: entry.title })} onClick={entry.restore}><RotateCcw size={14} aria-hidden />{t('Restore')}</button>
       <button type="button" className="trash-ghost trash-delete" disabled={busy === entry.key || !entry.remove} aria-label={t('Delete permanently: {title}', { title: entry.title })}
         title={entry.remove ? undefined : t('An answer quote, an evidence table or a report still cites this source. It is deleted with its research.')}
-        onClick={() => entry.remove && decide({ ...entry.remove, from: 'delete' })}>{t('Delete permanently')}</button>
+        onClick={() => entry.remove && decide({ ...entry.remove, from: 'delete' })}><Trash2 size={14} aria-hidden />{t('Delete permanently')}</button>
       {entry.more && (entry.more.open || entry.more.restoreAll || entry.more.deleteAll) && <DropdownMenu>
         <DropdownMenuTrigger className="trash-ghost trash-sq" aria-label={t('Actions for {title}', { title: entry.title })} title={t('More actions')}><Ellipsis size={15} aria-hidden /></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto">
@@ -303,6 +303,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
 
   return <section className="trash-page">
     <h1 tabIndex={-1}>{t('Trash')}</h1>
+    <p className="trash-foot trash-sub">{t('Nothing in the Trash expires.')}</p>
     {message && <div className="trash-message" role="status"><Info size={16} aria-hidden />{message}</div>}
     {error ? <p role="alert">{t('Could not load Trash: {message}', { message: error })} <button type="button" className="trash-ghost" onClick={() => { void refresh() }}>{t('Retry')}</button></p>
       : !trash ? <p role="status">{t('Loading Trash…')}</p>
@@ -390,7 +391,6 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
           </div>
         </div>}
       </>}
-    <p className="trash-foot">{t('Nothing in the Trash expires.')}</p>
     {openSource && <PassageSheet researchId={openSource.researchId} passageId={openSource.passageId}
       dark={dark} onClose={() => setOpenSource(null)}
       onRestoreSource={sourceVersionId => {

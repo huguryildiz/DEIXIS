@@ -263,3 +263,9 @@ def test_a_sign_in_refusal_after_the_init_event_is_not_sent():
     stdout = lines({"type": "init", "session_id": "s", "model": MODEL})
     result = GeminiCliAdapter.result_of(CliRun(42, stdout, INELIGIBLE), MODEL)
     assert (result.status, result.delivery_class, result.error_kind) == ("unavailable", "before_send", "auth_failed")
+
+
+def test_gemini_cli_has_the_terminal_sign_in():
+    """D21's Sign in button opens a terminal running `gemini`, where the person chooses Sign in with Google."""
+    from deixis import account_signin
+    assert account_signin.TOOLS["gemini_cli"] == ("gemini", [], "Gemini CLI")

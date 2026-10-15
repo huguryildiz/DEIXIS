@@ -41,6 +41,7 @@ TR: dict[str, str] = {
     "Cited passages": "Atıf yapılan pasajlar",
     "OCR text · check against the page": "OCR metni · sayfayla karşılaştırın",
     "arXiv source": "arXiv kaynağı",
+    "equations read by Mathpix": "denklemleri Mathpix okudu",
     "Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked.":
         "Yapısal denetim geçti: her atıf, bu adıma verilen kayıtlı bir pasaja karşılık gelir. Anlamsal destek denetlenmez.",
     "abstract": "özet",

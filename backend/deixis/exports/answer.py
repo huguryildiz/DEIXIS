@@ -106,6 +106,8 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
                 line += f" ({t(OCR_LABEL)})"
             if evidence.get("text_source") == "latex_source":
                 line += f" ({t('arXiv source')})"
+            if evidence.get("text_source") == "equation_ocr":
+                line += f" ({t('equations read by Mathpix')})"
             out.append(ooxml.paragraph(line, *(ooxml.Run(f"\n“{quote}”") for quote in anchors[passage_id]), style="Bibliography"))
     out += [ooxml.Rule(), ooxml.paragraph(t("Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked."))]
     return out

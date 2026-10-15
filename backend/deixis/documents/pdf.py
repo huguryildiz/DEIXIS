@@ -85,8 +85,10 @@ class PageText:
     text: str
     text_source: str = "text_layer"  # text_layer, ocr, or marker (a page with mathematics read by Marker, D52)
     # Display equations placed from the authors' arXiv source (D104), as (start, end, number) in the
-    # `normalize_page_text` space of `text`; a chunk holding one is labelled `latex_source`.
+    # `normalize_page_text` space of `text`; a chunk holding one is labelled `placement_label`: `latex_source`, or
+    # `equation_ocr` for equations read from the page image by Mathpix.
     latex_blocks: list = field(default_factory=list)
+    placement_label: str = "latex_source"
 
 
 @dataclass
@@ -104,14 +106,15 @@ class Extraction:
     placement: dict | None = None
 
 
-def _blocks(page: pymupdf.Page, textpage: pymupdf.TextPage | None = None) -> list[dict]:
+def _blocks(page: pymupdf.Page, textpage: pymupdf.TextPage | None = None, spans: bool = False) -> list[dict]:
     """Text blocks with their box, horizontal lines and the character-weighted type size.
 
     Each block also carries, per line, the line's text with symbol-font letters masked (`inline_math.line_text`) and its
-    box, for matching source equations to the page (D104); neither enters the page text."""
+    box, for matching source equations to the page (D104); neither enters the page text. With `spans`, each line's spans
+    (text, size, baseline, box) too, for the equation crops of the Mathpix route."""
     blocks = []
     for block in page.get_text("dict", flags=TEXT_FLAGS, textpage=textpage)["blocks"]:
-        lines, masked, boxes, weighted, count = [], [], [], 0.0, 0
+        lines, masked, boxes, line_spans, weighted, count = [], [], [], [], 0.0, 0
         for line in block.get("lines", []):
             if abs(line["dir"][1]) > 0.1:  # rotated or vertical: margin stamps such as arXiv's identifier
                 continue
@@ -121,12 +124,16 @@ def _blocks(page: pymupdf.Page, textpage: pymupdf.TextPage | None = None) -> lis
             lines.append(text)
             masked.append(inline_math.line_text([(span["text"], span["font"]) for span in line["spans"]]))
             boxes.append(tuple(line["bbox"]))
+            if spans:
+                line_spans.append([{"text": span["text"], "font": span["font"], "size": span["size"], "y": span["origin"][1],
+                                    "box": tuple(span["bbox"])}
+                                   for span in line["spans"]])
             for span in line["spans"]:
                 chars = len(span["text"].strip())
                 weighted, count = weighted + span["size"] * chars, count + chars
         if lines and count:
             blocks.append({"bbox": block["bbox"], "lines": lines, "size": weighted / count, "chars": count,
-                           "masked": masked, "line_boxes": boxes})
+                           "masked": masked, "line_boxes": boxes} | ({"line_spans": line_spans} if spans else {}))
     return blocks
 
 

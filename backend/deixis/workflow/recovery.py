@@ -59,7 +59,8 @@ def coverage_manifest(extraction: Any, chunker: Any) -> Manifest:
             if key in seen:
                 continue
             seen.add(key)
-            source = "latex_source" if any(start <= s and e <= end for s, e, _ in placed) else getattr(page, "text_source", "text_layer")
+            source = (getattr(page, "placement_label", "latex_source") if any(start <= s and e <= end for s, e, _ in placed)
+                      else getattr(page, "text_source", "text_layer"))
             manifest.append((page.physical_page, page.printed_label, f"chars:{start}-{end}", digest, source))
     return manifest
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from deixis.domain import contracts, phrasebank
 from deixis.domain.rules import RevisionConflict
+from deixis.workflow.equations import equation_fallback_field
 from deixis.workflow.flow import OptionalStepFailed, RunStopped
 from deixis.workflow.report import assembly, gaps, review_methodology, selection
 from deixis.workflow.report.phrasing import _report_checkpoint, flagged_sentences, repair_section
@@ -118,7 +119,8 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
         basis_passages.append({"passage_id": pid, "source_id": p["source_version_id"],
             "reading_depth": "abstract" if p["kind"] == "abstract" else "selected_sections",
             "locator": {"kind": p["kind"], "physical_page": p["physical_page"], "printed_label": p["printed_label"]},
-            "abstract_origin": p["abstract_origin"], "text_source": None if p["kind"] == "abstract" else p["text_source"], "text": p["text"]})
+            "abstract_origin": p["abstract_origin"], "text_source": None if p["kind"] == "abstract" else p["text_source"], "text": p["text"]}
+            | equation_fallback_field(flow.store, p))
     return {"source_ids": evidence_row_ids(snapshot), "column_ids": [c["column_id"] for c in snapshot["columns"]],
             "cells": [{name: c[name] for name in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")} for c in snapshot["cells"]],
             "accepted_gaps": accepted, "basis_cells": basis_cells, "basis_passages": basis_passages}

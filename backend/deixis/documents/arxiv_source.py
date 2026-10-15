@@ -864,6 +864,12 @@ def is_prose(line: str) -> bool:
     return len(PROSE_WORD.findall(line)) >= PROSE_WORDS
 
 
+def number_line(text: str) -> re.Match | None:
+    """An equation number ending a line: the whole line `(n)`, or `… (n)` after text that is not prose. Shared with the
+    Mathpix route's detector (`equation_regions`)."""
+    return NUMBER_ONLY.match(text) or (NUMBER_END.search(text) if not is_prose(text) else None)
+
+
 def _letters(text: str) -> Counter:
     from deixis.documents import inline_math, math_reader
 
@@ -917,7 +923,7 @@ def match(pdf_path: Path, found: list[dict[str, Any]], skip_pages: set[int]) -> 
             stop = -1
             for k, line in enumerate(lines):
                 text = line["text"]
-                m = NUMBER_ONLY.match(text) or (NUMBER_END.search(text) if not is_prose(text) else None)
+                m = number_line(text)
                 if not m:
                     continue
                 first = "" if NUMBER_ONLY.match(text) else text[:m.start()]

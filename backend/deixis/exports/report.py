@@ -53,6 +53,8 @@ def _appendix(view: dict[str, Any], sections: list[dict[str, Any]], locators: di
             text += f" ({t(OCR_LABEL)})"
         if record.get("text_source") == "latex_source":
             text += f" ({t('arXiv source')})"
+        if record.get("text_source") == "equation_ocr":
+            text += f" ({t('equations read by Mathpix')})"
         return text
 
     out: list[ooxml.Block] = []

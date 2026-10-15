@@ -72,7 +72,7 @@ def _json_record(row: dict, field: str, table: str, key: str, section_id: str,
                  and isinstance(value.get("column_id"), str))
     elif valid and field == "equation_origin_json":
         valid = (isinstance(value.get("passage_id"), str)
-                 and value.get("text_source") in {"text_layer", "ocr", "marker", "latex_source"})
+                 and value.get("text_source") in {"text_layer", "ocr", "marker", "latex_source", "equation_ocr"})
     elif valid and field == "basis_json":
         valid = all(isinstance(value.get(name), list) and all(isinstance(item, str) for item in value[name])
                     for name in ("basis_claim_keys", "basis_passage_ids", "basis_cell_ids"))
@@ -521,7 +521,7 @@ def _check_equations(store: Store, reports: ReportStore, report_id: str, *, curr
                           {link["passage_id"] for link in links_by_claim[claim["id"]] if link["passage_id"]}, supplied,
                           origin_record=dict(origin_row) if origin_row else None))
         passage = store.conn.execute("SELECT text_source FROM passages WHERE id = ?", (origin["passage_id"],)).fetchone()
-        if passage and passage["text_source"] in {"ocr", "marker"}:
+        if passage and passage["text_source"] in {"ocr", "marker", "equation_ocr"}:
             issues.append(_issue("equation_text_source_warning", section,
                                  f"WARNING: {key} equation came from {passage['text_source']} text."))
     return issues

@@ -69,7 +69,7 @@ from deixis.workflow import search_query as search_query_rules
 from deixis.workflow import user_plan as user_plan_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
-from deixis.workflow.equations import EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, equation_state
+from deixis.workflow.equations import EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, equation_fallback_field, equation_state
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, NotFound, RunInProgress, Store, seed_source_ids
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
 
@@ -2522,13 +2522,14 @@ class ResearchFlow:
         with that PDF's text layer, since its step stays failed.
 
         Without Marker and with the arXiv source route on (D104), a PDF the route may read is read once per run through
-        it; no outcome of the route pauses the run: the step ends `succeeded` with the PDF's state in its output.
+        it; no outcome of the route pauses the run: the step ends `succeeded` with the PDF's state in its output. The
+        Mathpix route (D40) works the same way and also honours "Answer now with PDF text".
         """
         service = self.deps.equations
         if service is None:
             return
         if not service.available():
-            if service.route_active():
+            if service.route_active() or service.mathpix_active():
                 await self._read_source_equations(run, svids)
             return
         run_id = run["id"]
@@ -2563,34 +2564,50 @@ class ResearchFlow:
                 self.store.finish_step(summary["id"], "succeeded", output={"pdfs_read": len(assets) - skipped, "pdfs_skipped": skipped})
 
     async def _read_source_equations(self, run: dict[str, Any], svids: list[str]) -> None:
-        """The arXiv source route's step per PDF (D104): tried at most once per run, never pausing it."""
+        """The arXiv source route's and Mathpix's step per PDF (D104, D40): tried at most once per run, never pausing it.
+        A PDF the source route settles for good within the step goes on to Mathpix in the same step."""
         service = self.deps.equations
         run_id = run["id"]
         assets = [r[0] for svid in svids for r in self.store.conn.execute(
             "SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,))]
+        skipped = 0
         for asset_id in assets:
             state = equation_state(self.store, asset_id)
-            again = (state["state"] == "failed" and state.get("reason") == EXTRACTION_FAILED
-                     and state.get("attempts", EQUATION_ATTEMPTS) < EQUATION_ATTEMPTS)
+            again = (state["state"] == "failed" and state.get("attempts", EQUATION_ATTEMPTS) < EQUATION_ATTEMPTS
+                     and (state.get("reason") == EXTRACTION_FAILED or state.get("route") == "mathpix"))
             waiting = state["state"] == "source_waiting"  # rule 3's table: the step records the wait and does not wait
-            if not service.route_target(asset_id) or (state["state"] != "pending" and not again and not waiting):
+            on_route = state.get("route") == "mathpix" or (state.get("route") == "arxiv_source" and service.route_target(asset_id))
+            if not on_route or (state["state"] != "pending" and not again and not waiting):
                 continue  # read, refused, permanently absent or failed for good: nothing to ask, no request
             step = self.store.step(run_id, f"equations:{asset_id}", "read_equations")
             if step["status"] in ("succeeded", "failed"):
+                continue
+            if state.get("route") == "mathpix" and self.store.equation_skip_requested(run_id):
+                skipped += 1  # "Answer now with PDF text": the rest keep their text layer
                 continue
             self._checkpoint(run_id)
             self.store.start_step(step["id"])
             if waiting:
                 self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, "route": "arxiv_source", **state})
                 continue
-            try:
-                state = await service.read_asset(asset_id, run_id)
-            except RunInProgress:
-                state = {"state": "pending", "outcome": "blocked_by_run"}
-            except Exception as exc:  # noqa: BLE001 - a gain, never a requirement: the run goes on with the current text
-                log.exception("arXiv source reading failed for %s", asset_id)
-                state = {"state": "pending", "outcome": "error", "error": f"{type(exc).__name__}: {exc}"[:300]}
-            self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, "route": "arxiv_source", **state})
+            route = state["route"]
+            for _ in range(2):
+                try:
+                    state = await service.read_asset(asset_id, run_id)
+                except RunInProgress:
+                    state = {"state": "pending", "outcome": "blocked_by_run", "route": route}
+                except Exception as exc:  # noqa: BLE001 - a gain, never a requirement: the run goes on with the current text
+                    log.exception("%s equation reading failed for %s", route, asset_id)
+                    state = {"state": "pending", "outcome": "error", "error": f"{type(exc).__name__}: {exc}"[:300], "route": route}
+                if route == "mathpix" or state.get("route") != "mathpix" or state["state"] != "pending" or self.store.equation_skip_requested(run_id):
+                    break
+                route = "mathpix"  # the source route settled this PDF for good: Mathpix reads it now
+            self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, **state, "route": state.get("route", route)})
+        if skipped:
+            summary = self.store.step(run_id, "equations_skipped", "equations_skipped")
+            if summary["status"] != "succeeded":
+                self.store.start_step(summary["id"])
+                self.store.finish_step(summary["id"], "succeeded", output={"pdfs_read": len(assets) - skipped, "pdfs_skipped": skipped})
 
     async def _acquire_pdf(self, run: dict[str, Any], svid: str, downloads: int, limit: int | None,
                            other_versions: bool = False) -> int:
@@ -4872,7 +4889,7 @@ class ResearchFlow:
             "locator": {"kind": p["kind"], "physical_page": p["physical_page"], "printed_label": p["printed_label"]},
             "abstract_origin": p["abstract_origin"],
             "text_source": None if p["kind"] == "abstract" else p.get("text_source", "text_layer"), "text": p["text"],
-        } for p in passage_rows]
+        } | equation_fallback_field(self.store, p) for p in passage_rows]
         language = scope["language_hint"] if scope["language_hint"] and re.fullmatch(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})*", scope["language_hint"]) else None
         question = scope["question"]
         if task_type == "followup_answer":

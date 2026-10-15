@@ -1844,11 +1844,12 @@ class Store:
                           diagnostic_only: bool = False, decision_code: str | None = None) -> str:
         passage_ids = []
         for page in extraction.pages:
-            # A chunk holding a display equation placed from the arXiv source is labelled per chunk (D104): the rest of
-            # the page, and the chunk's other text, is the PDF's own text layer.
+            # A chunk holding a placed display equation is labelled per chunk with the placement's label (D104: arXiv
+            # source; Mathpix: equation_ocr): the rest of the page, and the chunk's other text, is the PDF's own text layer.
             placed = getattr(page, "latex_blocks", None) or ()
             for start, end, text in chunker(page.text):
-                label = "latex_source" if any(start <= s and e <= end for s, e, _ in placed) else getattr(page, "text_source", "text_layer")
+                label = (getattr(page, "placement_label", "latex_source") if any(start <= s and e <= end for s, e, _ in placed)
+                         else getattr(page, "text_source", "text_layer"))
                 passage_ids.append((page.physical_page, self._insert_passage(
                     svid, aid, "pdf_page", page.physical_page, page.printed_label, None, f"chars:{start}-{end}", extraction_version, text,
                     label)))

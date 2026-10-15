@@ -1,7 +1,7 @@
 import { downloadName } from '../downloadName'
 import { type Answer, type Evidence, type Limitation, type Source, type Verdict } from '../api'
 import { locatorText, pageLocator, verdictLabels } from '../labels'
-import { formatReferenceText, type CitationStyle } from '../citations'
+import { formatReferenceText, inTextCitation, type CitationStyle } from '../citations'
 import { OCR_LABEL } from '../ocr'
 import { t } from '../i18n'
 
@@ -31,11 +31,17 @@ function pdfSuggestion(answer: Answer, sources: Source[]): { notes: Limitation[]
 export function reportParts(answer: Answer, sources: Source[], style?: CitationStyle) {
   const refs = new Map<string, { n: number; e: Answer['claims'][number]['evidence'][number] }>()
   answer.claims.forEach(c => c.evidence.forEach(e => { if (!refs.has(e.passage_id)) refs.set(e.passage_id, { n: refs.size + 1, e }) }))
-  // A citation names its source's key (D59); a claim citing two passages of one source adds each passage's place.
-  const citeLabel = (claim: Answer['claims'][number], e: Evidence) => {
-    if (!e.source_key || style === 'ieee') return `${refs.get(e.passage_id)?.n}`
+  // A citation is written in the chosen style ("Zeng et al., 2022"), else names its source's key (D59), else null (the
+  // caller uses the reference number); a claim citing two passages of one source adds each passage's place.
+  const citeLabel = (claim: Answer['claims'][number], e: Evidence): string | null => {
+    if (style === 'ieee') return null
     const repeated = claim.evidence.filter(x => x.source_version_id === e.source_version_id).length > 1
-    return repeated ? `${e.source_key}, ${e.kind === 'abstract' ? t('abstract') : e.physical_page ? pageLocator(e.physical_page, e.rendition) : t('section')}` : e.source_key
+    const locator = repeated ? (e.kind === 'abstract' ? t('abstract') : e.physical_page ? pageLocator(e.physical_page, e.rendition) : t('section')) : undefined
+    const source = style && sources.find(s => s.source_version_id === e.source_version_id)
+    const styled = source ? inTextCitation(style, source, locator) : null
+    if (styled) return styled
+    if (!e.source_key) return null
+    return locator ? `${e.source_key}, ${locator}` : e.source_key
   }
   // Consecutive claims with the same heading form one report section; answers saved before sections have no heading.
   const sections: { heading: string | null; claims: Answer['claims'] }[] = []
@@ -55,7 +61,7 @@ export function reportMarkdown(answer: Answer, sources: Source[], title: string,
   sections.forEach(({ heading, claims }) => {
     if (heading) lines.push(`## ${heading}`, '')
     claims.forEach(claim => {
-      const citations = claim.evidence.map(e => `[${citeLabel(claim, e)}]`).join('')
+      const citations = claim.evidence.map(e => { const label = citeLabel(claim, e); return label ? `(${label})` : `[${refs.get(e.passage_id)?.n}]` }).join('')
       const inference = claim.support_type === 'analyst_inference' ? ` _(${t('interpretation')})_` : ''
       const review = claim.review ? ` _${t('Reviewer: {reason}', { reason: `${t(verdictLabels[claim.review.verdict])} — ${claim.review.reason}` })}_` : ''
       lines.push(`${claim.text}${citations ? ` ${citations}` : ''}${inference}${review}`, '')

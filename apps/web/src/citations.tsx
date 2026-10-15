@@ -87,6 +87,20 @@ export function formatReference(style: CitationStyle, s: ReferenceFields): React
   }
 }
 
+// A source cited in the text of an author-date style, without the parentheses: APA "Zeng et al., 2022", Chicago
+// "Zeng et al. 2022", MLA "Zeng et al.". null in IEEE (cited by number) and for a source without authors.
+export function inTextCitation(style: CitationStyle, s: Pick<ReferenceFields, 'authors' | 'year'>, locator?: string): string | null {
+  if (style === 'ieee' || !s.authors.length) return null
+  const families = s.authors.map(a => parse(a).family)
+  const who = families.length === 1 ? families[0]
+    : families.length === 2 ? `${families[0]} ${style === 'apa' ? '&' : 'and'} ${families[1]}`
+    : style === 'chicago' && families.length === 3 ? `${families[0]}, ${families[1]}, and ${families[2]}`
+    : `${families[0]} et al.`
+  const year = s.year ?? 'n.d.'
+  const head = style === 'apa' ? `${who}, ${year}` : style === 'chicago' ? `${who} ${year}` : who
+  return locator ? `${head}, ${locator}` : head
+}
+
 // Plain-text companion for report copy/download. Keep it beside the visual formatter so exported
 // references follow the citation style selected in the report drawer.
 export function formatReferenceText(style: CitationStyle, s: Source): string {

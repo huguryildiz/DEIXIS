@@ -12,7 +12,7 @@ import { useReviewList } from '../review/useReviewList'
 import { useToast } from '../Toast'
 import { ModelName } from '../ModelName'
 import { useModelText } from '../modelText'
-import { formatReference, useCitationStyle } from '../citations'
+import { formatReference, inTextCitation, useCitationStyle } from '../citations'
 import { OCR_LABEL } from '../ocr'
 import { t, uiLocale } from '../i18n'
 import { SourceKey } from '../SourceKey'
@@ -189,7 +189,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       <p className="answer-paragraph">{claims.map(claim => { const change = diff?.claims.get(claim.id); return <span className="claim" key={claim.id}>
         {change?.added ? <ins><span className="sr-only">{t('Added:')} </span><MathText text={claim.text} /></ins> : <MathText text={claim.text} />}
         {claim.evidence.map(e => {
-          const chipButton = <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.text_source === 'equation_ocr' && t('equations read by Mathpix'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{e.source_key && !numeric ? citeLabel(claim, e) : `[${refs.get(e.passage_id)?.n}]`}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>
+          const chipButton = <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.text_source === 'equation_ocr' && t('equations read by Mathpix'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{citeLabel(claim, e) ?? `[${refs.get(e.passage_id)?.n}]`}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>
           return change?.addedPassages.has(e.passage_id) ? <ins key={e.passage_id} className="cite-ins"><span className="sr-only">{t('Added citation:')} </span>{chipButton}</ins> : chipButton
         })}
         {/* A passage the earlier version's claim of the same text cited and this one does not: named, not opened. */}
@@ -245,7 +245,9 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     if (!claim.evidence.length) return null
     const first = claim.evidence[0]
     const others = new Set(claim.evidence.map(e => e.source_version_id)).size - 1
-    const label = first.source_key && !numeric ? `${first.source_key}${others > 0 ? ` +${others}` : ''}` : `[${[...new Set(claim.evidence.map(e => refs.get(e.passage_id)?.n))].join(', ')}]`
+    const firstSource = sources.find(s => s.source_version_id === first.source_version_id)
+    const name = (firstSource && inTextCitation(style, firstSource)) || (numeric ? null : first.source_key)
+    const label = name ? `${name}${others > 0 ? ` +${others}` : ''}` : `[${[...new Set(claim.evidence.map(e => refs.get(e.passage_id)?.n))].join(', ')}]`
     const titleText = claim.evidence.map(e => [e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')).join('\n')
     return <button type="button" className={`cite-chip thread-cite${ctx?.citing === claim.id ? ' is-on' : ''}`} title={titleText} aria-expanded={ctx?.citing === claim.id}
       onClick={e => (ctx ? ctx.onCite(claim, e.currentTarget) : onOpen(first.passage_id, first.anchor_text))}>{label}</button>

@@ -1366,6 +1366,7 @@ const tr: Record<string, string> = {
   'Choose the answer and literature models first. DEIXIS does not pick them for you.': 'Önce yanıt ve literatür modellerini seçin. DEIXIS bunları sizin yerinize seçmez.',
   'Research saved, but DEIXIS could not attach the PDFs: {message}. You can retry from the research page.': 'Araştırma kaydedildi, ancak DEIXIS PDF’leri ekleyemedi: {message}. Araştırma sayfasından yeniden deneyebilirsiniz.',
   'Research saved, but DEIXIS could not start the search: {message}. You can retry from the research page.': 'Araştırma kaydedildi, ancak DEIXIS aramayı başlatamadı: {message}. Araştırma sayfasından yeniden deneyebilirsiniz.',
+  'Research saved, but DEIXIS could not start the answer: {message}. You can start it from the research page.': 'Araştırma kaydedildi, ancak DEIXIS cevabı başlatamadı: {message}. Araştırma sayfasından başlatabilirsiniz.',
   'Choose a readable PDF to guide the search.': 'Aramayı yönlendirmek için okunabilir bir PDF seçin.',
   'Use current PDF text': 'Güncel PDF metnini kullan',
   'Some PDF pages have no extracted text; the search uses only the readable passages.': 'PDF’nin bazı sayfalarında çıkarılmış metin yok; aramada yalnızca okunabilir pasajlar kullanılır.',

@@ -98,8 +98,12 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
     await expect(chip(page, 'Ask my PDFs')).toHaveAttribute('aria-pressed', 'true')
     await page.getByLabel('Research question').fill('SYNTHETIC question over my own PDF')
     const created = page.waitForRequest(isCreate)
+    const run = page.waitForRequest(r => r.method() === 'POST' && /\/api\/researches\/[^/]+\/runs$/.test(new URL(r.url()).pathname)
+      && r.postDataJSON()?.kind === 'answer')
     await page.getByRole('button', { name: 'Start research' }).click()
     expect(createBody(await created)).toMatchObject({ intent: 'report', source_scope: 'attached' })
+    // No search to wait for: the answer over the attached PDF starts at once.
+    expect((await run).postDataJSON()).toMatchObject({ kind: 'answer' })
   })
 
   test('Resume card: the latest research, its report version and what waits for the person, kept current by the shell', async ({ page, request }) => {

@@ -426,6 +426,11 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
       step = 'Research saved, but DEIXIS could not start the search: {message}. You can retry from the research page.'
       if (scope === 'academic' || (scope === 'attached_and_academic' && latestView.scope.seed_status === 'ready'))
         await api.startRun(id, 'discovery', crypto.randomUUID())
+      // "Ask my PDFs": no search to wait for, so the source-linked answer over the attached files starts at once.
+      if (scope === 'attached' && intent === 'report') {
+        step = 'Research saved, but DEIXIS could not start the answer: {message}. You can start it from the research page.'
+        await api.startRun(id, 'answer', crypto.randomUUID())
+      }
       onCreated(id)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)

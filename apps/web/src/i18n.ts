@@ -4543,6 +4543,13 @@ const tr: Record<string, string> = {
   'The models were asked {n} times: {split}.': 'Modellere {n} kez soruldu: {split}.',
   '(not refreshed: the last read failed)': '(yenilenmedi: son okuma başarısız oldu)',
   'OpenAlex’s budget today could not be read.': 'OpenAlex’in bugünkü bütçesi okunamadı.',
+  // P2 (D31): the requests a run sent, from its stored requests.
+  'Requests this run sent: {list}.': 'Bu işlemin gönderdiği istekler: {list}.',
+  '{provider} {n}': '{provider} {n}',
+  '{provider} {n} ({details})': '{provider} {n} ({details})',
+  '{n} refused': '{n} reddedildi',
+  '{n} not known whether sent': '{n} isteğin gönderilip gönderilmediği bilinmiyor',
+  'This run’s OpenAlex and Semantic Scholar requests are not known: it started before DEIXIS stored them.': 'Bu işlemin OpenAlex ve Semantic Scholar istekleri bilinmiyor: işlem, DEIXIS bunları kaydetmeye başlamadan önce başladı.',
   'Reading OpenAlex’s budget today…': 'OpenAlex’in bugünkü bütçesi okunuyor…',
   '{p}%': '%{p}',
   '${x} left': '${x} kaldı',

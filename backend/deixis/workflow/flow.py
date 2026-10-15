@@ -345,11 +345,14 @@ class ResearchFlow:
     async def execute(self, run_id: str) -> None:
         # Resume and retry use the same flow and run ID; quota may have reset between executions.
         self._quota_out.pop(run_id, None)
-        from deixis.providers.common import fast_openalex_pacing
+        from deixis.providers.common import fast_openalex_pacing, request_log
         pacing = fast_openalex_pacing.set(fast_path.chain_on(self.store.run(run_id)["budget"]))
+        # Every provider request of this run, and of the tasks it starts, is stored as it returns (D31).
+        logging_requests = request_log.set(self.store.request_log(run_id))
         try:
             await self._execute_run(run_id)
         finally:
+            request_log.reset(logging_requests)
             chain = self._fast_chains.pop(run_id, None)
             if chain is not None:
                 await chain.stop()

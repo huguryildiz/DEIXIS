@@ -731,6 +731,7 @@ EMPTY_BECAUSE = {
     "research_model_changes": "the builder changes no research model; backup/restore: tests/models/test_research_model_change.py",
     "watch_gaps": "the rich library builder starts no interval watch, so no scheduling gap is recorded",
     "watch_schedule_changes": "the rich library builder changes no follow-up watch schedule",
+    "provider_requests_unrecorded_runs": "lists the runs that existed when migration 0011 ran (D31); a library built after it has none",
 }
 
 

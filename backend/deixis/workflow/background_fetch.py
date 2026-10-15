@@ -7,6 +7,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
+from deixis.providers.common import request_log
 from deixis.storage.db import new_id, transaction
 from deixis.workflow import fast_path
 from deixis.workflow.store import ACTIVE_RUN_STATUSES
@@ -142,6 +143,8 @@ class BackgroundFetchLane:
         late_revision.advance(self.flow, run["research_id"])
 
     async def _fetch(self, run: dict[str, Any], wid: str) -> None:
+        # The fetch is the run's work, started after it ended: its provider requests are stored as the run's (D31).
+        request_log.set(self.store.request_log(run["id"]))
         async with self.flow.deps.fetch_slots.slot(background=True):
             await before_publish(self.flow, run)
             self.flow._claim(run["id"], wid, False, "fast_path")

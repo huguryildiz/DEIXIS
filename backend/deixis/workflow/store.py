@@ -456,6 +456,8 @@ class Store:
                           "model_proposals", "record_signal_ranks", "record_flags", "chain_links", "scope_english_questions"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
+            for table in ("provider_requests", "provider_requests_unrecorded_runs"):
+                self.conn.execute(f"DELETE FROM {table} WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
             for table in ("runs", "scope_revisions"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM researches WHERE id = ?", (research_id,))
@@ -3534,6 +3536,50 @@ class Store:
         return {row["task_type"]: row["calls"] for row in self.conn.execute(
             "SELECT i.task_type AS task_type, COUNT(*) AS calls FROM model_sessions m"
             f" JOIN step_inputs i ON i.id = m.step_input_id WHERE {where} GROUP BY i.task_type", args)}
+
+    def begin_provider_request(self, run_id: str, host: str, url: str) -> int | None:
+        """Store one attempt of this run about to be handed to the HTTP client, as not known whether sent (D31); its
+        row id. A run deleted with its research meanwhile keeps nothing (None)."""
+        with transaction(self.conn):
+            cur = self.conn.execute(
+                "INSERT INTO provider_requests (run_id, host, url, started_at) SELECT ?, ?, ?, ?"
+                " WHERE EXISTS (SELECT 1 FROM runs WHERE id = ?)", (run_id, host, url, now(), run_id))
+            return cur.lastrowid if cur.rowcount else None
+
+    def settle_provider_request(self, run_id: str, row_id: int | None, facts: dict[str, Any]) -> None:
+        """Settle a begun attempt of this run with what became of it (`providers.common.settle_request`). Only that
+        run's row, and only while unsettled: a row recovery already closed, or a run deleted meanwhile, is left as is."""
+        if row_id is None:
+            return
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE provider_requests SET sends = ?, refusals = ?, unknown = ?, delivery_class = ?, http_status = ?,"
+                " settled_at = ? WHERE id = ? AND run_id = ? AND settled_at IS NULL",
+                (facts["sends"], facts["refusals"], facts["unknown"], facts["delivery_class"], facts["http_status"],
+                 now(), row_id, run_id))
+
+    def request_log(self, run_id: str) -> Any:
+        """The request log `providers.common.request_log` takes for this run's work."""
+        store = self
+
+        class Log:
+            def begin(self, host: str, url: str) -> int | None:
+                return store.begin_provider_request(run_id, host, url)
+
+            def settle(self, row_id: int | None, facts: dict[str, Any]) -> None:
+                store.settle_provider_request(run_id, row_id, facts)
+        return Log()
+
+    def provider_request_counts(self, run_id: str) -> dict[str, dict[str, int]] | None:
+        """Per host, the attempts this run sent, the refusals among them, and those not known whether sent (cancelled
+        while out, still out, or out when the process stopped), from its stored requests; None for a run that started
+        before requests were stored, whose count is not known."""
+        if self.conn.execute("SELECT 1 FROM provider_requests_unrecorded_runs WHERE run_id = ?", (run_id,)).fetchone():
+            return None
+        return {row["host"]: {"sent": row["sent"], "refused": row["refused"], "unknown": row["unknown"]}
+                for row in self.conn.execute(
+                    "SELECT host, SUM(sends) AS sent, SUM(refusals) AS refused, SUM(unknown) AS unknown"
+                    " FROM provider_requests WHERE run_id = ? GROUP BY host", (run_id,))}
 
     def run_exists(self, run_id: str) -> bool:
         return self.conn.execute("SELECT 1 FROM runs WHERE id = ?", (run_id,)).fetchone() is not None

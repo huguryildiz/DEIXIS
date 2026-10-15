@@ -30,6 +30,30 @@ fast_openalex_pacing: ContextVar[bool] = ContextVar("fast_openalex_pacing", defa
 # Set by the caller for one dispatch and read after a start gate's wait: "quota_exhausted" once this run's quota for the
 # provider ran out, "stopped" once the run was stopped or its deadline passed, None to send.
 send_blocked: ContextVar[Callable[[], str | None] | None] = ContextVar("send_blocked", default=None)
+# Set for the length of one run's work (`Flow.execute`, a background full-text fetch) to store each provider request of
+# that run (P2, D31): one row per attempt of `send` (each 429 retry is one) and per OpenAlex PDF lookup. The row is
+# written just before the request goes to the HTTP client, as "not known whether sent", and settled when the attempt
+# ends; one the process never settled stays not known. The log has `begin(host, url) -> id | None` and
+# `settle(id, facts)`.
+request_log: ContextVar[Any] = ContextVar("request_log", default=None)
+
+
+def begin_request(location: str) -> Any:
+    """Store one attempt about to be handed to the HTTP client, when a run is counting; the token to settle it with.
+    `location` is the URL without its query."""
+    log = request_log.get()
+    return None if log is None else (log, log.begin(urlsplit(location).hostname or "", location))
+
+
+def settle_request(token: Any, sent: bool, refused: bool, delivery_class: str | None, http_status: int | None,
+                   *, unknown: bool = False) -> None:
+    """Settle a begun attempt: `sent` when it went out (one that failed before sending did not), `refused` when the
+    provider answered it without executing it (a 429 or another refusal), `unknown` when it was cancelled while out,
+    so whether it was sent is not known."""
+    if token is not None:
+        log, row = token
+        log.settle(row, {"sends": int(sent and not unknown), "refusals": int(refused), "unknown": int(unknown),
+                         "delivery_class": delivery_class, "http_status": http_status})
 
 
 @contextmanager
@@ -185,23 +209,32 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     """
     retries = 0
     gated = False  # the last attempt was stopped at its start gate and is not counted
+    pool_wait = False  # the last attempt timed out waiting for a pooled connection: not sent
+    begun: Any = None  # the stored row of the attempt now with the HTTP client (D31)
+    parts = urlsplit(url)
+    location = redact(f"{parts.scheme}://{parts.netloc.rsplit('@', 1)[-1]}{parts.path}", *secrets)
+
     def finish(response, outcome):
         if outcome.status not in {"completed", "zero_results"}:
             outcome.service_kind = service_error_kind(outcome.error_kind or outcome.http_status or outcome.status,
                 text=(outcome.error or outcome.delivery_class or "") if outcome.http_status is None else "")
             outcome.error = f"Service request failed ({outcome.service_kind})."
+        attempts = outcome.retries + int(not gated)
+        sends = attempts - int(outcome.delivery_class == "before_send" and not gated)
         entries = _transport_collector.get()
         if entries is not None:
-            parts = urlsplit(url)
-            location = f"{parts.scheme}://{parts.netloc.rsplit('@', 1)[-1]}{parts.path}"
-            attempts = outcome.retries + int(not gated)
-            entries.append({"url": redact(location, *secrets), "attempts": attempts,
-                            "sends": attempts - int(outcome.delivery_class == "before_send" and not gated),
+            entries.append({"url": location, "attempts": attempts, "sends": sends,
                             "retries": outcome.retries, "status": outcome.status,
                             "http_status": outcome.http_status, "delivery_class": outcome.delivery_class})
+        # The refused attempts before a retry were settled as they came back; this is the last one. An attempt stopped
+        # at its start gate never reached the client and has no row.
+        if not gated:
+            settle_request(begun, outcome.delivery_class != "before_send" and not pool_wait,
+                           outcome.delivery_class == "rejected_not_executed", outcome.delivery_class, outcome.http_status)
         return response, outcome
 
     while True:
+        begun = None
         try:
             if fast_openalex_pacing.get() and urlsplit(url).hostname == "api.openalex.org":
                 from deixis.providers.pacing import FAST_OPENALEX_PACER
@@ -215,15 +248,28 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                                                       error=f"Not sent after its start wait: {why}"))
             # A body makes this a POST; everything else — the Semantic Scholar gate (D67), the bounded 429 retries
             # and the failure classes — is the same path every provider request takes.
-            def attempt() -> Any:
-                if json_body is not None:
-                    return client.post(url, params=params, headers=headers, json=json_body, timeout=timeout)
-                return client.get(url, params=params, headers=headers, timeout=timeout)
+            async def attempt() -> Any:
+                nonlocal begun
+                # Stored before the client has it: a stop or a crash from here on leaves it "not known whether sent".
+                # A stop during a wait before this point (a pacer, the start gate) sent nothing and leaves no row.
+                begun = begin_request(location)
+                try:
+                    if json_body is not None:
+                        return await client.post(url, params=params, headers=headers, json=json_body, timeout=timeout)
+                    return await client.get(url, params=params, headers=headers, timeout=timeout)
+                except asyncio.CancelledError:
+                    settle_request(begun, False, False, "cancelled", None, unknown=True)
+                    raise
 
             if urlsplit(url).hostname == "api.semanticscholar.org":
                 response = await SEMANTIC_SCHOLAR_PACER.run(attempt)
             else:
                 response = await attempt()
+        except httpx.PoolTimeout as exc:
+            # No connection came free from the client's pool: nothing was sent. The outcome keeps its old class (a
+            # timeout); only the request count reads it as not sent.
+            pool_wait = True
+            return finish(None, SearchOutcome("timeout", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries))
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             return finish(None, SearchOutcome("failed", "before_send", description, access_mode, error=type(exc).__name__, retries=retries))
         except httpx.TimeoutException as exc:
@@ -252,6 +298,8 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
             wait = _retry_wait(response.headers.get("retry-after"), retries, unstated_wait, max_retry_wait)
             if retry_rate_limit and retries < max_rate_limit_retries and wait is not None:
                 retries += 1
+                # Settled before the wait, so a run stopped while waiting still counts this sent, refused attempt.
+                settle_request(begun, True, True, "rejected_not_executed", response.status_code)
                 await asyncio.sleep(wait)
                 continue
             return finish(None, SearchOutcome("rate_limited", "rejected_not_executed", **base,

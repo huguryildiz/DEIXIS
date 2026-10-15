@@ -1,6 +1,8 @@
-"""Usage reads (parity slice S16): OpenAlex budget today (F7) and model calls by role (F8).
+"""Usage reads (parity slice S16): OpenAlex budget today (F7) and model calls by role (F8), with a run's provider
+requests (P2, D31).
 
-Both are read from what the app stored. The model calls are the rows of `model_sessions`, never an estimate. The OpenAlex
+All are read from what the app stored. The model calls are the rows of `model_sessions`, never an estimate; a run's
+requests are the rows of `provider_requests`, counting only what went out. The OpenAlex
 numbers are the rate-limit headers of the newest stored OpenAlex response since the last daily reset (midnight UTC, when
 OpenAlex renews its daily budget); a denominator is given only when OpenAlex sent a limit header with it. The answer says it is the last stored response
 (`source`) and when that was (`as_of`); it is not a live reading. Nothing here
@@ -63,6 +65,21 @@ def usage(counts: dict[str, int]) -> dict[str, Any]:
     total = sum(calls.values())
     return {"total": total, "roles": [{"role": role, "calls": calls[role],
                                        "share": calls[role] / total if total else None} for role in ROLES]}
+
+
+# The hosts whose requests the run's Usage box counts, in its order (P2, D31).
+COUNTED_HOSTS = (("openalex", "api.openalex.org"), ("semantic_scholar", "api.semanticscholar.org"))
+
+
+def requests(counts: dict[str, dict[str, int]] | None) -> dict[str, Any]:
+    """The run's requests to OpenAlex and Semantic Scholar from its stored requests: sent, refused among those, and not
+    known whether sent (cancelled while out, still out, or out when the process stopped). `recorded` false, with no
+    figures, for a run older than the record."""
+    if counts is None:
+        return {"recorded": False, "providers": None}
+    empty = {"sent": 0, "refused": 0, "unknown": 0}
+    return {"recorded": True, "providers": [{"provider": provider} | counts.get(host, empty)
+                                            for provider, host in COUNTED_HOSTS]}
 
 
 def _number(value: Any) -> Decimal | None:
@@ -128,7 +145,8 @@ def register_usage_routes(app) -> None:
                 raise HTTPException(422, "period=run needs run_id")
             if not store.run_exists(run_id):
                 raise HTTPException(404, "Unknown run")
-            return {"period": "run", "run_id": run_id, "as_of": now()} | usage(store.model_call_counts(run_id=run_id))
+            return ({"period": "run", "run_id": run_id, "as_of": now()} | usage(store.model_call_counts(run_id=run_id))
+                    | {"requests": requests(store.provider_request_counts(run_id))})
         since, until = month_window(datetime.now(timezone.utc))
         return ({"period": "month", "since": since, "until": until, "as_of": now()}
                 | usage(store.model_call_counts(since=since, until=until)))

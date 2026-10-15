@@ -14,6 +14,15 @@ Decision:
 - The sheet shows "Answered · HTTP 200" or "Did not answer · …" next to the status, with the check's time; a test that could not run shows why and hides the earlier answer. COPY_CHANGES keyless-sheet-save is narrowed to the wording that still differs.
 Limits: Tested with mocked transports and the fixture server only; no live request to any source was sent. An HTTP answer, even 200, does not show that a search would return records.
 
+## D31 — A run's OpenAlex and Semantic Scholar requests are stored one row each and counted in its Usage box
+Status: accepted · Date: 2026-10-15 · Writer: Claude
+Context: The run's Usage box gave OpenAlex's day budget but no count of the run's own requests (S27, COPY_CHANGES usage-box-openalex). The steps store traces of some requests, but a retried search replaces its step's trace and the planning requests (term counts, routing, seed lookups) and the OpenAlex PDF lookups keep none.
+Decision:
+- Migration 0011 adds `provider_requests`: one row per attempt of `providers.common.send` made for a run (each 429 retry is its own attempt) and per OpenAlex PDF lookup by DOI (`documents/acquisition.py`). The row is written just before the attempt is handed to the HTTP client, as "not known whether sent", and settled when the attempt ends; a refused attempt is settled before the retry wait. The run is the one whose work is running (`Flow.execute`, or the background full-text fetch it queued), passed through a context variable; a request made outside a run is not stored.
+- A settled attempt has `sends` 1 when it went out; one closed before sending (`before_send`, or a timeout waiting for a pooled connection) is not, and a stop during a local wait (start gate, pacer) never reaches the client and has no row. `refusals` is 1 when the provider answered without executing: a 429 (retried or not) and any final `rejected_not_executed`; for a PDF lookup, any 4xx but 404. This is R19's reading: a refused request was sent. An attempt cancelled while out, still out, or out when the process stopped stays `unknown`; the next start marks the last kind `backend_stopped`. Unknown attempts are named apart, never counted as sent.
+- The run's Usage box adds "Requests this run sent: OpenAlex N, Semantic Scholar M", with "(K refused; U not known whether sent)" where those occur. Runs that existed when 0011 ran are listed in `provider_requests_unrecorded_runs`; for those the box says the count is not known, never 0.
+Limits: Hosts other than OpenAlex and Semantic Scholar are stored but not shown. Fake transports only: tests compare the count with the requests a mocked provider received; no live run was counted.
+
 ## D28 — The answer step organizes by topic, answers comparisons with the trade-off, and matches certainty to the evidence
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: The owner asked whether an outside literature-review skill (an agent skill with its own search and DOI tools) could be used. Its tools do not fit DEIXIS, where code searches and the model has no tools. Some of its writing rules were missing from `references/source-grounded-answer.md`.

@@ -72,6 +72,10 @@ class Worker:
             from deixis.workflow import fast_path
 
             fast_path.recover(self.store)
+            # A provider request still out when the process stopped stays "not known whether sent" (D31); its row
+            # says why.
+            conn.execute("UPDATE provider_requests SET delivery_class = 'backend_stopped', settled_at = ?"
+                         " WHERE settled_at IS NULL", (now(),))
             from deixis.workflow import background_fetch
             background_fetch.recover(self.store)
             steps = conn.execute(

@@ -17,7 +17,7 @@ import httpx
 
 from deixis.documents import fetch, jats, pdf
 from deixis.providers import core, crossref
-from deixis.providers.common import ProviderRecord, normalize_doi
+from deixis.providers.common import ProviderRecord, begin_request, normalize_doi, settle_request
 from deixis.storage import db
 from deixis.workflow.store import Store
 from deixis.workflow import file_restore
@@ -187,6 +187,7 @@ async def _openalex_request(client: httpx.AsyncClient, doi: str, source_version:
     if contact_email:
         params["mailto"] = contact_email
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    begun = None
     try:
         async with fetch.host_gate(OPENALEX_URL):  # one request per host at a time (slice 13e)
             if budget is not None and budget.exhausted:  # no request is made: a skip, with no HTTP status
@@ -194,11 +195,28 @@ async def _openalex_request(client: httpx.AsyncClient, doi: str, source_version:
                               attempt_id=uuid.uuid4().hex)
             attempt_id = uuid.uuid4().hex
             made.append(attempt_id)
-            response = await client.get(f"{OPENALEX_URL}/https://doi.org/{quote(doi, safe='/')}", params=params, headers=headers, timeout=30)
+            begun = begin_request(OPENALEX_URL)  # stored before the client has it (D31)
+            try:
+                response = await client.get(f"{OPENALEX_URL}/https://doi.org/{quote(doi, safe='/')}", params=params,
+                                            headers=headers, timeout=30)
+            except asyncio.CancelledError:
+                settle_request(begun, False, False, "cancelled", None, unknown=True)  # not known whether sent
+                raise
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout) as exc:
+        # Not sent: the connection never opened, or none came free from the pool.
+        settle_request(begun, False, False, "before_send", None)
+        return Lookup("timeout" if isinstance(exc, httpx.TimeoutException) else "failed", [],
+                      error_code="timeout" if isinstance(exc, httpx.TimeoutException) else type(exc).__name__)
     except httpx.TimeoutException:
+        settle_request(begun, True, False, "after_send_unknown", None)
         return Lookup("timeout", [], error_code="timeout")
     except httpx.HTTPError as exc:
+        settle_request(begun, True, False, "after_send_unknown", None)
         return Lookup("failed", [], error_code=type(exc).__name__)
+    # A 404 is an answer (OpenAlex holds no such DOI); any other 4xx, a 429 included, is a refusal.
+    refused = 400 <= response.status_code < 500 and response.status_code != 404
+    settle_request(begun, True, refused, "rejected_not_executed" if refused
+                   else "after_send_unknown" if response.status_code >= 500 else None, response.status_code)
     if response.status_code == 404:
         return Lookup("zero_results", [], 404)
     if response.status_code == 429:

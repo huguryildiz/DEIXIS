@@ -1463,9 +1463,14 @@ export const shellApi = {
 // last daily reset (midnight UTC).
 export type UsageRole = 'answer' | 'literature' | 'reviewer'
 export type RoleUsage = { role: UsageRole; calls: number; share: number | null }
+// A run's requests (period=run only, D31), from its stored requests: what the run sent to OpenAlex and Semantic Scholar,
+// how many of those the provider refused, and how many are not known whether sent (cancelled while out, still out, or
+// out when the process stopped). `recorded` false (no figures) for a run older than the record.
+export type ProviderRequests = { provider: 'openalex' | 'semantic_scholar'; sent: number; refused: number; unknown: number }
 export type Usage = {
   period: 'month' | 'run'; run_id?: string; since?: string; until?: string; as_of: string
   total: number; roles: RoleUsage[]
+  requests?: { recorded: true; providers: ProviderRequests[] } | { recorded: false; providers: null }
 }
 export type OpenAlexBudgetToday = {
   provider: 'openalex'; unit: 'usd' | 'credits' | null; remaining: number | null; limit: number | null

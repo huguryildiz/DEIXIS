@@ -243,7 +243,8 @@ def test_dismiss_wrong_status_and_long_reason_refused(api):
 
 @pytest.mark.parametrize("lifecycle", ["baseline_and_new", "failed", "cancelled"])
 def test_real_worker_lifecycle_authorizer_every_other_table_and_view_counts_unchanged(api, lifecycle):
-    allowed = {"runs", "run_steps", "events", *TABLES, "researches", "worker_owner", "sqlite_sequence"}
+    # provider_requests: the run's own provider requests, stored one row per attempt (D31).
+    allowed = {"runs", "run_steps", "events", *TABLES, "researches", "worker_owner", "sqlite_sequence", "provider_requests"}
     before_view = api.client.get(f"/api/researches/{api.rid}").json()
     tables = {r[0] for r in api.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     protected = sorted(tables-allowed)

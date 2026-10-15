@@ -318,7 +318,7 @@ test.describe.serial('S9: the steps list', () => {
   test('S27 (R17): the Usage box splits the run’s stored model calls by role and gives OpenAlex’s last stored budget', async () => {
     const view = await viewOf(api, parityRid)
     const discovery = view.runs.find(r => r.kind === 'discovery')!
-    const usage = await (await api.context.get(`/api/usage?period=run&run_id=${discovery.id}`)).json() as { total: number; roles: Array<{ role: string; calls: number }> }
+    const usage = await (await api.context.get(`/api/usage?period=run&run_id=${discovery.id}`)).json() as { total: number; roles: Array<{ role: string; calls: number }>; requests: { recorded: boolean; providers: Array<{ provider: string; sent: number; refused: number; unknown: number }> } }
     const budget = await (await api.context.get('/api/openalex/budget-today')).json() as { remaining: number | null }
     expect(usage.total).toBeGreaterThan(0)
     await page.goto(`${server.url()}/#/research/${parityRid}`)
@@ -336,6 +336,14 @@ test.describe.serial('S9: the steps list', () => {
     await expect(box.locator('span').nth(1)).toHaveText(budget.remaining === null
       ? 'OpenAlex: no budget figure is stored since the daily reset (midnight UTC), so today’s budget is not known.'
       : /^OpenAlex: .* in its last stored response \(\d/)
+    // P2 (D31): the requests the run sent, from its stored requests; the fixture's mocked OpenAlex answered every one.
+    expect(usage.requests.recorded).toBe(true)
+    const [openalex, s2] = usage.requests.providers
+    expect(openalex.provider).toBe('openalex')
+    expect(openalex.sent).toBeGreaterThan(0)
+    expect(openalex.unknown + s2.unknown).toBe(0)
+    const part = (name: string, p: { sent: number; refused: number }) => p.refused ? `${name} ${p.sent} (${p.refused} refused)` : `${name} ${p.sent}`
+    await expect(box.locator('span').nth(2)).toHaveText(`Requests this run sent: ${part('OpenAlex', openalex)}, ${part('Semantic Scholar', s2)}.`)
     await shot(page, 's27-usage-box')
   })
 

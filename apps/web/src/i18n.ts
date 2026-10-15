@@ -4280,6 +4280,7 @@ const tr: Record<string, string> = {
   'Not removed: {message}': 'Kaldırılmadı: {message}',
   'The proxy setting could not be read.': 'Proxy ayarı okunamadı.',
   'Not set up': 'Kurulmadı',
+  'Key and user ID saved': 'Anahtar ve kullanıcı kimliği kayıtlı',
   'Without a proxy, publisher links open directly.': 'Proxy olmadan yayıncı bağlantıları doğrudan açılır.',
   'Checking: asking the proxy host…': 'Denetleniyor: proxy sunucusuna soruluyor…',
   'The last check got no answer from DEIXIS. Test again.': 'Son denetim DEIXIS’ten cevap alamadı. Yeniden deneyin.',

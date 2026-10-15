@@ -1162,7 +1162,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
         {zotero && <LocalToolDetails tool={zotero} dark={dark} onChanged={reloadTools} refresh={false} chip={false} />}
       </section>
       {credentials && <section className="zotero-route">
-        <div className="zotero-route-head"><h3>zotero.org</h3>{zotero && <span className={`status-chip is-status ${zotero.web_configured ? '' : 'is-configured'}`}>{t(zotero.web_configured ? 'Ready' : 'Not set up')}</span>}</div>
+        <div className="zotero-route-head"><h3>zotero.org</h3>{zotero && <span className={`status-chip is-status ${zotero.web_configured ? '' : 'is-configured'}`}>{t(zotero.web_configured ? 'Key and user ID saved' : 'Not set up')}</span>}</div>
         <p className="foot-note is-ink">{linkify(t('To import from zotero.org, create a read-only key at zotero.org/settings/keys. Your user ID is shown on the same page.'))}</p>
         {(['ZOTERO_API_KEY', 'ZOTERO_LIBRARY_ID'] as const).map(env => <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain}
           plain={env === 'ZOTERO_LIBRARY_ID'} note={env === 'ZOTERO_LIBRARY_ID'} label={t(env === 'ZOTERO_API_KEY' ? 'zotero.org API key' : 'zotero.org user ID')} service="zotero.org"

@@ -851,8 +851,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
          While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */}
       {      active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
         {!answerOffersNew && <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>}
-        {/* Searching again is a secondary pill with the accent icon; the first search of a research is an outline button. */}
-        {hasAcademic && (view.search_runs.length
+        {/* Once there is an answer the next step here is a new answer (from the PDFs added since); searching again stays in
+           the research menu. Before an answer, searching again is a secondary pill; the first search is an outline button. */}
+        {hasAcademic && !(answer && view.search_runs.length) && (view.search_runs.length
           ? <Button className="search-again" variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} aria-hidden />{t('Search again')}</Button>
           : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
       </div><UploadedTextNote semantic={view.semantic} /></>}

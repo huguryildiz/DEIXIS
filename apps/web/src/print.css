@@ -129,6 +129,10 @@
   html[data-print="panel"] .report-document .reference-list { display: block; margin: 0; padding: 0 !important; counter-reset: ref; }
   html[data-print="panel"] .report-document .reference-list li { display: grid; grid-template-columns: 20pt minmax(0, 1fr);
     margin: 0 0 6pt; break-inside: avoid; font-size: 9.5pt; line-height: 1.4; }
+  /* A numeric style (IEEE) carries its [n] inside the button and has no ::before number: one column, or the whole
+     entry lands in the 20pt number track. */
+  html[data-print="panel"] .report-document .reference-list li:has(.ref-num) { grid-template-columns: minmax(0, 1fr); }
+  html[data-print="panel"] .report-document .reference-list .ref-num { display: inline; margin: 0 .3em 0 0; color: inherit; font: inherit; }
   html[data-print="panel"] .report-document .reference-list li::before { font: 400 9.5pt/1.4 var(--font-serif); color: #1a1a1a; padding: 0; }
   html[data-print="panel"] .report-document .reference-list button { display: block; padding: 0; border: 0; background: none;
     text-align: left; font: 400 9.5pt/1.4 var(--font-serif); color: #1a1a1a; }

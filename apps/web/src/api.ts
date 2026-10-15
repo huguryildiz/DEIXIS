@@ -162,8 +162,9 @@ export type RoleModelSetting = { model_connection: string; model: string | null;
 export type Step = {
   id: string; operation_key: string; kind: string; status: string; attempt: number; delivery_class: string | null
   error_code: string | null; error: unknown; started_at: string | null; finished_at: string | null
-  // The models this step's calls went to, from its stored sessions (D15): the model that answered when known, else the one asked for.
-  models?: { connection: string; model: string | null }[]
+  // The models this step's calls went to, from its stored sessions (D15): the model that answered when known, else the one asked for,
+  // with the reasoning effort the call was sent with (null when none was sent or the session predates its storage, D25).
+  models?: { connection: string; model: string | null; effort?: string | null }[]
   // Only small counting/provenance outputs carry through this view; model prose remains in its own artifact view.
   output: { pdfs_read?: number; pdfs_skipped?: number; page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number
     // A pdf_ocr run (D51): the pages without text it found, and whether the merged OCR text was taken into use.
@@ -694,6 +695,8 @@ export type Credentials = { keychain: Keychain; keys: KeyEntry[] }
 export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed'; detail: string; checked_at: string; kind?: string; http_status?: number | null; reset_at?: string | null }
 export type LocalToolModel = { id: string; size_bytes: number | null; embedding: boolean }
 export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; url: string }
+// 'failed' is set by the page itself when the terminal could not be opened (the server answered with an error).
+export type AccountSignIn = { state: 'idle' | 'waiting' | 'succeeded' | 'failed' | 'timed_out'; message: string | null }
 export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string } | null
 export type LocalTool = {
   id: 'claude_code' | 'codex' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'
@@ -1284,6 +1287,8 @@ export const api = {
   localTools: (refresh = false) => request<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`),
   installLocalTool: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/install`, { method: 'POST' }),
   cancelLocalToolInstall: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/cancel`, { method: 'POST' }),
+  startAccountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`, { method: 'POST' }),
+  accountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`),
   semanticSearch: () => request<SemanticSearch>('/api/semantic-search'),
   saveSemanticSearch: (provider: SemanticSearchProvider, model: string | null) =>
     request<SemanticSearch>('/api/semantic-search', json('PUT', { provider, model })),

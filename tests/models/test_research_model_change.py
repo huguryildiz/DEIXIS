@@ -77,8 +77,10 @@ def test_each_step_in_the_research_view_names_the_model_its_calls_went_to(tmp_pa
 
     runs = {run["id"]: run for run in research_view(lib.store, lib.rid)["runs"]}
     called = lambda run_id: [step["models"] for step in runs[run_id]["steps"] if step["kind"].startswith("model:")]
-    assert called(filled["id"]) and all(models == [{"connection": "fake", "model": "fake-model"}] for models in called(filled["id"]))
-    assert called(checked["id"]) == [[{"connection": "fake", "model": "fake-model-2"}]]
+    # The first run was sent with no effort; the recheck carries the effort the change set and the adapter sent (P3).
+    assert called(filled["id"]) and all(models == [{"connection": "fake", "model": "fake-model", "effort": None}]
+                                        for models in called(filled["id"]))
+    assert called(checked["id"]) == [[{"connection": "fake", "model": "fake-model-2", "effort": "high"}]]
     assert all(step["models"] == [] for run in runs.values() for step in run["steps"] if not step["kind"].startswith("model:"))
 
 
@@ -201,3 +203,80 @@ def test_the_model_change_history_survives_backup_and_restore(tmp_path):
         after = client.get(f"/api/researches/{rid}").json()
     assert after["model_changes"] == before["model_changes"] and len(after["model_changes"]) == 1
     assert after["scope"]["requested_model"] == "fake-model-2"  # the restored research runs on the chosen model
+
+
+def test_a_session_stores_the_effort_its_adapter_sent_and_never_a_setting(tmp_path):
+    """Post-parity P3: a model session keeps the reasoning effort sent with the call. An adapter that does not forward
+    an effort (an OpenAI-compatible connection) stores none although the role has one, and a session stored before
+    migration 0009 (null effort) is never given the role's current effort in the view."""
+    from deixis.workflow.views import research_view
+    lib = library(tmp_path)
+    change(lib, "fake-model-2", effort="high")
+    filled = fill(lib)
+    execute(lib, filled)
+    assert {effort for _, _, effort in lib.adapter.sent} == {"high"}
+    stored = lib.conn.execute("SELECT DISTINCT reasoning_effort FROM model_sessions WHERE run_id = ?", (filled["id"],)).fetchall()
+    assert [row[0] for row in stored] == ["high"]
+
+    lib.adapter.sends_reasoning_effort = False
+    checked = lib.tables.request_recheck(lib.rid, lib.tid, lib.cid, lib.published, 1, None)
+    execute(lib, checked)
+    assert lib.adapter.sent[-1] == ("cell_extraction", "fake-model-2", "high")  # passed to the adapter, not sent on
+    stored = lib.conn.execute("SELECT reasoning_effort FROM model_sessions WHERE run_id = ?", (checked["id"],)).fetchall()
+    assert stored and all(row[0] is None for row in stored)
+
+    # A session stored before the column existed reads null, as one sent without an effort does.
+    lib.conn.execute("UPDATE model_sessions SET reasoning_effort = NULL WHERE run_id = ?", (filled["id"],))
+    runs = {run["id"]: run for run in research_view(lib.store, lib.rid)["runs"]}
+    for run_id in (filled["id"], checked["id"]):
+        models = [m for step in runs[run_id]["steps"] if step["kind"].startswith("model:") for m in step["models"]]
+        assert models and all(m == {"connection": "fake", "model": "fake-model-2", "effort": None} for m in models)
+
+
+def test_migration_0009_keeps_earlier_sessions_with_a_null_effort(tmp_path):
+    """A session written before 0009 keeps its row and reads a null effort; nothing is back-filled. The earlier library
+    is made by taking 0009 back out of a migrated one after a run sent its calls with an effort."""
+    from deixis.storage import db
+    lib = library(tmp_path)
+    change(lib, "fake-model-2", effort="high")
+    execute(lib, fill(lib))
+    before = lib.conn.execute("SELECT id, requested_model, status FROM model_sessions ORDER BY rowid").fetchall()
+    assert before
+    lib.conn.execute("ALTER TABLE model_sessions DROP COLUMN reasoning_effort")
+    lib.conn.execute("DELETE FROM schema_migrations WHERE version = 9")
+    assert db.migrate(lib.conn) == [9]
+    after = lib.conn.execute("SELECT id, requested_model, status, reasoning_effort FROM model_sessions ORDER BY rowid").fetchall()
+    assert [tuple(r)[:3] for r in after] == [tuple(r) for r in before] and all(r["reasoning_effort"] is None for r in after)
+
+
+def test_a_step_lists_each_model_and_effort_once_with_its_latest_call_last(tmp_path):
+    """Sol P3 r1: a step whose calls went high, low, then high again lists low before high, so the last entry is where
+    its latest call went and the model line does not name an unchanged role as set for the next calls."""
+    from deixis.workflow.views import research_view
+    lib = library(tmp_path)
+    change(lib, "fake-model-2", effort="high")
+    filled = fill(lib)
+    execute(lib, filled)
+    first = lib.conn.execute("SELECT * FROM model_sessions WHERE run_id = ? ORDER BY rowid LIMIT 1", (filled["id"],)).fetchone()
+    lib.conn.execute("DELETE FROM model_sessions WHERE step_id = ? AND id != ?", (first["step_id"], first["id"]))
+    row = dict(first)
+    for n, effort in enumerate(("low", "high")):
+        row.update(id=f"{first['id']}-{n}", reasoning_effort=effort)
+        lib.conn.execute(f"INSERT INTO model_sessions ({', '.join(row)}) VALUES ({', '.join('?' for _ in row)})", tuple(row.values()))
+    run = next(r for r in research_view(lib.store, lib.rid)["runs"] if r["id"] == filled["id"])
+    step = next(s for s in run["steps"] if s["id"] == first["step_id"])
+    assert step["models"] == [{"connection": "fake", "model": "fake-model-2", "effort": "low"},
+                              {"connection": "fake", "model": "fake-model-2", "effort": "high"}]
+
+
+def test_only_adapters_that_forward_an_effort_say_so():
+    """D25: the flow stores an effort only for an adapter that declares it sends one. Every OpenAI-compatible connection
+    (Qwen, Kimi, Mistral and D22's Grok, Copilot, GLM, Muse and Ollama) sends none, so its sessions store null."""
+    from deixis.models import openai_compat
+    from deixis.models.adapter import CodexAdapter
+    from deixis.models.claude import ClaudeCodeAdapter
+    from deixis.models.deepseek import DeepSeekAdapter
+    from deixis.models.gemini import GeminiAdapter
+    assert all(cls.sends_reasoning_effort for cls in (CodexAdapter, ClaudeCodeAdapter, DeepSeekAdapter, GeminiAdapter))
+    assert openai_compat.CONNECTIONS and all(
+        openai_compat.OpenAICompatAdapter(spec).sends_reasoning_effort is False for spec in openai_compat.CONNECTIONS.values())

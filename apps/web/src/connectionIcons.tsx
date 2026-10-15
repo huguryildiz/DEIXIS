@@ -45,5 +45,5 @@ const icons: Record<string, ReactNode> = {
 
 export function ConnectionIcon({ id }: { id: string }) {
   const icon = icons[id]
-  return icon ? <span className="connection-icon" aria-hidden="true">{icon}</span> : null
+  return icon ? <span className="connection-icon" data-icon={id} aria-hidden="true">{icon}</span> : null
 }

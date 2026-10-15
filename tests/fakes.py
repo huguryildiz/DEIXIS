@@ -250,7 +250,7 @@ class FakeAdapter:
                  resolved_model: str | None = None, models: list[str] | None = None, efforts: list[str] | None = None,
                  delay: float = 0.0, before: Callable[[dict[str, Any]], None] | None = None,
                  fail: Callable[[dict[str, Any]], "ModelStepResult | None"] | None = None,
-                 enforces_schema: bool = True):
+                 enforces_schema: bool = True, sends_reasoning_effort: bool = True):
         self.responder = responder
         self.ready = ready
         self.resolved_model = resolved_model  # None: answer with the requested model, as a correct connection does
@@ -260,6 +260,7 @@ class FakeAdapter:
         self.before = before
         self.fail = fail
         self.enforces_schema = enforces_schema
+        self.sends_reasoning_effort = sends_reasoning_effort  # False: like an OpenAI-compatible connection (D25)
         self.calls: list[dict[str, Any]] = []
         self.sent_efforts: list[str | None] = []
         self.sent: list[tuple[str, str | None, str | None]] = []  # (task type, requested model, reasoning effort) per call

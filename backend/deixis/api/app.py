@@ -24,7 +24,7 @@ from keyring.errors import KeyringError
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from deixis import credentials, local_tools
+from deixis import account_signin, credentials, local_tools
 from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
@@ -726,6 +726,8 @@ def create_app(
     local_embedder: Any = None,
     xml_fetcher: Callable[[str], Awaitable[fetch_module.FetchResult]] | None = None,
     clock: fast_path.Clock | None = None,
+    signin_launcher: account_signin.Launcher | None = None,
+    signin_platform: str | None = None,
 ) -> FastAPI:
     settings = settings or load_settings()
     ports = {settings.port}
@@ -781,6 +783,22 @@ def create_app(
         app.state.fetch_xml = xml_fetcher or acquisition.fetch_xml  # Europe PMC's full text (SW21)
         app.state.institutional_access = None
         app.state.local_tools = local_tools.LocalTools(http)
+
+        def signed_in(tool: str) -> None:
+            app.state.local_tools._cache = None
+
+        async def signin_check(tool: str) -> bool:
+            # The tool's own health check is the only judge of a sign-in. A running Codex app-server started
+            # before the login may keep the old account; with no turn in flight it is closed first, so the check
+            # starts one that reads the login as it is now.
+            adapter = adapter_map.get(tool)
+            if adapter is None:
+                return False
+            if tool == "codex" and not getattr(adapter, "_active", True):
+                await adapter.close()
+            return bool((await adapter.health(refresh=True)).get("signed_in"))
+        app.state.account_signin = account_signin.AccountSignIn(settings.codex_home, signin_check, signin_launcher,
+                                                                platform=signin_platform, on_succeeded=signed_in)
         app.state.recovered = worker.recover() if owner else None
         app.state.reconciled = None
         async def reconcile_recovery() -> None:
@@ -1056,6 +1074,20 @@ def create_app(
                 for p, c in CONNECTORS.items()
             ],
         }
+
+    @app.post("/api/accounts/{tool}/sign-in")
+    async def start_account_sign_in(tool: str, request: Request) -> dict[str, Any]:
+        try:
+            return await request.app.state.account_signin.start(tool)
+        except account_signin.SignInError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @app.get("/api/accounts/{tool}/sign-in")
+    async def account_sign_in_state(tool: str, request: Request) -> dict[str, Any]:
+        try:
+            return await request.app.state.account_signin.state(tool)
+        except account_signin.SignInError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
 
     @app.get("/api/connections/{connection}")
     async def model_connection(connection: str, request: Request, refresh: bool = False) -> dict[str, Any]:

@@ -57,6 +57,7 @@ BY_KEY_ENV = {c.key_env: c for c in CONNECTIONS.values() if c.key_env}
 
 class OpenAICompatAdapter:
     enforces_schema = False
+    sends_reasoning_effort = False  # accepted for the protocol, never put in the request (module docstring)
 
     def __init__(self, spec: CompatConnection, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):
         self.spec = spec

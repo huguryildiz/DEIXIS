@@ -632,6 +632,7 @@ class ScriptedCodex:
 
     connection = "codex"
     enforces_schema = True  # as the real Codex adapter does (D86); the flow reads it before every model step
+    sends_reasoning_effort = True  # as the real Codex adapter does: a session stores the effort it was sent with (D25)
 
     def __init__(self, data_dir: Path | None = None) -> None:
         self.data_dir = data_dir
@@ -647,7 +648,10 @@ class ScriptedCodex:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         return {"connection": "codex", "ready": True, "reason": None, "installed": True, "signed_in": True,
                 "models": [{"id": MODEL, "display_name": MODEL, "is_default": True},
-                           *([{"id": SECOND_MODEL, "display_name": SECOND_MODEL}] if SECOND_MODEL else [])]}
+                           # The second model lists efforts with no default, so only a chosen effort is sent and shown (D25).
+                           *([{"id": SECOND_MODEL, "display_name": SECOND_MODEL,
+                               "reasoning_efforts": [{"id": "low", "description": ""}, {"id": "high", "description": ""}]}]
+                             if SECOND_MODEL else [])]}
 
     async def run_step(self, base, developer, message, output_schema, requested_model, reasoning_effort=None) -> ModelStepResult:
         global RATE_LIMIT_MODE

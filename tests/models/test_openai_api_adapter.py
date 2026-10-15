@@ -29,7 +29,7 @@ def answer(model="gpt-5.5", text='{"claims": []}', status="completed", output=No
 
 def test_identity():
     a = openai_api.OpenAIAdapter()
-    assert (a.connection, a.enforces_schema, a.sends_reasoning_effort) == ("openai", True, False)
+    assert (a.connection, a.enforces_schema, a.sends_reasoning_effort) == ("openai", True, True)
 
 
 def test_health_without_key_is_not_configured_and_sends_nothing(monkeypatch):
@@ -51,7 +51,6 @@ def test_health_keeps_chat_models_and_drops_the_rest(monkeypatch):
     status = asyncio.run(adapter(handler).health(refresh=True))
     assert status["ready"] is True
     assert [m["id"] for m in status["models"]] == ["gpt-4.1-mini", "gpt-4o", "gpt-4o-2024-08-06", "gpt-5.5", "o3"]
-    assert all(m["reasoning_efforts"] == [] for m in status["models"])
 
 
 def test_health_drops_chat_models_without_strict_json_schema(monkeypatch):
@@ -64,7 +63,7 @@ def test_health_drops_chat_models_without_strict_json_schema(monkeypatch):
         "gpt-4o-2024-08-06", "gpt-4o-mini", "gpt-4o-mini-2024-07-18", "o1", "o1-2024-12-17", "o3-mini"]
 
 
-def test_run_step_sends_a_strict_schema_no_tools_no_storage_and_no_effort(monkeypatch):
+def test_run_step_sends_a_strict_schema_no_tools_no_storage_and_the_effort(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     sent = []
 
@@ -80,7 +79,21 @@ def test_run_step_sends_a_strict_schema_no_tools_no_storage_and_no_effort(monkey
     body = sent[0]
     assert body["instructions"] == "BASE\n\nDEV" and body["input"] == "MSG" and body["store"] is False
     assert body["text"] == {"format": {"type": "json_schema", "name": "deixis_step", "schema": schema, "strict": True}}
-    assert not {"tools", "tool_choice", "reasoning", "previous_response_id"} & body.keys()
+    assert body["reasoning"] == {"effort": "high"}
+    assert not {"tools", "tool_choice", "previous_response_id"} & body.keys()
+    asyncio.run(adapter(handler).run_step("BASE", "DEV", "MSG", schema, "gpt-4o"))
+    assert "reasoning" not in sent[1]
+
+
+def test_health_offers_efforts_from_the_table_and_none_for_unknown_models(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    listed = ["gpt-4o", "gpt-5", "gpt-5-2025-08-07", "gpt-5-pro", "gpt-5.1", "gpt-5.5", "gpt-5.5-pro", "o3", "gpt-9-new"]
+    status = asyncio.run(adapter(lambda r: httpx.Response(200, json={"data": [{"id": i} for i in listed]})).health(refresh=True))
+    offered = {m["id"]: [e["id"] for e in m["reasoning_efforts"]] for m in status["models"]}
+    assert offered == {"gpt-4o": [], "gpt-5": ["minimal", "low", "medium", "high"],
+                       "gpt-5-2025-08-07": ["minimal", "low", "medium", "high"], "gpt-5-pro": ["high"],
+                       "gpt-5.1": ["none", "low", "medium", "high"], "gpt-5.5": ["none", "low", "medium", "high", "xhigh"],
+                       "gpt-5.5-pro": ["medium", "high", "xhigh"], "o3": ["low", "medium", "high"], "gpt-9-new": []}
 
 
 def test_run_step_without_key_or_model_sends_nothing(monkeypatch):

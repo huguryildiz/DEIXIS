@@ -4,8 +4,9 @@ Codex signed in with a ChatGPT account is a separate connection (`adapter.py`); 
 (`documents/embeddings.py`), unchanged. This one calls the Responses API directly: one stateless request per step
 (`store: false`), no tools, the step schema sent as a strict JSON-schema text format, and the answering model reported
 as `resolved_model` so the flow's mismatch check applies. Any output item other than a message or reasoning is a tool
-item and fails the step. No reasoning effort is sent: the accepted values differ by model and the model list does
-not say which a model takes.
+item and fails the step. The model list does not say which reasoning efforts a model takes, so they come from a fixed
+table (`EFFORTS`), checked live on 15 Oct 2026: the API refuses an effort a model does not take with HTTP 400 before
+any other check. A model missing from the table is offered no effort and none is sent.
 """
 
 from __future__ import annotations
@@ -31,6 +32,29 @@ EXCLUDED_MODEL_WORDS = ("audio", "realtime", "tts", "transcribe", "image", "sear
 # gpt-4o-2024-08-06 snapshot as the first that take it, and o1-preview and o1-mini never did.
 NO_STRICT_SCHEMA = re.compile(r"^(gpt-4o-2024-05-13|o1-preview|o1-mini)(-|$)")
 OUTPUT_ITEMS = frozenset({"message", "reasoning"})
+# Reasoning efforts per model (a dated snapshot takes its alias's), each list as the API accepted it on 15 Oct 2026.
+# GPT-4o and GPT-4.1 take none: the API refuses the parameter. The Codex models answered 404 to the key tested and
+# are left out.
+_GPT5 = ("minimal", "low", "medium", "high")
+_GPT51 = ("none", "low", "medium", "high")
+_GPT52 = ("none", "low", "medium", "high", "xhigh")
+_PRO = ("medium", "high", "xhigh")
+_O = ("low", "medium", "high")
+EFFORTS: dict[str, tuple[str, ...]] = {
+    "gpt-5": _GPT5, "gpt-5-mini": _GPT5, "gpt-5-nano": _GPT5, "gpt-5-pro": ("high",),
+    "gpt-5.1": _GPT51,
+    "gpt-5.2": _GPT52, "gpt-5.3-codex": _GPT52, "gpt-5.4": _GPT52, "gpt-5.4-mini": _GPT52, "gpt-5.4-nano": _GPT52,
+    "gpt-5.5": _GPT52, "gpt-5.6-luna": _GPT52, "gpt-5.6-sol": _GPT52, "gpt-5.6-terra": _GPT52,
+    "gpt-6-luna": _GPT52, "gpt-6-sol": _GPT52,
+    "gpt-5.2-pro": _PRO, "gpt-5.4-pro": _PRO, "gpt-5.5-pro": _PRO,
+    "gpt-6-astra": ("low", "medium", "high", "xhigh"), "gpt-6.1-sol": ("low", "medium", "high", "xhigh"),
+    "o1": _O, "o3": _O, "o3-mini": _O, "o4-mini": _O,
+}
+SNAPSHOT_DATE = re.compile(r"-\d{4}-\d{2}-\d{2}$")
+
+
+def efforts(model: str) -> tuple[str, ...]:
+    return EFFORTS.get(SNAPSHOT_DATE.sub("", model), ())
 
 
 def api_key() -> str | None:
@@ -40,7 +64,7 @@ def api_key() -> str | None:
 class OpenAIAdapter:
     connection = "openai"
     enforces_schema = True
-    sends_reasoning_effort = False  # accepted for the protocol, never put in the request (module docstring)
+    sends_reasoning_effort = True  # reasoning.effort, from the fixed table (module docstring)
 
     def __init__(self, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):
         self._client = client
@@ -81,7 +105,8 @@ class OpenAIAdapter:
                       and CHAT_MODEL.match(m["id"]) and not NO_STRICT_SCHEMA.match(m["id"])
                       and not any(w in m["id"] for w in EXCLUDED_MODEL_WORDS)})
         status["models"] = [{"id": i, "display_name": i, "is_default": False, "description": "",
-                             "default_reasoning_effort": None, "reasoning_efforts": []} for i in ids]
+                             "default_reasoning_effort": None,
+                             "reasoning_efforts": [{"id": e, "description": ""} for e in efforts(i)]} for i in ids]
         status["ready"] = True
         self._health = (time.monotonic(), status)
         return status
@@ -94,6 +119,8 @@ class OpenAIAdapter:
                                    delivery_class="before_send", error_kind="needs_key" if not key else "unknown")
         body = {"model": requested_model, "instructions": f"{base}\n\n{developer}", "input": message, "store": False,
                 "text": {"format": {"type": "json_schema", "name": "deixis_step", "schema": output_schema, "strict": True}}}
+        if reasoning_effort:
+            body["reasoning"] = {"effort": reasoning_effort}
         try:
             response = await self._http().post(f"{API_URL}/responses", json=body, headers={"Authorization": f"Bearer {key}"},
                                                timeout=self.turn_timeout)

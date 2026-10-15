@@ -379,6 +379,10 @@ class LibraryAddition(BaseModel):
     work_id: str = Field(min_length=1, max_length=200)
 
 
+class OutsideWorkAddition(BaseModel):
+    openalex_id: str = Field(min_length=1, max_length=200)
+
+
 class SourceRemoval(BaseModel):
     source_version_ids: list[str] = Field(min_length=1, max_length=500)
     note: str | None = Field(default=None, max_length=500)
@@ -1855,6 +1859,18 @@ def create_app(
         run = citation_map_run.request_run(store, research_id)
         request.app.state.worker.wake()
         return run
+
+    @app.post("/api/researches/{research_id}/outside-works", status_code=201)
+    async def add_outside_work(research_id: str, body: OutsideWorkAddition, request: Request) -> dict[str, Any]:
+        """Add an outside work of the citation map as an undecided source the person added; no request is sent."""
+        store = store_of(request)
+        try:
+            added = citation_map.add_outside_work(store, research_id, body.openalex_id)
+        except citation_map.OutsideWorkRefused as exc:
+            return JSONResponse(exc.extra | {"detail": exc.detail, "code": exc.code}, status_code=exc.status)
+        if added["restored"]:
+            intent.attached_ingested(store, research_id)
+        return {**research_view(store, research_id), **added}
 
     @app.post("/api/researches/{research_id}/queue/{source_version_id}/decision")
     async def queue_decision(research_id: str, source_version_id: str, body: QueueDecision,

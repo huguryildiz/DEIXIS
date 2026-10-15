@@ -1,14 +1,17 @@
 """The citation map of one research: its works, the reference links between them and the outside works they cite.
 
-Read only; no provider request and no model call. A link means "A's stored OpenAlex reference list holds B". A work
+`build` is read only; no provider request and no model call. A link means "A's stored OpenAlex reference list holds B". A work
 whose versions never had their list read has no outgoing link: an unread list is not an empty one (lineage/edges.py).
+`add_outside_work` puts one outside work the map lists into the research, from stored records only.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
+from deixis.storage.db import now, transaction
 from deixis.workflow.lineage.edges import normalize_openalex_id
 
 OUTSIDE_LIMIT = 40
@@ -123,3 +126,66 @@ def _known_work(conn: Any, research_id: str, openalex_id: str) -> dict[str, Any]
     return {"source_version_id": row["id"], "title": row["title"], "authors": authors,
             "authors_short": _short_authors(authors), "year": row["year"], "venue": row["venue"], "doi": row["doi"],
             "cited_by_count": row["cited_by_count"], "removed_from_research": bool(row["removed"])}
+
+
+OPENALEX_WORK_ID = re.compile(r"W\d+")
+
+
+class OutsideWorkRefused(Exception):
+    def __init__(self, status: int, code: str, detail: str, **extra: Any):
+        super().__init__(detail)
+        self.status, self.code, self.detail, self.extra = status, code, detail, extra
+
+
+def add_outside_work(store: Any, research_id: str, openalex_id: str) -> dict[str, Any]:
+    """Add an outside work of the map to the research as a source the person added and nobody screened yet.
+
+    No request is sent: the work must already be stored, as the map run's metadata step stores outside works. A work
+    the research once held and the person removed is restored instead (D50), so its earlier selection and reason come
+    back as they were; `add_to_corpus` would leave a removed membership removed and keep the old selection anyway.
+    """
+    oid = normalize_openalex_id(openalex_id)
+    if not OPENALEX_WORK_ID.fullmatch(oid):
+        raise OutsideWorkRefused(422, "invalid_openalex_id", "Not an OpenAlex work id")
+    store.research(research_id)
+    conn, ids = store.conn, (oid, f"https://openalex.org/{oid}")
+    # The stored record of the work, chosen as `_known_work` chooses it, so the map and this route name the same one.
+    record = conn.execute(
+        "SELECT v.id, v.work_id FROM identifier_mappings i JOIN source_versions v ON v.id = i.source_version_id"
+        " WHERE i.scheme = 'openalex' AND i.value IN (?, ?) ORDER BY v.created_at, v.id LIMIT 1", ids).fetchone()
+    # The map also knows a version as this work through a citation map resolution (an upload found in OpenAlex).
+    works = {row[0] for row in conn.execute(
+        "SELECT v.work_id FROM identifier_mappings i JOIN source_versions v ON v.id = i.source_version_id"
+        " WHERE i.scheme = 'openalex' AND i.value IN (?, ?) UNION SELECT v.work_id FROM citation_map_resolutions r"
+        " JOIN source_versions v ON v.id = r.source_version_id WHERE r.status = 'resolved' AND r.openalex_id IN (?, ?)",
+        (*ids, *ids))}
+    if len(works) > 1:
+        # Two local works carry the id (e.g. two uploads the map run resolved to it): which one is meant is unknown,
+        # so nothing is restored or added.
+        raise OutsideWorkRefused(409, "ambiguous_outside_work", "More than one stored work has this OpenAlex id",
+                                 work_ids=sorted(works))
+    members = [dict(row) for row in conn.execute(
+        "SELECT m.source_version_id, m.removed_at, v.work_id FROM corpus_memberships m"
+        " JOIN source_versions v ON v.id = m.source_version_id WHERE m.research_id = ? AND v.work_id = ?"
+        " ORDER BY m.created_at, m.source_version_id", (research_id, *works))] if works else []
+    if active := next((m for m in members if m["removed_at"] is None), None):
+        head = store.work_heads(research_id).get(active["work_id"], active["source_version_id"])
+        state = conn.execute("SELECT state FROM selections WHERE research_id = ? AND source_version_id = ?",
+                             (research_id, head)).fetchone()
+        raise OutsideWorkRefused(409, "already_in_research", "This work is already a source of this research",
+                                 source_version_id=head, work_id=active["work_id"], state=state["state"] if state else None)
+    if members:
+        removed = [m["source_version_id"] for m in members]
+        restored = store.restore_sources(research_id, removed)
+        work_id = members[0]["work_id"]
+        head = store.work_heads(research_id).get(work_id, restored[0])
+        return {"source_version_id": head, "work_id": work_id, "restored": True, "changed_source_version_ids": restored}
+    if record is None:
+        raise OutsideWorkRefused(409, "outside_work_not_described",
+                                 "This work has no stored record yet; read the reference lists first")
+    with transaction(conn):
+        # "library": the person brought a stored record in, which no search found and no screening judged.
+        store.add_to_corpus(research_id, record["id"], "library", selection_state="pending", selection_origin="user")
+        store._corpus_changed(research_id, "source_added", [record["id"]], now())
+    return {"source_version_id": record["id"], "work_id": record["work_id"], "restored": False,
+            "changed_source_version_ids": [record["id"]]}

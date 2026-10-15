@@ -2250,6 +2250,35 @@ def create_app(
             added += 1
         return {**research_view(store, research_id), "zotero_pdfs": {"checked": len(missing), "added": added, "notes": notes}}
 
+    @app.post("/api/researches/{research_id}/waiting/zotero")
+    async def waiting_zotero(research_id: str, body: ZoteroSourceChoice, request: Request) -> dict[str, Any]:
+        """The Zotero PDF of each work waiting for the person's PDF, matched by DOI or title (D49); nothing is attached.
+
+        The panel fetches each file and proposes it like a dropped one, so the person still picks the version and confirms.
+        """
+        store = store_of(request)
+        store.research(research_id)
+        library, http = zotero.library(body.source), zotero_http(request, body.source)
+        rows = pdf_waiting.waiting_view(store, research_id)["rows"]
+        found, notes = [], []
+        for row in rows:
+            item = await zotero.find_pdf(http, library, row["doi"], row["title"])
+            if item is None:
+                continue
+            if item.pdf_key is None:
+                notes.append({"title": row["title"], "note": item.pdf_problem, "vars": item.pdf_problem_vars})
+                continue
+            found.append({"work_id": row["work_id"], "title": row["title"], "key": item.pdf_key, "filename": item.pdf_filename})
+        return {"checked": len(rows), "found": found, "notes": notes}
+
+    @app.get("/api/zotero/attachments/{attachment_key}/file")
+    async def zotero_attachment_file(attachment_key: str, request: Request, source: Literal["local", "web"] = "local") -> Response:
+        """One PDF attachment of the person's Zotero library, read for the waiting panel's match (nothing is stored)."""
+        if not re.fullmatch(r"[A-Z0-9]{8}", attachment_key):
+            raise HTTPException(422, "Not a Zotero attachment key")
+        data = await zotero.pdf_bytes(zotero_http(request, source), zotero.library(source), attachment_key, request.app.state.fetch_pdf)
+        return Response(data, media_type="application/pdf")
+
     @app.get("/api/researches/{research_id}/bibliography")
     async def export_bibliography(research_id: str, request: Request,
                                   fmt: Literal["bibtex", "ris"] = Query("bibtex", alias="format"),

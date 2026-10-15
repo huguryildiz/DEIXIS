@@ -1224,6 +1224,14 @@ export const api = {
   // Attaches PDFs from the user's Zotero library to included works that have no PDF text yet (D49).
   zoteroPdfs: (id: string, source: ZoteroSource) =>
     request<ResearchView & { zotero_pdfs: { checked: number; added: number; notes: ZoteroNote[] } }>(`/api/researches/${id}/zotero-pdfs`, json('POST', { source })),
+  // The Zotero PDF of each work waiting for the person's PDF; nothing is attached (the panel proposes each file).
+  waitingZotero: (id: string, source: ZoteroSource) =>
+    request<{ checked: number; found: { work_id: string; title: string; key: string; filename: string | null }[]; notes: ZoteroNote[] }>(`/api/researches/${id}/waiting/zotero`, json('POST', { source })),
+  zoteroFile: async (source: ZoteroSource, key: string, filename: string | null) => {
+    const response = await fetch(`/api/zotero/attachments/${encodeURIComponent(key)}/file?source=${source}`, { credentials: 'same-origin' })
+    if (!response.ok) throw await responseError(response)
+    return new File([await response.blob()], filename || `${key}.pdf`, { type: 'application/pdf' })
+  },
   // Proposes the included source each PDF belongs to (DOI, arXiv id, or title); nothing is attached (D49).
   matchUploads: (id: string, files: File[]) => {
     const form = new FormData()

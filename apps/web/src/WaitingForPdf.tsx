@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { BookOpen, CircleCheck, CircleDashed, CircleMinus, ExternalLink, FileSearch, Info, RotateCw, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, ApiError, type AttachOutcome, type PersonFile, type PersonFiles, type ResearchView, type WaitingMatch, type WaitingRow, type WaitingView, type WaitingWork } from './api'
+import { api, ApiError, type AttachOutcome, type PersonFile, type PersonFiles, type ResearchView, type WaitingMatch, type WaitingRow, type WaitingView, type WaitingWork, type ZoteroNote, type ZoteroSource } from './api'
+import { ConnectionIcon } from './connectionIcons'
 import { fileRestoreNote, fileRestoreTone, pageLocator, personFileStateText, personUnreadText, queueAnswerLabels, queueAnswerOfCode, versionText, versionTones, waitingReasonText, waitingRelevanceParts } from './labels'
 import { Notice } from './Notice'
 import { UploadedTextNote } from './SemanticNotes'
@@ -40,6 +41,8 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
   const [matching, setMatching] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [finding, setFinding] = useState<string | null>(null)
+  const [zoteroSource, setZoteroSource] = useState<ZoteroSource>('local')
+  const [fromZoteroBusy, setFromZoteroBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const toast = useToast()
 
@@ -117,6 +120,29 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
     } finally { setFinding(null) }
   }
 
+  // Each waiting work's PDF in the person's Zotero library is read and proposed like a dropped file: it lands in the match
+  // cards below, and nothing is attached until the person picks the version and confirms.
+  const fromZotero = async () => {
+    setFromZoteroBusy(true)
+    try {
+      const { checked, found, notes } = await api.waitingZotero(researchId, zoteroSource)
+      const problems: ZoteroNote[] = [...notes]
+      for (const item of found) {
+        try {
+          await requestMatch([await api.zoteroFile(zoteroSource, item.key, item.filename)], item.work_id)
+        } catch (e) {
+          problems.push({ title: item.title, note: 'PDF not added: {reason}', vars: { reason: e instanceof Error ? e.message : String(e) } })
+        }
+      }
+      toast(found.length && !problems.length ? 'success' : 'warning', [
+        found.length ? t('Zotero: {found} of {checked} waiting works have a PDF in your library. Check where each file goes below.', { found: found.length, checked })
+          : t('Zotero: none of the {checked} waiting works has a PDF in your library.', { checked }),
+        ...problems.map(n => `${n.title}: ${t(n.note, n.vars)}.`)].join(' '))
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : String(e))
+    } finally { setFromZoteroBusy(false) }
+  }
+
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     setDragging(false)
@@ -184,6 +210,13 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
           </span>
         </li>)}
       </ol>}
+      {rows.length > 0 && canAttach && <div className="prow pdf-ready-zotero">
+        <Button variant="outline" size="sm" className="ghost" disabled={busy || reading || fromZoteroBusy} onClick={() => { void fromZotero() }}><ConnectionIcon id="zotero" />{t(fromZoteroBusy ? 'Looking in Zotero…' : 'Add from Zotero')}</Button>
+        <select value={zoteroSource} aria-label={t('Zotero library')} onChange={e => setZoteroSource(e.target.value as ZoteroSource)}>
+          <option value="local">{t('this computer')}</option>
+          <option value="web">zotero.org</option>
+        </select>
+      </div>}
       <input ref={rowFile} type="file" accept=".pdf,application/pdf" hidden aria-label={t('Choose a PDF for this work')} onChange={e => { matchFiles(Array.from(e.target.files ?? []), rowWork.current); rowWork.current = undefined; e.target.value = '' }} />
     </section>
 

@@ -703,6 +703,12 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const reloadTools = useCallback(() => loadTools(true).then(() => undefined), [loadTools])
   const reloadReader = useCallback(() => loadReader().then(() => undefined), [loadReader])
   const reloadAfterKeyChange = useCallback(() => { loadCredentials(); void load(true); void loadSemantic() }, [loadCredentials, load, loadSemantic])
+  // A model key change also re-checks that one connection on its own: the full refresh waits on every connection
+  // (about 12 s with the CLIs), and until then the card would still show the state before the change.
+  const reloadAfterModelKeyChange = useCallback((conn: string) => {
+    reloadAfterKeyChange()
+    api.modelConnection(conn, true).then(result => setData(old => old && { ...old, models: { ...old.models, [conn]: result } })).catch(() => {})
+  }, [reloadAfterKeyChange])
   // The page's default model choices follow the same connections answer (after a key change or a test).
   useEffect(() => { if (data) onConnections?.(data) }, [data, onConnections])
 
@@ -1013,7 +1019,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       <p className="way-desc">{linkify(t(way.desc ?? PAY_AS_YOU_GO, { site: t(way.site) }))}</p>
       {entry?.configured && model && !model.ready && reasonNotice(`key:${way.conn}`, healthReasonText(model))}
       {credentials && <KeyField key={way.env} env={way.env} entry={entry} keychain={credentials.keychain} label={t('Key')} service={way.service ?? c.name}
-        removeEffect={effect} onSaved={reloadAfterKeyChange} />}
+        removeEffect={effect} onSaved={() => reloadAfterModelKeyChange(way.conn)} />}
       {model && (model.models?.length || way.conn === 'gemini') ? <details className="way-more">
         <summary><ChevronRight size={14} aria-hidden />{t('Details')}</summary>
         {way.conn === 'gemini' && <div className="connection-checks">

@@ -21,6 +21,13 @@ from fakes import FakeAdapter
 GOOD_GEMINI = "gemini-good-key-123"
 
 
+# What each source answered a made-up key on 15 Oct 2026 (SYNTHETIC replies here, real status codes).
+SOURCE_REFUSALS = {"https://api.openalex.org/": 401, "https://api.semanticscholar.org/": 403, "https://eutils.ncbi.nlm.nih.gov/": 400,
+                   "https://ieeexploreapi.ieee.org/": 403, "https://api.elsevier.com/": 401, "https://api.core.ac.uk/": 401,
+                   "https://serpapi.com/": 401}
+SOURCE_KEYS = ("OPENALEX_API_KEY", "S2_API_KEY", "NCBI_API_KEY", "IEEE_API_KEY", "SCOPUS_API_KEY", "CORE_API_KEY", "SERPAPI_API_KEY")
+
+
 def remote(request):
     url = str(request.url)
     if url.startswith("https://generativelanguage.googleapis.com/"):
@@ -55,6 +62,14 @@ def remote(request):
         if request.headers.get("authorization") == f"Bearer {compat[url]}":
             return httpx.Response(200, json={"object": "list", "data": [{"id": "SYNTHETIC-model"}]})
         return httpx.Response(401, json={"error": {"message": "invalid api key"}})
+    for host, refusal in SOURCE_REFUSALS.items():
+        if url.startswith(host):
+            sent = request.headers.get("authorization", "") + request.headers.get("x-api-key", "") + request.headers.get("x-els-apikey", "") + url
+            if "source-good" in sent:
+                return httpx.Response(200, json={})
+            if "scopus-off-campus" in sent:
+                return httpx.Response(403, json={"error-response": {"error-code": "AUTHORIZATION_ERROR"}})
+            return httpx.Response(refusal, json={"error": "API key invalid"})
     if url == "http://127.0.0.1:11434/api/tags":
         return httpx.Response(200, json={"models": [{"name": "qwen3:8b", "size": 5_200_000_000},
                                                     {"name": "nomic-embed-text:latest", "size": 274_000_000}]})
@@ -241,15 +256,15 @@ def test_a_key_from_dotenv_is_replaced_and_removed_in_that_file(client, monkeypa
     entry = next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == "OPENALEX_API_KEY")
     assert (entry["configured"], entry["source"]) == (True, "dotenv")
 
-    saved = client.put("/api/credentials/OPENALEX_API_KEY", json={"value": "openalex-new-key"})
-    assert saved.status_code == 200 and saved.json()["key"]["source"] == "dotenv" and "openalex-new-key" not in saved.text
-    assert os.environ["OPENALEX_API_KEY"] == "openalex-new-key"
+    saved = client.put("/api/credentials/OPENALEX_API_KEY", json={"value": "openalex-source-good-new"})
+    assert saved.status_code == 200 and saved.json()["key"]["source"] == "dotenv" and "openalex-source-good-new" not in saved.text
+    assert os.environ["OPENALEX_API_KEY"] == "openalex-source-good-new"
     assert memory_keychain.get_password("DEIXIS", "OPENALEX_API_KEY") is None
     assert client.delete("/api/credentials/S2_API_KEY").json()["key"]["configured"] is False
-    assert dotenv.read_text() == "# SYNTHETIC\nOPENALEX_API_KEY=openalex-new-key\n\n# end"
+    assert dotenv.read_text() == "# SYNTHETIC\nOPENALEX_API_KEY=openalex-source-good-new\n\n# end"
     assert dotenv.stat().st_mode & 0o777 == 0o600
     # A key added after removal goes to the keychain, as for any key that is not in .env.
-    assert client.put("/api/credentials/S2_API_KEY", json={"value": "s2-fresh-key"}).json()["key"]["source"] == "keychain"
+    assert client.put("/api/credentials/S2_API_KEY", json={"value": "s2-source-good-fresh"}).json()["key"]["source"] == "keychain"
 
 
 def test_keys_from_dotenv_move_into_the_keychain_at_startup(monkeypatch, tmp_path, memory_keychain):
@@ -321,20 +336,16 @@ def test_the_zotero_org_pair_is_saved_from_settings(client, memory_keychain):
     assert tool["web_configured"] is True
 
 
-def test_a_saved_key_replaces_the_shell_key_until_removed_and_source_keys_are_not_tested(client, monkeypatch):
+def test_a_saved_key_replaces_the_shell_key_until_removed(client, monkeypatch):
     monkeypatch.setenv("OPENALEX_API_KEY", "openalex-from-env")
     entry = next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == "OPENALEX_API_KEY")
-    assert (entry["configured"], entry["source"], entry["testable"]) == (True, "environment", False)
+    assert (entry["configured"], entry["source"], entry["testable"]) == (True, "environment", True)
     assert client.delete("/api/credentials/OPENALEX_API_KEY").status_code == 409  # the shell key itself is never removed
-    saved = client.put("/api/credentials/OPENALEX_API_KEY", json={"value": "openalex-other-key"}).json()["key"]
-    assert (saved["source"], saved["shell_fallback"]) == ("keychain", True) and os.environ["OPENALEX_API_KEY"] == "openalex-other-key"
+    saved = client.put("/api/credentials/OPENALEX_API_KEY", json={"value": "openalex-source-good-key"}).json()["key"]
+    assert (saved["source"], saved["shell_fallback"]) == ("keychain", True) and os.environ["OPENALEX_API_KEY"] == "openalex-source-good-key"
     removed = client.delete("/api/credentials/OPENALEX_API_KEY").json()["key"]
     assert (removed["source"], removed["shell_fallback"]) == ("environment", False) and os.environ["OPENALEX_API_KEY"] == "openalex-from-env"
 
-    monkeypatch.setenv("S2_API_KEY", "")
-    saved = client.put("/api/credentials/S2_API_KEY", json={"value": "s2-key-12345"}).json()
-    assert saved["test"] is None and saved["key"]["source"] == "keychain"
-    assert client.post("/api/credentials/S2_API_KEY/test").status_code == 422
     assert client.put("/api/credentials/PATH", json={"value": "/SYNTHETIC/bin"}).status_code == 404
     assert client.put("/api/credentials/GEMINI_API_KEY", json={"value": "has space inside"}).status_code == 422
 
@@ -500,3 +511,22 @@ def test_zotero_reports_whether_its_local_api_is_on(client, monkeypatch):
     assert (zotero()["installed"], zotero()["running"], zotero()["local_api"]) == (True, True, False)
     replies["status"] = 200
     assert zotero()["local_api"] is True
+
+
+@pytest.mark.parametrize("env", SOURCE_KEYS)
+def test_a_source_key_is_tested_with_one_request_and_a_refused_one_is_not_saved(client, memory_keychain, monkeypatch, env):
+    monkeypatch.setenv(env, "")
+    refused = client.put(f"/api/credentials/{env}", json={"value": "made-up-key-123"})
+    assert refused.status_code == 422 and "did not accept" in refused.json()["detail"] and memory_keychain.items == {}
+    saved = client.put(f"/api/credentials/{env}", json={"value": "source-good-key-123"}).json()
+    assert saved["test"]["status"] == "ok" and saved["key"]["testable"] is True
+    assert client.post(f"/api/credentials/{env}/test").json()["status"] == "ok"
+
+
+def test_a_source_key_that_could_not_be_checked_is_still_saved(client, memory_keychain, monkeypatch):
+    monkeypatch.setenv("SCOPUS_API_KEY", "")
+    off_campus = client.put("/api/credentials/SCOPUS_API_KEY", json={"value": "scopus-off-campus-key"}).json()
+    assert off_campus["test"]["status"] == "failed" and "this network" in off_campus["test"]["detail"]
+    assert memory_keychain.items == {("DEIXIS", "SCOPUS_API_KEY"): "scopus-off-campus-key"}
+    retest = client.post("/api/credentials/SCOPUS_API_KEY/test")  # a failed test is an answer, not a server error
+    assert retest.status_code == 200 and retest.json()["http_status"] == 403

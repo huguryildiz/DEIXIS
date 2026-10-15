@@ -397,9 +397,9 @@ function UsageThisMonth() {
         <b>{t('OpenAlex today')}</b>
         <div className="bar" aria-hidden style={b && b.used_fraction === null ? { visibility: 'hidden' } : undefined}><i style={{ width: `${Math.round((b?.used_fraction ?? 0) * 100)}%`, background: (b?.used_fraction ?? 0) >= 1 ? 'var(--tone-exclude)' : undefined }} /></div>
         <p className="tnum">{budgetText ?? t(loading && !budget.failed ? 'Checking…' : 'not known')}
-          <small>{b?.as_of ? t('Last stored response, {time}', { time: clock(b.as_of) }) : b ? t('No OpenAlex response stored today') : ''}</small></p>
+          <small>{b?.as_of ? t(b.source === 'live' ? 'Read from OpenAlex, {time}' : 'Last stored response, {time}', { time: clock(b.as_of) }) : b ? t('No OpenAlex response stored today') : ''}</small></p>
       </div>
     </div>
-    {month.value?.since && <p className="foot-note set-usage-note" data-panel="usage">{t('Model calls counted since {date}. The OpenAlex figure comes from its last response, not a live reading.', { date: new Date(month.value.since).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })}</p>}
+    {month.value?.since && <p className="foot-note set-usage-note" data-panel="usage">{t(b?.source === 'live' ? 'Model calls counted since {date}. The OpenAlex figure is read from OpenAlex when this page opens.' : 'Model calls counted since {date}. The OpenAlex figure comes from its last response, not a live reading.', { date: new Date(month.value.since).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })}</p>}
   </>
 }

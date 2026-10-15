@@ -73,7 +73,7 @@
 .semantic-option:last-child{border-bottom:0}
 /* A choice's notes and controls sit under its name, clear of the radio and the icon (slice 21). */
 .semantic-option-body{display:grid;gap:4px;padding:0 13px 11px 49px}
-.semantic-option-body .actions{margin-top:4px}
+.semantic-option-body .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .semantic-builtin{display:grid;gap:4px}
 .semantic-builtin .status-chip{justify-self:start;margin-top:2px}
 @media(max-width:600px){.semantic-option-body{padding-left:13px}}

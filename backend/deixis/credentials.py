@@ -54,13 +54,13 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("ANTHROPIC_API_KEY", "model", "anthropic", testable=True),
     ManagedKey("OPENROUTER_API_KEY", "model", "openrouter", testable=True),
     ManagedKey("MIMO_API_KEY", "model", "mimo", testable=True),
-    ManagedKey("OPENALEX_API_KEY", "source", "openalex"),
-    ManagedKey("S2_API_KEY", "source", "semantic_scholar"),
-    ManagedKey("NCBI_API_KEY", "source", "pubmed"),
-    ManagedKey("IEEE_API_KEY", "source", "ieee_xplore"),
-    ManagedKey("SCOPUS_API_KEY", "source", "scopus"),
-    ManagedKey("CORE_API_KEY", "source", "core"),
-    ManagedKey("SERPAPI_API_KEY", "source", "serpapi"),
+    ManagedKey("OPENALEX_API_KEY", "source", "openalex", testable=True),
+    ManagedKey("S2_API_KEY", "source", "semantic_scholar", testable=True),
+    ManagedKey("NCBI_API_KEY", "source", "pubmed", testable=True),
+    ManagedKey("IEEE_API_KEY", "source", "ieee_xplore", testable=True),
+    ManagedKey("SCOPUS_API_KEY", "source", "scopus", testable=True),
+    ManagedKey("CORE_API_KEY", "source", "core", testable=True),
+    ManagedKey("SERPAPI_API_KEY", "source", "serpapi", testable=True),
     # The zotero.org pair is set on Settings' Zotero card; the library ID is not secret but is kept with its key (D19).
     ManagedKey("ZOTERO_API_KEY", "source", "zotero"),
     ManagedKey("ZOTERO_LIBRARY_ID", "source", "zotero"),
@@ -201,10 +201,29 @@ def delete(env: str) -> None:
     _from_keychain.discard(env)
 
 
+# One short request per scholarly source, sent the way its adapter sends the key. Each source answers a made-up key
+# with 400/401/403 (checked 15 Oct 2026), so 200 means the key itself works, not only the keyless route. SerpApi's
+# account page costs no search; the others ask for one record.
+def _source_request(env: str, value: str) -> tuple[str, dict[str, Any], dict[str, str]] | None:
+    return {
+        "OPENALEX_API_KEY": ("https://api.openalex.org/works", {"per_page": 1, "select": "id"}, {"Authorization": f"Bearer {value}"}),
+        "S2_API_KEY": ("https://api.semanticscholar.org/graph/v1/paper/search", {"query": "test", "limit": 1, "fields": "title"}, {"x-api-key": value}),
+        "NCBI_API_KEY": ("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/einfo.fcgi", {"db": "pubmed", "retmode": "json", "api_key": value}, {}),
+        "IEEE_API_KEY": ("https://ieeexploreapi.ieee.org/api/v1/search/articles", {"querytext": "test", "max_records": 1, "format": "json", "apikey": value}, {}),
+        "SCOPUS_API_KEY": ("https://api.elsevier.com/content/search/scopus", {"query": "TITLE(test)", "count": 1}, {"X-ELS-APIKey": value, "Accept": "application/json"}),
+        "CORE_API_KEY": ("https://api.core.ac.uk/v3/search/works/", {"q": "test", "limit": 1}, {"Authorization": f"Bearer {value}"}),
+        "SERPAPI_API_KEY": ("https://serpapi.com/account.json", {"api_key": value}, {}),
+    }.get(env)
+
+
 async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any]:
-    """One short request with the key: Gemini, DeepSeek, Anthropic and the OpenAI-compatible connections list models (OpenRouter reads its key's limits); OpenAI embeds one word, which also shows missing credit."""
+    """One short request with the key: a scholarly source asks for one record (SerpApi: its account page); Gemini, DeepSeek, Anthropic and the OpenAI-compatible connections list models (OpenRouter reads its key's limits); OpenAI embeds one word, which also shows missing credit."""
+    source = _source_request(env, value)
     try:
-        if env == "GEMINI_API_KEY":
+        if source:
+            url, params, headers = source
+            response = await client.get(url, params=params, headers=headers, timeout=20)
+        elif env == "GEMINI_API_KEY":
             response = await client.get(f"{GEMINI_API_URL}/models", params={"pageSize": 1},
                                         headers={"x-goog-api-key": value}, timeout=20)
         elif env == "DEEPSEEK_API_KEY":
@@ -227,6 +246,8 @@ async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any
         return {"status": "ok", "detail": "The key works.", "checked_at": now()}
     if code == 404 and env in COMPAT_BY_KEY_ENV and COMPAT_BY_KEY_ENV[env].static_models:
         return {"status": "ok", "detail": "Saved. This API lists no models, so the key is checked by the first step.", "checked_at": now()}
+    if code == 403 and env == "SCOPUS_API_KEY":  # Elsevier knows the key (a wrong one gets 401) but this network has no access
+        return {"status": "failed", "detail": "Elsevier knows the key, but Scopus gives no access from this network (HTTP 403).", "checked_at": now(), **fields}
     if code in (400, 401, 403):  # the provider's own message can quote part of the key, so it is not passed on
         return {"status": "rejected", "detail": f"The API did not accept the key (HTTP {code}).", "checked_at": now(), **fields}
     # 429: Gemini quota or OpenAI insufficient_quota; the message says which.

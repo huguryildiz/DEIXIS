@@ -1280,7 +1280,8 @@ def create_app(
         if source != "dotenv" and credentials.keychain_name() is None:
             raise HTTPException(503, "No system keychain is available")
         result = await credentials.test(request.app.state.http, env, body.value) if key.testable else None
-        if result and result["status"] in ("rejected", "failed"):
+        # A source key that only failed to reach its API (timeout, 5xx, rate limit) is still saved; a refused one is not.
+        if result and (result["status"] == "rejected" or (result["status"] == "failed" and key.group == "model")):
             return JSONResponse(status_code=422, content={"code": "credential_test_failed",
                 "detail": f"The key was not saved. {result['detail']}", "service": key.service,
                 "kind": result.get("kind", "unknown"), "http_status": result.get("http_status"),
@@ -1309,7 +1310,7 @@ def create_app(
         return {"key": credentials.status(env)}
 
     @app.post("/api/credentials/{env}/test")
-    async def test_credential(env: str, request: Request) -> dict[str, str]:
+    async def test_credential(env: str, request: Request) -> dict[str, Any]:
         key, value = managed_key(env), os.environ.get(env)
         if not key.testable:
             raise HTTPException(422, f"{env} is not tested in advance; access is recorded with each request")

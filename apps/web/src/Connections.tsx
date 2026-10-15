@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, BookOpenText, ChevronRight, Copy, Cpu, FileText, HardDrive, MemoryStick, Link, LoaderCircle, RefreshCw, RotateCw, ScanText, Server, Sigma, TriangleAlert, Upload } from 'lucide-react'
+import { Ban, BookOpenText, ChevronRight, CircleCheck, Copy, Cpu, FileText, HardDrive, MemoryStick, Link, LoaderCircle, RefreshCw, RotateCw, Save, ScanText, Server, Sigma, SquareTerminal, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -35,6 +35,18 @@ const providerNoKey: Record<string, string> = {
   scopus: 'Without a key, Scopus is not used: no Scopus abstracts are read.',
   core: 'Without a key, CORE is not searched.',
   serpapi: 'Without a key, SerpApi is not searched.',
+}
+// Where each key is obtained and the shortest route to it (checked on the providers' own pages, 15 Oct 2026).
+const OPENALEX_SIGNUP = { url: 'https://openalex.org/settings/api', steps: 'Create a free account at openalex.org, then copy the key from Settings → API.' }
+const providerKeySignup: Record<string, { url: string; steps: string }> = {
+  openalex: OPENALEX_SIGNUP,
+  biorxiv: { url: OPENALEX_SIGNUP.url, steps: 'bioRxiv uses the OpenAlex key. Create a free account at openalex.org, then copy the key from Settings → API.' },
+  semantic_scholar: { url: 'https://www.semanticscholar.org/product/api#api-key-form', steps: 'Fill in the request form. The key arrives by email, which can take a few days.' },
+  scopus: { url: 'https://dev.elsevier.com/apikey/manage', steps: 'Sign in to the Elsevier Developer Portal and create a key. Scopus answers only through an institutional subscription, so the key works from your institution’s network.' },
+  pubmed: { url: 'https://account.ncbi.nlm.nih.gov/settings/', steps: 'Sign in to an NCBI account, then open Account settings → API Key Management and choose Create.' },
+  ieee_xplore: { url: 'https://developer.ieee.org/getting_started', steps: 'Register a developer account, then request a key for an application. Keys are sent during US business hours.' },
+  core: { url: 'https://core.ac.uk/services/api', steps: 'Choose Register on the CORE API page and fill in the form. The key arrives by email.' },
+  serpapi: { url: 'https://serpapi.com/users/sign_up', steps: 'Sign up, then copy the key from the dashboard. The free plan allows 250 searches a month.' },
 }
 // Sources whose requests carry the contact email as `mailto` (openalex.py, crossref.py).
 const MAILTO_PROVIDERS = new Set(['openalex', 'crossref'])
@@ -101,9 +113,10 @@ function RemoveNotice({ text, busy, onRemove, onKeep }: { text: string; busy: bo
 
 // A key field (mockup sheet `key` kind). The stored key is never shown: the field starts empty and its placeholder says
 // where the key is kept. Save and test, Test and Remove key report only what the server answered.
-function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved, plain = false }: {
+function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved, plain = false, note = true }: {
   env: string; entry: KeyEntry | undefined; keychain: Keychain; label: string; service: string; removeEffect: string; onSaved: () => void
   plain?: boolean  // an identifier, not a secret: typed in the open and named as an ID
+  note?: boolean  // false when a sibling field already says where keys are stored
 }) {
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
@@ -149,11 +162,11 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
       <input id={id} className="field" type={plain ? 'text' : 'password'} inputMode={plain ? 'numeric' : undefined} autoComplete="off" spellCheck={false} value={value} disabled={busy}
         placeholder={entry.configured ? `•••••••••••• ${where}`.trim() : t(plain ? 'Type your user ID' : 'Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
     </label>
-    <p className="foot-note">{fromShell && `${t('This key comes from the terminal that started DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
-      {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>
+    {note && <p className="foot-note">{fromShell && `${t('This key comes from the terminal that started DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
+      {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>}
     {formError && <Notice tone="error"><p>{formError}</p></Notice>}
     <div className="acts">
-      {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(busy ? (typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…') : primary)}</button>}
+      {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : typed ? <Save aria-hidden /> : <CircleCheck aria-hidden />}{t(busy ? (typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…') : primary)}</button>}
       {entry.configured && !fromShell && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t(plain ? 'Remove ID' : 'Remove key')}</button>}
     </div>
     {asking && <RemoveNotice busy={busy} onRemove={remove} onKeep={() => setAsking(false)}
@@ -166,7 +179,7 @@ function errorLines(output: string): string[] {
   return output.split('\n').map(line => line.trim()).filter(line => /\berror\b|fatal|npm err!|permission denied|could not|not found/i.test(line)).slice(0, 3)
 }
 
-function LocalToolDetails({ tool, dark, onChanged, refresh = true }: { tool: LocalTool; dark: boolean; onChanged: () => Promise<void>; refresh?: boolean }) {
+function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }: { tool: LocalTool; dark: boolean; onChanged: () => Promise<void>; refresh?: boolean; chip?: boolean }) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -187,7 +200,7 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true }: { tool: Loc
     onChanged().finally(() => setRefreshing(false))
   }
   return <div className="local-tool-details-panel">
-    <span className={`status-chip ${tool.installed ? '' : 'is-configured'}`}>{t(tool.installed ? 'Installed' : 'Not installed')}</span>
+    {chip && <span className={`status-chip ${tool.installed ? '' : 'is-configured'}`}>{t(tool.installed ? 'Installed' : 'Not installed')}</span>}
     {tool.installed && <dl className="local-tool-facts">
       {tool.version && <><dt>{t('Version')}</dt><dd>{tool.version}</dd></>}
       {tool.path && <><dt>{t('Path')}</dt><dd className="local-tool-path">{tool.path.split('/').map((part, i) => <span key={i}>{i > 0 && '/'}{part}<wbr /></span>)}</dd></>}
@@ -204,7 +217,7 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true }: { tool: Loc
       </>
       : <p className="local-tool-note">{t(tool.id === 'ollama' ? 'Start it with `ollama serve`' : 'Open LM Studio and start its local server')}</p>)}
     {tool.kind === 'app' && tool.installed && <>
-      <p className="local-tool-note">{!tool.running ? t('Not running. Open Zotero to import from this computer.') : tool.local_api ? t('Local API on · {endpoint}', { endpoint: tool.endpoint ?? '' }) : t('Running, but its local API is off. Turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.')}</p>
+      <p className="local-tool-note">{!tool.running ? t('Not answering. Open Zotero and close any dialog it shows, then turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.') : tool.local_api ? t('Local API on · {endpoint}', { endpoint: tool.endpoint ?? '' }) : t('Running, but its local API is off. Turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.')}</p>
     </>}
     {!tool.installed && (tool.install.available
       ? <>
@@ -489,6 +502,12 @@ function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinE
   </div>
 }
 
+// Turns the bare site addresses in a settings sentence (openalex.org, zotero.org/settings/keys) into links.
+function linkify(text: string): ReactNode {
+  return text.split(/(\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:org|com|uk|gov)(?:\/[\w\/#?=.-]*[\w\/])?)/).map((part, i) => i % 2
+    ? <a key={i} href={`https://${part}`} target="_blank" rel="noopener noreferrer">{part}</a> : part)
+}
+
 function GeminiKeyPath() {
   const [before, after] = t('Get a free key: sign in at {link}, create a key, paste it under Cloud models → Gemini.').split('{link}')
   return <p className="local-tool-note">{before}<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a>{after}</p>
@@ -754,18 +773,19 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     return null
   }
   const semanticRows: { id: string; label: string; desc?: ReactNode; providers: SemanticSearchProvider[]; body?: ReactNode }[] = [
-    { id: 'builtin', providers: ['builtin'], label: t('This computer · built-in'),
-      body: <>
-        {builtin && <BuiltinEmbeddingPanel builtin={builtin} dark={dark} onChanged={async () => { await loadBuiltin(); await loadSemantic() }} />}
-      </> },
-    { id: 'openai', providers: ['openai'], label: t('OpenAI embeddings'),
-      desc: withCode(t('{model} · sends titles, abstracts and passage text to OpenAI'), { model: option('openai')?.models[0] ?? 'text-embedding-3-small' }) },
     { id: 'gemini', providers: ['gemini'], label: t('Gemini embeddings'),
       desc: withCode(t('{model} · sends titles, abstracts and passage text to Google'), { model: option('gemini')?.models[0] ?? 'gemini-embedding' }),
       body: <>
         <p className="local-tool-note">{t('Reads the question in any language. Needs a Google AI Studio key; a free key works.')}</p>
         {!option('gemini')?.available && <GeminiKeyPath />}
       </> },
+    { id: 'builtin', providers: ['builtin'], label: t('This computer · built-in'),
+      desc: withCode(t('{model} · reads English; for a question in another language it asks for one English sentence'), { model: 'bge-small-en-v1.5' }),
+      body: <>
+        {builtin && <BuiltinEmbeddingPanel builtin={builtin} dark={dark} onChanged={async () => { await loadBuiltin(); await loadSemantic() }} />}
+      </> },
+    { id: 'openai', providers: ['openai'], label: t('OpenAI embeddings'),
+      desc: withCode(t('{model} · sends titles, abstracts and passage text to OpenAI'), { model: option('openai')?.models[0] ?? 'text-embedding-3-small' }) },
     { id: 'server', providers: ['ollama', 'lm_studio'], label: t('Local model server'), desc: t('An embedding model on Ollama or LM Studio') },
     { id: 'off', providers: ['off'], label: t('Off'), desc: t('Keyword search only; sources get no similarity score.') },
   ]
@@ -838,7 +858,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
         <span className="spin" aria-hidden />{t('A terminal window opened. Finish signing in there; this updates by itself.')}
       </p>}
       {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && ownRun.message && <p className="foot-note warn-t" role="alert">{ownRun.message}</p>}
-      {signInCommand && <button type="button" className="ghost" aria-expanded={signIn === accountId} onClick={() => setSignIn(signIn === accountId ? null : accountId)}>{t('Or run this in a terminal')}</button>}
+      {signInCommand && <button type="button" className="ghost" aria-expanded={signIn === accountId} onClick={() => setSignIn(signIn === accountId ? null : accountId)}><SquareTerminal aria-hidden />{t('Or run this in a terminal')}</button>}
       {signIn === accountId && signInCommand && <div className="signin-cmd">
         <p className="foot-note">{t('Run this in a terminal, then test the connection:')}</p>
         <div className="cmd-row"><code className="field mono">{signInCommand}</code><button type="button" className="ghost" onClick={() => copy(signInCommand)}><Copy aria-hidden />{t('Copy')}</button></div>
@@ -915,9 +935,10 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     body = <>
       {dmeta(key, [tone, status], test && <span className={`status-chip ${test.answered && (test.http_status ?? 0) < 300 ? '' : 'is-warning'}`}>{providerAnswer(test)}</span>)}
       <p className="foot-note is-ink">{provider.id === 'openalex'
-        ? t('Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.')
+        ? linkify(t('Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.'))
         : !env ? (MAILTO_PROVIDERS.has(provider.id) ? t('No key needed. DEIXIS adds your contact email to its requests, as the service asks.') : t('No key needed.'))
         : t(provider.note)}</p>
+      {env && providerKeySignup[id] && <p className="foot-note key-signup">{linkify(t(providerKeySignup[id].steps))} <a href={providerKeySignup[id].url} target="_blank" rel="noopener noreferrer">{t('Get a key')}</a></p>}
       {env && credentials && <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain} service={providerNames[provider.id] ?? provider.id}
         label={t(provider.id === 'openalex' ? 'API key (optional, free from openalex.org)' : 'API key')}
         removeEffect={t('Requests that need this key stop until you add one again.')} onSaved={reloadAfterKeyChange} />}
@@ -970,14 +991,19 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     body = <>
       {dmeta('zotero', zoteroStatus())}
       <p className="foot-note is-ink">{t('Import a collection from Add sources on the home page or from a research’s Sources panel. Your Zotero library is never changed.')}</p>
-      <div className="acts">{checkButton('zotero', 'Find it on this computer', () => loadTools(true, true))}</div>
-      {zotero && <LocalToolDetails tool={zotero} dark={dark} onChanged={reloadTools} refresh={false} />}
-      {credentials && <>
-        <p className="foot-note is-ink">{t('To import from zotero.org, create a read-only key at zotero.org/settings/keys. Your user ID is shown on the same page.')}</p>
+      <section className="zotero-route">
+        <div className="zotero-route-head"><h3>{t('This computer')}</h3>{zotero && <span className={`status-chip is-status ${zotero.installed && zotero.running && zotero.local_api ? '' : 'is-configured'}`}>
+          {t(!zotero.installed ? 'Not installed' : !zotero.running ? 'Not running' : zotero.local_api ? 'Local API on' : 'Local API off')}</span>}</div>
+        <div className="acts">{checkButton('zotero', 'Find it on this computer', () => loadTools(true, true))}</div>
+        {zotero && <LocalToolDetails tool={zotero} dark={dark} onChanged={reloadTools} refresh={false} chip={false} />}
+      </section>
+      {credentials && <section className="zotero-route">
+        <div className="zotero-route-head"><h3>zotero.org</h3>{zotero && <span className={`status-chip is-status ${zotero.web_configured ? '' : 'is-configured'}`}>{t(zotero.web_configured ? 'Ready' : 'Not set up')}</span>}</div>
+        <p className="foot-note is-ink">{linkify(t('To import from zotero.org, create a read-only key at zotero.org/settings/keys. Your user ID is shown on the same page.'))}</p>
         {(['ZOTERO_API_KEY', 'ZOTERO_LIBRARY_ID'] as const).map(env => <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain}
-          plain={env === 'ZOTERO_LIBRARY_ID'} label={t(env === 'ZOTERO_API_KEY' ? 'zotero.org API key' : 'zotero.org user ID')} service="zotero.org"
+          plain={env === 'ZOTERO_LIBRARY_ID'} note={env === 'ZOTERO_LIBRARY_ID'} label={t(env === 'ZOTERO_API_KEY' ? 'zotero.org API key' : 'zotero.org user ID')} service="zotero.org"
           removeEffect={t('Importing from zotero.org stops until you add it again.')} onSaved={() => { reloadAfterKeyChange(); void reloadTools() }} />)}
-      </>}
+      </section>}
     </>
   } else if (sel?.kind === 'reference-files') {
     body = <>

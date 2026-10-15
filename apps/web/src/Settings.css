@@ -41,6 +41,12 @@
 .app .settings-page .rows p{flex:1;min-width:180px;margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
 .app .settings-page .rows .select{height:27px;color:var(--ink-2)}
 .app .settings-page .rows .bar{flex:1;min-width:140px}
+/* Default models: model and thinking level stay on the role's line in every language (long Turkish option labels made
+   the selects wrap below). */
+.app .settings-page .set-roles>div{flex-wrap:nowrap}
+.app .settings-page .set-roles p{min-width:0}
+.app .settings-page .set-roles .select{flex:none;width:200px}
+.app .settings-page .set-roles .select+.select{width:130px}
 .app .settings-page .bar{display:flex;height:6px;overflow:hidden;border-radius:3px;background:var(--selected-surface)}
 .app .settings-page .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
 .app .settings-page .set-usage p{flex:0 0 auto;min-width:0;text-align:right}
@@ -89,7 +95,7 @@
 .app .settings-page .opts label .st,.app .settings-page .opts label .spin{align-self:center;margin-left:auto}
 .app .settings-page .opts input{flex:none;margin:3px 0 0;accent-color:var(--accent)}
 .app .settings-page .opts label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-2px}
-.app .settings-page .semantic-option-body{display:grid;gap:4px;padding:0 14px 12px 37px;font-size:12.5px}
+.app .settings-page .semantic-option-body{display:grid;gap:4px;padding:0 14px 12px 63px;font-size:12.5px}
 .app .settings-page .semantic-option-body .local-tool-note,.app .settings-page .semantic-option-body .local-tool-error{font-size:12.5px}
 .app .settings-page .semantic-option-body .select{justify-self:start;height:27px}
 
@@ -146,7 +152,13 @@
 .connection-sheet .status-chip.is-status{gap:5px}
 .connection-sheet .status-chip.is-status::before{display:block}
 .connection-sheet .local-tool-note,.connection-sheet .local-tool-error{font-size:12.5px}
+.connection-sheet .zotero-route{display:grid;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:10px}
+.connection-sheet .zotero-route-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.connection-sheet .zotero-route h3{margin:0;font-size:13.5px;font-weight:600}
+.connection-sheet .zotero-route .acts{margin:0}
 .connection-sheet .connection-checks{border:1px solid var(--line);border-radius:10px}
+/* Where to get a source's key: the link reads as a link inside the muted note. */
+.connection-sheet .key-signup a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
 .connection-sheet .connection-checks .legacy-check{padding:9px 14px;border-bottom:0;border-top:1px solid var(--line);font-size:13px}
 .connection-sheet .connection-checks .legacy-check:first-child{border-top:0}
 .connection-sheet .connection-checks .legacy-check strong{color:var(--ink-2)}
@@ -171,7 +183,7 @@
 :is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon{width:16px;height:16px;color:var(--ink);opacity:.85}
 :is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [fill]:not([fill=none]){fill:currentColor}
 :is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [stroke]:not([stroke=none]){stroke:currentColor}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon :is([fill="#fff"],[data-icon=gemini] [fill="#1E1E2E"]){fill:var(--paper)}
+:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [fill="#fff"]{fill:var(--paper)}
 :is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [stroke="#fff"]{stroke:var(--paper)}
 :is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon img{filter:grayscale(1) contrast(1.2)}
 .app .settings-page .opts .connection-icon{margin-top:3px}

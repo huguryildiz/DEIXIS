@@ -292,3 +292,53 @@ def test_many_newer_rows_without_headers_do_not_hide_an_older_usable_one(served)
         store_search(store, rid, run, {} if n % 2 else {"retry-after": "1"}, at=now - timedelta(seconds=n + 1))
     body = client.get("/api/openalex/budget-today").json()
     assert (body["unit"], body["remaining"], body["limit"], body["source"]) == ("credits", 640.0, 1000.0, "last_stored_response")
+
+
+# ---- Live read from OpenAlex's /rate-limit (needs a key, costs no credits) ------------------------------------------
+# The body follows the shape OpenAlex returned on 15 Oct 2026; the figures here are SYNTHETIC.
+LIVE = {"rate_limit": {"daily_budget_usd": 1, "daily_used_usd": 0.25, "daily_remaining_usd": 0.75,
+                       "resets_at": "2026-10-16T00:00:00.000Z", "credits_limit": 10000, "credits_remaining": 7500}}
+
+
+def live_app(tmp_path, handler):
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, search_query="code", fulltext_fetch="off")
+    app = create_app(settings, adapters={"fake": FakeAdapter()}, http_client=httpx.AsyncClient(
+        transport=httpx.MockTransport(handler)), start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    return TestClient(app)
+
+
+def test_live_answer_gives_dollars_first_and_the_reset_time():
+    body = usage_routes.live_budget(LIVE, NOON)
+    assert (body["unit"], body["remaining"], body["limit"], body["source"]) == ("usd", 0.75, 1.0, "live")
+    assert body["used_fraction"] == pytest.approx(0.25)
+    assert body["reset_at"] == "2026-10-16T00:00:00.000+00:00"
+    credits = usage_routes.live_budget({"rate_limit": {"credits_limit": 10000, "credits_remaining": 7500}}, NOON)
+    assert (credits["unit"], credits["remaining"], credits["limit"]) == ("credits", 7500.0, 10000.0)
+    assert usage_routes.live_budget({"error": "x"}, NOON) is None
+
+
+def test_with_a_key_the_route_reads_openalex_live(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENALEX_API_KEY", "SYNTHETIC")
+    seen = []
+
+    def handler(request):
+        seen.append(request.url)
+        return httpx.Response(200, json=LIVE)
+    with live_app(tmp_path, handler) as client:
+        body = client.get("/api/openalex/budget-today").json()
+    assert (body["source"], body["remaining"]) == ("live", 0.75)
+    assert [(u.host, u.path, u.params["api_key"]) for u in seen] == [("api.openalex.org", "/rate-limit", "SYNTHETIC")]
+
+
+def test_without_a_key_nothing_is_asked_and_a_failed_read_falls_back_to_the_stored_figure(tmp_path, monkeypatch):
+    seen = []
+
+    def handler(request):
+        seen.append(request.url)
+        return httpx.Response(401, json={"error": "Authentication required"})
+    with live_app(tmp_path, handler) as client:
+        assert client.get("/api/openalex/budget-today").json() == EMPTY
+        assert seen == []
+        monkeypatch.setenv("OPENALEX_API_KEY", "SYNTHETIC")
+        assert client.get("/api/openalex/budget-today").json() == EMPTY
+        assert len(seen) == 1

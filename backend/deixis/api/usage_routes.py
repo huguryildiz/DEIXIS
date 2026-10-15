@@ -1,12 +1,14 @@
 """Usage reads (parity slice S16): OpenAlex budget today (F7) and model calls by role (F8), with a run's provider
 requests (P2, D31).
 
-All are read from what the app stored. The model calls are the rows of `model_sessions`, never an estimate; a run's
+The OpenAlex budget is read live from OpenAlex's free `/rate-limit` endpoint when an OpenAlex key is set (the endpoint
+needs one and costs no credits; `source` "live"). Without a key, or when that read fails, it falls back to what the app
+stored. Everything else is read from what the app stored. The model calls are the rows of `model_sessions`, never an estimate; a run's
 requests are the rows of `provider_requests`, counting only what went out. The OpenAlex
 numbers are the rate-limit headers of the newest stored OpenAlex response since the last daily reset (midnight UTC, when
 OpenAlex renews its daily budget); a denominator is given only when OpenAlex sent a limit header with it. The answer says it is the last stored response
 (`source`) and when that was (`as_of`); it is not a live reading. Nothing here
-writes, asks a provider or starts a run.
+writes or starts a run; only the budget read asks a provider.
 """
 
 from __future__ import annotations
@@ -16,9 +18,11 @@ from datetime import datetime, timedelta, timezone, tzinfo
 from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
+import httpx
 from fastapi import HTTPException, Query, Request
 
 from deixis.domain.rules import LITERATURE_TASKS
+from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import now
 
 ROLES = ("answer", "literature", "reviewer")  # the three roles the Settings page sets a model for
@@ -26,6 +30,8 @@ REVIEWER_TASKS = ("answer_review",)
 DAY_SECONDS = 86400
 # The figure is what OpenAlex said in the last stored response, not a live reading; `as_of` is that response's time.
 SOURCE = "last_stored_response"
+RATE_LIMIT_URL = "https://api.openalex.org/rate-limit"
+LIVE_TIMEOUT = 5.0
 
 
 def role_of(task_type: str) -> str:
@@ -130,9 +136,46 @@ def budget(rows: list[tuple[str, str | None]], moment: datetime) -> dict[str, An
             "reset_at": None, "as_of": None, "source": SOURCE}
 
 
+def live_budget(body: Any, moment: datetime) -> dict[str, Any] | None:
+    """OpenAlex's budget today from its `/rate-limit` answer: the dollar figures when present, else the credit figures
+    (never mixed, as in `budget`). None when the answer carries neither."""
+    limits = body.get("rate_limit") if isinstance(body, dict) else None
+    if not isinstance(limits, dict):
+        return None
+    for unit, remaining_key, limit_key in (("usd", "daily_remaining_usd", "daily_budget_usd"),
+                                           ("credits", "credits_remaining", "credits_limit")):
+        remaining = _number(str(limits.get(remaining_key)))
+        if remaining is None:
+            continue
+        limit = _number(str(limits.get(limit_key)))
+        try:
+            reset = iso(datetime.fromisoformat(str(limits.get("resets_at")).replace("Z", "+00:00")))
+        except ValueError:
+            reset = iso(day_start(moment) + timedelta(days=1))
+        used = min(1.0, max(0.0, float((limit - remaining) / limit))) if limit else None
+        return {"provider": "openalex", "unit": unit, "remaining": float(remaining),
+                "limit": float(limit) if limit else None, "used_fraction": used,
+                "reset_at": reset, "as_of": iso(moment), "source": "live"}
+    return None
+
+
+async def read_live(client, api_key: str) -> dict[str, Any] | None:
+    """Ask OpenAlex for today's budget; None when the request fails or the answer is not usable."""
+    try:
+        response = await client.get(RATE_LIMIT_URL, params={"api_key": api_key}, timeout=LIVE_TIMEOUT)
+        if response.status_code != 200:
+            return None
+        return live_budget(response.json(), datetime.now(timezone.utc))
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
 def register_usage_routes(app) -> None:
     @app.get("/api/openalex/budget-today")
     async def openalex_budget_today(request: Request) -> dict[str, Any]:
+        key = CONNECTORS["openalex"].api_key()
+        if key and (live := await read_live(request.app.state.http, key)) is not None:
+            return live
         moment = datetime.now(timezone.utc)
         return budget(request.app.state.store.openalex_rate_limit_rows(iso(day_start(moment))), moment)
 

@@ -1490,9 +1490,9 @@ export type Usage = {
 export type OpenAlexBudgetToday = {
   provider: 'openalex'; unit: 'usd' | 'credits' | null; remaining: number | null; limit: number | null
   used_fraction: number | null; reset_at: string | null
-  // The figure is OpenAlex's last stored response (source), received at as_of; not a live reading. Credits are not
-  // requests (a search costs several) and are never converted to dollars.
-  as_of: string | null; source: 'last_stored_response'
+  // With an OpenAlex key the figure is read live from OpenAlex at as_of (source 'live'); otherwise it is OpenAlex's last
+  // stored response, received at as_of. Credits are not requests (a search costs several) and are never converted to dollars.
+  as_of: string | null; source: 'live' | 'last_stored_response'
 }
 
 export const usageApi = {

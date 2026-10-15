@@ -834,7 +834,7 @@ class ScriptedCodex:
                                     evidence=[{'passage_id': passage['passage_id'], 'quote': quote}])
         if si["task_type"] == "report_review" and "[report-review-finding]" in question:
             first = si["report_target"]["review_sections"][0]
-            output["findings"] = [{"claim_key": first["claims"][0]["claim_key"], "sentence_id": None,
+            output["findings"] = [{"claim_key": first["claims"][0]["claim_key"],
                                    "code": "other", "text": "SYNTHETIC: the cited wording may need another reading."}]
         if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "VII":
             # VII claims need a gap basis (P7 assembly rule 8) and this fixture has no gaps: VII says so instead.

@@ -145,15 +145,6 @@ def test_report_target_with_a_cell_that_was_not_given_fails_before_the_model_cal
     assert (step["status"], step["error_code"]) == ("failed", "step_input_invalid")
 
 
-def test_report_section_receives_only_its_phrasebank_sections(tmp_path):
-    flow, store, adapter, run, scope, source_id, passage_id = report_flow(tmp_path)
-
-    run_report_section(flow, store, run, scope, source_id, passage_id, report_target(source_id, passage_id))
-
-    assert "# Referring to Literature" in adapter.developer
-    assert "# Defining Terms" not in adapter.developer
-
-
 def test_non_report_tasks_keep_the_original_step_input_shape(tmp_path):
     flow, store, _, run, scope, source_id, passage_id = report_flow(tmp_path)
     passage = store.passage(passage_id)

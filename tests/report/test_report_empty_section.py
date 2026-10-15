@@ -7,9 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from deixis.domain import contracts, phrasebank, skill
+from deixis.domain import contracts, skill
 from deixis.workflow.flow import RunStopped
-from deixis.workflow.report.phrasing import flagged_sentences
 from deixis.workflow.report.sections import run_report
 from fakes import FakeAdapter, envelope
 from test_report_flow import ReportAdapter, _claim, report_flow
@@ -150,7 +149,6 @@ def test_empty_vi_repairs_once_to_model_written_insufficiency_and_report_is_vali
     assert reports.report(report_id)["status"] == "valid"
     assert store.run(run["id"])["pause_reason"] is None
     assert not any(call["task_type"] == "report_phrase_repair" and call["report_target"]["section_id"] == "VI" for call in adapter.calls)
-    assert flagged_sentences("VI", [INSUFFICIENT], skill.load_skill_package().files[phrasebank.PHRASEBANK], "en") == []
     _assert_no_vi_claims_gaps_or_anchors(store, reports, report_id)
 
 

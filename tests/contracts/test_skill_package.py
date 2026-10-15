@@ -114,20 +114,15 @@ def test_runtime_text_loads_only_declared_files():
     text = package.runtime_text("grounded_answer")
     assert '<method-file path="SKILL.md">' in text
     assert '<method-file path="references/source-grounded-answer.md">' in text
-    assert f'<method-file path="{skill.PHRASEBANK}">' in text
     assert "provenance.json" not in text
-    # The answer and report-section steps carry the phrasebank.
-    assert skill.PHRASEBANK not in package.runtime_text("abstract_screening")
+    # D43: the phrasebank left the package; no step loads it.
+    assert not (SKILL_DIR / "references/phrases.md").exists()
+    assert all("references/phrases.md" not in files for files in skill.RUNTIME_FILES.values())
     review = package.runtime_text("answer_review")
-    assert '<method-file path="references/answer-review.md">' in review and skill.PHRASEBANK not in review
+    assert '<method-file path="references/answer-review.md">' in review
     for task in ("cell_extraction", "table_columns"):
-        table = package.runtime_text(task)
-        assert '<method-file path="references/evidence-table.md">' in table and skill.PHRASEBANK not in table
+        assert '<method-file path="references/evidence-table.md">' in package.runtime_text(task)
     assert '<method-file path="references/evidence-table.md">' not in text
-    assert f'<method-file path="{skill.PHRASEBANK}">' in package.runtime_text("report_section")
-    # The raw file's `tr:` lines never reach the model; a Turkish answer gets the rendered Turkish frames.
-    assert "\ntr: " not in text
-    assert "literal Turkish renderings" in package.runtime_text("grounded_answer", "tr")
 
 
 def test_skill_does_not_advertise_unsupported_modes_as_available():
@@ -139,7 +134,7 @@ def test_skill_does_not_advertise_unsupported_modes_as_available():
 
 def test_report_task_types_load_the_report_reference_and_pass_integrity():
     from deixis.domain.skill import RUNTIME_FILES, integrity_issues
-    for task in ("report_plan", "report_section", "report_phrase_repair", "report_review"):
+    for task in ("report_plan", "report_section", "report_review"):
         assert "references/report.md" in RUNTIME_FILES[task]
     assert integrity_issues() == []
 

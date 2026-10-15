@@ -6,7 +6,6 @@ import hashlib
 import json
 from typing import Any
 
-from deixis.domain import contracts
 
 
 CHECKER_VERSION = "edit-check-1"
@@ -92,10 +91,6 @@ def manifest(store, reports, report_id: str) -> dict:
         row = conn.execute("SELECT v.title, w.source_key FROM source_versions v LEFT JOIN works w ON w.id = v.work_id"
                            " WHERE v.id = ?", (source_id,)).fetchone()
         sources.append({"id": source_id, **ABSENT} if row is None else {"id": source_id, **dict(row)})
-    latest_repairs = {}
-    for row in conn.execute("SELECT id, section_id, sentence_id, before, after, outcome FROM report_phrase_repairs"
-                            " WHERE report_id = ? ORDER BY rowid", (report_id,)):
-        latest_repairs[(row["section_id"], row["sentence_id"])] = dict(row)
     return {
         "checker_version": CHECKER_VERSION,
         "report": {"language": report["language"], "plan": report["plan"],
@@ -103,8 +98,6 @@ def manifest(store, reports, report_id: str) -> dict:
         "snapshot_digest": _digest(snapshot["snapshot_json"]) if snapshot else dict(ABSENT),
         "sections": sections, "claims": claims, "effective_links": links,
         "passages": passages, "link_step_inputs": inputs, "sources": sources, "gaps": gaps,
-        "phrase_repairs": [latest_repairs[key] for key in sorted(latest_repairs)],
-        "phrasebank_digest": _digest(contracts._phrasebank_text()),
     }
 
 

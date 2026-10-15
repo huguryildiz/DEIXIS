@@ -93,19 +93,19 @@ def _behavior_outputs(case: dict, si: dict) -> tuple[dict, dict]:
 
 
 def _review_output(si: dict, findings: list[dict]) -> dict:
-    return {"schema_version": "deixis.report_review.v1", "step_input_id": si["step_input_id"],
+    return {"schema_version": "deixis.report_review.v2", "step_input_id": si["step_input_id"],
             "scope_revision": si["scope_revision"], "skill_package_hash": si["skill_package_hash"],
             "findings": findings, "notes": "SYNTHETIC reviewer fixture."}
 
 
-def _finding(key: str | None, code: str = "other", sentence: str | None = None) -> dict:
-    return {"claim_key": key, "sentence_id": sentence, "code": code,
+def _finding(key: str | None, code: str = "other") -> dict:
+    return {"claim_key": key, "code": code,
             "text": "SYNTHETIC finding names the seeded fault in the test fixture."}
 
 
 def test_case_registry_matches_builder_and_fixture() -> None:
     assert [case["id"] for case in CASES] == list(runner.CASE_IDS)
-    assert len(CASES) == 18
+    assert len(CASES) == 17
     assert all(case["fixture"] in FIXTURES for case in CASES)
     assert all(case["fixture"] == ("C_report_review" if case["id"].startswith(("RS", "RC"))
                                    else "C_report_section_IV") for case in CASES)
@@ -147,7 +147,7 @@ def test_built_input_and_citation_provenance(case: dict) -> None:
                                for e in cell["evidence"])
 
 
-@pytest.mark.parametrize("case", CASES[5:17], ids=lambda c: c["id"])
+@pytest.mark.parametrize("case", CASES[5:16], ids=lambda c: c["id"])
 def test_review_case_has_one_seeded_fault_with_consistent_other_evidence(case: dict) -> None:
     si = _input(case)
     cid = case["id"]
@@ -189,11 +189,6 @@ def test_review_case_has_one_seeded_fault_with_consistent_other_evidence(case: d
         assert cells[runner.SOURCE_IDS[2]]["reading_depth"] == "abstract"
         assert cells[runner.SOURCE_IDS[2]]["state"] == "value"
         assert cells[runner.SOURCE_IDS[2]]["value"]["text"] == "SYNTHETIC relay timing"
-    if cid == "RS01":
-        repair = target["review_sections"][0]["repairs"][0]
-        assert "does not report a physical experiment" in repair["before"]
-        assert "does report a physical experiment" in repair["after"]
-        assert "does not report a physical experiment" in passages[runner.SOURCE_IDS[0]]["text"]
     if cid == "RS02":
         assert passages[runner.SOURCE_IDS[2]]["reading_depth"] == "abstract"
         assert "constraint" not in passages[runner.SOURCE_IDS[2]]["text"].lower()
@@ -393,7 +388,7 @@ def test_review_catch_miss_false_positive_and_control(case: dict) -> None:
         assert counts["control_findings"] == 0
         return
     seeded = case["seeded_claim_key"]
-    finding = _finding(seeded, case["codes_accepted"][0], case.get("seeded_sentence_id"))
+    finding = _finding(seeded, case["codes_accepted"][0])
     caught = _review_output(si, [finding])
     assert contracts.validate_model_output(si, caught).ok
     checks, counts = runner.automatic_checks(case, caught, si)
@@ -414,7 +409,7 @@ def test_summary_counts_flags_over_valid_outputs_not_attempts() -> None:
                 "validation": {"ok": valid}}], "automatic_checks": checks,
                 "counts": {"false_positive_count": fp, "control_findings": control}}
     summary = runner.summarize([
-        row("RB01", True, {"safe": True}), row("RS01", False,
+        row("RB01", True, {"safe": True}), row("RS03", False,
             {"flagged": True, "flagged_with_expected_code": True}, fp=2),
         row("RS02", True, {"flagged": True, "flagged_with_expected_code": False}, fp=1),
         row("RC01", True, {"no_control_findings": False}, control=1),
@@ -427,18 +422,18 @@ def test_summary_counts_flags_over_valid_outputs_not_attempts() -> None:
     assert summary["RS"]["structurally_valid"] == 1
     assert summary["synthetic_review_flags"]["attempted"] == 2
     assert summary["synthetic_review_flags"]["valid_outputs"] == 1
-    assert summary["synthetic_review_flags"]["seeded_in_catalog"] == 12
+    assert summary["synthetic_review_flags"]["seeded_in_catalog"] == 11
     assert summary["synthetic_review_flags"]["seeded_presented"] == 2
     assert summary["synthetic_review_flags"]["flagged"] == 1
     assert summary["synthetic_review_flags"]["flagged_with_expected_code"] == 0
     assert summary["synthetic_review_flags"]["false_positives_total"] == 1
     assert summary["synthetic_review_flags"]["control_findings"] == 1
-    assert "2 of 12 synthetic RS cases and 1 RC control cases ran" in summary["synthetic_review_flags"]["scope"]
+    assert "2 of 11 synthetic RS cases and 1 RC control cases ran" in summary["synthetic_review_flags"]["scope"]
     assert "valid_outputs (1) as its denominator" in summary["synthetic_review_flags"]["scope"]
     assert "partial block" in summary["synthetic_review_flags"]["scope"]
-    full = runner.summarize([row(f"RS{i:02d}", True, {}) for i in range(1, 13)])
-    assert "12 of 12 synthetic RS cases" in full["synthetic_review_flags"]["scope"]
-    assert full["synthetic_review_flags"]["seeded_in_catalog"] == 12
+    full = runner.summarize([row(f"RS{i:02d}", True, {}) for i in range(2, 13)])
+    assert "11 of 11 synthetic RS cases" in full["synthetic_review_flags"]["scope"]
+    assert full["synthetic_review_flags"]["seeded_in_catalog"] == 11
     assert "partial block" not in full["synthetic_review_flags"]["scope"]
 
 

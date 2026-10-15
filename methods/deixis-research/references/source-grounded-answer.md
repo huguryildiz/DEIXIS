@@ -160,67 +160,27 @@ did.
 ### Phrasing
 
 Claim text, limitation text, unanswered aspects and the capability notice are
-written with the Academic Phrasebank frames in
-[phrases.md](phrases.md).
+plain academic prose in the answer language.
 
-- Build each sentence on one phrasebank frame where one fits. Replace only its slots (`X`, `Y`,
-  `Z`, `…` and the example content words such as topic nouns, author names and
-  years) with content from the cited passages; keep the frame's other words, word
-  order and tense. In a substitution table a frame is one stem plus one
-  continuation. A sentence may open with a linking phrase that is itself in the
-  phrasebank, for example "However," or "In contrast,".
-- Do not add framing, hedging, linking or evaluative wording that is not in the
-  phrasebank. A frame that changes who did what, what a source reports, or why
-  something is limited is the wrong frame; pick another, never change the
-  statement to fit a frame.
-- The evidence rules decide which frames are allowed. A frame's certainty must
-  match the support: "It is now well established that …" or "… conclusively
-  shown that …" need passages that state it that strongly, and
-  `analyst_inference` claims use cautious frames such as those under Being
-  Cautious or Suggesting general hypotheses.
-- Choose frames by what the sentence does:
-  - What a cited source did or reported: frames for referring to single
-    investigations or previous research, for example "It has been reported that
-    …" or "In an analysis of X, … found …". Example content in a frame, such as
-    the author and topic in "One study by Smith (2014) examined the trend in …",
-    still counts as frame wording, so a frame whose example words you would have
-    to drop is not a fit; choose one with open slots.
-  - Words that name the writer's own work ("this study", "the present study",
-    "this paper", "the current investigation") refer to this answer and its
-    supplied passages, never to a cited source; write them as "this answer" or
-    "the supplied passages". For example, "The study is limited by the lack of
-    information on …" becomes "This answer is limited by the lack of information
-    on …".
-    In report claims, own-work wording is a blocking issue, including after phrase repair; use a supported
-    source-reporting frame or wording about the report. Ordinary answers retain their warning policy.
-  - Access, scope and unanswered parts: frames about what could not be assessed
-    or addressed, for example "It was not possible to assess X; therefore, it is
-    unknown if …", "An issue that was not addressed in the supplied passages was
-    whether …", "It is beyond the scope of this answer to examine …".
-  - Gap and novelty frames ("This is the first study …", "No previous study has
-    …", "There is a paucity of …", "Very little is known about …", "It is still
-    not known whether …") state something about a whole field. Use them only when
-    a cited passage says so, and attribute it to that source; never for what the
-    supplied passages happen not to report.
-- Use author names and years only as they appear in the StepInput records; never
-  invent them. Do not use frames that point to a table, figure, page or section
-  number, such as "As shown in Figure 1"; the application rejects locators in
-  claim text.
-- For a Turkish question the frames you receive are already literal Turkish
-  renderings; use them as written, adding only the endings a filled slot needs.
-  Their own-work words ("bu çalışma", "mevcut çalışma", "bu makale") become
-  "bu cevap" or "sağlanan pasajlar", as in English, and never name a cited
-  source; "Önceki çalışmalar" needs several cited sources. To report what one
-  source states, turn the reported verb into its participle inside a reporting
-  frame, for example "Röle konumlarının sezgisel bir yöntemle seçilmiş olduğu
-  bildirilmiştir." or "… tarafından yapılan bir çalışma, …'i incelemiştir."; for
-  an unanswered part, "Sağlanan pasajlarda ele alınmayan bir konu, modellerin
-  doğrulanmış olup olmadığıydı."
-  For another non-English language, translate the chosen English frame literally,
-  keeping its structure, certainty and hedging. Do not write a sentence that has
-  no frame behind it, and do not replace a frame with a freer idiomatic phrase.
-- The application checks every sentence of these fields against the frames and
-  flags sentences without a frame, claims that use the writer's own-work words
-  ("this study", "bu çalışma") and several-sources wording for a one-source
-  claim. The flags are shown with the answer and never reject it; do not drop
-  evidence or shorten the report to avoid one. LaTeX math counts as one slot.
+- Write each sentence in your own words. Do not open sentences with a fixed
+  reporting formula ("It has been reported that …", "… bildirilmiştir.") and do
+  not repeat one sentence opening across claims. Name the finding directly, for
+  example "DBR saved more energy than VBF in a 500-node simulation." The
+  citation already says who reported it.
+- Certainty follows the evidence: state plainly what a passage states plainly,
+  and hedge `analyst_inference` claims ("may", "suggests") without overstating.
+- Words that name the writer's own work ("this study", "the present study",
+  "this paper", "bu çalışma") refer to this answer and its supplied passages,
+  never to a cited source; write "this answer" or "the supplied passages"
+  ("bu cevap", "sağlanan pasajlar"). In report claims, own-work wording is a
+  blocking issue; ordinary answers get a warning.
+- "Previous studies", "several studies" and the like need several cited
+  sources; for a one-source claim, speak of that one source.
+- Gap and novelty statements ("This is the first study …", "Very little is
+  known about …") describe a whole field. Use them only when a cited passage
+  says so, and attribute it to that source; never for what the supplied
+  passages happen not to report.
+- Use author names and years only as they appear in the StepInput records;
+  never invent them. Do not point to a table, figure, page or section number,
+  such as "As shown in Figure 1"; the application rejects locators in claim
+  text.

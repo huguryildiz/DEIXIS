@@ -8,11 +8,10 @@ import json
 
 import pytest
 
-from deixis.domain import contracts
 from deixis.storage import db
 from deixis.storage.db import new_id
 from deixis.workflow.report.assembly import run_assembly_checks
-from deixis.workflow.report import phrasing, review_methodology
+from deixis.workflow.report import review_methodology
 from deixis.workflow.report import gaps as report_gaps
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import Store
@@ -140,13 +139,6 @@ def report_with_sections(tmp_path):
         _claim("abstract.1", "This survey summarizes the evidence.", "analyst_inference", ["III.1"]),
     ], [{"claim_key": "abstract.1", "passage_id": abstract_passage, "source_version_id": source_id,
          "step_input_id": report_input_id, "anchor_text": "abstract evidence", "anchor_match": "exact"}])
-    phrasebank_text = contracts._phrasebank_text()
-    for section_id, claims in (("III", [_claim("III.1", "Resource allocation assigns capacity.", "source_stated")]),
-                               ("abstract", [_claim("abstract.1", "This survey summarizes the evidence.",
-                                                    "analyst_inference")])):
-        for flagged in phrasing.flagged_sentences(section_id, claims, phrasebank_text, "en"):
-            reports.save_phrase_repair(report_id, section_id, flagged["sentence_id"], flagged["text"],
-                                       flagged["text"], "unframed_exception")
 
     yield {
         "store": store, "reports": reports, "report_id": report_id, "report_step_id": report_step["id"],
@@ -184,9 +176,6 @@ def _add_claim(lib, section_id, key, text, *, count=None, origin=None, equation_
     claim = _claim(key, text, support_type)
     claim.update(count=count, equation_origin=origin, equation_ref=equation_ref, gap_refs=gap_refs or [])
     lib["reports"].save_claims(section, [claim], links or [])
-    for flagged in phrasing.flagged_sentences(section_id, [claim], contracts._phrasebank_text(), "en"):
-        lib["reports"].save_phrase_repair(lib["report_id"], section_id, flagged["sentence_id"],
-                                          flagged["text"], flagged["text"], "unframed_exception")
     return claim
 
 
@@ -210,8 +199,6 @@ def test_duplicate_claim_key_across_sections_is_an_error(report_with_sections):
     lib["reports"].save_claims(
         section_id, [_claim("III.1", "A duplicate key.", "source_stated")], []
     )
-    lib["reports"].save_phrase_repair(lib["report_id"], "IV", "III.1#1", "A duplicate key.",
-                                      "A duplicate key.", "unframed_exception")
 
     issues = _issues(lib)
 
@@ -228,9 +215,6 @@ def test_glossary_term_used_before_its_definition_section_is_a_warning(report_wi
         _claim("I.1", "Resource allocation is considered below.", "analyst_inference", ["III.1"]),
     ], [{"claim_key": "I.1", "passage_id": lib["abstract_passage"], "source_version_id": lib["source_id"],
          "step_input_id": lib["report_input_id"], "anchor_text": "abstract evidence", "anchor_match": "exact"}])
-    lib["reports"].save_phrase_repair(lib["report_id"], "I", "I.1#1",
-                                      "Resource allocation is considered below.",
-                                      "Resource allocation is considered below.", "unframed_exception")
 
     issues = _issues(lib)
 
@@ -749,19 +733,10 @@ def test_rule13_conflict_gap_needs_v_claim(report_with_sections):
     assert "conflict_gap_without_v_claim" not in _rules(lib)
 
 
-def test_rule14_exception_must_match_current_sentence(report_with_sections):
+def test_rule14_unframed_sentences_need_no_recorded_exception(report_with_sections):
+    # D43: report prose is no longer held to phrasebank frames, so no exception record is required.
     lib = report_with_sections
-    conn = lib["store"].conn
-    conn.execute("DELETE FROM report_phrase_repairs WHERE section_id = 'III'")
-    assert "unframed_sentence_not_recorded" in _rules(lib)
-    for before, after, outcome, passing in (
-        ("different", "Resource allocation assigns capacity.", "unframed_exception", True),
-        ("Resource allocation assigns capacity.", "refused", "reverted_exception", True),
-        ("different", "also different", "unframed_exception", False),
-        ("Resource allocation assigns capacity.", "same", "kept", False),
-    ):
-        lib["reports"].save_phrase_repair(lib["report_id"], "III", "III.1#1", before, after, outcome)
-        assert ("unframed_sentence_not_recorded" not in _rules(lib)) is passing
+    assert "unframed_sentence_not_recorded" not in _rules(lib)
 
 
 @pytest.mark.parametrize("question", [None, "x", {}, {"text": 1},

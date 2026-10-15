@@ -246,19 +246,6 @@ def test_report_repair_issue_text_uses_current_step_handles():
     assert shown[0]["message"] == "Bad evidence psg_P0000001"
 
 
-def test_phrase_repair_display_preserves_the_evidence_its_step_input_already_carries():
-    section_input = fixture("C_report_section_IV")
-    repair_input = fixture("C_report_phrase_repair")
-    before = copy.deepcopy(repair_input)
-    shown_section = contracts.with_citation_handles(section_input)
-    shown_repair = contracts.with_citation_handles(repair_input)
-    assert repair_input == before
-    for field in ("sources", "passages", "allowlist"):
-        assert shown_repair[field] == shown_section[field]
-    assert shown_repair["report_target"]["cells"] == shown_section["report_target"]["cells"]
-    assert shown_repair["report_target"]["repair_request"] == before["report_target"]["repair_request"]
-
-
 @pytest.mark.parametrize("path", PLAN_PATHS)
 def test_report_plan_only_record_handles_do_not_grant_output_permission(path):
     si, draft = fixture("C_report_plan"), output("report_plan_valid")
@@ -333,10 +320,6 @@ def test_four_report_tasks_store_real_inputs_and_results_but_messages_and_sessio
         assert json.loads(step[0])["result"] == contracts.resolve_citation_handles(payload, session["raw_output"])
         if payload["task_type"] in ("report_plan", "report_section") and raw.get("citation_anchors", raw.get("glossary")):
             assert "psg_P0000001" in session["raw_output"] or "cel_L0000001" in session["raw_output"]
-        if payload["task_type"] == "report_phrase_repair":
-            assert payload["sources"] == payload["passages"] == payload["report_target"]["cells"] == []
-            assert shown["sources"] == shown["passages"] == shown["report_target"]["cells"] == []
-            assert payload["allowlist"]["source_ids"] == payload["allowlist"]["passage_ids"] == []
     assert tasks == set(contracts.REPORT_TASKS)
     for link in store.conn.execute("SELECT passage_id, cell_id, source_version_id FROM report_citation_links"):
         assert not any(value and ("_P000" in value or "_L000" in value or "_S000" in value) for value in link)

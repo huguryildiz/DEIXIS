@@ -35,7 +35,6 @@ PURGE_GUARD_TABLES = (
 )
 NO_CHECKED_SUPPORT = ["semantic_support", "numbers_written_as_words", "passages"]
 ZERO_LINK_SKIPS = [
-    {"rule": "phrase_frames", "section_id": "III", "claim_key": "III.1", "reason": "human_text"},
     {"rule": "derived_depth_not_checked", "section_id": "abstract", "claim_key": "abstract.1",
      "reason": "no_citation_depth"},
 ]

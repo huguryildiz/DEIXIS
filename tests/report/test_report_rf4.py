@@ -253,47 +253,6 @@ def test_single_section_repair_sees_new_issues_and_is_bounded(tmp_path, still_ba
     assert bool(output.get("invalid")) is still_bad
 
 
-@pytest.mark.parametrize("violation", ["own_work", "banned"])
-def test_phrase_repair_introducing_a_violation_retains_the_valid_section(tmp_path, violation):
-    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, unframed_section="IV")
-    original = adapter.responder
-    def respond(si):
-        if si["task_type"] == "report_phrase_repair" and si["report_target"]["section_id"] == "IV":
-            return json.dumps(envelope(si, "deixis.report_phrase_repair_draft.v1") | {
-                "repairs": [{"sentence_id": s["sentence_id"], "text": REPLAY["bad_texts"][violation]} for s in si["report_target"]["repair_request"]["sentences"]]})
-        return original(si)
-    adapter.responder = respond
-    asyncio.run(run_report(flow, run, scope))
-    section = reports.section(report_id, "IV")
-    assert section["status"] == "valid"
-    assert reports.report(report_id)["status"] == "valid"
-    assert section["draft"]["claims"][0]["text"] == "Fig weiro randomtext not a frame sentence at all zzq."
-    expected = "own_work_phrase_in_claim" if violation == "own_work" else "banned_word"
-    rejection = next(i for i in section["validation"]["issues"] if i["code"] == "phrase_repair_rejected")
-    assert expected in rejection["blocking_codes"]
-    assert len([c for c in adapter.calls if c["task_type"] == "report_phrase_repair" and c["report_target"]["section_id"] == "IV"]) == 1
-
-
-def test_review_reversion_invokes_complete_validator_on_original_input(tmp_path, monkeypatch):
-    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, unframed_section="IV")
-    asyncio.run(run_report(flow, run, scope))
-    section = reports.section(report_id, "IV")
-    original = store.step_input_payload(section["draft"]["step_input_id"])
-    seen = []
-    validate = contracts.validate_model_output
-    def reject(payload, draft):
-        seen.append(copy.deepcopy(payload))
-        result = validate(payload, draft)
-        result.issues.append(contracts.Issue("SYNTHETIC_complete_validator", "/claims/0/text", "SYNTHETIC refusal"))
-        return result
-    monkeypatch.setattr(contracts, "validate_model_output", reject)
-    assert reports.revert_repair(report_id, "IV", "IV.1#1") == "would_break_assembly"
-    assert seen == [original]
-    assert reports.section(report_id, "IV") == section
-    assert reports.report(report_id)["status"] == "valid"
-    assert store.conn.execute("SELECT COUNT(*) FROM events WHERE type = 'report_repair_restoration_rejected'").fetchone()[0] == 1
-
-
 def test_vii_receives_accepted_vi_bases_without_widening_citations(tmp_path):
     flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
     asyncio.run(run_report(flow, run, scope))

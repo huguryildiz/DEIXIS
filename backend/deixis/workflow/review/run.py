@@ -7,7 +7,7 @@ import hashlib
 import json
 import re
 
-from deixis.domain import contracts, phrasebank
+from deixis.domain import contracts
 from deixis.domain.canonical import sha256_hex
 from deixis.domain.rules import MAX_RATE_LIMIT_MODEL_RETRIES, schema_repairs
 from deixis.domain.skill import RUNTIME_FILES
@@ -74,7 +74,7 @@ def review_step_input(snapshot_id, content, review_row, group, *, run_id, step_i
 
 def first_request(payload, package, enforces_schema):
     schema = contracts.step_output_schema("owner_review")
-    developer = prompt.developer_instructions(package, "owner_review", phrasebank.frames_language(payload))
+    developer = prompt.developer_instructions(package, "owner_review")
     if not enforces_schema:
         developer += "\n\n" + prompt.schema_appendix("owner_review", schema)
     message = prompt.step_message(contracts.with_citation_handles(payload))

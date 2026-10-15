@@ -11,15 +11,12 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
-from deixis.domain.phrasebank import PHRASEBANK, render
 from deixis.paths import SKILL_DIR
 
-# The answer and report section steps load the phrasebank; other steps do not write report prose.
 RUNTIME_FILES = {
     "owner_review": ("SKILL.md", "references/review.md"),
-    "grounded_answer": ("SKILL.md", "references/source-grounded-answer.md", PHRASEBANK),
+    "grounded_answer": ("SKILL.md", "references/source-grounded-answer.md"),
     "followup_answer": ("SKILL.md", "followup.md"),
     "answer_review": ("SKILL.md", "references/answer-review.md"),
     "cell_extraction": ("SKILL.md", "references/evidence-table.md"),
@@ -31,8 +28,7 @@ RUNTIME_FILES = {
     "abstract_screening": ("SKILL.md", "references/abstract-screening.md"),
     "fulltext_adjudication": ("SKILL.md", "references/fulltext-adjudication.md"),
     "report_plan": ("SKILL.md", "references/report.md"),
-    "report_section": ("SKILL.md", "references/report.md", "references/source-grounded-answer.md", PHRASEBANK),
-    "report_phrase_repair": ("SKILL.md", "references/report.md", PHRASEBANK),
+    "report_section": ("SKILL.md", "references/report.md", "references/source-grounded-answer.md"),
     "report_review": ("SKILL.md", "references/report.md"),
     "lineage_links": ("SKILL.md", "references/synthesis.md"),
     "claim_decomposition": ("SKILL.md", "references/candidate-check.md"),
@@ -57,13 +53,10 @@ class SkillPackage:
     package_hash: str
     files: dict[str, str]
 
-    def runtime_text(self, task_type: str, language: str = "en",
-                     sections: Sequence[str] | None = None) -> str:
-        """Method files for one step; the phrasebank is rendered in the language whose frames the answer uses."""
-        def body(name: str) -> str:
-            return render(self.files[name], language, sections) if name == PHRASEBANK else self.files[name]
-
-        return "\n\n".join(f"<method-file path=\"{name}\">\n{body(name)}\n</method-file>" for name in RUNTIME_FILES[task_type])
+    def runtime_text(self, task_type: str) -> str:
+        """Method files for one step, each wrapped in a method-file element."""
+        return "\n\n".join(f"<method-file path=\"{name}\">\n{self.files[name]}\n</method-file>"
+                           for name in RUNTIME_FILES[task_type])
 
 
 def _package_files(root: Path) -> list[Path]:

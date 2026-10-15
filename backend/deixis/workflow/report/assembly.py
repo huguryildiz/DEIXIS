@@ -8,8 +8,8 @@ import re
 from collections import defaultdict
 from typing import Any, Callable
 
-from deixis.domain import contracts, phrasebank
-from deixis.workflow.report import phrasing, review_methodology
+from deixis.domain import contracts, wording
+from deixis.workflow.report import review_methodology
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.report.snapshot import evidence_row_ids
 from deixis.workflow.store import Store
@@ -565,6 +565,7 @@ def _check_conflict_links(store: Store, reports: ReportStore, report_id: str) ->
 
 
 def _check_phrase_frames(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
+    """Own-work and plural-source wording in claims; the name is kept for stored rule names (frames went in D43)."""
     report = reports.report(report_id)
     sections = {section["section_id"]: section for section in reports.sections(report_id)}
     claims_by_section: dict[str, list[dict]] = defaultdict(list)
@@ -573,11 +574,6 @@ def _check_phrase_frames(store: Store, reports: ReportStore, report_id: str, *, 
     links_by_claim: dict[str, set[str]] = defaultdict(set)
     for link in _links(store, report_id, current=current):
         links_by_claim[link["claim_id"]].add(link["source_version_id"])
-    latest = {}
-    for row in store.conn.execute("SELECT section_id, sentence_id, before, after, outcome"
-                                  " FROM report_phrase_repairs WHERE report_id = ? ORDER BY rowid", (report_id,)):
-        latest[(row["section_id"], row["sentence_id"])] = dict(row)
-    phrasebank_text = contracts._phrasebank_text()
     issues = []
     for section_id, section in sections.items():
         if section_id == "II":
@@ -593,35 +589,19 @@ def _check_phrase_frames(store: Store, reports: ReportStore, report_id: str, *, 
         if payload is not None and "question" in payload and not valid_question:
             issues.append(_issue("stored_record_malformed", section_id,
                                  "ERROR: step_inputs question malformed."))
-        language = (phrasebank.frames_language(payload) if valid_question
+        language = (wording.question_language(payload) if valid_question
                     else (report["language"] or store.scope(report["research_id"], report["scope_revision"])
                           .get("language_hint") or "en"))
-        language = phrasebank.checked_language(language)
-        lexical_language = language if language and phrasebank.has_frames(phrasebank_text, language) else "en"
+        lexical_language = wording.checked_language(language) or "en"
         for claim in claims_by_section[section_id]:
             text = contracts._without_math(claim["text"])
-            for match in phrasebank.own_work_phrases(text, lexical_language):
+            for match in wording.own_work_phrases(text, lexical_language):
                 issues.append(_issue("own_work_phrase_in_claim", section_id,
                                      f"ERROR: {claim['claim_key']} uses {match!r}."))
             if len(links_by_claim[claim["id"]]) == 1:
-                for match in phrasebank.plural_source_phrases(text, lexical_language):
+                for match in wording.plural_source_phrases(text, lexical_language):
                     issues.append(_issue("plural_sources_for_one_source", section_id,
                                          f"ERROR: {claim['claim_key']} uses {match!r} for one source."))
-        if not phrasebank.REPORT_PHRASEBANK_SECTIONS.get(section_id) or not language or not phrasebank.has_frames(
-            phrasebank_text, language
-        ):
-            continue
-        fields = [{"claim_key": claim["claim_key"], "text": claim["text"],
-                   "support_type": claim["support_type"]} for claim in claims_by_section[section_id]
-                  if not current or claim["current_revision_id"] is None]
-        fields.extend(_draft_items(section, "insufficient_evidence", issues))
-        for flagged in phrasing.flagged_sentences(section_id, fields, phrasebank_text, language):
-            repair = latest.get((section_id, flagged["sentence_id"]))
-            if not repair or repair["outcome"] not in {"unframed_exception", "reverted_exception"} or (
-                flagged["text"] != repair["before"] and flagged["text"] != repair["after"]
-            ):
-                issues.append(_issue("unframed_sentence_not_recorded", section_id,
-                                     f"ERROR: {flagged['sentence_id']} has no matching exception."))
     return issues
 
 
@@ -731,7 +711,6 @@ def run_current_checks(store: Store, reports: ReportStore, report_id: str) -> di
             if claim["id"] not in depths or any(key not in by_key or by_key[key]["id"] not in depths for key in refs):
                 skip(claim, "derived_depth_not_checked", "no_citation_depth")
         if claim["current_revision_id"] is not None:
-            skip(claim, "phrase_frames", "human_text")
             if claim["section_id"] == "VIII" and contracts.limitations_number_restated(claim["text"]):
                 items.append(_issue("limitations_number_restated", "VIII",
                                     f"ERROR: {claim['claim_key']} restates a number outside an item reference."))

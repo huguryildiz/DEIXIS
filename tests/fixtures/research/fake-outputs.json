@@ -365,30 +365,12 @@
    }
   },
   {
-   "name": "report_phrase_repair_valid",
-   "step_input": "C_report_phrase_repair",
-   "expect_ok": true,
-   "expect_codes": [],
-   "output": {
-    "schema_version": "deixis.report_phrase_repair_draft.v1",
-    "step_input_id": "sti_SYNTHR0003",
-    "scope_revision": 1,
-    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-    "repairs": [
-     {
-      "sentence_id": "IV.1#1",
-      "text": "It has been reported that the rewritten sentence holds."
-     }
-    ]
-   }
-  },
-  {
    "name": "report_review_valid",
    "step_input": "C_report_review",
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.report_review.v1",
+    "schema_version": "deixis.report_review.v2",
     "step_input_id": "sti_SYNTHR0004",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",

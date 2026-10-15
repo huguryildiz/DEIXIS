@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from deixis.config import default_data_dir, load_settings
-from deixis.domain import contracts, phrasebank
+from deixis.domain import contracts
 from deixis.domain.rules import after_invalid_output, schema_repairs
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
@@ -149,7 +149,7 @@ def build_payload(case, content, package, group, model, budget, step_id):
 def build_request(payload, package, enforces_schema, repair_issues=None):
     task = "owner_review"
     schema = contracts.step_output_schema(task)
-    developer = prompt.developer_instructions(package, task, phrasebank.frames_language(payload))
+    developer = prompt.developer_instructions(package, task)
     if not enforces_schema:
         developer += "\n\n" + prompt.schema_appendix(task, schema)
     shown = contracts.with_citation_handles(payload)

@@ -232,7 +232,7 @@ def test_complete_flagged_run_views_export_numbers_and_evidence_inputs(state, la
     assert ("missing table cells: 1 of 6" if language == "en" else "6 tablo hücresinin 1") in ii["draft"]["text"]
     viii = reports.section(report, "VIII")
     core = viii["validation"]["numbers"]
-    assert core["items"][7]["number"] == 8 and core["items"][7]["key"] == "failed_rows"
+    assert core["items"][6]["number"] == 7 and core["items"][6]["key"] == "failed_rows"
     assert core["failed_rows"][0]["source_version_id"] == sid
     assert "anchor not in passage" in viii["draft"]["text"]
     assert assembly.run_assembly_checks(store, reports, report) == []
@@ -342,7 +342,7 @@ def test_word_budget_uses_completed_snapshot_rows_only_when_present(state, monke
     assert len(TableStore(store).active_rows(run["target"]["table_id"])) == (2 if failed else 1)
 
 
-def test_limitations_input_contract_accepts_seven_and_eight_but_refuses_bad_eighth(state):
+def test_limitations_input_contract_accepts_six_and_seven_but_refuses_bad_seventh(state):
     flow, store, reports, adapter, run, scope, report = state
     asyncio.run(sections.run_report(flow, run, scope))
     old = next(copy.deepcopy(si) for si in adapter.calls if si["task_type"] == "report_section"
@@ -355,13 +355,13 @@ def test_limitations_input_contract_accepts_seven_and_eight_but_refuses_bad_eigh
     updated = copy.deepcopy(old)
     updated["report_target"]["limitations_core"] = review_methodology.limitations_core(store, reports, report, frozen)
     assert contracts.check_step_input(updated) == []
-    for field, value in (("key", "truncation"), ("number", 7)):
+    for field, value in (("key", "truncation"), ("number", 8)):
         bad = copy.deepcopy(updated)
-        bad["report_target"]["limitations_core"]["items"][7][field] = value
+        bad["report_target"]["limitations_core"]["items"][6][field] = value
         assert "step_input_schema_invalid" in {i.code for i in contracts.check_step_input(bad)}
     # D243 changes shared answer instructions, the clean start (D1) the method cleanup and UI parity S5a the column
     # suggestion frame, S22a the follow-up method file; failed-row input rules stay fixed.
-    assert skill.load_skill_package().package_hash == "sha256:11962824cdc065232a14735239e4af061edd1c07e8b3808aea94d473af38afab"
+    assert skill.load_skill_package().package_hash == "sha256:02db41f833cf593c72ba67171281522d8a9261313aec378e55eb74dda018ad91"
 
 
 def test_three_full_text_absence_rows_have_identical_candidates_with_failed_row(state):
@@ -451,7 +451,7 @@ def test_old_snapshot_and_code_sections_keep_their_shapes_and_output(state):
     viii = reports.section(report, "VIII")
     assert "rows" not in ii["validation"]["numbers"]
     core = viii["validation"]["numbers"]
-    assert "failed_rows" not in core and len(core["items"]) == 7
+    assert "failed_rows" not in core and len(core["items"]) == 6
     assert viii["draft"]["text"] == review_methodology.render_limitations(core, "en")
     review_methodology.write_review_methodology(store, reports, report, rid, old)
     assert reports.section(report, "II")["draft"] == ii["draft"]

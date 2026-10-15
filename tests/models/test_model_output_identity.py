@@ -101,25 +101,6 @@ def test_new_behavior_anchor_patch_response_is_stamped(tmp_path, model_id):
     assert json.loads(row["raw_output"]).get("step_input_id") == model_id
 
 
-@pytest.mark.parametrize("model_id", [FOREIGN_ID, None])
-def test_new_behavior_phrase_repair_response_is_stamped(tmp_path, model_id):
-    def response(si, schema, message):
-        draft = json.loads(valid_response(si))
-        if model_id is None:
-            draft.pop("step_input_id")
-        else:
-            draft["step_input_id"] = model_id
-        return draft
-
-    template = copy.deepcopy(STEP_INPUTS["C_report_phrase_repair"])
-    output, store, adapter, _, _ = run_step(tmp_path, "report_phrase_repair", template, response)
-    assert not output.get("invalid"), output
-    assert len(adapter.calls) == 1
-    row = sessions(store)[0]
-    assert output["result"]["step_input_id"] == row["step_input_id"]
-    assert id_changes(row) == [{"path": "/step_input_id", "stamped": "step_input_id", "model_value": model_id}]
-
-
 def setup_request(tmp_path, response, *, attempt_record=None):
     flow, store, _, run, scope, _, _ = report_flow(tmp_path)
     adapter = Capture(response)
@@ -306,24 +287,6 @@ def test_preservation_stored_section_envelope_mismatch_is_not_stamped():
     draft["step_input_id"] = FOREIGN_ID
     assert ("envelope_mismatch", "/step_input_id") in [(i.code, i.path) for i in revalidate_section(si, draft).issues]
     assert draft["step_input_id"] == FOREIGN_ID
-
-
-def test_new_behavior_restoration_uses_original_step_input_not_draft_echo(tmp_path):
-    from test_report_flow import report_flow as complete_report_flow
-    from deixis.workflow.report.sections import run_report
-
-    flow, store, reports, _, run, scope, report_id = complete_report_flow(tmp_path, unframed_section="IV")
-    asyncio.run(run_report(flow, run, scope))
-    section = reports.section(report_id, "IV")
-    original = store.step_input_payload(section["draft"]["step_input_id"])
-    other = dict(original, step_input_id=new_id("sti"))
-    store.insert_step_input(original["step_id"], run["research_id"], run["id"], 1, other, "base", "dev", "message", {})
-    altered = dict(section["draft"], step_input_id=other["step_input_id"])
-    store.conn.execute("UPDATE report_sections SET draft_json = ? WHERE id = ?", (json.dumps(altered), section["id"]))
-    assert reports.revert_repair(report_id, "IV", "IV.1#1") == "would_break_assembly"
-    event = store.conn.execute("SELECT payload_json FROM events WHERE type = 'report_repair_restoration_rejected' ORDER BY rowid DESC LIMIT 1").fetchone()
-    assert ("envelope_mismatch", "/step_input_id") in [(i["code"], i["path"]) for i in json.loads(event[0])["issues"]]
-    assert reports.section(report_id, "IV")["draft"] == altered
 
 
 def test_preservation_matching_fresh_id_has_no_normalisation_record(tmp_path):

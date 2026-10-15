@@ -131,7 +131,7 @@ def test_an_ocr_extraction_that_found_no_text_is_rejected_and_the_old_text_stays
 # ---- sub-step 4: OCR in model output checks and views -------------------------------------------
 def test_a_claim_with_a_number_resting_only_on_ocr_text_is_a_warning_not_an_issue():
     from test_contracts import STEP_INPUTS
-    from test_phrasebank import CASES, anchored
+    from test_wording import CASES, anchored
 
     si = copy.deepcopy(STEP_INPUTS["A_answer"])
     next(p for p in si["passages"] if p["passage_id"] == "psg_SYNA1pg003")["text_source"] = "ocr"

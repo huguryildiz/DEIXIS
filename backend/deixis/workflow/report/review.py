@@ -95,17 +95,7 @@ def _input(flow: ResearchFlow, reports: ReportStore, report_id: str) -> tuple[di
         if unavailable:
             omitted.append({"section_id": section["section_id"], "reason": "passage_unavailable"})
             continue
-        latest = {}
-        for row in store.conn.execute(
-            "SELECT sentence_id, before, after, outcome FROM report_phrase_repairs"
-            " WHERE report_id = ? AND section_id = ? ORDER BY rowid", (report_id, section["section_id"]),
-        ):
-            latest[row["sentence_id"]] = row
-        keys = {claim["claim_key"] for claim in claims}
-        repairs = [{"sentence_id": row["sentence_id"], "before": row["before"], "after": row["after"]}
-                   for row in latest.values() if row["outcome"] == "kept"
-                   and row["sentence_id"].split("#", 1)[0] in keys]
-        entry = {"section_id": section["section_id"], "claims": review_claims, "repairs": repairs}
+        entry = {"section_id": section["section_id"], "claims": review_claims}
         additional_passages = [row for pid, row in section_passages.items() if pid not in passage_rows]
         additional_cells = [row for cid, row in section_cells.items() if cid not in cells]
         cost = (_estimated_tokens(entry) + sum(_estimated_tokens(_shown_passage(row)) for row in additional_passages)
@@ -119,14 +109,14 @@ def _input(flow: ResearchFlow, reports: ReportStore, report_id: str) -> tuple[di
         cells.update(section_cells)
     target = {"report_id": report_id, "section_id": None, "columns": snapshot["columns"], "plan": None,
               "cells": list(cells.values()), "gap_candidates": [], "prior_summaries": [],
-              "repair_request": None, "review_scope": [entry["section_id"] for entry in shown],
+              "review_scope": [entry["section_id"] for entry in shown],
               "review_sections": shown, "limitations_core": None}
     return target, list(passage_rows.values()), [section["section_id"] for section in all_sections], omitted
 
 
 async def run_report_review(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, Any],
                             reports: ReportStore, report_id: str) -> None:
-    """Record a model assessment; only a guarded support-broken finding can restore original wording."""
+    """Record a model assessment of the written sections; the review never changes the report."""
     section_ids = [section["section_id"] for section in reports.sections(report_id) if section["section_id"] != "II"]
     step = flow.store.step(run["id"], "report_review", "model:report_review")
     if step["status"] == "succeeded":
@@ -167,26 +157,11 @@ async def run_report_review(flow: ResearchFlow, run: dict[str, Any], scope: dict
     omitted = output["sections_not_reviewed"]
     owners = {claim["claim_key"]: section["section_id"] for section in target["review_sections"]
               for claim in section["claims"]}
-    repaired_owners = {repair["sentence_id"]: section["section_id"] for section in target["review_sections"]
-                       for repair in section["repairs"]}
     findings = [finding | {"section_id": owners.get(finding["claim_key"]) if finding["claim_key"] else None}
                 for finding in output["result"]["findings"]]
-    reverted, not_reverted = [], []
-    seen = set()
-    for finding in findings:
-        sentence = finding["sentence_id"]
-        if finding["code"] != "support_broken" or sentence in seen:
-            continue
-        seen.add(sentence)
-        section = repaired_owners[sentence]
-        outcome = reports.revert_repair(report_id, section, sentence)
-        item = {"sentence_id": sentence, "section_id": section}
-        if outcome == "reverted":
-            reverted.append(item)
-        else:
-            not_reverted.append(item | {"reason": outcome})
     record = {"status": "reviewed", "step_input_id": output["step_input_id"],
               "sections_reviewed": shown, "sections_not_reviewed": omitted,
               "findings": findings, "notes": output["result"]["notes"],
-              "reverted": reverted, "not_reverted": not_reverted}
+              # Kept empty for the UI and exports, which also show reviews from before D43 that reverted repairs.
+              "reverted": [], "not_reverted": []}
     reports.save_review(report_id, record)

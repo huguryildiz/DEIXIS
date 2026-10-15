@@ -75,7 +75,7 @@ def test_review_methodology_reports_corpus_counts_and_provider_dates_without_a_m
 
 
 @pytest.mark.parametrize("language", ["en", "tr"])
-def test_limitations_core_counts_saved_valid_claims_latest_repairs_and_distinct_truncation(lib, language):
+def test_limitations_core_counts_saved_valid_claims_and_distinct_truncation(lib, language):
     store, reports, report_id, _ = lib
     store.conn.execute("UPDATE reports SET language = ? WHERE id = ?", (language, report_id))
     third = reports.create_section(report_id, "III", 3)
@@ -92,23 +92,19 @@ def test_limitations_core_counts_saved_valid_claims_latest_repairs_and_distinct_
              "body_refs": [], "axis_id": None, "count": None, "equation_origin": None, "gap_refs": []}
     reports.save_claims(third, [claim], [])
     reports.save_claims(fourth, [claim | {"claim_key": "IV.1", "support_type": "source_stated"}], [])
-    reports.save_phrase_repair(report_id, "III", "III.1#1", "before", "after", "kept")
-    reports.save_phrase_repair(report_id, "III", "III.1#1", "before", "after", "reverted_exception")
-    reports.save_phrase_repair(report_id, "IV", "IV.1#1", "before", "after", "unframed_exception")
 
     numbers = limitations_core(store, reports, report_id, {"corpus": {
         "found": 8, "unique": 6, "screened": 5, "included": 4, "full_text": 2}})
 
     assert numbers["no_full_text_share"] == 0.5
     assert numbers["analyst_inference_share"] == {"analyst_inference": 1, "total": 1, "share": 1.0}
-    assert numbers["phrase_repair_exceptions"] == {
-        "repaired": 0, "reverted_exception": 1, "unframed_exception": 1}
+    assert "phrase_repair_exceptions" not in numbers
     assert numbers["truncation"] == {"budget_cut": 2, "missing_evidence": 1, "by_section": {
         "III": {"passage": 1, "cell": 0, "cell_missing_evidence": 1},
         "IV": {"passage": 0, "cell": 1, "cell_missing_evidence": 0}}}
     assert numbers["recall_measurement"] is None
     assert numbers["kill_search_status"] == "not_run"
-    assert [item["number"] for item in numbers["items"]] == list(range(1, 8))
+    assert [item["number"] for item in numbers["items"]] == list(range(1, 7))
     rendered = render_limitations(numbers, language)
     assert all(item["text"] in rendered for item in numbers["items"])
     assert "2" in rendered and "1" in rendered and "50.0%" in rendered

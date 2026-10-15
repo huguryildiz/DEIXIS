@@ -49,7 +49,7 @@ def test_followup_loads_its_own_method_file_and_moves_the_package_hash(tmp_path)
     assert skill.integrity_issues() == []
     package = skill.load_skill_package()
     text = package.runtime_text("followup_answer")
-    assert '<method-file path="followup.md">' in text and skill.PHRASEBANK not in text
+    assert '<method-file path="followup.md">' in text and "references/phrases.md" not in text
     assert "No search was run for this question" in " ".join(text.split())
     copy = tmp_path / "deixis-research"
     shutil.copytree(SKILL_DIR, copy)

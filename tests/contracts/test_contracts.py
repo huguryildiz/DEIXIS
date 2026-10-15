@@ -29,18 +29,18 @@ def test_canonical_schemas_are_valid_draft_2020_12():
         Draft202012Validator.check_schema(contracts.load_schema(name))
 
 
-@pytest.mark.parametrize("name", ["ReportPlanDraft", "ReportSectionDraft", "ReportPhraseRepairDraft", "ReportReview"])
+@pytest.mark.parametrize("name", ["ReportPlanDraft", "ReportSectionDraft", "ReportReview"])
 def test_new_report_schemas_are_valid_draft_2020_12_and_registered(name):
     assert name in contracts.SCHEMA_FILES
     Draft202012Validator.check_schema(contracts.load_schema(name))
 
 
 def test_report_task_types_are_registered():
-    for task in ("report_plan", "report_section", "report_phrase_repair", "report_review"):
+    for task in ("report_plan", "report_section", "report_review"):
         assert task in contracts.TASK_OUTPUTS
+    assert "report_phrase_repair" not in contracts.TASK_OUTPUTS  # removed in D43
     assert contracts.SCHEMA_FILES["ReportPlanDraft"] == "report-plan.schema.json"
     assert contracts.SCHEMA_FILES["ReportSectionDraft"] == "report-section-draft.schema.json"
-    assert contracts.SCHEMA_FILES["ReportPhraseRepairDraft"] == "report-phrase-repair.schema.json"
     assert contracts.SCHEMA_FILES["ReportReview"] == "report-review.schema.json"
 
 
@@ -88,14 +88,26 @@ def test_report_target_requires_limitations_core_and_only_viii_may_receive_it():
         "no_full_text_share": 1.0,
         "analyst_inference_share": {"analyst_inference": 0, "total": 0, "share": None},
         "kill_search_status": "not_run",
-        "phrase_repair_exceptions": {"repaired": 0, "reverted_exception": 0, "unframed_exception": 0},
         "truncation": {"budget_cut": 0, "missing_evidence": 0, "by_section": {}},
         "items": [{"number": i, "key": key, "text": "SYNTHETIC item"} for i, key in enumerate((
             "recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share",
-            "kill_search_status", "phrase_repair_exceptions", "truncation"), 1)],
+            "kill_search_status", "truncation"), 1)],
     }
     si["report_target"]["limitations_core"] = core
     assert contracts.check_step_input(si) == []
+    # A VIII input stored before D43 keeps its seven items, item 6 counting phrase repairs, and still validates.
+    legacy = json.loads(json.dumps(core)) | {
+        "phrase_repair_exceptions": {"repaired": 0, "reverted_exception": 0, "unframed_exception": 0}}
+    legacy["items"] = [{"number": i, "key": key, "text": "SYNTHETIC item"} for i, key in enumerate((
+        "recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share",
+        "kill_search_status", "phrase_repair_exceptions", "truncation"), 1)]
+    si["report_target"]["limitations_core"] = legacy
+    assert contracts.check_step_input(si) == []
+    core["items"].append({"number": 7, "key": "kill_search_status", "text": "SYNTHETIC extra"})
+    si["report_target"]["limitations_core"] = core
+    assert "step_input_schema_invalid" in {issue.code for issue in contracts.check_step_input(si)}
+    core["items"].pop()
+    si["report_target"]["limitations_core"] = core
     si["report_target"]["section_id"] = "IV"
     assert "limitations_core_mismatch" in {issue.code for issue in contracts.check_step_input(si)}
 

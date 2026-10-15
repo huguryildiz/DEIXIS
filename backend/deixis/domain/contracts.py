@@ -19,9 +19,9 @@ from typing import Any
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
-from deixis.domain import phrasebank
+from deixis.domain import wording
 from deixis.domain.lineage import MAX_WHAT_CHANGED, valid_what_changed
-from deixis.paths import CONTRACTS_DIR, SKILL_DIR
+from deixis.paths import CONTRACTS_DIR
 from deixis.workflow.criterion import (MAX_PHRASE_WORDS, PARTS_PER_PROPOSAL, PHRASES_PER_PART,
                                        holds as criterion_holds, norm as normalize_phrase)
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, check_value, column_spec
@@ -42,7 +42,6 @@ SCHEMA_FILES = {
     "StepInput": "step-input.schema.json",
     "ReportPlanDraft": "report-plan.schema.json",
     "ReportSectionDraft": "report-section-draft.schema.json",
-    "ReportPhraseRepairDraft": "report-phrase-repair.schema.json",
     "ReportReview": "report-review.schema.json",
     "LineageLinksDraft": "lineage-links-draft.schema.json",
     "ClaimDecomposition": "claim-decomposition.schema.json",
@@ -67,8 +66,7 @@ SCHEMA_VERSIONS = {
     "FulltextAdjudication": "deixis.fulltext_adjudication.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
     "ReportSectionDraft": "deixis.report_section_draft.v3",
-    "ReportPhraseRepairDraft": "deixis.report_phrase_repair_draft.v1",
-    "ReportReview": "deixis.report_review.v1",
+    "ReportReview": "deixis.report_review.v2",
     "LineageLinksDraft": "deixis.lineage_links_draft.v1",
     "ClaimDecomposition": "deixis.claim_decomposition.v1",
     "KillSearchQuery": "deixis.kill_search_query.v1",
@@ -93,7 +91,6 @@ TASK_OUTPUTS = {
     "fulltext_adjudication": ("FulltextAdjudication",),
     "report_plan": ("ReportPlanDraft",),
     "report_section": ("ReportSectionDraft",),
-    "report_phrase_repair": ("ReportPhraseRepairDraft",),
     "report_review": ("ReportReview",),
     "lineage_links": ("LineageLinksDraft",),
     "claim_decomposition": ("ClaimDecomposition",),
@@ -108,7 +105,7 @@ SCREENING_TARGET_TASKS = ("abstract_screening",)
 # The full-text reading step is given one work, the criterion parts, and which of the two runs this call is (D85).
 ADJUDICATION_TARGET_TASKS = ("fulltext_adjudication",)
 GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
-REPORT_TASKS = ("report_plan", "report_section", "report_phrase_repair", "report_review")
+REPORT_TASKS = ("report_plan", "report_section", "report_review")
 REVIEW_TASKS = ("owner_review",)
 LINEAGE_TASKS = ("lineage_links",)
 CANDIDATE_TASKS = ("claim_decomposition", "kill_search_query", "claim_assessment")
@@ -601,7 +598,7 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
                 if cell_id not in {c["cell_id"] for c in (context or {}).get("cells", [])}:
                     issues.append(Issue("gap_basis_cell_missing", f"/report_target/gap_candidates/{i}/basis_cell_ids/{j}",
                                         cell_id))
-        if step_input["task_type"] in ("report_section", "report_phrase_repair"):
+        if step_input["task_type"] == "report_section":
             if report_target["plan"] is None:
                 issues.append(Issue("report_plan_missing", "/report_target/plan", step_input["task_type"]))
             for axis in (report_target["plan"] or {}).get("axes", []):
@@ -1069,17 +1066,10 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_report_plan(step_input, allow, result, report)
     elif output_type == "ReportSectionDraft":
         _check_report_section(step_input, allow, result, report)
-        _check_phrasing(step_input, result, report, fields=_report_phrasing_fields(result))
+        _check_phrasing(step_input, result, report)
         _check_math(step_input, result, report, fields=_report_math_fields(result))
-    elif output_type == "ReportPhraseRepairDraft":
-        _check_report_phrase_repair(step_input, result, report)
     elif output_type == "ReportReview":
         _check_report_review(step_input, result, report)
-
-
-@cache
-def _phrasebank_text() -> str:
-    return (SKILL_DIR / phrasebank.PHRASEBANK).read_text(encoding="utf-8")
 
 
 MATH = re.compile(r"\$\$.+?\$\$|\$[^$\n]+\$", re.DOTALL)
@@ -1336,35 +1326,24 @@ def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: Valid
                                          "the quote overlaps an equation read by Mathpix from the page image; check it against the PDF page"))
 
 
-def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport,
-                    fields: list[tuple[str, str]] | None = None) -> None:
-    """Check the answer's prose against the Academic Phrasebank frames in the answer language.
+def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
+    """Check own-work wording and plural-source wording in the answer language.
 
-    Frame findings remain warnings (D19). Reports block own-work wording and decidable plural-source violations.
+    Prose is no longer checked against phrasebank frames (D43). Reports block both findings; answers warn.
     """
-    requested_language = draft["answer_language"] if fields is None else phrasebank.frames_language(step_input)
-    language = phrasebank.checked_language(requested_language)
     is_report = step_input["task_type"] == "report_section"
-    if language is None or not phrasebank.has_frames(_phrasebank_text(), language):
+    requested_language = wording.question_language(step_input) if is_report else draft["answer_language"]
+    language = wording.checked_language(requested_language)
+    if language is None:
         report.warnings.append(Issue("phrasing_not_checked", "/answer_language",
-                                     f"no phrasebank frames for {requested_language!r}"))
+                                     f"no wording rules for {requested_language!r}"))
         if not is_report:
             return
-        # Assembly also falls back to English for lexical checks when frames are unavailable.
+        # Assembly also falls back to English for lexical checks in other languages.
         language = "en"
-    if fields is None:
-        fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
-        fields += [(f"/limitations/{i}/text", lim["text"]) for i, lim in enumerate(draft["limitations"])]
-        fields += [(f"/unanswered_aspects/{i}", text) for i, text in enumerate(draft["unanswered_aspects"])]
-        if draft["capability_notice"]:
-            fields.append(("/capability_notice", draft["capability_notice"]))
-    for path, text in fields:
-        for sentence in phrasebank.unframed(_without_math(text), _phrasebank_text(), language):
-            report.warnings.append(Issue("sentence_without_phrasebank_frame", path,
-                                         f"{sentence!r} follows no phrasebank frame"))
     # A claim reports what a cited source says; words naming the writer's own work would attribute it to this answer.
     for i, claim in enumerate(draft["claims"]):
-        for phrase in phrasebank.own_work_phrases(_without_math(claim["text"]), language):
+        for phrase in wording.own_work_phrases(_without_math(claim["text"]), language):
             findings = report.issues if is_report else report.warnings
             findings.append(Issue("own_work_phrase_in_claim", f"/claims/{i}/text",
                                          f"{phrase!r} names this answer's own work, not a cited source"))
@@ -1379,7 +1358,7 @@ def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: V
                        for a in draft["citation_anchors"] if a["claim_key"] == claim["claim_key"]}
         if None in sources or len(sources) != 1:
             continue
-        for phrase in phrasebank.plural_source_phrases(_without_math(claim["text"]), language):
+        for phrase in wording.plural_source_phrases(_without_math(claim["text"]), language):
             findings = report.issues if is_report else report.warnings
             findings.append(Issue("plural_sources_for_one_source", f"/claims/{i}/text",
                                        f"{phrase!r} speaks of several sources, but this claim cites one source; "
@@ -2307,30 +2286,14 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
         report.issues.extend(Issue(issue.code, f"/gaps/{i}" + issue.path, issue.message) for issue in report_gap_issues(gap, target, passages))
 
 
-def _check_report_phrase_repair(step_input: dict[str, Any], draft: dict[str, Any],
-                                report: ValidationReport) -> None:
-    requested = {item["sentence_id"] for item in step_input["report_target"]["repair_request"]["sentences"]}
-    for i, repair in enumerate(draft["repairs"]):
-        if repair["sentence_id"] not in requested:
-            report.issues.append(Issue("unknown_repair_sentence", f"/repairs/{i}/sentence_id", repair["sentence_id"]))
-
-
 def _check_report_review(step_input: dict[str, Any], draft: dict[str, Any],
                          report: ValidationReport) -> None:
     claims = {claim["claim_key"]: section for section in step_input["report_target"]["review_sections"]
               for claim in section["claims"]}
-    repairs = {repair["sentence_id"]: section for section in step_input["report_target"]["review_sections"]
-               for repair in section["repairs"]}
     for i, finding in enumerate(draft["findings"]):
-        key, sentence = finding["claim_key"], finding["sentence_id"]
+        key = finding["claim_key"]
         if key is not None and key not in claims:
             report.issues.append(Issue("review_claim_unknown", f"/findings/{i}/claim_key", key))
-        if sentence is not None and (sentence not in repairs or (key is not None and claims.get(key) is not repairs.get(sentence))):
-            report.issues.append(Issue("review_sentence_not_repaired", f"/findings/{i}/sentence_id", sentence))
-        if sentence is not None and key is not None and not sentence.startswith(key + "#"):
-            report.issues.append(Issue("review_sentence_claim_mismatch", f"/findings/{i}/sentence_id", sentence))
-        if finding["code"] == "support_broken" and sentence is None:
-            report.issues.append(Issue("support_broken_without_sentence", f"/findings/{i}/sentence_id", "required"))
 
 
 def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:

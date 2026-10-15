@@ -38,7 +38,6 @@ that matches `task_type`:
 | `grounded_answer` | Grounded answer |
 | `report_plan` | [Report](references/report.md) — Report plan |
 | `report_section` | [Report](references/report.md) — Section instructions |
-| `report_phrase_repair` | [Report](references/report.md) — Phrase repair |
 | `report_review` | [Report](references/report.md) — Report review |
 | `owner_review` | [Owner review](references/review.md) |
 

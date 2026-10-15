@@ -1,13 +1,13 @@
 # Report
 
-Read this after SKILL.md. It applies only to the four report task types (`report_plan`, `report_section`,
-`report_phrase_repair`, `report_review`); an ordinary `grounded_answer` step never sees this file.
+Read this after SKILL.md. It applies only to the three report task types (`report_plan`, `report_section`,
+`report_review`); an ordinary `grounded_answer` step never sees this file.
 
 ## What a report is
 
 A report is a fixed-skeleton document written section by section, from the same evidence table and passages
 the research already has. You never write the whole report in one call. Each call writes one part: the plan,
-one section's claims, a targeted repair of a few flagged sentences, or a review of already-written sections.
+one section's claims, or a review of already-written sections.
 The report never invents a related-work table in prose: Section IV's table is the evidence table itself,
 given to you as rows and cited cells, and you discuss it — you do not restate it as a bullet list.
 
@@ -56,15 +56,9 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
   you were given supports no claim for this section, write `insufficient_evidence` entries naming the missing
   material and why (for example no limitations cell, no candidate or no passage). The application rejects an
   answer with neither; do not return an empty answer or invent content to fill the section.
-- The phrasebank frames you receive are limited to this section's own categories. Every sentence in
-  `claims[].text` and `insufficient_evidence[].reason` must follow one supplied frame: keep that frame's fixed
-  words in their order and put your own content in its slots. The frames are supplied in the answer's language;
-  for a Turkish section, use the Turkish rendering. Choosing a frame is a phrasing decision, never an evidence
-  decision. The evidence rules outrank this requirement: never choose a frame that says more than the cited
-  passage supports, and never change what a claim asserts to make a frame fit. If no supplied frame can carry
-  the sentence honestly, keep the sentence plain and expect it to be recorded as an exception rather than
-  distorting the claim. The application attempts one phrase repair and records accepted unframed exceptions.
-  Every hard section rule still applies after that repair.
+- Write `claims[].text` and `insufficient_evidence[].reason` as plain academic prose in the answer's language,
+  following Phrasing in [source-grounded-answer.md](source-grounded-answer.md): no fixed reporting formula at the
+  start of every sentence, and no sentence opening repeated across claims.
 
 For a cell-anchor patch, return only the requested patch: choose a numbered stored quote of that same cell
 or drop the anchor with `quote_number: null`. Rewrite a claim only as far as the chosen quotes support it.
@@ -140,30 +134,13 @@ that section, in fixed-skeleton order, and do not invent a section this report d
   is not traceable to a body claim; do not generalize beyond what the summaries say. `index_terms` are chosen
   only from the given D44 concept vocabulary list; do not add a term that is not in that list.
 
-## Phrase repair (`report_phrase_repair`)
-
-You receive a small list of flagged sentences (their `sentence_id`, original text, support type, up to three
-nearest phrasebank frames, and the sentence immediately before and after each). Rewrite only the flagged
-sentences, each into one that keeps a frame's fixed words in order. Preserve every number, every citation
-target implied by the sentence, every qualifier ("may", "some", "in the inspected text") and every negation.
-Do not touch neighboring sentences. If none of the three given frames can honestly carry the sentence's
-meaning, write the clearest plain sentence you can rather than distorting it — the application checks whether
-your rewrite still reads as valid and may keep the original if your rewrite changes what is claimed.
-All hard section rules still apply to the merged rewrite, including own-work wording, banned words, equation
-origins, citation anchors, derived support/depth, counts, candidate bases and word budgets. Never introduce
-own-work phrases such as "this study" or "Bu çalışma", or any blocking-rule violation, to fit a frame.
-The application rejects an invalid rewrite and retains the valid original draft without another repair loop.
-
 ## Report review (`report_review`)
 
-`report_target.review_sections` contains the claims of each shown section, their citation anchors, and the
-sentences changed by a phrase repair (`repairs[].before` and `repairs[].after`). Copy `claim_key` and
-`sentence_id` from those records; do not invent identifiers. Insufficient-evidence reasons are outside this review.
+`report_target.review_sections` contains the claims of each shown section and their citation anchors. Copy
+`claim_key` from those records; do not invent identifiers. Insufficient-evidence reasons are outside this review.
 
 Read one or more already-written sections against their cited passages and cells. Return a flat list of
-findings; you never edit the report yourself. Use `support_broken` only for a repaired sentence (its
-`sentence_id` set) whose meaning no longer matches what its citations support — the application reverts that
-one sentence to its pre-repair text when you use this code. Use `count_error`, `terminology_inconsistent`,
+findings; you never edit the report yourself. Use `count_error`, `terminology_inconsistent`,
 `abstract_body_mismatch`, `equation_mismatch` or `comparability_error` for the corresponding semantic problems
 named in this file's IV/V/VIII rules above that the application's own checks cannot see (word choice, whether
 a compared pair is truly comparable, whether an equation reads as the passage states it, whether the abstract

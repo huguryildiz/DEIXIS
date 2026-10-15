@@ -15,7 +15,7 @@ from deixis.storage.db import dumps, new_id
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
 from deixis.workflow.report.sections import _citation_links, _pause_detail, run_report
-from deixis.workflow.report.phrasing import _report_checkpoint
+from deixis.workflow.report.sections import _report_checkpoint
 from deixis.workflow.report.assembly import run_assembly_checks
 from deixis.workflow.report import assembly, sections
 from deixis.workflow.report.selection import SECTION_BUDGET_TOKENS
@@ -441,25 +441,6 @@ def test_report_pause_during_section_applies_stored_result_once_on_resume(tmp_pa
     assert all(_section_calls(adapter)[section] <= 1 for section in ("III", "V"))
 
 
-@pytest.mark.parametrize("repair_fails", [False, True])
-def test_report_cancel_during_phrase_repair_writes_no_repair_row(tmp_path, repair_fails):
-    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, unframed_section="IV")
-
-    def cancel(si):
-        if si["task_type"] == "report_phrase_repair":
-            store.update_run(run["id"], event="run_cancelled", status="cancelled", pause_reason="user_cancelled")
-
-    adapter.before = cancel
-    if repair_fails:
-        adapter.fail = lambda si: (ModelStepResult("failed", error="SYNTHETIC connection lost")
-                                   if si["task_type"] == "report_phrase_repair" else None)
-    with pytest.raises(RunStopped):
-        asyncio.run(run_report(flow, run, scope))
-    assert store.run(run["id"])["status"] == "cancelled"
-    assert store.conn.execute("SELECT COUNT(*) FROM report_phrase_repairs WHERE report_id = ?", (report_id,)).fetchone()[0] == 0
-    assert not _claims(store, reports, report_id, "IV")
-
-
 def test_report_repair_checkpoint_stops_an_already_paused_run(tmp_path):
     flow, store, _, _, run, _, _ = report_flow(tmp_path)
     # A failed model call checkpoints before repair_section can handle OptionalStepFailed.
@@ -467,27 +448,6 @@ def test_report_repair_checkpoint_stops_an_already_paused_run(tmp_path):
     store.update_run(run["id"], status="paused", pause_reason="user_requested")
     with pytest.raises(RunStopped):
         _report_checkpoint(flow, run)
-
-
-def test_report_pause_finalized_during_phrase_repair_writes_no_repair_row(tmp_path):
-    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, unframed_section="IV")
-
-    def pause(si):
-        if si["task_type"] == "report_phrase_repair":
-            store.update_run(run["id"], status="paused", pause_reason="user_requested")
-
-    adapter.before = pause
-    with pytest.raises(RunStopped):
-        asyncio.run(run_report(flow, run, scope))
-    assert (store.run(run["id"])["status"], store.run(run["id"])["pause_reason"]) == (
-        "paused", "user_requested",
-    )
-    assert store.conn.execute(
-        "SELECT COUNT(*) FROM report_phrase_repairs WHERE report_id = ?", (report_id,),
-    ).fetchone()[0] == 0
-    assert store.step(run["id"], "report_phrase_repair:IV", "model:report_phrase_repair")["status"] == "succeeded"
-    assert reports.section(report_id, "IV")["status"] == "running"
-    assert not _claims(store, reports, report_id, "IV")
 
 
 def test_report_wrong_model_reason_keeps_output_unapplied(tmp_path):
@@ -788,63 +748,6 @@ def test_an_empty_section_without_insufficient_evidence_pauses_the_run(tmp_path)
     assert store.run(run["id"])["error"] == {
         "sections": ["IV"], "reasons": [{"section_id": "IV", "code": "empty_section", "detail": None}],
     }
-
-
-def test_an_unframed_section_is_repaired_and_the_report_completes(tmp_path):
-    flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, unframed_section="IV")
-
-    asyncio.run(run_report(flow, run, scope))
-
-    assert reports.report(report_id)["status"] == "valid"
-    section = reports.section(report_id, "IV")
-    assert section["status"] == "valid"
-    assert section["validation"]["issues"] == []
-    repair = store.conn.execute(
-        "SELECT section_id, sentence_id, outcome FROM report_phrase_repairs WHERE report_id = ?",
-        (report_id,),
-    ).fetchone()
-    assert dict(repair) == {"section_id": "IV", "sentence_id": "IV.1#1", "outcome": "kept"}
-
-
-def test_viii_repair_that_restates_a_number_retains_the_valid_original(tmp_path):
-    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
-    original_response = adapter.responder
-
-    def scripted_response(step_input):
-        task = step_input["task_type"]
-        target = step_input["report_target"]
-        if task == "report_section" and target["section_id"] == "VIII":
-            draft = json.loads(original_response(step_input))
-            draft["claims"][0]["text"] = "Item 3 xqz unframed synthetic sentence."
-            return json.dumps(draft)
-        if task == "report_phrase_repair" and target["section_id"] == "VIII":
-            return json.dumps(envelope(step_input, "deixis.report_phrase_repair_draft.v1") | {
-                "repairs": [{"sentence_id": item["sentence_id"],
-                             "text": "3 studies xqz unframed synthetic sentence."}
-                            for item in target["repair_request"]["sentences"]],
-            })
-        return original_response(step_input)
-
-    adapter.responder = scripted_response
-    asyncio.run(run_report(flow, run, scope))
-
-    assert store.run(run["id"])["pause_reason"] is None
-    assert reports.report(report_id)["status"] == "valid"
-    viii = reports.section(report_id, "VIII")
-    assert viii["status"] == "valid"
-    assert viii["validation"]["ok"] is True
-    issues = viii["validation"]["issues"]
-    assert {issue["code"] for issue in issues} == {"unframed_exception", "phrase_repair_rejected"}
-    rejection = next(issue for issue in issues if issue["code"] == "phrase_repair_rejected")
-    assert rejection["blocking_codes"] == ["limitations_number_restated"]
-    assert rejection["issues"][0]["path"] == "/claims/0/text"
-    assert any(call["task_type"] == "report_phrase_repair" and
-               call["report_target"]["section_id"] == "VIII" for call in adapter.calls)
-    assert viii["draft"]["claims"][0]["text"] == "Item 3 xqz unframed synthetic sentence."
-    assert viii["draft"]["text"].startswith("1. Recall was not measured")
-    assert viii["validation"]["numbers"]
-    assert any(section["section_id"] == "VIII" and section["status"] == "valid"
-                   for section in reports.sections(report_id))
 
 
 def test_a_resumed_report_run_does_not_call_the_model_again_for_a_succeeded_section(tmp_path):

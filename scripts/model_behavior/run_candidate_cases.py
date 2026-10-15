@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from deixis.config import load_settings
-from deixis.domain import contracts, phrasebank
+from deixis.domain import contracts
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
 from deixis.models.adapter import CodexAdapter, is_rate_limited
@@ -317,7 +317,7 @@ async def run_one(adapter: CodexAdapter, package: Any, si: dict[str, Any]) -> tu
     if issues:
         raise ValueError(f"invalid candidate StepInput: {[(i.code, i.path) for i in issues]}")
     schema = contracts.step_output_schema(task)
-    developer = prompt.developer_instructions(package, task, phrasebank.frames_language(si))
+    developer = prompt.developer_instructions(package, task)
     if not adapter.enforces_schema:
         developer += "\n\n" + prompt.schema_appendix(task, schema)
     shown = contracts.with_citation_handles(si)

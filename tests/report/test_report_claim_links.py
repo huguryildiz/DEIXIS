@@ -536,9 +536,8 @@ def test_zero_effective_links_count_with_no_integer_records_explicit_skip(report
     assert result["items"] == []
     assert result["skipped"] == [
         {"rule": "count_text_not_checked", "section_id": "IV", "claim_key": "IV.1", "reason": "no_integer_in_text"},
-        {"rule": "phrase_frames", "section_id": "IV", "claim_key": "IV.1", "reason": "human_text"},
     ]
-    assert result["counts"]["skipped"] == 2
+    assert result["counts"]["skipped"] == 1
 
 
 def test_report_citations_impact_counts_passage_links_only(report_with_sections):
@@ -590,7 +589,7 @@ def test_real_removals_run_e1_rules_and_explicit_skips_without_changing_base(rep
             {"rule": "equation_origin_not_in_input", "section_id": "IV", "detail": "ERROR: IV.1 origin was not supplied.", "severity": "error"},
         ]
     assert result["items"] == expected
-    expected_skips = [{"rule": "phrase_frames", "section_id": key.split('.')[0], "claim_key": key, "reason": "human_text"}]
+    expected_skips = []
     if case == "derived_depth":
         expected_skips.append({"rule": "derived_depth_not_checked", "section_id": "abstract", "claim_key": "abstract.1", "reason": "no_citation_depth"})
     assert result["skipped"] == expected_skips

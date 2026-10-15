@@ -930,7 +930,6 @@
         "fulltext_adjudication",
         "report_plan",
         "report_section",
-        "report_phrase_repair",
         "report_review",
         "lineage_links",
         "claim_decomposition",
@@ -1521,7 +1520,7 @@
     "report_target": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["report_id", "section_id", "columns", "plan", "cells", "gap_candidates", "prior_summaries", "repair_request", "review_scope", "review_sections", "limitations_core", "validation_context"],
+      "required": ["report_id", "section_id", "columns", "plan", "cells", "gap_candidates", "prior_summaries", "review_scope", "review_sections", "limitations_core", "validation_context"],
       "properties": {
         "validation_context": {
           "anyOf": [
@@ -1718,7 +1717,7 @@
             },
             { "type": "null" }
           ],
-          "description": "report_plan (this validates the plan the model just wrote, before code appends corpus/section_budgets/allowed_support): null. report_section and report_phrase_repair: the frozen plan. report_review: null (review reads sections directly, not the plan echo)."
+          "description": "report_plan (this validates the plan the model just wrote, before code appends corpus/section_budgets/allowed_support): null. report_section: the frozen plan. report_review: null (review reads sections directly, not the plan echo)."
         },
         "cells": {
           "type": "array",
@@ -1781,29 +1780,8 @@
           }
         },
         "repair_request": {
-          "anyOf": [
-            {
-              "type": "object", "additionalProperties": false,
-              "required": ["section_id", "sentences"],
-              "properties": {
-                "section_id": { "type": "string" },
-                "sentences": {
-                  "type": "array",
-                  "items": {
-                    "type": "object", "additionalProperties": false,
-                    "required": ["sentence_id", "text", "support_type", "nearest_frames", "previous_sentence", "next_sentence"],
-                    "properties": {
-                      "sentence_id": { "type": "string" }, "text": { "type": "string" },
-                      "support_type": { "type": "string", "enum": ["source_stated", "analyst_inference"] },
-                      "nearest_frames": { "type": "array", "maxItems": 3, "items": { "type": "string" } },
-                      "previous_sentence": { "type": ["string", "null"] }, "next_sentence": { "type": ["string", "null"] }
-                    }
-                  }
-                }
-              }
-            },
-            { "type": "null" }
-          ]
+          "description": "Legacy: before D43 the phrase-repair step carried its flagged sentences here; stored inputs still hold null.",
+          "type": "null"
         },
         "review_scope": { "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }] },
         "review_sections": {
@@ -1811,7 +1789,7 @@
             "type": "array",
             "items": {
               "type": "object", "additionalProperties": false,
-              "required": ["section_id", "claims", "repairs"],
+              "required": ["section_id", "claims"],
               "properties": {
                 "section_id": { "type": "string", "enum": ["abstract", "I", "III", "IV", "V", "VI", "VII", "VIII", "IX", "index_terms"] },
                 "claims": {
@@ -1834,7 +1812,7 @@
                     }
                   }
                 },
-                "repairs": { "type": "array", "items": {
+                "repairs": { "description": "Legacy (before D43): phrase repairs shown to the review.", "type": "array", "items": {
                   "type": "object", "additionalProperties": false,
                   "required": ["sentence_id", "before", "after"],
                   "properties": { "sentence_id": { "type": "string" }, "before": { "type": "string" }, "after": { "type": "string" } }
@@ -1846,7 +1824,10 @@
         "limitations_core": {
           "anyOf": [{
             "type": "object", "additionalProperties": false,
-            "required": ["version", "kind", "as_of", "corpus", "recall_measurement", "open_access_bias_note", "included", "full_text", "no_full_text_share", "analyst_inference_share", "kill_search_status", "phrase_repair_exceptions", "truncation", "items"],
+            "required": ["version", "kind", "as_of", "corpus", "recall_measurement", "open_access_bias_note", "included", "full_text", "no_full_text_share", "analyst_inference_share", "kill_search_status", "truncation", "items"],
+            "if": { "required": ["phrase_repair_exceptions"] },
+            "then": { "properties": { "items": { "minItems": 7 } } },
+            "else": { "properties": { "items": { "prefixItems": [{}, {}, {}, {}, {}, {}], "items": { "properties": { "key": { "const": "failed_rows" } } } } } },
             "properties": {
               "version": { "type": "integer", "const": 1 },
               "kind": { "type": "string", "const": "limitations" },
@@ -1876,6 +1857,7 @@
               },
               "kill_search_status": { "type": "string", "const": "not_run" },
               "phrase_repair_exceptions": {
+                "description": "Legacy (before D43): the counts behind the old item 6; no longer written.",
                 "type": "object", "additionalProperties": false,
                 "required": ["repaired", "reverted_exception", "unframed_exception"],
                 "properties": {
@@ -1905,30 +1887,36 @@
                 }
               },
               "items": {
-                "type": "array", "minItems": 7, "maxItems": 8,
-                "prefixItems": [
-                  { "properties": { "number": { "maximum": 7 } } },
-                  { "properties": { "number": { "maximum": 7 } } },
-                  { "properties": { "number": { "maximum": 7 } } },
-                  { "properties": { "number": { "maximum": 7 } } },
-                  { "properties": { "number": { "maximum": 7 } } },
-                  { "properties": { "number": { "maximum": 7 } } },
-                  { "properties": { "number": { "maximum": 7 } } }, {
-                  "properties": { "number": { "const": 8 }, "key": { "const": "failed_rows" } }
-                }],
-                "items": false,
-                "allOf": [{ "items": {
+                "type": "array", "minItems": 6, "maxItems": 8,
+                "description": "Six fixed items since D43 (seven before it, with phrase_repair_exceptions as item 6), then an optional failed_rows item.",
+                "anyOf": [
+                  { "maxItems": 7, "prefixItems": [
+                      { "properties": { "number": { "maximum": 6 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 6 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 6 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 6 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 6 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 6 }, "key": { "not": { "const": "failed_rows" } } } }
+                    ], "items": { "properties": { "number": { "const": 7 }, "key": { "const": "failed_rows" } } } },
+                  { "minItems": 7, "prefixItems": [
+                      { "properties": { "number": { "maximum": 7 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 7 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 7 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 7 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 7 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 7 }, "key": { "not": { "const": "failed_rows" } } } },
+                      { "properties": { "number": { "maximum": 7 }, "key": { "not": { "const": "failed_rows" } } } }
+                    ], "items": { "properties": { "number": { "const": 8 }, "key": { "const": "failed_rows" } } } }
+                ],
+                "items": {
                   "type": "object", "additionalProperties": false,
                   "required": ["number", "key", "text"],
                   "properties": {
                     "number": { "type": "integer", "minimum": 1, "maximum": 8 },
                     "key": { "type": "string", "enum": ["recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share", "kill_search_status", "phrase_repair_exceptions", "truncation", "failed_rows"] },
                     "text": { "type": "string", "minLength": 1 }
-                  },
-                  "if": { "properties": { "number": { "const": 8 } } },
-                  "then": { "properties": { "key": { "const": "failed_rows" } } },
-                  "else": { "properties": { "key": { "not": { "const": "failed_rows" } } } }
-                } }]
+                  }
+                }
               },
               "failed_rows": {
                 "type": "array",

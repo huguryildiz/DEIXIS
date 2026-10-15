@@ -107,16 +107,6 @@ def limitations_core(store: Store, reports: ReportStore, report_id: str,
     if counts["total"]:
         counts["share"] = counts["analyst_inference"] / counts["total"]
 
-    latest = {}
-    for row in store.conn.execute(
-        "SELECT section_id, sentence_id, outcome FROM report_phrase_repairs WHERE report_id = ?"
-        " AND section_id IN ('III','IV','V','VI','VII') ORDER BY rowid", (report_id,),
-    ):
-        latest[(row["section_id"], row["sentence_id"])] = row["outcome"]
-    repairs = {"repaired": 0, "reverted_exception": 0, "unframed_exception": 0}
-    for outcome in latest.values():
-        repairs["repaired" if outcome == "kept" else outcome] += 1
-
     by_section = {}
     for section_id in ("III", "IV", "V", "VI", "VII"):
         section = sections.get(section_id)
@@ -153,8 +143,6 @@ def limitations_core(store: Store, reports: ReportStore, report_id: str,
             f"analist çıkarımıydı ({counts['share']:.1%})." if counts["share"] is not None else
             "Geçerli III–VII bölümlerinde payı hesaplanacak iddia yoktu.",
             "Araştırma boşluğu için kill-search çalıştırılmadı.",
-            f"VIII yazılmadan önceki cümle onarımları: {repairs['repaired']} korundu, "
-            f"{repairs['reverted_exception']} geri alındı, {repairs['unframed_exception']} kalıpsız kaldı.",
             f"Bütçe nedeniyle {truncation['budget_cut']} kayıt kesildi; {truncation['missing_evidence']} hücrenin "
             f"kanıt pasajı bulunamadı (bölümler: {section_cuts}).",
         ] if tr else [
@@ -167,19 +155,17 @@ def limitations_core(store: Store, reports: ReportStore, report_id: str,
             f"inferences ({counts['share']:.1%})." if counts["share"] is not None else
             "No claims in valid sections III–VII were available for an inference share.",
             "A kill search for research gaps was not run.",
-            f"Before VIII was written, phrase repairs kept {repairs['repaired']}, reverted "
-            f"{repairs['reverted_exception']}, and left {repairs['unframed_exception']} unframed.",
             f"{truncation['budget_cut']} records were cut for the budget; a cell's evidence passage was not found "
             f"for {truncation['missing_evidence']} cells (by section: {section_cuts}).",
         ]
     )
     keys = ("recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share",
-            "kill_search_status", "phrase_repair_exceptions", "truncation")
+            "kill_search_status", "truncation")
     result = {"version": 1, "kind": "limitations", "as_of": "before_viii", "corpus": corpus,
             "recall_measurement": None, "open_access_bias_note": True, "included": included,
             "full_text": full_text, "no_full_text_share": share,
             "analyst_inference_share": counts, "kill_search_status": "not_run",
-            "phrase_repair_exceptions": repairs, "truncation": truncation,
+            "truncation": truncation,
             "items": [{"number": i, "key": key, "text": sentence}
                       for i, (key, sentence) in enumerate(zip(keys, texts), 1)]}
     if snapshot.get("failed_rows"):
@@ -192,7 +178,7 @@ def limitations_core(store: Store, reports: ReportStore, report_id: str,
                 "ve toplulaştırma paydalarına alınmadı." if tr else
                 f"The evidence-table rows for {names} did not complete. These rows were excluded from the report's "
                 "evidence assessment and aggregation denominators.")
-        result["items"].append({"number": 8, "key": "failed_rows", "text": text})
+        result["items"].append({"number": len(result["items"]) + 1, "key": "failed_rows", "text": text})
     return result
 
 

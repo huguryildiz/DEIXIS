@@ -6,12 +6,11 @@ import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
-from deixis.domain import contracts, phrasebank
+from deixis.domain import contracts, wording
 from deixis.domain.rules import RevisionConflict
 from deixis.workflow.equations import equation_fallback_field
 from deixis.workflow.flow import OptionalStepFailed, RunStopped
 from deixis.workflow.report import assembly, gaps, review_methodology, selection
-from deixis.workflow.report.phrasing import _report_checkpoint, flagged_sentences, repair_section
 from deixis.workflow.report.plan import freeze_plan
 from deixis.workflow.report.review import run_report_review
 from deixis.workflow.report.store import ReportStore
@@ -21,6 +20,12 @@ from deixis.workflow.tables import TableStore, report_ready
 
 if TYPE_CHECKING:
     from deixis.workflow.flow import ResearchFlow
+
+
+def _report_checkpoint(flow: ResearchFlow, run: dict[str, Any]) -> None:
+    flow._checkpoint(run["id"], run["scope_revision"])
+    if flow.store.run(run["id"])["status"] == "paused":
+        raise RunStopped
 
 
 ROUNDS: tuple[tuple[str, ...], ...] = (
@@ -54,7 +59,7 @@ def _prior_summaries(flow: ResearchFlow, reports: ReportStore, report_id: str,
                     depth = "abstract" if link["passage_kind"] == "abstract" else "selected_sections"
                 if depth in _DEPTH_ORDER:
                     depths.append(depth)
-            sentences = phrasebank.sentences(claim["text"])
+            sentences = wording.sentences(claim["text"])
             summaries.append({
                 "section_id": section["section_id"],
                 "claim_key": claim["claim_key"],
@@ -177,7 +182,6 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
         "cells": evidence["cells"],
         "gap_candidates": gap_candidates,
         "prior_summaries": prior_summaries,
-        "repair_request": None,
         "review_scope": None,
         "limitations_core": numbers,
         "validation_context": None,
@@ -233,13 +237,7 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
 
     draft = output["result"]
     payload = flow.store.step_input_payload(output["step_input_id"])
-    language = phrasebank.frames_language(payload)
-    flagged = flagged_sentences(
-        section_id, [*draft["claims"], *draft["insufficient_evidence"]],
-        flow.deps.package.files[phrasebank.PHRASEBANK], language,
-    )
-    draft, exceptions = await repair_section(flow, run, scope, report_id, section_id, draft, flagged, payload)
-    _report_checkpoint(flow, run)
+    exceptions: list[dict[str, Any]] = []
     validation = revalidate_section(payload, draft)
     if numbers is not None:
         language = (reports.report(report_id)["language"] or scope.get("language_hint") or "en").lower()
@@ -288,7 +286,7 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
             flow._fail(run_id, "table_not_ready", report_ready(flow.store, research_id, table_id,
                                                               continue_with_failed=continue_with_failed))
     target = {"report_id": report_id, "section_id": None, "columns": snapshot["columns"], "plan": None, "cells": [],
-              "gap_candidates": [], "prior_summaries": [], "repair_request": None, "review_scope": None,
+              "gap_candidates": [], "prior_summaries": [], "review_scope": None,
               "limitations_core": None}
 
     source_ids = evidence_row_ids(snapshot)

@@ -192,13 +192,8 @@ def valid_response(si: dict[str, Any]) -> str:
                                   "cell_id": None, "quote": " ".join(first["text"].split())[:600]}],
             "subsections": [], "gaps": [], "insufficient_evidence": [],
         })
-    if task == "report_phrase_repair":
-        return json.dumps(envelope(si, "deixis.report_phrase_repair_draft.v1") | {
-            "repairs": [{"sentence_id": r["sentence_id"], "text": "It has been reported that the rewritten sentence holds."}
-                        for r in si["report_target"]["repair_request"]["sentences"]],
-        })
     if task == "report_review":
-        return json.dumps(envelope(si, "deixis.report_review.v1") | {"findings": [], "notes": ""})
+        return json.dumps(envelope(si, "deixis.report_review.v2") | {"findings": [], "notes": ""})
     if task == "fulltext_adjudication":
         # Every part present, quoting the first passage, so two runs agree and the quote verifies.
         passage = si["passages"][0]

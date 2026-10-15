@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deixis.domain import contracts, phrasebank
+from deixis.domain import contracts
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
 from deixis.models.adapter import ModelStepResult
@@ -465,7 +465,7 @@ def test_run_one_production_message_and_validation_order(enforces_schema: bool) 
     run, result = asyncio.run(runner.run_one(stub, PACKAGE, si))
     assert len(calls) == 1 and "lineage_links" in HANDLE_TASKS
     args, kwargs = calls[0]
-    developer = prompt.developer_instructions(PACKAGE, "lineage_links", phrasebank.frames_language(si))
+    developer = prompt.developer_instructions(PACKAGE, "lineage_links")
     schema = contracts.step_output_schema("lineage_links")
     if not enforces_schema:
         developer += "\n\n" + prompt.schema_appendix("lineage_links", schema)

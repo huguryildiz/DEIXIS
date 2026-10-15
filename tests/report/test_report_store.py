@@ -54,7 +54,6 @@ def test_report_store_persists_claim_refs_gaps_and_valid_version(lib):
     )} == {("body_ref", "IV.1"), ("gap_ref", "gap1")}
     reports.save_gaps(report_id, [{"gap_id": "gap1", "kind": "corpus_absence", "text": "Bounded gap",
                                    "basis_cell_ids": [], "provenance": {"search_date": "now"}}])
-    reports.save_phrase_repair(report_id, "VI", "VI.1", "before", "after", "kept")
     assert reports.finalize(report_id, "valid") == 1
     assert reports.report(report_id)["report_version"] == 1
     assert reports.report(report_id)["plan"] == {"scope_statement": "Q"}

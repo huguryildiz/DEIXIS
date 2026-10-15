@@ -713,6 +713,7 @@ EMPTY_BECAUSE = {
     "record_lookups": "written by record lookups, not run here",
     "record_references": "reference lists arrive with citation chaining or lookups, both off",
     "report_stale_acknowledgements": "written only when a person acknowledges stale report changes after an upstream edit",
+    "report_phrase_repairs": "kept for reports written before D43; the phrase-repair step that wrote it is gone",
     "research_purge_authorizations": "a temporary row opened and removed inside the purge transaction",
     "recovery_purge_authorizations": "a temporary row opened and removed inside the recovery purge transaction",
     "scope_english_questions": "written only for a non-English question that gets an English rendering",

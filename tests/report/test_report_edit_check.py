@@ -146,16 +146,13 @@ def test_budget_recounts_only_edited_sections_with_insufficient_reasons(report_w
     assert lib["reports"].section(lib["report_id"], "III")["word_count"] == 10
 
 
-def test_edited_math_and_diagnostics_skip_frames_but_unedited_frames_still_run(report_with_sections):
+def test_edited_math_and_diagnostics_still_run_without_frame_checks(report_with_sections):
     lib = report_with_sections
-    lib["store"].conn.execute("DELETE FROM report_phrase_repairs")
     finish(lib)
     edit(lib, "This study cites previous studies with $broken math.")
     result = current(lib)
     assert {"math_not_well_formed", "own_work_phrase_in_claim", "plural_sources_for_one_source"} <= rules(result)
-    frames = [item for item in result["items"] if item["rule"] == "unframed_sentence_not_recorded"]
-    assert frames and {item["section_id"] for item in frames} == {"abstract"}
-    assert {"rule": "phrase_frames", "section_id": "III", "claim_key": "III.1", "reason": "human_text"} in result["skipped"]
+    assert not [item for item in result["items"] if item["rule"] == "unframed_sentence_not_recorded"]
 
 
 @pytest.mark.parametrize("text,error", [("Item 7 describes the limit.", False),
@@ -273,8 +270,8 @@ def test_unknown_body_ref_skips_depth_without_a_partial_comparison(report_with_s
 @pytest.mark.parametrize("change", [
     "revision", "link", "passage_text", "passage_kind", "passage_source", "passage_text_source",
     "snapshot", "draft", "validation", "section_word_count", "section_ordinal", "selected_section_input",
-    "link_input", "gap", "phrase_repair", "plan", "language", "language_fallback", "checker_version",
-    "phrasebank", "source_title", "source_key", "claim_section", "claim_support", "claim_count",
+    "link_input", "gap", "plan", "language", "language_fallback", "checker_version",
+    "source_title", "source_key", "claim_section", "claim_support", "claim_count",
     "claim_equation_origin", "claim_refs", "claim_paragraph", "claim_key", "claim_ordinal", "claim_table",
     "claim_equation", "claim_axis", "claim_base_text",
 ])
@@ -317,8 +314,6 @@ def test_one_change_in_each_manifest_input_class_changes_fingerprint(report_with
         conn.execute("UPDATE step_inputs SET payload_json = '{}' WHERE id = ?", (lib["report_input_id"],))
     elif change == "gap":
         _gap(lib, "stated_limitation", passage_ids=[lib["section_passage"]])
-    elif change == "phrase_repair":
-        lib["reports"].save_phrase_repair(lib["report_id"], "III", "III.1#1", "changed", "changed", "unframed_exception")
     elif change == "plan":
         plan = copy.deepcopy(lib["reports"].report(lib["report_id"])["plan"])
         plan["glossary"] = []
@@ -330,9 +325,6 @@ def test_one_change_in_each_manifest_input_class_changes_fingerprint(report_with
         monkeypatch.setattr(lib["store"], "scope", lambda *a, **kw: {**original(*a, **kw), "language_hint": "tr"})
     elif change == "checker_version":
         monkeypatch.setattr(edit_check, "CHECKER_VERSION", "edit-check-2")
-    elif change == "phrasebank":
-        original = contracts._phrasebank_text()
-        monkeypatch.setattr(contracts, "_phrasebank_text", lambda: original + "\nSYNTHETIC phrasebank change")
     elif change == "source_title":
         conn.execute("UPDATE source_versions SET title = 'SYNTHETIC changed title' WHERE id = ?", (lib["source_id"],))
     elif change == "source_key":
@@ -382,13 +374,10 @@ def test_unlinked_claim_section_move_alone_changes_fingerprint(report_with_secti
     assert after == expected
 
 
-def test_absent_inputs_are_explicit_and_latest_phrase_repair_is_selected(report_with_sections):
+def test_absent_inputs_are_explicit(report_with_sections):
     lib = report_with_sections
     manifest = dependencies(lib)
     assert next(s for s in manifest["sections"] if s["section_id"] == "VIII")["selected_step_input"] == {"absent": True}
-    lib["reports"].save_phrase_repair(lib["report_id"], "III", "III.1#1", "last", "last", "kept")
-    rows = [r for r in dependencies(lib)["phrase_repairs"] if r["section_id"] == "III"]
-    assert len(rows) == 1 and rows[0]["after"] == "last"
     conn = lib["store"].conn
     conn.execute("UPDATE report_claims SET equation_origin_json = ? WHERE claim_key = 'III.1'",
                  ('{"passage_id":"absent-passage","text_source":"text_layer"}',))
@@ -529,7 +518,7 @@ def test_check_result_bytes_are_deterministic_and_skipped_are_separate(report_wi
     one = current(lib)
     two = current(lib)
     assert edit_check.canonical(one) == edit_check.canonical(two)
-    assert one["counts"]["errors"] == 1 and one["counts"]["skipped"] == 1
+    assert one["counts"]["errors"] == 1 and one["counts"]["skipped"] == 0
     assert one["not_checked"] == ["semantic_support", "numbers_written_as_words", "passages"]
     assert one["rules_run"] == [check.__name__.removeprefix("_check_") for check in assembly._CHECKS] + ["limitations_number_restated"]
 

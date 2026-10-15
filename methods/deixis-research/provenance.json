@@ -64,7 +64,7 @@
     "references/search-methods.md",
     "references/source-audit.md"
    ],
-   "change": "Search plan keeps vocabulary families, essential-versus-desired conditions, no AND-everything queries, question-driven date limits and no exhaustiveness claim. Screening adds include/exclude/uncertain proposals with keyword false-positive guard. Grounded answer keeps original-passage checking, access limits and contradiction handling, expressed as claim-to-passage links. Search logging, citation chasing, sentinel sets and bibliometric maps are application or later-stage responsibilities and were not copied. 2026-09-16 (D44): the search plan names concepts (exactly one core) and providers; query writing, per-provider syntax and date limits were removed because the application compiles the queries."
+   "change": "Search plan keeps vocabulary families, essential-versus-desired conditions, no AND-everything queries, question-driven date limits and no exhaustiveness claim. Screening adds include/exclude/uncertain proposals with keyword false-positive guard. Grounded answer keeps original-passage checking, access limits and contradiction handling, expressed as claim-to-passage links. Search logging, citation chasing, sentinel sets and bibliometric maps are application or later-stage responsibilities and were not copied. 2026-09-16 (D44): the search plan names concepts (exactly one core) and providers; query writing, per-provider syntax and date limits were removed because the application compiles the queries. 15 October 2026 (D43): Phrasing no longer builds sentences on phrasebank frames; it asks for plain sentences without a repeated reporting formula and keeps the own-work, plural-source, gap-claim and locator rules."
   },
   {
    "deixis_file": "references/answer-review.md",
@@ -89,7 +89,7 @@
   {
    "deixis_file": "references/report.md",
    "derived_from": [],
-   "change": "Written for DEIXIS on 2026-09-17 (P6 slice 1), not adapted from upstream text. Applies SKILL.md's evidence rules to the fixed report skeleton: report_plan, per-section instructions for III-IX/abstract/index_terms, VI/VII's narrowed gap/future-direction exception to the candidate-development ban, phrase repair, and report review. Loaded into report_plan, report_section, report_phrase_repair and report_review steps only. 2026-09-18: made the supplied per-section frames mandatory for every claims[].text and insufficient_evidence[].reason sentence because the first real-model report run produced sentences that followed no frame; evidence support explicitly outranks frame fit. 30 September 2026 (P18): require exact copying of per-step passage, cell, source and column handles, restrict use to the allowlist, and forbid citations to glossary passages outside it. 30 September 2026 (P19): distinguish anchor location from claim support and require rewriting or dropping an unsupported cell citation without substituting another cell quote or passage."
+   "change": "Written for DEIXIS on 2026-09-17 (P6 slice 1), not adapted from upstream text. Applies SKILL.md's evidence rules to the fixed report skeleton: report_plan, per-section instructions for III-IX/abstract/index_terms, VI/VII's narrowed gap/future-direction exception to the candidate-development ban, phrase repair, and report review. Loaded into report_plan, report_section and report_review steps only. 2026-09-18: made the supplied per-section frames mandatory for every claims[].text and insufficient_evidence[].reason sentence because the first real-model report run produced sentences that followed no frame; evidence support explicitly outranks frame fit. 30 September 2026 (P18): require exact copying of per-step passage, cell, source and column handles, restrict use to the allowlist, and forbid citations to glossary passages outside it. 30 September 2026 (P19): distinguish anchor location from claim support and require rewriting or dropping an unsupported cell citation without substituting another cell quote or passage. 15 October 2026 (D43): the per-section phrasebank frames, the phrase-repair step and the review's reversion of repaired sentences were removed; claim prose follows the plain-prose Phrasing rules in source-grounded-answer.md."
   },
   {
    "deixis_file": "references/abstract-screening.md",
@@ -133,7 +133,7 @@
    "derived_from": [],
    "date": "2026-10-03",
    "decision": "D198",
-   "change": "Describe bounded cell-anchor patches: the model selects a numbered stored quote of the same cell or drops the anchor, may rewrite an affected claim, and must record removal of a claim left without anchors. Location does not prove support. Designed using H9 stored failures, not independently validated."
+   "change": "Describe bounded cell-anchor patches: the model selects a numbered stored quote of the same cell or drops the anchor, may rewrite an affected claim, and must record removal of a claim left without anchors. Location does not prove support. Designed using H9 stored failures, not independently validated. 15 October 2026 (D43): the per-section phrasebank frames, the phrase-repair step and the review's reversion of repaired sentences were removed; claim prose follows the plain-prose Phrasing rules in source-grounded-answer.md."
   },
   {
    "deixis_file": "references/abstract-screening.md",
@@ -186,11 +186,11 @@
   }
  ],
  "phrasebank": {
-  "deixis_file": "references/phrases.md",
+  "status": "removed",
+  "removed": "2026-10-15 (D43)",
+  "former_file": "references/phrases.md",
   "source": "Academic Phrasebank, 2015 enhanced edition (John Morley, The University of Manchester), phrase sections of printed pages 7-91. Copyright remains with The University of Manchester.",
-  "form": "converted once on 2026-09-14: one frame per list item under # section and ## subsection headings, table rows written with {a | b} alternatives; nine frames split or joined by the conversion were repaired by hand",
-  "turkish": "each frame is followed by a `tr:` line, a literal Turkish rendering written on 2026-09-14 by Claude Sonnet subagents; checked by script for equal alternative groups and slots, spot-read by the implementing agent, not reviewed by a human translator",
-  "use": "versioned at the user's decision (2026-09-14); loaded into grounded_answer and report_section steps, English frames or their Turkish renderings by question language; grounded-answer sentences and report-section prose sentences are checked against the frames of the answer language; its hash is part of skill_package_hash"
+  "note": "The converted frames and their Turkish renderings are no longer in the package; answers and reports are written in plain prose and no sentence is checked against frames. The text is in Git history before D43."
  },
  "upstream_update_policy": "Quaestio changes are not imported automatically. A change is compared by diff, recorded here with the new revision and hashes, and re-tested with the behavior cases before the package version changes.",
  "distribution_review": "not_done; required before public distribution of adapted text",

@@ -1979,7 +1979,7 @@ FILE_EXPECTED = {
         '\n'
         '## VIII. Limitations and Threats to Validity\n'
         '\n'
-        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. Before VIII was written, phrase repairs kept 0, reverted 0, and left 0 unframed. 7. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
+        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
         '\n'
         'It has been reported that the SYNTHETIC formulation is bounded.\n'
         '\n'
@@ -2045,7 +2045,7 @@ FILE_EXPECTED = {
         '\n'
         '## VIII. Sınırlılıklar ve Geçerlilik Tehditleri\n'
         '\n'
-        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. Before VIII was written, phrase repairs kept 0, reverted 0, and left 0 unframed. 7. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
+        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
         '\n'
         'It has been reported that the SYNTHETIC formulation is bounded.\n'
         '\n'
@@ -2113,7 +2113,7 @@ FILE_EXPECTED = {
         '\n'
         '## VIII. Limitations and Threats to Validity\n'
         '\n'
-        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. Before VIII was written, phrase repairs kept 0, reverted 0, and left 0 unframed. 7. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
+        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
         '\n'
         'It has been reported that the SYNTHETIC formulation is bounded.\n'
         '\n'
@@ -2181,7 +2181,7 @@ FILE_EXPECTED = {
         '\n'
         '## VIII. Sınırlılıklar ve Geçerlilik Tehditleri\n'
         '\n'
-        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. Before VIII was written, phrase repairs kept 0, reverted 0, and left 0 unframed. 7. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
+        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
         '\n'
         'It has been reported that the SYNTHETIC formulation is bounded.\n'
         '\n'
@@ -2247,7 +2247,7 @@ FILE_EXPECTED = {
         '\n'
         '## VIII. Limitations and Threats to Validity\n'
         '\n'
-        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. Before VIII was written, phrase repairs kept 0, reverted 0, and left 0 unframed. 7. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
+        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
         '\n'
         'It has been reported that the SYNTHETIC formulation is bounded.\n'
         '\n'
@@ -2313,7 +2313,7 @@ FILE_EXPECTED = {
         '\n'
         '## VIII. Sınırlılıklar ve Geçerlilik Tehditleri\n'
         '\n'
-        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. Before VIII was written, phrase repairs kept 0, reverted 0, and left 0 unframed. 7. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
+        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
         '\n'
         'It has been reported that the SYNTHETIC formulation is bounded.\n'
         '\n'
@@ -2379,7 +2379,7 @@ FILE_EXPECTED = {
         '\n'
         '## VIII. Limitations and Threats to Validity\n'
         '\n'
-        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. Before VIII was written, phrase repairs kept 0, reverted 0, and left 0 unframed. 7. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
+        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
         '\n'
         'It has been reported that the SYNTHETIC formulation is bounded.\n'
         '\n'
@@ -2445,7 +2445,7 @@ FILE_EXPECTED = {
         '\n'
         '## VIII. Sınırlılıklar ve Geçerlilik Tehditleri\n'
         '\n'
-        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. Before VIII was written, phrase repairs kept 0, reverted 0, and left 0 unframed. 7. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
+        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
         '\n'
         'It has been reported that the SYNTHETIC formulation is bounded.\n'
         '\n'
@@ -2511,7 +2511,7 @@ FILE_EXPECTED = {
         '\n'
         '## VIII. Limitations and Threats to Validity\n'
         '\n'
-        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. Before VIII was written, phrase repairs kept 0, reverted 0, and left 0 unframed. 7. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
+        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
         '\n'
         'It has been reported that the SYNTHETIC formulation is bounded.\n'
         '\n'
@@ -2577,7 +2577,7 @@ FILE_EXPECTED = {
         '\n'
         '## VIII. Sınırlılıklar ve Geçerlilik Tehditleri\n'
         '\n'
-        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. Before VIII was written, phrase repairs kept 0, reverted 0, and left 0 unframed. 7. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
+        "\\1. Recall was not measured against a known source set. 2. The frozen corpus had 0 found, 1 unique, 0 screened, and 1 included sources; full text was available for 0/1 included sources and may favor open access sources. 3. 1 of 1 included sources had no PDF text (100.0%). 4. In valid sections III–VII, 0 of 5 claims were analyst inferences (0.0%). 5. A kill search for research gaps was not run. 6. 0 records were cut for the budget; a cell's evidence passage was not found for 0 cells (by section: none).\n"
         '\n'
         'It has been reported that the SYNTHETIC formulation is bounded.\n'
         '\n'

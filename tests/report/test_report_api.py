@@ -116,9 +116,8 @@ def test_check_edits_route_without_model_or_worker(tmp_path, case, expected):
                 assert view["has_human_edits"] is True and view["edited_after_version"] is None
                 assert view["edit_check"]["current"] is True
                 assert view["edit_check"]["errors"] == 1
-                assert view["edit_check"]["skipped"] == 1
-                assert view["edit_check"]["skipped_rules"] == [{"rule": "phrase_frames", "section_id": "III",
-                                                             "claim_key": "III.1", "reason": "human_text"}]
+                assert view["edit_check"]["skipped"] == 0
+                assert view["edit_check"]["skipped_rules"] == []
                 assert client.get(f"/api/researches/{rid}/reports/{report_id}").json()["edit_check"] == view["edit_check"]
         asyncio.run(http.aclose())
     finally:

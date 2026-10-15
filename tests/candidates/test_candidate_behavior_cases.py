@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deixis.domain import contracts, phrasebank
+from deixis.domain import contracts
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
 from deixis.models.adapter import ModelStepResult
@@ -485,7 +485,7 @@ def test_run_one_production_message_and_validation_order(case_id: str, enforces_
     run, result = asyncio.run(runner.run_one(adapter, PACKAGE, si))
     assert stages == ["resolve_citation_handles", "normalise_output", "validate_model_output"]
     assert si["task_type"] in HANDLE_TASKS
-    developer = prompt.developer_instructions(PACKAGE, si["task_type"], phrasebank.frames_language(si))
+    developer = prompt.developer_instructions(PACKAGE, si["task_type"])
     schema = contracts.step_output_schema(si["task_type"])
     if not enforces_schema:
         developer += "\n\n" + prompt.schema_appendix(si["task_type"], schema)

@@ -28,7 +28,7 @@ import httpx
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, identity, math_reader, ocr, pdf
-from deixis.domain import canonical, contracts, phrasebank, vocabulary as question_words
+from deixis.domain import canonical, contracts, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
                                  FULLTEXT_RUNS, MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES,
@@ -5328,11 +5328,7 @@ class ResearchFlow:
             schema = (contracts.report_section_anchor_patch_schema() if anchor_patch
                       else contracts.model_output_schema(task_type))
             base = prompt.BASE_INSTRUCTIONS
-            sections = (phrasebank.REPORT_PHRASEBANK_SECTIONS[payload["report_target"]["section_id"]]
-                        if task_type in ("report_section", "report_phrase_repair") else None)
-            developer = prompt.developer_instructions(
-                self.deps.package, task_type, phrasebank.frames_language(payload), sections=sections,
-            )
+            developer = prompt.developer_instructions(self.deps.package, task_type)
             if not adapter.enforces_schema:
                 developer = developer + "\n\n" + prompt.schema_appendix(task_type, schema)
             # Handled steps show short IDs; the stored StepInput keeps the record IDs they map back to.

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from deixis.config import load_settings
-from deixis.domain import contracts, phrasebank
+from deixis.domain import contracts
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
 from deixis.models.adapter import CodexAdapter, is_rate_limited
@@ -23,7 +23,7 @@ from deixis.workflow.flow import HANDLE_TASKS
 
 FIXTURES = REPO_ROOT / "tests/fixtures/research/step-inputs.json"
 CASES = REPO_ROOT / "tests/model_behavior/report_cases.json"
-SEEDED_RS_CASES = tuple(f"RS{i:02d}" for i in range(1, 13))
+SEEDED_RS_CASES = tuple(f"RS{i:02d}" for i in range(2, 13))  # RS01 (repair drops a negation) went with the repair step, D43
 CASE_IDS = tuple([f"RB{i:02d}" for i in range(1, 6)] +
                  list(SEEDED_RS_CASES) + ["RC01"])
 COL = "col_SYNTHR0001"
@@ -88,17 +88,12 @@ def _review_case(case_id: str, si: dict[str, Any]) -> None:
         _claim("IV.4", "SYNTHETIC Source C studies relay timing.", (2,)),
     ]
     section = "IV"
-    repairs: list[dict[str, str]] = []
     count = None
     cells_used: tuple[int, ...] = ()
     cited = (0,)
     support = "source_stated"
     text = "SYNTHETIC Source A models delay reduction in simulation."
-    if case_id == "RS01":
-        text = "SYNTHETIC Source A does report a physical experiment."
-        repairs = [{"sentence_id": "IV.1#1", "before": "SYNTHETIC Source A does not report a physical experiment.",
-                    "after": text}]
-    elif case_id == "RS02":
+    if case_id == "RS02":
         depths[2] = "abstract"
         cited = (2,)
         text = "SYNTHETIC Source C minimizes delay subject to a fixed energy constraint."
@@ -151,12 +146,11 @@ def _review_case(case_id: str, si: dict[str, Any]) -> None:
             claim["claim_key"] = f"{section}.{index}"
     first = _claim(key, text, cited, cells=bool(cells_used), support=support, count=count)
     if case_id == "RS12":
-        sections = [{"section_id": "IV", "claims": [first, *clean[:2]], "repairs": []},
+        sections = [{"section_id": "IV", "claims": [first, *clean[:2]]},
                     {"section_id": "abstract", "claims": [
-                        _claim("abstract.1", "SYNTHETIC Source A conclusively reduces delay in every setting.")],
-                     "repairs": []}]
+                        _claim("abstract.1", "SYNTHETIC Source A conclusively reduces delay in every setting.")]}]
     else:
-        sections = [{"section_id": section, "claims": [first, *clean], "repairs": repairs}]
+        sections = [{"section_id": section, "claims": [first, *clean]}]
     if case_id == "RC01":
         sections[0]["claims"] = clean
     if case_id == "RS10":
@@ -392,16 +386,10 @@ def automatic_checks(case: dict[str, Any], output: dict[str, Any] | None,
     findings = output["findings"]
     keys = {claim["claim_key"] for section in si["report_target"]["review_sections"]
             for claim in section["claims"]}
-    sentences = {repair["sentence_id"] for section in si["report_target"]["review_sections"]
-                 for repair in section["repairs"]}
     seeded = case["seeded_claim_key"]
     matching = [f for f in findings if f["claim_key"] == seeded] if seeded else []
-    if case_id == "RS01":
-        matching = [f for f in matching if f["sentence_id"] == case["seeded_sentence_id"]
-                    and f["code"] == "support_broken"]
     false_positives = sum(f["claim_key"] != seeded for f in findings)
-    checks = {"identifier_valid": all(f["claim_key"] is None or f["claim_key"] in keys for f in findings) and
-              all(f["sentence_id"] is None or f["sentence_id"] in sentences for f in findings)}
+    checks = {"identifier_valid": all(f["claim_key"] is None or f["claim_key"] in keys for f in findings)}
     if seeded:
         checks.update({"flagged": bool(matching),
                        "flagged_with_expected_code": any(f["code"] in case["codes_accepted"] for f in matching)})
@@ -482,10 +470,7 @@ def _write_results(out_dir: Path, payload: dict[str, Any], *, timestamped: bool 
 
 async def run_one(adapter: CodexAdapter, package: Any, si: dict[str, Any]) -> tuple[dict[str, Any], Any]:
     schema = contracts.step_output_schema(si["task_type"])
-    sections = (phrasebank.REPORT_PHRASEBANK_SECTIONS[si["report_target"]["section_id"]]
-                if si["task_type"] in ("report_section", "report_phrase_repair") else None)
-    developer = prompt.developer_instructions(package, si["task_type"],
-                                               phrasebank.frames_language(si), sections=sections)
+    developer = prompt.developer_instructions(package, si["task_type"])
     if not adapter.enforces_schema:
         developer += "\n\n" + prompt.schema_appendix(si["task_type"], schema)
     shown = contracts.with_citation_handles(si) if si["task_type"] in HANDLE_TASKS else si

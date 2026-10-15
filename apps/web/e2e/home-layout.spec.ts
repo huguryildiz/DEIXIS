@@ -108,7 +108,7 @@ test.describe.serial('S4: Home layout', () => {
     await expect(page.getByText('Add from library')).toHaveCount(0)
   })
 
-  test('models menu: one row per role with model and effort; a row opens that role picker', async ({ page }) => {
+  test('models menu: one row per role with model and effort, read-only; a row opens Settings → Models', async ({ page }) => {
     await page.goto(server.url())
     await expect(page.locator('.models-summary')).toContainText('fixture-model')
     await page.locator('.models-summary').click()
@@ -122,9 +122,8 @@ test.describe.serial('S4: Home layout', () => {
     await expect(items.nth(2)).toContainText('Reviewer')
     await expect(items.nth(3)).toContainText('Change the defaults in Settings')
     await items.nth(1).click()
-    await expect(page.getByRole('combobox', { name: /Search models or providers/ })).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Answer model' })).toBeVisible()
+    await expect(page).toHaveURL(/#\/settings\/models$/)
+    await expect(page.getByRole('combobox', { name: /Search models or providers/ })).toHaveCount(0)
   })
 
   test('depth menu lists the three depths with minutes and papers', async ({ page }) => {

@@ -58,8 +58,6 @@ export const notReadyReasons = (connections: Connections) =>
 
 // The most PDFs that guide one search (D3); the backend enforces it.
 export const MAX_SEED_PDFS = 5
-const DEFAULT_REVIEWER = '__default'
-const NO_REVIEW = '__off'
 
 // Step roles and what each does; the composer and Settings describe them the same way. Text is English; callers use t().
 export const modelRoles: Record<ModelRole, { label: string; icon: LucideIcon; hint: string }> = {
@@ -275,13 +273,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
   const [reasoning, setReasoning] = useState<string | null>(null)
   const [literature, setLiterature] = useState('')
   const [literatureReasoning, setLiteratureReasoning] = useState<string | null>(null)
-  const [reviewer, setReviewer] = useState(DEFAULT_REVIEWER)
-  const [reviewerReasoning, setReviewerReasoning] = useState<string | null>(null)
   const [defaults, setDefaults] = useState<Record<ModelRole, RoleModelSetting> | null>(null)
-  // The role whose picker is open under the controls (chosen in the Models menu).
-  const [pickerRole, setPickerRole] = useState<ModelRole | null>(null)
-  // Each choice in the menu remounts the picker, so choosing the same role again opens its list again.
-  const [pickerNonce, setPickerNonce] = useState(0)
   // The attached PDFs and the ones the person unchecked as search guides, kept in one state so every change to the
   // files and their check marks is one atomic update (two quick adds cannot drop a file or a mark).
   const [attached, setAttached] = useState<{ files: File[]; unguided: Set<string> }>({ files: [], unguided: new Set() })
@@ -305,13 +297,18 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
       const models = connectionModels(result)
       // Only a ready connection can run a step: a signed-out Codex still lists its models, so it must not be the start.
       const ready = models.filter(m => result.models[m.connection]?.ready)
-      const preferred = ready.find(m => m.is_default) ?? ready[0]
+      // Claude Code lists a "default" alias first; the composer names a real model, so the alias is skipped when another is listed.
+      const named = ready.filter(m => m.model !== 'default')
+      const preferred = named.find(m => m.is_default) ?? named[0] ?? ready[0]
+      // A model that lists efforts without declaring a default (Claude Code) starts at medium, so the menu can name the effort.
+      const fallbackEffort = (id: string) => defaultEffort(models, id)
+        ?? (exposesEffortControl(models.find(m => m.id === id)) && listedEffort(models, id, 'medium') ? 'medium' : null)
       // A default from Settings applies while its connection is ready and still lists it; otherwise the composer starts from the first ready connection's default model.
       const start = (setting: RoleModelSetting | undefined) => {
         const saved = setting?.model ? modelKey(setting.model_connection, setting.model) : null
         const id = saved && ready.some(m => m.id === saved) ? saved : preferred?.id
         if (!id) return null
-        return { id, effort: (id === saved ? listedEffort(models, id, setting?.reasoning_effort ?? null) : null) ?? defaultEffort(models, id) }
+        return { id, effort: (id === saved ? listedEffort(models, id, setting?.reasoning_effort ?? null) : null) ?? fallbackEffort(id) }
       }
       const answer = start(saved?.answer)
       const literature = start(saved?.literature)
@@ -360,12 +357,6 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
   const chipDisabled = (chip: ModeChip) => chip === 'papers' && scope === 'attached' ? t('Needs academic search')
     : chip === 'ask' && !files.length && !zotero ? t('Add a PDF first') : null
 
-  function chooseModel(id: string, list = models) {
-    const next = list.find(m => m.id === id)
-    setModel(id)
-    // Each model lists its own efforts; use the provider-declared default when one exists.
-    setReasoning(next?.default_reasoning_effort ?? null)
-  }
 
   async function addFiles(list: FileList | null) {
     if (!list) return
@@ -396,17 +387,13 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     setError('')
     let id: string | null = null
     let step = ''
-    const customReviewer = reviewer !== DEFAULT_REVIEWER && reviewer !== NO_REVIEW
-    const reviewerChoice = customReviewer ? models.find(m => m.id === reviewer) : undefined
     try {
       const view = await api.create({ question: question.trim(), source_scope: scope, intent,
         seed_mode: scope === 'attached_and_academic' ? 'uploaded_seed' : 'question_only', effort, model_connection: chosen.connection, requested_model: chosen.model,
         reasoning_effort: efforts.some(e => e.id === reasoning) ? reasoning : null,
         literature_connection: literatureChoice.connection, literature_model: literatureChoice.model,
         literature_reasoning_effort: listedEffort(models, literature, literatureReasoning),
-        review_mode: customReviewer ? 'custom' : reviewer === NO_REVIEW ? 'off' : 'default',
-        review_connection: reviewerChoice?.connection ?? null, review_model: reviewerChoice?.model ?? null,
-        review_reasoning_effort: customReviewer ? listedEffort(models, reviewer, reviewerReasoning) : null })
+        review_mode: 'default', review_connection: null, review_model: null, review_reasoning_effort: null })
       id = view.research.id
       let latestView = view
       const uploaded = new Map<string, string>()
@@ -452,12 +439,6 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
 
   const modelName = (id: string) => models.find(m => m.id === id)?.display_name ?? id.slice(id.indexOf(':') + 1)
   const defaultName = defaults?.reviewer.model ? modelName(modelKey(defaults.reviewer.model_connection, defaults.reviewer.model)) : null
-  const reviewerChoices = [
-    { value: DEFAULT_REVIEWER, title: defaultName ? t('Default · {name}', { name: defaultName }) : t('Default · none set'),
-      detail: t(defaultName ? 'The reviewer set in Settings for all researches' : 'No reviewer is set in Settings, so answers are not reviewed') },
-    { value: NO_REVIEW, title: t('Off'), detail: t('Answers of this research are not reviewed') },
-  ]
-  const reviewerSummary = reviewer === NO_REVIEW ? t('Off') : reviewer === DEFAULT_REVIEWER ? defaultName ?? t('no reviewer') : modelName(reviewer)
   // Bytes as the file manager shows them, so a large attachment is recognisable before it is uploaded.
   const fileSize = (bytes: number) => bytes >= 1_000_000 ? t('{n} MB', { n: (bytes / 1_000_000).toFixed(1) }) : t('{n} KB', { n: Math.max(1, Math.round(bytes / 1000)) })
   // A mixed search is guided by up to five of the attached PDFs (D3); with several files the checked ones' chips say so.
@@ -477,14 +458,16 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
       </div>)}
   </div>
 
-  // The Models menu: one row per real role, "model · effort" under its name (mockup order: literature, answer, reviewer).
+  // The Models menu shows, read-only, the models from Settings: one row per role, "model · effort" under its name
+  // (mockup order: literature, answer, reviewer). A row opens Settings → Models, where the defaults are changed.
   const withEffort = (name: string, effort: string | null) => effort ? `${name} · ${reasoningLabel(effort)}` : name
   const roleRows: { role: ModelRole; summary: string }[] = [
     { role: 'literature', summary: withEffort(modelName(literature), listedEffort(models, literature, literatureReasoning)) },
     { role: 'answer', summary: withEffort(modelName(model), efforts.some(e => e.id === reasoning) ? reasoning : null) },
-    { role: 'reviewer', summary: reviewer === NO_REVIEW || reviewerSummary === t('no reviewer') ? reviewerSummary : withEffort(reviewerSummary, reviewer === DEFAULT_REVIEWER ? listedEffort(models, modelKey(defaults!.reviewer.model_connection, defaults!.reviewer.model!), defaults!.reviewer.reasoning_effort ?? null) : listedEffort(models, reviewer, reviewerReasoning)) },
+    { role: 'reviewer', summary: defaultName ? withEffort(defaultName, listedEffort(models, modelKey(defaults!.reviewer.model_connection, defaults!.reviewer.model!), defaults!.reviewer.reasoning_effort ?? null)) : t('no reviewer') },
   ]
   const noModel = Boolean(connections) && !models.length
+  const openModelSettings = () => { window.location.hash = '#/settings/models' }
 
   // Home is one centred column: the band with the scope, the question, then one control row (+, files, Models, depth, send).
   return <section className="welcome home">
@@ -527,8 +510,8 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
               <DropdownMenuContent className="home-menu" align="start" sideOffset={6} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }}>
                 <DropdownMenuGroup>
                   <DropdownMenuLabel className="home-menu-heading">{t('Models')}</DropdownMenuLabel>
-                  {roleRows.map(row => <DropdownMenuItem key={row.role} className="home-menu-item" onClick={() => { setPickerRole(row.role); setPickerNonce(n => n + 1) }}><MenuRow icon={Cpu} title={t(modelRoles[row.role].label)} detail={row.summary} /></DropdownMenuItem>)}
-                  <DropdownMenuItem className="home-menu-item" onClick={() => { window.location.hash = '#/settings' }}><MenuRow icon={SlidersHorizontal} title={t('Change the defaults in Settings')} /></DropdownMenuItem>
+                  {roleRows.map(row => <DropdownMenuItem key={row.role} className="home-menu-item" onClick={openModelSettings}><MenuRow icon={Cpu} title={t(modelRoles[row.role].label)} detail={row.summary} /></DropdownMenuItem>)}
+                  <DropdownMenuItem className="home-menu-item" onClick={openModelSettings}><MenuRow icon={SlidersHorizontal} title={t('Change the defaults in Settings')} /></DropdownMenuItem>
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -554,16 +537,6 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
         })}
         {overLimit && <span className="guide-limit">{t('Up to five guide the search; DEIXIS keeps the five whose first pages share the most words with your question.')}</span>}
         {noGuide && <span className="guide-none" role="status">{t('Choose at least one PDF to guide the search.')}</span>}
-      </div>}
-      {pickerRole && models.length > 0 && <div className="composer-options composer-models">
-        {pickerRole === 'answer' && <ModelPicker key={pickerNonce} defaultOpen role={t(modelRoles.answer.label)} icon={modelRoles.answer.icon} hint={t(modelRoles.answer.hint)} models={models} value={model}
-          onChange={id => chooseModel(id)} effort={reasoning} onEffort={setReasoning} />}
-        {pickerRole === 'literature' && <ModelPicker key={pickerNonce} defaultOpen role={t(modelRoles.literature.label)} icon={modelRoles.literature.icon} hint={t(modelRoles.literature.hint)} models={models} value={literature}
-          onChange={id => { setLiterature(id); setLiteratureReasoning(defaultEffort(models, id)) }} effort={literatureReasoning} onEffort={setLiteratureReasoning} />}
-        {pickerRole === 'reviewer' && <ModelPicker key={pickerNonce} defaultOpen role={t(modelRoles.reviewer.label)} icon={modelRoles.reviewer.icon} hint={t(modelRoles.reviewer.hint)}
-          models={models} value={reviewer} onChange={id => { setReviewer(id); setReviewerReasoning(defaultEffort(models, id)) }}
-          effort={reviewerReasoning} onEffort={setReviewerReasoning} choices={reviewerChoices} />}
-        <button type="button" className="models-picker-close" aria-label={t('Close')} onClick={() => setPickerRole(null)}><X size={14} /></button>
       </div>}
     </form>
     <ZoteroDialog open={zoteroOpen} onOpenChange={setZoteroOpen} destination="home" busy={busy} initial={zotero} returnFocus={addButton}

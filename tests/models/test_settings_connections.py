@@ -783,6 +783,14 @@ def test_lm_studio_update_reads_the_version_its_download_link_redirects_to(tmp_p
     assert (updates["version"], updates["latest"], updates["update_available"], updates["installed_with"]) == ("0.4.20", "0.4.26", True, "app")
 
 
+def test_suggested_models_fall_back_to_the_fixed_list_when_the_catalog_cannot_be_read(client):
+    # The test client's remote handler refuses ollama.com and lmstudio.ai.
+    ollama = client.get("/api/local-tools/ollama/suggested").json()
+    assert ollama["source"] == "fixed" and ollama["models"] == list(local_tools.OLLAMA_SUGGESTED)
+    assert client.get("/api/local-tools/lm_studio/suggested").json()["models"] == list(local_tools.LMSTUDIO_SUGGESTED)
+    assert client.get("/api/local-tools/zotero/suggested").status_code == 422
+
+
 def test_zotero_reports_whether_its_local_api_is_on(client, monkeypatch):
     replies = {"status": None}
 

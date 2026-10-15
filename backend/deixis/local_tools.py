@@ -29,6 +29,7 @@ import httpx
 from deixis.storage.db import now
 
 CACHE_SECONDS = 30
+CATALOG_SECONDS = 24 * 60 * 60
 INSTALL_TIMEOUT_SECONDS = 20 * 60
 OUTPUT_TAIL_CHARS = 4000
 # The model the Ollama card offers first when no embedding model is installed: a small one semantic search can use.
@@ -220,6 +221,7 @@ class LocalTools:
         self._pull_task: asyncio.Task | None = None
         self._lms_pull: dict[str, Any] | None = None  # the LM Studio model download, while it runs and after
         self._lms_task: asyncio.Task | None = None
+        self._catalogs: dict[str, tuple[float, dict[str, Any]]] = {}  # tool id → (when read, suggestions)
 
     async def snapshot(self, refresh: bool = False) -> dict[str, Any]:
         if refresh or not self._cache or time.monotonic() - self._cache[0] > CACHE_SECONDS:
@@ -587,6 +589,25 @@ class LocalTools:
         version = lm_studio["version"]
         return {"version": version, "latest": latest, "update_available": newer(latest, version),
                 "installed_with": "app" if lm_studio.get("app_installed") else None, "models": {}}
+
+    async def suggested(self, tool_id: str, http: httpx.AsyncClient) -> dict[str, Any]:
+        """Suggested research models read from the tool's catalog and sized for this computer's memory, kept for a day;
+        the fixed list when the catalog cannot be read. Embedding suggestions always come from the fixed list."""
+        from deixis import local_catalog
+
+        fixed = OLLAMA_SUGGESTED if tool_id == "ollama" else LMSTUDIO_SUGGESTED
+        kept = self._catalogs.get(tool_id)
+        if kept and time.monotonic() - kept[0] < CATALOG_SECONDS:
+            return kept[1]
+        memory = (await self.snapshot())["machine"].get("memory_gb")
+        read = local_catalog.ollama if tool_id == "ollama" else local_catalog.lmstudio
+        live = await read(http, memory)
+        embedding = [m for m in fixed if m["purpose"] == "embedding"]
+        result = ({"models": [*live, *embedding], "source": "catalog", "memory_gb": memory} if live else
+                  {"models": list(fixed), "source": "fixed", "memory_gb": memory})
+        if live:  # a failed read is tried again on the next open, not kept for a day
+            self._catalogs[tool_id] = (time.monotonic(), result)
+        return result
 
     def cancel(self, tool_id: str) -> dict[str, Any]:
         tool = TOOLS.get(tool_id)

@@ -1324,6 +1324,7 @@ export const api = {
   updateLocalTool: (id: 'ollama' | 'lm_studio') => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/update`, { method: 'POST' }),
   pullOllamaModel: (model: string) => request<{ job: LocalTool['pull'] }>('/api/local-tools/ollama/pull', json('POST', { model })),
   cancelOllamaPull: () => request<{ job: LocalTool['pull'] }>('/api/local-tools/ollama/pull/cancel', { method: 'POST' }),
+  localToolSuggested: (tool: 'ollama' | 'lm_studio') => request<{ models: NonNullable<LocalTool['suggested']>; source: 'catalog' | 'fixed'; memory_gb: number | null }>(`/api/local-tools/${tool}/suggested`),
   localToolUpdates: (tool: 'ollama' | 'lm_studio') => request<OllamaUpdates>(`/api/local-tools/${tool}/updates`),
   pullLmStudioModel: (model: string) => request<{ job: LocalTool['pull'] }>('/api/local-tools/lm_studio/pull', json('POST', { model })),
   startLmStudioServer: () => request<{ started: boolean }>('/api/local-tools/lm_studio/start-server', { method: 'POST' }),

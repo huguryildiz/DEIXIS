@@ -484,11 +484,18 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
   }, [checkedAfter, tool.id])
   const lms = tool.id === 'lm_studio'
   const product = lms ? 'LM Studio' : 'Ollama'
+  // The fixed list shows at once; the catalog's current models (read by the server at most once a day) replace it.
+  const [catalog, setCatalog] = useState<{ models: NonNullable<LocalTool['suggested']>; source: 'catalog' | 'fixed' } | null>(null)
+  useEffect(() => {
+    let live = true
+    api.localToolSuggested(lms ? 'lm_studio' : 'ollama').then(c => { if (live) setCatalog(c) }, () => { if (live) setCatalog(null) })
+    return () => { live = false }
+  }, [lms])
   const installed = tool.models ?? []
   // Ollama names carry a tag (":latest" when none is given); LM Studio lists a catalog model by its own key or file name.
   const full = (id: string) => lms ? id.toLowerCase().split('/').pop()! : id.includes(':') ? id : `${id}:latest`
   const have = new Set(installed.map(m => full(m.id)))
-  const suggested = (tool.suggested ?? []).filter(s => !have.has(full(s.id)))
+  const suggested = (catalog?.models ?? tool.suggested ?? []).filter(s => !have.has(full(s.id)))
   const research = suggested.filter(s => s.purpose === 'research')
   const embedding = suggested.filter(s => s.purpose === 'embedding')
   function updateApp() {
@@ -554,13 +561,14 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
 
     {research.length > 0 && <>
       <h3 className="source-section">{t('Suggested models')}</h3>
+      {catalog?.source === 'catalog' && <p className="foot-note">{t('New models from {site}, each in the largest size that fits this computer’s memory.', { site: lms ? 'lmstudio.ai' : 'ollama.com' })}</p>}
       <ul className="ollama-cards">{research.map(s => {
         // A model needs about its download size plus a few GB of memory to run; one that does not fit is shown faded.
         const need = s.memory_gb ?? Math.ceil(((s.size_bytes ?? 0) / 1e9 + 4) / 4) * 4
         const tight = memoryGb != null && memoryGb < need
         return <li key={s.id} className={`ollama-card${tight ? ' is-tight' : ''}`}>
           <b>{s.name}</b>
-          <small title={s.id}>{s.maker} · <code>{s.id}</code></small>
+          <small title={s.id}>{s.maker && `${s.maker} · `}<code>{s.id}</code></small>
           <span className="ollama-card-size" title={tight ? t('More than this computer’s {memory} GB of memory', { memory: memoryGb! }) : undefined}>{tight && <TriangleAlert size={12} aria-hidden />}{s.size_bytes != null ? t('{size} · {need} GB memory', { size: formatBytes(s.size_bytes), need }) : t('{need} GB memory', { need })}</span>
           <button type="button" className="ghost" disabled={busy || pulling} onClick={() => start(s.id)}><Download size={14} aria-hidden />{t('Download')}</button>
         </li>

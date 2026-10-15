@@ -249,6 +249,38 @@ function SetupCard({ connections, reasons, proxy }: { connections: Connections; 
   </section>
 }
 
+// The question box's placeholder types itself out letter by letter, then erases and types the next line: the default
+// line first, then questions suggested from earlier answers. Static (the first line) when motion is reduced or the box
+// has text.
+function useTypewriter(lines: string[], active: boolean): string {
+  const key = lines.join('\n')
+  const [text, setText] = useState('')
+  useEffect(() => {
+    const all = key.split('\n')
+    if (!active || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { setText(all[0]); return }
+    let line = 0, shown = 0, erasing = false
+    let timer: ReturnType<typeof setTimeout>
+    const tick = () => {
+      const full = all[line]
+      if (!erasing) {
+        shown += 1
+        setText(full.slice(0, shown))
+        if (shown >= full.length) { if (all.length === 1) return; erasing = true; timer = setTimeout(tick, 2600); return }
+        timer = setTimeout(tick, 28 + Math.random() * 40)
+      } else {
+        shown -= 2
+        setText(full.slice(0, Math.max(shown, 0)))
+        if (shown <= 0) { erasing = false; shown = 0; line = (line + 1) % all.length; timer = setTimeout(tick, 400); return }
+        timer = setTimeout(tick, 14)
+      }
+    }
+    setText('')
+    timer = setTimeout(tick, 300)
+    return () => clearTimeout(timer)
+  }, [key, active])
+  return text
+}
+
 // `researches` is the shell's list (refreshed by its poll), newest first: the Resume card and the suggestions follow it.
 export function Home({ onCreated, researches }: { onCreated: (id: string) => void; researches: ResearchSummary[] }) {
   const [question, setQuestion] = useState('')
@@ -262,9 +294,10 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
   const listKey = researches.map(progressKey).join('|')
   useEffect(() => {
     let current = true
-    homeApi.suggestions().then(result => { if (current) setSuggestions(result.suggestions.slice(0, 2)) }, () => { if (current) setSuggestions([]) })
+    homeApi.suggestions().then(result => { if (current) setSuggestions(result.suggestions) }, () => { if (current) setSuggestions([]) })
     return () => { current = false }
   }, [listKey])
+  const placeholder = useTypewriter([t('Ask a research question. DEIXIS searches, screens, reads and links every claim to a passage.'), ...suggestions.slice(0, 5).map(s => s.text)], question === '')
   const [effort, setEffort] = useState<Effort>('standard')
   // The depth chosen in Settings → General; a pick made here before it arrives is kept.
   const effortPicked = useRef(false)
@@ -494,7 +527,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
         </Select>
       </div>
       <label className="composer-label sr-only" htmlFor="research-question">{t('What would you like to investigate?')}</label>
-      <Textarea ref={questionInput} id="research-question" aria-label={t('Research question')} placeholder={t('Ask a research question. DEIXIS searches, screens, reads and links every claim to a passage.')} value={question}
+      <Textarea ref={questionInput} id="research-question" aria-label={t('Research question')} placeholder={placeholder} value={question}
         onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit() } }} />
       {scope === 'attached_and_academic' && files.length === 0 && zotero &&
         <p className="composer-hint">{t('The imported PDFs guide the search.')}</p>}
@@ -565,7 +598,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     </div>
     {(latest || suggestions.length > 0) && <div className="home-cards">
       {latest && <ResumeCard key={latest.id} research={latest} />}
-      {suggestions.map(s => <button key={`${s.answer_id}:${s.text}`} type="button" className="card" onClick={() => { setQuestion(s.text); questionInput.current?.focus() }}>
+      {suggestions.slice(0, 2).map(s => <button key={`${s.answer_id}:${s.text}`} type="button" className="card" onClick={() => { setQuestion(s.text); questionInput.current?.focus() }}>
         <span className="home-card-tag"><Lightbulb aria-hidden />{t('Suggested')}</span>
         <p>{s.text}</p>
         <small className="home-card-source">{s.research_title}</small>

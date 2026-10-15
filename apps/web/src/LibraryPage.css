@@ -186,3 +186,23 @@
   .library-page .lib-left{display:none}
   .library-page .lib-project-select{display:block}
 }
+
+/* Head toggles: hide the left list and the right "New from selection" pane. */
+.library-page .lib-toggle{border:1px solid var(--line)}
+.library-page .lib-toggle.off{color:var(--faint,var(--muted));background:transparent}
+@media (min-width:1101px){
+  .library-page .lib[data-left=off] .lib-body{grid-template-columns:minmax(0,1fr) 260px}
+  .library-page .lib[data-right=off] .lib-body{grid-template-columns:200px minmax(0,1fr)}
+  .library-page .lib[data-left=off][data-right=off] .lib-body{grid-template-columns:minmax(0,1fr)}
+  .library-page .lib[data-right=off] .lib-right{display:none}
+  .library-page .lib[data-right=off] .lib-selbar{display:flex}
+}
+@media (min-width:821px){
+  .library-page .lib[data-left=off] .lib-left{display:none}
+  .library-page .lib[data-left=off] .lib-project-select{display:block}
+}
+@media (min-width:821px) and (max-width:1100px){
+  .library-page .lib[data-left=off] .lib-body{grid-template-columns:minmax(0,1fr)}
+}
+@media (max-width:1100px){ .library-page .lib-toggle-right{display:none} }
+@media (max-width:820px){ .library-page .lib-toggle-left{display:none} }

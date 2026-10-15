@@ -92,7 +92,8 @@
 .phrasing-note ul{margin:6px 0 0}
 /* The question bubble (mockup `.q`, R13): where DEIXIS looks in accent, the question, and "date · revision N". */
 .chat-question{display:block;width:fit-content;max-width:min(540px,100%);margin:0 0 0 auto;padding:12px 14px;border-radius:12px;background:var(--bubble);color:var(--ink);font-size:14.5px;line-height:1.5;overflow-wrap:anywhere}
-.chat-question>b{display:inline-flex;align-items:center;gap:5px;color:var(--accent);font-weight:500}
+.chat-question>b{color:var(--accent);font-weight:500}
+.chat-question>b>svg{display:inline-block;margin-right:5px;vertical-align:-3px}
 .chat-question>span{white-space:pre-wrap}
 .chat-question>time{display:block;margin-top:6px;color:var(--muted);font-size:11.5px}
 /* Revise question turns the bubble into the form (mockup `.q.edit`): Question, English key terms, Cancel, Save revision N+1. */

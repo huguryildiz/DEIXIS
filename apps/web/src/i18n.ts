@@ -2327,6 +2327,7 @@ const tr: Record<string, string> = {
   'Installation instructions': 'Kurulum yönergeleri',
   'Installing…': 'Kuruluyor…',
   'Install finished.': 'Kurulum tamamlandı.',
+  'New models from {site}, each in the largest size that fits this computer’s memory.': '{site} sitesindeki yeni modeller, her biri bu bilgisayarın belleğine sığan en büyük boyuyla.',
   'LM Studio is installed, but its local server is off.': 'LM Studio kurulu ama yerel sunucusu kapalı.',
   'Start the server': 'Sunucuyu başlat',
   'Starting…': 'Başlatılıyor…',

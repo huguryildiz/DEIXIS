@@ -1097,9 +1097,9 @@ def create_app(
     async def connections(request: Request, refresh: bool = False) -> dict[str, Any]:
         from deixis.providers.facade import connectors
         descriptors = {p: f.descriptor for p, f in connectors().items()}
-        models = {}
-        for name, adapter in request.app.state.adapters.items():
-            models[name] = await adapter.health(refresh=refresh)
+        # The checks run side by side: each waits on its own CLI or HTTP probe, and one after another took ~19 s.
+        adapters = request.app.state.adapters
+        models = dict(zip(adapters, await asyncio.gather(*(a.health(refresh=refresh) for a in adapters.values()))))
         return {
             "models": models,
             # The Codex home this backend runs Codex with (DEIXIS_CODEX_HOME or the data folder's codex-home), so the
@@ -1411,6 +1411,11 @@ def create_app(
     async def lm_studio_updates(request: Request) -> dict[str, Any]:
         """The installed LM Studio against its latest release: one request to lmstudio.ai."""
         return await request.app.state.local_tools.lm_studio_updates(request.app.state.http)
+
+    @app.get("/api/local-tools/{tool_id}/suggested")
+    async def local_tool_suggested(tool_id: Literal["ollama", "lm_studio"], request: Request) -> dict[str, Any]:
+        """Suggested models from ollama.com or lmstudio.ai, read at most once a day; the fixed list if that fails."""
+        return await request.app.state.local_tools.suggested(tool_id, request.app.state.http)
 
     @app.post("/api/local-tools/{tool_id}/cancel")
     async def cancel_local_tool_install(tool_id: str, request: Request) -> dict[str, Any]:

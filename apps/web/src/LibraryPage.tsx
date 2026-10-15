@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import {
   ArrowUpDown, Check, ChevronLeft, ChevronRight, Download, Ellipsis, FileText, Filter, Folder, LibraryBig, Link2,
-  MessageSquare, Plus, Search, SlidersHorizontal, Table2, Trash2, Upload, X,
+  MessageSquare, PanelLeft, PanelRight, Plus, Search, SlidersHorizontal, Table2, Trash2, Upload, X,
 } from 'lucide-react'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
@@ -150,6 +150,8 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
   const [pending, setPending] = useState<Pending | null>(null)
   const [result, setResult] = useState<Result | null>(null)
   const [zoteroOpen, setZoteroOpen] = useState(false)
+  const [showLeft, setShowLeft] = useState(true)
+  const [showRight, setShowRight] = useState(true)
   const [asking, setAsking] = useState<{ mode: Mode; works: string[] } | null>(null)
   const [dragging, setDragging] = useState<{ workId: string; held: string[] } | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
@@ -708,7 +710,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
     onRemove={() => setPending({ research: project, works: pickedWorks.map(e => e.work_id) })} />
 
   return <section className="library-page" ref={sectionRef}>
-    <div className="lib" data-density={density} data-grouping={grouped ? 'research' : 'none'}>
+    <div className="lib" data-density={density} data-grouping={grouped ? 'research' : 'none'} data-left={showLeft ? 'on' : 'off'} data-right={showRight ? 'on' : 'off'}>
       <div className="lib-head">
         <h1 tabIndex={-1}><span>{t('Library')} /</span> <span className="lib-crumb" title={projectName}>{projectName}</span></h1>
         {project && <DropdownMenu>
@@ -722,6 +724,8 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
         </DropdownMenu>}
         <button type="button" className="ghost" ref={zoteroButton} disabled={locked} onClick={() => setZoteroOpen(true)}>{t('Import from Zotero')}</button>
         <button type="button" className="btn-teal" disabled={locked} aria-busy={busy === 'upload'} onClick={() => fileInput.current?.click()}><Upload size={16} aria-hidden />{t('Upload PDF')}</button>
+        <button type="button" className={`ib lib-toggle lib-toggle-left${showLeft ? '' : ' off'}`} aria-pressed={showLeft} title={showLeft ? t('Hide the list') : t('Show the list')} aria-label={showLeft ? t('Hide the list') : t('Show the list')} onClick={() => setShowLeft(v => !v)}><PanelLeft size={16} aria-hidden /></button>
+        <button type="button" className={`ib lib-toggle lib-toggle-right${showRight ? '' : ' off'}`} aria-pressed={showRight} title={showRight ? t('Hide New from selection') : t('Show New from selection')} aria-label={showRight ? t('Hide New from selection') : t('Show New from selection')} onClick={() => setShowRight(v => !v)}><PanelRight size={16} aria-hidden /></button>
       </div>
       <div className="lib-body">
         <div className="pane lib-left">

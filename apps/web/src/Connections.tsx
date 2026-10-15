@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, BookOpenText, ChevronRight, CircleCheck, Copy, Cpu, Download, FileText, HardDrive, MemoryStick, LoaderCircle, Plus, RefreshCw, RotateCw, Save, ScanText, Server, Sigma, Trash2, TriangleAlert, Upload } from 'lucide-react'
+import { Ban, BookOpenText, ChevronRight, CircleCheck, Copy, Cpu, Download, FileLock, FileText, HardDrive, Info, Laptop, MemoryStick, LoaderCircle, Package, Plus, RefreshCw, RotateCw, Save, ScanText, Server, ShieldCheck, Sigma, Trash2, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -365,21 +365,24 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
     setBusy(true)
     action().then(() => { setConfirm(null); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
   }
-  return <div className="local-tool-details-panel">
-    <span className={`status-chip ${ready ? '' : 'is-configured'}`}>{t(ready ? 'Installed' : 'Not installed')}</span>
-    <p className="local-tool-note">{t('Marker reads the equations in your PDFs from the page image, so answers and tables get them as LaTeX instead of broken PDF text. It runs on this computer, and no file leaves it.')}</p>
-    <p className="local-tool-note">{t('About one Marker equation in fifty was misread in a test on three papers, and a misread equation looks correct. Equations that do not match the PDF’s own text are marked to check against the page.')}</p>
-    <dl className="local-tool-facts">
+  const offerInstall = !ready && !running && reader.install.available
+  return <div className="local-tool-details-panel tool-panel">
+    <p className="tool-lead">{t('Marker reads the equations in your PDFs from the page image, so answers and tables get them as LaTeX instead of broken PDF text.')}</p>
+    <ToolTraits items={[[<Laptop key="l" />, 'Runs on this computer'], [<ShieldCheck key="s" />, 'No file leaves it']]} />
+    {offerInstall && <section className="tool-install">
+      <HardDrive aria-hidden />
+      <div><b>{t('About 4.4 GB of disk · {gb} GB free', { gb: reader.disk_free_gb })}</b><span>{t('DEIXIS installs it into its data folder.')}</span></div>
+      <Button size="sm" onClick={() => setConfirm('install')}>{t('Install')}</Button>
+    </section>}
+    {!ready && !running && !reader.install.available && <p className="local-tool-note">{reader.install.unavailable_reason}<br /><a href={reader.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>}
+    {reader.installed && <ReaderProgress reader={reader} />}
+    <ToolCaveat>{t('About one Marker equation in fifty was misread in a test on three papers, and a misread equation looks correct. Equations that do not match the PDF’s own text are marked to check against the page.')}</ToolCaveat>
+    <ToolFacts foot={ready && !running ? <ToolUpdateCheck tool="marker" /> : null}>
       <dt>{t('Package')}</dt><dd><code className="local-tool-code">{reader.package}</code></dd>
       <dt>{t('License')}</dt><dd>{t('Code GPL-3.0; the models have their own license')}</dd>
       {reader.size_bytes > 0 && <><dt>{t('Size on disk')}</dt><dd>{formatBytes(reader.size_bytes)}</dd></>}
-      {!ready && <><dt>{t('Needs')}</dt><dd>{t('About 4.4 GB of disk · {gb} GB free', { gb: reader.disk_free_gb })}</dd></>}
-    </dl>
-    {reader.installed && <ReaderProgress reader={reader} />}
-    {ready && !running && <ToolUpdateCheck tool="marker" />}
-    {!ready && !running && (reader.install.available
-      ? <div className="actions"><Button variant="outline" size="sm" onClick={() => setConfirm('install')}>{t('Install')}</Button></div>
-      : <p className="local-tool-note">{reader.install.unavailable_reason}<br /><a href={reader.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
+      {!ready && !offerInstall && <><dt>{t('Needs')}</dt><dd>{t('About 4.4 GB of disk · {gb} GB free', { gb: reader.disk_free_gb })}</dd></>}
+    </ToolFacts>
     {job && <>
       {running
         ? <p className="local-tool-note local-tool-progress-head"><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Step {step} of {steps}: {what}', { step: job.step, steps: job.steps, what: t(installSteps[job.step - 1] ?? '') })}</p>
@@ -614,29 +617,45 @@ function useToolUpdate(tool: ToolUpdate['tool'], key: unknown = null) {
   return result?.error || !result?.latest ? null : result
 }
 
+// The three PDF tools' sheets share one layout: what the tool does, where it runs, how far its output can be trusted,
+// then its facts with the release check as their last row.
+function ToolTraits({ items }: { items: [ReactNode, string][] }) {
+  return <ul className="tool-traits">{items.map(([icon, label]) => <li key={label}>{icon}{t(label)}</li>)}</ul>
+}
+
+function ToolCaveat({ children }: { children: ReactNode }) {
+  return <section className="tool-caveat"><Info aria-hidden /><div><h4>{t('How accurate it is')}</h4><p>{children}</p></div></section>
+}
+
+function ToolFacts({ children, foot }: { children: ReactNode; foot?: ReactNode }) {
+  return <section className="tool-facts" aria-label={t('Details')}>
+    <dl>{children}</dl>
+    {foot}
+  </section>
+}
+
 function ToolUpdateCheck({ tool }: { tool: 'marker' | 'pymupdf' }) {
   const result = useToolUpdate(tool)
   if (!result?.installed) return null
   const stale = result.tested && result.installed !== result.tested
   return <>
-    <p className="local-tool-note" role="status">{result.update_available
-      ? t('Version {latest} comes with the next DEIXIS update.', { latest: result.latest ?? '' })
-      : t('Up to date.')}</p>
-    {stale && <p className="local-tool-note">{t('The installed Marker is {installed}, not {tested}. Remove it and install it again to get the tested version.', { installed: result.installed, tested: result.tested ?? '' })}</p>}
+    <p className={`tool-facts-foot${result.update_available ? '' : ' is-ok'}`} role="status">{result.update_available
+      ? <><Info aria-hidden />{t('Version {latest} comes with the next DEIXIS update.', { latest: result.latest ?? '' })}</>
+      : <><CircleCheck aria-hidden />{t('Up to date.')}</>}</p>
+    {stale && <p className="tool-facts-foot">{t('The installed Marker is {installed}, not {tested}. Remove it and install it again to get the tested version.', { installed: result.installed, tested: result.tested ?? '' })}</p>}
   </>
 }
 
 // PyMuPDF reads the text layer of every PDF; it comes with DEIXIS, so there is nothing to install.
 function PdfReaderDetails({ reader }: { reader: PdfReader }) {
-  return <div className="local-tool-details-panel">
-    <span className="status-chip">{t('Installed')}</span>
-    <p className="local-tool-note">{t('PyMuPDF reads the text, page numbers and layout of every PDF you add or DEIXIS fetches. It comes with DEIXIS, runs on this computer, and no file leaves it.')}</p>
-    <dl className="local-tool-facts">
+  return <div className="local-tool-details-panel tool-panel">
+    <p className="tool-lead">{t('PyMuPDF reads the text, page numbers and layout of every PDF you add or DEIXIS fetches.')}</p>
+    <ToolTraits items={[[<Package key="p" />, 'Comes with DEIXIS'], [<Laptop key="l" />, 'Runs on this computer'], [<ShieldCheck key="s" />, 'No file leaves it']]} />
+    <ToolFacts foot={<ToolUpdateCheck tool="pymupdf" />}>
       <dt>{t('Version')}</dt><dd>{reader.version}</dd>
       <dt>{t('MuPDF')}</dt><dd>{reader.mupdf_version}</dd>
       <dt>{t('License')}</dt><dd>AGPL-3.0</dd>
-    </dl>
-    <ToolUpdateCheck tool="pymupdf" />
+    </ToolFacts>
   </div>
 }
 
@@ -653,28 +672,32 @@ function OcrToolDetails({ tool, onChanged }: { tool: OcrTool; onChanged: () => P
     api.installOcr().then(() => onChanged()).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
   }
   const phase = { preparing: 'Preparing…', downloading: 'Downloading…', installing: 'Installing…' }[job?.phase ?? 'preparing']
-  return <div className="local-tool-details-panel">
-    <p className="local-tool-note">{t('Tesseract reads scanned PDF pages that have no selectable text when you choose Read with OCR on a source. It runs on this computer, no file leaves it, and the PDF is not changed.')}</p>
-    <p className="local-tool-note">{t('Text read by OCR is labelled wherever it is quoted. In a test on four scanned articles, 0.2–1.5% of characters were misread and equations were unusable, so check numbers and equations against the page.')}</p>
-    {tool.version && <dl className="local-tool-facts">
-      <dt>{t('Version')}</dt><dd>{tool.version}{ready && update && !update.update_available && <span className="local-tool-uptodate"> · {t('up to date')}</span>}</dd>
-      {tool.languages.length > 0 && <><dt>{t('Languages')}</dt><dd>{ocrLanguagesText(tool.languages)}</dd></>}
-      {tool.missing_languages.length > 0 && <><dt>{t('Missing')}</dt><dd>{ocrLanguagesText(tool.missing_languages)}</dd></>}
-    </dl>}
+  const upToDate = ready && update && !update.update_available
+  const canUpdate = ready && !running && update?.update_available && tool.can_install
+  return <div className="local-tool-details-panel tool-panel">
+    <p className="tool-lead">{t('Tesseract reads scanned PDF pages that have no selectable text when you choose Read with OCR on a source.')}</p>
+    <ToolTraits items={[[<Laptop key="l" />, 'Runs on this computer'], [<ShieldCheck key="s" />, 'No file leaves it'], [<FileLock key="f" />, 'The PDF is not changed']]} />
     {running
       ? <InstallProgress label={t(phase)} />
-      : !ready
-        ? (tool.can_install
-          ? <div className="actions"><Button size="sm" onClick={install} disabled={busy}>{t('Install')}</Button></div>
-          : <p className="local-tool-note">{t('Installing Tesseract needs Homebrew.')} <a href="https://brew.sh" target="_blank" rel="noopener noreferrer">brew.sh</a></p>)
-        : update?.update_available && tool.can_install && <div className="tool-update-row">
-          <span>{t('Version {latest} is available.', { latest: update.latest ?? '' })}</span>
-          <Button size="sm" onClick={install} disabled={busy}>{t('Update')}</Button>
-        </div>}
+      : !ready && (tool.can_install
+        ? <section className="tool-install">
+          <ScanText aria-hidden />
+          <div><b>{t('Installed with Homebrew')}</b><span>{t('DEIXIS runs the install command for you.')}</span></div>
+          <Button size="sm" onClick={install} disabled={busy}>{t('Install')}</Button>
+        </section>
+        : <p className="local-tool-note">{t('Installing Tesseract needs Homebrew.')} <a href="https://brew.sh" target="_blank" rel="noopener noreferrer">brew.sh</a></p>)}
     {job?.status === 'failed' && <>
       <p className="local-tool-error">{t('Install failed.')}</p>
       {job.output && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{job.output}</pre></details>}
     </>}
+    <ToolCaveat>{t('Text read by OCR is labelled wherever it is quoted. In a test on four scanned articles, 0.2–1.5% of characters were misread and equations were unusable, so check numbers and equations against the page.')}</ToolCaveat>
+    {tool.version && <ToolFacts foot={canUpdate
+      ? <div className="tool-facts-foot is-update"><span><Info aria-hidden />{t('Version {latest} is available.', { latest: update.latest ?? '' })}</span><Button size="sm" onClick={install} disabled={busy}>{t('Update')}</Button></div>
+      : upToDate ? <p className="tool-facts-foot is-ok" role="status"><CircleCheck aria-hidden />{t('Up to date.')}</p> : null}>
+      <dt>{t('Version')}</dt><dd>{tool.version}</dd>
+      {tool.languages.length > 0 && <><dt>{t('Languages')}</dt><dd>{ocrLanguagesText(tool.languages)}</dd></>}
+      {tool.missing_languages.length > 0 && <><dt>{t('Missing')}</dt><dd>{ocrLanguagesText(tool.missing_languages)}</dd></>}
+    </ToolFacts>}
   </div>
 }
 
@@ -1347,9 +1370,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     </>
   } else if (sel?.kind === 'equation-reader') {
     body = <>
-      {dmeta('equation-reader', readerStatus())}
-      <p className="foot-note is-ink">{t('Runs on this computer. DEIXIS installs it into its data folder when you choose Install.')}</p>
-      <div className="acts">{checkButton('equation-reader', 'Find it on this computer', () => loadReader(true))}</div>
+      <div className="tool-status">{dmeta('equation-reader', readerStatus())}{checkButton('equation-reader', 'Find it on this computer', () => loadReader(true), false, true)}</div>
       {reader && <EquationReaderDetails reader={reader} dark={dark} onChanged={reloadReader} />}
     </>
   } else if (sel?.kind === 'ocr-tool') {

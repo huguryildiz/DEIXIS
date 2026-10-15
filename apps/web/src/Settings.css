@@ -318,5 +318,33 @@
 .connection-sheet .ollama-pull-row input{flex:1;min-width:0}
 @keyframes install-sweep{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
 @media(prefers-reduced-motion:reduce){.install-progress-bar span{animation:none;width:100%;opacity:.5}}
-.tool-update-row{display:flex;width:100%;box-sizing:border-box;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:13px}
-.local-tool-uptodate{color:var(--muted)}
+/* PDF tool sheets (PyMuPDF, Tesseract, Marker): status with its check, lead, traits, install card, accuracy, facts. */
+.connection-sheet .tool-status{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.connection-sheet .tool-status>.notice{flex-basis:100%}
+.connection-sheet .tool-panel{gap:14px}
+.connection-sheet .tool-lead{margin:0;color:var(--ink);font-size:14px;line-height:1.55}
+.connection-sheet .tool-traits{display:flex;flex-wrap:wrap;gap:6px;margin:-4px 0 0;padding:0;list-style:none}
+.connection-sheet .tool-traits li{display:inline-flex;align-items:center;gap:5px;padding:3px 9px 3px 7px;border:1px solid var(--line);border-radius:999px;color:var(--ink-2);font-size:12px;line-height:1.45}
+.connection-sheet .tool-traits svg{flex:none;width:13px;height:13px;color:var(--ok-ink)}
+.connection-sheet .tool-install{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;box-sizing:border-box;padding:12px 14px;border:1px solid var(--accent-line);border-radius:10px;background:var(--accent-tint)}
+.connection-sheet .tool-install>svg{width:18px;height:18px;color:var(--accent)}
+.connection-sheet .tool-install>div{display:grid;gap:1px;min-width:0}
+.connection-sheet .tool-install b{color:var(--ink);font-size:13px;font-weight:600}
+.connection-sheet .tool-install span{color:var(--muted);font-size:12px;line-height:1.45}
+.connection-sheet .tool-caveat{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;width:100%;box-sizing:border-box;padding:12px 14px;border-radius:10px;background:var(--hover-surface)}
+.connection-sheet .tool-caveat>svg{width:16px;height:16px;margin-top:1px;color:var(--muted)}
+.connection-sheet .tool-caveat h4{margin:0 0 2px;color:var(--ink);font-size:13px;font-weight:600}
+.connection-sheet .tool-caveat p{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.55}
+.connection-sheet .tool-facts{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.connection-sheet .tool-facts dl{display:grid;grid-template-columns:minmax(84px,auto) minmax(0,1fr);margin:0;padding:0 14px;font-size:13px}
+.connection-sheet .tool-facts :is(dt,dd){margin:0;padding:8px 0;line-height:1.45}
+.connection-sheet .tool-facts dt{padding-right:16px;color:var(--muted)}
+.connection-sheet .tool-facts dd{color:var(--ink);overflow-wrap:anywhere}
+.connection-sheet .tool-facts dl>:nth-child(n+3){border-top:1px solid var(--line)}
+.connection-sheet .tool-facts .local-tool-code{padding:1px 6px;border-radius:5px;background:var(--hover-surface);font-size:12px}
+.connection-sheet .tool-facts-foot{display:flex;align-items:center;gap:7px;margin:0;padding:9px 14px;border-top:1px solid var(--line);background:var(--hover-surface);color:var(--ink-2);font-size:12.5px;line-height:1.45}
+.connection-sheet .tool-facts-foot svg{flex:none;width:14px;height:14px;color:var(--muted)}
+.connection-sheet .tool-facts-foot.is-ok svg{color:var(--ok-ink)}
+.connection-sheet .tool-facts-foot.is-update{justify-content:space-between;gap:12px;background:var(--accent-tint)}
+.connection-sheet .tool-facts-foot.is-update>span{display:inline-flex;align-items:center;gap:7px;color:var(--ink)}
+.connection-sheet .tool-facts-foot.is-update svg{color:var(--accent)}

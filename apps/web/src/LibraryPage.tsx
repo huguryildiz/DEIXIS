@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import {
-  ArrowUpDown, Check, ChevronLeft, ChevronRight, Download, Ellipsis, FileText, Filter, Folder, LibraryBig, Link2,
+  ArrowUpDown, Check, ChevronLeft, ChevronRight, Download, Ellipsis, FileText, Filter, Folder, LibraryBig, Link2, ListFilter,
   MessageSquare, PanelLeft, PanelRight, Plus, Search, SlidersHorizontal, Table2, Trash2, Upload, X,
 } from 'lucide-react'
 import {
@@ -58,6 +58,12 @@ const SORTS: Record<SortKey, string> = {
   added_new: 'Recently added', added_old: 'First added', cited: 'Most cited', year_new: 'Newest first', year_old: 'Oldest first', title: 'Title A–Z',
 }
 const PDF_FILTERS: Record<PdfFilter, string> = { all: 'All', text: 'PDF text', no_text: 'No PDF text', abstract: 'Abstract only', metadata: 'Metadata only' }
+// Relevant: the works a research kept (the user's own, included or candidate), plus works held by no research.
+// Search results nobody read or that a reading set aside stay in All works; the default shows only the relevant ones.
+type Scope = 'relevant' | 'all'
+const SCOPES: Record<Scope, string> = { relevant: 'Relevant', all: 'All' }
+const passesScope = (entry: LibraryEntry, scope: Scope, project: string | null) => scope === 'all' ? true
+  : project ? entry.relevant_research_ids.includes(project) : !entry.researches.length || entry.relevant_research_ids.length > 0
 const passesPdf = (entry: LibraryEntry, filter: PdfFilter) => filter === 'all' ? true : filter === 'text' ? entry.access_level === 'pdf_available'
   : filter === 'no_text' ? entry.access_level !== 'pdf_available' : filter === 'abstract' ? entry.access_level === 'abstract' : entry.access_level === 'metadata'
 
@@ -139,6 +145,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
   const [project, setProject] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [pdf, setPdf] = useState<PdfFilter>('all')
+  const [scope, setScope] = useState<Scope>('relevant')
   const [sort, setSort] = useState<SortKey>(readSort)
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(readPageSize)
@@ -311,6 +318,10 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
     writeStored(SORT_KEY, next)
     setPage(0)
   }
+  function chooseScope(next: Scope) {
+    setScope(next)
+    resetList()
+  }
   function choosePdf(next: PdfFilter) {
     setPdf(next)
     resetList()
@@ -339,7 +350,8 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
 
   // Grouping applies in All works; a chosen research is one group already.
   const grouped = grouping === 'research' && project === null
-  const inProject = useMemo(() => (project ? entries.filter(entry => entry.researches.some(r => r.id === project)) : entries), [entries, project])
+  const inResearch = useMemo(() => (project ? entries.filter(entry => entry.researches.some(r => r.id === project)) : entries), [entries, project])
+  const inProject = useMemo(() => inResearch.filter(entry => passesScope(entry, scope, project)), [inResearch, scope, project])
   const needle = query.trim().toLocaleLowerCase(uiLocale())
   const shown = useMemo(() => {
     const list = inProject.filter(entry => passesPdf(entry, pdf) && (!needle || [entry.title, authorsText(entry.authors), entry.venue ?? '',
@@ -380,7 +392,8 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
   }, [entries])
   const citationsReadAt = useMemo(() => entries.reduce<string | null>(
     (latest, entry) => (entry.cited_by_count_at && (!latest || entry.cited_by_count_at > latest) ? entry.cited_by_count_at : latest), null), [entries])
-  const heldBy = (researchId: string) => entries.filter(entry => entry.researches.some(r => r.id === researchId)).length
+  const heldBy = (researchId: string) => entries.filter(entry => entry.researches.some(r => r.id === researchId) && passesScope(entry, scope, researchId)).length
+  const allCount = entries.filter(entry => passesScope(entry, scope, null)).length
   const narrowed = needle !== '' || pdf !== 'all'
   const locked = busy !== null
 
@@ -731,7 +744,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
         <div className="pane lib-left">
           <div className="cols-list" role="group" aria-label={t('Show works')}>
             <button type="button" className={project === null ? 'on' : undefined} aria-pressed={project === null} onClick={() => chooseProject(null)}>
-              <span>{t('All works')}</span><em className="tnum">{view ? num(entries.length) : '–'}</em>
+              <span>{t('All works')}</span><em className="tnum">{view ? num(allCount) : '–'}</em>
             </button>
             <h6>{t('Research')}</h6>
             {researches.map(research => <button type="button" key={research.id} data-research={research.id} className={project === research.id ? 'on' : undefined} aria-pressed={project === research.id}
@@ -759,6 +772,20 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
               </DropdownMenuContent>
             </DropdownMenu>
             <DropdownMenu>
+              <DropdownMenuTrigger className={`ghost lib-scope${scope !== 'relevant' ? ' tint' : ''}`} aria-label={t('Filter works by relevance')}><ListFilter size={16} aria-hidden />{t('Scope: {scope}', { scope: t(SCOPES[scope]) })}</DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-auto library-menu">
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel className="lib-menu-h">{t('Scope')}</DropdownMenuLabel>
+                  {(['relevant', 'all'] as Scope[]).map(key => <DropdownMenuItem key={key} onClick={() => chooseScope(key)}>
+                    {scope === key ? <Check size={16} /> : <ListFilter size={16} />}<span className="library-tx">{t(SCOPES[key])}</span>
+                    <span className="library-menu-hint tnum">{num(inResearch.filter(e => passesScope(e, key, project)).length)}</span>
+                  </DropdownMenuItem>)}
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <p className="lib-scope-note">{t('Relevant: works you added, and works a reading included or kept as candidates. All adds search results that were not read or were set aside.')}</p>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
               <DropdownMenuTrigger className={`ghost lib-pdf${pdf !== 'all' ? ' tint' : ''}`} aria-label={t('Filter works by PDF text')}><Filter size={16} aria-hidden />{t('PDF: {filter}', { filter: t(PDF_FILTERS[pdf]) })}</DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-auto library-menu">
                 <DropdownMenuGroup>
@@ -773,7 +800,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
               </DropdownMenuContent>
             </DropdownMenu>
             <select className="lib-project-select" aria-label={t('Research')} value={project ?? ''} onChange={event => chooseProject(event.target.value || null)}>
-              <option value="">{t('All works')} ({num(entries.length)})</option>
+              <option value="">{t('All works')} ({num(allCount)})</option>
               {researches.map(r => <option key={r.id} value={r.id}>{r.title} ({num(heldBy(r.id))})</option>)}
             </select>
           </div>
@@ -828,6 +855,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
               {view !== null && !shown.length && <tr className="more-row lib-nomatch"><td colSpan={6}>
                 {narrowed
                   ? <>{t(needle && pdf !== 'all' ? 'No works match “{q}” with {pdf}.' : needle ? 'No works match “{q}”.' : 'No works match with {pdf}.', { q: query.trim(), pdf: t(PDF_FILTERS[pdf]) })} <button type="button" className="link" onClick={() => { setQuery(''); choosePdf('all') }}>{t('Clear search and filter')}</button></>
+                  : inResearch.length ? <>{t('No relevant work here yet.')} <button type="button" className="link" onClick={() => chooseScope('all')}>{t('Show all works')}</button></>
                   : t('No work of this research is in the Library now.')}
               </td></tr>}
             </tbody>

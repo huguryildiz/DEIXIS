@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D47 — The Library shows the works a research kept, and all works on request
+Status: accepted · Date: 2026-10-16 · Writer: Claude
+Context: A discovery run puts every search result in the research's corpus. On the owner's library one research held 742 works in the Library, of which the reading included 31 and kept 48 as abstract candidates; about 530 were never read because they ranked below the reading cap. The Library listed all of them with the same weight.
+Decision: `library_view` gives each work `relevant_research_ids`: the researches where the source was added by the user (upload, Zotero, Library), the current full-text decision is `include`, or the current abstract decision is `candidate` with no current full-text `criterion_not_met`. The Library's new Scope filter defaults to Relevant: in All works it shows works relevant to some research plus works held by no research (saved or removed ones); with a research chosen, the works relevant to it. The pane counts follow the filter. Scope: All lists every stored work as before. Nothing is deleted; unread results stay for the citation map, late full text and restores.
+Limits: Unresolved works (abstract or full text) appear only under All. The choice is not remembered between visits. Measured only on the owner's library (47 relevant of 743).
+
 ## D46 — "Continue without PDF": a work nobody can find a PDF for leaves the waiting list and is read from its abstract
 Status: accepted · Date: 2026-10-16 · Writer: Claude
 Context: A work no route found an open copy for stayed on "Waiting for your PDF" for good, and its "Find PDF" button repeated a search that had already failed. The owner asked for a way to say "I cannot find it, go on without it" (16 Oct).

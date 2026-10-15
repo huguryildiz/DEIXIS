@@ -791,6 +791,8 @@ export type LibraryEntry = {
   publication_type: string | null; doi: string | null; landing_url: string | null
   cited_by_count: number | null; cited_by_count_at: string | null; is_retracted: boolean | null; access_level: AccessLevel
   versions: LibraryVersion[]; researches: LibraryResearch[]; first_research_id: string | null; newest_source_at: string
+  // Researches this work is relevant to: added by the user, included, or kept as a candidate (unread search results are not).
+  relevant_research_ids: string[]
 }
 export type LibraryView = { entries: LibraryEntry[]; researches: LibraryResearch[]; counts: { works: number; versions: number; researches: number } }
 export type LibraryAddition = { work_id: string; research_id: string; source_version_id: string; access_level: AccessLevel; library: LibraryView }

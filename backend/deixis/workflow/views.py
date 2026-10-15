@@ -1020,10 +1020,24 @@ def library_view(store: Store) -> dict[str, Any]:
         " FROM library_items i JOIN source_versions v ON v.id = i.source_version_id ORDER BY v.created_at DESC"
     ).fetchall()
     saved = _library_items(conn)
+    # A source counts as relevant to its research when the user brought it, the full-text reading included it, or the
+    # abstract reading kept it as a candidate that no full-text reading rejected. Works the search found but never read,
+    # or read and set aside, stay listed; the Library only hides them by default.
+    relevant = {(r["research_id"], r["source_version_id"]) for r in conn.execute(
+        "SELECT m.research_id, m.source_version_id FROM corpus_memberships m WHERE m.removed_at IS NULL AND ("
+        " m.added_by != 'search'"
+        " OR EXISTS (SELECT 1 FROM stage_decisions d WHERE d.research_id = m.research_id"
+        "  AND d.source_version_id = m.source_version_id AND d.superseded_at IS NULL AND d.stage = 'fulltext' AND d.outcome = 'include')"
+        " OR (EXISTS (SELECT 1 FROM stage_decisions d WHERE d.research_id = m.research_id"
+        "  AND d.source_version_id = m.source_version_id AND d.superseded_at IS NULL AND d.stage = 'abstract' AND d.outcome = 'candidate')"
+        "  AND NOT EXISTS (SELECT 1 FROM stage_decisions d WHERE d.research_id = m.research_id"
+        "  AND d.source_version_id = m.source_version_id AND d.superseded_at IS NULL AND d.stage = 'fulltext'"
+        "  AND d.outcome = 'criterion_not_met')))"
+    )}
 
     works: dict[str, dict[str, Any]] = {}
     for row in [*rows, *saved_rows]:
-        work = works.setdefault(row["work_id"], {"versions": {}, "researches": {}})
+        work = works.setdefault(row["work_id"], {"versions": {}, "researches": {}, "relevant": set()})
         svid = row["source_version_id"]
         if svid not in work["versions"]:
             work["versions"][svid] = {
@@ -1043,6 +1057,8 @@ def library_view(store: Store) -> dict[str, Any]:
                 work["versions"][svid]["research_ids"].append(rid)
             if rid not in work["researches"]:
                 work["researches"][rid] = {"id": rid, "title": row["research_title"], "updated_at": row["research_updated_at"]}
+            if (rid, svid) in relevant:
+                work["relevant"].add(rid)
 
     entries = []
     for work_id, work in works.items():
@@ -1069,6 +1085,8 @@ def library_view(store: Store) -> dict[str, Any]:
             # The best reading depth any stored version of this work reaches; the panel lists each version separately.
             "access_level": max((v["access_level"] for v in versions), key=_ACCESS_ORDER.index),
             "researches": researches,
+            # The researches this work is relevant to (see `relevant` above), newest first.
+            "relevant_research_ids": [r["id"] for r in researches if r["id"] in work["relevant"]],
             "first_research_id": researches[0]["id"] if researches else None,
             "newest_source_at": max(max(v["source_created_at"] or "", (v["library_item"] or {}).get("added_at") or "")
                                     for v in versions),

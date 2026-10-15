@@ -1,5 +1,5 @@
-import { type ReactNode } from 'react'
-import { AlignLeft, Check, Copy, Download, Eye, EyeOff, FileCheck2 } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { Check, MessageSquareQuote, TriangleAlert, Copy, Download, Eye, EyeOff, FileCheck2 } from 'lucide-react'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
@@ -38,8 +38,11 @@ export function ReportPanel({ open, onOpenChange, dark, title, version, latestVe
   // Each style is previewed on one line, without the link, which would fill it.
   const preview = { ...(sample ?? SAMPLE_REFERENCE), doi: null, landing_url: null }
   const reviewLabel = t('Review with another model')
+  // A stale source selection is a chip on the meta line; its full sentence opens under the line on request.
+  const [staleOpen, setStaleOpen] = useState(false)
+  const stale = answer.applicability === 'stale_selection'
   const fmt = (format: string, detail: string) => <><FileTypeIcon format={format} /><b>{format}</b><span>{detail}</span></>
-  return <StackPanel name={`report:${answer.id}`} open={open} onClose={() => onOpenChange(false)} title={title} icon={AlignLeft}
+  return <StackPanel name={`report:${answer.id}`} open={open} onClose={() => onOpenChange(false)} title={title} icon={MessageSquareQuote}
     className={`report-panel report-sheet${dark ? ' dark' : ''}`} actions={<div className="report-toolbar-actions">
       {versions.length > 1 && <Select value={answer.id} onValueChange={value => { if (value && value !== answer.id) onVersion(value as string) }}>
         <SelectTrigger className="report-select" aria-label={t('Version')}><SelectValue>{(value: string) => `V${versions.find(v => v.id === value)?.version ?? version}`}</SelectValue></SelectTrigger>
@@ -85,8 +88,10 @@ export function ReportPanel({ open, onOpenChange, dark, title, version, latestVe
             <span>{t('Report')} · V{version}{version < latestVersion ? ` ${t('(earlier version)')}` : ''}</span><span aria-hidden>·</span>
             <time dateTime={answer.created_at}>{new Date(answer.created_at).toLocaleDateString(uiLocale(), { dateStyle: 'long' })}</time><span aria-hidden>·</span>
             <span>{t(cited === 1 ? '{n} source' : '{n} sources', { n: count(cited) })}</span>
+            {stale && <button type="button" className="badge-s v-part meta-alert" aria-expanded={staleOpen} onClick={() => setStaleOpen(o => !o)}><TriangleAlert size={11} aria-hidden />{t('Source selection changed')}</button>}
             {verdicts.map(([v, n]) => <span key={v} className={`badge-s v-${verdictTones[v]}`} title={t('The reviewer model’s reading of each claim against its cited passages; it is not independent verification.')}>{v === 'supported' && <Check size={11} aria-hidden />}{count(n)} {t(verdictLabels[v])}</span>)}
           </div>
+          {stale && staleOpen && <p className="meta-alert-detail">{t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}</p>}
         </header>
         {changes}
         {children}

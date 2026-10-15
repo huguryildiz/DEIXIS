@@ -322,15 +322,17 @@ function auditStyle(pair: Pair, property: string, differs: boolean) {
 export function checkType(pair: Pair, m: Side): string[] {
   if (!m.mock || !m.app) return []
   const out: string[] = []
-  const fm = normaliseFamily(m.mock.style['font-family']), fa = normaliseFamily(m.app.style['font-family'])
-  if (fm !== fa) out.push(`${pair.id}: font-family mockup ${fm} app ${fa}`)
   const freeStyle = new Set(STYLE_EXCEPTIONS.filter(e => e.pairs.includes(baseId(pair.id))).flatMap(e => e.properties))
+  const fm = normaliseFamily(m.mock.style['font-family']), fa = normaliseFamily(m.app.style['font-family'])
+  if (freeStyle.has('font-family')) auditStyle(pair, 'font-family', fm !== fa)
+  else if (fm !== fa) out.push(`${pair.id}: font-family mockup ${fm} app ${fa}`)
   for (const k of ['font-size', 'font-weight', 'line-height', 'text-transform']) {
     if (freeStyle.has(k)) { auditStyle(pair, k, px(m.mock.style[k]) !== px(m.app.style[k])); continue }
     if (px(m.mock.style[k]) !== px(m.app.style[k])) out.push(`${pair.id}: ${k} mockup ${m.mock.style[k]} app ${m.app.style[k]}`)
   }
   const ls = (v: string) => (v === 'normal' ? '0px' : px(v))
-  if (ls(m.mock.style['letter-spacing']) !== ls(m.app.style['letter-spacing'])) {
+  if (freeStyle.has('letter-spacing')) auditStyle(pair, 'letter-spacing', ls(m.mock.style['letter-spacing']) !== ls(m.app.style['letter-spacing']))
+  else if (ls(m.mock.style['letter-spacing']) !== ls(m.app.style['letter-spacing'])) {
     out.push(`${pair.id}: letter-spacing mockup ${m.mock.style['letter-spacing']} app ${m.app.style['letter-spacing']}`)
   }
   return out

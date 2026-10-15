@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
-import { BookOpen, CircleCheck, CircleDashed, CircleMinus, ExternalLink, FileSearch, Info, RotateCw, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
+import { BookOpen, CircleCheck, CircleDashed, CircleMinus, ExternalLink, FileSearch, FileText, Info, RotateCw, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, ApiError, type AttachOutcome, type PersonFile, type PersonFiles, type ResearchView, type WaitingMatch, type WaitingRow, type WaitingView, type WaitingWork, type ZoteroNote, type ZoteroSource } from './api'
 import { ConnectionIcon } from './connectionIcons'
@@ -77,6 +77,14 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
   const uploadFor = (row: WaitingRow) => { rowWork.current = row.work_id; rowFile.current?.click() }
 
   const reading = matching
+
+  // A new file's match card sits below the whole list; bring it into view so the upload visibly did something.
+  const matchesRef = useRef<HTMLElement>(null)
+  const shown = useRef(0)
+  useEffect(() => {
+    if (proposals.length > shown.current) matchesRef.current?.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    shown.current = proposals.length
+  }, [proposals.length])
 
   const update = (key: string, change: Partial<Proposal>) => setProposals(old => old.map(p => (p.key === key ? { ...p, ...change } : p)))
   const drop = (key: string) => setProposals(old => old.filter(p => p.key !== key))
@@ -229,7 +237,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
       <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden aria-label={t('Choose PDF files')} onChange={e => { matchFiles(Array.from(e.target.files ?? [])); e.target.value = '' }} />
     </div>}
 
-    {proposals.length > 0 && <section className="plist waiting-matches" aria-labelledby="waiting-matches-title">
+    {proposals.length > 0 && <section ref={matchesRef} className="plist waiting-matches" aria-labelledby="waiting-matches-title">
       <h4><span id="waiting-matches-title">{t('Check where each file goes')}</span><span className="tnum">{proposals.length}</span></h4>
       {proposals.map(p => <MatchPanel key={p.key} proposal={p} rows={rows} work={workOf(p)} busy={busy}
         onWork={workId => update(p.key, { workId, version: '', refused: null })} onVersion={version => update(p.key, { version, refused: null })}
@@ -284,11 +292,16 @@ function YourFiles({ researchId, files, busy, onChanged }: { researchId: string;
     </Notice>}
     <ul className="person-files-rows" aria-label={t('Files you added')}>
       {files.rows.map(row => <li key={row.asset_id} className={`is-${row.state}`}>
-        <strong className="pdf-ready-title">{row.title}</strong>
-        <span className="person-file-facts">
-          <span className={`ref-pill is-${versionTones[row.version_label ?? ''] ?? 'unstated'}`}>{versionText(row.version_label)}</span>
-          {row.filename && <span className="person-file-name">{row.filename}</span>}
-        </span>
+        <div className="person-file-head">
+          <span className="file-glyph" aria-hidden><FileText size={16} /></span>
+          <span className="person-file-main">
+            <strong className="pdf-ready-title">{row.title}</strong>
+            <span className="person-file-facts">
+              <span className={`ref-pill is-${versionTones[row.version_label ?? ''] ?? 'unstated'}`}>{versionText(row.version_label)}</span>
+              {row.filename && <span className="person-file-name" title={row.filename}>{row.filename}</span>}
+            </span>
+          </span>
+        </div>
         <PersonFileState row={row} researchId={researchId} />
         {row.state === 'included' && row.quotes.length > 0 && <ul className="person-file-quotes" aria-label={t('Quotes code found on their pages')}>
           {row.quotes.map(q => <li key={`${q.part}-${q.quote}`}>
@@ -336,7 +349,11 @@ function MatchPanel({ proposal: p, rows, work, busy, onWork, onVersion, onConfir
   const basis = m?.basis === 'doi' ? t('Its first pages name this work’s DOI.') : m?.basis === 'title' ? t('Its first pages carry this work’s title.') : t('Its first pages name no work a file can go to here. Choose the work it belongs to.')
   const name = `version-${p.key}`
   return <div className="waiting-match" role="group" aria-label={t('Where {file} goes', { file: p.file.name })}>
-    <p className="waiting-file"><strong>{p.file.name}</strong>{facts && <small>{facts}</small>}</p>
+    <div className="waiting-file">
+      <span className="file-glyph" aria-hidden><FileText size={16} /></span>
+      <span className="waiting-file-text"><strong title={p.file.name}>{p.file.name}</strong>{facts && <small>{facts}</small>}</span>
+    </div>
+    <div className="waiting-target">
     <p className="waiting-basis">{basis}</p>
     {m?.work
       ? <p className="waiting-work">{m.work.title}</p>
@@ -346,14 +363,19 @@ function MatchPanel({ proposal: p, rows, work, busy, onWork, onVersion, onConfir
         {rows.filter(r => m?.candidates?.some(w => w.work_id === r.work_id)).map(r => <option key={r.work_id} value={r.work_id}>{`${r.place}. ${r.title}`}</option>)}
         {(m?.candidates ?? []).filter(w => !rows.some(r => r.work_id === w.work_id)).sort((a, b) => a.title.localeCompare(b.title)).map(w => <option key={w.work_id} value={w.work_id}>{t('{title} (not waiting)', { title: w.title })}</option>)}
       </select>}
+    </div>
     {work && <fieldset className="waiting-versions">
       <legend>{t('Which version is this file? Choose one.')}</legend>
       {work.versions.map(v => <label key={v.source_version_id} className={v.has_pdf ? 'is-disabled' : undefined}>
         <input type="radio" name={name} value={v.source_version_id} checked={p.version === v.source_version_id} disabled={v.has_pdf} onChange={() => onVersion(v.source_version_id)} />
-        <span className={`ref-pill is-${versionTones[v.version_label ?? ''] ?? 'unstated'}`}>{versionText(v.version_label)}</span>
-        <span className="waiting-version-facts">{[v.year, v.publication_type, v.doi].filter(Boolean).join(' · ')}</span>
-        {v.proposed && <small className="waiting-version-note">{t('named by the file')}</small>}
-        {v.has_pdf && <small className="waiting-version-note">{t('already has a PDF')}</small>}
+        <span className="waiting-version-body">
+          <span className="waiting-version-top">
+            <span className={`ref-pill is-${versionTones[v.version_label ?? ''] ?? 'unstated'}`}>{versionText(v.version_label)}</span>
+            {v.proposed && <small className="waiting-version-tag">{t('named by the file')}</small>}
+            {v.has_pdf && <small className="waiting-version-note">{t('already has a PDF')}</small>}
+          </span>
+          <span className="waiting-version-facts">{[v.year, v.publication_type, v.doi].filter(Boolean).join(' · ')}</span>
+        </span>
       </label>)}
     </fieldset>}
     {work && !p.refused && <AttachNote work={work} version={p.version} hasText={m?.has_text_layer ?? null} />}

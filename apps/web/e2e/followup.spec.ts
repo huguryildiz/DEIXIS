@@ -235,9 +235,9 @@ test('02 new records, notices, identity and publication/local dates stay separat
   await panel(page).getByText('Notices (1)', { exact: true }).click()
   await expect(panel(page).locator(`[data-item-id="${found.find(item => item.kind === 'notice')!.id}"]`)).toBeVisible()
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: server.url })
-  await button(row, 'Copy DOI').click()
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(dated.doi)
-  await expect(page.locator('.toast')).toContainText('DOI copied.')
+  await button(row, 'Copy DOI link').click()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(`https://doi.org/${dated.doi}`)
+  await expect(page.locator('.toast')).toContainText('DOI link copied.')
 })
 
 test('03 dismissal records its reason and repeat reads do not reannounce it', async ({ page }) => {

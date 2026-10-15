@@ -7,6 +7,7 @@ import { downloadTableCsv } from '../tableCsv'
 import { useCitationStyle } from '../citations'
 import { useToast } from '../Toast'
 import { t, uiLanguage } from '../i18n'
+import { tableTitle } from '../labels'
 import { downloadReportMarkdown } from './reportMarkdown'
 
 // Bibliography files for reference managers, downloaded from the local API. Cited sources are the ones `answerId` cites
@@ -64,7 +65,7 @@ export function ExportMenu({ researchId, report, sources, tables, included, cite
         {link(answerDocxUrl(researchId, report.answer.id, lang, style), 'DOCX', t('Word document'))}
       </DropdownMenuGroup>}
       {table && <DropdownMenuGroup>
-        <DropdownMenuLabel>{exportable.length > 1 ? `${t('Evidence table')} · ${table.title}` : t('Evidence table')}</DropdownMenuLabel>
+        <DropdownMenuLabel>{exportable.length > 1 ? `${t('Evidence table')} · ${tableTitle(table.title)}` : t('Evidence table')}</DropdownMenuLabel>
         <DropdownMenuItem className="research-export-item menu-fmt" onClick={() => { void tableCsv(table) }}>{row('CSV', t('Comma-separated values'))}</DropdownMenuItem>
         {link(tableExportUrl(researchId, table.id, 'xlsx', lang, style), 'XLSX', t('Excel workbook'))}
         {link(tableExportUrl(researchId, table.id, 'docx', lang, style), 'DOCX', t('Word table'))}

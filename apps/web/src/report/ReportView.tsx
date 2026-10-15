@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AlignLeft, ChevronDown, ChevronRight, Copy, Download, FileText, Link, RotateCw, FileCheck2, Table2, TriangleAlert } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, Download, FileText, Link, RotateCw, FileCheck2, Table2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
@@ -358,7 +358,7 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
     </DropdownMenu>
   </div> : undefined
   const runActive = view.runs.some(run => ['queued', 'running', 'pause_requested'].includes(run.status))
-  return <><StackPanel name="ereport" open onClose={onClose} title={panelTitle} icon={AlignLeft} className={`report-panel report-sheet erep-panel${dark ? ' dark' : ''}`} actions={actions}>
+  return <><StackPanel name="ereport" open onClose={onClose} title={panelTitle} icon={FileText} className={`report-panel report-sheet erep-panel${dark ? ' dark' : ''}`} actions={actions}>
     <p className="sr-only">{t('Evidence report')}</p>
     <div className="report-scroll">
     <article ref={documentRoot} className="report-document evidence-report-document" data-report-id={reportId}>

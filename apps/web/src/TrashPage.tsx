@@ -171,14 +171,14 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     }
     for (const table of trash.tables) {
       entries.push({
-        key: table.id, at: table.trashed_at, kind: t('Evidence table'), icon: Table2, title: tableTitle(table.title), researchId: table.research_id, researchTitle: table.research_title, year: 0,
+        key: table.id, at: table.trashed_at, kind: t('Evidence table'), icon: Table2, title: tableTitle(table.title, table.research_title), researchId: table.research_id, researchTitle: table.research_title, year: 0,
         note: [table.research_title, t(table.rows === 1 ? '{n} row' : '{n} rows', { n: table.rows }), t(table.columns === 1 ? '{n} column' : '{n} columns', { n: table.columns }),
           t(table.cells === 1 ? '{n} cell with a value' : '{n} cells with a value', { n: table.cells }),
           table.human_edits > 0 && t(table.human_edits === 1 ? '{n} edit of yours' : '{n} edits of yours', { n: table.human_edits }),
           t('Moved to Trash {date}', { date: dateText(table.trashed_at) })].filter(Boolean).join(' · '),
         restore: () => void run(table.id, async () => { await api.restoreTable(table.research_id, table.id, table.version); return t('Table restored to {research}.', { research: table.research_title }) }, 'Could not restore the table: {message}'),
         remove: {
-          key: table.id, question: t('Delete “{title}” permanently?', { title: tableTitle(table.title) }),
+          key: table.id, question: t('Delete “{title}” permanently?', { title: tableTitle(table.title, table.research_title) }),
           detail: t('Its rows, columns, {cells} cells with a value and {edits} edits of yours are deleted. Passages, files and answers stay. This cannot be undone.', { cells: table.cells, edits: table.human_edits }),
           confirm: () => void run(table.id, async () => { await api.purgeTable(table.id); return t('Table permanently deleted.') }, 'Could not delete the table: {message}'),
         },

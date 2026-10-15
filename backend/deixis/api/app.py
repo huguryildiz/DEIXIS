@@ -62,6 +62,7 @@ from deixis.providers.registry import CONNECTORS, configured_providers, provider
 from deixis.storage import db
 from deixis.workflow import adjudication, fulltext
 from deixis.workflow import bibliography
+from deixis.exports.text import attachment, download_name
 from deixis.workflow import audit as audit_rules
 from deixis.workflow import prisma_s
 from deixis.workflow import queue as human_queue
@@ -1917,11 +1918,11 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         data = prisma_s.export(store, research_id)
-        name = f"deixis-prisma-s-{research_id}-r{data['scope_revision']}"
+        title, suffixes = store.research(research_id)["title"], ("PRISMA-S", f"r{data['scope_revision']}")
         if format == "md":
             return Response(prisma_s.markdown(data), media_type="text/markdown; charset=utf-8",
-                            headers={"Content-Disposition": f'attachment; filename="{name}.md"'})
-        return JSONResponse(data, headers={"Content-Disposition": f'attachment; filename="{name}.json"'})
+                            headers={"Content-Disposition": attachment(download_name(title, *suffixes, extension="md"))})
+        return JSONResponse(data, headers={"Content-Disposition": attachment(download_name(title, *suffixes, extension="json"))})
 
     @app.get("/api/researches/{research_id}/answers/{answer_id}/method")
     async def answer_method(research_id: str, answer_id: str, request: Request) -> dict[str, Any]:
@@ -2329,7 +2330,7 @@ def create_app(
             raise HTTPException(422, "No source is included" if sources == "included" else "The answer cites no source still in this research")
         text = bibliography.to_bibtex(chosen) if fmt == "bibtex" else bibliography.to_ris(chosen)
         name = bibliography.filename(store.research(research_id)["title"], sources, fmt)
-        return Response(text, media_type=bibliography.MEDIA_TYPES[fmt], headers={"Content-Disposition": f'attachment; filename="{name}"'})
+        return Response(text, media_type=bibliography.MEDIA_TYPES[fmt], headers={"Content-Disposition": attachment(name)})
 
     @app.get("/api/researches/{research_id}/passages/{passage_id}")
     async def get_passage(research_id: str, passage_id: str, request: Request) -> dict[str, Any]:

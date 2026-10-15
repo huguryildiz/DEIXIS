@@ -59,6 +59,12 @@
 .app .settings-page .lang button.on{background:var(--selected-surface);color:var(--ink);font-weight:600}
 .app .settings-page .lang button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .app .settings-page .lang button:disabled{cursor:default;opacity:.55}
+/* Research rows: label, explanation and control in three aligned columns. */
+.app .settings-page .set-research>div{display:grid;grid-template-columns:220px minmax(0,1fr) 180px;align-items:center;gap:16px}
+.app .settings-page .set-research>div>b,.app .settings-page .set-research>div>p{min-width:0}
+.app .settings-page .set-research>div>.lang,.app .settings-page .set-research>div>.select{justify-self:end}
+.app .settings-page .set-research>div>.select{width:72px}
+@media(max-width:620px){.app .settings-page .set-research>div{grid-template-columns:minmax(0,1fr) auto;gap:6px 12px}.app .settings-page .set-research>div>p{grid-column:1/-1;grid-row:2}}
 
 /* Status pill (mockup `.st`). */
 :is(.app .settings-page,.connection-sheet) .st{flex:none;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:500;line-height:1.5;white-space:nowrap}
@@ -117,7 +123,7 @@
 .app .settings-page .doc-list button:hover{background:var(--hover-surface)}
 .app .settings-page .doc-list button.on{background:var(--accent-tint)}
 .app .settings-page .doc-list button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.app .settings-page .doc-list button>span:first-child{display:grid;flex:1;min-width:0}
+.app .settings-page .doc-list button>span:not(.connection-icon):not(.st){display:grid;flex:1;min-width:0}
 .app .settings-page .doc-list b{font-size:13.5px;font-weight:500}
 .app .settings-page .doc-list small{color:var(--muted);font-size:12px}
 
@@ -162,8 +168,12 @@
 
 /* ── Connection sheet (mockup `.sheet` 420px over a scrim; body is the `.pad.detail` column) ──────────── */
 .detail-sheet.connection-sheet{width:min(420px,100vw);gap:0}
-.connection-sheet [data-slot=sheet-title]{display:flex;align-items:center;gap:8px}
-.connection-sheet [data-slot=sheet-title] svg{flex:none;color:var(--muted)}
+.connection-sheet [data-slot=sheet-header].sheet-head{flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;min-height:68px;padding:14px 52px 14px 20px}
+.connection-sheet .sheet-mark{display:grid;place-items:center;flex:none;width:36px;height:36px;border:1px solid var(--line);border-radius:9px;background:var(--sidebar-surface)}
+.connection-sheet .sheet-mark svg{flex:none;width:18px;height:18px;color:var(--ink-2)}
+.connection-sheet .sheet-head-text{display:grid;gap:1px;min-width:0}
+.connection-sheet .sheet-head-text [data-slot=sheet-title]{margin:0;color:var(--ink);font-size:15px;font-weight:600;letter-spacing:-.005em;line-height:1.3}
+.connection-sheet .sheet-head-text [data-slot=sheet-description]{margin:0;color:var(--muted);font-size:12.5px;line-height:1.4}
 .connection-sheet .connection-body{flex:1;min-height:0;overflow:auto}
 .connection-sheet .mk .foot-note.is-ink{color:var(--ink-2)}
 .connection-sheet .mk .dmeta .spin{vertical-align:-2px}
@@ -225,6 +235,57 @@
 .connection-sheet .way-more>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .app .settings-page #profile{scroll-margin-top:24px}
 
+/* Source and reference sheets: a lead line, then cards for what can be done, then a facts list. */
+.connection-sheet .mk.pad.detail{gap:14px;padding:18px 20px 32px}
+.connection-sheet .mk .sheet-lead{margin:0;color:var(--ink-2);font-size:13.5px;line-height:1.55}
+.connection-sheet .mk .sheet-lead a,.connection-sheet .sheet-card-text a{color:var(--accent);text-decoration:underline;text-decoration-color:var(--accent-line);text-underline-offset:3px}
+.connection-sheet .sheet-card{display:grid;gap:12px;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--paper)}
+.connection-sheet .sheet-card .acts{margin:0}
+.connection-sheet .sheet-card-text{margin:0;color:var(--muted);font-size:12.5px;line-height:1.55}
+.connection-sheet .sheet-card-title{margin:0;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+.connection-sheet .sheet-card-foot{margin:0 -16px -16px;padding:11px 16px 12px;border-top:1px solid var(--line);border-radius:0 0 12px 12px;background:var(--sidebar-surface);color:var(--muted);font-size:12.5px;line-height:1.55}
+.connection-sheet .key-signup a{display:inline-flex;align-items:center;gap:2px;font-weight:500}
+.connection-sheet .key-signup a svg{width:13px;height:13px}
+.connection-sheet .key-box .lbl{display:grid;gap:6px;color:var(--ink);font-size:12.5px;font-weight:500}
+.connection-sheet .key-box .field{height:38px;padding:0 12px;border-radius:8px;font-size:13px}
+.connection-sheet .key-box .field::placeholder{color:var(--muted);letter-spacing:.01em}
+.connection-sheet .key-note{display:flex;gap:6px;align-items:flex-start;margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.connection-sheet .key-note svg{flex:none;width:13px;height:13px;margin-top:2px;color:var(--ok-ink)}
+.connection-sheet .sheet-facts{display:grid;margin:0;border-radius:12px;background:var(--sidebar-surface)}
+.connection-sheet .sheet-facts>div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:11px 16px}
+.connection-sheet .sheet-facts>div+div{border-top:1px solid var(--line)}
+.connection-sheet .sheet-facts dt{margin:0;color:var(--muted);font-size:12.5px;font-weight:400}
+.connection-sheet .sheet-facts dd{margin:0;color:var(--ink);font-size:13px;font-weight:500;text-align:right}
+.connection-sheet .sheet-facts dd a{color:var(--accent);text-decoration:underline;text-decoration-color:var(--accent-line);text-underline-offset:3px}
+.connection-sheet .zotero-route.sheet-card{gap:12px;padding:16px}
+.connection-sheet .zotero-route-head{justify-content:flex-start}
+.connection-sheet .zotero-route-head h3{flex:1;min-width:0}
+.connection-sheet .route-ico{display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:7px;background:var(--sidebar-surface);color:var(--ink-2)}
+.connection-sheet .route-ico svg{width:15px;height:15px}
+.connection-sheet .zotero-route .local-tool-details-panel{display:grid;gap:10px}
+.connection-sheet .zotero-route .local-tool-facts{gap:6px 14px;margin:0;font-size:12.5px}
+.connection-sheet .zotero-route .local-tool-facts dt{margin:0;font-weight:400}
+.connection-sheet .zotero-route .local-tool-facts dd{color:var(--ink-2)}
+.connection-sheet .zotero-route .local-tool-facts dd.local-tool-path{margin:0;padding:4px 8px;font-size:11.5px}
+.connection-sheet .local-tool-note.is-callout{margin:0;padding:10px 12px;border:1px solid var(--warn-line);border-radius:8px;background:var(--warn-surface);color:var(--warn-ink);line-height:1.55}
+.connection-sheet .ref-drop{display:grid;justify-items:center;gap:6px;padding:28px 20px 22px;border:1.5px dashed var(--strong-line);border-radius:12px;background:var(--sidebar-surface);text-align:center;transition:border-color .15s ease,background-color .15s ease}
+.connection-sheet .ref-drop.is-over{border-color:var(--accent);background:var(--accent-tint)}
+.connection-sheet .ref-drop-ico{display:grid;place-items:center;width:44px;height:44px;margin-bottom:4px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--accent)}
+.connection-sheet .ref-drop-ico svg{width:20px;height:20px}
+.connection-sheet .ref-drop-title{margin:0;color:var(--ink);font-size:13.5px;font-weight:600}
+.connection-sheet .ref-drop-sub{margin:0 0 8px;color:var(--muted);font-size:12.5px}
+.connection-sheet .reference-import{display:grid;gap:14px}
+.connection-sheet .ref-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin:2px 0 0;overflow:hidden;border:1px solid var(--line);border-radius:10px;background:var(--line)}
+.connection-sheet .ref-stats>div{display:grid;align-content:space-between;gap:4px;padding:10px 12px;background:var(--paper)}
+.connection-sheet .ref-stats dt{margin:0;color:var(--muted);font-size:11px;font-weight:400}
+.connection-sheet .ref-stats dd{margin:0;color:var(--ink);font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+@media(max-width:420px){.connection-sheet .ref-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.connection-sheet .ref-how ul{display:grid;gap:12px;margin:0;padding:0;list-style:none}
+.connection-sheet .ref-how li{display:flex;gap:10px;align-items:flex-start}
+.connection-sheet .ref-how li>svg{flex:none;width:16px;height:16px;margin-top:1px;color:var(--accent)}
+.connection-sheet .ref-how li p{display:grid;gap:2px;margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.connection-sheet .ref-how li b{color:var(--ink);font-size:13px;font-weight:600}
+
 /* This computer: chip, memory and a disk meter in one bordered card, three cells on wide screens, stacked on phones. */
 .app .settings-page .machine-card{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .app .settings-page .machine-cell{display:flex;gap:10px;align-items:flex-start;padding:14px 16px;min-width:0}
@@ -240,13 +301,13 @@
 /* Brand marks keep their shapes but lose their colours: coloured parts take the ink, white cut-outs take the page,
    so the status pill stays the only colour on a tile. The SerpApi mark is a bitmap and is greyed instead. */
 .app .settings-page .conn-title{display:flex;align-items:center;gap:8px;min-width:0}
-:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon{width:16px;height:16px;color:var(--ink);opacity:.85}
+:is(.app .settings-page .conn,.app .settings-page .doc-list,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet .sheet-mark) .connection-icon{width:16px;height:16px;color:var(--ink);opacity:.85}
 .app .settings-page .co-mark .connection-icon{width:18px;height:18px;color:currentColor;opacity:1}
-:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [fill]:not([fill=none]){fill:currentColor}
-:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [stroke]:not([stroke=none]){stroke:currentColor}
-:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [fill="#fff"]{fill:var(--paper)}
-:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [stroke="#fff"]{stroke:var(--paper)}
-:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon img{filter:grayscale(1) contrast(1.2)}
+:is(.app .settings-page .conn,.app .settings-page .doc-list,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet .sheet-mark) .connection-icon [fill]:not([fill=none]){fill:currentColor}
+:is(.app .settings-page .conn,.app .settings-page .doc-list,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet .sheet-mark) .connection-icon [stroke]:not([stroke=none]){stroke:currentColor}
+:is(.app .settings-page .conn,.app .settings-page .doc-list,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet .sheet-mark) .connection-icon [fill="#fff"]{fill:var(--paper)}
+:is(.app .settings-page .conn,.app .settings-page .doc-list,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet .sheet-mark) .connection-icon [stroke="#fff"]{stroke:var(--paper)}
+:is(.app .settings-page .conn,.app .settings-page .doc-list,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet .sheet-mark) .connection-icon img{filter:grayscale(1) contrast(1.2)}
 .app .settings-page .opts .connection-icon{margin-top:3px}
 .app .settings-page .opts label.is-disabled .connection-icon{opacity:.4}
 

@@ -12,7 +12,7 @@ import { dateText, timeText } from './labels'
 const foundByLabels: Record<Watch['kind'], string> = { protocol_queries: 'search queries', citing_works: 'citing works' }
 
 // The records a follow-up found (mockup `.rec`): the title, when it was published and first seen here and which
-// follow-up found it, then Open at publisher, Copy DOI and Dismiss with an optional reason.
+// follow-up found it, then Open at publisher, Copy DOI link and Dismiss with an optional reason.
 export function ItemList({ items, researchId, watches, reload }: { items: WatchItem[]; researchId: string; watches: Watch[]; reload: () => Promise<void> }) {
   return <ul className="followup-items">{items.map(item => <Item key={item.id} item={item} items={items} researchId={researchId} watches={watches} reload={reload} />)}</ul>
 }
@@ -24,7 +24,7 @@ function Item({ item, items, researchId, watches, reload }: { item: WatchItem; i
   const record = item.record
   const url = item.landing_url ?? (item.doi ? `https://doi.org/${item.doi}` : null)
   const copyDoi = async () => {
-    try { await navigator.clipboard.writeText(item.doi!); toast('success', t('DOI copied.')) }
+    try { await navigator.clipboard.writeText(`https://doi.org/${item.doi!.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '')}`); toast('success', t('DOI link copied.')) }
     catch { toast('error', t('The DOI could not be copied: {doi}', { doi: item.doi! })) }
   }
   const finders = [...new Set(item.found_by.flatMap(entry => {
@@ -52,7 +52,7 @@ function Item({ item, items, researchId, watches, reload }: { item: WatchItem; i
       <button type="button" className="ghost" onClick={() => setDismissing(false)}>{t('Cancel')}</button>
     </form> : <div className="rowacts">
       {url ? <a className="followup-publisher" href={url} target="_blank" rel="noreferrer"><Link aria-hidden />{t('Open at publisher')}</a> : <><button type="button" disabled aria-describedby={`publisher-reason-${item.id}`}><Link aria-hidden />{t('Open at publisher')}</button><span id={`publisher-reason-${item.id}`} className="foot-note">{t('No publisher URL or DOI was returned.')}</span></>}
-      {item.doi && <button type="button" onClick={() => { void copyDoi() }}><Copy aria-hidden />{t('Copy DOI')}</button>}
+      {item.doi && <button type="button" onClick={() => { void copyDoi() }}><Copy aria-hidden />{t('Copy DOI link')}</button>}
       {item.status === 'new' && <button type="button" disabled={dismiss.locked} aria-describedby={dismiss.locked ? `dismiss-reason-${item.id}` : undefined} onClick={() => setDismissing(true)}><X aria-hidden />{t('Dismiss')}</button>}
     </div>}
     {dismiss.locked && <small id={`dismiss-reason-${item.id}`}>{t('Resolve the pending command before starting another.')}</small>}

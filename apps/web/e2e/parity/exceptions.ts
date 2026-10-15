@@ -414,6 +414,8 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     note: 'The closing note sits in a soft box with an info icon before it, so its text starts after the icon and the box padding and is narrower. y and height are compared.' },
   { id: 'evidence-grid-card', rule: 'owner request 15 Oct 2026 (premium evidence table: the grid is a card inset 12px from the panel edge, roomier cells)', pairs: ['table.wrap', 'table.row-head', 'table.cell-box'], axes: ['x', 'width'],
     note: 'The grid sits in a bordered card 12px in from the panel edge, so the wrap, the row head and the first cell start 12px further right and the wrap is 24px narrower; the source column is 210px wide instead of 190. y and height are compared.' },
+  { id: 'settings-sheet-head-height', rule: 'owner request 15 Oct 2026 (premium connection sheets: a 36 px mark tile and a subtitle line under the name)', pairs: ['settings-sheet.head'], axes: ['height'],
+    note: 'The connection sheet head holds a 36 px icon tile and the maker or use line under the name, so it is 68 px tall instead of 46. x, y and width are compared.' },
   { id: 'settings-roles-y', rule: 'PLACEMENTS settings-default-note (the note under "Default models")', pairs: ['settings.roles', 'settings.role'], axes: ['y'],
     note: 'The default model rows sit under the note the mockup has no place for, so their top is lower by the note and one gap. x, width and height are compared.' },
   { id: 'settings-proxy-state-width', rule: '§2.3 (copy change proxy-working: the line names the HTTP status and the check time)', pairs: ['settings.proxy-state'], axes: ['width'], widths: [1280],
@@ -588,6 +590,7 @@ export const APP_ADDITIONS: Array<{ id: string; rule: string; app: string; slice
   { id: 'followup-compose-short-window', rule: 'WCAG 1.4.10 / 2.4.11 (a sticky box must not cover the thread it belongs to)', app: 'in a window 560px tall or less the follow-up composer stays in the flow at the end of the thread instead of sticking to its foot (the parity windows are 844 and 900px tall)', slice: 'S22b' },
   { id: 'settings-icons', rule: 'owner request 15 Oct 2026 (Settings icons in black and white)', app: 'Settings: a 16px black-and-white mark before each connection tile name, semantic search row and connection sheet title (brand marks from connectionIcons.tsx, lucide glyphs where a connection has none); the sheet title shows it instead of the mockup\'s link icon', slice: 'icons' },
   { id: 'settings-tabs', rule: 'owner request 15 Oct 2026 (D30: Settings in four tabs; the mockup stays one page)', app: 'Settings: the tab bar under the title (Models, Sources, Usage, General; .settings-tabs). Parity shows every tab\'s sections at once (allSettingsTabs), so the sections keep their mockup comparison; which section sits in which tab is checked by settings.spec', slice: 'D30' },
+  { id: 'report-polish', rule: 'owner request 15 Oct 2026 (report polish)', app: 'the report panel: the document is about 70 characters wide and centred; a stale source selection is a "Source selection changed" chip on the meta line that opens its sentence (instead of the label and the box); a key figures strip of up to three cited claims that state percentages sits above the sections', slice: 'report-polish' },
   { id: 'keys-off-switch', rule: '§2.4 (single-key shortcuts) / WCAG 2.1.4 (character key shortcuts can be turned off)', app: 'the keys dialog\'s foot: one line with the "Single-key shortcuts" checkbox, kept across reloads (.keys-dialog .keys-foot)', slice: 'S3' },
 ]
 
@@ -610,6 +613,8 @@ export const STYLE_EXCEPTIONS: Array<{ id: string; rule: string; pairs: string[]
     properties: ['background-color', 'border-top-left-radius', 'border-top-right-radius', 'border-bottom-right-radius', 'border-bottom-left-radius', 'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
       'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'line-height', 'box-shadow'],
     note: 'The access lines sit in a card like the background-jobs card: a hairline border, a 9px radius, --raised-surface, 8px/10px padding with room for a chevron on the right; each status dot has a soft halo ring of its tone; the lines wrap at line-height 1.45.' },
+  { id: 'report-serif-headings', rule: 'owner request 15 Oct 2026 (report polish: serif section headings with a muted number)', pairs: ['report-panel.h2'], properties: ['font-family', 'font-size', 'font-weight', 'line-height', 'letter-spacing'],
+    note: 'The report\'s section headings use the serif of its title (19px, 500) with the number in --muted; the mockup sets them in the 15px sans.' },
 ]
 
 /** Mockup elements whose target the app does not have yet (S3: a key or row is not shown before the thing it opens

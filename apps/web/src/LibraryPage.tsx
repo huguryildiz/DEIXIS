@@ -394,8 +394,8 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
 
   async function copyDoi(doi: string) {
     try {
-      await navigator.clipboard.writeText(doi)
-      toast('success', t('DOI copied.'))
+      await navigator.clipboard.writeText(`https://doi.org/${doi.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '')}`)
+      toast('success', t('DOI link copied.'))
     } catch (e) {
       toast('error', t('Could not copy the DOI: {message}', { message: errorText(e) }))
     }
@@ -1015,7 +1015,7 @@ function Row({ entry, project, researches, picked, locked, dragging, onPick, onO
             <FileText size={16} /><span className="library-tx">{t('Open in research')}{!owner && <small>{t('No research holds it')}</small>}</span>
           </DropdownMenuItem>
           <DropdownMenuItem disabled={!entry.doi} onClick={() => { if (entry.doi) onCopyDoi(entry.doi) }}>
-            <Link2 size={16} /><span className="library-tx">{t('Copy DOI')}{!entry.doi && <small>{t('no DOI stored')}</small>}</span>
+            <Link2 size={16} /><span className="library-tx">{t('Copy DOI link')}{!entry.doi && <small>{t('no DOI stored')}</small>}</span>
           </DropdownMenuItem>
           {removable && <DropdownMenuItem variant="destructive" disabled={locked} onClick={onRemove}>
             <X size={16} /><span className="library-tx">{project ? t('Remove from this research') : t('Remove from every research')}<small>{t('Stays in All works')}</small></span>

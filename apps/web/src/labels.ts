@@ -4,6 +4,12 @@ import { t, uiLocale } from './i18n'
 // Label records hold English text; callers show them through t().
 export const LATE_REVISION_LABEL = 'Updated with full text'
 
+// The heading the report card shows: the question when it extends the research title, else the title.
+export const researchHeading = (view: { research: { title: string }; scope: { question: string } }) =>
+  view.scope.question.startsWith(view.research.title) ? view.scope.question : view.research.title
+// The automatic table is stored as "Study table" (workflow/intent.py TABLE_TITLE) and shown under its research's heading; a title the person chose is shown as is.
+export const tableTitle = (title: string, research?: string) => title === 'Study table' ? research || t('Study table') : title
+
 // The "Retracted" mark's note (D27): the version's own OpenAlex flag, else another version of its work; null for none.
 export function retractionNote(source: { is_retracted: boolean | null; work_is_retracted: boolean | null }): string | null {
   if (source.is_retracted) return t('OpenAlex lists this paper as retracted. Check the retraction notice before relying on it.')

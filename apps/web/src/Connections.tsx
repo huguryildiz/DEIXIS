@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, BookOpenText, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, HardDrive, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, Plus, RefreshCw, RotateCw, Save, ScanText, Server, ShieldCheck, Sigma, Trash2, TriangleAlert, Upload } from 'lucide-react'
+import { ArrowUpRight, Ban, BadgeCheck, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, FileUp, HardDrive, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, PenLine, Plus, RefreshCw, RotateCw, Save, ScanText, Server, ShieldCheck, Sigma, Trash2, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -124,7 +124,7 @@ const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocal
 // Settings icons, drawn in black and white (Settings.css): brand marks where connectionIcons.tsx has one, a plain glyph otherwise.
 const glyph = (icon: ReactNode) => <span className="connection-icon" aria-hidden="true">{icon}</span>
 const GLYPHS: Record<string, ReactNode> = {
-  ocr: glyph(<ScanText strokeWidth={1.8} />), marker: glyph(<Sigma strokeWidth={1.8} />), mathpix: glyph(<Cloud strokeWidth={1.8} />), pymupdf: glyph(<BookOpenText strokeWidth={1.8} />), servers: glyph(<Server strokeWidth={1.8} />),
+  ocr: glyph(<ScanText strokeWidth={1.8} />), marker: <ConnectionIcon id="marker" />, mathpix: glyph(<Cloud strokeWidth={1.8} />), pymupdf: <ConnectionIcon id="pymupdf" />, servers: glyph(<Server strokeWidth={1.8} />),
   server: glyph(<Server strokeWidth={1.8} />), 'reference-files': glyph(<FileText strokeWidth={1.8} />), off: glyph(<Ban strokeWidth={1.8} />),
 }
 const settingsIcon = (key: string) => GLYPHS[key] ?? <ConnectionIcon id={localToolIcon(key)} />
@@ -229,7 +229,7 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
         autoComplete={plain ? 'off' : 'new-password'} data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
         placeholder={entry.configured ? `${entry.last4 ? `••••••••${entry.last4}` : '••••••••••••'} ${where}`.trim() : t(plain ? 'Type your user ID' : 'Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
     </label>
-    {note && <p className="foot-note">{fromShell && `${t('This key comes from the terminal that started DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
+    {note && <p className="foot-note key-note"><ShieldCheck aria-hidden />{fromShell && `${t('This key comes from the terminal that started DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
       {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>}
     {formError && <Notice tone="error"><p>{formError}</p></Notice>}
     <div className="acts">
@@ -287,7 +287,7 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
       </>
       : <p className="local-tool-note">{t(offerApp ? 'Only the command-line version is installed. Install the Ollama app to run it without a terminal.' : tool.id === 'ollama' ? 'Start it with `ollama serve`' : 'Open LM Studio and start its local server')}</p>)}
     {tool.kind === 'app' && tool.installed && <>
-      <p className="local-tool-note">{!tool.running ? t('Not answering. Open Zotero and close any dialog it shows, then turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.') : tool.local_api ? t('Local API on · {endpoint}', { endpoint: tool.endpoint ?? '' }) : t('Running, but its local API is off. Turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.')}</p>
+      <p className={`local-tool-note${tool.running && tool.local_api ? '' : ' is-callout'}`}>{!tool.running ? t('Not answering. Open Zotero and close any dialog it shows, then turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.') : tool.local_api ? t('Local API on · {endpoint}', { endpoint: tool.endpoint ?? '' }) : t('Running, but its local API is off. Turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.')}</p>
     </>}
     {offerInstall && (tool.install.available
       ? <>
@@ -759,10 +759,12 @@ function ToolUpdateCheck({ tool }: { tool: 'marker' | 'pymupdf' }) {
   const result = useToolUpdate(tool)
   if (!result?.installed) return null
   const stale = result.tested && result.installed !== result.tested
+  // Marker stays pinned to its tested version, so a newer release on PyPI is not shown.
+  const hideNewer = result.update_available && tool === 'marker'
   return <>
-    <p className={`tool-facts-foot${result.update_available ? '' : ' is-ok'}`} role="status">{result.update_available
+    {!hideNewer && <p className={`tool-facts-foot${result.update_available ? '' : ' is-ok'}`} role="status">{result.update_available
       ? <><Info aria-hidden />{t('Version {latest} comes with the next DEIXIS update.', { latest: result.latest ?? '' })}</>
-      : <><CircleCheck aria-hidden />{t('Up to date.')}</>}</p>
+      : <><CircleCheck aria-hidden />{t('Up to date.')}</>}</p>}
     {stale && <p className="tool-facts-foot">{t('The installed Marker is {installed}, not {tested}. Remove it and install it again to get the tested version.', { installed: result.installed, tested: result.tested ?? '' })}</p>}
   </>
 }
@@ -940,18 +942,38 @@ function ReferenceFileImport() {
   const entries = result?.entries ?? []
   const confirmed = entries.filter(e => e.record === 'provider' || e.record === 'existing').length
   const own = entries.filter(e => e.record === 'user_supplied').length
+  const [over, setOver] = useState(false)
   return <div className="reference-import">
     <input ref={input} type="file" accept=".bib,.ris,.bibtex,text/plain" hidden onChange={e => choose(e.target.files?.[0])} />
-    <div className="acts"><button type="button" className="btn-pri" disabled={busy} onClick={() => input.current?.click()}>{busy ? <span className="spin" aria-hidden /> : <Upload aria-hidden />}{t(busy ? 'Importing…' : 'Choose a .bib or .ris file')}</button></div>
+    <div className={`ref-drop${over ? ' is-over' : ''}${busy ? ' is-busy' : ''}`}
+      onDragOver={e => { e.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)}
+      onDrop={e => { e.preventDefault(); setOver(false); choose(e.dataTransfer.files?.[0]) }}>
+      <span className="ref-drop-ico" aria-hidden>{busy ? <span className="spin" /> : <FileUp />}</span>
+      <p className="ref-drop-title">{t(busy ? 'Importing…' : 'Drop a .bib or .ris file here')}</p>
+      <p className="ref-drop-sub">{t('Exported from Zotero, Mendeley, EndNote or JabRef')}</p>
+      <button type="button" className="btn-pri" disabled={busy} onClick={() => input.current?.click()}><Upload aria-hidden />{t('Choose a .bib or .ris file')}</button>
+    </div>
     {error && <p className="key-form-error" role="alert">{error}</p>}
     {result && <div className="reference-result" role="status">
       <p>{t('{file}: {n} entries read. {saved} saved to the Library, {already} were already there.', { file: result.filename ?? t('The file'), n: entries.length, saved: result.saved.length, already: result.already_saved.length })}</p>
-      <p>{t('{confirmed} matched a provider record by DOI; {own} kept as your own records, not confirmed by a provider.', { confirmed, own })}</p>
+      <dl className="ref-stats">
+        <div><dt>{t('Saved')}</dt><dd>{result.saved.length}</dd></div>
+        <div><dt>{t('Already there')}</dt><dd>{result.already_saved.length}</dd></div>
+        <div><dt>{t('Matched by DOI')}</dt><dd>{confirmed}</dd></div>
+        <div><dt>{t('Kept as written')}</dt><dd>{own}</dd></div>
+      </dl>
       {result.errors.length > 0 && <>
         <p>{t('{n} entries could not be read and were left out:', { n: result.errors.length })}</p>
         <ul>{result.errors.slice(0, 20).map((err, i) => <li key={i}>{t('Line {line}', { line: err.line })}{err.key ? ` · ${err.key}` : ''}: {err.message}</li>)}</ul>
       </>}
     </div>}
+    <section className="sheet-card ref-how" aria-label={t('How entries are kept')}>
+      <h3 className="sheet-card-title">{t('How entries are kept')}</h3>
+      <ul>
+        <li><BadgeCheck aria-hidden /><p><b>{t('DOI confirmed')}</b>{t('When OpenAlex or Crossref confirms an entry’s DOI, that provider’s record is used.')}</p></li>
+        <li><PenLine aria-hidden /><p><b>{t('Kept as written')}</b>{t('Other entries are kept as you wrote them and marked as not confirmed.')}</p></li>
+      </ul>
+    </section>
   </div>
 }
 
@@ -1204,9 +1226,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   // Document reading (not models): the PDF tools in the mockup's order.
   const docRows: { kind: Selected['kind']; id: string; name: string; what: string; status: [Tone, string] }[] = [
     { kind: 'pdf-reader', id: 'pymupdf', name: 'PDF reader', what: 'Reads the text of every PDF', status: pdfReaderStatus() },
-    { kind: 'ocr-tool', id: 'tesseract', name: 'Scanned PDF reader (OCR)', what: 'Turns scanned pages into text', status: ocrStatus() },
+    { kind: 'ocr-tool', id: 'tesseract', name: 'Scanned PDF reader (OCR)', what: 'Turns scanned pages into text with Tesseract', status: ocrStatus() },
     { kind: 'equation-reader', id: 'marker', name: 'Equation reader', what: 'Reads equations as LaTeX', status: readerStatus() },
-    { kind: 'mathpix', id: 'mathpix', name: 'Mathpix equation reader', what: 'Reads numbered equations online, with your key pair', status: mathpixStatus() },
   ]
   const saveLocalServer = (url: string) => {
     setServerBusy(true); setServerError('')
@@ -1287,6 +1308,13 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     : sel.kind === 'reference-files' ? t('BibTeX / RIS files')
     : sel.kind === 'zotero' ? 'Zotero'
     : sel.id
+  // The line under the sheet title: who makes it, or what DEIXIS uses it for.
+  const sheetSub = !sel ? null
+    : company ? t(company.maker)
+    : sel.kind === 'provider' ? (providerUse[sel.id] ? t(providerUse[sel.id]) : providerRole(provider?.role))
+    : sel.kind === 'zotero' ? t('Read-only collections')
+    : sel.kind === 'reference-files' ? t('Import a .bib or .ris file')
+    : null
   const checkedLine = (key: string) => checked[key] && !checkFailed[key] ? <span className="status-chip is-configured">{t('checked {time}', { time: clock(checked[key]) })}</span> : null
   // A failed check and the reason a connection is not ready share one card under the status line.
   const reasonNotice = (key: string, reason?: ReactNode) => {
@@ -1487,21 +1515,29 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     const keyless = provider.access_mode === 'keyless'
     const test = keyless && checking !== key && checked[key] && !checkFailed[key] ? providerTests[provider.id] : undefined
     const id = provider.id
+    // The status chip already says "No key needed"; the lead only adds what the chip cannot.
+    const lead = provider.id === 'openalex' ? linkify(t('Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.'))
+      : !env ? (MAILTO_PROVIDERS.has(provider.id) ? t('No key needed. DEIXIS adds your contact email to its requests, as the service asks.') : null)
+      : t(provider.note)
     body = <>
       {dmeta(key, [tone, status], test && <span className={`status-chip ${test.answered && (test.http_status ?? 0) < 300 ? '' : 'is-warning'}`}>{providerAnswer(test)}</span>)}
-      <p className="foot-note is-ink">{provider.id === 'openalex'
-        ? linkify(t('Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.'))
-        : !env ? (MAILTO_PROVIDERS.has(provider.id) ? t('No key needed. DEIXIS adds your contact email to its requests, as the service asks.') : t('No key needed.'))
-        : t(provider.note)}</p>
-      {env && providerKeySignup[id] && <p className="foot-note key-signup">{linkify(t(providerKeySignup[id].steps))} <a href={providerKeySignup[id].url} target="_blank" rel="noopener noreferrer">{t('Get a key')}</a></p>}
-      {env && credentials && <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain} service={providerNames[provider.id] ?? provider.id}
-        label={t(provider.id === 'openalex' ? 'API key (optional, free from openalex.org)' : 'API key')}
-        removeEffect={t('Requests that need this key stop until you add one again.')} onSaved={reloadAfterKeyChange} />}
+      {lead && <p className="sheet-lead">{lead}</p>}
+      {env && credentials && <section className="sheet-card">
+        <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain} service={providerNames[provider.id] ?? provider.id}
+          label={t(provider.id === 'openalex' ? 'API key (optional, free from openalex.org)' : 'API key')}
+          removeEffect={t('Requests that need this key stop until you add one again.')} onSaved={reloadAfterKeyChange} />
+        {providerKeySignup[id] && <p className="sheet-card-foot key-signup">{linkify(t(providerKeySignup[id].steps))} <a href={providerKeySignup[id].url} target="_blank" rel="noopener noreferrer">{t('Get a key')}<ArrowUpRight aria-hidden /></a></p>}
+      </section>}
+      {env && !credentials && providerKeySignup[id] && <p className="foot-note key-signup">{linkify(t(providerKeySignup[id].steps))} <a href={providerKeySignup[id].url} target="_blank" rel="noopener noreferrer">{t('Get a key')}</a></p>}
       {env && credentials && !keyEntry(env)?.configured && providerNoKey[provider.id] && <Notice tone="attention">{t(providerNoKey[provider.id])}</Notice>}
-      {keyless && <div className="acts">{checkButton(key, 'Test', () => api.testProvider(id).then(result => { setProviderTests(old => ({ ...old, [id]: result })); return result }))}</div>}
-      {test && !test.contact_email_sent && <p className="foot-note">{t('Sent without a contact email; none is set in Profile.')}</p>}
-      {MAILTO_PROVIDERS.has(provider.id) && <p className="foot-note"><a href="#/settings/profile">{t('Set the contact email in Profile')}</a></p>}
-      <div className="connection-checks">{check(t('Used for'), providerUse[provider.id] ? t(providerUse[provider.id]) : providerRole(provider.role))}</div>
+      {keyless && <section className="sheet-card">
+        <p className="sheet-card-text">{t('Test sends one request to {name} without a key and shows how it answered.', { name: providerNames[id] ?? id })}</p>
+        <div className="acts">{checkButton(key, 'Test', () => api.testProvider(id).then(result => { setProviderTests(old => ({ ...old, [id]: result })); return result }))}</div>
+        {test && !test.contact_email_sent && <p className="foot-note">{t('Sent without a contact email; none is set in Profile.')}</p>}
+      </section>}
+      {MAILTO_PROVIDERS.has(provider.id) && <dl className="sheet-facts">
+        <div><dt>{t('Contact email')}</dt><dd><a href="#/settings/profile">{t('Set in Profile')}</a></dd></div>
+      </dl>}
     </>
   } else if (sel?.kind === 'equation-reader') {
     body = <>
@@ -1526,16 +1562,16 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   } else if (sel?.kind === 'zotero') {
     body = <>
       {dmeta('zotero', zoteroStatus())}
-      <p className="foot-note is-ink">{t('Import a collection from Add sources on the home page or from a research’s Sources panel. Your Zotero library is never changed.')}</p>
-      <section className="zotero-route">
-        <div className="zotero-route-head"><h3>{t('This computer')}</h3>{zotero && <span className={`status-chip is-status ${zotero.installed && zotero.running && zotero.local_api ? '' : 'is-configured'}`}>
+      <p className="sheet-lead">{t('Import a collection from Add sources on the home page or from a research’s Sources panel. Your Zotero library is never changed.')}</p>
+      <section className="zotero-route sheet-card">
+        <div className="zotero-route-head"><span className="route-ico" aria-hidden><Laptop /></span><h3>{t('This computer')}</h3>{zotero && <span className={`status-chip is-status ${zotero.installed && zotero.running && zotero.local_api ? '' : 'is-configured'}`}>
           {t(!zotero.installed ? 'Not installed' : !zotero.running ? 'Not running' : zotero.local_api ? 'Local API on' : 'Local API off')}</span>}</div>
-        <div className="acts">{checkButton('zotero', 'Find it on this computer', () => loadTools(true, true))}</div>
         {zotero && <LocalToolDetails tool={zotero} dark={dark} onChanged={reloadTools} refresh={false} chip={false} />}
+        <div className="acts">{checkButton('zotero', 'Find it on this computer', () => loadTools(true, true), false, true)}</div>
       </section>
-      {credentials && <section className="zotero-route">
-        <div className="zotero-route-head"><h3>zotero.org</h3>{zotero && <span className={`status-chip is-status ${zotero.web_configured ? '' : 'is-configured'}`}>{t(zotero.web_configured ? 'Key and user ID saved' : 'Not set up')}</span>}</div>
-        <p className="foot-note is-ink">{linkify(t('To import from zotero.org, create a read-only key at zotero.org/settings/keys. Your user ID is shown on the same page.'))}</p>
+      {credentials && <section className="zotero-route sheet-card">
+        <div className="zotero-route-head"><span className="route-ico" aria-hidden><Cloud /></span><h3>zotero.org</h3>{zotero && <span className={`status-chip is-status ${zotero.web_configured ? '' : 'is-configured'}`}>{t(zotero.web_configured ? 'Key and user ID saved' : 'Not set up')}</span>}</div>
+        <p className="sheet-card-text">{linkify(t('To import from zotero.org, create a read-only key at zotero.org/settings/keys. Your user ID is shown on the same page.'))}</p>
         {(['ZOTERO_API_KEY', 'ZOTERO_LIBRARY_ID'] as const).map(env => <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain}
           plain={env === 'ZOTERO_LIBRARY_ID'} note={env === 'ZOTERO_LIBRARY_ID'} label={t(env === 'ZOTERO_API_KEY' ? 'zotero.org API key' : 'zotero.org user ID')} service="zotero.org"
           removeEffect={t('Importing from zotero.org stops until you add it again.')} onSaved={() => { reloadAfterKeyChange(); void reloadTools() }} />)}
@@ -1543,7 +1579,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     </>
   } else if (sel?.kind === 'reference-files') {
     body = <>
-      <p className="foot-note is-ink">{t('Adds the entries of a .bib or .ris file to the Library. Entries whose DOI OpenAlex or Crossref confirms use that record; the rest are kept as you wrote them, marked as not confirmed.')}</p>
+      <p className="sheet-lead">{t('Adds the entries of a .bib or .ris file to the Library.')}</p>
       <ReferenceFileImport />
     </>
   }
@@ -1626,7 +1662,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       <ul className="doc-list" data-group="documents">{docRows.map(row => {
         const [tone, status] = row.status
         return <li key={row.kind}><button type="button" className={isActive(row.kind, row.id) ? 'on' : ''} onClick={() => show({ kind: row.kind, id: row.id })}>
-          <span><b>{t(row.name)}</b><small>{t(row.what)}</small></span><span className={`st ${tone}`}>{status}</span>
+          {settingsIcon(row.kind === 'ocr-tool' ? 'ocr' : row.id)}<span><b>{t(row.name)}</b><small>{t(row.what)}</small></span><span className={`st ${tone}`}>{status}</span>
         </button></li>
       })}</ul>
     </section>
@@ -1645,7 +1681,13 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
 
     <Sheet open={open && !gone} onOpenChange={setOpen}>
       <SheetContent className={`detail-sheet connection-sheet ${dark ? 'dark' : ''}`}>
-        <SheetHeader><SheetTitle>{sheetIcon}<span>{name}</span></SheetTitle><SheetDescription className="sr-only">{company ? `${company.name} · ${t(company.maker)}` : t('{name} details', { name })}</SheetDescription></SheetHeader>
+        <SheetHeader className="sheet-head">
+          {sheetIcon && <span className="sheet-mark" aria-hidden>{sheetIcon}</span>}
+          <div className="sheet-head-text">
+            <SheetTitle>{name}</SheetTitle>
+            <SheetDescription className={sheetSub ? '' : 'sr-only'}>{sheetSub ?? t('{name} details', { name })}</SheetDescription>
+          </div>
+        </SheetHeader>
         <div className="connection-body mk pad detail">{body}</div>
       </SheetContent>
     </Sheet>

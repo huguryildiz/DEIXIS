@@ -9,7 +9,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { PassageSheet } from './PassageSheet'
 import { ModelName } from './ModelName'
 import { useModelText, type ModelText } from './modelText'
-import { locatorText, runStatusLabels, versionText } from './labels'
+import { locatorText, researchHeading, runStatusLabels, tableTitle, versionText } from './labels'
 import { OCR_LABEL } from './ocr'
 import { formatReferenceText, useCitationStyle } from './citations'
 import { useToast, type ToastAction } from './Toast'
@@ -493,7 +493,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
       : !rows.length ? <p className="empty-inline">{t('The table has no rows. Add sources of this research as rows.')}</p>
       : <>
         <div className="tbl-wrap evidence-grid-wrap">
-          <table ref={grid} className="evidence-grid" role="grid" aria-label={table.table.title} aria-describedby="evidence-grid-keys" onKeyDown={moveFocus}>
+          <table ref={grid} className="evidence-grid" role="grid" aria-label={tableTitle(table.table.title, researchHeading(view))} aria-describedby="evidence-grid-keys" onKeyDown={moveFocus}>
             <thead><tr>
               <th scope="col" className="evidence-corner">{t('Source')}</th>
               {columns.map(col => { const Icon = formatIcons[col.answer_format]; return <th scope="col" key={col.id}>

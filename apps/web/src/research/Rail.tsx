@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Clock, Copy, File, FileText, Lightbulb, ListChecks, MessageSquareQuote, Table2, type LucideIcon } from 'lucide-react'
 import { api, type Answer, type QueueRow, type ResearchView, type Run, type TableSummary } from '../api'
 import { collectionProgress } from '../BackgroundJobs'
-import { queueKindLabels, runKindLabels } from '../labels'
+import { queueKindLabels, researchHeading, runKindLabels, tableTitle } from '../labels'
 import { t } from '../i18n'
 import { useRailWide } from './railData'
 import { budgetAsOf, budgetFigure, useOpenAlexBudget, usageRun } from './usageData'
@@ -99,7 +99,7 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
           {tables?.map(table => {
             const label = t('Evidence table · {sources} · {columns}', {
               sources: t(table.rows === 1 ? '{n} source' : '{n} sources', { n: table.rows }), columns: t(table.columns === 1 ? '{n} column' : '{n} columns', { n: table.columns }) })
-            return <Row key={table.id} icon={Table2} label={label} ariaLabel={`${label} · ${table.title}`} onClick={() => onOpenTable(table.id)} />
+            return <Row key={table.id} icon={Table2} label={label} ariaLabel={`${label} · ${tableTitle(table.title, researchHeading(view))}`} onClick={() => onOpenTable(table.id)} />
           })}
           {view.reportRuns.map(item => <Row key={item.id} icon={FileText} label={t('Evidence report')}
             aside={item.status === 'valid' ? `V${item.report_version ?? ''}` : t(item.status === 'draft' ? 'draft' : 'being written')} onClick={() => onOpenEvidenceReport(item.id)} />)}

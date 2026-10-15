@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, PencilLine, Search, Sparkles, Table2, Trash2, Waypoints } from 'lucide-react'
+import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, MessageSquareQuote, PencilLine, Search, Sparkles, Table2, Trash2, Waypoints } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, followupApi, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
-import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, seedSkipText, seedUseText } from './labels'
+import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, researchHeading, seedSkipText, seedUseText, tableTitle } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { TextRecoveryContext } from './TextRecoveryContext'
 import { EvidenceTab, TABLE_RUN_KINDS } from './EvidenceTable'
@@ -531,7 +531,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     setPicked([])
     showTableFirst(table.id)
     openPanel('table')
-  }, t('Rows added to {title}.', { title: table.title }))
+  }, t('Rows added to {title}.', { title: tableTitle(table.title, researchHeading(view)) }))
   // Saves source versions to the Library (F14), one request per 500; the message counts what the server reports saved
   // and already there, and names a failed batch with what it left unsaved.
   const saveToLibrary = async (ids: string[]) => {
@@ -567,7 +567,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // The model names the research (at most 15 words); the new title arrives with the typewriter transition.
   const suggestTitle = () => { endTitleEdit(); void startTitle() }
   // The stored title is the question cut to 160 characters until a valid answer names the research (D36); until then show it whole.
-  const heading = view.scope.question.startsWith(view.research.title) ? view.scope.question : view.research.title
+  const heading = researchHeading(view)
   // Each count is the way into the evidence it describes; the selection filter lives here so a count can set it.
   const showSources = (filter: StateFilter) => { setSourceFocus(null); setSourceFilter(filter); openPanel('sources') }
   // An abstract-stage work of the audit sample is chosen with the source list's own controls: the list opens at that
@@ -581,7 +581,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const olderReport = reports.find(r => r.answer.id === openReportId && r.answer.id !== answer?.id)
   const openTable = (tableId: string) => { showTableFirst(tableId); openPanel('table') }
   // Table cards sit under the report card, or at the end of the conversation before the first answer.
-  const tableCards = tables && tables.length > 0 && <div className="table-artifacts">{tables.map(table => <TableCard key={table.id} table={table} onOpen={() => openTable(table.id)} />)}</div>
+  const tableCards = tables && tables.length > 0 && <div className="table-artifacts">{tables.map(table => <TableCard key={table.id} table={table} heading={heading} onOpen={() => openTable(table.id)} />)}</div>
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
   // A research whose current search finished may answer with nothing included: the answer records that (SW22).
   const answersWithoutInclude = view.scope.discovery_completed === true
@@ -763,7 +763,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
               {panelRow('funnel', 'Search funnel', Funnel, null)}
               {reports.filter(r => r.answer.id !== answer?.id).map(({ answer: older, version }) =>
                 <DropdownMenuItem key={older.id} className="research-menu-placement" onClick={() => { rowChosen.current = true; setOpenReportId(older.id) }}>
-                  <FileText size={15} aria-hidden /><span>{t('Report')} · V{version}</span>
+                  <MessageSquareQuote size={15} aria-hidden /><span>{t('Report')} · V{version}</span>
                 </DropdownMenuItem>)}
               {view.reportRuns.slice(1).map(item =>
                 <DropdownMenuItem key={item.id} className="research-menu-placement" onClick={() => { rowChosen.current = true; setOpenEvidenceReportId(item.id) }}>

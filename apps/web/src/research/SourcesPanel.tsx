@@ -3,7 +3,7 @@ import { ArrowUpDown, Download, Filter, Info, LibraryBig, ListChecks, ListMinus,
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api, type Effort, type EffortLimits, type Source, type TableSummary, type UnscreenedWork } from '../api'
-import { accessParts, versionText } from '../labels'
+import { accessParts, tableTitle, versionText } from '../labels'
 import { t, uiLocale } from '../i18n'
 import { useToast } from '../Toast'
 import { effortLabels } from '../Home'
@@ -221,7 +221,7 @@ function SelectionBar({ ids, busy, researchId, active, onStartTable, onAddToTabl
       <button type="button" className="ghost" disabled={busy} onClick={() => onStartTable(ids)}><Table2 size={14} aria-hidden />{t('Start table')}</button>
       <DropdownMenu>
         <DropdownMenuTrigger disabled={busy || !tables?.length} render={<button type="button" className="ghost selbar-add-table" />} title={tables && !tables.length ? t('This research has no table yet') : undefined}><ListPlus size={14} aria-hidden />{t('Add to table')}</DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-auto">{(tables ?? []).map(table => <DropdownMenuItem key={table.id} onClick={() => onAddToTable(table, ids)}><Table2 size={15} />{table.title}</DropdownMenuItem>)}</DropdownMenuContent>
+        <DropdownMenuContent align="start" className="w-auto">{(tables ?? []).map(table => <DropdownMenuItem key={table.id} onClick={() => onAddToTable(table, ids)}><Table2 size={15} />{tableTitle(table.title)}</DropdownMenuItem>)}</DropdownMenuContent>
       </DropdownMenu>
       <button type="button" className="ghost" disabled={busy} onClick={() => { void onSaveToLibrary(ids) }}><LibraryBig size={14} aria-hidden />{t('Add to library')}</button>
       <button type="button" className="ghost selbar-remove" disabled={busy || active} title={active ? t('Available when the active run finishes') : undefined} onClick={() => onRemove(ids)}><ListMinus size={14} aria-hidden />{t('Remove from research')}</button>

@@ -25,6 +25,8 @@ import { BASIS_BADGES, diffAnswers, type ComparisonBase } from './answerDiff'
 import { downloadReportMarkdown, reportMarkdown, reportParts, verdictTones } from './reportMarkdown'
 import { printReport } from './printPanel'
 
+const PERCENT = /%\s?\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s?%/g
+
 // The latest answer in the thread (mockup `answerBlock()`, R22-R29): the notices of its state, the report card (or the
 // live card while a new version is written), the first paragraphs of its claims with their citations, the Methods box,
 // the action pills and the Next steps box. Every number is the answer's own stored record or the view's count. The full
@@ -175,17 +177,27 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {depthBadges(claim)}
   </>
   const limitAdded = new Set(diff?.limitsAdded ?? [])
+  // Key figures: up to three cited claims that state percentages (the reviewer did not mark them down; a claim with
+  // math is a setup, not a result), each with its first two percentages, above the sections; each opens the passage its
+  // claim cites first. The numbers are quoted from the claim text, never computed.
+  const figures = sections.flatMap(s => s.claims).filter(c => c.evidence.length > 0 && c.support_type !== 'analyst_inference' && (!c.review || c.review.verdict === 'supported') && !/\$|\\\(/.test(c.text))
+    .map(claim => ({ claim, value: [...new Set((claim.text.match(PERCENT) ?? []).map(v => v.replace(/\s+/g, '')))].slice(0, 2).join(' · ') })).filter(f => f.value).slice(0, 3)
   let headed = 0
   const report = <div className="legacy-answer report-content">
-    {(answer.applicability !== 'current' || answer.late_revision) && <div className="section-label">{t('Source-linked answer')}{answer.applicability === 'stale_scope' ? ` · ${t('earlier question revision')}` : answer.applicability === 'stale_selection' ? ` · ${t('earlier source selection')}` : ''}</div>}
+    {/* A stale source selection is told by the chip on the report's meta line (ReportPanel), not by a label and a box here. */}
+    {((answer.applicability !== 'current' && answer.applicability !== 'stale_selection') || answer.late_revision) && <div className="section-label">{t('Source-linked answer')}{answer.applicability === 'stale_scope' ? ` · ${t('earlier question revision')}` : answer.applicability === 'stale_selection' ? ` · ${t('earlier source selection')}` : ''}</div>}
     {answer.late_revision && <p className="legacy-mini-note"><span className="support-badge">{t(LATE_REVISION_LABEL)}</span> {answer.late_revision.base_report_version !== null && t(LATE_REVISION_DETAIL, { n: answer.late_revision.upgraded_sources, v: answer.late_revision.base_report_version })}</p>}
     {answer.applicability === 'stale_scope' && <Notice tone="attention">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</Notice>}
-    {answer.applicability === 'stale_selection' && <Notice tone="attention">{t('Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.')}</Notice>}
     {answer.source_text_changed && <Notice tone="attention">{t('A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.')}</Notice>}
     {answer.capability_notice && <Notice tone="info">{answer.capability_notice}</Notice>}
     {/* A section is one paragraph (D230) under its numbered heading (mockup `.report h2`); its label names a topic. */}
+    {figures.length > 0 && <section className="key-figures" aria-label={t('Key figures')}>
+      {figures.map(({ value, claim }) => <button type="button" key={claim.id} className="key-figure" onClick={() => onOpen(claim.evidence[0].passage_id, claim.evidence[0].anchor_text)}>
+        <strong>{value}</strong><span><MathText text={claim.text} /></span>
+      </button>)}
+    </section>}
     {sections.map(({ heading, claims }, index) => <section className="answer-section" key={index}>
-      {heading && <h2>{++headed}. {heading}</h2>}
+      {heading && <h2><span className="section-num">{++headed}.</span> {heading}</h2>}
       <p className="answer-paragraph">{claims.map(claim => { const change = diff?.claims.get(claim.id); return <span className="claim" key={claim.id}>
         {change?.added ? <ins><span className="sr-only">{t('Added:')} </span><MathText text={claim.text} /></ins> : <MathText text={claim.text} />}
         {claim.evidence.map(e => {

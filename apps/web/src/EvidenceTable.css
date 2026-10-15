@@ -5,6 +5,9 @@
 .split-panel :is(.table-panel,.cell-detail) p{margin:0}
 .table-panel{display:flex;flex-direction:column;min-width:0;min-height:100%}
 .table-panel>.table-failed{margin:10px 12px 0}
+.table-panel>.evidence-new-rows{--notice:var(--accent);align-items:center;flex-wrap:wrap;margin:10px 12px 0}
+.evidence-new-rows>span{flex:1 1 220px}
+.evidence-new-rows>button{flex:none}
 .table-panel>.table-reason{display:flex;align-items:center;gap:8px;padding:10px 14px 0}
 .table-panel>.table-reason::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--tone-uncertain)}
 .table-panel .foot-note,.cell-panel .foot-note,.column-dialog .foot-note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}

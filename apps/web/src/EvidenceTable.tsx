@@ -268,6 +268,11 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
 
   const tableId = table.table.id
   const { columns, rows, fill_estimate: estimate } = table
+  const recheck = table.recheck_estimate ?? { cells: 0, sources: 0, max_model_calls: 0 }  // absent from a server older than the page
+  // Sources included in this research after the table was made (a PDF read later, a person's decision) that are not rows;
+  // a row the person removed stays out.
+  const known = new Set([...rows, ...table.removed_rows].map(r => r.source_version_id))
+  const newIncluded = view.sources.filter(s => s.selection.state === 'included' && !known.has(s.source_version_id)).map(s => s.source_version_id)
   const hasDevelopmentColumns = (['problem', 'change', 'uncertainty'] as const).every(role => columns.some(c => c.lineage_role === role))
   const cells = new Map<string, CellSummary>(table.cells.map(c => [`${c.column_id}:${c.source_version_id}`, c]))
   // Live state comes from the active run's stored target: the cells a fill plans to read, or the one cell a recheck reads.
@@ -336,10 +341,10 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
     if (ok && target.mode !== 'edit') focusWhenLost(() => Array.from(grid.current?.querySelectorAll<HTMLElement>('.evidence-col-head') ?? []).at(-1))
   })
   const suggestionSpec = (s: ColumnSuggestion): ColumnSpec => ({ name: s.name, instruction: s.instruction, answer_format: s.answer_format, options: s.options, allow_multiple: s.allow_multiple, unit_hint: s.unit_hint })
-  const fillEmptyCells = async () => {
+  const fillEmptyCells = async (includeStale = false) => {
     const origin = document.activeElement
     let started: Run | undefined
-    if (!await act(async () => { started = await api.fillTable(researchId, tableId, table.table.version, newKey()); onRunStarted() }) || !started) return
+    if (!await act(async () => { started = await api.fillTable(researchId, tableId, table.table.version, newKey(), includeStale); onRunStarted() }) || !started) return
     const runId = started.id
     // Follow this fill's status line to the current cell when the line leaves, unless the person has moved focus elsewhere.
     focusWhenLost(() => document.querySelector<HTMLElement>(`.evidence-run[data-run-id="${runId}"]`) ?? grid.current?.querySelector<HTMLElement>('[data-cell][tabindex="0"]'), 120_000, true, origin)
@@ -393,12 +398,25 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
     {/* What a report from this table would leave out, then why it cannot be written yet (mockup `repGate`). */}
     {continueWithFailed && summary && <div className="notice warn table-failed"><TriangleAlert size={16} aria-hidden /><span>{t('{n} of {m} sources did not complete the table (missing cells: {cells}). These rows will be excluded from the report’s evidence assessment and aggregation denominators.', { n: summary.report_ready.failed_rows, m: summary.report_ready.included_rows, cells: summary.report_ready.cells_left })}</span></div>}
     {reportReason && <p id="evidence-report-reason" className={columns.length ? 'foot-note table-reason' : 'sr-only'}>{reportReason}</p>}
+    {newIncluded.length > 0 && <div className="notice evidence-new-rows"><Info size={15} aria-hidden />
+      <span>{t(newIncluded.length === 1 ? '{n} source was included after this table was made and is not a row yet.' : '{n} sources were included after this table was made and are not rows yet.', { n: newIncluded.length })}</span>
+      <button type="button" className="ghost" disabled={busy} onClick={() => act(() => api.addTableRows(researchId, tableId, newIncluded, table.table.version),
+        t(newIncluded.length === 1 ? '{n} row added. Fill empty cells reads it.' : '{n} rows added. Fill empty cells reads them.', { n: newIncluded.length }))}>
+        <ListPlus size={14} aria-hidden />{t(newIncluded.length === 1 ? '{n} new source · add as a row' : '{n} new sources · add as rows', { n: newIncluded.length })}</button>
+    </div>}
     <div className="toolbar evidence-toolbar">
       {columns.length ? <button type="button" className="ghost" disabled={busy} onClick={() => setEditor({ mode: 'add' })}><Plus size={15} aria-hidden />{t('Add column')}</button>
         : <span className="table-rows-count">{t(rows.length === 1 ? '{n} source' : '{n} sources', { n: rows.length })}</span>}
       {columns.length > 0 && <button type="button" className="ghost" disabled={busy || Boolean(activeRun)} title={suggestTitle} onClick={suggestColumns}><Lightbulb size={15} aria-hidden />{t('Suggest columns')}</button>}
-      {columns.length > 0 && estimate.sources > 0 && <button type="button" className="ghost tint" disabled={busy || !fillable} onClick={fillEmptyCells}>
+      {columns.length > 0 && estimate.sources > 0 && <button type="button" className="ghost tint" disabled={busy || !fillable} onClick={() => fillEmptyCells()}>
         <Zap size={15} aria-hidden />{t(estimate.sources === 1 ? 'Fill empty cells · {n} source · up to {calls} calls · {model}' : 'Fill empty cells · {n} sources · up to {calls} calls · {model}', { n: estimate.sources, calls: estimate.max_model_calls, model })}
+      </button>}
+      {/* Values made under an earlier column or citing a replaced PDF or an earlier extraction are read again; the
+          results wait as proposals beside the current value (D37). */}
+      {columns.length > 0 && recheck.cells > 0 && <button type="button" className="ghost" disabled={busy || Boolean(activeRun)}
+        title={t('Reads the current PDF text and column definition again. New values wait as proposals; the cell keeps its value until you use one.')}
+        onClick={() => fillEmptyCells(true)}>
+        <RotateCw size={15} aria-hidden />{t(recheck.cells === 1 ? 'Recheck changed cells · {n} cell · up to {calls} calls' : 'Recheck changed cells · {n} cells · up to {calls} calls', { n: recheck.cells, calls: recheck.max_model_calls })}
       </button>}
       <button type="button" className="ghost" disabled={busy || Boolean(reportReason)} title={reportReason || undefined} aria-describedby={reportReason ? 'evidence-report-reason' : undefined}
         onClick={() => act(async () => { await api.startReport(researchId, tableId, newKey(), continueWithFailed ? { continueWithFailed: true } : undefined); onRunStarted() })}><AlignLeft size={15} aria-hidden />{t(continueWithFailed ? 'Write the report with missing rows' : 'Write a manuscript draft')}</button>
@@ -581,6 +599,7 @@ function CellButton({ column, row, summary, live, position, focusable, onFocus, 
     flags.includes('proposal_invalid') && { tone: 'blocking', label: t('Invalid proposal') },
     flags.includes('stale_column') && { tone: 'attention', label: t('Column changed') },
     ...(['pdf_removed', 'pdf_replaced', 'text_superseded'] as const).map(flag => flags.includes(flag) && { tone: 'attention', label: t(evidenceStatusLabels[flag]) }),
+    flags.includes('newer_text') && { tone: 'attention', label: t('New PDF text') },
     flags.includes('ocr_numbers_unchecked') && { tone: 'attention', label: t('OCR number') },
   ].filter((m): m is { tone: string; label: string } => Boolean(m))
   const value = current && hasValue(current)
@@ -817,6 +836,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
         {flags.includes('pdf_replaced') && flag(t('This value cites a PDF that was later replaced. Its evidence still opens the previous file; a recheck reads the current file.'))}
         {flags.includes('ocr_numbers_unchecked') && current && flag(t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.'))}
         {flags.includes('text_superseded') && flag(t('This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction.'))}
+        {flags.includes('newer_text') && flag(t('PDF text for this source was added after this value was made. A recheck reads it; the result waits as a proposal.'))}
 
         {rechecking && !pending && <section className="evidence-block cell-waiting" aria-labelledby="evidence-slot-title">
           <h4 className="sub" id="evidence-slot-title">{t('Pending proposal')}<span className="cell-live" role="status"><span className="cell-pulse" aria-hidden />{t('Rechecking this cell…')}</span></h4>

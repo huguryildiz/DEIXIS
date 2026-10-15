@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
 from test_asset_replacement import PAGES, extraction, replace
-from test_table_extraction import cell, execute, fill, library
+from test_table_extraction import add_pdf, cell, execute, fill, library
 
 CHUNK = lambda text: [(0, len(text), text)]  # noqa: E731
 
@@ -63,6 +63,30 @@ def test_a_stale_fill_proposes_for_cells_whose_evidence_is_shadowed(tmp_path):
     view = cell(lib, lib.published)
     assert view["current"]["id"] == current["id"]
     assert view["pending_proposal"] is not None and statuses({"current": view["pending_proposal"]}) == {"current"}
+
+
+def test_the_recheck_estimate_counts_shadowed_cells_until_a_proposal_waits(tmp_path):
+    lib = filled(tmp_path)
+    assert lib.tables.table_view(lib.rid, lib.tid)["recheck_estimate"]["cells"] == 0
+    replace(lib, PAGES, "9" * 64)
+    assert lib.tables.table_view(lib.rid, lib.tid)["recheck_estimate"]["cells"] == 1
+
+    assert execute(lib, fill(lib, include_stale=True))["status"] == "completed"
+    assert lib.tables.table_view(lib.rid, lib.tid)["recheck_estimate"]["cells"] == 0  # asking again would repeat the waiting proposal
+
+
+def test_a_value_read_before_pdf_text_arrived_is_offered_for_a_recheck(tmp_path):
+    lib = filled(tmp_path)
+    before = cell(lib, lib.preprint)
+    assert before["current"] and "newer_text" not in before["flags"]
+    add_pdf(lib.store, lib.preprint, ["SYNTHETIC preprint full text: packets of 96 bytes were best."], "7" * 64)
+
+    view = cell(lib, lib.preprint)
+    assert "newer_text" in view["flags"] and statuses(view) == {"current"}  # the abstract it cites is still current
+    assert lib.tables.table_view(lib.rid, lib.tid)["recheck_estimate"]["cells"] == 1
+    assert execute(lib, fill(lib, include_stale=True))["status"] == "completed"
+    view = cell(lib, lib.preprint)
+    assert view["current"]["id"] == before["current"]["id"] and view["pending_proposal"] is not None
 
 
 def test_answer_quotes_and_passages_show_a_replaced_pdf_and_the_old_file_opens_only_where_cited(tmp_path):

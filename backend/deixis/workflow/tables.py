@@ -31,6 +31,11 @@ MAX_COLUMNS_PER_CALL = 8  # columns one cell extraction call answers for its sou
 CALLS_PER_REQUEST = 2  # a model call and its one schema repair
 SHADOWED_STATUSES = ("pdf_removed", "pdf_replaced", "text_superseded")  # cell flags, in display order (D45)
 # A row whose source was removed from the research is hidden and not filled; its cells stay and return with the source (D50).
+# PDF text stored for the cell's source after its current value was made (a PDF found or uploaded later); the value was
+# read without it. `{cell}` and `{revision}` name the evidence cell and its current revision.
+NEWER_TEXT_SQL = ("EXISTS (SELECT 1 FROM passages np JOIN source_assets na ON na.id = np.asset_id"
+                  " WHERE np.source_version_id = {cell}.source_version_id AND na.removed_at IS NULL"
+                  " AND np.created_at > {revision}.created_at)")
 SOURCE_ACTIVE_SQL = ("EXISTS (SELECT 1 FROM corpus_memberships m JOIN evidence_tables et ON et.research_id = m.research_id"
                      " WHERE et.id = t.table_id AND m.source_version_id = t.source_version_id AND m.removed_at IS NULL)")
 
@@ -662,13 +667,21 @@ class TableStore:
             cells = {r["column_id"]: r for r in self.conn.execute(
                 "SELECT c.column_id, c.version, r.column_revision, EXISTS (SELECT 1 FROM cell_evidence_links l"
                 f" JOIN passages p ON p.id = l.passage_id LEFT JOIN source_assets a ON a.id = p.asset_id"
-                f" WHERE l.cell_revision_id = r.id AND {EVIDENCE_STATUS_SQL} <> 'current') AS shadowed"
+                f" WHERE l.cell_revision_id = r.id AND {EVIDENCE_STATUS_SQL} <> 'current') AS shadowed,"
+                # A proposal asked for after the current value and not yet decided: asking again would only repeat it.
+                " EXISTS (SELECT 1 FROM cell_revisions q WHERE q.cell_id = c.id AND q.kind = 'model_proposal'"
+                " AND q.rowid > r.rowid AND NOT EXISTS (SELECT 1 FROM cell_revisions d WHERE d.based_on_revision_id = q.id"
+                " AND d.kind IN ('accept_proposal', 'dismiss_proposal'))) AS waiting,"
+                f" {NEWER_TEXT_SQL.format(cell='c', revision='r')} AS newer_text"
                 " FROM evidence_cells c LEFT JOIN cell_revisions r"
                 " ON r.id = c.current_revision_id WHERE c.table_id = ? AND c.source_version_id = ?", (table_id, svid)
             )}
-            # Stale: made under an earlier column revision, or citing a file or extraction no longer in use (D45).
+            # Stale: made under an earlier column revision, citing a file or extraction no longer in use (D45), or made
+            # before PDF text of its source was stored.
             targets = [c["id"] for c in columns if c["id"] not in cells or cells[c["id"]]["column_revision"] is None
-                       or (include_stale and (cells[c["id"]]["column_revision"] != c["current_revision"] or cells[c["id"]]["shadowed"]))]
+                       or (include_stale and not cells[c["id"]]["waiting"]
+                           and (cells[c["id"]]["column_revision"] != c["current_revision"] or cells[c["id"]]["shadowed"]
+                                or cells[c["id"]]["newer_text"]))]
             if not targets:
                 continue
             if len(sources) == MAX_FILL_SOURCES:
@@ -876,6 +889,9 @@ class TableStore:
             flags.append("stale_column")
         evidence_statuses = {e["evidence_status"] for e in current_view["evidence"]} if current_view else set()
         flags += [status for status in SHADOWED_STATUSES if status in evidence_statuses]
+        if current and self.conn.execute(f"SELECT {NEWER_TEXT_SQL.format(cell='c', revision='r')} FROM evidence_cells c"
+                                         " JOIN cell_revisions r ON r.id = ? WHERE c.id = ?", (current["id"], cell["id"])).fetchone()[0]:
+            flags.append("newer_text")
         from deixis.domain.contracts import value_has_number_or_math  # contracts imports this module
 
         shown = current_view or (self._revision_view(pending) if pending else None)
@@ -916,6 +932,8 @@ class TableStore:
             "SELECT * FROM evidence_cells WHERE table_id = ? ORDER BY created_at", (table_id,)
         ) if c["column_id"] in by_column and c["source_version_id"] in active_rows]
         plan = self.fill_plan(research_id, table_id)
+        stale = self.fill_plan(research_id, table_id, include_stale=True)
+        stale_cells = sum(len(s["column_ids"]) for s in stale["sources"]) - sum(len(s["column_ids"]) for s in plan["sources"])
         return {
             "table": {k: table[k] for k in ("id", "research_id", "title", "template_id", "version", "created_at", "updated_at")},
             "columns": [{"id": c["id"], "position": c["position"], "revision": c["current_revision"], "version": c["version"],
@@ -930,6 +948,9 @@ class TableStore:
                        "pending_proposals": sum(c["pending_proposal"] is not None for c in cells)},
             "fill_estimate": {"sources": len(plan["sources"]), "sources_without_text": sum(not s["has_text"] for s in plan["sources"]),
                               **{k: plan[k] for k in ("sources_beyond_limit", "model_calls", "max_model_calls")}},
+            # Values made under an earlier column revision or citing a replaced/removed PDF or an earlier extraction;
+            # a recheck fill also fills the empty cells, and its results for filled cells wait as proposals (D37, D45).
+            "recheck_estimate": {"cells": stale_cells, "sources": len(stale["sources"]), "max_model_calls": stale["max_model_calls"]},
             "column_suggestions": self.column_suggestions(table_id),
         }
 

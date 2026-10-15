@@ -850,7 +850,7 @@ export type CellRevision = {
   run_id: string | null; created_at: string; model: { connection: string | null; resolved_model: string | null } | null; evidence: CellEvidence[]
   decision?: 'accepted' | 'dismissed' | 'pending' | 'superseded'  // model proposals in a cell's history
 }
-export type CellFlag = 'stale_column' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded' | 'proposal_before_edit' | 'proposal_invalid' | 'ocr_numbers_unchecked'
+export type CellFlag = 'stale_column' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded' | 'proposal_before_edit' | 'proposal_invalid' | 'ocr_numbers_unchecked' | 'newer_text'
 export type CellSummary = {
   cell_id: string | null; column_id: string; source_version_id: string; version: number
   current: CellRevision | null; pending_proposal: CellRevision | null; flags: CellFlag[]
@@ -862,6 +862,7 @@ export type TableView = {
   columns: TableColumn[]; rows: TableRow[]; removed_rows: TableRow[]; cells: CellSummary[]
   counts: { rows: number; columns: number; with_value: number; empty: number; pending_proposals: number }
   fill_estimate: { sources: number; sources_without_text: number; sources_beyond_limit: number; model_calls: number; max_model_calls: number }
+  recheck_estimate: { cells: number; sources: number; max_model_calls: number }
   column_suggestions: { run_id: string; step_id: string; columns: ColumnSuggestion[]; notes: string } | null
 }
 export type TableSummary = { id: string; title: string; version: number; created_at: string; updated_at: string; rows: number; columns: number; access: { pdf_available: number; abstract: number; metadata: number }; auto_columns: number
@@ -1441,8 +1442,8 @@ export const api = {
     request<TableView>(`/api/researches/${id}/tables/${tableId}/columns/${columnId}/restore`, json('POST', { expected_version: expectedVersion })),
   suggestColumns: (id: string, tableId: string, idempotencyKey: string) =>
     request<Run>(`/api/researches/${id}/tables/${tableId}/column-suggestions`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }),
-  fillTable: (id: string, tableId: string, expectedVersion: number, idempotencyKey: string) =>
-    request<Run>(`/api/researches/${id}/tables/${tableId}/fill`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+  fillTable: (id: string, tableId: string, expectedVersion: number, idempotencyKey: string, includeStale = false) =>
+    request<Run>(`/api/researches/${id}/tables/${tableId}/fill`, json('POST', { expected_version: expectedVersion, include_stale: includeStale }, { 'Idempotency-Key': idempotencyKey })),
   cell: (id: string, tableId: string, columnId: string, sourceId: string) =>
     request<CellView>(`/api/researches/${id}/tables/${tableId}/cells/${columnId}/${sourceId}`),
   editCell: (id: string, tableId: string, columnId: string, sourceId: string, body: CellEdit, idempotencyKey: string) =>

@@ -35,6 +35,7 @@ from deixis.documents import local_embedding, math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
 from deixis.documents import tool_updates
+from deixis.documents import equation_regions, mathpix
 from deixis.documents import upload_record
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
@@ -66,6 +67,7 @@ from deixis.workflow import person_reading
 from deixis.workflow import waiting as pdf_waiting
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import english_question
+from deixis.workflow import equations as equations_module
 from deixis.workflow.equations import EquationService, chunk_numbers, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.local_embedding_service import EmbeddingService, ServiceError
 from deixis.workflow.flow import FlowDeps, ResearchFlow
@@ -208,6 +210,16 @@ def create_research_row(store: Store, body: CreateResearch, literature_connectio
 
 class KeyValue(BaseModel):
     value: str = Field(min_length=1, max_length=400, pattern=r"^\S+$")
+
+
+class MathpixPair(BaseModel):
+    app_id: str = Field(min_length=1, max_length=200, pattern=r"^\S+$")
+    app_key: str = Field(min_length=8, max_length=400, pattern=r"^\S+$")
+
+
+class MathpixSettings(BaseModel):
+    switch: Literal["on", "off"] | None = None
+    monthly_budget: int | None = Field(default=None, ge=0, le=100_000)
 
 
 class ProxyAddress(BaseModel):
@@ -793,6 +805,8 @@ def create_app(
             store, math_reader.MathReader(math_reader.runtime_paths(settings.data_dir)), settings.papers_dir)
         if equation_service is None:
             equations.configure_arxiv_source(settings.effective_arxiv_source(), settings.data_dir)  # D104, off unless the flag says auto
+        if equations.mathpix_client is None:
+            equations.configure_mathpix(settings.data_dir, http)  # D40: requests only with the switch on and a key pair
         # The built-in embedding model (slice 21): a test injects its own embedder and never starts a real runner.
         builtin_paths = local_embedding.builtin_paths(settings.data_dir)
         embedder = local_embedder if local_embedder is not None else local_embedding.LocalEmbedder(builtin_paths)
@@ -1279,16 +1293,86 @@ def create_app(
         store_of(request).set_setting(role, body.model_dump())
         return {role: body.model_dump()}
 
+    class UsePairRoute(Exception):
+        pass
+
+    @app.exception_handler(UsePairRoute)
+    async def use_pair_route(request: Request, exc: UsePairRoute) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"code": "use_pair_route",
+                                                      "detail": "This key is part of a pair and is saved on its own route."})
+
     def managed_key(env: str) -> credentials.ManagedKey:
         if env not in credentials.MANAGED_KEYS:
             raise HTTPException(404, f"{env} is not a key DEIXIS manages")
+        if credentials.MANAGED_KEYS[env].pair:
+            raise UsePairRoute()
         return credentials.MANAGED_KEYS[env]
 
     @app.get("/api/credentials")
     async def list_credentials() -> dict[str, Any]:
         name = credentials.keychain_name()
         return {"keychain": {"available": name is not None, "name": name},
-                "keys": [credentials.status(env) for env in credentials.MANAGED_KEYS]}
+                "keys": [credentials.status(env) for env, key in credentials.MANAGED_KEYS.items() if not key.pair]}
+
+    # ---- Mathpix (D40): the key pair, the switch and the monthly budget --------------------------------------------
+    @app.get("/api/mathpix")
+    async def mathpix_status(request: Request) -> dict[str, Any]:
+        return request.app.state.equations.mathpix_status()
+
+    @app.put("/api/mathpix")
+    async def put_mathpix_settings(body: MathpixSettings, request: Request) -> dict[str, Any]:
+        """The switch and the monthly budget; turning the switch off stops new requests (sent ones finish or time out)."""
+        store = store_of(request)
+        if body.switch is not None:
+            store.set_setting(equations_module.MATHPIX_SWITCH, body.switch)
+        if body.monthly_budget is not None:
+            store.set_setting(equations_module.MATHPIX_BUDGET, body.monthly_budget)
+        return request.app.state.equations.mathpix_status()
+
+    @app.get("/api/mathpix/estimate")
+    async def mathpix_estimate(request: Request) -> dict[str, Any]:
+        """How many PDFs Mathpix would read and an upper bound of requests, from the detector alone; nothing is sent."""
+        return await request.app.state.equations.mathpix_estimate()
+
+    @app.put("/api/credentials/mathpix")
+    async def save_mathpix_pair(body: MathpixPair, request: Request) -> Any:
+        """Test the pair against Mathpix's usage API, then store it as one keychain item; a refused pair is not stored. A
+        pair that only failed to reach Mathpix is stored, untested."""
+        if credentials.status(mathpix.ENV)["source"] != "dotenv" and credentials.keychain_name() is None:
+            raise HTTPException(503, "No system keychain is available")
+        result = await mathpix.test_pair(request.app.state.http, body.app_id, body.app_key)
+        if result["status"] == "rejected":
+            return JSONResponse(status_code=422, content={"code": "credential_test_failed", "service": "mathpix",
+                                                          "detail": f"The key pair was not saved. {result['detail']}",
+                                                          "http_status": result["http_status"]})
+        try:
+            credentials.save(mathpix.ENV, mathpix.encode_pair(body.app_id, body.app_key))
+        except credentials.KeySourceConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except KeyringError as exc:
+            raise HTTPException(503, f"The keychain did not store the key pair ({type(exc).__name__})") from exc
+        except OSError as exc:
+            raise HTTPException(503, f".env could not be written ({type(exc).__name__})") from exc
+        return {"mathpix": request.app.state.equations.mathpix_status(), "test": result}
+
+    @app.post("/api/credentials/mathpix/test")
+    async def test_mathpix_pair(request: Request) -> dict[str, Any]:
+        pair = mathpix.read_pair()
+        if not isinstance(pair, mathpix.Pair):
+            raise HTTPException(422, "No readable Mathpix key pair is saved")
+        return await mathpix.test_pair(request.app.state.http, pair.app_id, pair.app_key)
+
+    @app.delete("/api/credentials/mathpix")
+    async def delete_mathpix_pair(request: Request) -> dict[str, Any]:
+        try:
+            credentials.delete(mathpix.ENV)
+        except credentials.KeySourceConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except KeyringError as exc:
+            raise HTTPException(503, f"The keychain did not remove the key pair ({type(exc).__name__})") from exc
+        except OSError as exc:
+            raise HTTPException(503, f".env could not be written ({type(exc).__name__})") from exc
+        return {"mathpix": request.app.state.equations.mathpix_status()}
 
     @app.put("/api/credentials/{env}")
     async def save_credential(env: str, body: KeyValue, request: Request) -> dict[str, Any]:
@@ -2174,6 +2258,28 @@ def create_app(
             raise HTTPException(404, "Passage is not part of this research")
         return view
 
+    @app.get("/api/researches/{research_id}/passages/{passage_id}/equations/{number}/crop")
+    async def get_equation_crop(research_id: str, passage_id: str, number: str, request: Request) -> Response:
+        """The image Mathpix read a passage's equation from (D40), rendered again from the stored PDF by its recipe; it is
+        served only when it hashes to the image that was sent."""
+        store = store_of(request)
+        store.research(research_id)
+        if passage_view(store, research_id, passage_id) is None:
+            raise HTTPException(404, "Passage is not part of this research")
+        passage = store.passage(passage_id)
+        item = equations_module.mathpix_crop(store, passage["asset_id"] or "", passage["extraction_version"] or "",
+                                             passage["physical_page"], number) if passage["text_source"] == "equation_ocr" else None
+        if item is None:
+            raise HTTPException(404, "No equation read by Mathpix has this number in this passage")
+        root = settings.papers_dir.resolve()
+        path = (root / store.asset(passage["asset_id"])["storage_path"]).resolve()
+        if not path.is_relative_to(root) or not path.exists():
+            raise HTTPException(404, "File missing")
+        png = await asyncio.to_thread(equation_regions.render_crop, path, item["crop"])
+        if hashlib.sha256(png).hexdigest() != item["crop_sha256"]:
+            raise HTTPException(409, "The stored PDF no longer gives the image that was read")
+        return Response(png, media_type="image/png", headers={"Cache-Control": "no-cache"})
+
     @app.get("/api/researches/{research_id}/assets/{asset_id}")
     async def get_asset(research_id: str, asset_id: str, request: Request) -> FileResponse:
         store = store_of(request)
@@ -2227,7 +2333,7 @@ def create_app(
         version = extraction["extraction_version"] if extraction else asset["extraction_version"]
         to_check = equations_to_check(store, asset_id, version)
         source_numbers = {version: latex_numbers(store, asset_id, version)
-                          for version in {p["extraction_version"] for p in passages if p["text_source"] == "latex_source"}}
+                          for version in {p["extraction_version"] for p in passages if p["text_source"] in ("latex_source", "equation_ocr")}}
         return {
             "occurrence": occurrence_view(store, asset, dict(extraction) if extraction else None, extraction_version=version),
             "asset": {k: asset[k] for k in ("id", "extraction_status", "page_count", "origin", "byte_size", "original_filename")}
@@ -2235,7 +2341,8 @@ def create_app(
             "passages": [{k: passage[k] for k in ("id", "kind", "text", "physical_page", "printed_label", "extraction_version", "payload_ref", "text_source")}
                          | {"equations_to_check": to_check.get(passage["physical_page"], 0) if passage["text_source"] == "marker" else 0,
                             "source_equations": chunk_numbers(source_numbers[passage["extraction_version"]], passage["physical_page"],
-                                                              passage["payload_ref"]) if passage["text_source"] == "latex_source" else []}
+                                                              passage["payload_ref"])
+                            if passage["text_source"] in ("latex_source", "equation_ocr") else []}
                          for passage in passages],
             "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
                                                 "cited_by_count", "cited_by_count_at")}
@@ -2461,9 +2568,10 @@ def create_app(
         store = store_of(request)
         asset_in_use(store, research_id, source_version_id, asset_id)
         service = request.app.state.equations
-        if not service.available():
+        state = equation_state(store, asset_id)
+        if not service.available() and not (state.get("route") == mathpix.ENGINE and service.mathpix_active()):
             raise HTTPException(409, "The equation reader is not installed")
-        if equation_state(store, asset_id)["state"] != "failed":
+        if state["state"] != "failed":
             raise HTTPException(409, "Only a failed equation reading is read again")
         service.retry(asset_id)
         return research_view(store, research_id)

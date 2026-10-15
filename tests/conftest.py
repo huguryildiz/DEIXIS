@@ -61,7 +61,7 @@ def no_model_api_keys(monkeypatch):
     """Tests never use real model API keys; a test that needs one sets a fake key."""
     for name in ("GEMINI_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY", "MISTRAL_API_KEY",
                  "XAI_API_KEY", "GITHUB_TOKEN", "ZAI_API_KEY", "MODEL_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY",
-                 "MIMO_API_KEY"):
+                 "MIMO_API_KEY", "MATHPIX_CREDENTIALS"):
         # setenv first records the original value, so a key a test saves through the app is removed afterwards too.
         monkeypatch.setenv(name, "unset")
         monkeypatch.delenv(name)

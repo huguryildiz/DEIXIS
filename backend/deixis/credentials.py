@@ -35,9 +35,10 @@ DEEPSEEK_API_URL = "https://api.deepseek.com"
 @dataclass(frozen=True)
 class ManagedKey:
     env: str
-    group: str  # 'model' or 'source'
+    group: str  # 'model', 'source' or 'equations'
     service: str
     testable: bool = False
+    pair: bool = False  # saved, tested and removed only together on its own route; hidden from the generic key list
 
 
 MANAGED_KEYS = {k.env: k for k in (
@@ -66,6 +67,8 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("ZOTERO_LIBRARY_ID", "source", "zotero"),
     # Kept in the keychain only; Settings shows no card for it (D19).
     ManagedKey("TYPESAFE_API_KEY", "source", "typesafe"),
+    # Mathpix's app ID and key as one JSON item with a revision (D40), on `/api/credentials/mathpix`.
+    ManagedKey("MATHPIX_CREDENTIALS", "equations", "mathpix", pair=True),
 )}
 _from_keychain: set[str] = set()
 _from_dotenv: set[str] = set()

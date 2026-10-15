@@ -34,6 +34,7 @@ from deixis.documents.identity import MATCH_TEXT_CHARS
 from deixis.documents import local_embedding, math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf
+from deixis.documents import tool_updates
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
 from deixis.workflow import fast_path, intent, small_batch
@@ -2184,6 +2185,18 @@ def create_app(
     async def ocr_status() -> dict[str, Any]:
         """The local Tesseract: installed or not, its version, the languages it can read and the install command (D51)."""
         return await asyncio.to_thread(ocr.tesseract_status)
+
+    @app.get("/api/pdf-reader")
+    async def pdf_reader_status() -> dict[str, Any]:
+        """PyMuPDF, which reads every PDF's text layer: it comes with DEIXIS, so only its version is reported."""
+        return tool_updates.pymupdf_status()
+
+    @app.get("/api/tool-updates/{tool}")
+    async def tool_update(tool: str, request: Request) -> dict[str, Any]:
+        """Installed and latest version of Tesseract, Marker or PyMuPDF; one request, sent only when the user asks."""
+        if tool not in tool_updates.TOOLS:
+            raise HTTPException(404, "Unknown tool")
+        return await tool_updates.check(tool, request.app.state.http, request.app.state.equations.reader.paths)
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/ocr", status_code=202)
     async def read_with_ocr(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:

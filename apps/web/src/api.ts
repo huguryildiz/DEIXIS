@@ -357,6 +357,10 @@ export type OcrRead = {
   engine: string; version: string | null; languages: string[]; pages_read: number; pages_with_text: number; blank_pages: number; failed_pages: number[]
 }
 // The local Tesseract (D51): usable when it runs and has data for at least one language.
+// PyMuPDF, which reads every PDF's text layer; it comes with DEIXIS.
+export type PdfReader = { available: boolean; version: string; mupdf_version: string }
+// An update check of a PDF tool, run only when asked; `tested` is the version DEIXIS pins (Marker, PyMuPDF).
+export type ToolUpdate = { tool: 'tesseract' | 'marker' | 'pymupdf'; installed: string | null; tested: string | null; latest: string | null; update_available: boolean | null; command: string | null; error: string | null }
 export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: string | null }
 // What became of a cited passage's file since it was stored (D45).
 export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded'
@@ -1297,6 +1301,8 @@ export const api = {
   rereadEquations: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/equations`, { method: 'POST' }),
   ocr: () => request<OcrTool>('/api/ocr'),
+  pdfReader: () => request<PdfReader>('/api/pdf-reader'),
+  toolUpdate: (tool: ToolUpdate['tool']) => request<ToolUpdate>(`/api/tool-updates/${tool}`),
   // Starts a pdf_ocr run that reads the PDF's pages without text with the local Tesseract (D51).
   readWithOcr: (id: string, sourceId: string, assetId: string) =>
     request<Run>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/ocr`, { method: 'POST' }),

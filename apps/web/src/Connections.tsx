@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, ChevronRight, Copy, Cpu, FileText, HardDrive, MemoryStick, Link, LoaderCircle, RefreshCw, RotateCw, ScanText, Server, Sigma, TriangleAlert, Upload } from 'lucide-react'
+import { Ban, BookOpenText, ChevronRight, Copy, Cpu, FileText, HardDrive, MemoryStick, Link, LoaderCircle, RefreshCw, RotateCw, ScanText, Server, Sigma, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DataLocationCard } from './DataLocation'
-import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
@@ -47,12 +47,12 @@ const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocal
 // Settings icons, drawn in black and white (Settings.css): brand marks where connectionIcons.tsx has one, a plain glyph otherwise.
 const glyph = (icon: ReactNode) => <span className="connection-icon" aria-hidden="true">{icon}</span>
 const GLYPHS: Record<string, ReactNode> = {
-  ocr: glyph(<ScanText strokeWidth={1.8} />), marker: glyph(<Sigma strokeWidth={1.8} />), servers: glyph(<Server strokeWidth={1.8} />),
+  ocr: glyph(<ScanText strokeWidth={1.8} />), marker: glyph(<Sigma strokeWidth={1.8} />), pymupdf: glyph(<BookOpenText strokeWidth={1.8} />), servers: glyph(<Server strokeWidth={1.8} />),
   server: glyph(<Server strokeWidth={1.8} />), 'reference-files': glyph(<FileText strokeWidth={1.8} />), off: glyph(<Ban strokeWidth={1.8} />),
 }
 const settingsIcon = (key: string) => GLYPHS[key] ?? <ConnectionIcon id={localToolIcon(key)} />
 
-type Selected = { kind: 'account' | 'model' | 'cli' | 'servers' | 'equation-reader' | 'ocr-tool' | 'provider' | 'api-key' | 'zotero' | 'reference-files'; id: string }
+type Selected = { kind: 'account' | 'model' | 'cli' | 'servers' | 'equation-reader' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'api-key' | 'zotero' | 'reference-files'; id: string }
 type Tone = 'ok' | 'no' | 'warn'
 
 // Why a service refused a new key, in plain words, with the HTTP code it answered. The readings follow each
@@ -297,6 +297,7 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
       {!ready && <><dt>{t('Needs')}</dt><dd>{t('About 4.4 GB of disk · {gb} GB free', { gb: reader.disk_free_gb })}</dd></>}
     </dl>
     {reader.installed && <ReaderProgress reader={reader} />}
+    {ready && !running && <ToolUpdateCheck tool="marker" />}
     {!ready && !running && (reader.install.available
       ? <div className="actions"><Button variant="outline" size="sm" onClick={() => setConfirm('install')}>{t('Install')}</Button></div>
       : <p className="local-tool-note">{reader.install.unavailable_reason}<br /><a href={reader.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
@@ -316,6 +317,49 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
   </div>
 }
 
+// An update check for a PDF tool, sent only when the user asks. Tesseract is the user's own install, so the result names
+// the Homebrew command; Marker and PyMuPDF are pinned by DEIXIS and a newer release arrives with a DEIXIS update.
+function ToolUpdateCheck({ tool }: { tool: ToolUpdate['tool'] }) {
+  const [result, setResult] = useState<ToolUpdate | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const toast = useToast()
+  function check() {
+    setBusy(true); setError('')
+    api.toolUpdate(tool).then(setResult, (e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  const copy = (text: string) => { writeClipboard(text).then(() => toast('success', t('Command copied.')), () => toast('error', t('Could not copy; select the command and copy it.'))) }
+  const pinned = tool !== 'tesseract'
+  const line = !result ? null
+    : result.error || !result.latest ? t('Could not reach the release list: {message}', { message: result.error ?? '' })
+    : !result.installed ? t('Latest release: {latest}. It is not installed here.', { latest: result.latest })
+    : !result.update_available ? t('Up to date ({version}).', { version: result.installed })
+    : pinned ? t('{latest} is out; DEIXIS uses {tested}, the version its reading was tested with. It is updated with DEIXIS.', { latest: result.latest, tested: result.tested ?? result.installed })
+    : t('{latest} is out; this computer has {installed}. Run this in a terminal to update:', { latest: result.latest, installed: result.installed })
+  const stale = pinned && result?.installed && result.tested && result.installed !== result.tested
+  return <div className="tool-update">
+    <div className="actions"><Button variant="outline" size="sm" onClick={check} disabled={busy}>{busy ? <LoaderCircle className="chat-spin" aria-hidden /> : <RefreshCw aria-hidden />}{t('Check for updates')}</Button></div>
+    {error && <p className="local-tool-error">{error}</p>}
+    {line && <p className="local-tool-note" role="status">{line}</p>}
+    {stale && <p className="local-tool-note">{t('The installed Marker is {installed}, not {tested}. Remove it and install it again to get the tested version.', { installed: result.installed ?? '', tested: result.tested ?? '' })}</p>}
+    {result?.update_available && result.command && <div className="cmd-row"><code className="field mono">{result.command}</code><button type="button" className="ghost" onClick={() => copy(result.command!)}><Copy aria-hidden />{t('Copy')}</button></div>}
+  </div>
+}
+
+// PyMuPDF reads the text layer of every PDF; it comes with DEIXIS, so there is nothing to install.
+function PdfReaderDetails({ reader }: { reader: PdfReader }) {
+  return <div className="local-tool-details-panel">
+    <span className="status-chip">{t('Installed')}</span>
+    <p className="local-tool-note">{t('PyMuPDF reads the text, page numbers and layout of every PDF you add or DEIXIS fetches. It comes with DEIXIS, runs on this computer, and no file leaves it.')}</p>
+    <dl className="local-tool-facts">
+      <dt>{t('Version')}</dt><dd>{reader.version}</dd>
+      <dt>{t('MuPDF')}</dt><dd>{reader.mupdf_version}</dd>
+      <dt>{t('License')}</dt><dd>AGPL-3.0</dd>
+    </dl>
+    <ToolUpdateCheck tool="pymupdf" />
+  </div>
+}
+
 // The local OCR tool (D51): detected, not installed by DEIXIS.
 function OcrToolDetails({ tool }: { tool: OcrTool }) {
   return <div className="local-tool-details-panel">
@@ -328,6 +372,7 @@ function OcrToolDetails({ tool }: { tool: OcrTool }) {
       {tool.missing_languages.length > 0 && <><dt>{t('Missing')}</dt><dd>{ocrLanguagesText(tool.missing_languages)}</dd></>}
     </dl>
     {tool.reason && <p className="local-tool-note">{tool.reason}</p>}
+    {tool.available && <ToolUpdateCheck tool="tesseract" />}
   </div>
 }
 
@@ -471,6 +516,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const [toolsError, setToolsError] = useState('')
   const [reader, setReader] = useState<EquationReader | null>(null)
   const [ocrTool, setOcrTool] = useState<OcrTool | null>(null)
+  const [pdfReader, setPdfReader] = useState<PdfReader | null>(null)
   const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
   const [semError, setSemError] = useState('')
   const [pending, setPending] = useState<{ provider: SemanticSearchProvider; model: string | null } | null>(null)
@@ -525,6 +571,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   }, [builtin, loadBuiltin, loadSemantic])
   useEffect(() => { void loadReader() }, [loadReader])
   useEffect(() => { void loadOcr() }, [loadOcr])
+  useEffect(() => { api.pdfReader().then(setPdfReader, (e: Error) => setToolsError(e.message)) }, [])
   useEffect(() => {
     if (reader?.job?.status !== 'running' && !reader?.reading) return
     const timer = window.setInterval(() => { void loadReader() }, reader?.job?.status === 'running' ? 2000 : 10000)
@@ -637,6 +684,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const ocrStatus = (): [Tone, string] => !ocrTool ? (toolsError ? unknown : loading)
     : !ocrTool.available ? ['no', t('Not installed')] : !ocrTool.missing_languages.length ? ['ok', t('Installed')]
     : ['warn', t(ocrTool.languages.join() === 'eng' ? 'English only' : 'Languages missing')]
+  const pdfReaderStatus = (): [Tone, string] => pdfReader ? ['ok', t('Installed')] : toolsError ? unknown : loading
   const readerStatus = (): [Tone, string] => !reader ? (toolsError ? unknown : loading)
     : reader.job?.status === 'running' ? ['no', t('Installing…')] : reader.installed && reader.models_downloaded ? ['ok', t('Installed')] : ['no', t('Not installed')]
   const providerStatus = (mode: string | null): [Tone, string] => mode === 'api_key' ? ['ok', t('Key configured')] : mode === 'keyless' ? ['ok', t('No key needed')] : ['no', t('Not set up')]
@@ -704,7 +752,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const provider = sel?.kind === 'provider' ? data?.providers.find(p => p.id === sel.id) : undefined
   const cliTool = sel?.kind === 'cli' ? toolOf(sel.id) : accountId ? toolOf(ACCOUNT_TOOLS[accountId].tool) : undefined
   // The sheet title carries the same icon as the tile it opened from.
-  const sheetIconKey = !sel ? '' : sel.kind === 'api-key' ? 'openai' : sel.kind === 'ocr-tool' ? 'ocr' : sel.kind === 'reference-files' ? 'reference-files' : sel.id
+  const sheetIconKey = !sel ? '' : sel.kind === 'api-key' ? 'openai' : sel.kind === 'ocr-tool' ? 'ocr' : sel.kind === 'pdf-reader' ? 'pymupdf' : sel.kind === 'reference-files' ? 'reference-files' : sel.id
   const name = !sel ? ''
     : sel.kind === 'account' ? ACCOUNT_TOOLS[sel.id]?.name ?? sel.id
     : sel.kind === 'model' ? modelNames[sel.id] ?? sel.id
@@ -712,6 +760,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     : sel.kind === 'api-key' ? t('OpenAI API')
     : sel.kind === 'equation-reader' ? t('Equation reader (Marker)')
     : sel.kind === 'ocr-tool' ? t('OCR (Tesseract)')
+    : sel.kind === 'pdf-reader' ? t('PDF reader (PyMuPDF)')
     : sel.kind === 'servers' ? t('Local model servers')
     : sel.kind === 'reference-files' ? t('BibTeX / RIS files')
     : sel.kind === 'zotero' ? 'Zotero'
@@ -885,6 +934,11 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
       <div className="acts">{checkButton('ocr-tool', 'Find it on this computer', () => loadOcr(true))}</div>
       {ocrTool && <OcrToolDetails tool={ocrTool} />}
     </>
+  } else if (sel?.kind === 'pdf-reader') {
+    body = <>
+      {dmeta('pdf-reader', pdfReaderStatus())}
+      {pdfReader && <PdfReaderDetails reader={pdfReader} />}
+    </>
   } else if (sel?.kind === 'zotero') {
     body = <>
       {dmeta('zotero', zoteroStatus())}
@@ -924,6 +978,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
       {tile('ocr', 'ocr-tool', 'tesseract', t('OCR (Tesseract)'), t('Scanned PDFs'), ocrStatus())}
       {tile('servers', 'servers', 'servers', t('Local model servers'), t('Ollama or LM Studio · no account'), serversStatus())}
       {tile('marker', 'equation-reader', 'marker', t('Equation reader (Marker)'), t('Reads equations as LaTeX'), readerStatus())}
+      {tile('pymupdf', 'pdf-reader', 'pymupdf', t('PDF reader (PyMuPDF)'), t('Reads the text of every PDF'), pdfReaderStatus())}
     </div>
     <div className="computer-more" data-panel="models">
       {/* Copilot CLI (D24) and Gemini CLI (D23) run steps like Codex and Claude Code; the mockup's five tiles above stay as they are. */}

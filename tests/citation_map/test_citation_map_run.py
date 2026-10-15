@@ -359,6 +359,34 @@ def test_an_outside_work_openalex_does_not_return_is_not_asked_again(lib):
     after = citation_map_run.prepare(lib.store, lib.rid)
     assert after["outside_to_describe"] == 0 and after["requests"] == 0
     sent = len(lib.api.sent("openalex"))
-    with pytest.raises(Exception):
+    with pytest.raises(RevisionConflict):
         citation_map_run.request_run(lib.store, lib.rid)  # nothing left to fill
     assert len(lib.api.sent("openalex")) == sent
+
+
+def test_an_answer_without_a_count_is_asked_again(lib):
+    provider(lib, "W40", refs=["W77"])
+    provider(lib, "W41", refs=["W77"])
+    lib.api.on_request = None
+    real = lib.api.handler
+
+    def no_meta(request):
+        response = real(request)
+        if request.url.params["filter"].startswith("openalex:W77"):
+            return httpx.Response(200, json={"results": []})
+        return response
+
+    lib.http._transport = httpx.MockTransport(no_meta)
+    assert execute(lib, queue(lib))["status"] == "completed"
+    assert citation_map_run.prepare(lib.store, lib.rid)["outside_to_describe"] == 1
+
+
+def test_an_empty_answer_in_one_research_does_not_skip_the_work_in_another(lib):
+    provider(lib, "W40", refs=["W77"])
+    provider(lib, "W41", refs=["W77"])
+    assert execute(lib, queue(lib))["status"] == "completed"
+    other = lib.store.create_research("SYNTHETIC second question?", "attached", "quick", [], "fake", "fake-model", "en")
+    for oid in ("W40", "W41"):
+        svid = lib.store.find_source_by_identifier("openalex", oid)
+        lib.store.add_to_corpus(other, svid, "library", selection_state="pending", selection_origin="user")
+    assert citation_map_run.prepare(lib.store, other)["outside_to_describe"] == 1

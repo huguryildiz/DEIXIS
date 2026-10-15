@@ -120,17 +120,20 @@ def unread_targets(store: Any, research_id: str) -> list[tuple[str, str]]:
 
 
 def asked_without_answer(store: Any, research_id: str) -> set[str]:
-    """Outside works an earlier run of this research asked OpenAlex to describe, in a request that succeeded, and that
-    still have no stored record: OpenAlex has no work under that id (merged or withdrawn), so asking again would spend
-    a request every time for nothing (seen live on 16 Oct: four of 38 ids came back empty twice)."""
+    """Outside works an earlier run of this research asked OpenAlex to describe, in a request that succeeded with a
+    complete answer (OpenAlex's own count present and every counted work returned), and that still have no stored
+    record. OpenAlex returned nothing for them; asking again would spend a request every time for nothing (seen live on
+    16 Oct: four of 38 ids came back empty twice). An answer without a count proves nothing and is asked again."""
     asked: set[str] = set()
     for row in store.conn.execute(
-        "SELECT p.output_json FROM run_steps p JOIN runs r ON r.id = p.run_id"
+        "SELECT p.output_json, d.output_json AS answer FROM run_steps p JOIN runs r ON r.id = p.run_id"
         " JOIN run_steps d ON d.run_id = p.run_id AND d.operation_key = 'citation_map:describe' AND d.status = 'succeeded'"
         " WHERE r.research_id = ? AND r.kind = 'citation_map' AND p.operation_key = 'citation_map:describe_plan'"
         " AND p.status = 'succeeded'", (research_id,)
     ):
-        asked.update(json.loads(row["output_json"] or "{}").get("ids") or [])
+        answer = json.loads(row["answer"] or "{}")
+        if answer.get("provider_total") is not None and answer["provider_total"] <= answer.get("returned", 0):
+            asked.update(json.loads(row["output_json"] or "{}").get("ids") or [])
     return asked
 
 
@@ -274,7 +277,8 @@ async def _request(flow: Any, run: dict[str, Any], key: str, send: Callable[[], 
     returned = len((outcome.raw_payload or {}).get("results") or [])
     if ok and outcome.provider_total is not None and outcome.provider_total > returned:
         ok, outcome.status = False, "incomplete"  # a work cut off the page could change what a DOI names
-    output = lookups.transport_output(store, step, {"status": outcome.status, "returned": len(outcome.records)})
+    output = lookups.transport_output(store, step, {"status": outcome.status, "returned": len(outcome.records),
+                                                     "provider_total": outcome.provider_total})
     with transaction(store.conn):
         if ok:
             store.finish_step(step["id"], "succeeded", output=output | apply(outcome, step))

@@ -802,16 +802,14 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           <span>{dateText(current.created_at)}</span>
         </p>}
         {!draft && <div className="dacts">
-          <button type="button" className="btn-pri" disabled={recheckLocked} onClick={() => mutate(() => api.recheckCell(researchId, tableId, column.id, sv, cell.version, newKey()), t('Recheck started. Its result will wait as a proposal.'), onRunStarted)}><RotateCw size={14} aria-hidden />{t('Recheck this cell')}</button>
+          <button type="button" className={`btn-pri${rechecking ? ' is-working' : ''}`} disabled={recheckLocked} onClick={() => mutate(() => api.recheckCell(researchId, tableId, column.id, sv, cell.version, newKey()), t('Recheck started. Its result will wait as a proposal.'), onRunStarted)}>{rechecking ? <><span className="spin" aria-hidden />{t('Rechecking…')}</> : <><RotateCw size={14} aria-hidden />{t('Recheck this cell')}</>}</button>
           <button type="button" className="ghost" disabled={busy} onClick={() => { setProblem(''); setDraft(draftFrom(column, current)); setDraftBase(cell?.version ?? null) }}><PencilLine size={14} aria-hidden />{t('Edit value')}</button>
           {source && <button type="button" className="ib" aria-label={t('Open the source')} title={t('Open the source')} onClick={onOpenSource}><FileText size={16} aria-hidden /></button>}
         </div>}
-        {!draft && <p className="foot-note cell-scope">{!available ? t('This source has no stored text, so a recheck has nothing to read.')
-          : rechecking ? t('This cell is being rechecked. Its result will wait as a proposal.')
+        {!draft && !rechecking && <p className="foot-note cell-scope">{!available ? t('This source has no stored text, so a recheck has nothing to read.')
           : activeRun ? t('Another run is active; a recheck can start when it finishes.')
           : t(recheckPassages === 1 ? 'Only {source} · up to {n} passage · {model} · 1–2 calls. The result waits as a proposal; the model does not see the current value.' : 'Only {source} · up to {n} passages · {model} · 1–2 calls. The result waits as a proposal; the model does not see the current value.', { source: row.source_key || row.title, n: recheckPassages, model })}</p>}
         {activeRun && !rechecking && <div className="notice warn"><Pause size={15} aria-hidden /><span>{t('Model actions are locked while a run is in progress. Recheck becomes available when it finishes.')}</span></div>}
-        {rechecking && <p className="cell-live" role="status"><span className="spin" aria-hidden />{t('Rechecking this cell…')}</p>}
         {limited && value && <p className="cell-limit"><TriangleAlert size={14} aria-hidden /><span><strong>{t(current.reading_depth === 'abstract' ? 'Read from the abstract only.' : 'Read from the metadata only.')}</strong> {t('The full text of this source was not read.')}</span></p>}
         {current?.note && <p className="evidence-note"><span>{t(current.author === 'human' ? 'Your note' : 'Model note')}</span>{current.note}</p>}
         {flags.includes('stale_column') && current && flag(t('Made under an earlier definition of this column (revision {old}). It stays until you edit it or use a newer proposal.', { old: current.column_revision }))}
@@ -820,8 +818,8 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
         {flags.includes('ocr_numbers_unchecked') && current && flag(t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.'))}
         {flags.includes('text_superseded') && flag(t('This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction.'))}
 
-        {rechecking && !pending && <section className="evidence-block" aria-labelledby="evidence-slot-title">
-          <h4 className="sub" id="evidence-slot-title">{t('Pending proposal')}</h4>
+        {rechecking && !pending && <section className="evidence-block cell-waiting" aria-labelledby="evidence-slot-title">
+          <h4 className="sub" id="evidence-slot-title">{t('Pending proposal')}<span className="cell-live" role="status"><span className="cell-pulse" aria-hidden />{t('Rechecking this cell…')}</span></h4>
           <div className="cell-slot" aria-hidden><i /><i /><i /></div>
           <p className="foot-note">{t('The result will appear here as a proposal; the current value does not change.')}</p>
         </section>}
@@ -870,7 +868,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
 
         <div>
           {current && current.evidence.length > 0 && <EvidenceList items={current.evidence} onShow={showEvidence} />}
-          {!current ? <p className="foot-note">{t('Not filled yet.')}</p>
+          {!current ? null
             : value && !current.evidence.length ? <div className="notice warn"><TriangleAlert size={15} aria-hidden /><span>{t('No linked evidence: this value was recorded without a passage. Recheck it, or treat it as unsupported.')}</span></div>
             : !value && current.state && passageNotes[current.state] ? <p className="foot-note">{t(passageNotes[current.state]!)}</p> : null}
         </div>

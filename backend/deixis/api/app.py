@@ -397,6 +397,10 @@ class ZoteroSourceChoice(BaseModel):
     source: Literal["local", "web"]
 
 
+class WaitingSkip(BaseModel):
+    work_id: str = Field(min_length=1, max_length=200)
+
+
 class ZoteroImport(BaseModel):
     source: Literal["local", "web"]
     collection_key: str = Field(pattern=r"^[A-Z0-9]{8}$")
@@ -2094,6 +2098,23 @@ def create_app(
         return view | {"files": person_reading.files_view(
             store, research_id, request.app.state.worker.flow.person_reading_on(research_id))}
 
+    # "Continue without PDF" (D46): the person could not find the work's PDF; it is read from its abstract only.
+    @app.post("/api/researches/{research_id}/waiting/skips", status_code=201)
+    async def skip_waiting_pdf(research_id: str, body: WaitingSkip, request: Request) -> dict[str, Any]:
+        """The work leaves the waiting list and its counts; nothing is queued, the answer already reads its abstract."""
+        store = store_of(request)
+        store.research(research_id)
+        pdf_waiting.skip(store, research_id, body.work_id)
+        return await waiting_list(research_id, request)
+
+    @app.delete("/api/researches/{research_id}/waiting/skips/{work_id}")
+    async def undo_waiting_skip(research_id: str, work_id: str, request: Request) -> dict[str, Any]:
+        """Undo "Continue without PDF": the work waits for the person's PDF again when it still would."""
+        store = store_of(request)
+        store.research(research_id)
+        pdf_waiting.unskip(store, research_id, work_id)
+        return await waiting_list(research_id, request)
+
     @app.post("/api/researches/{research_id}/waiting/uploads", status_code=201)
     async def attach_waiting_pdf(research_id: str, request: Request, file: UploadFile = File(...),
                                  work_id: str = Form(...), source_version_id: str = Form(...),
@@ -2369,7 +2390,7 @@ def create_app(
         store.research(research_id)
         asset = store.asset(asset_id)
         # A replaced file, or the file of a source removed from this research, still opens read-only in the viewer where
-        # this research's evidence cites it (D45, D50).
+        # this research's evidence cites it (D46, D50).
         svid = asset["source_version_id"]
         cited = asset["removal_reason"] in (None, "replaced") and store.was_member(research_id, svid) and store.research_cites_asset(research_id, asset_id)
         in_use = asset["removed_at"] is None and store.is_active_member(research_id, svid)
@@ -2568,7 +2589,7 @@ def create_app(
     @app.put("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}")
     async def replace_asset(research_id: str, source_version_id: str, asset_id: str, request: Request,
                             file: UploadFile = File(...)) -> dict[str, Any]:
-        """Replace the PDF in use with another file; evidence citing the old file keeps its passages (D45)."""
+        """Replace the PDF in use with another file; evidence citing the old file keeps its passages (D46)."""
         store = store_of(request)
         asset = asset_in_use(store, research_id, source_version_id, asset_id)
         with disk_full_refused():
@@ -2592,7 +2613,7 @@ def create_app(
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/extractions")
     async def reextract_asset(research_id: str, source_version_id: str, asset_id: str, request: Request,
                               response: Response, body: TextRetryRequest | None = None) -> dict[str, Any]:
-        """Extract the PDF in use again with the current extractor; it becomes current only if it loses no visible text (D45)."""
+        """Extract the PDF in use again with the current extractor; it becomes current only if it loses no visible text (D46)."""
         store = store_of(request)
         asset = asset_in_use(store, research_id, source_version_id, asset_id)
         if body is not None:

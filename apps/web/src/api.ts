@@ -335,7 +335,7 @@ export type Asset = {
   id: string; extraction_status: string; extraction_error?: string | null; extraction_version?: string | null; page_count: number | null; origin: string; byte_size: number; original_filename: string | null
   // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
   rendition?: boolean
-  // Sources only (D45): whether the text comes from the current extractor, and a later extraction that was not taken.
+  // Sources only (D46): whether the text comes from the current extractor, and a later extraction that was not taken.
   current_extraction?: boolean; rejected_extraction?: { extraction_version: string; rejection_reason: string; created_at: string } | null
   // Sources only (D52): whether Marker has read the PDF's pages with mathematics.
   // A read's `equations_to_check` counts display equations that did not match the PDF's text layer, on pages `to_check`.
@@ -369,7 +369,7 @@ export type OllamaUpdates = { version: string | null; latest: string | null; upd
 export type ToolUpdate = { tool: 'tesseract' | 'marker' | 'pymupdf'; installed: string | null; tested: string | null; latest: string | null; update_available: boolean | null; error: string | null }
 export type OcrJob = { status: 'running' | 'succeeded' | 'failed'; phase: 'preparing' | 'downloading' | 'installing'; output: string; started_at: string; finished_at: string | null }
 export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: string | null; can_install: boolean; job: OcrJob | null }
-// What became of a cited passage's file since it was stored (D45).
+// What became of a cited passage's file since it was stored (D46).
 export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded'
 export type ReplacedAsset = { id: string; original_filename: string | null; removed_at: string; replaced_by_asset_id: string }
 export type AssetImpact = { asset_id: string; researches: { id: string; title: string }[]; cells: number; quotes: number }
@@ -455,7 +455,10 @@ export type WaitingRow = {
   // Why the work sits where it does: where the search found it, its place in the frozen ranking, the abstract verdict.
   relevance?: { origin: 'search' | 'chain' | 'user' | null; rank: number | null; ranked: number | null; abstract: 'candidate' | 'unresolved' | 'out_of_scope' | null }
 }
-export type WaitingView = { rows: WaitingRow[]; count: number; scope_revision: number; has_plan: boolean; attach_candidates: number; via_proxy: boolean; order: 'fulltext_plan' | 'small_batch_plan'; files: PersonFiles }
+// A work the person went on without a PDF for (D46): read from its abstract; `answer_reads_abstract` is false when the
+// answer cannot (its abstract did not pass the abstract stage, or none is stored).
+export type SkippedRow = WaitingRow & { skipped_at: string; answer_reads_abstract: boolean }
+export type WaitingView = { rows: WaitingRow[]; skipped: SkippedRow[]; count: number; scope_revision: number; has_plan: boolean; attach_candidates: number; via_proxy: boolean; order: 'fulltext_plan' | 'small_batch_plan'; files: PersonFiles }
 // A file the person added, and what became of it, read from the stored decisions and steps (slice 18b, decision 9).
 export type PersonFileState = 'waiting' | 'reading' | 'included' | 'criterion_not_met' | 'your_decision' | 'unread' | 'changed' | 'model_off' | 'decision_stands' | 'not_eligible'
 export type PersonFile = {
@@ -529,14 +532,14 @@ export type Answer = {
   model: { connection: string; requested_model: string | null; resolved_model: string | null; token_usage: unknown } | null
   // What the answer was given, from its stored input; `depth` counts works given PDF pages, only an abstract, or no passage.
   inputs_given: { sources: number; passages: number; source_ids: string[]; depth?: { pdf: number; abstract: number; metadata: number } } | null
-  source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D45)
+  source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D46)
   // Where the flow stood when this answer's run started (slice 20); null when that run kept none.
   start_snapshot: AnswerStartSnapshot | null
   review: AnswerReview | null
 }
 // Slice 20, decision 1: every work of the revision in one bucket, from the person's decisions first.
 export type FlowBucket = 'confirmed' | 'person_not_met' | 'person_excluded' | 'look_again' | 'included' | 'not_met' | 'queued'
-  | 'person_unsure' | 'waiting_for_pdf' | 'not_read_yet' | 'candidate_not_fetched' | 'abstract_open' | 'abstract_not_read'
+  | 'person_unsure' | 'waiting_for_pdf' | 'abstract_by_choice' | 'not_read_yet' | 'candidate_not_fetched' | 'abstract_open' | 'abstract_not_read'
   | 'survey' | 'out_of_scope_model' | 'out_of_scope_code' | 'not_screened' | 'other'
 export type FlowCounts = {
   works: number; buckets: Record<FlowBucket, number>; other_reasons: Record<string, number>
@@ -1262,6 +1265,9 @@ export const api = {
     return request<{ matches: WaitingMatch[]; scope_revision: number }>(`/api/researches/${id}/uploads/match`, { method: 'POST', body: form })
   },
   waiting: (id: string) => request<WaitingView>(`/api/researches/${id}/waiting`),
+  // "Continue without PDF" (D46) and its undo; each answers with the list as `waiting` reads it.
+  skipWaiting: (id: string, workId: string) => request<WaitingView>(`/api/researches/${id}/waiting/skips`, json('POST', { work_id: workId })),
+  undoSkipWaiting: (id: string, workId: string) => request<WaitingView>(`/api/researches/${id}/waiting/skips/${encodeURIComponent(workId)}`, { method: 'DELETE' }),
   // Adds the file to the version the person picked; 409 with a reason when what the match showed has moved (slice 18a).
   attachWaiting: (id: string, file: File, match: WaitingMatch, work: WaitingWork, sourceId: string) => {
     const form = new FormData()

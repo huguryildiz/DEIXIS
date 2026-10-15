@@ -143,6 +143,7 @@ class _Context:
         self._outcomes: dict[str, dict[str, Any]] = {}
         self._scanned: tuple[Any, ...] | None = None
         self._waiting: tuple[dict[str, dict[str, Any]], set[str]] | None = None
+        self._waiting_skipped: set[str] = set()  # the works the person went on without a PDF for (D46)
 
     def outcome(self, work_id: str) -> dict[str, Any]:
         """`work_outcome` of one work, derived once per context: the queue and the probe set read the same result."""

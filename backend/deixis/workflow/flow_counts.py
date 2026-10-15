@@ -23,7 +23,7 @@ from deixis.workflow.probes import NOT_A_READING
 
 # In the order the flow block lists them: the person's decisions, then the machine's, then what is still open.
 BUCKETS = ("confirmed", "person_not_met", "person_excluded", "look_again", "included", "not_met", "queued",
-           "person_unsure", "waiting_for_pdf", "not_read_yet", "candidate_not_fetched", "abstract_open",
+           "person_unsure", "waiting_for_pdf", "abstract_by_choice", "not_read_yet", "candidate_not_fetched", "abstract_open",
            "abstract_not_read", "survey", "out_of_scope_model", "out_of_scope_code", "not_screened", "other")
 ABSTRACT_OPEN = ("no_abstract", "abstract_not_found", "runs_agree_unresolved")
 ABSTRACT_NOT_READ = ("abstract_not_read", "abstract_not_proposed")
@@ -92,10 +92,13 @@ def _waiting_bucket(ctx: Any, work_id: str) -> str:
     """A work whose code says "waiting for a PDF" is in that bucket only when D99's waiting list holds it (one rule,
     `fulltext.waits_for_pdf`). When another version already has PDF text the work is off that list, and here it is
     "text in hand, not read yet" (`not_read_yet`): the text is there and nothing has read it for the criterion. Any
-    other reason to be off the list (no stored retrieval plan) is `other`, with its reason code."""
+    other reason to be off the list (no stored retrieval plan) is `other`, with its reason code. A work the person went
+    on without a PDF for (D46) would be on the list; it is `abstract_by_choice`, read from its abstract."""
     works, listed = waiting.for_context(ctx)
     if work_id in listed:
         return "waiting_for_pdf"
+    if work_id in waiting.skipped_in_context(ctx):
+        return "abstract_by_choice"
     work = works.get(work_id)
     return "not_read_yet" if work and any(version.get("has_text") for version in work["versions"]) else "other"
 
@@ -221,7 +224,8 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
         ("out_of_scope_model", buckets["out_of_scope_model"]),
         ("out_of_scope_code", buckets["out_of_scope_code"]),
         ("fulltext_sought", len(sought)),
-        ("fulltext_not_retrieved", buckets["waiting_for_pdf"]),
+        # A work the person went on without (D46) is still one whose full text was not retrieved.
+        ("fulltext_not_retrieved", buckets["waiting_for_pdf"] + buckets["abstract_by_choice"]),
         ("fulltext_read", read),
         ("not_met", flow["five"]["not_met"]),
         ("queued", buckets["queued"]),

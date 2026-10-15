@@ -82,7 +82,7 @@ def _output_digest(raw_output: str) -> str:
         return f"text:{sha256_hex(raw_output)}"
 
 
-# The suffix an equation pass appends to the extraction it was laid on (D36, D40, D45).
+# The suffix an equation pass appends to the extraction it was laid on (D36, D40, D46).
 EQUATION_PASS = re.compile(r"\+(?:marker-|arxiv-latex-|mathpix-).*$")
 
 
@@ -140,11 +140,11 @@ class NotFound(Exception):
 
 
 class PdfInUse(Exception):
-    """A source version has at most one PDF in use; another file replaces it (D45)."""
+    """A source version has at most one PDF in use; another file replaces it (D46)."""
 
 
 class RunInProgress(Exception):
-    """A research using the source has a queued, running or pause-requested run (D45)."""
+    """A research using the source has a queued, running or pause-requested run (D46)."""
 
 
 class RequestConflict(Exception):
@@ -160,7 +160,7 @@ class NotRetryable(Exception):
 
 
 class SameFile(Exception):
-    """A PDF can only be replaced by a different file (D45)."""
+    """A PDF can only be replaced by a different file (D46)."""
 
 
 class NotASource(Exception):
@@ -453,7 +453,7 @@ class Store:
             self.conn.execute("DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM pdf_discovery_runs WHERE research_id = ?", (research_id,))
             # Stage decisions, proposals and ranks go before the run steps and passages they point at.
-            for table in ("person_pdf_requests", "answer_reviews", "answers", "model_sessions", "step_inputs",
+            for table in ("person_pdf_requests", "pdf_skips", "answer_reviews", "answers", "model_sessions", "step_inputs",
                           "candidate_hits", "candidates", "search_runs",
                           "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
                           "source_similarities", "protocol_records", "human_selection_links", "stage_decisions",
@@ -1666,7 +1666,7 @@ class Store:
         """Decision 1's record rows again, from the stored file version (no PDF is opened), for each PDF of the record in
         use that has an eligibility row. A refusal on a PDF whose current text is a source reading withdraws that reading:
         the route's extraction row is superseded first, then the row current just before it is current again with the
-        asset's four mirrored fields (the one-current index holds throughout); its passages stay, shadowed (D45)."""
+        asset's four mirrored fields (the one-current index holds throughout); its passages stay, shadowed (D46)."""
         from deixis.documents import arxiv_source
 
         record = dict(self.conn.execute("SELECT doi, landing_url, oa_pdf_url, version_label FROM source_versions WHERE id = ?",
@@ -1876,7 +1876,7 @@ class Store:
     def reextract_asset(self, asset_id: str, extraction: Any, extraction_version: str, chunker: Any,
                         dry_run: bool = False, allow_run_id: str | None = None, guard: Any = None, *,
                         input_observation: dict | None = None) -> dict[str, Any]:
-        """Append a tool occurrence under D45, retaining the baseline's text pages.
+        """Append a tool occurrence under D46, retaining the baseline's text pages.
 
         All decision inputs are read under the write lock. A dry run evaluates
         without writing. The optional source-route guard precedes those reads.
@@ -2300,7 +2300,7 @@ class Store:
     def replace_asset(self, asset_id: str, sha256: str, size: int, storage_path: str, origin: str, retrieved_from: str | None,
                       filename: str | None, extraction: Any, extraction_version: str, chunker: Any, *,
                       input_observation: dict | None = None) -> str:
-        """Put another file in use for the source version, in every research that uses it (D45).
+        """Put another file in use for the source version, in every research that uses it (D46).
 
         The new file gets its own passages even when its text is the same; the old file is marked replaced, and the evidence
         that cites its passages keeps them. The selection does not change, so no selection revision is bumped.
@@ -2889,7 +2889,7 @@ class Store:
         return digest
 
     def page_digest_holds(self, asset_id: str | None, digest: str | None) -> bool:
-        """Whether a file's pages are still those a reading saw (decision 6, D45): its current extraction, or the
+        """Whether a file's pages are still those a reading saw (decision 6, D46): its current extraction, or the
         extraction an equation pass (Marker, arXiv LaTeX, Mathpix) was laid on. An equation pass adds the equations and
         keeps the page text, so a file read just before it is still the file that was read; OCR or a new base
         extraction is a different file."""
@@ -3374,7 +3374,7 @@ class Store:
         return {page: " ".join(parts) for page, parts in pages.items()}
 
     def passages_for(self, svid: str) -> list[dict[str, Any]]:
-        """Passages a model step may read: an abstract, or text of the PDF in use from its current extraction (D45).
+        """Passages a model step may read: an abstract, or text of the PDF in use from its current extraction (D46).
 
         Passages of a removed file or of another extraction stay resolvable through `passage` for the evidence citing them.
         """

@@ -23,9 +23,10 @@ from deixis.domain import proxy
 from deixis.domain.canonical import sha256_hex
 from deixis.domain.reason_codes import reason
 from deixis.domain.rules import RevisionConflict
+from deixis.storage.db import now, transaction
 from deixis.workflow import fulltext, small_batch
 from deixis.workflow.decisions import DecisionStore
-from deixis.workflow.store import Store
+from deixis.workflow.store import NotFound, Store
 
 
 class AttachRefused(RevisionConflict):
@@ -35,6 +36,10 @@ class AttachRefused(RevisionConflict):
     def __init__(self, reason: str, message: str):
         super().__init__(message)
         self.reason = reason
+
+
+class SkipRefused(AttachRefused):
+    """"Continue without PDF" for a work that is not on the waiting list (`not_waiting`) or already skipped."""
 
 
 def _plans(store: Store, research_id: str, revision: int) -> list[dict[str, Any]]:
@@ -112,20 +117,84 @@ def _works(store: Store, research_id: str) -> list[dict[str, Any]]:
             for work_id, head in sorted(heads.items())]
 
 
-def _rows(store: Store, research_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+def skipped(store: Store, research_id: str) -> dict[str, str]:
+    """The works the person chose to go on without a PDF for (D46), by `work_id`, with when they chose it.
+
+    A PDF added to any version of the work at or after the choice ends it, by whatever route it came (the waiting
+    panel, a source's upload, a background fetch): normal reading applies again. Read here rather than deleted by each
+    route, so no route can miss it; the row stays, inert, and a later undo removes it."""
+    return {row[0]: row[1] for row in store.conn.execute(
+        "SELECT k.work_id, k.skipped_at FROM pdf_skips k WHERE k.research_id = ? AND NOT EXISTS ("
+        " SELECT 1 FROM source_assets a JOIN source_versions v ON v.id = a.source_version_id"
+        " WHERE v.work_id = k.work_id AND a.retrieved_at >= k.skipped_at)", (research_id,))}
+
+
+def _split(rows: list[dict[str, Any]], skips: dict[str, str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The rows still waiting and the rows the person skipped (D46), each numbered again from 1 in reading order."""
+    waiting_rows = [row for row in rows if row["work_id"] not in skips]
+    skipped_rows = [row for row in rows if row["work_id"] in skips]
+    return ([row | {"place": n} for n, row in enumerate(waiting_rows, start=1)],
+            [row | {"place": n, "skipped_at": skips[row["work_id"]]} for n, row in enumerate(skipped_rows, start=1)])
+
+
+def _listing(store: Store, research_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    """Every work that would wait for a PDF, skipped or not, with the plans and the question revision."""
     revision = store.research(research_id)["current_scope_revision"]
     plans = _plans(store, research_id, revision)
     return _waiting_rows(_works(store, research_id), plans), plans, revision
 
 
+def _rows(store: Store, research_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    """The works that wait for the person's PDF: a work the person went on without (D46) is not among them."""
+    rows, plans, revision = _listing(store, research_id)
+    return _split(rows, skipped(store, research_id))[0], plans, revision
+
+
 def for_context(ctx: Any) -> tuple[dict[str, dict[str, Any]], set[str]]:
     """The works as `fulltext.waiting` reads them, by id, and the ids on the waiting list, once per queue context:
-    the flow's buckets and the tab's count read the same derivation (slice 20)."""
+    the flow's buckets and the tab's count read the same derivation (slice 20). A skipped work (D46) is not listed."""
     if ctx._waiting is None:
         works = _works(ctx.store, ctx.rid)
         rows = _waiting_rows(works, _plans(ctx.store, ctx.rid, ctx.revision))
-        ctx._waiting = ({work["work_id"]: work for work in works}, {row["work_id"] for row in rows})
+        skips = skipped(ctx.store, ctx.rid)
+        ctx._waiting = ({work["work_id"]: work for work in works},
+                        {row["work_id"] for row in rows if row["work_id"] not in skips})
+        ctx._waiting_skipped = {row["work_id"] for row in rows if row["work_id"] in skips}
     return ctx._waiting
+
+
+def skipped_in_context(ctx: Any) -> set[str]:
+    """The works that would wait for a PDF but that the person went on without (D46): the flow's own bucket."""
+    for_context(ctx)
+    return ctx._waiting_skipped
+
+
+def skip(store: Store, research_id: str, work_id: str) -> None:
+    """"Continue without PDF" (D46): the work leaves the waiting list and its counts and is read from its abstract.
+
+    Only a work on the waiting list now can be skipped. Nothing else changes: the answer input already gives such a
+    work its abstract (`fast_answer.cutoff_snapshot` routes a work with no read PDF to its abstract), so no run is
+    queued and no selection is written."""
+    with transaction(store.conn):
+        rows, _, _ = _listing(store, research_id)
+        skips = skipped(store, research_id)
+        if work_id in skips:
+            raise SkipRefused("already_skipped", "This work is already read from its abstract only")
+        if work_id not in {row["work_id"] for row in rows}:
+            raise SkipRefused("not_waiting", "This work no longer waits for a PDF")
+        # An earlier choice a PDF ended (see `skipped`) is replaced by this one.
+        store.conn.execute("INSERT OR REPLACE INTO pdf_skips (research_id, work_id, skipped_at) VALUES (?, ?, ?)",
+                           (research_id, work_id, now()))
+        store._event(research_id, "waiting_pdf_skipped", {"work_id": work_id})
+
+
+def unskip(store: Store, research_id: str, work_id: str) -> None:
+    """Undo "Continue without PDF" (D46): the work waits for the person's PDF again, if it still would."""
+    with transaction(store.conn):
+        if not store.conn.execute("DELETE FROM pdf_skips WHERE research_id = ? AND work_id = ?",
+                                  (research_id, work_id)).rowcount:
+            raise NotFound(work_id)
+        store._event(research_id, "waiting_pdf_skip_undone", {"work_id": work_id})
 
 
 def waiting_count(store: Store, research_id: str) -> int:
@@ -199,11 +268,12 @@ def _relevance(store: Store, research_id: str, listing: dict[str, Any] | None,
 def waiting_view(store: Store, research_id: str) -> dict[str, Any]:
     """The list in reading order: each work's record, why it waits, its links (through the proxy when one is set),
     the version "Find PDF" asks for, and its versions for a confirmation."""
-    found, plans, revision = _rows(store, research_id)
+    every, plans, revision = _listing(store, research_id)
+    found, passed_over = _split(every, skipped(store, research_id))
     address = store.setting(proxy.SETTING)
     listing = _frozen_list(store, research_id, revision)
-    rows = []
-    for row in found:
+    rows, skipped_rows = [], []
+    for row in [*found, *passed_over]:
         view = work_view(store, research_id, row["work_id"], row["head"])
         sources = [store.source(v["source_version_id"]) for v in view["versions"]]
         head = sources[0]
@@ -211,14 +281,22 @@ def waiting_view(store: Store, research_id: str) -> dict[str, Any]:
         # A landing page that is only the DOI's resolver (OpenAlex often stores it so) is not offered twice.
         landing = next((s["landing_url"] for s in sources if proxy.openable(s["landing_url"])
                         and s["landing_url"].lower() != (proxy.doi_url(doi) or "").lower()), None)
-        rows.append(row | {
+        (skipped_rows if "skipped_at" in row else rows).append(row | {
             "title": head["title"], "year": head["year"], "venue": head["venue"], "authors": head["authors"],
             "doi": doi, "links": {"doi": proxy.link(proxy.doi_url(doi), address), "landing": proxy.link(landing, address)},
             # "Find PDF" is today's action on a record with a DOI (D4): the head's, else another version's.
             "find_pdf_source_version_id": next((s["id"] for s in sources if s["doi"]), None),
             "versions": view["versions"], "versions_digest": view["versions_digest"],
             "relevance": _relevance(store, research_id, listing, [v["source_version_id"] for v in view["versions"]])})
+    for row in skipped_rows:
+        # Whether the answer can read the work from its abstract: it passed the abstract stage and an abstract is
+        # stored for one of its versions (`fast_answer.cutoff_snapshot` needs both). False says the answer leaves it out.
+        row["answer_reads_abstract"] = row["relevance"]["abstract"] == "candidate" and bool(store.conn.execute(
+            "SELECT 1 FROM passages WHERE kind = 'abstract' AND source_version_id IN (%s) LIMIT 1"
+            % ",".join("?" * len(row["versions"])), [v["source_version_id"] for v in row["versions"]]).fetchone())
     return {"rows": rows, "count": len(rows), "scope_revision": revision, "has_plan": bool(plans),
+            # The works the person went on without a PDF for (D46), in reading order; each can be undone or given a file.
+            "skipped": skipped_rows,
             # How many works a dropped file may be attached to (`candidate_works`): with no plan yet these are the
             # works the person included, so the panel opens its drop zone on this, not on `has_plan` alone.
             "attach_candidates": len(candidate_works(store, research_id)),
@@ -233,7 +311,8 @@ def candidate_works(store: Store, research_id: str) -> dict[str, str]:
     order two writes inside it, and a work the person included then is theirs to add a file to (Sol's check); the
     cost is at most a work they included just before, which only widens their own choice.
     """
-    found, plans, _ = _rows(store, research_id)
+    # A work the person went on without (D46) is still listed here: a file for it clears the skip.
+    found, plans, _ = _listing(store, research_id)
     heads = store.work_heads(research_id)
     wanted = {row["work_id"] for row in found}
     latest = plans[0] if plans else None

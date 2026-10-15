@@ -170,6 +170,8 @@ const plainEventTexts: Record<string, string> = {
   pdf_identity_revoked: 'PDF no longer confirmed as the right paper',
   person_pdf_request: 'PDF requested from a person',
   waiting_pdf_attached: 'Awaited PDF attached',
+  waiting_pdf_skipped: 'Continued without a PDF',
+  waiting_pdf_skip_undone: 'Continuing without a PDF undone',
   lineage_changed: 'Development links changed',
   lookup_version_opened: 'Source version opened',
 }

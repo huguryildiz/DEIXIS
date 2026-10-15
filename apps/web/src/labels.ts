@@ -713,6 +713,7 @@ export const flowBucketLabels: Record<string, string> = {
   person_excluded: 'You excluded (kind not recorded)', look_again: 'Your earlier decision, to look at again',
   included: 'Included by two agreeing runs', not_met: 'Criterion not met (two agreeing runs)',
   queued: 'In your queue, not looked at', person_unsure: 'You were not sure', waiting_for_pdf: 'Waiting for a PDF',
+  abstract_by_choice: 'You continued without a PDF (abstract only)',
   not_read_yet: 'Text in hand, not read yet', candidate_not_fetched: 'Passed the abstract stage, full text not tried',
   abstract_open: 'Abstract could not decide', abstract_not_read: 'Abstract not read',
   survey: 'Survey, kept for citation chaining', out_of_scope_model: 'Out of scope (model runs)',

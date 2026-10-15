@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
-import { BookOpen, CircleCheck, CircleDashed, CircleMinus, ExternalLink, FileSearch, FileText, Info, RotateCw, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
+import { BookOpen, ChevronRight, CircleCheck, CircleDashed, CircleMinus, ExternalLink, FileSearch, FileText, Info, RotateCw, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, ApiError, type AttachOutcome, type PersonFile, type PersonFiles, type ResearchView, type WaitingMatch, type WaitingRow, type WaitingView, type WaitingWork, type ZoteroNote, type ZoteroSource } from './api'
+import { api, ApiError, type AttachOutcome, type PersonFile, type PersonFiles, type ResearchView, type SkippedRow, type WaitingMatch, type WaitingRow, type WaitingView, type WaitingWork, type ZoteroNote, type ZoteroSource } from './api'
 import { ConnectionIcon } from './connectionIcons'
 import { fileRestoreNote, fileRestoreTone, pageLocator, personFileStateText, personUnreadText, queueAnswerLabels, queueAnswerOfCode, versionText, versionTones, waitingReasonText, waitingRelevanceParts } from './labels'
 import { Notice } from './Notice'
@@ -41,6 +41,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
   const [matching, setMatching] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [finding, setFinding] = useState<string | null>(null)
+  const [skipping, setSkipping] = useState<string | null>(null)
   const [zoteroSource, setZoteroSource] = useState<ZoteroSource>('local')
   const [fromZoteroBusy, setFromZoteroBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -128,6 +129,21 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
     } finally { setFinding(null) }
   }
 
+  // "Continue without PDF" (D46): the work leaves the list and is read from its abstract; undo puts it back. Each answers
+  // with the list, which replaces any list request still on its way.
+  const skipFor = async (row: WaitingRow, undo: boolean) => {
+    setSkipping(row.work_id)
+    try {
+      const next = await (undo ? api.undoSkipWaiting : api.skipWaiting)(researchId, row.work_id)
+      listRequest.current++
+      setList(next)
+      toast('success', t(undo ? 'The work waits for your PDF again.' : 'The work is read from its abstract only. Where the answer cites it, it is labelled “From abstract”.'))
+      await onChanged()
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : String(e))
+    } finally { setSkipping(null) }
+  }
+
   // Each waiting work's PDF in the person's Zotero library is read and proposed like a dropped file: it lands in the match
   // cards below, and nothing is attached until the person picks the version and confirms.
   const fromZotero = async () => {
@@ -160,6 +176,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
   if (error) return <Notice tone="error">{error}</Notice>
   if (!list) return <p className="legacy-mini-note" role="status">{t('Loading the works waiting for a PDF…')}</p>
   const rows = list.rows
+  const skipped = list.skipped
   // The four boxes (mockup `.depth`): works that passed the abstract stage and, of them, those with PDF text in hand, both
   // from the same source list and rule as the Sources panel's "Passed abstract" (the funnel's); the works this panel
   // lists as waiting; and the files you added that no reading has read, as "Your files" lists them.
@@ -186,10 +203,10 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
     {included}
 
     <section className="plist" aria-labelledby="waiting-title">
-      <h4><span id="waiting-title">{rows.length ? plural(rows.length, '{n} work waits for your PDF', '{n} works wait for your PDF') : t('No work waits for your PDF')}</span><span className="tnum" aria-hidden>{rows.length}</span></h4>
-      <p className="prow pdf-ready-lede">{rows.length
-        ? t('These works have no PDF text the model can read; each row says why. If you can reach a copy through your library, open its link, save the PDF and add it here. Nothing is attached until you choose the version and confirm.')
-        : list.has_plan ? t('Every work the full-text retrieval tried has its text, or is decided another way.') : t('The full-text retrieval has not run for this question yet.')}</p>
+      {/* With nothing waiting the box is one line: its head. */}
+      <h4><span id="waiting-title">{rows.length ? plural(rows.length, '{n} work waits for your PDF', '{n} works wait for your PDF') : list.has_plan ? t('No work waits for your PDF') : t('The full-text retrieval has not run for this question yet.')}</span><span className="tnum" aria-hidden>{rows.length}</span></h4>
+      {rows.length > 0 && <p className="prow pdf-ready-lede">{t('These works have no PDF text the model can read; each row says why. If you can reach a copy through your library, open its link, save the PDF and add it here. Nothing is attached until you choose the version and confirm.')}{' '}
+        {t('If no PDF comes, a work that passed the abstract stage enters the answer from its abstract and is labelled “From abstract” where cited.')}</p>}
       {rows.length > 0 && <p className="prow foot-note">{list.via_proxy
         ? t('Links open through your institution’s proxy in your browser; DEIXIS sends nothing through it.')
         : <>{t('Links open directly.')} <a href="#/settings/access">{t('Set your institution’s proxy address')}</a></>}</p>}
@@ -210,10 +227,15 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
           <span className="pdf-ready-side waiting-actions">
             {row.links.doi && <a className="pdf-ready-link waiting-link" href={row.links.doi} target="_blank" rel="noopener noreferrer">{t('DOI')}<ExternalLink size={12} aria-hidden /><span className="sr-only">{t('(opens in a new tab)')}</span></a>}
             {row.links.landing && <a className="pdf-ready-link waiting-link" href={row.links.landing} target="_blank" rel="noopener noreferrer">{t('Publisher page')}<ExternalLink size={12} aria-hidden /><span className="sr-only">{t('(opens in a new tab)')}</span></a>}
-            <Button variant="outline" size="sm" className="ghost" disabled={busy || finding !== null || !row.find_pdf_source_version_id}
-              title={row.find_pdf_source_version_id ? undefined : t('Find PDF needs a DOI')} onClick={() => { void findPdf(row) }}>
-              <FileSearch size={14} aria-hidden />{t(finding === row.work_id ? 'Finding…' : 'Find PDF')}
-            </Button>
+            {/* No route found an open copy, so looking again is not offered; the person can go on without the PDF (D46). */}
+            {row.reason_code === 'no_fulltext'
+              ? <Button variant="outline" size="sm" className="ghost" disabled={busy || skipping !== null} aria-label={t('Continue without PDF for {title}', { title: row.title })} onClick={() => { void skipFor(row, false) }}>
+                <FileText size={14} aria-hidden />{t('Continue without PDF')}
+              </Button>
+              : <Button variant="outline" size="sm" className="ghost" disabled={busy || finding !== null || !row.find_pdf_source_version_id}
+                title={row.find_pdf_source_version_id ? undefined : t('Find PDF needs a DOI')} onClick={() => { void findPdf(row) }}>
+                <FileSearch size={14} aria-hidden />{t(finding === row.work_id ? 'Finding…' : 'Find PDF')}
+              </Button>}
             {canAttach && <Button variant="outline" size="sm" className="ghost" disabled={busy || reading} aria-label={t('Upload PDF for {title}', { title: row.title })} onClick={() => uploadFor(row)}><Upload size={14} aria-hidden />{t('Upload PDF')}</Button>}
           </span>
         </li>)}
@@ -227,6 +249,9 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
       </div>}
       <input ref={rowFile} type="file" accept=".pdf,application/pdf" hidden aria-label={t('Choose a PDF for this work')} onChange={e => { matchFiles(Array.from(e.target.files ?? []), rowWork.current); rowWork.current = undefined; e.target.value = '' }} />
     </section>
+
+    {skipped.length > 0 && <SkippedWorks rows={skipped} disabled={busy || skipping !== null} canAttach={canAttach} uploading={reading}
+      onUndo={row => { void skipFor(row, true) }} onUpload={uploadFor} />}
 
     {canAttach && <div className={`drop pdf-ready-drop${dragging ? ' over is-over' : ''}`} data-testid="waiting-drop"
       onDragOver={e => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
@@ -253,6 +278,34 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
     </div>
     <UploadedTextNote semantic={view.semantic} />
   </div>
+}
+
+// The works the person went on without a PDF for (D46), folded to one line under the list. Each can be undone or still
+// given a file, which clears the choice.
+function SkippedWorks({ rows, disabled, canAttach, uploading, onUndo, onUpload }: {
+  rows: SkippedRow[]; disabled: boolean; canAttach: boolean; uploading: boolean
+  onUndo: (row: SkippedRow) => void; onUpload: (row: SkippedRow) => void
+}) {
+  return <details className="plist pdf-ready-full waiting-skipped">
+    <summary><h4><ChevronRight size={14} aria-hidden className="queue-decided-chevron" />{plural(rows.length, 'Read from the abstract only · {n} work', 'Read from the abstract only · {n} works')}</h4></summary>
+    <ol className="pdf-ready-rows waiting-rows" aria-label={t('Works read from the abstract only')}>
+      {rows.map(row => <li key={row.work_id} className="prow">
+        <span className="waiting-place">{row.relevance?.rank ?? row.place}</span>
+        <span className="t pdf-ready-head">
+          <strong className="pdf-ready-title">{row.title}</strong>
+          {(byline(row) || row.venue) && <small className="source-byline">
+            {byline(row) && <span>{byline(row)}</span>}
+            {row.venue && <span><em>{row.venue}</em></span>}
+          </small>}
+        </span>
+        <span className="waiting-reason is-abstract">{t(row.answer_reads_abstract ? 'Read from the abstract only.' : 'The answer leaves it out: it has no abstract that passed the abstract stage.')}</span>
+        <span className="pdf-ready-side waiting-actions">
+          <Button variant="outline" size="sm" className="ghost" disabled={disabled} aria-label={t('Undo continuing without a PDF for {title}', { title: row.title })} onClick={() => onUndo(row)}><RotateCcw size={14} aria-hidden />{t('Undo')}</Button>
+          {canAttach && <Button variant="outline" size="sm" className="ghost" disabled={disabled || uploading} aria-label={t('Upload PDF for {title}', { title: row.title })} onClick={() => onUpload(row)}><Upload size={14} aria-hidden />{t('Upload PDF')}</Button>}
+        </span>
+      </li>)}
+    </ol>
+  </details>
 }
 
 // What the toast adds once a file is attached: what happens to it next (slice 18b).

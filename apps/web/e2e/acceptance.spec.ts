@@ -174,11 +174,11 @@ test('connections separate model connections from configured scholarly access', 
     await sheet.getByRole('button', { name: 'Close' }).click()
     // The scholarly sources are on the Sources tab (D30).
     await page.getByRole('tab', { name: 'Sources' }).click()
-    await expect(page.getByRole('button', { name: 'OpenAlex No key needed Search and citation chain' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'OpenAlex No key needed Search, citation chain and PDF lookup' })).toBeVisible()
     await expect(page.locator('.grid3[data-group="sources"]')).not.toContainText('Connected')
     await shot(page, 'connections-desktop')
 
-    await page.getByRole('button', { name: 'OpenAlex No key needed Search and citation chain' }).click()
+    await page.getByRole('button', { name: 'OpenAlex No key needed Search, citation chain and PDF lookup' }).click()
     await expect(page.locator('.connection-sheet')).toContainText('Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.')
     await page.getByRole('button', { name: 'Close' }).click()
     // Synthetic configured-key response: verify its green style without using a real credential or provider request.
@@ -189,10 +189,10 @@ test('connections separate model connections from configured scholarly access', 
       await route.fulfill({ response, json: body })
     })
     await page.reload()
-    const configured = page.getByRole('button', { name: 'OpenAlex Key configured Search and citation chain' })
+    const configured = page.getByRole('button', { name: 'OpenAlex Key configured Search, citation chain and PDF lookup' })
     await expect(configured.locator('.st')).toHaveClass(/\bok\b/)
     // Crossref carries what it is asked for on the tile: abstracts and metadata checks, not record search (D87).
-    await expect(page.getByRole('button', { name: 'Crossref No key needed Abstracts and metadata checks' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Crossref No key needed Abstracts, metadata checks and PDF lookup' })).toBeVisible()
     await shot(page, 'connections-key-configured-desktop')
     await page.getByRole('tab', { name: 'Models' }).click()
     await page.locator('.co-fold').click()

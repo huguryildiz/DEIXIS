@@ -20,10 +20,14 @@ const providerNames: Record<string, string> = {
 const providerKeyEnv: Record<string, string> = { openalex: 'OPENALEX_API_KEY', biorxiv: 'OPENALEX_API_KEY', semantic_scholar: 'S2_API_KEY', pubmed: 'NCBI_API_KEY', ieee_xplore: 'IEEE_API_KEY', scopus: 'SCOPUS_API_KEY', core: 'CORE_API_KEY', serpapi: 'SERPAPI_API_KEY' }
 // The mockup's order comes first (plan ST7); every other registered connector follows in the registry's order.
 const PROVIDER_ORDER = ['openalex', 'semantic_scholar', 'crossref', 'scopus', 'arxiv']
-// What the fast path asks each source for (CLAUDE.md, D12); the others carry their role in the registry.
+// What the fast path asks each source for (fast_search.py, fast_read.py, documents/acquisition.py). The fast path sends
+// no query to arXiv, PubMed or IEEE Xplore (fast_search drops them as openalex_only) and calls SerpApi nowhere
+// (flow.py passes web_search=False).
 const providerUse: Record<string, string> = {
-  openalex: 'Search and citation chain', semantic_scholar: 'Abstracts and bulk search', crossref: 'Abstracts and metadata checks',
-  scopus: 'Abstracts, once its full view is confirmed',
+  openalex: 'Search, citation chain and PDF lookup', semantic_scholar: 'Abstracts; bulk search in Detailed mode',
+  crossref: 'Abstracts, metadata checks and PDF lookup', scopus: 'Abstracts, once its full view is confirmed',
+  arxiv: 'Not searched now', biorxiv: 'Not searched on its own; OpenAlex brings its preprints',
+  pubmed: 'Not searched now', ieee_xplore: 'Not searched now', core: 'PDF lookup by DOI', serpapi: 'Not used now',
 }
 // What happens while a provider has no key (the keyless modes in providers/*.py, required keys in registry.py).
 const providerNoKey: Record<string, string> = {
@@ -1631,7 +1635,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
 
     <h2 data-panel="sources">{t('Scholarly sources')}</h2>
     <div className="grid3" data-group="sources" data-panel="sources">{providers.map(p => tile(p.id, 'provider', p.id, providerNames[p.id] ?? p.id, providerUse[p.id] ? t(providerUse[p.id]) : providerRole(p.role), providerStatus(p.access_mode)))}</div>
-    <p className="foot-note sources-note" data-panel="sources">{t('New researches use every source that has the access it needs.')}</p>
+    <p className="foot-note sources-note" data-panel="sources">{t('Searches run on OpenAlex, joined by Semantic Scholar in Detailed mode. The other sources fill in abstracts, check records or find PDFs.')}</p>
 
     <h2 data-panel="sources">{t('Reference managers')}</h2>
     <div className="grid3" data-group="references" data-panel="sources">

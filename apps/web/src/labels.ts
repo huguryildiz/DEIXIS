@@ -273,7 +273,7 @@ const pauseReasons: Record<string, string> = {
   search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
   user_plan_unsearchable: 'No record on OpenAlex holds any word of one block of your search plan, backups included, so nothing was searched. Edit the plan and search again.',
 }
-export { reviewFindingLabels, reviewFocusLabels, reviewDecisionLabels, reviewStaleLabels, reviewNotReviewedLabels, reviewContextLabels, notReviewedText } from './review/labels'
+export { reviewFindingLabels, reviewFocusLabels, reviewDecisionLabels, reviewContextLabels, notReviewedText } from './review/labels'
 export const pauseReasonText = (reason: string | null, detail?: unknown) => {
   const error = detail && typeof detail === 'object' ? detail as Record<string, unknown> : {}
   if ((reason === 'model_call_failed' || reason === 'model_connection_not_ready' || reason?.startsWith('provider_')) && (error.error_kind || error.service_kind)) {
@@ -347,9 +347,6 @@ const approvedByNames: Record<string, string> = {
   user_edited: 'You edited and saved this search plan; it was searched as you saved it.',
 }
 export const approvedByText = (by: string | null) => (by ? t(approvedByNames[by] ?? by) : '')
-
-const stageNames: Record<string, string> = { claim_check: 'claim review' }
-export const stageLabel = (stage: string) => t(stageNames[stage] ?? stage)
 
 export const verdictLabels: Record<Verdict, string> = {
   supported: 'supported', partially_supported: 'partly supported', not_supported: 'not supported', cannot_assess: 'cannot assess',

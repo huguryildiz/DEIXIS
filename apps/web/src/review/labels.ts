@@ -5,11 +5,11 @@ import type { ReviewDetail, ReviewResolvedTarget, ReviewTargetRef } from '../api
 export const reviewFindingLabels = { unsupported: 'Not supported by the cited text', partially_supported: 'Partly supported by the cited text', overstated: 'Overstated', missing_context: 'Missing context', inconsistent: 'Inconsistent', assumption_unstated: 'Unstated assumption', other: 'Other' }
 export const reviewFocusLabels = { source_support: 'Source support', assumptions_and_consistency: 'Assumptions and consistency' }
 export const reviewDecisionLabels = { accepted: 'Accepted', dismissed: 'Dismissed', deferred: 'Deferred' }
-export const reviewStaleLabels: Record<string, string> = {
+const reviewStaleLabels: Record<string, string> = {
   newer_candidate_version: 'a newer candidate version exists', newer_kill_search: 'a newer search exists', kill_search_changed: 'the reviewed search changed', owner_status_changed: 'the owner status changed',
   newer_answer: 'a newer answer exists', scope_revised: 'the question was revised', sources_added: 'sources added', sources_removed: 'sources removed', selection_changed: 'source selection changed', newer_report_version: 'a newer report version exists', report_version_changed: 'report version changed', claim_edited: 'claim edited', claim_removed: 'claim removed', cell_changed: 'cell changed', rows_added: 'rows added', rows_removed: 'rows removed', column_revised: 'column revised', passage_changed: 'passage changed', asset_changed: 'file changed', extraction_changed: 'extraction changed', evidence_missing: 'evidence missing', pdf_replaced: 'PDF replaced', pdf_removed: 'PDF removed', text_superseded: 'text superseded',
 }
-export const reviewNotReviewedLabels: Record<string, string> = {
+const reviewNotReviewedLabels: Record<string, string> = {
   source_too_large: 'source exceeds the request size limit', candidate_too_large: 'candidate exceeds the request size limit',
   claim_too_large: 'claim exceeds the request size limit', too_many_passages: 'too many passages', cell_value_too_large: 'cell value exceeds the input size limit', claim_text_too_long: 'claim text is too long', invalid_model_output: 'model output could not be read', message_too_large: 'request exceeds the size limit', repair_message_too_large: 'repair request exceeds the size limit', deadline_passed: 'review deadline passed',
 }

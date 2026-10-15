@@ -235,7 +235,7 @@ function elapsedText(since: string, now: number) {
 
 // The library's PDFs by reading state and the PDF Marker is reading now. Marker reports no page progress, so only the
 // time since the read started is shown.
-export function ReaderProgress({ reader }: { reader: EquationReader }) {
+function ReaderProgress({ reader }: { reader: EquationReader }) {
   const [now, setNow] = useState(() => Date.now())
   const reading = reader.reading
   useEffect(() => {

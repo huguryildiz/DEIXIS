@@ -12,14 +12,20 @@ import { t, uiLocale } from './i18n'
 
 const count = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
 
-// The five of SW11.12 in one line.
-function fiveText(flow: FlowCounts) {
+// The five of SW11.12 as labelled counts; the splits inside a count are in its title.
+function FiveChips({ flow }: { flow: FlowCounts }) {
   const five = flow.five
-  return t('{included} included (two agreeing runs {agreed}, you confirmed {confirmed}) · {queued} in your queue, not looked at · {waiting} waiting for a PDF · {notRead} full text not read ({reading} in reading, {tried} not tried) · {notMet} criterion not met', {
-    included: count(five.included), agreed: count(five.included_by_agreement), confirmed: count(five.confirmed),
-    queued: count(five.queued), waiting: count(five.waiting_for_pdf), notRead: count(five.not_read),
-    reading: count(five.not_read_in_reading), tried: count(five.not_read_not_tried), notMet: count(five.not_met),
-  })
+  const chips: { label: string; n: number; detail?: string; tone?: 'warn' }[] = [
+    { label: 'Included', n: five.included, detail: t('two agreeing runs {agreed}, you confirmed {confirmed}', { agreed: count(five.included_by_agreement), confirmed: count(five.confirmed) }) },
+    { label: 'In queue', n: five.queued, detail: t('in your queue, not looked at') },
+    { label: 'Waiting for a PDF', n: five.waiting_for_pdf, tone: 'warn' },
+    { label: 'Not read', n: five.not_read, detail: t('full text not read: {reading} in reading, {tried} not tried', { reading: count(five.not_read_in_reading), tried: count(five.not_read_not_tried) }) },
+    { label: 'Not met', n: five.not_met, detail: t('Criterion not met') },
+  ]
+  return <span className="flow-chips">{chips.map(chip => <span key={chip.label} title={chip.detail}
+    className={`flow-chip${chip.n === 0 ? ' is-zero' : chip.tone === 'warn' ? ' is-warn' : ''}`}>
+    <span>{t(chip.label)}</span><strong className="tnum">{count(chip.n)}</strong>
+  </span>)}</span>
 }
 
 const ORDER = Object.keys(flowBucketLabels) as FlowBucket[]
@@ -30,7 +36,7 @@ function FlowBlock({ researchId, counts }: { researchId: string; counts: Counts 
   const flow = counts.flow
   if (!flow) return null
   return <details className="search-summary flow-block">
-    <summary><span><Workflow size={14} aria-hidden />{t('Flow')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{fiveText(flow)}</small></summary>
+    <summary><span><Workflow size={14} aria-hidden />{t('Flow')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><FiveChips flow={flow} /></summary>
     <div className="flow-detail">
       <div>
         <p className="flow-head">{t('Where each of the {n} works stands', { n: count(flow.works) })}</p>

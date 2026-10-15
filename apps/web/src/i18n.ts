@@ -3280,6 +3280,11 @@ const tr: Record<string, string> = {
   // The flow, the audit sample and the PRISMA-S search report (slice 20, D102).
   '{included} included (two agreeing runs {agreed}, you confirmed {confirmed}) · {queued} in your queue, not looked at · {waiting} waiting for a PDF · {notRead} full text not read ({reading} in reading, {tried} not tried) · {notMet} criterion not met': '{included} dahil (iki uyuşan koşu {agreed}, sizin onayladığınız {confirmed}) · kuyruğunuzda bakılmamış {queued} · PDF bekleyen {waiting} · tam metni okunmamış {notRead} (okumada {reading}, denenmemiş {tried}) · ölçütü karşılamayan {notMet}',
   'Flow': 'Akış',
+  'In queue': 'Kuyrukta',
+  'Not met': 'Ölçüt dışı',
+  'two agreeing runs {agreed}, you confirmed {confirmed}': 'iki uyuşan koşu {agreed}, sizin onayladığınız {confirmed}',
+  'in your queue, not looked at': 'kuyruğunuzda, bakılmamış',
+  'full text not read: {reading} in reading, {tried} not tried': 'tam metni okunmadı: okumada {reading}, denenmemiş {tried}',
   'Where each of the {n} works stands': '{n} eserin her biri nerede duruyor',
   'Other, by reason code: {list}': 'Diğer, neden koduna göre: {list}',
   'An abstract not read is not an exclusion: the work was not read.': 'Okunmamış özet bir dışlama değildir: eser okunmadı.',

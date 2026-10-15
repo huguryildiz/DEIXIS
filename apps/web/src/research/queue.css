@@ -199,7 +199,14 @@
 
 /* The flow of an sw research (slice 20): the Sources tab's flow block, the line under an answer, the override count and
    the audit sample. Counts only, set as quiet interface text; nothing here is styled as success. */
-.flow-block summary small{flex:1;min-width:0;text-align:right;line-height:1.45}
+.flow-block summary{flex-wrap:wrap;row-gap:8px}
+.flow-chips{display:flex;flex-basis:100%;min-width:0;flex-wrap:wrap;gap:6px;padding-left:22px}
+.flow-chip{display:inline-flex;align-items:baseline;gap:6px;padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface,transparent);color:var(--muted);font-size:11.5px;font-weight:400;line-height:1.4;white-space:nowrap}
+.flow-chip strong{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.flow-chip[title]{cursor:help}
+.flow-chip.is-zero{border-style:dashed;opacity:.62}
+.flow-chip.is-warn{border-color:color-mix(in srgb,var(--warn-ink),transparent 70%);background:var(--warn-surface);color:var(--warn-ink)}
+.flow-chip.is-warn strong{color:var(--warn-ink)}
 .flow-detail{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:start;gap:10px 14px;padding:4px 0 14px 24px}
 /* Each count list is a box (mockup .plist): a head band on the side surface, then rows on hairlines. */
 .flow-detail>div{min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -236,8 +243,6 @@
 .queue-panel .audit-abstract{margin-top:22px;padding-top:12px;border-top:1px solid var(--line)}
 @media (max-width:760px){
   .flow-detail{padding-left:0}
-  .flow-block summary{flex-wrap:wrap}
-  .flow-block summary small{text-align:left;flex-basis:100%}
   .queue-panel .audit-row{grid-template-columns:minmax(0,1fr)}
   .queue-panel .audit-answers,.queue-panel .audit-answered{justify-content:flex-start;max-width:none}
 }

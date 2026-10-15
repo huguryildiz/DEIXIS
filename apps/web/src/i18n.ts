@@ -4825,4 +4825,13 @@ const tr: Record<string, string> = {
   'Download cache': 'İndirme önbelleği',
   '{size} of installer downloads. Installed tools keep working; a later install downloads again.': 'Kurulumların indirdiği dosyalar: {size}. Kurulu araçlar çalışmaya devam eder; sonraki bir kurulum yeniden indirir.',
   'Empty. Tool installs keep their downloads here.': 'Boş. Araç kurulumları indirdiklerini burada tutar.',
+  'Cited passage': 'Atıf yapılan pasaj',
+  'Contents': 'İçindekiler',
+  '+ {n} more sections': '+ {n} bölüm daha',
+  'Show fewer sections': 'Daha az bölüm göster',
+  'Citation map': 'Atıf haritası',
+  'Each box is a PDF page. Yellow: a page with a cited passage.': 'Her kutu bir PDF sayfası. Sarı: atıf yapılan pasajı olan sayfa.',
+  '{n} section': '{n} bölüm',
+  '{n} sections': '{n} bölüm',
+  'Drawn from Europe PMC': 'Europe PMC’den çizildi',
 }

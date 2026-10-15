@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Quote, ScanText, TriangleAlert } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Quote, ScanText, TriangleAlert } from 'lucide-react'
 import { Tooltip } from '@/components/ui/tooltip'
 import { api, figureUrl, type AssetFigure } from './api'
 import { t } from './i18n'
@@ -98,9 +98,13 @@ function PdfTextTable({ rows }: { rows: string[] }) {
 // title, heading, table or figure, is left unmarked rather than marked beyond what the backend found (slice 17).
 export type CitationLabels = { marked: string; unmarked: string; mark: string }
 
+// "Cited passage i of N" in the cited-passage card: which marked place the reader is at, the exact text marked there
+// (read back from the marks on the page, never composed), and how to step to another place.
+export type CiteNav = { at: number; count: number; quote: string | null; onStep: (index: number) => void }
+
 // With a citation, the document opens on the cited text: every located anchor is marked and the first is scrolled into view.
 // An anchor not found in its page's text leaves the page unmarked; the view then opens on that page and says so.
-export function PdfTextDocument({ researchId, assetId, passages, showNotes, sourceTitle = null, citation = null, rendition = false, comparison = false, suppressFigurePictures = false }: { researchId: string; assetId: string; passages: Passages; showNotes: boolean; sourceTitle?: string | null; rendition?: boolean; comparison?: boolean; suppressFigurePictures?: boolean; citation?: { page: number | null; texts: string[]; expected: boolean; labels?: CitationLabels } | null }) {
+export function PdfTextDocument({ researchId, assetId, passages, showNotes, sourceTitle = null, citation = null, rendition = false, comparison = false, suppressFigurePictures = false, label = null, nav = null }: { researchId: string; assetId: string; passages: Passages; showNotes: boolean; sourceTitle?: string | null; rendition?: boolean; comparison?: boolean; suppressFigurePictures?: boolean; label?: ReactNode; nav?: CiteNav | null; citation?: { page: number | null; texts: string[]; expected: boolean; labels?: CitationLabels } | null }) {
   const [figures, setFigures] = useState<AssetFigure[]>([])
   useEffect(() => {
     if (suppressFigurePictures) return
@@ -129,14 +133,53 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
     return () => cancelAnimationFrame(frame)
   }, [scrollKey])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <>
-    {citation && <div className={`pdf-text-citation${unmarked ? ' is-unmarked' : ''}`}>
-      {unmarked ? <TriangleAlert size={14} aria-hidden /> : <Quote size={14} aria-hidden />}
-      <span>{comparison ? t('Current text · {locator} · not the cited extraction', { locator: pageLocator(citation.page ?? '?', rendition) }) : citation.labels ? (unmarked ? citation.labels.unmarked : citation.labels.marked) : unmarked
-        ? t(citation.texts.length ? 'The cited text was not found in the text of {locator}, so it is not marked. Check the page in the PDF.' : 'This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.', { locator: pageLocator(citation.page ?? '?', rendition) })
-        : t('Cited text · {locator}', { locator: pageLocator(citation.page ?? '?', rendition) })}</span>
-      {(marks?.first || citedPage) && <button type="button" onClick={goToCitation}>{t(comparison ? 'Go to page' : marks?.first ? 'Go to cited text' : 'Go to cited page')}</button>}
+  // The outline rail (wide panels): each section heading with its page, the sections that hold a cited mark, and a map of
+  // the pages with the cited ones marked. Everything comes from the document and the located marks.
+  const outline = useMemo(() => {
+    const headingIds = new Set(doc.headings.map(h => h.id))
+    const pageOf = new Map<string, number | null>()
+    const citedSections = new Set<string>()
+    const citedPages = new Set<string>(citedPage ? [citedPage] : [])
+    let current: string | null = null
+    for (const { head, blocks } of doc.pages) for (const block of blocks) {
+      if (headingIds.has(block.id)) { current = block.id; pageOf.set(block.id, head.physical_page) }
+      if (marks?.blocks.has(block.id)) { citedPages.add(head.id); if (current) citedSections.add(current) }
+    }
+    return { pageOf, citedSections, citedPages }
+  }, [doc, marks, citedPage])
+  const [allSections, setAllSections] = useState(false)
+  const railSections = allSections ? doc.headings : doc.headings.slice(0, 5)
+  const pageCount = new Set(passages.map(item => item.physical_page)).size
+  const meta = [rendition ? t('Drawn from Europe PMC') : null, t(pageCount === 1 ? '{n} page' : '{n} pages', { n: pageCount }), doc.headings.length ? t(doc.headings.length === 1 ? '{n} section' : '{n} sections', { n: doc.headings.length }) : null].filter(Boolean).join(' · ')
+  const hasRail = doc.headings.length >= 3 || doc.pages.length > 1
+  const pageName = (page: number | null) => page ? pageLocator(page, rendition) : t('Extracted text')
+
+  const locator = citation ? pageLocator(citation.page ?? '?', rendition) : ''
+  const quoted = Boolean(nav?.quote && !unmarked && !comparison)
+  // A text opened for the human queue keeps its own sentence ("The model’s quote, found in the text of …") beside the quote.
+  const noted = !quoted || Boolean(citation?.labels)
+  const cardBody = comparison ? t('Current text · {locator} · not the cited extraction', { locator })
+    : citation?.labels ? (unmarked ? citation.labels.unmarked : citation.labels.marked)
+    : unmarked ? t(citation?.texts.length ? 'The cited text was not found in the text of {locator}, so it is not marked. Check the page in the PDF.' : 'This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.', { locator })
+    : t('Cited text · {locator}', { locator })
+
+  return <div className={`sd-doc${marks?.located ? ' has-cite' : ''}`}>
+    <div className="sd-main">
+    {citation && <div className={`pdf-text-citation${unmarked ? ' is-unmarked' : ''}${comparison ? ' is-comparison' : ''}`}>
+      {!comparison && <div className="cite-head">
+        {unmarked ? <TriangleAlert size={15} aria-hidden /> : <Quote size={15} aria-hidden />}
+        <span className="cite-label">{t('Cited passage')}</span>
+        <span className="cite-meta">{nav && nav.count > 0 && !unmarked ? `${nav.at + 1} / ${nav.count} · ${locator}` : locator}</span>
+        <span className="cite-spacer" />
+        {nav && nav.count > 0 && <>
+          <button type="button" className="cite-step" aria-label={t('Previous passage')} title={t('Previous passage')} disabled={nav.count < 2} onClick={() => nav.onStep(nav.at - 1)}><ChevronLeft size={14} aria-hidden /></button>
+          <button type="button" className="cite-step" aria-label={t('Next passage')} title={t('Next passage')} disabled={nav.count < 2} onClick={() => nav.onStep(nav.at + 1)}><ChevronRight size={14} aria-hidden /></button></>}
+      </div>}
+      {quoted && <p className="cite-quote">“{nav!.quote}”</p>}
+      {noted && <p className="cite-note">{cardBody}</p>}
+      {(marks?.first || citedPage) && <div className="cite-foot"><button type="button" className="cite-go" onClick={goToCitation}>{t(comparison ? 'Go to page' : marks?.first ? 'Go to cited text' : 'Go to cited page')}</button></div>}
     </div>}
+    {label && <h3 className="source-section sd-label"><span className="sd-label-title">{label}</span><span className="sd-label-meta">{meta}</span></h3>}
     {doc.headings.length >= 3 && <details className="pdf-text-contents">
       <summary>{t('Contents · {n} sections', { n: doc.headings.length })}</summary>
       <ol>{doc.headings.map(h => <li key={h.id}><button type="button" onClick={() => jump(h.id)}>{h.text}</button></li>)}</ol>
@@ -165,5 +208,20 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
         })}
       </section>
     })}
-  </>
+    </div>
+    {hasRail && <aside className="sd-rail" aria-label={t('Contents')}>
+      {doc.headings.length >= 3 && <div className="sd-rail-block">
+        <h4 className="sd-rail-label">{t('Contents')}</h4>
+        <ul className="sd-rail-list">{railSections.map(h => <li key={h.id}><button type="button" className={`sd-rail-item${outline.citedSections.has(h.id) ? ' is-cited' : ''}`} onClick={() => jump(h.id)}>
+          <span className="sd-rail-text">{h.text}</span>{outline.citedSections.has(h.id) && <i className="sd-rail-dot" aria-hidden />}
+          <span className="sd-rail-page">{pageName(outline.pageOf.get(h.id) ?? null)}</span></button></li>)}</ul>
+        {doc.headings.length > 5 && <button type="button" className="sd-rail-more" onClick={() => setAllSections(v => !v)}>{allSections ? t('Show fewer sections') : t('+ {n} more sections', { n: doc.headings.length - 5 })}</button>}
+      </div>}
+      {doc.pages.length > 1 && <div className="sd-rail-block sd-map">
+        <h4 className="sd-rail-label">{t('Citation map')}</h4>
+        <div className="sd-map-grid">{doc.pages.map(({ head }) => <button key={head.id} type="button" className={`sd-map-cell${outline.citedPages.has(head.id) ? ' is-cited' : ''}`} title={pageName(head.physical_page)} aria-label={`${pageName(head.physical_page)}${outline.citedPages.has(head.id) ? ` · ${t('Cited passage')}` : ''}`} onClick={() => jump(head.id)} />)}</div>
+        <p className="sd-map-note">{t('Each box is a PDF page. Yellow: a page with a cited passage.')}</p>
+      </div>}
+    </aside>}
+  </div>
 }

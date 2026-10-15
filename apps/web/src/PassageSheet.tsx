@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignLeft, Check, ChevronLeft, ChevronRight, Copy, Ellipsis, FileText, FileUp, Info, Link as LinkIcon, ListMinus, LoaderCircle, Maximize2, Minimize2, Replace, RotateCcw, ScanText, Search, Sigma, Trash2, TriangleAlert } from 'lucide-react'
+import { AlignLeft, Check, Copy, Ellipsis, FileText, FileUp, Info, Link as LinkIcon, ListMinus, LoaderCircle, Maximize2, Minimize2, Replace, RotateCcw, ScanText, Search, Sigma, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -10,7 +10,7 @@ import { PassageMathText } from './PassageMathText'
 import { PdfViewer } from './PdfViewer'
 import { OCR_LABEL, ocrOffer } from './ocr'
 import { SourceKey } from './SourceKey'
-import { PdfTextDocument, type CitationLabels } from './PdfTextDocument'
+import { PdfTextDocument, type CitationLabels, type CiteNav } from './PdfTextDocument'
 import { AUTHOR_NOTE, readablePassageText } from './pdfText'
 import { Notice } from './Notice'
 import { OccurrenceNotice, StoredPdfNotice } from './occurrence'
@@ -151,7 +151,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const [style] = useCitationStyle()
   const toast = useToast()
   const textView = useRef<HTMLDivElement>(null)
-  const [groups, setGroups] = useState(0)
+  // The exact text marked at each cited place of the text view, read back from the marks (math is left out of it).
+  const [quotes, setQuotes] = useState<string[]>([])
+  const groups = quotes.length
   const [groupAt, setGroupAt] = useState(0)
   const opened = sourceVersionId ? sources?.find(s => s.source_version_id === sourceVersionId) : undefined
   const openAssetId = assetId ?? ((!passageId && opened?.access.assets[0]?.id) || null)
@@ -267,7 +269,14 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const documentShown = tab === 'text' && Boolean((passage && !abstract && shownDocument) || otherText)
   useEffect(() => {
     if (!documentShown) return
-    const frame = requestAnimationFrame(() => { setGroups(markGroups(textView.current).length); setGroupAt(0) })
+    const frame = requestAnimationFrame(() => {
+      const list = markGroups(textView.current)
+      // Each marked block carries its place's number, which the reading text shows as a badge in the margin.
+      textView.current?.querySelectorAll('[data-cite-n]').forEach(el => el.removeAttribute('data-cite-n'))
+      list.forEach((marks, i) => marks.forEach(mark => { const block = mark.closest('[id]'); if (block && !block.hasAttribute('data-cite-n')) block.setAttribute('data-cite-n', String(i + 1)) }))
+      setQuotes(list.map(marks => marks.map(mark => { const copy = mark.cloneNode(true) as HTMLElement; copy.querySelectorAll('.katex-mathml').forEach(el => el.remove()); return (copy.textContent ?? '').replace(/\s+/g, ' ').trim() }).filter(Boolean).join(' ')))
+      setGroupAt(0)
+    })
     return () => cancelAnimationFrame(frame)
   }, [documentShown, shownDocument, otherText, comparing, showNotes, highlightKey])
   const goToGroup = (index: number) => {
@@ -277,6 +286,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     setGroupAt(next)
     list[next][0].scrollIntoView({ block: 'center' })
   }
+  const nav: CiteNav | null = groups > 0 ? { at: groupAt, count: groups, quote: quotes[groupAt] || null, onStep: goToGroup } : null
 
   const hasPdf = Boolean(pdfAssetId)
   // The file and its text are told apart (P12): a passage read from the PDF, or its loaded text, says there is text;
@@ -373,14 +383,6 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
 
   const tabs: [Tab, string][] = hasPdf ? [['text', 'Plain text'], ['pdf', 'PDF'], ['abs', 'Abstract']] : [['abs', 'Abstract'], ['text', 'Plain text'], ['pdf', 'PDF']]
   const notesToggle = (doc: AssetText) => doc.passages.some(item => item.text.split(/\n{2,}/).some(p => AUTHOR_NOTE.test(p.trim()))) && <button type="button" className="pdf-text-notes-toggle" onClick={() => setShowNotes(v => !v)}>{t(showNotes ? 'Hide author notes' : 'Show author notes')}</button>
-  // "Cited passage i of N" and the size of the text read (mockup `.docnav`, P17).
-  const docnav = (doc: AssetText) => <div className="docnav">
-    {groups > 0 && <><span>{t('Cited passage {i} of {n}', { i: groupAt + 1, n: groups })}</span>
-      <button type="button" className="ib" aria-label={t('Previous passage')} title={t('Previous passage')} disabled={groups < 2} onClick={() => goToGroup(groupAt - 1)}><ChevronLeft size={15} aria-hidden /></button>
-      <button type="button" className="ib" aria-label={t('Next passage')} title={t('Next passage')} disabled={groups < 2} onClick={() => goToGroup(groupAt + 1)}><ChevronRight size={15} aria-hidden /></button></>}
-    <span className="spacer" />
-    <span>{t((doc === shownDocument ? textRendition : doc.asset.rendition) ? 'Text drawn from Europe PMC · {n} pages' : 'Text from the PDF · {n} pages', { n: pages(doc) })}</span>
-  </div>
   const empty = (kind: 'text' | 'pdf') => <div className="empty source-empty">
     <div>{kind === 'text' ? <AlignLeft aria-hidden /> : <FileText aria-hidden />}
       <h2>{t(kind === 'text' ? 'No full text yet' : 'No PDF yet')}</h2>
@@ -392,18 +394,14 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
 
   const textTab = passage && !abstract
     ? shownDocument !== null ? <>
-      {shownDocument && docnav(shownDocument)}
-      <h3 className="source-section">{t('Extracted PDF text')}{shownDocument && notesToggle(shownDocument)}</h3>
-      {shownDocument ? <PdfTextDocument researchId={researchId} assetId={shownDocument.asset.id} passages={shownDocument.passages} showNotes={showNotes} sourceTitle={shownDocument.source.title} citation={citation} comparison={comparing} suppressFigurePictures={earlier && !comparing} rendition={textRendition} /> : <p>{t('Loading PDF text…')}</p>}
+      {shownDocument ? <PdfTextDocument researchId={researchId} assetId={shownDocument.asset.id} passages={shownDocument.passages} showNotes={showNotes} sourceTitle={shownDocument.source.title} citation={citation} comparison={comparing} suppressFigurePictures={earlier && !comparing} rendition={textRendition} nav={nav} label={<>{t('Extracted PDF text')}{notesToggle(shownDocument)}</>} /> : <><h3 className="source-section">{t('Extracted PDF text')}</h3><p>{t('Loading PDF text…')}</p></>}
     </> : <>
       <h3 className="source-section">{t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
       {expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{citationLabels?.unmarked ?? t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
       <p className="passage-text"><HighlightedPassageText passage={passage} highlightTexts={highlights} markLabel={citationLabels?.mark} /></p>
     </>
     : otherText ? <>
-      {otherText.passages.length > 0 && docnav(otherText)}
-      <h3 className="source-section">{t('Extracted PDF text')}{notesToggle(otherText)}</h3>
-      {otherText.passages.length ? <PdfTextDocument researchId={researchId} assetId={otherText.asset.id} passages={otherText.passages} showNotes={showNotes} sourceTitle={otherText.source.title} rendition={Boolean(otherText.asset.rendition)} /> : <Notice tone="info">{t('No text was extracted from this PDF.')}</Notice>}
+      {otherText.passages.length ? <PdfTextDocument researchId={researchId} assetId={otherText.asset.id} passages={otherText.passages} showNotes={showNotes} sourceTitle={otherText.source.title} rendition={Boolean(otherText.asset.rendition)} label={<>{t('Extracted PDF text')}{notesToggle(otherText)}</>} /> : <><h3 className="source-section">{t('Extracted PDF text')}</h3><Notice tone="info">{t('No text was extracted from this PDF.')}</Notice></>}
     </>
     : needsOtherText ? <p>{t('Loading PDF text…')}</p>
     : empty('text')
@@ -422,42 +420,45 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
         {error && <Notice tone="error">{error}</Notice>}
         {!passage && !assetText && !detailsOnly && !error && <p>{t(openAssetId ? 'Loading PDF text…' : 'Loading passage…')}</p>}
         {(passage || assetText || detailsOnly) && source && head && <>
-          {/* The work (mockup `.dhead`, P12): venue · year · citations, the title, the authors, then its pills. */}
+          {/* The work (mockup `.dhead`): the source key, venue · year · citations, the title and the authors, then one
+              status line: the decision and who made it, the latest answer's claims that cite this copy, the text the
+              panel holds (one pill that also says an upload is yours), and the similarity used for ordering. */}
           <div className="dhead">
             {(head.source_key || head.venue || head.year || head.cited_by_count !== null) && <p className="source-venue venue"><SourceKey value={head.source_key} />{[head.venue, head.year, head.cited_by_count !== null ? citedText(head.cited_by_count) : null].filter(Boolean).map((part, i) => <Fragment key={i}>{i > 0 && <span aria-hidden className="source-dot" />}{i === 0 && head.venue ? <i>{part}</i> : <span>{part}</span>}</Fragment>)}</p>}
             <h3 className="source-title">{head.title}</h3>
             {head.authors.length > 0 && <p className="source-byline au">{head.authors.length > 3 && !allAuthors
               ? <>{head.authors.slice(0, 2).join(', ')}, <button className="author-more" onClick={() => setAllAuthors(true)}>{t('and {n} more', { n: head.authors.length - 2 })}</button></>
               : head.authors.join(', ')}</p>}
-            <div className="source-chips pills">
-              {retractionNote(source) && <span className="ref-pill pill is-retracted" title={retractionNote(source) ?? undefined}>{t('Retracted')}</span>}
-              {pdfText === 'text'
-                ? <span className="ref-pill pill is-text">{(() => { const doc = shownDocument ?? otherText; const n = doc ? pages(doc) : fileAsset?.page_count ?? null; return n ? t('PDF text · {n} pp.', { n }) : t('PDF text') })()}</span>
-                : pdfText === 'none' ? <span className="ref-pill pill is-text">{t('PDF without extracted text')}</span>
-                : pdfText === 'pending' ? <span className="ref-pill pill is-text">{t('PDF, text not read yet')}</span>
-                : abstractId ? <span className="ref-pill pill is-abstract">{t('Abstract only')}</span>
-                : <span className="ref-pill pill">{t('Metadata only')}</span>}
-              <span className="ref-pill pill">{source.version_label ? versionText(source.version_label) : t('version not stated by the provider')}</span>
-              {source.origin === 'user_upload' && <span className="ref-pill pill">{t('uploaded by you')}</span>}
-              {(passage?.text_source === 'ocr' || row?.has_ocr_text) && <span className="ref-pill pill is-ocr warn"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
-              {passage?.text_source === 'latex_source' && <span className="ref-pill pill is-text"><Sigma size={12} aria-hidden />{t('arXiv source')}</span>}
-              {passage?.text_source === 'equation_ocr' && <span className="ref-pill pill is-text"><Sigma size={12} aria-hidden />Mathpix</span>}
+            <div className="dmeta source-chips pills">
+              {row && <strong className={`dpill is-decision is-${row.selection.state}`}>
+                {row.selection.state === 'included' ? <Check size={12} strokeWidth={2.5} aria-hidden /> : null}
+                <span>{t(selectionText[row.selection.state])}</span>
+                {originText[row.selection.origin] && <span className="dpill-origin">· {t(originText[row.selection.origin]!)}</span>}
+              </strong>}
+              {citedClaims !== null && latestAnswer && <span className="dpill is-cited"><AlignLeft size={12} aria-hidden />{citedClaims ? t(citedClaims === 1 ? 'cited in {n} claim of V{v}' : 'cited in {n} claims of V{v}', { n: citedClaims, v: latestAnswer.version }) : t('not cited in V{v}', { v: latestAnswer.version })}</span>}
+              {retractionNote(source) && <span className="ref-pill pill dpill is-retracted" title={retractionNote(source) ?? undefined}>{t('Retracted')}</span>}
+              {(() => {
+                const uploaded = source.origin === 'user_upload' ? t('uploaded by you') : null
+                const text = pdfText === 'text'
+                  ? (() => { const doc = shownDocument ?? otherText; const n = doc ? pages(doc) : fileAsset?.page_count ?? null; return n ? t('PDF text · {n} pp.', { n }) : t('PDF text') })()
+                  : pdfText === 'none' ? t('PDF without extracted text')
+                  : pdfText === 'pending' ? t('PDF, text not read yet')
+                  : abstractId ? t('Abstract only') : t('Metadata only')
+                return <span className={`ref-pill pill dpill dpill-outline${pdfText ? ' is-text' : abstractId ? ' is-abstract' : ''}`}><i className="dpill-dot" aria-hidden />{[text, uploaded].filter(Boolean).join(' · ')}</span>
+              })()}
+              {!(source.origin === 'user_upload' && source.version_label === 'uploaded file') && <span className="ref-pill pill dpill dpill-outline">{source.version_label ? versionText(source.version_label) : t('version not stated by the provider')}</span>}
+              {(passage?.text_source === 'ocr' || row?.has_ocr_text) && <span className="ref-pill pill dpill is-ocr warn"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
+              {passage?.text_source === 'latex_source' && <span className="ref-pill pill dpill is-text"><Sigma size={12} aria-hidden />{t('arXiv source')}</span>}
+              {passage?.text_source === 'equation_ocr' && <span className="ref-pill pill dpill is-text"><Sigma size={12} aria-hidden />Mathpix</span>}
+              {row && row.similarity !== null && <span className="dpill tnum" title={t('Used for ordering only; it is not a relevance judgment.')}>{t('similarity {score}', { score: row.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</span>}
             </div>
           </div>
-          {/* Where the source stands in this research (mockup `.dmeta`, P13): the decision and who made it, the latest
-              answer's claims that cite this copy, and the similarity used for ordering. */}
-          {row && <p className="dmeta source-role">
-            <span className={`is-${row.selection.state}`}>{t(selectionText[row.selection.state])}</span>
-            {originText[row.selection.origin] && <span>{t(originText[row.selection.origin]!)}</span>}
-            {citedClaims !== null && latestAnswer && <span>{citedClaims ? t(citedClaims === 1 ? 'cited in {n} claim of V{v}' : 'cited in {n} claims of V{v}', { n: citedClaims, v: latestAnswer.version }) : t('not cited in V{v}', { v: latestAnswer.version })}</span>}
-            {row.similarity !== null && <span className="tnum" title={t('Used for ordering only; it is not a relevance judgment.')}>{t('similarity {score}', { score: row.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</span>}
-          </p>}
-          {/* One primary action, then DOI, copy citation and ⋯ (mockup `.dacts`, P14). */}
+          {/* One primary action, then DOI, copy citation (both with their words) and ⋯ (mockup `.dacts`, P14). */}
           <div className="dacts">
             {hasPdf ? <button type="button" className="btn-pri" onClick={() => choose('pdf')}><FileText size={14} aria-hidden />{t('Open PDF')}</button>
               : tab === 'abs' && canFind && <button type="button" className="btn-pri" disabled={busy || finding} onClick={() => { void startFind() }}><Search size={14} aria-hidden />{t('Find PDF')}</button>}
-            {doiHref && <a className="ib" href={doiHref} target="_blank" rel="noreferrer" aria-label={t(source.doi ? 'Open DOI' : 'Open publisher page')} title={t(source.doi ? 'Open DOI' : 'Open publisher page')}><LinkIcon size={15} aria-hidden /></a>}
-            <button type="button" className="ib" aria-label={t('Copy citation')} title={t('Copy citation')} onClick={copyCitation}><Copy size={15} aria-hidden /></button>
+            {doiHref && <a className="ib ib-text" href={doiHref} target="_blank" rel="noreferrer" aria-label={t(source.doi ? 'Open DOI' : 'Open publisher page')} title={t(source.doi ? 'Open DOI' : 'Open publisher page')}><LinkIcon size={15} aria-hidden />{source.doi ? 'DOI' : t('Publisher page')}</a>}
+            <button type="button" className="ib ib-text" aria-label={t('Copy citation')} title={t('Copy citation')} onClick={copyCitation}><Copy size={15} aria-hidden />{t('Copy citation')}</button>
             <DropdownMenu>
               <DropdownMenuTrigger render={<button type="button" className="ib" aria-label={t('More actions')} title={t('More actions')} />}><Ellipsis size={15} aria-hidden /></DropdownMenuTrigger>
               <DropdownMenuContent align="end" sideOffset={6} className="source-more-menu">

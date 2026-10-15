@@ -320,9 +320,9 @@ test.describe('S12: report, Citation and Source details panels', () => {
     await expect(dmeta).toContainText(citing === 1 ? `cited in 1 claim of V${latest.report_version}` : `cited in ${citing} claims of V${latest.report_version}`)
     if (pdfSource.similarity !== null) await expect(dmeta).toContainText(`similarity ${pdfSource.similarity.toFixed(2)}`)
     // P17: the cited place in the text, and the size of the text read.
-    const docnav = details.locator('.docnav')
-    await expect(docnav).toContainText('Cited passage 1 of 1')
-    await expect(docnav).toContainText(/Text from the PDF · \d+ pages/)
+    await expect(details.locator('.pdf-text-citation')).toContainText('Cited passage')
+    await expect(details.locator('.pdf-text-citation')).toContainText('1 / 1')
+    await expect(details.locator('.sd-label-meta')).toContainText(/\d+ pages?/)
     await expect(details.locator('#source-text-view mark.citation-highlight').first()).toBeVisible()
     // P14: Open PDF, DOI, Copy citation, ⋯.
     const acts = details.locator('.dacts')
@@ -603,7 +603,7 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await expect(details.getByRole('tab', { name: 'Abstract' })).toHaveAttribute('aria-selected', 'true')
       await expect(notice).toHaveCount(0)
       await details.getByRole('tab', { name: 'Plain text' }).click()
-      await expect(details.locator('.docnav')).toContainText(/Text drawn from Europe PMC · \d+ pages/)
+      await expect(details.locator('.sd-label-meta')).toContainText(/Drawn from Europe PMC · \d+ pages?/)
       await expect(notice).toBeVisible()
       await details.getByRole('tab', { name: 'PDF' }).click()
       await expect(notice).toBeVisible()
@@ -667,14 +667,14 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await details.getByRole('tab', { name: 'Plain text' }).click()
       // The fixture's first file names the work's DOI on its first page.
       await expect(text).toContainText(`https://doi.org/${source.doi}`)
-      await expect(details.locator('.docnav')).toContainText(/Text drawn from Europe PMC · \d+ pages/)
+      await expect(details.locator('.sd-label-meta')).toContainText(/Drawn from Europe PMC · \d+ pages?/)
       // The first replacement: its text read is held; the second replacement comes while it still runs.
       await replace('replacement-a')
       await expect(text).toContainText('Loading PDF text…')
       await replace('replacement-b')
       await expect(text).toContainText('SYNTHETIC replacement scan', { timeout: 20_000 })
       await expect(text).not.toContainText(`https://doi.org/${source.doi}`)
-      await expect(details.locator('.docnav')).toContainText('Text from the PDF · 1 page')
+      await expect(details.locator('.sd-label-meta')).toContainText('1 page')
       await expect(details.locator('.dhead .pills .ref-pill').first()).toHaveText('PDF text · 1 pp.')
       // The held read for the second file answers now; the third file's text stays.
       await staleAnswered

@@ -1,0 +1,124 @@
+/* Source details, owner-approved redesign (Oct 2026): a serif title, one status line of rounded pills, outline action
+   buttons with words, one cited-passage card, a reading column in the serif face and, in a wide panel, an outline rail
+   with a map of the cited pages. Loaded after panels.css; every rule here is scoped to .source-detail. */
+.source-sheet .source-detail .dhead{container:sdhead/inline-size}
+.source-sheet .source-detail .asset-text-view{container:sdetail/inline-size}
+
+/* Rows keep their content height: a tab strip (overflow auto) must not shrink to nothing in a short dialog. */
+.source-sheet .sheet-body.source-detail{grid-auto-rows:max-content}
+
+/* Header */
+.source-sheet .source-detail .dhead{display:grid;gap:10px}
+.source-sheet .source-detail .dhead .venue{gap:2px 8px;font-size:12.5px;color:var(--muted)}
+.source-sheet .source-detail .dhead .venue i{font-size:12.5px}
+.source-sheet .source-detail .dhead .venue .source-key{margin:0;padding:2px 7px;border:1px solid var(--line);border-radius:6px;background:var(--hover-surface);color:var(--ink-2);font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-size:11.5px;line-height:1.4}
+.source-sheet .source-detail .dhead .venue .source-key::after{content:none}
+.source-sheet .source-detail h3.source-title{max-width:760px;margin:0;font-family:var(--font-serif);font-size:28px;font-weight:600;line-height:1.22;letter-spacing:-.01em;text-wrap:balance}
+@container sdhead (max-width:520px){.source-sheet .source-detail h3.source-title{font-size:24px}}
+.source-sheet .source-detail .source-byline{font-size:14px;color:var(--ink-2)}
+
+/* Status line */
+.source-sheet .source-detail .dhead .dmeta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:4px 0 0;color:var(--ink-2);font-size:12.5px}
+.source-sheet .source-detail .dmeta>:is(span,strong)+:is(span,strong)::before{content:none}
+.source-sheet .source-detail .dpill{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:999px;background:var(--accent-tint);color:var(--accent-deep);font-size:12.5px;font-weight:500;line-height:1;white-space:nowrap}
+.dark .source-sheet .source-detail .dpill{color:var(--accent)}
+.source-sheet .source-detail .dpill svg{flex:none}
+.source-sheet .source-detail .dpill.is-decision{font-weight:600}
+.source-sheet .source-detail .dpill.is-decision.is-included{background:color-mix(in srgb,var(--tone-include),transparent 88%);color:color-mix(in srgb,var(--tone-include),var(--ink) 25%)}
+.source-sheet .source-detail .dpill.is-decision.is-excluded{background:color-mix(in srgb,var(--tone-exclude),transparent 90%);color:color-mix(in srgb,var(--tone-exclude),var(--ink) 20%)}
+.source-sheet .source-detail .dpill.is-decision.is-pending{background:color-mix(in srgb,var(--tone-uncertain),transparent 88%);color:var(--warn-ink)}
+.source-sheet .source-detail .dpill-origin{font-weight:400}
+.source-sheet .source-detail .dpill.dpill-outline,.source-sheet .source-detail .dpill.tnum{border:1px solid var(--line);background:transparent;color:var(--ink-2)}
+.source-sheet .source-detail .dpill.tnum{font-variant-numeric:tabular-nums}
+.source-sheet .source-detail .dpill-dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.source-sheet .source-detail .dpill.is-abstract .dpill-dot{background:var(--attr-abstract)}
+.source-sheet .source-detail .dpill.is-retracted{border:1px solid color-mix(in srgb,var(--tone-uncertain),transparent 55%);background:color-mix(in srgb,var(--tone-uncertain),transparent 90%);color:var(--warn-ink)}
+.source-sheet .source-detail .dpill.is-ocr{border:1px solid color-mix(in srgb,var(--tone-uncertain),transparent 55%);background:color-mix(in srgb,var(--tone-uncertain),transparent 90%);color:var(--warn-ink)}
+.source-sheet .source-detail .dpill.is-text:not(.dpill-outline){border:1px solid var(--line);background:transparent;color:var(--ink-2)}
+
+/* Actions */
+.source-sheet .source-detail .dacts{flex-wrap:wrap;gap:8px;margin-top:4px}
+.source-sheet .source-detail .dacts .btn-pri{height:36px;margin:0;padding:0 14px;border-radius:8px;background:var(--accent-deep);font-size:13.5px;font-weight:600;box-shadow:0 1px 2px color-mix(in srgb,var(--ink),transparent 88%)}
+.source-sheet .source-detail .dacts .btn-pri svg{width:15px;height:15px}
+.source-sheet .source-detail .dacts .ib{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:36px;height:36px;border:1px solid var(--strong-line);border-radius:8px;background:var(--paper);color:var(--muted)}
+.source-sheet .source-detail .dacts .ib.ib-text{width:auto;padding:0 12px;color:var(--ink);font-size:13.5px;font-weight:500;text-decoration:none;white-space:nowrap}
+.source-sheet .source-detail .dacts .ib:hover{background:var(--hover-surface);color:var(--ink)}
+.source-sheet .source-detail .dacts .ib svg{flex:none;width:15px;height:15px}
+
+/* Cited-passage card: the navigator and the cited text strip as one card */
+.source-sheet .source-detail .pdf-text-citation{position:static;display:flex;flex-direction:column;align-items:stretch;gap:10px;margin:0 0 22px;padding:14px 16px 16px;border:1px solid var(--accent-line);border-radius:12px;background:color-mix(in srgb,var(--paper),var(--accent-tint) 45%);color:var(--ink)}
+.source-sheet .source-detail .pdf-text-citation .cite-head{display:flex;align-items:center;gap:10px;min-width:0}
+.source-sheet .source-detail .pdf-text-citation .cite-head>svg{flex:none;color:var(--accent)}
+.source-sheet .source-detail .pdf-text-citation .cite-label{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--accent-deep);white-space:nowrap}
+.dark .source-sheet .source-detail .pdf-text-citation .cite-label{color:var(--accent)}
+.source-sheet .source-detail .pdf-text-citation .cite-meta{min-width:0;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.source-sheet .source-detail .pdf-text-citation .cite-spacer{flex:1}
+.source-sheet .source-detail .pdf-text-citation .cite-step{display:inline-flex;flex:none;align-items:center;justify-content:center;width:28px;height:28px;margin:0;padding:0;border:1px solid var(--line);border-radius:7px;background:var(--paper);color:var(--muted)}
+.source-sheet .source-detail .pdf-text-citation .cite-step:hover:not(:disabled){background:var(--hover-surface);color:var(--ink)}
+.source-sheet .source-detail .pdf-text-citation .cite-step:disabled{color:var(--faint);opacity:.6;cursor:default}
+.source-sheet .source-detail .pdf-text-citation .cite-quote{display:-webkit-box;margin:0;overflow:hidden;font-family:var(--font-serif);font-size:16.5px;line-height:1.55;color:var(--ink);-webkit-box-orient:vertical;-webkit-line-clamp:4}
+.source-sheet .source-detail .pdf-text-citation .cite-note{margin:0;font-size:12.5px;line-height:1.55;color:var(--ink-2)}
+.source-sheet .source-detail .pdf-text-citation .cite-foot{display:flex;justify-content:flex-end}
+.source-sheet .source-detail .pdf-text-citation .cite-go{flex:none;height:30px;margin:0;padding:0 12px;border:1px solid var(--accent-line);border-radius:7px;background:var(--paper);color:var(--accent-deep);font-size:12.5px;font-weight:600}
+.dark .source-sheet .source-detail .pdf-text-citation .cite-go{color:var(--accent)}
+.source-sheet .source-detail .pdf-text-citation .cite-go:hover{background:var(--accent-tint)}
+.source-sheet .source-detail .pdf-text-citation.is-unmarked{border-color:color-mix(in srgb,var(--tone-uncertain),transparent 55%);background:color-mix(in srgb,var(--paper),var(--tone-uncertain) 9%)}
+.source-sheet .source-detail .pdf-text-citation.is-unmarked .cite-head>svg{color:var(--tone-uncertain)}
+.source-sheet .source-detail .pdf-text-citation.is-unmarked .cite-label{color:var(--ink)}
+.source-sheet .source-detail .pdf-text-citation.is-unmarked .cite-go{border-color:color-mix(in srgb,var(--tone-uncertain),transparent 55%);color:var(--ink)}
+.source-sheet .source-detail .pdf-text-citation.is-comparison{flex-direction:row;align-items:center;padding:10px 14px}
+.source-sheet .source-detail .pdf-text-citation.is-comparison .cite-note{flex:1}
+
+/* Section label row */
+.source-sheet .source-detail h3.sd-label{display:flex;align-items:baseline;gap:10px;margin:0 0 22px;padding:0 0 8px;border-bottom:1px solid var(--line);color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.source-sheet .source-detail .sd-label-meta{margin-left:auto;color:var(--muted);font-weight:400;letter-spacing:0;text-transform:none;white-space:nowrap}
+.source-sheet .source-detail .sd-label .pdf-text-notes-toggle{letter-spacing:0;text-transform:none}
+
+/* Reading text */
+.source-sheet .source-detail .sd-doc{display:block;min-width:0}
+.source-sheet .source-detail .sd-main{min-width:0}
+.source-sheet .source-detail .sd-doc.has-cite .sd-main{padding-left:28px}
+.source-sheet .source-detail .sd-doc.has-cite .pdf-text-citation,.source-sheet .source-detail .sd-doc.has-cite h3.sd-label{margin-left:-28px}
+.source-sheet .source-detail .sd-doc .pdf-text-page :is(.passage-text,.pdf-text-heading,.pdf-text-title){max-width:600px}
+.source-sheet .source-detail .sd-doc .pdf-text-page .passage-text{color:var(--ink);font-family:var(--font-serif);font-size:16.5px;line-height:1.7}
+.source-sheet .source-detail .sd-doc .pdf-text-page .passage-text.pdf-text-note{font-family:var(--font-sans);font-size:12.5px;line-height:1.5;color:var(--muted)}
+.source-sheet .source-detail .sd-doc .pdf-text-page .passage-text.pdf-text-bio{font-size:14px;line-height:1.6;color:var(--ink-2)}
+.source-sheet .source-detail .sd-doc .pdf-text-page :is(.pdf-text-heading,.pdf-text-title){font-family:var(--font-serif);color:var(--ink);letter-spacing:0}
+.source-sheet .source-detail .sd-doc .pdf-text-page .pdf-text-heading{font-size:17px}
+.source-sheet .source-detail .sd-doc .pdf-text-page .pdf-text-heading.is-sub{font-size:15.5px}
+.source-sheet .source-detail .sd-doc .pdf-text-page .pdf-text-title{font-size:22px;line-height:1.3;max-width:600px}
+.source-sheet .source-detail .sd-doc .pdf-text-page h4{font-family:var(--font-sans);font-size:12px;letter-spacing:.04em;text-transform:uppercase}
+.source-sheet .source-detail .sd-doc{--sd-mark-line:color-mix(in srgb,var(--mark),var(--tone-uncertain) 45%)}
+.source-sheet .source-detail .sd-doc .citation-highlight{padding:1px 2px;border-radius:3px;background:var(--mark);box-shadow:inset 0 -2px 0 var(--sd-mark-line)}
+/* The old blue gutter bar becomes a numbered badge in the margin (the number is the place's index). */
+.source-sheet .source-detail .sd-doc .pdf-text-page :is(.passage-text,.pdf-text-heading,.pdf-text-title):has(mark.citation-highlight)::before,
+.source-sheet .source-detail .sd-doc .pdf-text-page [data-cite-n]::before{position:absolute;left:-28px;top:.25em;bottom:auto;display:flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:6px;background:var(--accent-deep);color:var(--paper);font-family:var(--font-sans);font-size:11px;font-weight:600;line-height:1}
+.source-sheet .source-detail .sd-doc .pdf-text-page [data-cite-n]{position:relative}
+.source-sheet .source-detail .sd-doc .pdf-text-page [data-cite-n]::before{content:attr(data-cite-n)}
+.dark .source-sheet .source-detail .sd-doc .pdf-text-page :is(.passage-text,.pdf-text-heading,.pdf-text-title):has(mark.citation-highlight)::before,
+.dark .source-sheet .source-detail .sd-doc .pdf-text-page [data-cite-n]::before{background:var(--accent);color:var(--paper)}
+
+/* Outline rail: only in a wide panel; the narrow panel keeps the collapsible contents */
+.source-sheet .source-detail .sd-rail{display:none}
+@container sdetail (min-width:820px){
+  .source-sheet .source-detail .sd-doc{display:grid;grid-template-columns:minmax(0,1fr) 232px;gap:0 28px}
+  .source-sheet .source-detail .sd-rail{position:sticky;top:0;display:flex;flex-direction:column;gap:18px;align-self:start;max-height:calc(100vh - 140px);overflow-y:auto;padding:18px;border-left:1px solid var(--line);border-radius:0 10px 10px 0;background:var(--sidebar-surface)}
+  .source-sheet .source-detail .pdf-text-contents{display:none}
+}
+.source-sheet .source-detail .sd-rail-label{margin:0 0 6px;padding:0 8px;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.source-sheet .source-detail .sd-rail-list{display:grid;gap:4px;margin:0;padding:0;list-style:none}
+.source-sheet .source-detail .sd-rail-item{display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border-radius:7px;color:var(--ink-2);font-size:13px;line-height:1.35;text-align:left}
+.source-sheet .source-detail .sd-rail-item:hover{background:var(--hover-surface)}
+.source-sheet .source-detail .sd-rail-item.is-cited{background:var(--accent-tint);color:var(--accent-deep);font-weight:600}
+.dark .source-sheet .source-detail .sd-rail-item.is-cited{color:var(--accent)}
+.source-sheet .source-detail .sd-rail-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.source-sheet .source-detail .sd-rail-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--sd-mark-line,var(--mark))}
+.source-sheet .source-detail .sd-rail-page{flex:none;color:var(--muted);font-size:11.5px;font-weight:400}
+.source-sheet .source-detail .sd-rail-more{margin-top:2px;padding:6px 8px;color:var(--accent);font-size:12.5px;font-weight:500;text-align:left}
+.source-sheet .source-detail .sd-map:not(:first-child){padding-top:16px;border-top:1px solid var(--line)}
+.source-sheet .source-detail .sd-map .sd-rail-label{margin-bottom:8px}
+.source-sheet .source-detail .sd-map-grid{display:grid;grid-template-columns:repeat(auto-fill,24px);gap:4px;padding:0 8px}
+.source-sheet .source-detail .sd-map-cell{width:24px;height:24px;padding:0;border-radius:3px;background:var(--selected-surface)}
+.source-sheet .source-detail .sd-map-cell:hover{outline:2px solid var(--accent-line)}
+.source-sheet .source-detail .sd-map-cell.is-cited{background:color-mix(in srgb,var(--mark),var(--tone-uncertain) 30%)}
+.source-sheet .source-detail .sd-map-note{margin:8px 0 0;padding:0 8px;color:var(--muted);font-size:12px;line-height:1.5}

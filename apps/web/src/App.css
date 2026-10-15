@@ -343,6 +343,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .choose-model{display:grid;gap:10px;margin-top:12px}
 .choose-model-row{display:grid;grid-template-columns:120px minmax(0,1fr);align-items:center;gap:10px;color:var(--ink-2);font-size:13px}
 .choose-model-note{color:var(--muted);font-size:12.5px}
+.choose-model-menu{width:max-content;min-width:var(--anchor-width);max-width:min(32rem,var(--available-width))}
 /* The Role, Model and effort lists open above the dialog (z 61), as in the review dialog. */
 body:has(.choose-model) div:has(> [data-slot="select-content"]){z-index:70}
 @media (max-width:520px){.choose-model-row{grid-template-columns:minmax(0,1fr)}}

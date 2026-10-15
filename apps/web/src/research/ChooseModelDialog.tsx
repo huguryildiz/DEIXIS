@@ -94,7 +94,7 @@ function RoleModelDialog({ target, view, dark, onClose, onChanged, onReload }: {
           : !models.length ? <span className="choose-model-note">{t('No connected model is ready.')}</span>
           : <Select value={choice || null} onValueChange={value => { if (value) { setChoice(value as string); setEffort(null) } }}>
             <SelectTrigger aria-label={t('Model')}><SelectValue placeholder={t('Choose a model')}>{(value: string) => { const m = models.find(x => x.id === value); return m ? `${connectionName(m.connection)} · ${m.display_name}` : t('Choose a model') }}</SelectValue></SelectTrigger>
-            <SelectContent align="start" alignItemWithTrigger={false}>
+            <SelectContent className="choose-model-menu" align="start" alignItemWithTrigger={false}>
               {models.map(m => <SelectItem key={modelKey(m.connection, m.model)} value={m.id}>{connectionName(m.connection)} · {m.display_name}</SelectItem>)}
             </SelectContent>
           </Select>}

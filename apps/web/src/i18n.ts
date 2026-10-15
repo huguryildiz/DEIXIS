@@ -2220,6 +2220,8 @@ const tr: Record<string, string> = {
   // Passage sheet
   'Source details': 'Kaynak ayrıntıları',
   'Not readable in the PDF': 'PDF\'ten okunamadı',
+  'Update the answer with 1 new full text': 'Yanıtı 1 yeni tam metinle güncelle',
+  'Update the answer with {n} new full texts': 'Yanıtı {n} yeni tam metinle güncelle',
   'Collapse panel': 'Paneli daralt',
   'Expand to full page': 'Tam sayfaya genişlet',
   'Cited passage: {locator}': 'Atıf yapılan pasaj: {locator}',

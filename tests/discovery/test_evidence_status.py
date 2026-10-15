@@ -122,3 +122,29 @@ def test_answer_quotes_and_passages_show_a_replaced_pdf_and_the_old_file_opens_o
         (new,) = store.conn.execute("SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,)).fetchone()
         client.delete(f"/api/researches/{rid}/sources/{svid}/assets/{new}")
         assert client.get(f"/api/researches/{rid}/assets/{new}").status_code == 404  # a mistaken file stays closed
+
+
+def test_an_answer_counts_the_works_whose_full_text_was_read_after_it_started(tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as raw:
+        client = session(raw)
+        rid = create(client, source_scope="attached")
+        store = app.state.store
+        client.post(f"/api/researches/{rid}/uploads", files={"file": ("notes.pdf", make_pdf(["SYNTHETIC uploaded molecule schedule notes."]), "application/pdf")})
+        view, run = wait_run(client, rid, client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()["id"])
+        assert view["answers"][0]["fulltext_read_since"] == 0
+        svid = view["answers"][0]["claims"][0]["evidence"][0]["source_version_id"]
+
+        def decide(outcome, by, created_at, superseded_at=None):  # one current decision per work: the last one stands
+            store.conn.execute("UPDATE stage_decisions SET superseded_at = ? WHERE research_id = ? AND source_version_id = ?"
+                               " AND stage = 'fulltext' AND superseded_at IS NULL", (created_at, rid, svid))
+            store.conn.execute(
+                "INSERT INTO stage_decisions (id, research_id, source_version_id, stage, outcome, reason_code, decided_by,"
+                " next_step, scope_revision, superseded_at, created_at) VALUES (?, ?, ?, 'fulltext', ?, 'SYNTHETIC', ?, 'none', 1, ?, ?)",
+                (f"sd_{outcome}_{by}_{created_at}", rid, svid, outcome, by, superseded_at, created_at))
+        decide("include", "model_agreement", "2000-01-01T00:00:00+00:00")  # read before the answer: not counted
+        decide("unresolved", "code", "2999-01-01T00:00:00+00:00")  # code saying the file was not read: not counted
+        decide("include", "model_agreement", "2999-01-01T00:00:01+00:00", superseded_at="2999-01-02")  # superseded
+        assert client.get(f"/api/researches/{rid}").json()["answers"][0]["fulltext_read_since"] == 0
+        decide("criterion_not_met", "model_agreement", "2999-01-01T00:00:02+00:00")  # a reading that excluded it counts
+        assert client.get(f"/api/researches/{rid}").json()["answers"][0]["fulltext_read_since"] == 1

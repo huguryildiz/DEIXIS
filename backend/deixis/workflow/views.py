@@ -687,6 +687,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                       "resolved_model": session["resolved_model"], "token_usage": _json(session["token_usage_json"])} if session else None,
             # A file or text extraction this answer read is no longer in use; its quotes still open what was read (D45).
             "source_text_changed": source_text_changed(store, given),
+            # Works whose full text a model or a person read and decided on after this answer's run started: what a new
+            # answer would read that this one did not ("Update the answer with N new full texts").
+            "fulltext_read_since": _fulltext_read_since(store, a),
             "inputs_given": {"sources": len(given["sources"]), "passages": len(given["passages"]),
                              "source_ids": [s["source_id"] for s in given["sources"]],
                              "depth": _given_depth(given)} if given else None,
@@ -949,6 +952,14 @@ def _fulltext_read_works(store: Store, research_id: str, revision: int) -> int:
     return store.conn.execute(
         f"SELECT COUNT(DISTINCT work_id) FROM source_versions WHERE id IN ({','.join('?' * len(read))})", read
     ).fetchone()[0]
+
+
+def _fulltext_read_since(store: Store, answer: Any) -> int:
+    return store.conn.execute(
+        "SELECT COUNT(DISTINCT d.source_version_id) FROM stage_decisions d JOIN runs r ON r.id = ?"
+        " WHERE d.research_id = r.research_id AND d.stage = 'fulltext' AND d.decided_by IN ('model_agreement', 'human')"
+        " AND d.outcome IN ('include', 'criterion_not_met') AND d.superseded_at IS NULL AND d.created_at > r.created_at",
+        (answer["run_id"],)).fetchone()[0]
 
 
 def _start_snapshot(store: Store, answer: Any) -> dict[str, Any] | None:

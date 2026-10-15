@@ -103,7 +103,9 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   const ctx = showCard ? thread : undefined
   const latePending = ctx && answer.late_revision_status && ['waiting_fetch', 'reading', 'answering'].includes(answer.late_revision_status.status)
     ? <p className="foot-note answer-late-pending" role="status">{t(LATE_REVISION_PENDING)}</p> : null
-  const newAnswer = ctx && <Button size="sm" disabled={!ctx.canNewAnswer} onClick={ctx.onNewAnswer}><RotateCw size={14} aria-hidden />{t('Generate a new answer')}</Button>
+  const newAnswer = ctx && <Button size="sm" disabled={!ctx.canNewAnswer} onClick={ctx.onNewAnswer}><RotateCw size={14} aria-hidden />{answer.fulltext_read_since
+    ? t(answer.fulltext_read_since === 1 ? 'Update the answer with 1 new full text' : 'Update the answer with {n} new full texts', { n: answer.fulltext_read_since })
+    : t('Generate a new answer')}</Button>
   if (answer.status === 'clarification' && answer.clarification) {
     if (!ctx) return null
     const clarification = answer.clarification

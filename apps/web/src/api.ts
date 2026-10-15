@@ -534,6 +534,7 @@ export type Answer = {
   // What the answer was given, from its stored input; `depth` counts works given PDF pages, only an abstract, or no passage.
   inputs_given: { sources: number; passages: number; source_ids: string[]; depth?: { pdf: number; abstract: number; metadata: number } } | null
   source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D46)
+  fulltext_read_since: number  // works whose full text was read and decided on after this answer's run started
   // Where the flow stood when this answer's run started (slice 20); null when that run kept none.
   start_snapshot: AnswerStartSnapshot | null
   review: AnswerReview | null

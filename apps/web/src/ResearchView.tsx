@@ -681,6 +681,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   } : undefined
   // A notice of the answer offers "Generate a new answer" when its evidence changed or it failed validation; the button
   // under the thread then leaves it to the notice, so the page has one.
+  const newFulltext = answer?.fulltext_read_since ?? 0
   const answerOffersNew = Boolean(answer && (answer.status === 'unverified_draft' || (answer.status === 'structurally_valid' && (answer.source_text_changed || answer.applicability === 'stale_selection'))))
   // The too-broad notice's Search again (R21): the rewritten question becomes the next revision, which then searches.
   const rewriteAndSearch = async (question: string, keyTerms: string | null) => {
@@ -850,7 +851,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       {/* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
          While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */}
       {      active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
-        {!answerOffersNew && <Button variant={answer ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{t(answer ? 'Generate a new answer' : 'Generate source-linked answer')}</Button>}
+        {/* With full text read since the answer started, the new answer is an update that names how many works it adds. */}
+        {!answerOffersNew && <Button variant={answer && !newFulltext ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{
+          !answer ? t('Generate source-linked answer') : newFulltext ? t(newFulltext === 1 ? 'Update the answer with 1 new full text' : 'Update the answer with {n} new full texts', { n: newFulltext }) : t('Generate a new answer')}</Button>}
         {/* Once there is an answer the next step here is a new answer (from the PDFs added since); searching again stays in
            the research menu. Before an answer, searching again is a secondary pill; the first search is an outline button. */}
         {hasAcademic && !(answer && view.search_runs.length) && (view.search_runs.length

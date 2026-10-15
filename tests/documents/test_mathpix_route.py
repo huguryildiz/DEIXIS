@@ -174,18 +174,76 @@ def test_a_rate_limited_read_fails_and_its_retry_reuses_the_answered_crop(tmp_pa
     assert math["reused"] == 1 and math["requests"] == 1
 
 
-def test_the_monthly_budget_stops_sending_and_a_higher_budget_resumes_from_the_stored_answers(tmp_path, on):
+def test_the_monthly_budget_stops_sending_and_the_answered_crops_are_still_placed(tmp_path, on):
+    # Sol r1 finding 2: a budget that stops sending keeps what was paid for; the crop left unsent is refused budget_reached.
     store, _, aid, papers = library(tmp_path)
     fake = FakeMathpix()
     svc = service(store, papers, tmp_path, fake)
     store.set_setting(equations.MATHPIX_BUDGET, 1)
     state = read(svc, aid)
-    assert state["state"] == "budget_reached" and state["outcome"] == "budget_reached" and len(fake.text_requests()) == 1
-    assert mathpix_extraction(store, aid) is None and svc.next_asset() is None
-    store.set_setting(equations.MATHPIX_BUDGET, 5)
-    assert equations.equation_state(store, aid)["state"] == "pending"
-    fake.script = [ANSWERS["2"]]
-    assert read(svc, aid)["state"] == "read" and len(fake.text_requests()) == 2
+    assert len(fake.text_requests()) == 1
+    assert state["state"] == "read" and state["mathpix"] == {"placed": 1, "pages": [1], "refused": {"budget_reached": 1}}
+    assert store.asset(aid)["extraction_version"] == TARGET and svc.next_asset() is None
+
+
+def many_equations(n):
+    """`n` numbered displays `x = k` (k = 1..n), each between two prose lines, over as many pages as they need."""
+    import pymupdf
+
+    from mathpix_helpers import AFTER, number, scripted
+
+    doc = pymupdf.open()
+    k = 0
+    while k < n:
+        page = doc.new_page(width=612, height=792)
+        y = prose(page, 80, [AFTER])
+        while k < n and y < 700:
+            y += 22
+            k += 1
+            scripted(page, 250, y, [(f"x = {k}", "base")])
+            number(page, y, str(k))
+            y = prose(page, y + 26, [AFTER])
+    return doc
+
+
+def test_a_pdf_with_61_candidates_places_the_60_answered_and_refuses_the_61st(tmp_path, on):
+    # Sol r1 finding 2: the per-PDF cap stopped the read at the 61st reservation and placed nothing, for good.
+    store, _, aid, papers = library(tmp_path, many_equations(61).tobytes())
+    fake = FakeMathpix([{"latex_styled": f"x={k}", "confidence": 0.99} for k in range(1, 61)])
+    svc = service(store, papers, tmp_path, fake)
+    state = read(svc, aid)
+    assert len(fake.text_requests()) == equations.MAX_ASSET_REQUESTS == 60
+    assert state["state"] == "read" and state["mathpix"]["placed"] == 60 and state["mathpix"]["refused"] == {"budget_reached": 1}
+    refused = json.loads(mathpix_extraction(store, aid)["math_json"])["refused"]
+    assert refused == [{"page": refused[0]["page"], "n": refused[0]["n"], "reason": "budget_reached"}]
+
+
+def test_a_pdf_at_its_budget_is_read_again_from_stored_answers_alone(tmp_path, on):
+    # Sol r1 finding 2: the state gate blocked a read that needs no new request. Crop (1) was answered earlier; the month
+    # is used up; the background reader leaves the PDF alone, and an asked-for read places (1) without sending anything.
+    store, _, aid, papers = library(tmp_path)
+    crop = next(c for c in equation_regions.detect(papers / "paper.pdf", set()) if c["n"] == "1")
+    store.conn.execute("INSERT INTO mathpix_requests (id, crop_sha256, asset_id, file_sha256, page, n, attempt, status, http_status,"
+                       " response_json, credential_revision, reserved_at, answered_at) VALUES ('mpx_old', ?, ?, 'f', 1, '1', 1,"
+                       " 'answered', 200, ?, 'rev-1', ?, ?)", (crop["crop_sha256"], aid, json.dumps(ANSWERS["1"]), now(), now()))
+    fake = FakeMathpix()
+    svc = service(store, papers, tmp_path, fake)
+    store.set_setting(equations.MATHPIX_BUDGET, 1)
+    assert equations.equation_state(store, aid)["state"] == "budget_reached" and svc.next_asset() is None
+    state = read(svc, aid, retry=True)
+    assert fake.requests == []
+    assert state["state"] == "read" and state["mathpix"] == {"placed": 1, "pages": [1], "refused": {"budget_reached": 1}}
+    math = json.loads(mathpix_extraction(store, aid)["math_json"])
+    assert math["requests"] == 0 and math["reused"] == 1 and math["placed"][0]["request_row_id"] == "mpx_old"
+
+
+def test_a_pdf_at_its_budget_without_stored_answers_is_not_read_again(tmp_path, on):
+    store, _, aid, papers = library(tmp_path)
+    fake = FakeMathpix()
+    svc = service(store, papers, tmp_path, fake)
+    store.set_setting(equations.MATHPIX_BUDGET, 0)
+    assert read(svc, aid, retry=True) == {"state": "budget_reached", "month": 0, "budget": 0, "asset": 0, "route": "mathpix"}
+    assert fake.requests == [] and mathpix_extraction(store, aid) is None
 
 
 def insert_row(store, aid, status, http_status=None, crop="c" * 64, at=None):

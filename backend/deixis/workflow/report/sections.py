@@ -126,9 +126,16 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
             "accepted_gaps": accepted, "basis_cells": basis_cells, "basis_passages": basis_passages}
 
 
+LEGACY_SECTION_VERSION = "deixis.report_section_draft.v2"
+
+
 def revalidate_section(payload: dict, draft: dict) -> contracts.ValidationReport:
     """Only VIII's code-rendered text is outside the model contract; retain the original input envelope."""
     model_draft = {key: value for key, value in draft.items() if key != "text"}
+    # A draft stored before D40 is v2. v3 only adds `equation_ocr` to `equation_origin`, so a v2 draft is checked under v3's
+    # rules with its version read as v3; the stored draft keeps its own version. New model output must say v3.
+    if model_draft.get("schema_version") == LEGACY_SECTION_VERSION:
+        model_draft["schema_version"] = contracts.SCHEMA_VERSIONS["ReportSectionDraft"]
     return contracts.validate_model_output(payload, model_draft)
 
 

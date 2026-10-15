@@ -17,7 +17,9 @@ from typing import Annotated, Any, Awaitable, Callable, Iterator, Literal
 
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
-from fastapi.exception_handlers import http_exception_handler
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from keyring.errors import KeyringError
@@ -206,6 +208,10 @@ def create_research_row(store: Store, body: CreateResearch, literature_connectio
                                  literature_connection=literature_connection, review_connection=review_connection,
                                  seed_mode=body.seed_mode,
                                  key_terms=body.key_terms, intent=body.intent)
+
+
+# Request fields that carry a key or secret; a validation error never echoes them (D40).
+SECRET_FIELDS = {"value", "app_id", "app_key", "api_key", "key", "token", "password", "secret"}
 
 
 class KeyValue(BaseModel):
@@ -960,6 +966,16 @@ def create_app(
             raise exc
         code, status, detail = failure
         return JSONResponse({"detail": detail, "code": code}, status_code=status)
+
+    # A refused key never comes back in the 422 (D40): FastAPI's default puts the submitted value in `input` and the
+    # failed constraint in `ctx`. On the credential routes, and for any field that carries a key, both are dropped.
+    @app.exception_handler(RequestValidationError)
+    async def validation_failed(request: Request, exc: RequestValidationError):
+        errors = exc.errors()
+        if not request.url.path.startswith("/api/credentials") and not any(set(map(str, e.get("loc", ()))) & SECRET_FIELDS for e in errors):
+            return await request_validation_exception_handler(request, exc)
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(
+            [{k: v for k, v in e.items() if k not in ("input", "ctx", "url")} for e in errors])})
 
     @app.exception_handler(StarletteHTTPException)
     async def body_parse_failed(request: Request, exc: StarletteHTTPException):
@@ -2571,7 +2587,9 @@ def create_app(
         state = equation_state(store, asset_id)
         if not service.available() and not (state.get("route") == mathpix.ENGINE and service.mathpix_active()):
             raise HTTPException(409, "The equation reader is not installed")
-        if state["state"] != "failed":
+        # A Mathpix PDF at its request budget is read again from its stored answers alone (D40); nothing new is sent.
+        cached = state["state"] == "budget_reached" and equations_module.mathpix_answered(store, asset_id)
+        if state["state"] != "failed" and not cached:
             raise HTTPException(409, "Only a failed equation reading is read again")
         service.retry(asset_id)
         return research_view(store, research_id)

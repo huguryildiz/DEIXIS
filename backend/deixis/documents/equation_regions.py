@@ -24,6 +24,7 @@ import hashlib
 import math
 import re
 import statistics
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -45,10 +46,41 @@ SCRIPT_SHIFT = 0.12  # share of the body size a script's baseline sits above or 
 MIN_CONFIDENCE = 0.5  # a placement filter on Mathpix's own confidence, not an accuracy threshold
 NUMBER_TAIL = re.compile(r"\s*\(\d{1,3}[a-z]?\)\s*$")
 
+# Every sign the gate compares, text-layer character → its class. A math sign (Unicode Sm/So) the table does not know, on
+# either side, refuses the region (`unknown_sign`): an unknown sign is never dropped from the comparison (Sol r1).
 SIGNS = {"=": "=", "+": "+", "-": "−", "−": "−", "<": "<", ">": ">", "≤": "≤", "⩽": "≤", "≥": "≥", "⩾": "≥", "≠": "≠",
-         "±": "±", "∓": "∓", "×": "×", "÷": "÷", "≈": "≈", "≡": "≡", "·": "·", "⋅": "·"}
+         "±": "±", "∓": "∓", "×": "×", "÷": "÷", "≈": "≈", "≡": "≡", "·": "·", "⋅": "·", "/": "/", "∕": "/",
+         "∑": "∑", "∏": "∏", "∐": "∐", "∫": "∫", "∬": "∬", "∭": "∭", "∮": "∮", "⋃": "⋃", "⋂": "⋂", "⨁": "⨁", "⨂": "⨂",
+         "⋁": "⋁", "⋀": "⋀", "⨆": "⨆", "√": "√", "∂": "∂", "∇": "∇", "∞": "∞", "∈": "∈", "∉": "∉", "⊂": "⊂", "⊆": "⊆",
+         "⊃": "⊃", "⊇": "⊇", "∪": "∪", "∩": "∩", "→": "→", "←": "←", "↔": "↔", "⇒": "⇒", "⇐": "⇐", "⇔": "⇔", "↦": "↦",
+         "∀": "∀", "∃": "∃", "¬": "¬", "∧": "∧", "∨": "∨", "⊕": "⊕", "⊗": "⊗", "∘": "∘", "∝": "∝", "∼": "∼", "~": "∼",
+         "≃": "≃", "≅": "≅", "≪": "≪", "≫": "≫", "∗": "∗", "*": "∗", "∖": "∖", "⊥": "⊥", "∥": "∥", "≜": "≜", "≔": "≔"}
 SIGN_COMMANDS = {"leq": "≤", "le": "≤", "leqslant": "≤", "geq": "≥", "ge": "≥", "geqslant": "≥", "neq": "≠", "ne": "≠",
-                 "pm": "±", "mp": "∓", "times": "×", "div": "÷", "approx": "≈", "equiv": "≡", "cdot": "·"}
+                 "pm": "±", "mp": "∓", "times": "×", "div": "÷", "approx": "≈", "equiv": "≡", "cdot": "·",
+                 "sum": "∑", "prod": "∏", "coprod": "∐", "int": "∫", "iint": "∬", "iiint": "∭", "oint": "∮", "bigcup": "⋃",
+                 "bigcap": "⋂", "bigoplus": "⨁", "bigotimes": "⨂", "bigvee": "⋁", "bigwedge": "⋀", "bigsqcup": "⨆", "sqrt": "√",
+                 "partial": "∂", "nabla": "∇", "infty": "∞", "in": "∈", "notin": "∉", "subset": "⊂", "subseteq": "⊆",
+                 "supset": "⊃", "supseteq": "⊇", "cup": "∪", "cap": "∩", "to": "→", "rightarrow": "→", "leftarrow": "←",
+                 "gets": "←", "leftrightarrow": "↔", "Rightarrow": "⇒", "implies": "⇒", "Leftarrow": "⇐", "Leftrightarrow": "⇔",
+                 "iff": "⇔", "mapsto": "↦", "forall": "∀", "exists": "∃", "neg": "¬", "lnot": "¬", "wedge": "∧", "land": "∧",
+                 "vee": "∨", "lor": "∨", "oplus": "⊕", "otimes": "⊗", "circ": "∘", "propto": "∝", "sim": "∼", "simeq": "≃",
+                 "cong": "≅", "ll": "≪", "gg": "≫", "ast": "∗", "setminus": "∖", "perp": "⊥", "parallel": "∥",
+                 "triangleq": "≜", "coloneqq": "≔"}
+# Signs neither side compares: delimiters and primes, which the text layer and a reading set in too many ways.
+UNCOMPARED = {"|", "‖", "∣", "′", "″", "^", "`", "°"}
+# Commands that print no compared letter or sign: type faces, accents, spacing, dots and delimiters. Any other command a
+# reading uses that is not a letter, operator name, sign or fraction is an unknown sign.
+SILENT_COMMANDS = {"mathrm", "mathit", "mathbf", "mathsf", "mathtt", "mathcal", "mathbb", "mathfrak", "mathscr", "boldsymbol",
+                   "bm", "text", "textrm", "textit", "textbf", "textsf", "operatorname", "displaystyle", "textstyle",
+                   "scriptstyle", "scriptscriptstyle", "quad", "qquad", "hat", "bar", "vec", "dot", "ddot", "tilde",
+                   "widetilde", "widehat", "overline", "underline", "check", "breve", "acute", "grave", "mathring", "prime",
+                   "ldots", "cdots", "dots", "vdots", "ddots", "dotsc", "dotsb", "dotsm", "langle", "rangle", "lvert", "rvert",
+                   "lVert", "rVert", "vert", "Vert", "mid", "lceil", "rceil", "lfloor", "rfloor", "lbrace", "rbrace",
+                   "phantom", "hphantom", "vphantom", "mathop", "nolimits", "kern", "mkern", "mspace", "mathstrut", "strut",
+                   "boxed", "overset", "underset", "stackrel", "binom", "dbinom", "tbinom", "ell", "hbar", "imath", "jmath",
+                   "mathbin", "mathrel", "mathord", "mathpunct", "mathopen", "mathclose", "colon", "space", "enspace",
+                   "thinspace", "negthinspace", "medspace", "thickspace"}
+LETTER_COMMANDS = {"ell": "ℓ", "hbar": "ℏ", "imath": "ı", "jmath": "ȷ"}
 # Operators whose scripts a display sets as limits above or below: their script letters may stand on any level.
 LIMIT_OPERATORS = {"sum", "prod", "coprod", "bigcup", "bigcap", "bigoplus", "bigotimes", "bigvee", "bigwedge", "bigsqcup",
                    "underbrace", "overbrace"}
@@ -147,7 +179,14 @@ def _marks(spans_by_line: list[list[dict]], body: float) -> tuple[list[list[str]
                     chars.append([c, level])
                 elif c in SIGNS:
                     signs[SIGNS[c]] += 1
+                elif _math_sign(c):
+                    signs["?" + c] += 1  # a sign the table does not know: the gate refuses the region
     return chars, signs
+
+
+def _math_sign(c: str) -> bool:
+    """A character that prints a mathematical sign (Unicode Sm or So) and is not one the gate leaves uncompared."""
+    return len(c) == 1 and unicodedata.category(c) in ("Sm", "So") and c not in UNCOMPARED
 
 
 def _render(page: pymupdf.Page, box: tuple, cut: list, dpi: int) -> bytes:
@@ -362,8 +401,10 @@ def latex_marks(latex: str) -> dict[str, Any]:
                 out["free"][c] += 1
             else:
                 out["fixed"][(c, level)] += 1
-        elif c in SIGNS:
+        elif c in SIGNS and c != "~":  # a LaTeX `~` is a space, not a sign
             out["signs"][SIGNS[c]] += 1
+        elif _math_sign(c):
+            out["signs"]["?" + c] += 1
 
     def run(i: int, level: str, loose: bool, stop: str) -> int:
         limits = False
@@ -389,20 +430,28 @@ def latex_marks(latex: str) -> dict[str, Any]:
             name = token[1:].rstrip("*")
             if name in GREEK:
                 emit(GREEK[name], level, loose)
+            elif name in LETTER_COMMANDS:
+                emit(LETTER_COMMANDS[name], level, loose)
             elif name in OPERATOR_NAMES:
                 for c in name:
                     emit(c, level, loose)
                 return i + 1, name in LIMIT_NAMES
             elif name in LIMIT_OPERATORS or name == "limits":
+                if name in SIGN_COMMANDS:
+                    out["signs"][SIGN_COMMANDS[name]] += 1  # ∑ against ∏ is a different equation (Sol r1)
                 return i + 1, True
-            elif name in SIGN_COMMANDS:
+            elif name in SIGN_COMMANDS and name != "sqrt":
                 out["signs"][SIGN_COMMANDS[name]] += 1
             elif name in FRACTIONS:
                 out["fractions"] += 1
             elif name in DELIMITER_SIZERS:
                 return i + 2, False  # the delimiter after it prints no letter or sign
-            elif name == "sqrt" and i + 1 < len(tokens) and tokens[i + 1] == "[":
-                return run(i + 2, level, True, "]"), False  # a root's index is set small; its level is not compared
+            elif name == "sqrt":
+                out["signs"]["√"] += 1
+                if i + 1 < len(tokens) and tokens[i + 1] == "[":
+                    return run(i + 2, level, True, "]"), False  # a root's index is set small; its level is not compared
+            elif name not in SILENT_COMMANDS:
+                out["signs"]["?\\" + name] += 1  # a command the gate cannot compare: the region is refused
             return i + 1, False
         if token.startswith("\\"):
             return i + 1, False  # a control symbol: spacing, escaped braces
@@ -440,7 +489,11 @@ def gate(candidate: dict[str, Any], response: dict[str, Any] | None) -> dict[str
     checks["scripts"] = marks["fixed"] <= text and Counter(c for c, _ in rest.elements()) == marks["free"]
     if not checks["scripts"]:
         return {"latex": latex, "reason": "script_differs", "checks": checks}
-    checks["operators"] = Counter(candidate.get("signs", {})) == marks["signs"]
+    signs = Counter(candidate.get("signs", {}))
+    checks["known_signs"] = not any(k.startswith("?") for k in (signs + marks["signs"]))
+    if not checks["known_signs"]:
+        return {"latex": latex, "reason": "unknown_sign", "checks": checks}
+    checks["operators"] = signs == marks["signs"]
     if not checks["operators"]:
         return {"latex": latex, "reason": "operators_differ", "checks": checks}
     checks["fractions"] = candidate.get("rules", 0) == marks["fractions"]

@@ -53,6 +53,19 @@ def test_the_report_section_draft_is_v3_and_its_equation_origin_is_checked():
     assert "unknown_passage_id" in {i.code for i in validate(step_input, output).issues}
 
 
+def test_a_stored_v2_section_draft_still_revalidates_and_new_output_must_be_v3():
+    # Sol r1 finding 4 (D40): the wording rollback re-checks a stored draft with `revalidate_section`.
+    from deixis.workflow.report.sections import revalidate_section
+
+    step_input, output = section_case()
+    output["schema_version"] = "deixis.report_section_draft.v2"
+    assert revalidate_section(step_input, output).ok
+    assert output["schema_version"] == "deixis.report_section_draft.v2"  # the stored draft keeps its version
+    assert not validate(step_input, output).ok  # a model's new output is held to v3
+    output["schema_version"] = "deixis.report_section_draft.v1"
+    assert not revalidate_section(step_input, output).ok
+
+
 def test_the_method_package_names_latex_source_and_its_hash_moved():
     assert skill.package_hash() != OLD_HASH and skill.integrity_issues() == []
     for name in ("source-grounded-answer.md", "evidence-table.md"):

@@ -162,7 +162,8 @@ def test_the_gate_passes_a_reading_that_agrees_with_the_text_layer():
     found = er.gate(candidate([("x", "base"), ("a", "base"), ("2", "raised"), ("b", "base"), ("i", "lowered")], {"=": 1, "+": 1}),
                     ANSWERS["1"])
     assert found == {"latex": "x=a^{2}+b_{i}", "reason": None,
-                     "checks": {"katex": True, "letters": True, "scripts": True, "operators": True, "fractions": True}}
+                     "checks": {"katex": True, "letters": True, "scripts": True, "known_signs": True, "operators": True,
+                                "fractions": True}}
 
 
 @pytest.mark.parametrize("response", [
@@ -206,13 +207,36 @@ def test_documented_misses_pass_the_gate():
     assert er.gate(candidate([("a", "base"), ("2", "raised"), ("b", "base")]), answer("a b^{2}"))["reason"] is None
     # Wrong grouping of a sum.
     chars = [("i", "lowered"), ("a", "base"), ("b", "base")]
-    assert er.gate(candidate(chars, {"+": 1}), answer("\\sum_{i}(a+b)"))["reason"] is None
-    assert er.gate(candidate(chars, {"+": 1}), answer("\\sum_{i} a+b"))["reason"] is None
+    assert er.gate(candidate(chars, {"∑": 1, "+": 1}), answer("\\sum_{i}(a+b)"))["reason"] is None
+    assert er.gate(candidate(chars, {"∑": 1, "+": 1}), answer("\\sum_{i} a+b"))["reason"] is None
+
+
+def test_a_dropped_slash_or_a_changed_big_operator_is_refused():
+    # Sol r1 finding 3: `a/b → ab` and `∑x → ∏x` passed every check.
+    ab = [("a", "base"), ("b", "base")]
+    assert er.gate(candidate(ab, {"/": 1}), answer("ab"))["reason"] == "operators_differ"
+    assert er.gate(candidate(ab, {"/": 1}), answer("a/b"))["reason"] is None
+    x = [("x", "base")]
+    assert er.gate(candidate(x, {"∑": 1}), answer("\\prod x"))["reason"] == "operators_differ"
+    assert er.gate(candidate(x, {"∑": 1}), answer("\\sum x"))["reason"] is None
+    assert er.gate(candidate(x, {"∫": 1}), answer("\\oint x"))["reason"] == "operators_differ"
+    assert er.latex_marks("\\bigcup_{i} x")["signs"] == Counter({"⋃": 1})
+
+
+def test_a_sign_the_table_does_not_know_refuses_the_region_on_either_side():
+    x = [("x", "base"), ("y", "base")]
+    assert er.gate(candidate(x, {"?⊲": 1}), answer("x y"))["reason"] == "unknown_sign"  # the text layer's ⊲
+    assert er.gate(candidate(x), answer("x \\lhd y"))["reason"] == "unknown_sign"  # a command the gate cannot compare
+    assert er.gate(candidate(x), answer("x ⊲ y"))["reason"] == "unknown_sign"  # a Unicode sign in the reading
+    # The text layer's marks: a known sign is counted, an unknown one is kept as unknown, delimiters are not compared.
+    spans = [[{"text": "x ⊲ y | z/w", "font": "Times-Italic", "size": 10, "y": 100.0, "box": (0, 90, 60, 102)}]]
+    chars, signs = er._marks(spans, 10)
+    assert signs == Counter({"?⊲": 1, "/": 1}) and [c for c, _ in chars] == list("xyzw")
 
 
 def test_limits_of_a_display_operator_may_stand_on_any_level():
     chars = [("i", "base"), ("1", "base"), ("N", "base"), ("x", "base"), ("i", "lowered")]
-    assert er.gate(candidate(chars, {"=": 1}), answer("\\sum_{i=1}^{N} x_{i}"))["reason"] is None
+    assert er.gate(candidate(chars, {"∑": 1, "=": 1}), answer("\\sum_{i=1}^{N} x_{i}"))["reason"] is None
     assert er.gate(candidate([("m", "base"), ("a", "base"), ("x", "base"), ("k", "lowered")]), answer("\\max_{k}"))["reason"] is None
 
 

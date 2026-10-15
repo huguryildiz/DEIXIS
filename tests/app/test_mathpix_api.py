@@ -58,6 +58,34 @@ PAIR_BODY = {"app_id": "synthetic-app", "app_key": "synthetic-key-0001"}
 
 
 # ---- the key pair -------------------------------------------------------------------------------------------------------
+SECRET = "SYNTHETICsecretKEY9"
+
+
+@pytest.mark.parametrize("route,body", [
+    ("/api/credentials/mathpix", {"app_id": "synthetic-app", "app_key": SECRET + " with spaces"}),  # pattern
+    ("/api/credentials/mathpix", {"app_id": "synthetic-app", "app_key": SECRET * 40}),  # too long
+    ("/api/credentials/mathpix", {"app_id": SECRET + " x", "app_key": SECRET}),  # the ID refused, the key valid
+    ("/api/credentials/mathpix", {"app_key": SECRET + " x"}),  # a missing field beside a refused key
+    ("/api/credentials/mathpix", {"app_id": SECRET}),  # a missing key: the body itself is echoed by default
+    ("/api/credentials/OPENALEX_API_KEY", {"value": SECRET + " x"}),  # the generic key route too
+    ("/api/credentials/OPENALEX_API_KEY", {"value": SECRET * 40}),
+])
+def test_a_refused_key_never_comes_back_in_the_validation_answer(client_for, memory_keychain, route, body):
+    # Sol r1 finding 1: FastAPI's default 422 puts the submitted value in `detail[].input` (and the limit in `ctx`).
+    client, _, fake = client_for()
+    response = client.put(route, json=body)
+    assert response.status_code == 422
+    assert SECRET not in response.text and "SYNTHETICsecret" not in response.text
+    assert all(set(item) <= {"type", "loc", "msg"} for item in response.json()["detail"])
+    assert fake.requests == [] and memory_keychain.items == {}
+
+
+def test_other_routes_keep_the_default_validation_answer(client_for):
+    client, _, _ = client_for()
+    response = client.put("/api/mathpix", json={"monthly_budget": -5})
+    assert response.status_code == 422 and response.json()["detail"][0]["input"] == -5
+
+
 def test_the_pair_is_tested_then_saved_as_one_keychain_item_and_never_returned(client_for, memory_keychain):
     client, _, fake = client_for()
     saved = client.put("/api/credentials/mathpix", json=PAIR_BODY)
@@ -200,6 +228,43 @@ def test_an_anchor_found_only_in_a_fallback_is_a_contract_error():
     assert "anchor_not_in_passage" in {i.code for i in contracts.validate_model_output(step_input, json.dumps(output)).issues}
     passage["equation_fallbacks"] = [{"n": "1", "text_layer": "x", "extra": 1}]
     assert [i.code for i in contracts.check_step_input(step_input)] == ["step_input_schema_invalid"]
+
+
+def test_every_step_that_takes_passages_accepts_their_equation_fallbacks():
+    # Sol r1 (fallback scope): `_step_input` builds passages for every model step, so each one carries the field for an
+    # equation_ocr passage. Every task shares the one StepInput passage schema; this checks each fixture task accepts it.
+    fixtures = __import__("pathlib").Path(__file__).parent.parent / "fixtures/research"
+    inputs = json.loads((fixtures / "step-inputs.json").read_text())
+    tasks = set()
+    for name, step_input in inputs.items():
+        pdf_passages = [p for p in (step_input.get("passages") or []) if p.get("text_source")] if isinstance(step_input, dict) else []
+        if not pdf_passages:
+            continue
+        pdf_passages[0]["text_source"] = "equation_ocr"
+        pdf_passages[0]["equation_fallbacks"] = [{"n": "1", "text_layer": "x = a2 + bi"}]
+        assert contracts.check_step_input(step_input) == [], name
+        tasks.add(step_input["task_type"])
+    assert {"grounded_answer", "followup_answer", "report_section", "fulltext_adjudication", "lineage_links"} <= tasks
+
+
+def test_an_anchor_inside_a_mathpix_equation_is_warned_and_one_outside_is_not():
+    # Sol r1 finding 5 (r3): the answer validator names a quote that rests on Mathpix's reading of the page image.
+    fixtures = __import__("pathlib").Path(__file__).parent.parent / "fixtures/research"
+    step_input = json.loads((fixtures / "step-inputs.json").read_text())["A_answer"]
+    case = next(c for c in json.loads((fixtures / "fake-outputs.json").read_text())["cases"]
+                if c["step_input"] == "A_answer" and c["expect_ok"])
+    output = case["output"]
+    anchor = output["citation_anchors"][1]
+    passage = next(p for p in step_input["passages"] if p["passage_id"] == anchor["passage_id"])
+    passage["text"] += "\n$$\nq_{k}=\\frac{r_{k}}{s_{k}}\n$$ (7)\nwhere SYNTHETIC trailing words follow."
+    warned = lambda: [w for w in contracts.validate_model_output(step_input, json.dumps(output)).warnings if w.code == "anchor_in_ocr_equation"]
+    anchor["quote"] = "q_{k}=\\frac{r_{k}}{s_{k}}"
+    assert warned() == []  # the same passage as text layer: nothing to say
+    passage["text_source"] = "equation_ocr"
+    assert [w.path for w in warned()] == ["/citation_anchors/1/quote"]
+    assert not contracts.validate_model_output(step_input, json.dumps(output)).issues  # a warning, not a refusal
+    anchor["quote"] = "SYNTHETIC trailing words follow"
+    assert warned() == []
 
 
 @pytest.mark.parametrize("answer", [500, "skip"])

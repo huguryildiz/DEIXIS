@@ -69,7 +69,7 @@ from deixis.workflow import search_query as search_query_rules
 from deixis.workflow import user_plan as user_plan_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
-from deixis.workflow.equations import EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, equation_fallback_field, equation_state
+from deixis.workflow.equations import EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, equation_fallback_field, equation_state, mathpix_answered
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, NotFound, RunInProgress, Store, seed_source_ids
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
 
@@ -2574,7 +2574,8 @@ class ResearchFlow:
         for asset_id in assets:
             state = equation_state(self.store, asset_id)
             again = (state["state"] == "failed" and state.get("attempts", EQUATION_ATTEMPTS) < EQUATION_ATTEMPTS
-                     and (state.get("reason") == EXTRACTION_FAILED or state.get("route") == "mathpix"))
+                     and (state.get("reason") == EXTRACTION_FAILED or state.get("route") == "mathpix")) \
+                or (state["state"] == "budget_reached" and mathpix_answered(self.store, asset_id))  # stored answers, no new request
             waiting = state["state"] == "source_waiting"  # rule 3's table: the step records the wait and does not wait
             on_route = state.get("route") == "mathpix" or (state.get("route") == "arxiv_source" and service.route_target(asset_id))
             if not on_route or (state["state"] != "pending" and not again and not waiting):

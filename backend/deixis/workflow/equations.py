@@ -109,6 +109,12 @@ def mathpix_counts(store: Store, asset_id: str | None = None) -> dict[str, int]:
     return out
 
 
+def mathpix_answered(store: Store, asset_id: str) -> bool:
+    """Mathpix has answered at least one crop of this PDF: a read that needs no new request can still place something."""
+    return store.conn.execute("SELECT 1 FROM mathpix_requests WHERE asset_id = ? AND status = 'answered' LIMIT 1",
+                              (asset_id,)).fetchone() is not None
+
+
 def mathpix_keys_rejected(store: Store, pair: Any = None) -> bool:
     """Mathpix refused the saved pair (401/403) on a request sent with it. Saving the pair again gives a new revision."""
     pair = mathpix.read_pair() if pair is None else pair
@@ -754,12 +760,16 @@ class EquationService:
 
     async def _read_mathpix(self, asset_id: str, run_id: str | None, retry: bool, background: bool,
                             state: dict[str, Any]) -> dict[str, Any]:
-        """One PDF through Mathpix. A read either resolves every crop it found or writes nothing; answers already
-        received are kept and reused by the next read. Every outcome returns the PDF's state; RunInProgress propagates."""
+        """One PDF through Mathpix. Answers already received are kept and reused by the next read. A budget that stops
+        sending does not throw away what was answered: the read places those, and the crops left unsent are refused
+        `budget_reached`; a PDF at its budget is read again from stored answers alone. Any other stop writes nothing.
+        Every outcome returns the PDF's state; RunInProgress propagates."""
         global reading
         asset = self.store.asset(asset_id)
         attempts = state.get("attempts", MAX_ATTEMPTS) if state["state"] == "failed" else 0
-        if state["state"] not in ("pending", "failed") or (state["state"] == "failed" and not retry and attempts >= MAX_ATTEMPTS):
+        cached = state["state"] == "budget_reached" and mathpix_answered(self.store, asset_id)
+        if state["state"] not in ("pending", "failed") and not cached \
+                or (state["state"] == "failed" and not retry and attempts >= MAX_ATTEMPTS):
             return state
         pair = mathpix.read_pair()
         if not isinstance(pair, mathpix.Pair) or not self.mathpix_active():
@@ -781,6 +791,7 @@ class EquationService:
                 reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": asset["page_count"], "started_at": now(),
                            "route": mathpix.ENGINE}
                 answers: dict[tuple[int, str], dict[str, Any]] = {}
+                unsent: list[dict[str, Any]] = []  # crops a budget kept from being sent; stored answers still count
                 stop: dict[str, Any] | None = None
                 try:
                     found = await text_retry.drained_thread(equation_regions.detect, path, set(ocr_pages))
@@ -789,6 +800,9 @@ class EquationService:
                             stop = {"reason": "preempted" if background else "skipped"}
                             break
                         result = await self._crop_answer(asset_id, start_version, start_id, file_sha, pair, crop)
+                        if result["outcome"] == "stop" and result["reason"] == "budget_reached":
+                            unsent.append({"page": crop["page"], "n": crop["n"], "reason": "budget_reached"})
+                            continue
                         if result["outcome"] == "stop":
                             stop = result
                             break
@@ -802,19 +816,24 @@ class EquationService:
                 if not found:
                     self._record_mathpix(asset, target, NO_CANDIDATES, {"candidates": 0})
                     return equation_state(self.store, asset_id)
-                return await self._place_mathpix(asset, run_id, found, answers, start_version, start_id, target, attempts, ocr_pages)
+                if unsent and not answers:
+                    return equation_state(self.store, asset_id) | {"outcome": "budget_reached"}
+                return await self._place_mathpix(asset, run_id, found, answers, start_version, start_id, target, attempts, ocr_pages,
+                                                 unsent)
         except text_retry.FileBusy:
             return equation_state(self.store, asset_id) | {"outcome": "file_busy"}
 
     async def _place_mathpix(self, asset: dict[str, Any], run_id: str | None, found: list[dict[str, Any]],
                              answers: dict[tuple[int, str], dict[str, Any]], start_version: str | None, start_id: str | None,
-                             target: str, attempts: int, ocr_pages: dict[int, str]) -> dict[str, Any]:
+                             target: str, attempts: int, ocr_pages: dict[int, str],
+                             unsent: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         asset_id = asset["id"]
-        refused = [{"page": c["page"], "n": c["n"], "reason": c["refused"]} for c in found if "refused" in c]
+        unsent = unsent or []
+        refused = [{"page": c["page"], "n": c["n"], "reason": c["refused"]} for c in found if "refused" in c] + unsent
         placements, details = [], {}
         requests = sum(1 for a in answers.values() if a["outcome"] == "answered")
         reused = len(answers) - requests
-        for crop in (c for c in found if "png" in c):
+        for crop in (c for c in found if "png" in c and (c["page"], c["n"]) in answers):
             answer = answers[(crop["page"], crop["n"])]
             body = json.loads(answer["row"]["response_json"] or "null")
             checked = equation_regions.gate(crop, body)
@@ -829,6 +848,8 @@ class EquationService:
                 "confidence": body.get("confidence"), "confidence_rate": body.get("confidence_rate"), "checks": checked["checks"],
                 "text_layer": crop["text_layer"]}
         summary = {"candidates": len(found), "requests": requests, "reused": reused}
+        if not placements and unsent:  # nothing placeable yet; the crops left unsent may still be read under a new budget
+            return equation_state(self.store, asset_id) | {"outcome": "budget_reached"}
         if not placements:
             self._record_mathpix(asset, target, NONE_PLACED, summary | {"refused": refused})
             return equation_state(self.store, asset_id)
@@ -842,6 +863,8 @@ class EquationService:
         refused += placement["refused"]
         placed = [{"page": p["page"], "n": p["n"], "start": p["start"], "end": p["end"]} | details[(p["page"], p["n"])]
                   for p in placement["placed"]]
+        if not placed and unsent and not placement["refused"]:
+            return equation_state(self.store, asset_id) | {"outcome": "budget_reached"}
         if not placed or any(r["reason"] == OFFSETS_UNRESOLVED for r in placement["refused"]):
             self._record_mathpix(asset, target, NONE_PLACED, summary | {"refused": refused})
             return equation_state(self.store, asset_id)

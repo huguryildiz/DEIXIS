@@ -81,6 +81,7 @@ from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound
                                    SeedUnavailable, Store, LegacyInspectionPolicyRemoved,
                                    RequestConflict, RecoveryConflict, NotRetryable)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
+from deixis.workflow import citation_map
 from deixis.workflow.lineage.run import LineagePlanner, stale_link_revisions
 from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
 from deixis.workflow.lineage.view import LineageView
@@ -1834,6 +1835,12 @@ def create_app(
         store = store_of(request)
         store.research(research_id)
         return human_queue.row_detail(store, research_id, source_version_id)
+
+    @app.get("/api/researches/{research_id}/citation-map")
+    async def research_citation_map(research_id: str, request: Request) -> dict[str, Any]:
+        store = store_of(request)
+        store.research(research_id)
+        return citation_map.build(store, research_id)
 
     @app.post("/api/researches/{research_id}/queue/{source_version_id}/decision")
     async def queue_decision(research_id: str, source_version_id: str, body: QueueDecision,

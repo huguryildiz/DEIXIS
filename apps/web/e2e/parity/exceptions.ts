@@ -595,11 +595,11 @@ export const STYLE_EXCEPTIONS: Array<{ id: string; rule: string; pairs: string[]
   { id: 'menu-heading-case', rule: '.impeccable.md §2.4 (small caps labels are sentence-case text uppercased by CSS)', pairs: ['export-menu.headings', 'scope-menu.heading', 'models-menu.heading', 'depth-menu.heading', 'scope-menu.badge', 'add-menu.badge'], properties: ['text-transform'],
     note: 'The mockup writes REPORT, EVIDENCE TABLE, SOURCES, WORKFLOWS, MODELS, DEPTH and LATER in capitals; the app writes them in sentence case and uppercases them in CSS, so the Turkish labels case-fold correctly. The rendered text is the same.' },
   { id: 'palette-focus-line', rule: 'WCAG 2.4.7 (focus visible; a11y.spec X05 needs an indicator on every focus stop)', pairs: ['palette.field'], properties: ['box-shadow'],
+    note: 'While its input has focus the palette field draws a 2px accent line along its bottom edge (inset box-shadow); the mockup\'s field has no focus indicator.' },
   { id: 'sidebar-access-card', rule: 'owner request 15 Oct 2026 (premium access status in the sidebar foot)', pairs: SIDEBAR_ACCESS_PAIRS,
     properties: ['background-color', 'border-top-left-radius', 'border-top-right-radius', 'border-bottom-right-radius', 'border-bottom-left-radius', 'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
       'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'line-height', 'box-shadow'],
     note: 'The access lines sit in a card like the background-jobs card: a hairline border, a 9px radius, --raised-surface, 8px/10px padding with room for a chevron on the right; each status dot has a soft halo ring of its tone; the lines wrap at line-height 1.45.' },
-    note: 'While its input has focus the palette field draws a 2px accent line along its bottom edge (inset box-shadow); the mockup\'s field has no focus indicator.' },
 ]
 
 /** Mockup elements whose target the app does not have yet (S3: a key or row is not shown before the thing it opens

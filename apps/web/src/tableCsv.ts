@@ -1,3 +1,4 @@
+import { downloadName } from './downloadName'
 import { type CellRevision, type CellState, type CellValue, type ResearchView, type Source, type TableColumn, type TableRow, type TableSummary, type TableView } from './api'
 import { locatorText, versionText } from './labels'
 import { citationStyle, formatReferenceText, type CitationStyle } from './citations'
@@ -52,11 +53,10 @@ export function tableCsv(table: TableView, sources: Source[]) {
 }
 
 export function downloadTableCsv(table: TableView, sources: Source[]) {
-  const base = table.table.title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 80)
   const url = URL.createObjectURL(new Blob([tableCsv(table, sources)], { type: 'text/csv;charset=utf-8' }))
   const link = document.createElement('a')
   link.href = url
-  link.download = `${base || 'evidence-table'}-v${table.table.version}.csv`
+  link.download = downloadName(table.table.title, [`V${table.table.version}`], 'csv', 'Evidence table')
   link.click()
   URL.revokeObjectURL(url)
 }

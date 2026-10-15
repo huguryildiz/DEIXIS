@@ -1,3 +1,4 @@
+import { downloadName } from '../downloadName'
 import { type Answer, type Evidence, type Limitation, type Source, type Verdict } from '../api'
 import { locatorText, pageLocator, verdictLabels } from '../labels'
 import { formatReferenceText, type CitationStyle } from '../citations'
@@ -11,8 +12,7 @@ import { t } from '../i18n'
 export const verdictTones: Record<Verdict, string> = { supported: 'ok', partially_supported: 'part', not_supported: 'bad', cannot_assess: 'plain' }
 
 function reportFilename(title: string, version: number) {
-  const base = title.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 80)
-  return `${base || 'deixis-report'}-v${version}.md`
+  return downloadName(title, [`V${version}`], 'md', 'Report')
 }
 
 function pdfSuggestion(answer: Answer, sources: Source[]): { notes: Limitation[]; sources: Source[] } | null {

@@ -488,7 +488,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     const download = page.waitForEvent('download')
     await report.getByRole('button', { name: 'Download report' }).click()
     await page.getByRole('menuitem', { name: /^MD/ }).click()
-    expect((await download).suggestedFilename()).toBe('synthetic-evidence-for-release-scheduling-and-optimization-in-constrained-molecu-v2.md')
+    expect((await download).suggestedFilename()).toBe('DEIXIS - Synthetic evidence for release scheduling and optimization in constrained molecular communication networks - V2.md')
     claimsBefore = await report.locator('.claim').allInnerTexts()
     expect(claimsBefore.length).toBeGreaterThan(0)
     await expect(report.locator('.claim', { hasText: 'hospital' })).toHaveCount(0)  // the excluded source was not given to the model
@@ -783,7 +783,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await expect(panel.locator('.dmeta')).toContainText('You')
     await expect(panel.getByRole('button', { name: 'Open in source' }).first()).toBeVisible()
 
-    await expect(panel).toContainText('Only Synthetic21 · up to 1 passage · fixture-model · 1–2 calls.')
+    await expect(panel).toContainText('Only synthetic2021synthetic · up to 1 passage · fixture-model · 1–2 calls.')
     await panel.getByRole('button', { name: 'Recheck this cell' }).click()
     const proposal = panel.locator('.evidence-proposal')
     await expect(proposal).toContainText('Pending proposal', { timeout: 30000 })

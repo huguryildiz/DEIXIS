@@ -78,7 +78,7 @@ export function ReportPanel({ open, onOpenChange, dark, title, version, latestVe
     </div>}>
     <p className="sr-only">{t('Source-linked research report, version {n}.', { n: version })}</p>
     <div className="report-scroll">
-      <article className="report-document" data-answer-id={answer.id}>
+      <article className="report-document" data-answer-id={answer.id} data-version={version}>
         <header className="report-document-head">
           <h1>{title}</h1>
           <div className="meta">

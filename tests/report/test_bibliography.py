@@ -1,5 +1,6 @@
 """BibTeX and RIS export of included and cited sources (D16)."""
 
+from urllib.parse import quote
 import pytest
 from fastapi.testclient import TestClient
 
@@ -70,7 +71,8 @@ def test_export_downloads_included_sources_and_refuses_an_empty_cited_set(tmp_pa
         response = client.get(f"/api/researches/{rid}/bibliography", params={"format": "ris"})
         assert response.status_code == 200, response.text
         assert response.headers["content-type"].startswith("application/x-research-info-systems")
-        assert response.headers["content-disposition"] == 'attachment; filename="deixis-how-is-molecule-release-scheduling-optim-included.ris"'
+        name = "DEIXIS - How is molecule release scheduling optimized - included sources.ris"
+        assert response.headers["content-disposition"] == f'attachment; filename="{name}"; filename*=UTF-8\'\'{quote(name, safe="")}'
         assert response.text == "TY  - GEN\r\nTI  - molecule paper\r\nN1  - Source version read in DEIXIS: uploaded file\r\nER  - \r\n"
 
         assert client.get(f"/api/researches/{rid}/bibliography").text.startswith("@misc{anonmolecule,\n")

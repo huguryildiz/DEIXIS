@@ -203,7 +203,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await shot(page, 's8-export-menu')
     const markdown = page.waitForEvent('download')
     await rows.nth(0).click()
-    expect((await markdown).suggestedFilename()).toMatch(/-v\d+\.md$/)
+    expect((await markdown).suggestedFilename()).toMatch(/^DEIXIS - .+ - V\d+\.md$/)
 
     // A table with one row and one column brings the Evidence table group: CSV written here, Excel and Word from the API.
     const view = await viewOf(api, rid)
@@ -217,7 +217,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await expect(rows.nth(4)).toHaveAttribute('href', new RegExp(`/tables/${table.table.id}/export/xlsx`))
     const csv = page.waitForEvent('download')
     await rows.nth(3).click()
-    expect((await csv).suggestedFilename()).toMatch(/^synthetic-topbar-table-v\d+\.csv$/)
+    expect((await csv).suggestedFilename()).toMatch(/^DEIXIS - SYNTHETIC topbar table - V\d+\.csv$/)
   })
 
   test('S27: the PDF row opens the report panel of the exported version and the print dialog on it alone', async () => {

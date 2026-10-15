@@ -111,11 +111,22 @@ def translator(language: Language) -> Translate:
     return t
 
 
-def file_base(title: str, fallback: str) -> str:
-    """The browser's download name stem: accents dropped, other characters to '-', lower case, 80 characters."""
-    base = re.sub(r"[̀-ͯ]", "", unicodedata.normalize("NFKD", title))
-    base = re.sub(r"[^a-zA-Z0-9]+", "-", base).strip("-").lower()[:80]
-    return base or fallback
+def download_name(title: str, *suffixes: str, extension: str, fallback: str = "Research") -> str:
+    """A download's file name as Elicit writes it: `DEIXIS - <title> - <suffix>.<ext>`, the title as written.
+
+    A colon becomes " - "; the other characters a file system refuses (/ \\ * ? " < > | and control characters)
+    become spaces, runs of spaces collapse, and the title is cut at 120 characters."""
+    def tidy(text: str) -> str:
+        return " ".join(re.sub(r'[\x00-\x1f\x7f/\\*?"<>|]+', " ", re.sub(r"\s*:\s*", " - ", text)).split())
+    parts = ["DEIXIS", tidy(title)[:120].rstrip() or fallback, *(tidy(part) for part in suffixes if tidy(part))]
+    return f"{' - '.join(parts)}.{extension}"
+
+
+def attachment(name: str) -> str:
+    """The Content-Disposition value of a download: an ASCII `filename` for old clients and the UTF-8 `filename*`."""
+    from urllib.parse import quote
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii").replace('"', "")
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
 def number_text(value: int | float, language: Language) -> str:

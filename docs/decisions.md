@@ -4,6 +4,15 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D38 — Work keys read as first author, four-digit year and first title word, like "zeng2022multiparty"
+Status: accepted · Date: 2026-10-15 · Writer: Claude
+Context: Keys were the first author's family name cut to 10 letters plus a two-digit year ("Nakano13"); a work with no author got its first title word ("Multipartynd"). The owner wants the Google Scholar / BibTeX form, e.g. `zeng2022multiparity` (15 Oct).
+Decision:
+- `source_keys.key_stem` builds: first author's family name (particles and Jr./III dropped, ASCII letters, lower case), the four-digit year or `nd`, then the title's first word that is not a stopword (`the`, `of`, `on`…), lower-case ASCII letters, a hyphenated word kept whole. Each part is cut at 20 letters. A work with no author is `<title word><year>` (`multiparty2022`); with neither, `source<year>`.
+- A collision still adds `b`, `c`, … at the end (`zeng2022multipartyb`); the oldest work keeps the bare key. The other old D59 rules stay: one key per work, kept once given, only a title key gives way to an author key.
+- Migration 0013 clears every key; at startup `source_keys.assign_missing` gives each keyless work its key, oldest first.
+Limits: Keys in frozen report snapshots and in files exported earlier keep the old form. Cited answers and the Library show the new key, since they read it from `works`.
+
 ## D37 — An uploaded PDF takes its title, authors and abstract from the OpenAlex record it names itself as
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: An uploaded PDF became a source whose only field was a title made from the file name. The source panel said no abstract was stored, "Copy as BibTeX" gave `@misc{Multipartynd, title = {...}}` with no authors, and the title could be wrong: the owner's file "Multiparty Entanglement Routing in Quantum Networks" is the paper "Multi-Entanglement Routing Design over Quantum Networks" (owner's screenshots, 15 Oct). Only seed PDFs were ever matched to OpenAlex (D2, D3).

@@ -16,6 +16,7 @@ import io
 import math
 import re
 import zipfile
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Iterable, Sequence, Union
 
@@ -61,7 +62,7 @@ def runs(*parts: Inline) -> tuple[Run, ...]:
 
 @dataclass(frozen=True)
 class Paragraph:
-    """One paragraph. `style` is one of STYLES: Title, Heading1-3, Quote, Small, or None for body text."""
+    """One paragraph. `style` is one of STYLES: Title, Heading1-3, Quote, Small, Bibliography, or None for body text."""
     runs: tuple[Run, ...]
     style: str | None = None
 
@@ -102,14 +103,14 @@ def bullets(items: Iterable[Sequence[Inline]], ordered: bool = False) -> ListBlo
 
 # ---- shared package parts ---------------------------------------------------------------------------------------
 
-def _zip(parts: list[tuple[str, str]]) -> bytes:
+def _zip(parts: list[tuple[str, str | bytes]]) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, xml in parts:
             info = zipfile.ZipInfo(name, date_time=_STAMP)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
-            archive.writestr(info, xml.encode("utf-8"))
+            archive.writestr(info, xml if isinstance(xml, bytes) else xml.encode("utf-8"))
     return buffer.getvalue()
 
 
@@ -142,7 +143,10 @@ _CORE_REL = "http://schemas.openxmlformats.org/package/2006/relationships/metada
 
 # ---- DOCX -------------------------------------------------------------------------------------------------------
 
-STYLES = ("Title", "Heading1", "Heading2", "Heading3", "Quote", "Small")
+STYLES = ("Title", "Heading1", "Heading2", "Heading3", "Quote", "Small", "BodyText", "Bibliography")
+# The look of an Elicit report's Word file: Georgia body text set justified at 1.15 lines, Calibri headings that are
+# not bold, and a numbered reference list with a hanging indent. Tables keep Calibri and left-aligned cells.
+_SERIF = '<w:rFonts w:ascii="Georgia" w:hAnsi="Georgia" w:eastAsia="Georgia" w:cs="Georgia"/>'
 _FONT = '<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/>'
 
 
@@ -150,29 +154,34 @@ def _styles_docx() -> str:
     # Child order inside pPr and rPr follows the schema sequence; Word refuses files that break it.
     def para(style_id: str, name: str, ppr: str, rpr: str, outline: int | None = None) -> str:
         nxt, keep, level = ("", "", "") if outline is None else (
-            '<w:next w:val="Normal"/>', "<w:keepNext/>", f'<w:outlineLvl w:val="{outline}"/>')
+            '<w:next w:val="BodyText"/>', "<w:keepNext/><w:keepLines/>", f'<w:outlineLvl w:val="{outline}"/>')
         return (f'<w:style w:type="paragraph" w:styleId="{style_id}"><w:name w:val="{name}"/><w:basedOn w:val="Normal"/>'
                 f'{nxt}<w:qFormat/><w:pPr>{keep}{ppr}{level}</w:pPr><w:rPr>{rpr}</w:rPr></w:style>')
+
+    def size(half_points: int) -> str:
+        return f'<w:sz w:val="{half_points}"/><w:szCs w:val="{half_points}"/>'
     return _xml(
         f'<w:styles xmlns:w="{_W}">'
-        f'<w:docDefaults><w:rPrDefault><w:rPr>{_FONT}<w:sz w:val="22"/><w:szCs w:val="22"/>'
+        f'<w:docDefaults><w:rPrDefault><w:rPr>{_SERIF}{size(22)}'
         '<w:lang w:val="en-US"/></w:rPr></w:rPrDefault>'
         '<w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'
         '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'
-        + para("Title", "Title", '<w:spacing w:after="80"/>', '<w:b/><w:sz w:val="36"/><w:szCs w:val="36"/>', 0)
-        + para("Heading1", "heading 1", '<w:spacing w:before="280" w:after="100"/>', '<w:b/><w:sz w:val="30"/><w:szCs w:val="30"/>', 0)
-        + para("Heading2", "heading 2", '<w:spacing w:before="240" w:after="80"/>', '<w:b/><w:sz w:val="26"/><w:szCs w:val="26"/>', 1)
-        + para("Heading3", "heading 3", '<w:spacing w:before="200" w:after="60"/>', '<w:b/><w:sz w:val="23"/><w:szCs w:val="23"/>', 2)
+        + para("Title", "Title", '<w:spacing w:after="80" w:line="240" w:lineRule="auto"/>', _FONT + size(32), 0)
+        + para("Heading1", "heading 1", '<w:spacing w:before="360" w:after="80"/>', _FONT + size(28), 0)
+        + para("Heading2", "heading 2", '<w:spacing w:before="240" w:after="80"/>', _FONT + size(28), 1)
+        + para("Heading3", "heading 3", '<w:spacing w:before="160" w:after="80"/>', size(24), 2)
+        + para("BodyText", "Body Text", '<w:spacing w:before="120" w:after="120" w:line="276" w:lineRule="auto"/><w:jc w:val="both"/>', "")
+        + para("Bibliography", "Bibliography", '<w:spacing w:before="0" w:after="160"/><w:ind w:left="567" w:hanging="567"/>', "")
         + para("Quote", "Quote", '<w:pBdr><w:left w:val="single" w:sz="12" w:space="8" w:color="A0A0A0"/></w:pBdr><w:ind w:left="567"/>',
                '<w:color w:val="404040"/>')
-        + para("Small", "Small", '<w:spacing w:after="40"/>', '<w:color w:val="595959"/><w:sz w:val="18"/><w:szCs w:val="18"/>')
+        + para("Small", "Small", '<w:spacing w:after="40"/>', '<w:color w:val="595959"/>' + size(18))
         + '<w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:basedOn w:val="Normal"/>'
-          '<w:qFormat/><w:pPr><w:spacing w:after="60"/><w:ind w:left="720"/><w:contextualSpacing/></w:pPr></w:style>'
+          '<w:qFormat/><w:pPr><w:spacing w:before="36" w:after="36"/><w:ind w:left="720"/></w:pPr></w:style>'
         '<w:style w:type="table" w:default="1" w:styleId="TableNormal"><w:name w:val="Normal Table"/><w:tblPr>'
         '<w:tblInd w:w="0" w:type="dxa"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="108" w:type="dxa"/>'
         '<w:bottom w:w="0" w:type="dxa"/><w:right w:w="108" w:type="dxa"/></w:tblCellMar></w:tblPr></w:style>'
         '<w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:basedOn w:val="TableNormal"/>'
-        '<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr>'
+        f'<w:pPr><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr><w:rPr>{_FONT}{size(18)}</w:rPr>'
         '<w:tblPr><w:tblBorders>' + "".join(
             f'<w:{side} w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/>'
             for side in ("top", "left", "bottom", "right", "insideH", "insideV")) +
@@ -238,16 +247,47 @@ def _table_xml(table: Table, text_width: int) -> str:
             f'{header}{"".join(row(r) for r in table.rows)}</w:tbl><w:p/>')
 
 
+_MARK = Path(__file__).with_name("deixis-mark.png")  # public/deixis-icon.svg in black, 128 px
+_MARK_EMU = 9 * 12700  # drawn 9 pt square
+
+
+def _footer(text_width: int) -> str:
+    """The footer of every page, as an Elicit report has one: the DEIXIS mark and name on the left, the page number on
+    the right."""
+    mark = ('<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+            f'<wp:extent cx="{_MARK_EMU}" cy="{_MARK_EMU}"/><wp:docPr id="1" name="DEIXIS"/>'
+            '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>'
+            '<pic:nvPicPr><pic:cNvPr id="0" name="deixis-mark.png"/><pic:cNvPicPr/></pic:nvPicPr>'
+            '<pic:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{_MARK_EMU}" cy="{_MARK_EMU}"/></a:xfrm>'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic>'
+            '</wp:inline></w:drawing></w:r>')
+    name = (f'<w:r><w:rPr>{_FONT}<w:b/><w:color w:val="111111"/><w:spacing w:val="16"/><w:sz w:val="16"/><w:szCs w:val="16"/>'
+            '</w:rPr><w:t xml:space="preserve"> DEIXIS</w:t></w:r>')
+    number = '<w:rPr><w:color w:val="111111"/><w:sz w:val="17"/><w:szCs w:val="17"/></w:rPr>'
+    page = (f'<w:r>{number}<w:tab/></w:r><w:r>{number}<w:fldChar w:fldCharType="begin"/></w:r>'
+            f'<w:r>{number}<w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
+            f'<w:r>{number}<w:fldChar w:fldCharType="separate"/></w:r><w:r>{number}<w:t>1</w:t></w:r>'
+            f'<w:r>{number}<w:fldChar w:fldCharType="end"/></w:r>')
+    return _xml(f'<w:ftr xmlns:w="{_W}" xmlns:r="{_R}" '
+                'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+                'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+                'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+                f'<w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="{text_width}"/></w:tabs><w:spacing w:before="0" w:after="0"/>'
+                f'</w:pPr>{mark}{name}{page}</w:p></w:ftr>')
+
+
 def docx(blocks: Sequence[Block], *, title: str = "", landscape: bool = False) -> bytes:
     """The bytes of a .docx file holding the blocks in order (A4, portrait unless `landscape`)."""
     width, height = (16838, 11906) if landscape else (11906, 16838)
-    margin = 1134
+    margin = 1134 if landscape else 1440
     text_width = width - 2 * margin
     ordered = 0
     body: list[str] = []
     for block in blocks:
         if isinstance(block, Paragraph):
-            body.append(_paragraph_xml(block))
+            # Body text outside tables is justified (BodyText); table cells keep Normal.
+            body.append(_paragraph_xml(block if block.style else Paragraph(block.runs, "BodyText")))
         elif isinstance(block, ListBlock):
             if block.ordered:
                 ordered += 1
@@ -263,18 +303,23 @@ def docx(blocks: Sequence[Block], *, title: str = "", landscape: bool = False) -
         else:
             raise TypeError(f"not a document block: {type(block).__name__}")
     orient = ' w:orient="landscape"' if landscape else ""
-    section = (f'<w:sectPr><w:pgSz w:w="{width}" w:h="{height}"{orient}/>'
+    section = (f'<w:sectPr><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="{width}" w:h="{height}"{orient}/>'
                f'<w:pgMar w:top="{margin}" w:right="{margin}" w:bottom="{margin}" w:left="{margin}" '
                'w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>')
     document = _xml(f'<w:document xmlns:w="{_W}" xmlns:r="{_R}"><w:body>{"".join(body)}{section}</w:body></w:document>')
     main = "application/vnd.openxmlformats-officedocument.wordprocessingml"
     return _zip([
-        ("[Content_Types].xml", _content_types(_DEFAULTS, {
+        ("[Content_Types].xml", _content_types(_DEFAULTS | {"png": "image/png"}, {
             "/word/document.xml": f"{main}.document.main+xml", "/word/styles.xml": f"{main}.styles+xml",
-            "/word/numbering.xml": f"{main}.numbering+xml", "/docProps/core.xml": _CORE_TYPE})),
+            "/word/numbering.xml": f"{main}.numbering+xml", "/word/footer1.xml": f"{main}.footer+xml",
+            "/docProps/core.xml": _CORE_TYPE})),
         ("_rels/.rels", _rels([(f"{_DOC_REL}/officeDocument", "word/document.xml"), (_CORE_REL, "docProps/core.xml")])),
         ("word/document.xml", document),
-        ("word/_rels/document.xml.rels", _rels([(f"{_DOC_REL}/styles", "styles.xml"), (f"{_DOC_REL}/numbering", "numbering.xml")])),
+        ("word/_rels/document.xml.rels", _rels([(f"{_DOC_REL}/styles", "styles.xml"), (f"{_DOC_REL}/numbering", "numbering.xml"),
+                                                (f"{_DOC_REL}/footer", "footer1.xml")])),
+        ("word/footer1.xml", _footer(text_width)),
+        ("word/_rels/footer1.xml.rels", _rels([(f"{_DOC_REL}/image", "media/deixis-mark.png")])),
+        ("word/media/deixis-mark.png", _MARK.read_bytes()),
         ("word/styles.xml", _styles_docx()),
         ("word/numbering.xml", _numbering(ordered)),
         ("docProps/core.xml", _core(title)),

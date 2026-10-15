@@ -7,6 +7,7 @@ anchors and locators as stored, and no secrets or local paths.
 
 from __future__ import annotations
 
+from urllib.parse import quote
 import csv
 import io
 import json
@@ -35,7 +36,8 @@ W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 S = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 SPECIAL = "A & B < C > D \"q\" 'a' 🧪 İstanbul ğüşöçı ĞÜŞÖÇ $\\alpha_{1} < \\beta^{2}$ \\& x"
 DOCX_PARTS = {"[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/_rels/document.xml.rels",
-              "word/styles.xml", "word/numbering.xml", "docProps/core.xml"}
+              "word/styles.xml", "word/numbering.xml", "word/footer1.xml", "word/_rels/footer1.xml.rels",
+              "word/media/deixis-mark.png", "docProps/core.xml"}
 XLSX_PARTS = {"[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/styles.xml",
               "xl/worksheets/sheet1.xml", "docProps/core.xml"}
 
@@ -49,16 +51,17 @@ def parts(data: bytes, required: set[str]) -> dict[str, ET.Element]:
         names = archive.namelist()
         assert names[0] == "[Content_Types].xml"
         assert required <= set(names), required - set(names)
-        parsed = {name: ET.fromstring(archive.read(name)) for name in names}
+        parsed = {name: ET.fromstring(archive.read(name)) for name in names if not name.endswith(".png")}
     types = parsed["[Content_Types].xml"]
     overrides = {item.get("PartName") for item in types if item.tag.endswith("Override")}
-    assert overrides == {"/" + name for name in names if not name.endswith(".rels") and name != "[Content_Types].xml"}
+    # The footer mark is typed by the png Default; every other part has its own Override.
+    assert overrides == {"/" + name for name in names if not name.endswith((".rels", ".png")) and name != "[Content_Types].xml"}
     return parsed
 
 
 def raw_text(data: bytes) -> str:
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        return "\n".join(archive.read(name).decode("utf-8") for name in archive.namelist())
+        return "\n".join(archive.read(name).decode("utf-8") for name in archive.namelist() if not name.endswith(".png"))
 
 
 def _p_text(p: ET.Element) -> str:
@@ -318,7 +321,8 @@ def test_answer_docx_route_names_refusals_and_content(tmp_path):
         response = client.get(path + "?lang=en&style=apa")
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == ooxml.DOCX_MEDIA_TYPE
-        assert re.fullmatch(r'attachment; filename="[a-z0-9-]+-v1\.docx"', response.headers["content-disposition"])
+        assert response.headers["content-disposition"].startswith(f'attachment; filename="DEIXIS - ') and \
+            response.headers["content-disposition"].endswith(f"{quote(' - V1.docx', safe='')}")
         items = docx_items(response.content)
         assert items[0] == answer["report_title"] and items[1] == "Report · V1"
         evidence = [e for claim in answer["claims"] for e in claim["evidence"]]
@@ -466,7 +470,8 @@ def test_table_routes_on_a_filled_synthetic_table(tmp_path):
         xlsx = client.get(base + "/xlsx")
         assert xlsx.status_code == 200, xlsx.text
         assert xlsx.headers["content-type"] == ooxml.XLSX_MEDIA_TYPE
-        assert xlsx.headers["content-disposition"] == f'attachment; filename="synthetic-evidence-v{view["table"]["version"]}.xlsx"'
+        name = f'DEIXIS - {view["table"]["title"]} - V{view["table"]["version"]}.xlsx'
+        assert xlsx.headers["content-disposition"] == f"attachment; filename=\"{name}\"; filename*=UTF-8''{quote(name, safe='')}"
         rows = xlsx_rows(xlsx.content)
         expected = _csv(browser_exports(lang="en", style="apa", sources=sources, table=view)["csv"])
         assert len(rows) == len(expected) and len(rows[0]) == 7 + 5 * len(view["columns"])
@@ -481,7 +486,7 @@ def test_table_routes_on_a_filled_synthetic_table(tmp_path):
                 assert row[9 + 5 * index: 11 + 5 * index] == ["Model · Selected pages", "Value"]
         docx = client.get(base + "/docx?lang=tr&style=chicago")
         assert docx.status_code == 200 and docx.headers["content-type"] == ooxml.DOCX_MEDIA_TYPE
-        assert docx.headers["content-disposition"].endswith(f'-v{view["table"]["version"]}.docx"')
+        assert docx.headers["content-disposition"].endswith(quote(f' - V{view["table"]["version"]}.docx', safe=''))
         assert "Seçili sayfalar" in raw_text(docx.content)
         for data in (xlsx.content, docx.content):
             assert_clean(data, tmp_path)
@@ -571,7 +576,7 @@ def test_evidence_report_route_and_refusals(tmp_path):
         response = client.get(f"/api/researches/{rid}/reports/{report_id}/export/docx")
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == ooxml.DOCX_MEDIA_TYPE
-        assert re.fullmatch(r'attachment; filename="report-[a-z0-9-]+-v1\.docx"', response.headers["content-disposition"])
+        assert re.fullmatch(r'attachment; filename="(report-[a-z0-9-]+-v1\.docx)"; filename\*=UTF-8\'\'\1', response.headers["content-disposition"])
         markdown = client.get(f"/api/researches/{rid}/reports/{report_id}/export?format=markdown").text
         items, expected = docx_items(response.content), _markdown_items(markdown)
         assert items[:len(expected)] == expected

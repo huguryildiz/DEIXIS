@@ -273,7 +273,8 @@ def test_the_endpoint_gives_both_formats(tmp_path, monkeypatch):
     finally:
         client.__exit__(None, None, None)
     assert as_json.status_code == 200 and len(as_json.json()["items"]) == 16
-    assert as_json.headers["content-disposition"].endswith('.json"')
+    assert as_json.headers["content-disposition"].startswith('attachment; filename="DEIXIS - SYNTHETIC ')
+    assert as_json.headers["content-disposition"].endswith("%20-%20PRISMA-S%20-%20r1.json")
     assert as_md.status_code == 200 and as_md.headers["content-type"].startswith("text/markdown")
     assert as_md.text.splitlines()[2] == prisma_s.STATEMENT
 

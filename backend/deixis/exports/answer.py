@@ -14,12 +14,12 @@ from __future__ import annotations
 from typing import Any
 
 from deixis.exports import ooxml
-from deixis.exports.text import OCR_LABEL, VERDICTS, CitationStyle, Language, file_base, locator_text, page_locator, \
+from deixis.exports.text import OCR_LABEL, VERDICTS, CitationStyle, Language, download_name, locator_text, page_locator, \
     reference_text, translator
 
 
 def filename(title: str, version: int) -> str:
-    return f"{file_base(title, 'deixis-report')}-v{version}.docx"
+    return download_name(title, f"V{version}", extension="docx", fallback="Report")
 
 
 def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str, version: int,
@@ -106,6 +106,6 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
                 line += f" ({t(OCR_LABEL)})"
             if evidence.get("text_source") == "latex_source":
                 line += f" ({t('arXiv source')})"
-            out.append(ooxml.paragraph(line, *(ooxml.Run(f"\n“{quote}”") for quote in anchors[passage_id])))
+            out.append(ooxml.paragraph(line, *(ooxml.Run(f"\n“{quote}”") for quote in anchors[passage_id]), style="Bibliography"))
     out += [ooxml.Rule(), ooxml.paragraph(t("Structural check passed: each citation resolves to a stored passage that was given to this step. Semantic support is not checked."))]
     return out

@@ -459,7 +459,7 @@ export type PersonFile = {
 }
 export type PersonFiles = { rows: PersonFile[]; reading_on: boolean; paused_run: { id: string; kind: string; status: string; pause_reason: string | null } | null }
 export type Source = {
-  // A short author–year key such as "Nakano13", one per work across the library (D59); null only before it is given.
+  // An author–year–title key such as "nakano2013molecular", one per work across the library (D59, D38); null only before it is given.
   source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
   volume: string | null; issue: string | null; pages: string | null
   doi: string | null; landing_url: string | null; version_label: string | null; publication_type: string | null

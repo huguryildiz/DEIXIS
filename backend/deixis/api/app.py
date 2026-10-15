@@ -38,6 +38,7 @@ from deixis.documents import tool_updates
 from deixis.documents import upload_record
 from deixis.domain import proxy, skill
 from deixis.workflow import abstract_stage
+from deixis.workflow import source_keys
 from deixis.workflow import fast_path, intent, small_batch
 from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
@@ -764,6 +765,7 @@ def create_app(
         db.migrate(conn)
         store = Store(conn, clock=clock)
         store.recovery_dir = settings.recovery_dir
+        source_keys.assign_missing(store)
         settings = settings.bound_to(store.setting)  # the contact email set in Settings is read before the env var (F15)
         app.state.settings = settings
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent(settings.contact_email)})

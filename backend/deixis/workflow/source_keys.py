@@ -1,4 +1,4 @@
-"""Short author–year keys for works, such as "Nakano13" (D59)."""
+"""Author–year–title keys for works, such as "zeng2022multiparty" (D59, D38)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import re
 import unicodedata
 from itertools import product
 
-MAX_NAME = 10
+from deixis.storage.db import transaction
+
+MAX_NAME = 20
 _PARTICLES = {"van", "von", "der", "den", "de", "del", "della", "di", "da", "dos", "das", "du", "la", "le", "ter", "ten", "al", "el", "bin", "ibn"}
 _SUFFIXES = {"jr", "sr", "ii", "iii", "iv"}
 _TITLE_STOPWORDS = {"a", "an", "the", "on", "of", "and", "in", "for", "to", "with", "towards", "toward", "via", "from", "by", "at"}
@@ -19,12 +21,8 @@ def _ascii(text: str) -> str:
 
 
 def _join(words: list[str]) -> str:
-    parts = []
-    for word in words:
-        letters = re.sub(r"[^A-Za-z]", "", _ascii(word))
-        if letters:
-            parts.append(letters.capitalize() if letters.isupper() and len(letters) > 1 else letters[0].upper() + letters[1:])
-    return "".join(parts)[:MAX_NAME]
+    """ASCII letters of the words, lower case, run together."""
+    return "".join(re.sub(r"[^A-Za-z]", "", _ascii(word)) for word in words).lower()[:MAX_NAME]
 
 
 def family_name(author: str) -> str:
@@ -40,16 +38,22 @@ def family_name(author: str) -> str:
     return _join(kept or words)
 
 
+def title_word(title: str | None) -> str:
+    """The title's first word that is not a stopword, in lower-case ASCII letters; "" when it has none."""
+    words = [w for w in (_join([w]) for w in re.split(r"[\s/:]+", title or "")) if w]
+    return next((w for w in words if w not in _TITLE_STOPWORDS), words[0] if words else "")
+
+
 def key_stem(authors: list[str], title: str | None, year: int | None) -> tuple[str, str]:
-    """The key before any collision suffix, and whether it came from an author or the title."""
+    """The key before any collision suffix, and whether it came from an author or the title: first author's family
+    name, four-digit year ("nd" without one) and the title's first significant word, as in "zeng2022multiparty". A work
+    with no author starts with the title word instead, as in "multiparty2022"."""
     name = next((n for n in (family_name(a) for a in authors if a.strip()) if n), "")
-    basis = "author"
-    if not name:
-        basis = "title"
-        words = [w for w in re.split(r"\s+", title or "") if re.sub(r"[^A-Za-z]", "", _ascii(w))]
-        significant = [w for w in words if re.sub(r"[^a-z]", "", _ascii(w).casefold()) not in _TITLE_STOPWORDS]
-        name = _join((significant or words)[:1]) or "Source"
-    return f"{name}{f'{year % 100:02d}' if year else 'nd'}", basis
+    word = title_word(title)
+    when = f"{year:04d}" if year else "nd"
+    if name:
+        return f"{name}{when}{word}", "author"
+    return f"{word or 'source'}{when}", "title"
 
 
 def suffixes():
@@ -57,3 +61,13 @@ def suffixes():
     yield ""
     yield from "bcdefghijklmnopqrstuvwxyz"
     yield from ("".join(pair) for pair in product("abcdefghijklmnopqrstuvwxyz", repeat=2))
+
+
+def assign_missing(store) -> int:
+    """Give every work without a key its key, oldest work first, so the first of colliding works keeps the bare key.
+    Runs at startup; after migration 0013 cleared the old short keys it gives every work its D38 key once."""
+    rows = store.conn.execute("SELECT id FROM works WHERE source_key IS NULL ORDER BY created_at, id").fetchall()
+    with transaction(store.conn):
+        for (work_id,) in rows:
+            store._assign_source_key(work_id)
+    return len(rows)

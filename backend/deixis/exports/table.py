@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from deixis.exports import ooxml
-from deixis.exports.text import CitationStyle, Language, Translate, file_base, locator_text, number_text, \
+from deixis.exports.text import CitationStyle, Language, Translate, download_name, locator_text, number_text, \
     reference_text, translator, version_text
 
 ACCESS = {"pdf_available": "PDF text", "abstract": "Abstract only", "metadata": "Metadata only"}
@@ -48,7 +48,7 @@ class CellText:
 
 
 def filename(view: dict[str, Any], extension: str) -> str:
-    return f"{file_base(view['table']['title'], 'evidence-table')}-v{view['table']['version']}.{extension}"
+    return download_name(view["table"]["title"], f"V{view['table']['version']}", extension=extension, fallback="Evidence table")
 
 
 def _value(t: Translate, language: Language, column: dict[str, Any], value: dict[str, Any] | None) -> str | int | float:

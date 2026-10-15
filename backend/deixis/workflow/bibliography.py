@@ -88,8 +88,8 @@ def export_sources(store: Store, research_id: str, selection: Selection, answer_
 
 
 def filename(title: str, selection: Selection, fmt: Format) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", _fold(title))[:40].strip("-")
-    return f"deixis-{slug or 'research'}-{selection}.{'bib' if fmt == 'bibtex' else 'ris'}"
+    from deixis.exports.text import download_name
+    return download_name(title, f"{selection} sources", extension="bib" if fmt == "bibtex" else "ris")
 
 
 def to_bibtex(sources: list[dict[str, Any]], keys: list[str] | None = None, *, latex_report: bool = False) -> str:

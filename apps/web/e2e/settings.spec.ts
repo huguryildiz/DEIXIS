@@ -117,13 +117,22 @@ test.describe.serial('S24: the Settings page', () => {
   })
   test.afterAll(async () => { await page?.close(); await server.stop() })
 
-  test('four tabs (D30) keep the mockup order inside each; the old Connections link opens Models at "On this computer"', async () => {
+  test('four tabs (D30); Models holds one card per company, the other models folded, local models and document reading; the old Connections link opens Models at "Model connections"', async () => {
     await page.goto(server.url('#/settings'))
     const tabs = page.getByRole('tab')
     await expect(tabs).toHaveText(['Models', 'Sources', 'Usage', 'General'])
     await expect(page.getByRole('tab', { name: 'Models' })).toHaveAttribute('aria-selected', 'true')
     const shown = page.locator('.settings-page h2:visible')
-    await expect(shown).toHaveText(['Default models', 'Cloud models', 'On this computer', 'This computer', 'Semantic search'])
+    await expect(shown).toHaveText(['Model connections', /^Other models · \d+/, 'Local models', 'This computer', 'Default models', 'Semantic search', 'Document reading'])
+    // No command-line or key names on the cards (owner-approved connection mockup, 15 Oct 2026); other models start folded.
+    await expect(page.locator('.co-grid[data-group="main"] .co-name b')).toHaveText(['Claude', 'ChatGPT', 'Gemini', 'GitHub Copilot', 'Grok', 'Mistral'])
+    await expect(page.locator('.co-grid[data-group="main"]')).not.toContainText(/CLI|_API_KEY|Codex/)
+    await expect(page.locator('.co-fold')).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.locator('.co-grid[data-group="others"]')).toHaveCount(0)
+    await page.locator('.co-fold').click()
+    await expect(page.locator('.co-grid[data-group="others"] .co-name b')).toHaveText(['OpenRouter', 'Muse', 'MiMo', 'Qwen', 'GLM', 'DeepSeek'])
+    await expect(page.locator('.co-grid[data-group="local"] .co-name b')).toHaveText(['Ollama', 'LM Studio', 'Another local server'])
+    await expect(page.locator('.doc-list b')).toHaveText(['PDF reader', 'Scanned PDF reader (OCR)', 'Equation reader'])
     await page.getByRole('tab', { name: 'Sources' }).click()
     await expect(page).toHaveURL(/#\/settings\/sources$/)
     await expect(shown).toHaveText(['Institutional access', 'Scholarly sources', 'Reference managers'])
@@ -137,8 +146,6 @@ test.describe.serial('S24: the Settings page', () => {
     await page.reload()
     await expect(page.getByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true')
     await page.goto(server.url('#/settings/sources'))
-    const computer = page.locator('.grid3[data-group="computer"] .conn-name')
-    await expect(computer).toHaveText(['Codex CLI', 'Claude Code', 'OCR (Tesseract)', 'Local model servers', 'Equation reader (Marker)', 'PDF reader (PyMuPDF)'])
     // Scholarly sources: the mockup's five first, then the other registered connectors.
     const sources = page.locator('.grid3[data-group="sources"] .conn-name')
     await expect(sources.nth(0)).toHaveText('OpenAlex')
@@ -150,7 +157,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.locator('.settings-footer')).toContainText('© 2026 DEIXIS')
 
     await page.goto(server.url('#/settings/connections'))
-    const heading = page.getByRole('heading', { name: 'On this computer' })
+    const heading = page.getByRole('heading', { name: 'Model connections' })
     await expect(heading).toBeFocused()
     expect((await heading.boundingBox())!.y).toBeLessThan(60)
     await shot(page, 'S24-settings-connections-desktop')
@@ -448,9 +455,9 @@ test.describe.serial('S24: the Settings page', () => {
       await route.fulfill({ json: { key: entry(), test: configured ? { status: 'ok', detail: '', checked_at: PINNED } : null } })
     })
     await page.goto(server.url('#/settings'))
-    await page.getByRole('button', { name: /^OpenAI API Not set up/ }).click()
-    const sheet = page.getByRole('dialog', { name: 'OpenAI API' })
-    const field = sheet.getByLabel('API key')
+    await page.locator('.co-card').filter({ hasText: /^ChatGPT/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'ChatGPT' })
+    const field = sheet.getByLabel('Key', { exact: true })
     await expect(field).toHaveValue('')
     await expect(field).toHaveAttribute('type', 'password')
     await expect(field).toHaveAttribute('placeholder', 'Paste your key')
@@ -465,10 +472,10 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(field).toHaveValue('')
     await expect(field).toHaveAttribute('placeholder', /stored in SYNTHETIC keychain$/)
     expect(await sheet.innerText()).not.toContain('SYNTHETIC-not-a-key')
-    await expect(sheet.getByRole('button', { name: 'Test' })).toBeVisible()
+    await expect(sheet.getByRole('button', { name: 'Test', exact: true })).toBeVisible()
     await sheet.getByRole('button', { name: 'Remove key' }).click()
     const confirm = sheet.getByRole('group', { name: 'Remove the key' })
-    await expect(confirm).toContainText('Remove the key for OpenAI? Semantic search with OpenAI stops until a new key is added.')
+    await expect(confirm).toContainText('Remove the key for OpenAI? Research steps with this key, and semantic search with OpenAI, stop until a new key is added.')
     await confirm.getByRole('button', { name: 'Keep it' }).click()
     await expect(confirm).toHaveCount(0)
     await sheet.getByRole('button', { name: 'Remove key' }).click()
@@ -512,11 +519,12 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(effort.locator('option')).toHaveText(['Model default', 'Low', 'High'])
     await effort.selectOption({ label: 'Model default' })
     await expect.poll(() => saved.at(-1)?.reasoning_effort ?? 'none').toBe('none')
-    // A connection test in the Codex sheet reads the model list again; the default model choices follow it.
-    await page.getByRole('button', { name: /^Codex CLI / }).click()
-    const sheet = page.getByRole('dialog', { name: 'Codex CLI' })
-    await sheet.getByRole('button', { name: 'Test the connection' }).click()
-    await expect(sheet.locator('.dmeta')).toContainText('checked')
+    // A connection test of the ChatGPT account (Codex) reads the model list again; the default model choices follow it.
+    await page.locator('.co-card').filter({ hasText: /^ChatGPT/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'ChatGPT' })
+    const account = sheet.getByRole('region', { name: 'With your ChatGPT account' })
+    await account.getByRole('button', { name: 'Test the connection' }).click()
+    await expect(account.locator('.way-head')).toContainText('checked')
     await sheet.getByRole('button', { name: 'Close' }).click()
     await expect(model.locator('option', { hasText: 'SYNTHETIC model B' })).toHaveCount(1)
     await page.unrouteAll({ behavior: 'ignoreErrors' })
@@ -527,7 +535,7 @@ test.describe.serial('S24: the Settings page', () => {
     await page.route(url => url.pathname === '/api/equation-reader', route => fail ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC reader check failure' } }) : route.fallback())
     await page.goto(server.url('#/settings'))
     await page.reload()
-    await page.getByRole('button', { name: /^Equation reader \(Marker\)/ }).click()
+    await page.getByRole('button', { name: /^Equation reader/ }).click()
     const sheet = page.getByRole('dialog', { name: 'Equation reader (Marker)' })
     const find = sheet.getByRole('button', { name: 'Find it on this computer' })
     await find.click()
@@ -569,10 +577,10 @@ test.describe.serial('S24: the Settings page', () => {
     await page.reload()
     const off = page.locator('.semantic-option[data-row="off"] input')
     await expect(off).toBeChecked()
-    // The local server sheet's Test reads semantic search again; that read is held open.
-    await page.getByRole('button', { name: /^Local model servers/ }).click()
-    const sheet = page.getByRole('dialog', { name: 'Local model servers' })
-    await sheet.getByRole('button', { name: 'Test' }).click()
+    // The Ollama panel's Test reads semantic search again; that read is held open.
+    await page.locator('.co-card').filter({ hasText: /^Ollama/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'Ollama' })
+    await sheet.getByRole('button', { name: 'Test', exact: true }).click()
     await expect.poll(() => reads).toBe(2)
     await page.keyboard.press('Escape')
     await expect(sheet).toHaveCount(0)
@@ -585,7 +593,7 @@ test.describe.serial('S24: the Settings page', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
-  test('the local server sheet shows each address read-only and chooses the embedding model, as the page row does (Sol r2 backlog)', async () => {
+  test('the Ollama panel shows its address read-only and chooses the embedding model, as the page row does (Sol r2 backlog)', async () => {
     const option = (provider: string, available: boolean, models: string[] = []) => ({ provider, models, available, reason: available ? null : 'SYNTHETIC not available' })
     const view = (provider: string, model: string | null) => ({ provider, model, explicit: true,
       options: [option('builtin', false), option('openai', false), option('gemini', false), option('ollama', true, ['syn-embed-small', 'syn-embed-large']), option('lm_studio', false), option('off', true)] })
@@ -598,11 +606,11 @@ test.describe.serial('S24: the Settings page', () => {
     })
     await page.goto(server.url('#/settings'))
     await page.reload()
-    await page.getByRole('button', { name: /^Local model servers/ }).click()
-    const sheet = page.getByRole('dialog', { name: 'Local model servers' })
+    await page.locator('.co-card').filter({ hasText: /^Ollama/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'Ollama' })
     await expect(sheet.locator('.server-block code').first()).toBeVisible()
     await expect(sheet.locator('.server-block input')).toHaveCount(0)
-    await expect(sheet).toContainText('Each address is the one its app uses by default; this version of DEIXIS cannot change it.')
+    await expect(sheet).toContainText('The address is the one the app uses by default; this version of DEIXIS cannot change it.')
     const model = sheet.getByRole('combobox', { name: 'Embedding model for semantic search' })
     await expect(model).toHaveValue('')
     await model.selectOption({ label: 'Ollama · syn-embed-large' })
@@ -618,8 +626,8 @@ test.describe.serial('S24: the Settings page', () => {
 
   test('Sign in has a button; the terminal command with Copy is the collapsed fallback', async () => {
     await page.goto(server.url('#/settings/connections'))
-    await page.getByRole('button', { name: /^Codex CLI / }).click()
-    const sheet = page.getByRole('dialog', { name: 'Codex CLI' })
+    await page.locator('.co-card').filter({ hasText: /^ChatGPT/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'ChatGPT' })
     await expect(sheet.getByRole('button', { name: /^Sign in( again)?$/ })).toBeVisible()
     await expect(sheet.locator('.cmd-row')).toHaveCount(0)
     await sheet.getByRole('button', { name: 'Or run this in a terminal' }).click()
@@ -683,14 +691,14 @@ test.describe.serial('S24: the Settings page', () => {
     await sheet.getByRole('button', { name: 'Close' }).click()
   })
 
-  test('phone: one column of tiles, no horizontal scroll', async () => {
+  test('phone: one column of cards, no horizontal scroll', async () => {
     await expect(page.locator('.connection-sheet')).toHaveCount(0)
     await page.setViewportSize({ width: 390, height: 844 })
     // A hash-only goto keeps the page; reload so the phone layout is built from the start.
     await page.goto(server.url('#/settings'))
     await page.reload()
     await expect(page.getByRole('combobox', { name: 'Literature model' })).toBeEnabled()
-    const columns = await page.locator('.settings-page .grid3').first().evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)
+    const columns = await page.locator('.settings-page .co-grid').first().evaluate(el => getComputedStyle(el).gridTemplateColumns.split(' ').length)
     expect(columns).toBe(1)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await shot(page, 'S24-settings-phone')

@@ -703,6 +703,8 @@ export type ModelHealth = {
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
   // 'fixed': the connection cannot list its models; DEIXIS keeps the list (Gemini CLI, D23).
   catalogue?: 'fixed'
+  // The local server's saved address (D34, `local_server` only); null while none is saved.
+  base_url?: string | null
 }
 export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; providers: { id: string; implemented: boolean; access_mode: string | null; supplementary?: boolean; role?: string; note: string }[] }
 export type Keychain = { available: boolean; name: string | null }
@@ -1289,6 +1291,8 @@ export const api = {
   events: (id: string, after = 0) => request<ActivityEvent[]>(`/api/researches/${id}/events?after=${after}`),
   connections: (refresh = false) => request<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`),
   modelConnection: (connection: string, refresh = false) => request<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}${refresh ? '?refresh=true' : ''}`),
+  // The local server's address (D34): loopback only, '' clears it; answers with the connection's fresh health.
+  saveLocalServer: (baseUrl: string) => request<ModelHealth>('/api/connections/local_server', json('PUT', { base_url: baseUrl })),
   institutionalAccess: () => request<InstitutionalAccess>('/api/institutional-access'),
   credentials: () => request<Credentials>('/api/credentials'),
   saveCredential: (env: string, value: string) => request<{ key: KeyEntry; test: KeyTest | null }>(`/api/credentials/${env}`, json('PUT', { value })),

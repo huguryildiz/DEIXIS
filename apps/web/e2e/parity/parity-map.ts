@@ -352,11 +352,11 @@ export const SURFACES: Surface[] = [
   { id: 'settings', mock: "setScenario('ok'); go('settings')", app: '#/settings', ready: '.settings-page .set-usage [data-role="openalex"] small', prepare: settingsState, open: allSettingsTabs },
   { id: 'settings-sheet', mock: "setScenario('ok'); go('settings')", mockAct: "st.conn = 'Codex CLI'; render()", app: '#/settings', ready: '.settings-page .set-usage', prepare: settingsState, open: allSettingsTabs,
     appAct: async page => {
-      await page.locator('.grid3[data-group="computer"] .conn').filter({ hasText: /^Codex CLI/ }).click()
-      await page.locator('.connection-sheet .connection-body .acts').waitFor()
+      await page.locator('.co-grid[data-group="main"] .co-card').filter({ hasText: /^ChatGPT/ }).click()
+      await page.locator('.connection-sheet .connection-body .way').first().waitFor()
       await page.mouse.move(0, 0)
     } },
-  { id: 'dialog', mock: HOME, mockAct: "zoteroDlg('home')", app: '#/settings/connections', ready: '.settings-page .grid3[data-group="computer"]', reader: 'not-installed',
+  { id: 'dialog', mock: HOME, mockAct: "zoteroDlg('home')", app: '#/settings/connections', ready: '.settings-page .doc-list', reader: 'not-installed',
     appAct: async page => {
       await page.getByRole('button', { name: /^Equation reader/ }).click()
       await page.locator('.connection-sheet').getByRole('button', { name: 'Install', exact: true }).click()
@@ -534,17 +534,17 @@ const SI = '.settings-in'
 const SP = '.settings-page'
 const settingsPage: Pair[] = [
   { id: 'settings.title', surface: 'settings', mock: `${SI} > h1`, app: `${SP} > h1`, checks: ['chrome', 'type', 'colour'], text: true, status: 'active' },
-  { id: 'settings.headings', surface: 'settings', mock: `${SI} > h2`, app: `${SP} > h2`, checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
+  { id: 'settings.headings', surface: 'settings', mock: `${SI} > h2`, app: `${SP} > h2`, checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: [], status: 'pending:models-redesign', why: 'The Models tab follows the owner-approved connection mockup (15 Oct 2026), not v24: one card per company, other models folded, local models, document reading last' },
   { id: 'settings.roles', surface: 'settings', mock: `${SI} > .rows:has(select)`, app: `${SP} > .set-roles`, checks: ['chrome', 'colour'], use: 'decorative', status: 'active' },
   { id: 'settings.role', surface: 'settings', mock: `${SI} > .rows:has(select) > div`, app: '.set-roles > div', checks: ['chrome', 'colour'], use: 'decorative', list: 'fixed', text: false, status: 'active' },
   { id: 'settings.role-name', surface: 'settings', mock: `${SI} > .rows:has(select) > div > b`, app: '.set-roles > div > b', checks: ['type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
   { id: 'settings.role-note', surface: 'settings', mock: `${SI} > .rows:has(select) > div > p`, app: '.set-roles > div > p', checks: ['type', 'colour'], list: 'fixed', text: true, states: [], status: 'active' },
   { id: 'settings.role-select', surface: 'settings', mock: `${SI} > .rows:has(select) select`, app: '.set-roles select', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
-  { id: 'settings.computer', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3`, app: '.grid3[data-group="computer"]', checks: ['content'], status: 'active' },
-  { id: 'settings.computer-tile', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn`, app: '.grid3[data-group="computer"] > .conn', checks: ['content', 'colour'], use: 'decorative', list: 'fixed', text: false, states: ['hover'], hoverSurface: true, status: 'active' },
-  { id: 'settings.tile-name', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn > b`, app: '.grid3[data-group="computer"] > .conn > b', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
-  { id: 'settings.tile-pill', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn .st`, app: '.grid3[data-group="computer"] > .conn .st', checks: ['type'], list: 'fixed', text: false, states: [], status: 'active' },
-  { id: 'settings.tile-note', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn small`, app: '.grid3[data-group="computer"] > .conn small', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'active' },
+  { id: 'settings.computer', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3`, app: '.grid3[data-group="computer"]', checks: ['content'], status: 'pending:models-redesign', why: 'The Models tab follows the owner-approved connection mockup (15 Oct 2026), not v24: one card per company, other models folded, local models, document reading last' },
+  { id: 'settings.computer-tile', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn`, app: '.grid3[data-group="computer"] > .conn', checks: ['content', 'colour'], use: 'decorative', list: 'fixed', text: false, states: ['hover'], hoverSurface: true, status: 'pending:models-redesign', why: 'The Models tab follows the owner-approved connection mockup (15 Oct 2026), not v24: one card per company, other models folded, local models, document reading last' },
+  { id: 'settings.tile-name', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn > b`, app: '.grid3[data-group="computer"] > .conn > b', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'pending:models-redesign', why: 'The Models tab follows the owner-approved connection mockup (15 Oct 2026), not v24: one card per company, other models folded, local models, document reading last' },
+  { id: 'settings.tile-pill', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn .st`, app: '.grid3[data-group="computer"] > .conn .st', checks: ['type'], list: 'fixed', text: false, states: [], status: 'pending:models-redesign', why: 'The Models tab follows the owner-approved connection mockup (15 Oct 2026), not v24: one card per company, other models folded, local models, document reading last' },
+  { id: 'settings.tile-note', surface: 'settings', mock: `${SI} > h2:nth-of-type(2) + .grid3 > .conn small`, app: '.grid3[data-group="computer"] > .conn small', checks: ['type', 'colour'], list: 'fixed', text: false, states: [], status: 'pending:models-redesign', why: 'The Models tab follows the owner-approved connection mockup (15 Oct 2026), not v24: one card per company, other models folded, local models, document reading last' },
   { id: 'settings.semantic-note', surface: 'settings', mock: `${SI} > h2:nth-of-type(3) + .foot-note`, app: `${SP} > .foot-note:has(+ .semantic-choices)`, checks: ['content', 'type', 'colour'], states: [], status: 'active' },
   { id: 'settings.semantic', surface: 'settings', mock: `${SI} > .rows.opts`, app: '.semantic-choices', checks: ['content', 'colour'], use: 'decorative', status: 'active' },
   { id: 'settings.semantic-row', surface: 'settings', mock: `${SI} > .rows.opts > label`, app: '.semantic-choices > .semantic-option > label', checks: ['content', 'type'], list: 'fixed', text: false, status: 'active' },
@@ -573,11 +573,11 @@ const settingsPage: Pair[] = [
   { id: 'settings-sheet.sheet', surface: 'settings-sheet', mock: 'aside.sheet', app: '.connection-sheet', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
   { id: 'settings-sheet.head', surface: 'settings-sheet', mock: 'aside.sheet .p-head', app: '.connection-sheet [data-slot=sheet-header]', checks: ['chrome', 'colour'], use: 'decorative', unordered: true, status: 'active' },
   // The title carries the connection's own black-and-white mark instead of the mockup's link icon (APP_ADDITIONS settings-icons).
-  { id: 'settings-sheet.title', surface: 'settings-sheet', mock: 'aside.sheet .p-head h2', app: '.connection-sheet [data-slot=sheet-title]', checks: ['type'], text: true, unordered: true, status: 'active' },
+  { id: 'settings-sheet.title', surface: 'settings-sheet', mock: 'aside.sheet .p-head h2', app: '.connection-sheet [data-slot=sheet-title]', checks: ['type'], text: true, unordered: true, status: 'pending:models-redesign', why: 'The connection sheet of a company card (owner-approved connection mockup, 15 Oct 2026): intro, one box per way to connect, footer; v24 has the Codex CLI sheet' },
   { id: 'settings-sheet.close', surface: 'settings-sheet', mock: 'aside.sheet .p-head .ib', app: '.connection-sheet [data-slot=sheet-close]', checks: ['chrome', 'icon'], icon: { mock: 'x', app: 'x' }, unordered: true, status: 'active' },
-  { id: 'settings-sheet.meta', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail > .dmeta', app: '.connection-body > .dmeta', checks: ['chrome', 'type'], text: false, unordered: true, status: 'active' },
-  { id: 'settings-sheet.account', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail > .foot-note', app: '.connection-body > .foot-note', checks: ['content', 'type', 'colour'], text: false, states: [], unordered: true, status: 'active' },
-  { id: 'settings-sheet.buttons', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail .acts button', app: '.connection-body > .acts button', checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], unordered: true, status: 'active' },
+  { id: 'settings-sheet.meta', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail > .dmeta', app: '.connection-body > .dmeta', checks: ['chrome', 'type'], text: false, unordered: true, status: 'pending:models-redesign', why: 'The connection sheet of a company card (owner-approved connection mockup, 15 Oct 2026): intro, one box per way to connect, footer; v24 has the Codex CLI sheet' },
+  { id: 'settings-sheet.account', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail > .foot-note', app: '.connection-body > .foot-note', checks: ['content', 'type', 'colour'], text: false, states: [], unordered: true, status: 'pending:models-redesign', why: 'The connection sheet of a company card (owner-approved connection mockup, 15 Oct 2026): intro, one box per way to connect, footer; v24 has the Codex CLI sheet' },
+  { id: 'settings-sheet.buttons', surface: 'settings-sheet', mock: 'aside.sheet .pad.detail .acts button', app: '.connection-body > .acts button', checks: ['content', 'type', 'colour'], list: 'fixed', text: true, states: ['hover'], unordered: true, status: 'pending:models-redesign', why: 'The connection sheet of a company card (owner-approved connection mockup, 15 Oct 2026): intro, one box per way to connect, footer; v24 has the Codex CLI sheet' },
 ]
 
 // S25 Library (L1-L10). The researches' rows, the works' rows and their counts are the fixture's data; the sort button

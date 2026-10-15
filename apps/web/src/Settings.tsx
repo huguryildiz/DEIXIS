@@ -130,13 +130,13 @@ export function SettingsPage({ dark, section, language, onLanguage, onProfile, a
     api.settings().then(setDefaults).catch((e: Error) => setError(t('The default models could not be read: {message}', { message: e.message })))
   }, [])
 
-  // `#/settings/connections` opens the page at "On this computer", `#/settings/access` at "Institutional access" (ST1);
+  // `#/settings/connections` opens the page at "Model connections", `#/settings/access` at "Institutional access" (ST1);
   // `#/settings/openalex` opens the OpenAlex sheet (R19's "Add an OpenAlex key"), which takes the focus itself.
   const scrolled = useRef(false)
   useEffect(() => {
     if (!section || section === 'openalex' || TABS.some(x => x.id === section) || scrolled.current || !defaults) return
     scrolled.current = true
-    const target = document.getElementById(section === 'access' ? 'institutional-access' : section === 'profile' ? 'profile' : 'on-this-computer')
+    const target = document.getElementById(section === 'access' ? 'institutional-access' : section === 'profile' ? 'profile' : 'model-connections')
     target?.scrollIntoView({ block: 'start' })
     target?.focus({ preventScroll: true })
   }, [section, defaults])
@@ -168,23 +168,9 @@ export function SettingsPage({ dark, section, language, onLanguage, onProfile, a
     pick(TABS[to].id, true)
   }
 
-  // Every section is rendered once; `data-panel` names its tab and the page's `data-tab` shows one tab's sections, so the
-  // connections, the open sheet and the forms keep their state when the tab changes.
-  return <section className="settings-page mk" data-tab={tab}>
-    <h1 tabIndex={-1}>{t('Settings')}</h1>
-    <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')} onKeyDown={onTabKey}>
-      {TABS.map(x => <button key={x.id} ref={el => { tabRefs.current[x.id] = el }} type="button" role="tab" id={`settings-tab-${x.id}`}
-        aria-selected={tab === x.id} tabIndex={tab === x.id ? 0 : -1} className={tab === x.id ? 'on' : ''} onClick={() => pick(x.id)}>{t(x.label)}</button>)}
-    </div>
-    {error && <Notice tone="error" panel="models">{error}</Notice>}
-    {anyReady === false && <div className="notice info" data-panel="models"><Info aria-hidden /><span>{t('Connect Codex CLI or Claude Code below to start.')}</span></div>}
-
-    <h2 id="profile" tabIndex={-1} data-panel="general">{t('Profile')}</h2>
-    <div className="rows set-profile" data-panel="general">
-      <ProfileNameRow onProfile={onProfile} />
-      <ContactEmailRow />
-    </div>
-
+  // Default models sit after the model connections (owner-approved connection mockup, 15 Oct 2026): a model is
+  // connected first, then chosen.
+  const defaultsBlock = <>
     <h2 data-panel="models">{t('Default models')}</h2>
     <p className="foot-note set-roles-note" data-panel="models">{t('Defaults apply to new researches. Each research keeps the models it was created with.')}</p>
     <div className="rows set-roles" data-panel="models">
@@ -226,8 +212,26 @@ export function SettingsPage({ dark, section, language, onLanguage, onProfile, a
         </div>
       })}
     </div>
+  </>
 
-    <ConnectionsTab dark={dark} access={<InstitutionalAccessBlock access={access} />} onConnections={onConnections} openProvider={section === 'openalex' ? 'openalex' : undefined} />
+  // Every section is rendered once; `data-panel` names its tab and the page's `data-tab` shows one tab's sections, so the
+  // connections, the open sheet and the forms keep their state when the tab changes.
+  return <section className="settings-page mk" data-tab={tab}>
+    <h1 tabIndex={-1}>{t('Settings')}</h1>
+    <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')} onKeyDown={onTabKey}>
+      {TABS.map(x => <button key={x.id} ref={el => { tabRefs.current[x.id] = el }} type="button" role="tab" id={`settings-tab-${x.id}`}
+        aria-selected={tab === x.id} tabIndex={tab === x.id ? 0 : -1} className={tab === x.id ? 'on' : ''} onClick={() => pick(x.id)}>{t(x.label)}</button>)}
+    </div>
+    {error && <Notice tone="error" panel="models">{error}</Notice>}
+    {anyReady === false && <div className="notice info" data-panel="models"><Info aria-hidden /><span>{t('Connect a model below to start.')}</span></div>}
+
+    <h2 id="profile" tabIndex={-1} data-panel="general">{t('Profile')}</h2>
+    <div className="rows set-profile" data-panel="general">
+      <ProfileNameRow onProfile={onProfile} />
+      <ContactEmailRow />
+    </div>
+
+    <ConnectionsTab dark={dark} access={<InstitutionalAccessBlock access={access} />} defaults={defaultsBlock} onConnections={onConnections} openProvider={section === 'openalex' ? 'openalex' : undefined} />
 
     <UsageThisMonth />
 

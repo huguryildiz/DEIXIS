@@ -12,7 +12,7 @@
 .app .settings-page h2:focus{outline:0}
 .app .settings-page h2:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .app .settings-page h2+.foot-note{margin-top:-10px}
-.app .settings-page>.foot-note,.app .settings-page .computer-more .foot-note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.app .settings-page>.foot-note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
 .app .settings-page>.notice{margin:0}
 /* Tabs (D30, owner 15 Oct 2026; the mockup is one page): the page's data-tab shows the sections whose data-panel names
    that tab. Sections without a data-panel (the footer, the connections read error) show under every tab. */
@@ -25,9 +25,6 @@
 .app .settings-page[data-tab="sources"]>[data-panel]:not([data-panel="sources"]),
 .app .settings-page[data-tab="usage"]>[data-panel]:not([data-panel="usage"]),
 .app .settings-page[data-tab="general"]>[data-panel]:not([data-panel="general"]){display:none}
-/* The Cloud models block (a §2.2 placement) is one DOM group for the parity exclusion, laid out as part of the page grid. */
-.app .settings-page>.cloud-models{display:contents}
-.app .settings-page>.cloud-models>.foot-note{margin:-10px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
 
 /* ── Row groups (mockup `.rows`): default models, usage, language, the proxy box ───────────────────────── */
 .app .settings-page .rows{border:1px solid var(--line);border-radius:10px}
@@ -47,6 +44,8 @@
 .app .settings-page .set-roles p{min-width:0}
 .app .settings-page .set-roles .select{flex:none;width:200px}
 .app .settings-page .set-roles .select+.select{width:130px}
+/* On a phone the line cannot hold both selects: they wrap under the role, so the page never scrolls sideways. */
+@media(max-width:620px){.app .settings-page .set-roles>div{flex-wrap:wrap}.app .settings-page .set-roles .select,.app .settings-page .set-roles .select+.select{flex:1 1 140px;width:auto;min-width:0}}
 .app .settings-page .bar{display:flex;height:6px;overflow:hidden;border-radius:3px;background:var(--selected-surface)}
 .app .settings-page .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
 .app .settings-page .set-usage p{flex:0 0 auto;min-width:0;text-align:right}
@@ -59,10 +58,11 @@
 .app .settings-page .lang button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 
 /* Status pill (mockup `.st`). */
-.app .settings-page .st{flex:none;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:500;line-height:1.5;white-space:nowrap}
-.app .settings-page .st.ok{background:var(--ok-surface);color:var(--ok-ink)}
-.app .settings-page .st.no{background:var(--selected-surface);color:var(--muted)}
-.app .settings-page .st.warn{background:var(--warn-surface);color:var(--warn-ink)}
+:is(.app .settings-page,.connection-sheet) .st{flex:none;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:500;line-height:1.5;white-space:nowrap}
+:is(.app .settings-page,.connection-sheet) .st.ok{background:var(--ok-surface);color:var(--ok-ink)}
+:is(.app .settings-page,.connection-sheet) .st.no{background:var(--selected-surface);color:var(--muted)}
+:is(.app .settings-page,.connection-sheet) .st.warn{background:var(--warn-surface);color:var(--warn-ink)}
+.connection-sheet .st.rec{background:var(--accent-tint);color:var(--accent)}
 
 /* ── Tiles (mockup `.grid3`, `.conn`) ──────────────────────────────────────────────────────────────────── */
 .app .settings-page .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
@@ -73,13 +73,50 @@
 .app .settings-page .conn b{display:flex;align-items:center;justify-content:space-between;gap:6px;min-width:0;font-size:13.5px;font-weight:500}
 .app .settings-page .conn-name{min-width:0;overflow-wrap:anywhere}
 .app .settings-page .conn small{color:var(--muted);font-size:12px}
-.app .settings-page .planned-connections{display:grid;gap:10px;margin:0}
-.app .settings-page .planned-connections>summary{display:flex;align-items:center;gap:6px;width:fit-content;color:var(--muted);font-size:12.5px;font-weight:500;cursor:pointer;list-style:none}
-.app .settings-page .planned-connections>summary::-webkit-details-marker{display:none}
-.app .settings-page .planned-connections>summary>svg{flex:none;transition:transform .15s ease}
-.app .settings-page .planned-connections[open]>summary>svg{transform:rotate(90deg)}
-.app .settings-page .planned-connections>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-.app .settings-page .computer-more{display:grid;gap:10px}
+
+/* ── Models tab (owner-approved connection mockup, 15 Oct 2026): one card per company ──────────────────── */
+.app .settings-page .models-intro{max-width:640px;margin:-4px 0 0;color:var(--muted);font-size:13px;line-height:1.5}
+.app .settings-page .co-group{display:grid;gap:10px}
+.app .settings-page .co-group>h2{margin:6px 0 0}
+.app .settings-page .co-group-head{display:grid;gap:2px}
+.app .settings-page .co-group-head>h2{margin:0}
+.app .settings-page .co-note{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.app .settings-page .co-group>.co-note:first-of-type{margin-top:-6px}
+.app .settings-page .co-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:10px}
+.app .settings-page .co-card{display:grid;align-content:start;gap:8px;min-width:0;padding:14px;border:1px solid var(--line);border-radius:10px;background:none;color:var(--ink);font:inherit;line-height:1.5;text-align:left;cursor:pointer}
+.app .settings-page .co-card.is-compact{padding:10px 14px}
+.app .settings-page .co-card:hover{border-color:var(--accent-line);background:color-mix(in srgb,var(--accent-tint) 45%,var(--paper))}
+.app .settings-page .co-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app .settings-page .co-card.on{border-color:var(--accent-line);background:var(--accent-tint)}
+.app .settings-page .co-head{display:flex;align-items:center;gap:12px;min-width:0}
+.app .settings-page .co-mark{flex:none;display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:8px;background:var(--accent-tint);color:var(--accent);font-size:13px;font-weight:600;line-height:1}
+.app .settings-page .co-card.is-compact .co-mark{width:28px;height:28px;border-radius:6px;background:var(--selected-surface);color:var(--muted);font-size:12px}
+.app .settings-page .co-card.on .co-mark{background:var(--paper)}
+.app .settings-page .co-card.is-compact .co-mark .connection-icon{width:15px;height:15px}
+.app .settings-page .co-name{display:grid;flex:1;min-width:0}
+.app .settings-page .co-name b{color:var(--ink);font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.app .settings-page .co-name small{overflow:hidden;color:var(--muted);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.app .settings-page .co-via{color:var(--muted);font-size:12.5px}
+.app .settings-page .co-group>h2:has(.co-fold){margin:2px 0 0}
+.app .settings-page .co-fold{display:flex;align-items:center;gap:8px;padding:4px 0;border:0;background:none;color:var(--ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.app .settings-page .co-fold>svg{flex:none;color:var(--muted);transition:transform .15s ease}
+.app .settings-page .co-fold[aria-expanded="true"]>svg{transform:rotate(90deg)}
+.app .settings-page .co-fold>span{color:var(--muted);font-weight:400}
+.app .settings-page .co-fold:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+/* Document reading: not models, set apart by a hairline above (mockup `h-docs`). */
+.app .settings-page .doc-readers{display:grid;gap:12px;margin-top:6px;padding-top:22px;border-top:1px solid var(--line)}
+.app .settings-page .doc-list{margin:0;padding:0;list-style:none;border:1px solid var(--line);border-radius:10px}
+.app .settings-page .doc-list li+li{border-top:1px solid var(--line)}
+.app .settings-page .doc-list button{display:flex;align-items:center;gap:12px;width:100%;padding:11px 14px;border:0;background:none;color:var(--ink);font:inherit;line-height:1.5;text-align:left;cursor:pointer}
+.app .settings-page .doc-list li:first-child button{border-radius:9px 9px 0 0}
+.app .settings-page .doc-list li:last-child button{border-radius:0 0 9px 9px}
+.app .settings-page .doc-list li:only-child button{border-radius:9px}
+.app .settings-page .doc-list button:hover{background:var(--hover-surface)}
+.app .settings-page .doc-list button.on{background:var(--accent-tint)}
+.app .settings-page .doc-list button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.app .settings-page .doc-list button>span:first-child{display:grid;flex:1;min-width:0}
+.app .settings-page .doc-list b{font-size:13.5px;font-weight:500}
+.app .settings-page .doc-list small{color:var(--muted);font-size:12px}
 
 /* ── Semantic search (mockup `.rows.opts`) ─────────────────────────────────────────────────────────────── */
 .app .settings-page .rows.opts>div{display:block;padding:0}
@@ -163,6 +200,25 @@
 .connection-sheet .connection-checks .legacy-check:first-child{border-top:0}
 .connection-sheet .connection-checks .legacy-check strong{color:var(--ink-2)}
 .connection-sheet .connection-recheck{justify-self:start}
+/* A way to connect (mockup sheet boxes): account or key, each with its own connection's state; a way not built yet is
+   dashed. The details hold the tool's name, its checks and the models it lists. */
+.connection-sheet .way{display:grid;gap:8px;padding:14px;border:1px solid var(--line);border-radius:10px}
+.connection-sheet .way.is-on{border-color:var(--accent-line);background:color-mix(in srgb,var(--accent-tint) 45%,transparent)}
+.connection-sheet .way.is-soon{gap:4px;border-style:dashed;border-color:var(--strong-line)}
+.connection-sheet .way-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.connection-sheet .way-head h3{flex:1;min-width:0;margin:0;color:var(--ink);font-size:13.5px;font-weight:600}
+.connection-sheet .way.is-soon h3{color:var(--muted)}
+.connection-sheet .way-desc{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.connection-sheet .way-desc a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.connection-sheet .way .acts{margin:0}
+.connection-sheet .way .key-box{gap:6px}
+.connection-sheet .way-terminal{justify-self:start}
+.connection-sheet .way-more>summary{display:flex;align-items:center;gap:6px;width:fit-content;color:var(--muted);font-size:12.5px;font-weight:500;cursor:pointer;list-style:none}
+.connection-sheet .way-more>summary::-webkit-details-marker{display:none}
+.connection-sheet .way-more>summary>svg{flex:none;transition:transform .15s ease}
+.connection-sheet .way-more[open]{display:grid;gap:8px}
+.connection-sheet .way-more[open]>summary>svg{transform:rotate(90deg)}
+.connection-sheet .way-more>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .app .settings-page #profile{scroll-margin-top:24px}
 
 /* This computer: chip, memory and a disk meter in one bordered card, three cells on wide screens, stacked on phones. */
@@ -180,12 +236,13 @@
 /* Brand marks keep their shapes but lose their colours: coloured parts take the ink, white cut-outs take the page,
    so the status pill stays the only colour on a tile. The SerpApi mark is a bitmap and is greyed instead. */
 .app .settings-page .conn-title{display:flex;align-items:center;gap:8px;min-width:0}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon{width:16px;height:16px;color:var(--ink);opacity:.85}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [fill]:not([fill=none]){fill:currentColor}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [stroke]:not([stroke=none]){stroke:currentColor}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [fill="#fff"]{fill:var(--paper)}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [stroke="#fff"]{stroke:var(--paper)}
-:is(.app .settings-page .conn,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon img{filter:grayscale(1) contrast(1.2)}
+:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon{width:16px;height:16px;color:var(--ink);opacity:.85}
+.app .settings-page .co-mark .connection-icon{width:18px;height:18px;color:currentColor;opacity:1}
+:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [fill]:not([fill=none]){fill:currentColor}
+:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [stroke]:not([stroke=none]){stroke:currentColor}
+:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [fill="#fff"]{fill:var(--paper)}
+:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon [stroke="#fff"]{stroke:var(--paper)}
+:is(.app .settings-page .conn,.app .settings-page .co-mark,.app .settings-page .opts,.connection-sheet [data-slot=sheet-title]) .connection-icon img{filter:grayscale(1) contrast(1.2)}
 .app .settings-page .opts .connection-icon{margin-top:3px}
 .app .settings-page .opts label.is-disabled .connection-icon{opacity:.4}
 

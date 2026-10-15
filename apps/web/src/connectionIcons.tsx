@@ -45,6 +45,8 @@ const icons: Record<string, ReactNode> = {
 icons.gemini_cli = icons.gemini
 // Codex CLI signs in with a ChatGPT account: the OpenAI mark.
 icons.codex = icons.openai
+// The Anthropic API runs the same Claude models as Claude Code: the Claude mark.
+icons.anthropic = icons.claude
 
 export function ConnectionIcon({ id }: { id: string }) {
   const icon = icons[id === 'copilot_cli' ? 'copilot' : id]

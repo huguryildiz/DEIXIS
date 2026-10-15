@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, BookOpenText, ChevronRight, CircleCheck, Copy, Cpu, FileText, HardDrive, MemoryStick, Link, LoaderCircle, RefreshCw, RotateCw, Save, ScanText, Server, Sigma, SquareTerminal, TriangleAlert, Upload } from 'lucide-react'
+import { Ban, BookOpenText, ChevronRight, CircleCheck, Copy, Cpu, FileText, HardDrive, MemoryStick, LoaderCircle, Plus, RefreshCw, RotateCw, Save, ScanText, Server, Sigma, SquareTerminal, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -8,7 +8,7 @@ import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbed
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
-import { serviceErrorSentence, healthReasonText, compatConnectionKeys, connectionNames as modelNames, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
+import { serviceErrorSentence, healthReasonText, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { writeClipboard } from './clipboard'
 import { Notice } from './Notice'
@@ -53,6 +53,67 @@ const MAILTO_PROVIDERS = new Set(['openalex', 'crossref'])
 // The model connections that sign in with an account on this computer, and the command-line tool each one runs.
 const ACCOUNT_TOOLS: Record<string, { tool: LocalTool['id']; name: string }> = { codex: { tool: 'codex', name: 'Codex CLI' }, claude: { tool: 'claude_code', name: 'Claude Code' }, copilot_cli: { tool: 'copilot_cli', name: 'GitHub Copilot CLI' }, gemini_cli: { tool: 'gemini_cli', name: 'Gemini CLI' } }
 const SERVER_IDS = ['ollama', 'lm_studio']
+
+// The Models tab (owner-approved connection mockup, 15 Oct 2026): one card per company, each with up to two ways to
+// connect, an account sign-in and an API key, and each way keeps its own connection's state. Texts are English; the
+// cards translate them. `site` fills the key sentence's {site}.
+type KeyWay = { conn: string; env: string; label?: string; desc?: string; site: string; service?: string }
+type Company = {
+  id: string; name: string; maker: string; icon?: string; mono?: string
+  account?: { conn: string; label: string; desc: string }
+  soon?: string  // the account way that is not built yet: its label
+  key: KeyWay
+  keyFirst?: boolean  // the key is the recommended way (Gemini)
+  intro?: string
+  onlyWhenSet?: boolean  // an older connection, listed only while its key is saved
+}
+const PAY_AS_YOU_GO = 'Pay as you go. Get the key at {site}.'
+const MAIN_COMPANIES: Company[] = [
+  { id: 'claude', name: 'Claude', maker: 'Anthropic', icon: 'claude',
+    account: { conn: 'claude', label: 'With your Claude account', desc: 'If you have a Claude Pro or Max subscription. No extra charge; your plan’s usage limit applies.' },
+    key: { conn: 'anthropic', env: 'ANTHROPIC_API_KEY', site: 'console.anthropic.com', service: 'Anthropic' } },
+  { id: 'chatgpt', name: 'ChatGPT', maker: 'OpenAI', icon: 'openai',
+    account: { conn: 'codex', label: 'With your ChatGPT account', desc: 'If you have a ChatGPT Plus, Pro or Business subscription. No extra charge.' },
+    key: { conn: 'openai', env: 'OPENAI_API_KEY', site: 'platform.openai.com', service: 'OpenAI', desc: 'Pay as you go. Get the key at {site}. The same key can also be used for semantic search.' } },
+  { id: 'gemini', name: 'Gemini', maker: 'Google', icon: 'gemini', keyFirst: true,
+    intro: 'Either way is enough. Google recommends an API key for apps that run Gemini in the background.',
+    account: { conn: 'gemini_cli', label: 'With your Google account', desc: 'A free Google account is enough; there is a daily usage limit.' },
+    key: { conn: 'gemini', env: 'GEMINI_API_KEY', site: 'aistudio.google.com', desc: 'Get the key at {site}. The same key can also be used for semantic search.' } },
+  { id: 'copilot', name: 'GitHub Copilot', maker: 'GitHub', icon: 'copilot',
+    account: { conn: 'copilot_cli', label: 'With your GitHub account', desc: 'If you have a Copilot subscription. Free for students and teachers.' },
+    key: { conn: 'copilot', env: 'GITHUB_TOKEN', site: 'github.com/settings/tokens', service: 'GitHub Models', label: 'With a GitHub Models token', desc: 'Create a token with the “models” permission at {site}.' } },
+  { id: 'grok', name: 'Grok', maker: 'xAI', icon: 'grok', soon: 'With your SuperGrok account', key: { conn: 'grok', env: 'XAI_API_KEY', site: 'console.x.ai', service: 'xAI' } },
+  { id: 'mistral', name: 'Mistral', maker: 'Mistral AI', icon: 'mistral', soon: 'With your Mistral account', key: { conn: 'mistral', env: 'MISTRAL_API_KEY', site: 'console.mistral.ai' } },
+]
+const META_SITE = 'the Meta Model API (US only for now)'
+const OTHER_COMPANIES: Company[] = [
+  { id: 'openrouter', name: 'OpenRouter', maker: 'One key, many models', mono: 'OR', key: { conn: 'openrouter', env: 'OPENROUTER_API_KEY', site: 'openrouter.ai/keys' } },
+  { id: 'muse', name: 'Muse', maker: 'Meta', icon: 'muse_spark', key: { conn: 'muse_spark', env: 'MODEL_API_KEY', site: META_SITE } },
+  { id: 'mimo', name: 'MiMo', maker: 'Xiaomi', mono: 'Xi', key: { conn: 'mimo', env: 'MIMO_API_KEY', site: 'the Xiaomi MiMo API platform' } },
+  { id: 'qwen', name: 'Qwen', maker: 'Alibaba', icon: 'qwen', key: { conn: 'qwen', env: 'DASHSCOPE_API_KEY', site: 'Alibaba Cloud Model Studio' } },
+  { id: 'glm', name: 'GLM', maker: 'Z.ai', icon: 'glm', key: { conn: 'glm', env: 'ZAI_API_KEY', site: 'z.ai' } },
+  { id: 'deepseek', name: 'DeepSeek', maker: 'DeepSeek', icon: 'deepseek', key: { conn: 'deepseek', env: 'DEEPSEEK_API_KEY', site: 'platform.deepseek.com' } },
+  { id: 'kimi', name: 'Kimi', maker: 'Moonshot AI', icon: 'kimi', onlyWhenSet: true, key: { conn: 'kimi', env: 'MOONSHOT_API_KEY', site: 'platform.moonshot.ai' } },
+  { id: 'muse_glimmer', name: 'Muse Glimmer', maker: 'Meta', icon: 'muse_glimmer', onlyWhenSet: true, key: { conn: 'muse_glimmer', env: 'MODEL_API_KEY', site: META_SITE } },
+]
+const COMPANIES = [...MAIN_COMPANIES, ...OTHER_COMPANIES]
+// Models people have run on a local server; suggestions to try, not models DEIXIS has measured.
+const LOCAL_TRY = 'Models to try: gpt-oss-20b (at least 24 GB of memory), Qwen3.5-35B-A3B, Gemma 4 31B, GLM-4.7-Flash (at least 32 GB each). Small models can struggle with long papers.'
+
+// A company's mark: its brand icon in the tinted square, or two letters where the app has no icon for it.
+const companyMark = (icon: string | undefined, mono: string | undefined, glyph?: ReactNode) =>
+  <span className="co-mark" aria-hidden="true">{glyph ?? (icon ? <ConnectionIcon id={icon} /> : mono)}</span>
+
+// A card (mockup `.card`): the mark, name and maker, the status pill, then one line on how it is connected. Green only
+// when its connection says it is usable.
+function CompanyCard({ mark, name, maker, via, ready, status, active, compact = false, onClick }: {
+  mark: ReactNode; name: string; maker: string; via?: string; ready: boolean; status: string; active: boolean; compact?: boolean; onClick: () => void
+}) {
+  return <button type="button" className={`co-card ${compact ? 'is-compact' : ''} ${active ? 'on' : ''}`} onClick={onClick}>
+    <span className="co-head">{mark}<span className="co-name"><b>{name}</b><small>{maker}</small></span><span className={`st ${ready ? 'ok' : 'no'}`}>{status}</span></span>
+    {via && <span className="co-via">{via}</span>}
+  </button>
+}
 const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
 const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
 
@@ -64,7 +125,7 @@ const GLYPHS: Record<string, ReactNode> = {
 }
 const settingsIcon = (key: string) => GLYPHS[key] ?? <ConnectionIcon id={localToolIcon(key)} />
 
-type Selected = { kind: 'account' | 'model' | 'cli' | 'servers' | 'equation-reader' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'api-key' | 'zotero' | 'reference-files'; id: string }
+type Selected = { kind: 'company' | 'local' | 'equation-reader' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'zotero' | 'reference-files'; id: string }
 type Tone = 'ok' | 'no' | 'warn'
 
 // Why a service refused a new key, in plain words, with the HTTP code it answered. The readings follow each
@@ -504,12 +565,12 @@ function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinE
 
 // Turns the bare site addresses in a settings sentence (openalex.org, zotero.org/settings/keys) into links.
 function linkify(text: string): ReactNode {
-  return text.split(/(\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:org|com|uk|gov)(?:\/[\w\/#?=.-]*[\w\/])?)/).map((part, i) => i % 2
+  return text.split(/(\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:org|com|uk|gov|ai)(?:\/[\w\/#?=.-]*[\w\/])?)/).map((part, i) => i % 2
     ? <a key={i} href={`https://${part}`} target="_blank" rel="noopener noreferrer">{part}</a> : part)
 }
 
 function GeminiKeyPath() {
-  const [before, after] = t('Get a free key: sign in at {link}, create a key, paste it under Cloud models → Gemini.').split('{link}')
+  const [before, after] = t('Get a free key: sign in at {link}, create a key, paste it under Model connections → Gemini.').split('{link}')
   return <p className="local-tool-note">{before}<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a>{after}</p>
 }
 
@@ -546,10 +607,14 @@ function ReferenceFileImport() {
   </div>
 }
 
-// The sections of the Settings page that read connections (plan ST4–ST8 and the Cloud models placement of §2.2): Cloud
-// models, On this computer, Semantic search, the institutional access block given by the page, Scholarly sources and
-// Reference managers, with the connection sheet.
-export function ConnectionsTab({ dark, access, onConnections, openProvider }: { dark: boolean; access: ReactNode; onConnections?: (connections: Connections) => void; openProvider?: string }) {
+// The sections of the Settings page that read connections: on the Models tab the company cards (Model connections,
+// Other models, Local models), This computer, the page's Default models, Semantic search and Document reading; on the
+// Sources tab the institutional access block given by the page, Scholarly sources and Reference managers; and the
+// connection sheet every card and tile opens.
+export function ConnectionsTab({ dark, access, defaults, onConnections, openProvider }: {
+  dark: boolean; access: ReactNode; onConnections?: (connections: Connections) => void; openProvider?: string
+  defaults?: ReactNode  // the page's Default models block, placed after the model connections
+}) {
   const [data, setData] = useState<Connections | null>(null)
   const [error, setError] = useState('')
   const [selected, setSelected] = useState<Selected | null>(null)
@@ -573,6 +638,11 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const [signInRun, setSignInRun] = useState<{ tool: string; run: AccountSignIn } | null>(null)
   // The last answer to each keyless source's Test; shown only while its check's time is (the same check's answer).
   const [providerTests, setProviderTests] = useState<Record<string, ProviderTest>>({})
+  const [showOthers, setShowOthers] = useState(false)
+  // The local server address being typed (null: the saved one shows), and its save.
+  const [serverDraft, setServerDraft] = useState<string | null>(null)
+  const [serverBusy, setServerBusy] = useState(false)
+  const [serverError, setServerError] = useState('')
   const toast = useToast()
   // A later read wins: an answer to an earlier request that arrives after it is dropped. Semantic search reads and saves
   // share one version: a save moves it on, so a read started before or during the save never replaces the saved result.
@@ -689,25 +759,19 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const isActive = (kind: Selected['kind'], id: string) => open && !gone && selected?.kind === kind && selected.id === id
   const check = (label: string, value: string) => <div className="legacy-check" key={label}><span>{label}</span><strong>{value}</strong></div>
 
-  const modelEntries = Object.entries(data?.models ?? {})
-  const cloudModels = modelEntries.filter(([id]) => !ACCOUNT_TOOLS[id])
   const toolOf = (id: string) => tools?.tools.find(tool => tool.id === id)
-  const otherCli = (tools?.tools ?? []).filter(tool => tool.kind === 'cli' && tool.id !== 'codex' && tool.id !== 'claude_code' && tool.id !== 'copilot_cli' && tool.id !== 'gemini_cli')
-  const servers = (tools?.tools ?? []).filter(tool => SERVER_IDS.includes(tool.id))
   const zotero = toolOf('zotero')
   const machine = tools?.machine
   const providers = [...(data?.providers ?? [])].sort((a, b) => {
     const rank = (id: string) => { const i = PROVIDER_ORDER.indexOf(id); return i < 0 ? PROVIDER_ORDER.length : i }
     return rank(a.id) - rank(b.id)
   })
-  const openaiKey = credentials?.keys.find(k => k.env === 'OPENAI_API_KEY')
   const keyEntry = (env: string) => credentials?.keys.find(k => k.env === env)
 
   // A sheet whose subject is no longer listed closes; one still loading stays.
-  const gone = !!selected && (selected.kind === 'model' ? !!data && !data.models[selected.id]
-    : selected.kind === 'provider' ? !!data && !data.providers.some(p => p.id === selected.id)
-    : selected.kind === 'cli' || selected.kind === 'zotero' ? !!tools && !tools.tools.some(tool => tool.id === selected.id)
-    : selected.kind === 'account' ? !!data && !!tools && !data.models[selected.id] && !tools.tools.some(tool => tool.id === ACCOUNT_TOOLS[selected.id]?.tool)
+  const gone = !!selected && (selected.kind === 'provider' ? !!data && !data.providers.some(p => p.id === selected.id)
+    : selected.kind === 'zotero' ? !!tools && !tools.tools.some(tool => tool.id === selected.id)
+    : selected.kind === 'company' ? !COMPANIES.some(c => c.id === selected.id)
     : false)
 
   const modelStatus = (m: ModelHealth): [Tone, string] => m.ready ? ['ok', t('Ready')]
@@ -724,11 +788,6 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     if (tool) return tool.installed ? ['no', t('Installed')] : ['no', t('Not installed')]
     return (!data || !tools) && !error && !toolsError ? loading : unknown
   }
-  const serversStatus = (): [Tone, string] => {
-    if (!tools) return toolsError ? unknown : loading
-    if (servers.some(s => s.running)) return ['ok', t('Running')]
-    return servers.some(s => s.installed) ? ['no', t('Not running')] : ['no', t('Not installed')]
-  }
   const ocrStatus = (): [Tone, string] => !ocrTool ? (toolsError ? unknown : loading)
     : !ocrTool.available ? ['no', t('Not installed')] : !ocrTool.missing_languages.length ? ['ok', t('Installed')]
     : ['warn', t(ocrTool.languages.join() === 'eng' ? 'English only' : 'Languages missing')]
@@ -739,10 +798,59 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   const zoteroStatus = (): [Tone, string] => !zotero ? (tools ? ['no', t('Not set up')] : toolsError ? unknown : loading)
     : zotero.running && zotero.local_api ? ['ok', t('Local API on')] : zotero.web_configured ? ['ok', t('zotero.org set')]
     : zotero.installed ? ['no', t(zotero.running ? 'Local API off' : 'Not running')] : ['no', t('Not set up')]
-  const modelDesc = (id: string) => id === 'gemini' ? t('API key · models and semantic search') : id === 'ollama' ? t('This computer · no key') : compatConnectionKeys[id] ? t('API key · not tested with the real service yet') : t('API key')
   const tile = (key: string, kind: Selected['kind'], id: string, name: string, desc: string, [tone, status]: [Tone, string]) =>
     <Tile key={key} icon={settingsIcon(key)} name={name} desc={desc} tone={tone} status={status} active={isActive(kind, id)} onClick={() => show({ kind, id })} />
 
+  // A company card is ready when one of its connections says it is; the line under it says which, from the same state.
+  const companyState = (c: Company): { ready: boolean; status: string; via: string } => {
+    if (!data) return { ready: false, status: error ? t('Not known') : t('Checking…'), via: '' }
+    const acc = c.account ? data.models[c.account.conn] : undefined
+    const key = data.models[c.key.conn]
+    const a = !!acc?.ready, k = !!key?.ready
+    const via = a && k ? t('Connected with your account and an API key') : a ? t('Connected with your account') : k ? t('Connected with an API key')
+      : key?.key_configured ? t('API key saved · not ready') : acc?.signed_in ? t('Signed in · not ready')
+      : t(c.account ? 'Connect with your account or an API key' : 'Connect with an API key')
+    return { ready: a || k, status: t(a || k ? 'Ready' : 'Not connected'), via }
+  }
+  const companyCard = (c: Company, compact = false) => {
+    const state = companyState(c)
+    return <CompanyCard key={c.id} mark={companyMark(c.icon, c.mono)} name={c.name} maker={t(c.maker)} via={compact ? undefined : state.via} ready={state.ready}
+      status={state.status} active={isActive('company', c.id)} compact={compact} onClick={() => show({ kind: 'company', id: c.id })} />
+  }
+  // Older connections stay listed while their key is saved, so nobody loses one they set up.
+  const others = OTHER_COMPANIES.filter(c => !c.onlyWhenSet || !!data?.models[c.key.conn]?.key_configured || !!keyEntry(c.key.env)?.configured)
+  const othersReady = others.filter(c => companyState(c).ready).length
+
+  // Local models: Ollama is its own connection; LM Studio and other servers run research steps through the local server
+  // connection, whose saved address says which one it is.
+  const localServer = data?.models.local_server
+  const lmStudio = toolOf('lm_studio')
+  const lmStudioUrl = lmStudio?.endpoint ? `${lmStudio.endpoint}/v1` : null
+  const lmStudioInUse = !!lmStudioUrl && localServer?.base_url === lmStudioUrl
+  const localReady: Record<string, boolean> = {
+    ollama: !!data?.models.ollama?.ready,
+    lm_studio: lmStudioInUse && !!localServer?.ready,
+    local_server: !!localServer?.ready,
+  }
+  const localCards = [
+    { id: 'ollama', name: 'Ollama', hint: 'ollama.com', mark: companyMark('ollama', undefined) },
+    { id: 'lm_studio', name: 'LM Studio', hint: 'lmstudio.ai', mark: companyMark('lm_studio', undefined) },
+    { id: 'local_server', name: t('Another local server'), hint: localServer?.base_url ?? t('llama.cpp, Jan, LocalAI, vLLM · enter its address'), mark: companyMark(undefined, undefined, <Plus size={16} strokeWidth={1.8} />) },
+  ]
+  // Document reading (not models): the PDF tools in the mockup's order.
+  const docRows: { kind: Selected['kind']; id: string; name: string; what: string; status: [Tone, string] }[] = [
+    { kind: 'pdf-reader', id: 'pymupdf', name: 'PDF reader', what: 'Reads the text of every PDF', status: pdfReaderStatus() },
+    { kind: 'ocr-tool', id: 'tesseract', name: 'Scanned PDF reader (OCR)', what: 'Turns scanned pages into text', status: ocrStatus() },
+    { kind: 'equation-reader', id: 'marker', name: 'Equation reader', what: 'Reads equations as LaTeX', status: readerStatus() },
+  ]
+  const saveLocalServer = (url: string) => {
+    setServerBusy(true); setServerError('')
+    api.saveLocalServer(url).then(result => {
+      setData(current => current ? { ...current, models: { ...current.models, local_server: { ...result, connection: 'local_server' } } } : current)
+      setServerDraft(null)
+      toast('success', url ? t('Local server address saved.') : t('Local server address removed.'))
+    }).catch((e: Error) => setServerError(e.message)).finally(() => setServerBusy(false))
+  }
   // Semantic search rows (plan ST5): the mockup's five, one "Local model server" for Ollama and LM Studio. A row that
   // cannot be chosen says what it needs, from the options' own state. A choice is saved at once; choosing the row that
   // is only the default (nothing saved yet) saves it too.
@@ -796,134 +904,212 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
 
   // ---- the connection sheet ----
   const sel = selected
-  const accountId = sel?.kind === 'account' ? sel.id : null
-  const model = sel?.kind === 'model' ? data?.models[sel.id] : accountId ? data?.models[accountId] : undefined
+  const company = sel?.kind === 'company' ? COMPANIES.find(c => c.id === sel.id) : undefined
   const provider = sel?.kind === 'provider' ? data?.providers.find(p => p.id === sel.id) : undefined
-  const cliTool = sel?.kind === 'cli' ? toolOf(sel.id) : accountId ? toolOf(ACCOUNT_TOOLS[accountId].tool) : undefined
-  // The sheet title carries the same icon as the tile it opened from.
-  const sheetIconKey = !sel ? '' : sel.kind === 'api-key' ? 'openai' : sel.kind === 'ocr-tool' ? 'ocr' : sel.kind === 'pdf-reader' ? 'pymupdf' : sel.kind === 'reference-files' ? 'reference-files' : sel.id
+  // The sheet title carries the same mark as the card or tile it opened from.
+  const sheetIcon = !sel ? null
+    : company ? (company.icon ? <ConnectionIcon id={company.icon} /> : null)
+    : sel.kind === 'local' ? settingsIcon(sel.id === 'local_server' ? 'server' : sel.id)
+    : settingsIcon(sel.kind === 'ocr-tool' ? 'ocr' : sel.kind === 'pdf-reader' ? 'pymupdf' : sel.kind === 'reference-files' ? 'reference-files' : sel.id)
   const name = !sel ? ''
-    : sel.kind === 'account' ? ACCOUNT_TOOLS[sel.id]?.name ?? sel.id
-    : sel.kind === 'model' ? modelNames[sel.id] ?? sel.id
+    : company ? company.name
+    : sel.kind === 'local' ? (sel.id === 'local_server' ? t('Another local server') : localToolNames[sel.id] ?? sel.id)
     : sel.kind === 'provider' ? providerNames[sel.id] ?? sel.id
-    : sel.kind === 'api-key' ? t('OpenAI API')
     : sel.kind === 'equation-reader' ? t('Equation reader (Marker)')
     : sel.kind === 'ocr-tool' ? t('OCR (Tesseract)')
     : sel.kind === 'pdf-reader' ? t('PDF reader (PyMuPDF)')
-    : sel.kind === 'servers' ? t('Local model servers')
     : sel.kind === 'reference-files' ? t('BibTeX / RIS files')
     : sel.kind === 'zotero' ? 'Zotero'
-    : cliTool?.name || localToolNames[sel.id] || sel.id
+    : sel.id
   const checkedLine = (key: string) => checked[key] && !checkFailed[key] ? <span className="status-chip is-configured">{t('checked {time}', { time: clock(checked[key]) })}</span> : null
   // A failed check and the reason a connection is not ready share one card under the status line.
-  const dmeta = (key: string, [tone, status]: [Tone, string], extra?: ReactNode, reason?: ReactNode) => {
+  const reasonNotice = (key: string, reason?: ReactNode) => {
     const failed = checking !== key && checkFailed[key]
-    return <>
-      <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> {t('Checking…')}</span> : <span className={`status-chip is-status ${tone === 'warn' ? 'is-warning' : tone === 'no' ? 'is-configured' : ''}`}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
-      {(failed || reason) && <Notice tone="attention">
-        {failed && <p className="check-failed">{t('Could not check: {message}', { message: checkFailed[key] })}</p>}
-        {reason && <p>{reason}</p>}
-      </Notice>}
-    </>
+    return (failed || reason) && <Notice tone="attention">
+      {failed && <p className="check-failed">{t('Could not check: {message}', { message: checkFailed[key] })}</p>}
+      {reason && <p>{reason}</p>}
+    </Notice>
   }
-  const checkButton = (key: string, label: string, run: () => Promise<unknown>, disabled = false) =>
-    <button type="button" className="btn-pri" disabled={disabled || checking !== null} onClick={() => runCheck(key, run)}>{checking === key ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
+  const dmeta = (key: string, [tone, status]: [Tone, string], extra?: ReactNode, reason?: ReactNode) => <>
+    <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> {t('Checking…')}</span> : <span className={`status-chip is-status ${tone === 'warn' ? 'is-warning' : tone === 'no' ? 'is-configured' : ''}`}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
+    {reasonNotice(key, reason)}
+  </>
+  const checkButton = (key: string, label: string, run: () => Promise<unknown>, disabled = false, quiet = false) =>
+    <button type="button" className={quiet ? 'ghost' : 'btn-pri'} disabled={disabled || checking !== null} onClick={() => runCheck(key, run)}>{checking === key ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
   // The Codex home this backend uses (DEIXIS_CODEX_HOME or the data folder's), single-quoted for a POSIX shell.
   const codexLogin = data?.codex_home ? `CODEX_HOME='${data.codex_home.replaceAll("'", "'\\''")}' codex login` : null
-  const signInCommand = accountId === 'codex' ? codexLogin : accountId === 'claude' ? 'claude auth login' : accountId === 'copilot_cli' ? 'copilot login' : accountId === 'gemini_cli' ? 'gemini' : null
+  const signInCommandOf = (id: string) => id === 'codex' ? codexLogin : id === 'claude' ? 'claude auth login' : id === 'copilot_cli' ? 'copilot login' : id === 'gemini_cli' ? 'gemini' : null
   const copy = (text: string) => { writeClipboard(text).then(() => toast('success', t('Command copied.')), () => toast('error', t('Could not copy; select the command and copy it.'))) }
+  // A way's head: its label and the state of its own connection.
+  const wayHead = (label: string, [tone, status]: [Tone, string], key?: string, tag?: ReactNode) => <div className="way-head">
+    <h3>{label}</h3>{tag}
+    {key && checking === key ? <span className="spin" aria-label={t('Checking…')} /> : <span className={`st ${tone}`}>{status}</span>}
+    {key && checking !== key && checkedLine(key)}
+  </div>
 
-  const keyedSheet = (env: string, service: string, effect: string) => credentials && <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain}
-    label={t('API key')} service={service} removeEffect={effect} onSaved={reloadAfterKeyChange} />
-
-  let body: ReactNode = null
-  if (sel?.kind === 'account' && accountId) {
+  // The account way: sign in with the subscription account through the tool DEIXIS runs for it (Claude Code, Codex CLI,
+  // Copilot CLI, Gemini CLI); the tool's name and checks are in its details.
+  const accountWay = (c: Company) => {
+    const accountId = c.account!.conn
+    const model = data?.models[accountId]
+    const tool = toolOf(ACCOUNT_TOOLS[accountId].tool)
     const key = `account:${accountId}`
     const ownRun = signInRun?.tool === accountId ? signInRun.run : null
-    body = <>
-      {dmeta(key, accountStatus(accountId), undefined, model && !model.ready ? healthReasonText(model) : undefined)}
-      <p className="foot-note is-ink">{t(accountId === 'codex'
-        ? 'Uses the account you sign in with through Codex CLI. DEIXIS keeps this sign-in apart from your usual Codex one and stores no password.'
-        : accountId === 'gemini_cli' ? 'Uses the Google account you are signed in with in Gemini CLI. DEIXIS keeps no password or token of its own.'
-        : accountId === 'copilot_cli' ? 'Uses the GitHub account you are signed in with in Copilot CLI. DEIXIS keeps no password or token of its own.'
-        : 'Uses the account you are signed in with in Claude Code. DEIXIS keeps no password or token of its own.')}</p>
+    const signInCommand = signInCommandOf(accountId)
+    const status = accountStatus(accountId)
+    const toolName = ACCOUNT_TOOLS[accountId].name
+    return <section key="account" className={`way ${model?.ready ? 'is-on' : ''}`} aria-label={t(c.account!.label)}>
+      {wayHead(t(c.account!.label), status, key)}
+      <p className="way-desc">{t(c.account!.desc)}</p>
+      {reasonNotice(key, model && !model.ready ? healthReasonText(model) : undefined)}
       <div className="acts">
-        {checkButton(key, 'Test the connection', () => refreshModel(accountId), !model)}
-        {signInCommand && <button type="button" className="ghost" disabled={ownRun?.state === 'waiting'} onClick={() => startSignIn(accountId)}>
+        {signInCommand && <button type="button" className={model?.signed_in ? 'ghost' : 'btn-pri'} disabled={ownRun?.state === 'waiting'} onClick={() => startSignIn(accountId)}>
           {ownRun?.state === 'waiting' && <span className="spin" aria-hidden />}
           {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') ? t('Try again') : model?.signed_in ? t('Sign in again') : t('Sign in')}
         </button>}
+        {checkButton(key, 'Test the connection', () => refreshModel(accountId), !model, true)}
       </div>
       {ownRun?.state === 'waiting' && <p className="foot-note signin-wait" role="status">
         <span className="spin" aria-hidden />{t('A terminal window opened. Finish signing in there; this updates by itself.')}
       </p>}
       {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && ownRun.message && <p className="foot-note warn-t" role="alert">{ownRun.message}</p>}
-      {signInCommand && <button type="button" className="ghost" aria-expanded={signIn === accountId} onClick={() => setSignIn(signIn === accountId ? null : accountId)}><SquareTerminal aria-hidden />{t('Or run this in a terminal')}</button>}
+      {signInCommand && <button type="button" className="ghost way-terminal" aria-expanded={signIn === accountId} onClick={() => setSignIn(signIn === accountId ? null : accountId)}><SquareTerminal aria-hidden />{t('Or run this in a terminal')}</button>}
       {signIn === accountId && signInCommand && <div className="signin-cmd">
         <p className="foot-note">{t('Run this in a terminal, then test the connection:')}</p>
         <div className="cmd-row"><code className="field mono">{signInCommand}</code><button type="button" className="ghost" onClick={() => copy(signInCommand)}><Copy aria-hidden />{t('Copy')}</button></div>
       </div>}
-      {model && accountId === 'codex' && <>
-        <p className="foot-note">{t('Codex only writes text for DEIXIS: its tools, add-ons and instruction files are turned off.')}</p>
+      {tool && (!model || !tool.installed) && <LocalToolDetails key={tool.id} tool={tool} dark={dark} onChanged={reloadTools} />}
+      {!model && data && <p className="foot-note">{t('No model connection is set up for it in this version of DEIXIS; the tool on this computer is shown above.')}</p>}
+      {model && <details className="way-more">
+        <summary><ChevronRight size={14} aria-hidden />{t('Details')}</summary>
+        <p className="foot-note">{t(accountId === 'codex'
+          ? 'Uses the account you sign in with through Codex CLI. DEIXIS keeps this sign-in apart from your usual Codex one and stores no password.'
+          : accountId === 'gemini_cli' ? 'Uses the Google account you are signed in with in Gemini CLI. DEIXIS keeps no password or token of its own.'
+          : accountId === 'copilot_cli' ? 'Uses the GitHub account you are signed in with in Copilot CLI. DEIXIS keeps no password or token of its own.'
+          : 'Uses the account you are signed in with in Claude Code. DEIXIS keeps no password or token of its own.')}</p>
+        <p className="foot-note">{t(accountId === 'codex' ? 'Codex only writes text for DEIXIS: its tools, add-ons and instruction files are turned off.'
+          : accountId === 'claude' ? 'Claude Code only writes text for DEIXIS: its tools, add-ons and instruction files are turned off.'
+          : accountId === 'copilot_cli' ? 'Copilot CLI only writes text for DEIXIS: its tools, add-ons and instruction files are turned off. Each model uses your Copilot plan’s requests at the rate GitHub sets for it.'
+          : 'Gemini CLI only writes text for DEIXIS: DEIXIS starts it with its own settings, which turn off its tools, MCP servers, extensions and instruction files, and stops a step if the CLI reports any tool use.')}</p>
         <div className="connection-checks">
-          {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
-          {check(t('Signed in for DEIXIS'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
-          {check(t('Instruction files used'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
-          {check(t('Add-ons with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
-        </div>
-      </>}
-      {model && accountId === 'claude' && <>
-        <p className="foot-note">{t('Claude Code only writes text for DEIXIS: its tools, add-ons and instruction files are turned off.')}</p>
-        <div className="connection-checks">
-          {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
-          {check(t('Signed in to Claude Code'), model.signed_in ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('no'))}
-          {check(t('Instruction files used'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
-          {check(t('Add-ons with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
-        </div>
-      </>}
-      {model && accountId === 'copilot_cli' && <>
-        <p className="foot-note">{t('Copilot CLI only writes text for DEIXIS: its tools, add-ons and instruction files are turned off. Each model uses your Copilot plan’s requests at the rate GitHub sets for it.')}</p>
-        <div className="connection-checks">
-          {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
-          {check(t('Signed in to GitHub Copilot'), model.signed_in ? t('yes') : t('no'))}
-          {check(t('Instruction files used'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
-          {check(t('Add-ons with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
-        </div>
-      </>}
-      {model && accountId === 'gemini_cli' && <>
-        <p className="foot-note">{t('Gemini CLI only writes text for DEIXIS: DEIXIS starts it with its own settings, which turn off its tools, MCP servers, extensions and instruction files, and stops a step if the CLI reports any tool use.')}</p>
-        <div className="connection-checks">
-          {check('CLI', model.installed ? model.cli_version ?? t('installed') : t('not found'))}
-          {check(t('Signed in to Gemini CLI'), model.signed_in ? t('yes') : t('no'))}
+          {check(toolName, model.installed ? model.cli_version ?? t('installed') : t('not found'))}
+          {check(t('Signed in'), model.signed_in ? (model.plan_type ?? model.account_type ? t('yes · {plan}', { plan: model.plan_type ?? model.account_type ?? '' }) : t('yes')) : t('no'))}
+          {accountId !== 'gemini_cli' && check(t('Instruction files used'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
+          {accountId !== 'gemini_cli' && check(t('Add-ons with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
         </div>
         {model.catalogue === 'fixed' && <p className="foot-note">{t('Gemini CLI cannot list its models, so this list is fixed in DEIXIS. A step that another model answers is stopped.')}</p>}
-      </>}
-      {model && <ModelCatalogue model={model} />}
-      {!model && data && <p className="foot-note">{t('No model connection is set up for it in this version of DEIXIS; the tool on this computer is shown below.')}</p>}
-      {cliTool && (!model || !cliTool.installed) && <LocalToolDetails key={cliTool.id} tool={cliTool} dark={dark} onChanged={reloadTools} />}
-    </>
-  } else if (sel?.kind === 'model' && model) {
-    const env = sel.id === 'gemini' ? 'GEMINI_API_KEY' : sel.id === 'deepseek' ? 'DEEPSEEK_API_KEY' : compatConnectionKeys[sel.id]
-    const key = `model:${sel.id}`
-    body = <>
-      {dmeta(key, modelStatus(model), undefined, !model.ready && model.key_configured !== false ? healthReasonText(model) : undefined)}
-      {env && keyedSheet(env, modelNames[sel.id] ?? sel.id, t('This connection stops working until a new key is added.'))}
-      {sel.id === 'gemini' && <>
-        <div className="connection-checks">
+        <ModelCatalogue model={model} />
+      </details>}
+    </section>
+  }
+  // The key way: the key field of the company's API connection, with that connection's own state.
+  const keyWay = (c: Company) => {
+    const way = c.key
+    const model = data?.models[way.conn]
+    const entry = keyEntry(way.env)
+    const status: [Tone, string] = !data || !credentials ? loading : model?.ready ? ['ok', t('Ready')] : entry?.configured && model ? modelStatus(model) : ['no', t('No key entered')]
+    const effect = way.env === 'OPENAI_API_KEY' ? t('Research steps with this key, and semantic search with OpenAI, stop until a new key is added.')
+      : way.env === 'GEMINI_API_KEY' ? t('Research steps with this key, and semantic search with Gemini, stop until a new key is added.')
+      : t('This connection stops working until a new key is added.')
+    return <section key="key" className={`way ${model?.ready ? 'is-on' : ''}`} aria-label={t(way.label ?? 'With an API key')}>
+      {wayHead(t(way.label ?? 'With an API key'), status, undefined, c.keyFirst ? <span className="st rec">{t('Recommended')}</span> : undefined)}
+      <p className="way-desc">{linkify(t(way.desc ?? PAY_AS_YOU_GO, { site: t(way.site) }))}</p>
+      {entry?.configured && model && !model.ready && reasonNotice(`key:${way.conn}`, healthReasonText(model))}
+      {credentials && <KeyField key={way.env} env={way.env} entry={entry} keychain={credentials.keychain} label={t('Key')} service={way.service ?? c.name}
+        removeEffect={effect} onSaved={reloadAfterKeyChange} />}
+      {model && (model.models?.length || way.conn === 'gemini') ? <details className="way-more">
+        <summary><ChevronRight size={14} aria-hidden />{t('Details')}</summary>
+        {way.conn === 'gemini' && <div className="connection-checks">
           {/* From the saved semantic search provider, not from the key alone: another provider or Off may be chosen. */}
           {check(t('Semantic passage search'), !semantic ? t('not known') : semantic.provider === 'gemini' ? t('on · passage text is sent to Google')
             : model.key_configured ? t('off · another provider is chosen') : t('off'))}
-        </div>
-      </>}
-      {sel.id === 'ollama' && <p className="foot-note">{t('DEIXIS uses Ollama on this computer, so no key is needed. Open the Ollama app or run `ollama serve`, then download a model with `ollama pull`.')}</p>}
-      <div className="acts">{checkButton(key, 'Check again', () => refreshModel(sel.id))}</div>
-      <ModelCatalogue model={model} />
-    </>
-  } else if (sel?.kind === 'api-key') {
+        </div>}
+        <ModelCatalogue model={model} />
+      </details> : null}
+    </section>
+  }
+  const soonWay = (label: string) => <section key="soon" className="way is-soon" aria-label={t(label)}>
+    {wayHead(t(label), ['no', t('Coming soon')])}
+    <p className="way-desc">{t('Signing in with a subscription account is not available for this model yet.')}</p>
+  </section>
+  // A local server's address (read-only: each app's default), its tool state and the embedding model semantic search
+  // may use from it.
+  const serverBlock = (server: LocalTool) => <section className="server-block" aria-label={server.name || localToolNames[server.id]}>
+    {server.endpoint && <div className="lbl">{t('Server address')}<code className="field mono">{server.endpoint}</code></div>}
+    <LocalToolDetails tool={server} dark={dark} onChanged={reloadTools} refresh={false} />
+    {server.endpoint && <p className="foot-note">{t('The address is the one the app uses by default; this version of DEIXIS cannot change it.')}</p>}
+    {/* The same choice as the Local model server row under Semantic search: choosing a model saves it as the provider. */}
+    {(() => {
+      const choices = serverChoices.filter(c => c.provider === server.id)
+      const mine = serverChosen && chosen!.provider === server.id
+      return <label className="lbl">{t('Embedding model for semantic search')}
+        <select className="select server-embedding" disabled={saving || !choices.length} value={mine ? `${chosen!.provider}|${chosen!.model ?? ''}` : ''}
+          onChange={e => { if (!e.target.value) return; const [p, ...m] = e.target.value.split('|'); chooseSemantic(p as SemanticSearchProvider, m.join('|')) }}>
+          {!mine && <option value="">{t(choices.length ? 'Not used for semantic search' : 'No embedding model listed')}</option>}
+          {choices.map(c => <option key={`${c.provider}|${c.model}`} value={`${c.provider}|${c.model}`}>{c.label}</option>)}
+        </select>
+      </label>
+    })()}
+  </section>
+  const localCheck = (conn: string | null) => Promise.all([...(conn ? [refreshModel(conn)] : []), loadTools(true, true), loadSemantic(true)])
+  let body: ReactNode = null
+  if (company) {
+    const ways = company.keyFirst
+      ? [keyWay(company), company.account && accountWay(company)]
+      : [company.account ? accountWay(company) : company.soon ? soonWay(company.soon) : null, keyWay(company)]
     body = <>
-      {dmeta('api-key', openaiKey?.configured ? ['ok', t('Key configured')] : ['no', t('Not set up')])}
-      <p className="foot-note is-ink">{t('Used for semantic search only, when OpenAI embeddings are chosen.')}</p>
-      {keyedSheet('OPENAI_API_KEY', 'OpenAI', t('Semantic search with OpenAI stops until a new key is added.'))}
+      <p className="foot-note is-ink">{t(company.intro ?? (company.account ? 'Either way is enough. If you have a subscription, signing in with your account is the easiest.' : 'This model connects with an API key only for now.'))}</p>
+      {ways}
+      {company.account && <p className="foot-note">{t('If both are connected, each appears as its own choice in the model lists. A research uses the one you choose; DEIXIS does not switch between them by itself.')}</p>}
+    </>
+  } else if (sel?.kind === 'local' && sel.id === 'ollama') {
+    const model = data?.models.ollama
+    const tool = toolOf('ollama')
+    body = <>
+      {dmeta('local:ollama', model ? modelStatus(model) : data ? unknown : loading, undefined, model && !model.ready ? healthReasonText(model) : undefined)}
+      <p className="foot-note is-ink">{t('DEIXIS uses Ollama on this computer, so no key is needed. Open the Ollama app or run `ollama serve`, then download a model with `ollama pull`.')}</p>
+      <div className="acts">{checkButton('local:ollama', 'Test', () => localCheck(model ? 'ollama' : null))}</div>
+      {tool && serverBlock(tool)}
+      {model && <ModelCatalogue model={model} />}
+    </>
+  } else if (sel?.kind === 'local' && sel.id === 'lm_studio') {
+    const status: [Tone, string] = lmStudioInUse && localServer ? modelStatus(localServer) : !lmStudio ? (toolsError ? unknown : loading)
+      : lmStudio.running ? ['no', t('Running')] : lmStudio.installed ? ['no', t('Not running')] : ['no', t('Not installed')]
+    body = <>
+      {dmeta('local:lm_studio', status, undefined, lmStudioInUse && localServer && !localServer.ready ? healthReasonText(localServer) : undefined)}
+      <p className="foot-note is-ink">{t('LM Studio runs models on this computer. Research steps reach it through its local server address; semantic search can use one of its embedding models.')}</p>
+      {serverError && <Notice tone="error"><p>{serverError}</p></Notice>}
+      <div className="acts">
+        {checkButton('local:lm_studio', 'Test', () => localCheck(lmStudioInUse ? 'local_server' : null))}
+        {lmStudioUrl && lmStudio?.installed && !lmStudioInUse && <button type="button" className="ghost" disabled={serverBusy || !lmStudio?.running} onClick={() => saveLocalServer(lmStudioUrl)}
+          title={lmStudio?.running ? undefined : t('Start LM Studio’s local server first')}>{t('Use for research steps')}</button>}
+      </div>
+      {lmStudioInUse && <p className="foot-note">{t('Research steps use LM Studio at {address}.', { address: lmStudioUrl ?? '' })}</p>}
+      {lmStudio && serverBlock(lmStudio)}
+      {lmStudioInUse && localServer && <ModelCatalogue model={localServer} />}
+    </>
+  } else if (sel?.kind === 'local' && sel.id === 'local_server') {
+    const saved = localServer?.base_url ?? ''
+    const field = serverDraft ?? saved
+    const changed = field.trim().replace(/\/+$/, '') !== saved
+    body = <>
+      {dmeta('local:local_server', localServer ? (saved ? modelStatus(localServer) : ['no', t('No address entered')]) : data ? unknown : loading, undefined,
+        localServer && saved && !localServer.ready ? healthReasonText(localServer) : undefined)}
+      <p className="foot-note is-ink">{t('For llama.cpp, Jan, LocalAI, vLLM or any server on this computer that answers like the OpenAI API. Enter the address its models list is under, usually ending in /v1.')}</p>
+      <form className="key-box" onSubmit={e => { e.preventDefault(); if (changed && field.trim()) saveLocalServer(field.trim()) }}>
+        <label className="lbl" htmlFor="local-server-url">{t('Server address')}
+          <input id="local-server-url" className="field" type="url" inputMode="url" spellCheck={false} autoComplete="off" value={field} disabled={serverBusy}
+            placeholder="http://127.0.0.1:8080/v1" onChange={e => { setServerDraft(e.target.value); setServerError('') }} />
+        </label>
+        <p className="foot-note">{t('Only a server on this computer is accepted: 127.0.0.1, localhost or [::1]. No text leaves the computer.')}</p>
+        {serverError && <Notice tone="error"><p>{serverError}</p></Notice>}
+        <div className="acts">
+          <button type="submit" className="btn-pri" disabled={serverBusy || !changed || !field.trim()}>{serverBusy ? <span className="spin" aria-hidden /> : <Save aria-hidden />}{t(serverBusy ? 'Saving…' : 'Save and test')}</button>
+          {saved && <button type="button" className="ghost" disabled={serverBusy} onClick={() => saveLocalServer('')}>{t('Remove')}</button>}
+          {saved && checkButton('local:local_server', 'Test', () => refreshModel('local_server'), serverBusy, true)}
+        </div>
+      </form>
+      {localServer && saved && <ModelCatalogue model={localServer} />}
     </>
   } else if (sel?.kind === 'provider' && provider) {
     const env = providerKeyEnv[provider.id]
@@ -947,28 +1133,6 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
       {test && !test.contact_email_sent && <p className="foot-note">{t('Sent without a contact email; none is set in Profile.')}</p>}
       {MAILTO_PROVIDERS.has(provider.id) && <p className="foot-note"><a href="#/settings/profile">{t('Set the contact email in Profile')}</a></p>}
       <div className="connection-checks">{check(t('Used for'), providerUse[provider.id] ? t(providerUse[provider.id]) : providerRole(provider.role))}</div>
-    </>
-  } else if (sel?.kind === 'cli' && cliTool) {
-    body = <LocalToolDetails key={cliTool.id} tool={cliTool} dark={dark} onChanged={reloadTools} />
-  } else if (sel?.kind === 'servers') {
-    body = <>
-      {dmeta('servers', serversStatus())}
-      <p className="foot-note is-ink">{t('Ollama and LM Studio run models on this computer. Semantic search can use one of their embedding models, and Ollama models can also run research steps.')}</p>
-      {servers.map(server => <section key={server.id} className="server-block" aria-label={server.name || localToolNames[server.id]}>
-        <h3>{server.name || localToolNames[server.id]}</h3>
-        {server.endpoint && <div className="lbl">{t('Server address')}<code className="field mono">{server.endpoint}</code></div>}
-        <LocalToolDetails tool={server} dark={dark} onChanged={reloadTools} refresh={false} />
-      </section>)}
-      {servers.some(server => server.endpoint) && <p className="foot-note">{t('Each address is the one its app uses by default; this version of DEIXIS cannot change it.')}</p>}
-      {/* The same choice as the Local model server row on the page: choosing a model saves it as the semantic search provider. */}
-      <label className="lbl">{t('Embedding model for semantic search')}
-        <select className="select server-embedding" disabled={saving || !serverChoices.length} value={serverChosen ? `${chosen!.provider}|${chosen!.model ?? ''}` : ''}
-          onChange={e => { if (!e.target.value) return; const [p, ...m] = e.target.value.split('|'); chooseSemantic(p as SemanticSearchProvider, m.join('|')) }}>
-          {!serverChosen && <option value="">{t(serverChoices.length ? 'Not used for semantic search' : 'No embedding model listed')}</option>}
-          {serverChoices.map(c => <option key={`${c.provider}|${c.model}`} value={`${c.provider}|${c.model}`}>{c.label}</option>)}
-        </select>
-      </label>
-      <div className="acts">{checkButton('servers', 'Test', () => Promise.all([loadTools(true, true), loadSemantic(true)]))}</div>
     </>
   } else if (sel?.kind === 'equation-reader') {
     body = <>
@@ -1015,35 +1179,28 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
   return <>
     {error && <Notice tone="error">{error}</Notice>}
 
-    <div className="cloud-models" data-panel="models">
-    <h2>{t('Cloud models')}</h2>
-    <div className="grid3" data-group="cloud">
-      {cloudModels.map(([id, m]) => tile(id, 'model', id, modelNames[id] ?? id, modelDesc(id), modelStatus(m)))}
-      {tile('openai', 'api-key', 'OPENAI_API_KEY', t('OpenAI API'), t('API key · semantic search only'), !credentials ? loading : openaiKey?.configured ? ['ok', t('Key configured')] : ['no', t('Not set up')])}
-    </div>
-    </div>
+    <p className="models-intro" data-panel="models">{t('Connect the model that runs the research steps. If you have a subscription, sign in with your account; if not, enter an API key. One is enough.')}</p>
+    <section className="co-group" data-panel="models" aria-labelledby="model-connections">
+      <h2 id="model-connections" tabIndex={-1}>{t('Model connections')}</h2>
+      <div className="co-grid" data-group="main">{MAIN_COMPANIES.map(c => companyCard(c))}</div>
+    </section>
 
-    <h2 id="on-this-computer" tabIndex={-1} data-panel="models">{t('On this computer')}</h2>
-    {toolsError && <Notice tone="error" panel="models">{toolsError}</Notice>}
-    <div className="grid3" data-group="computer" data-panel="models">
-      {tile('codex', 'account', 'codex', 'Codex CLI', t('Account sign-in'), accountStatus('codex'))}
-      {tile('claude', 'account', 'claude', 'Claude Code', t('Account sign-in'), accountStatus('claude'))}
-      {tile('ocr', 'ocr-tool', 'tesseract', t('OCR (Tesseract)'), t('Scanned PDFs'), ocrStatus())}
-      {tile('servers', 'servers', 'servers', t('Local model servers'), t('Ollama or LM Studio · no account'), serversStatus())}
-      {tile('marker', 'equation-reader', 'marker', t('Equation reader (Marker)'), t('Reads equations as LaTeX'), readerStatus())}
-      {tile('pymupdf', 'pdf-reader', 'pymupdf', t('PDF reader (PyMuPDF)'), t('Reads the text of every PDF'), pdfReaderStatus())}
-    </div>
-    <div className="computer-more" data-panel="models">
-      {/* Copilot CLI (D24) and Gemini CLI (D23) run steps like Codex and Claude Code; the mockup's five tiles above stay as they are. */}
-      <div className="grid3" data-group="computer-accounts">
-        {tile('copilot_cli', 'account', 'copilot_cli', 'GitHub Copilot CLI', t('Account sign-in'), accountStatus('copilot_cli'))}
-        {tile('gemini_cli', 'account', 'gemini_cli', 'Gemini CLI', t('Google account sign-in'), accountStatus('gemini_cli'))}
-      </div>
-      {otherCli.length > 0 && <details className="planned-connections"><summary><ChevronRight size={14} aria-hidden />{t('Other command-line tools · {n}', { n: otherCli.length })}</summary>
-        <p className="foot-note">{t('Only Claude Code, Codex CLI, GitHub Copilot CLI and Gemini CLI run research steps. The other tools are detected only: finding one here does not mean DEIXIS supports it.')}</p>
-        <div className="grid3">{otherCli.map(tool => tile(tool.id, 'cli', tool.id, tool.name || localToolNames[tool.id] || tool.id, t('Detected only'), ['no', t(tool.job?.status === 'running' ? 'Installing…' : tool.installed ? 'Installed' : 'Not installed')]))}</div>
-      </details>}
-    </div>
+    <section className="co-group" data-panel="models" aria-labelledby="other-models">
+      <h2 id="other-models"><button type="button" className="co-fold" aria-expanded={showOthers} aria-controls="other-models-grid" onClick={() => setShowOthers(v => !v)}>
+        <ChevronRight size={16} aria-hidden />{t('Other models')}{' '}<span>{data ? t('· {n} · {ready} ready', { n: others.length, ready: othersReady }) : t('· {n}', { n: others.length })}</span>
+      </button></h2>
+      {showOthers && <div className="co-grid" id="other-models-grid" data-group="others">{others.map(c => companyCard(c, true))}</div>}
+    </section>
+
+    <section className="co-group" data-panel="models" aria-labelledby="local-models">
+      <h2 id="local-models">{t('Local models')}</h2>
+      <p className="co-note">{t('They run on this computer. No account or key is needed; Ollama and LM Studio are found by themselves while their app is open.')}</p>
+      {toolsError && <Notice tone="error">{toolsError}</Notice>}
+      <div className="co-grid" data-group="local">{localCards.map(card => <CompanyCard key={card.id} mark={card.mark} name={card.name} maker={card.hint} ready={localReady[card.id]}
+        status={!data ? (error ? t('Not known') : t('Checking…')) : t(localReady[card.id] ? 'Ready' : 'Not connected')} active={isActive('local', card.id)} compact
+        onClick={() => show({ kind: 'local', id: card.id })} />)}</div>
+      <p className="co-note">{t(LOCAL_TRY)}</p>
+    </section>
 
     {machine && (machine.chip || machine.memory_gb != null || machine.disk_free_gb != null) && <>
       <h2 data-panel="models">{t('This computer')}</h2>
@@ -1059,6 +1216,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     </>}
     <DataLocationCard dark={dark} />
 
+    {defaults}
     <h2 data-panel="models">{t('Semantic search')}</h2>
     <p className="foot-note" data-panel="models">{t('Ranks search results by meaning, not only by shared words. Changing the provider scores the passages again; earlier scores are kept.')}</p>
     {semError && <Notice tone="error" panel="models">{semError}</Notice>}
@@ -1091,6 +1249,16 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
     </div>
     {privacy && <p className="foot-note semantic-privacy" data-panel="models">{privacy}</p>}
 
+    <section className="doc-readers" data-panel="models" aria-labelledby="document-reading">
+      <div className="co-group-head"><h2 id="document-reading">{t('Document reading')}</h2><p className="co-note">{t('Not models: tools that take the text out of PDFs.')}</p></div>
+      <ul className="doc-list" data-group="documents">{docRows.map(row => {
+        const [tone, status] = row.status
+        return <li key={row.kind}><button type="button" className={isActive(row.kind, row.id) ? 'on' : ''} onClick={() => show({ kind: row.kind, id: row.id })}>
+          <span><b>{t(row.name)}</b><small>{t(row.what)}</small></span><span className={`st ${tone}`}>{status}</span>
+        </button></li>
+      })}</ul>
+    </section>
+
     {access}
 
     <h2 data-panel="sources">{t('Scholarly sources')}</h2>
@@ -1105,7 +1273,7 @@ export function ConnectionsTab({ dark, access, onConnections, openProvider }: { 
 
     <Sheet open={open && !gone} onOpenChange={setOpen}>
       <SheetContent className={`detail-sheet connection-sheet ${dark ? 'dark' : ''}`}>
-        <SheetHeader><SheetTitle>{(sheetIconKey && settingsIcon(sheetIconKey)) || <Link size={16} aria-hidden />}<span>{name}</span></SheetTitle><SheetDescription className="sr-only">{t('{name} details', { name })}</SheetDescription></SheetHeader>
+        <SheetHeader><SheetTitle>{sheetIcon}<span>{name}</span></SheetTitle><SheetDescription className="sr-only">{company ? `${company.name} · ${t(company.maker)}` : t('{name} details', { name })}</SheetDescription></SheetHeader>
         <div className="connection-body mk pad detail">{body}</div>
       </SheetContent>
     </Sheet>

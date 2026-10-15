@@ -357,7 +357,7 @@ const providerNames: Record<string, string> = {
 }
 export const providerName = (id: string) => providerNames[id] ?? id
 
-export const connectionNames: Record<string, string> = { codex: 'Codex', claude: 'Claude Code', copilot_cli: 'GitHub Copilot CLI', deepseek: 'DeepSeek', gemini: 'Gemini', gemini_cli: 'Gemini CLI', kimi: 'Kimi', grok: 'Grok', copilot: 'GitHub Copilot', glm: 'GLM', muse_spark: 'Muse Spark', muse_glimmer: 'Muse Glimmer', ollama: 'Ollama', qwen: 'Qwen', mistral: 'Mistral' }
+export const connectionNames: Record<string, string> = { codex: 'Codex', claude: 'Claude Code', copilot_cli: 'GitHub Copilot CLI', deepseek: 'DeepSeek', gemini: 'Gemini', gemini_cli: 'Gemini CLI', kimi: 'Kimi', grok: 'Grok', copilot: 'GitHub Copilot', glm: 'GLM', muse_spark: 'Muse Spark', muse_glimmer: 'Muse Glimmer', ollama: 'Ollama', qwen: 'Qwen', mistral: 'Mistral', anthropic: 'Anthropic API', openai: 'OpenAI API', openrouter: 'OpenRouter', mimo: 'Xiaomi MiMo', local_server: 'Local server' }
 export const connectionName = (id: string) => connectionNames[id] ?? id
 
 export const localToolNames: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex CLI', gemini_cli: 'Gemini CLI', qwen_code: 'Qwen Code', kimi_cli: 'Kimi CLI', mistral_vibe: 'Mistral Vibe', copilot_cli: 'GitHub Copilot CLI', opencode: 'OpenCode', aider: 'Aider', goose: 'Goose', amp: 'Amp', cline: 'Cline', ollama: 'Ollama', lm_studio: 'LM Studio', zotero: 'Zotero' }

@@ -15,9 +15,6 @@
 .status-chip::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
 .status-chip.is-configured{border-color:var(--strong-line);background:var(--raised-surface);color:var(--muted)}
 .command{display:block;margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:5px;font-size:11px;overflow-wrap:anywhere;color:var(--ink)}
-.planned-connections{margin-top:12px}
-.planned-connections summary{width:fit-content;cursor:pointer;color:var(--muted);font-size:12px;font-weight:600}
-.planned-connections summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
 /* Settings · Connections tab */
 .status-chip.is-warning{--chip-ink:var(--warn-ink);--chip-surface:var(--warn-surface);--chip-line:var(--warn-line)}

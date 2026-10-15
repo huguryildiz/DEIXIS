@@ -103,7 +103,7 @@ test.describe.serial('N: the built-in embedding model', () => {
       /^Gemini embeddings/, /^This computer · built-in/, /^OpenAI embeddings/, /^Local model server/, /^Off/])
     const gemini = option(page, 'Gemini embeddings')
     await expect(gemini).toContainText('Reads the question in any language. Needs a Google AI Studio key; a free key works.')
-    await expect(gemini).toContainText('Get a free key: sign in at aistudio.google.com/apikey, create a key, paste it under Cloud models → Gemini.')
+    await expect(gemini).toContainText('Get a free key: sign in at aistudio.google.com/apikey, create a key, paste it under Model connections → Gemini.')
     await expect(gemini.getByRole('link', { name: 'aistudio.google.com/apikey' })).toHaveAttribute('href', 'https://aistudio.google.com/apikey')
     await expect(semanticSection(page)).not.toContainText('Recommended')
     const builtin = option(page, 'This computer · built-in')

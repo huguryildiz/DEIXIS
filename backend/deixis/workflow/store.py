@@ -82,6 +82,10 @@ def _output_digest(raw_output: str) -> str:
         return f"text:{sha256_hex(raw_output)}"
 
 
+# The suffix an equation pass appends to the extraction it was laid on (D36, D40, D45).
+EQUATION_PASS = re.compile(r"\+(?:marker-|arxiv-latex-|mathpix-).*$")
+
+
 def _read_person_file(requests: dict[str, dict[str, Any]]) -> str | None:
     """The version whose person's file was read and still is as it was read, the newest such request's (slice 18b)."""
     held = [request for request in requests.values() if request["holds"]]
@@ -2858,28 +2862,44 @@ class Store:
         from deixis.workflow.decisions import DecisionStore  # decisions builds on this module
         return DecisionStore(self).staleness_key(research_id)
 
-    def asset_page_digest(self, asset_id: str | None) -> str | None:
+    def asset_page_digest(self, asset_id: str | None, extraction_version: str | None = None) -> str | None:
         """One file's page texts as its current extraction gives them, as one digest (slice 18b, decision 6).
 
         A plan freezes it and a reading checks it again, so a file re-extracted since reads as a different file. The
-        pages of a removed file are still digested: the caller checks separately that the file is in use."""
+        pages of a removed file are still digested: the caller checks separately that the file is in use. With
+        `extraction_version`, the pages of that extraction of the file instead of its current one."""
         if not asset_id:
             return None
-        row = self.conn.execute("SELECT extraction_version FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
-        key = (asset_id, row[0]) if row is not None and row[0] is not None else None
+        if extraction_version is None:
+            row = self.conn.execute("SELECT extraction_version FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
+            extraction_version = row[0] if row is not None else None
+        key = (asset_id, extraction_version) if extraction_version is not None else None
         if key is not None and key in self._page_digests:
             return self._page_digests[key]
         pages: dict[int, list[str]] = {}
         for row in self.conn.execute(
                 # Through the file's version, which `passages` is indexed by: by the file alone it scans every passage.
                 "SELECT p.physical_page, p.text FROM source_assets a JOIN passages p ON p.source_version_id ="
-                " a.source_version_id AND p.asset_id = a.id AND p.extraction_version IS a.extraction_version"
-                " WHERE a.id = ? AND p.kind = 'pdf_page' ORDER BY p.physical_page, p.rowid", (asset_id,)):
+                " a.source_version_id AND p.asset_id = a.id AND p.extraction_version IS ?"
+                " WHERE a.id = ? AND p.kind = 'pdf_page' ORDER BY p.physical_page, p.rowid", (extraction_version, asset_id)):
             pages.setdefault(row["physical_page"] or 0, []).append(row["text"])
         digest = sha256_hex({"asset_id": asset_id, "pages": [[page, " ".join(texts)] for page, texts in sorted(pages.items())]})
         if key is not None:
             self._page_digests[key] = digest
         return digest
+
+    def page_digest_holds(self, asset_id: str | None, digest: str | None) -> bool:
+        """Whether a file's pages are still those a reading saw (decision 6, D45): its current extraction, or the
+        extraction an equation pass (Marker, arXiv LaTeX, Mathpix) was laid on. An equation pass adds the equations and
+        keeps the page text, so a file read just before it is still the file that was read; OCR or a new base
+        extraction is a different file."""
+        if digest is None or not asset_id:
+            return False
+        if self.asset_page_digest(asset_id) == digest:
+            return True
+        row = self.conn.execute("SELECT extraction_version FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
+        base = EQUATION_PASS.sub("", row[0]) if row is not None and row[0] else None
+        return base is not None and base != row[0] and self.asset_page_digest(asset_id, base) == digest
 
     def person_files(self, research_id: str, work_id: str | None = None) -> dict[str, dict[str, Any]]:
         """The live reading request of each version that carries one, by version (slice 18b).
@@ -2901,7 +2921,7 @@ class Store:
                 (research_id, revision, criterion_hash, *((work_id,) if work_id is not None else ()))):
             request = dict(row)
             request["holds"] = (request["status"] == "read"
-                                and request["page_digest"] == self.asset_page_digest(request["asset_id"]))
+                                and self.page_digest_holds(request["asset_id"], request["page_digest"]))
             found[request["source_version_id"]] = request
         return found
 
@@ -2943,13 +2963,12 @@ class Store:
                 "  AND m.removed_at IS NULL"
                 f" WHERE q.research_id = ?{' AND v.work_id = ?' if work_id is not None else ''}",
                 (research_id, *((work_id,) if work_id is not None else ()))):
-            digest = self.asset_page_digest(row["asset_id"])
             if (row["scope_revision"], row["criterion_hash"]) == key:
-                read = row["status"] == "read" and row["page_digest"] == digest
+                read = row["status"] == "read" and self.page_digest_holds(row["asset_id"], row["page_digest"])
             else:
                 current = decisions.current(research_id, row["source_version_id"], "fulltext")
-                read = (current is not None and not decisions.is_stale(current, key)
-                        and self.decision_read_file(current) == (row["asset_id"], digest))
+                file = self.decision_read_file(current) if current is not None and not decisions.is_stale(current, key) else None
+                read = file is not None and file[0] == row["asset_id"] and self.page_digest_holds(*file)
             if not read:
                 unread.add(row["source_version_id"])
         return unread

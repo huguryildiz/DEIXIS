@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D45 — An equation pass after a reading leaves the person's file read
+Status: accepted · Date: 2026-10-16 · Writer: Claude
+Context: A person's file counts as read only while its pages are those the reading saw (slice 18b, decision 6). The equation reader (Marker, arXiv LaTeX, Mathpix) runs on its own after the reading and writes a new extraction of the same file, so on the owner's library copy 8 files the model had read showed as "Your PDF, not read yet" four minutes later and the answer left them out (16 Oct).
+Decision: `Store.page_digest_holds` accepts the digest of the current extraction or of the extraction the equation pass was laid on (the version with its `+marker-`, `+arxiv-latex-` or `+mathpix-` suffix removed, whose pages stay stored). Every check of decision 6 uses it. OCR and a new base extraction still make a different file.
+Limits: Tested with SYNTHETIC records (`test_an_equation_pass_after_the_reading_keeps_the_file_read`) and checked on the library copy (8 unread → 0); the reading saw the text without the equations, and nothing reads the file again for them.
+
 ## D44 — A work that late full text excluded stays out of later answers
 Status: accepted · Date: 2026-10-15 · Writer: Claude
 Context: Abstract screening can admit a work that its full text, read after the cutoff (late lane, D255 in the old log), finds does not meet the criterion or is out of scope. When every late PDF came out that way, no revision was written; the answer was marked out of date (`stale_selection`) and offered a new answer, but `fast_answer.input_plan` rebuilt the input from the cutoff and read the excluded work from its abstract again. That new answer then showed as current. The owner asked whether a PDF can lower a source's standing (15 Oct).

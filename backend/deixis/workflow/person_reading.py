@@ -148,7 +148,7 @@ def close_run(store: Store, run_id: str, ended: bool = False) -> int:
         for row in rows:
             in_use = store.conn.execute("SELECT 1 FROM source_assets WHERE id = ? AND source_version_id = ?"
                                         " AND removed_at IS NULL", (row["asset_id"], row["source_version_id"])).fetchone()
-            why = FILE_CHANGED if not in_use or store.asset_page_digest(row["asset_id"]) != row["page_digest"] else why_run
+            why = FILE_CHANGED if not in_use or not store.page_digest_holds(row["asset_id"], row["page_digest"]) else why_run
             store.conn.execute("UPDATE person_pdf_requests SET status = 'unread', unread_reason = ?, updated_at = ?"
                                " WHERE id = ?", (why, now(), row["id"]))
         _event(store, run["research_id"], "unread", [row["id"] for row in rows], run_id)
@@ -260,8 +260,8 @@ def files_view(store: Store, research_id: str, reading_on: bool) -> dict[str, An
         elif request is not None and request["status"] == "unread":
             row["state"] = "unread"
         elif (request is not None and changed_since_read(request)) or (
-                request is None and decision is not None
-                and store.decision_read_file(decision) not in (None, (asset["id"], store.asset_page_digest(asset["id"])))):
+                request is None and decision is not None and (file := store.decision_read_file(decision)) is not None
+                and not (file[0] == asset["id"] and store.page_digest_holds(*file))):
             # The file's pages are not those the reading quoted: nothing it found is shown as verified (decision 6).
             row["state"] = "changed"
         elif request is not None and request["status"] in ("waiting", "planned"):

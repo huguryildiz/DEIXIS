@@ -3398,7 +3398,7 @@ class ResearchFlow:
         if "asset_id" not in item:
             return True
         asset_id = self._current_asset(item["read_version"])
-        return asset_id == item["asset_id"] and self.store.asset_page_digest(asset_id) == item["page_digest"]
+        return asset_id == item["asset_id"] and self.store.page_digest_holds(asset_id, item["page_digest"])
 
     def _user_supplied_pdf(self, svid: str) -> bool:
         """A PDF the user added is the file they meant, and so is one a person confirmed from the queue (slice 16).

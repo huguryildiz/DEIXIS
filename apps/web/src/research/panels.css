@@ -244,6 +244,21 @@
 .pdf-ready-full>summary{display:flex;justify-content:space-between;gap:8px;padding:9px 12px;border-radius:10px;background:var(--sidebar-surface);list-style:none;cursor:pointer}
 .pdf-ready-full>summary::-webkit-details-marker{display:none}
 .pdf-ready-full[open]>summary{border-bottom:1px solid var(--line);border-radius:10px 10px 0 0}
+/* "Your PDF, not read yet": a warn-toned box; the reason is said once in the lede, each row carries a pill. */
+.pdf-unread{overflow:hidden;border-color:color-mix(in srgb,var(--tone-uncertain) 28%,var(--line));background:var(--paper)}
+.pdf-unread>h4{align-items:center;padding:11px 14px;border-bottom-color:color-mix(in srgb,var(--tone-uncertain) 20%,var(--line));background:var(--warn-surface);color:var(--warn-ink);font-size:13px}
+.pdf-unread-title{display:inline-flex;align-items:center;gap:8px}
+.pdf-unread-title>svg{color:var(--tone-uncertain)}
+.plist.pdf-unread>h4>.pdf-unread-count{min-width:22px;padding:1px 8px;border-radius:999px;background:color-mix(in srgb,var(--tone-uncertain) 14%,transparent);color:var(--warn-ink);font-size:12px;font-weight:600;text-align:center}
+.pdf-unread>.prow.pdf-ready-lede{padding:12px 14px;border-top:0;color:var(--ink-2);font-size:13px;line-height:1.6}
+.pdf-unread .pdf-ready-lede a{display:inline-flex;align-items:center;gap:4px;font-weight:500;text-decoration:none}
+.pdf-unread .pdf-ready-lede a:hover{text-decoration:underline}
+.pdf-unread .pdf-ready-rows>.prow{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:14px;padding:13px 14px;border-top:1px solid var(--line);transition:background-color .12s}
+.pdf-unread .pdf-ready-rows>.prow:hover{background:var(--sidebar-surface)}
+.pdf-unread .pdf-ready-title{font-family:var(--font-serif);font-size:15px;font-weight:500;line-height:1.35;color:var(--ink)}
+.pdf-unread .pdf-ready-head .source-byline>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pdf-unread .pdf-ready-side{padding-top:2px}
+.pdf-unread .pill.warn{white-space:nowrap}
 .pdf-ready-zotero .connection-icon{display:inline-flex}
 .pdf-ready-zotero .connection-icon svg{width:13px;height:13px}
 .pdfs-panel select{height:28px;max-width:100%;padding:0 8px;border:1px solid var(--strong-line);border-radius:7px;background:var(--field-surface,var(--paper));color:var(--ink);font:inherit;font-size:12.5px}

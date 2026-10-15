@@ -121,9 +121,11 @@ class Research:
     def outcome(self, svid):
         return self.ds.work_outcome(self.rid, self.lib.work_of(svid))
 
-    def reextract(self, svid, asset):
-        """The same file extracted again with different text, as a new extraction writes it (D45)."""
-        version = db.new_id("ext")
+    def reextract(self, svid, asset, suffix=None):
+        """The same file extracted again with different text, as a new extraction writes it (D45); with `suffix`, as an
+        equation pass laid on the current extraction writes it."""
+        version = db.new_id("ext") if suffix is None else self.store.conn.execute(
+            "SELECT extraction_version FROM source_assets WHERE id = ?", (asset,)).fetchone()[0] + suffix
         with db.transaction(self.store.conn):
             for page, text in self.store.page_texts(svid).items():
                 self.store._insert_passage(svid, asset, "pdf_page", page, None, None, None, version,
@@ -625,6 +627,21 @@ def test_a_re_extracted_read_file_loses_its_precedence(research):
     r.reextract(preprint, asset)
     assert r.outcome(published)["reason_code"] == "versions_disagree"
     assert r.store.answer_version(r.rid, published) == published == r.store.answer_versions(r.rid)[published]
+
+
+def test_an_equation_pass_after_the_reading_keeps_the_file_read(research):
+    # Marker laid equations on the file after the model read it (live, 15 Oct): the page text the reading saw is
+    # still there, so the file is still the one that was read (D45). OCR or a new base extraction is not.
+    r = research()
+    published, preprint = two_versions(r, code="criterion_absent")
+    asset, _ = r.attach(preprint)
+    r.drain()
+    r.reextract(preprint, asset, suffix="+marker-1.10.2-math-v2")
+    assert r.store.unread_person_versions(r.rid) == set()
+    assert r.store.person_files(r.rid)[preprint]["holds"]
+    assert r.store.answer_versions(r.rid)[published] == preprint
+    r.reextract(preprint, asset)
+    assert r.store.unread_person_versions(r.rid) == {preprint}
 
 
 def test_a_work_without_a_person_s_file_reads_as_before(research):

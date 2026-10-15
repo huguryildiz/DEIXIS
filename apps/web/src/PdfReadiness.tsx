@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Download, Pause, Play, ScanText, Upload } from 'lucide-react'
+import { ArrowRight, Download, FileClock, Pause, Play, ScanText, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, type OcrTool, type ResearchView, type Source, type ZoteroSource } from './api'
 import { ConnectionIcon } from './connectionIcons'
@@ -131,11 +131,14 @@ export function PdfReadiness({ researchId, view, busy, act, onUpload, ocrTool, o
       <Button className="btn-teal" disabled={busy || Boolean(current && collecting) || !missing.length} title={!missing.length ? t('Every included source has its PDF') : undefined} onClick={() => void collect()}><Download size={15} />{t('Collect open-access PDFs')}</Button>
       {hint}
     </div>
-    {unread.length > 0 && <section className="plist" aria-labelledby="pdf-unread-title">
-      <h4><span id="pdf-unread-title">{t('Your PDF, not read yet')}</span><span className="tnum">{unread.length}</span></h4>
+    {unread.length > 0 && <section className="plist pdf-unread" aria-labelledby="pdf-unread-title">
+      <h4><span className="pdf-unread-title"><FileClock size={14} aria-hidden /><span id="pdf-unread-title">{t('Your PDF, not read yet')}</span></span><span className="pdf-unread-count tnum">{unread.length}</span></h4>
       <UnreadNote n={unread.length} />
       <ul className="pdf-ready-rows" aria-label={t('Your PDF, not read yet')}>
-        {unread.map(record => <li key={record.source_version_id} className="prow"><RowHead record={record} facts={[{ text: t(UNREAD_FACT), tone: 'abstract' }]} /></li>)}
+        {unread.map(record => <li key={record.source_version_id} className="prow">
+          <RowHead record={record} facts={[]} />
+          <span className="pdf-ready-side"><span className="pill warn" title={t(UNREAD_FACT)}>{t('Not read yet')}</span></span>
+        </li>)}
       </ul>
     </section>}
     {needs.length > 0 && <section className="plist" aria-labelledby="pdf-needs-title">
@@ -187,7 +190,7 @@ const UNREAD_FACT = 'Your PDF is attached and not read yet: the answer leaves th
 function UnreadNote({ n }: { n: number }) {
   return <p className="prow pdf-ready-lede">
     {plural(n, '{n} source has your PDF, not read yet. The answer leaves it out until the model reads it.', '{n} sources have your PDF, not read yet. The answer leaves them out until the model reads them.')}{' '}
-    <a href="#person-files-title" onClick={e => { e.preventDefault(); document.getElementById('person-files-title')?.scrollIntoView({ block: 'start' }) }}>{t('See it in Your files')}</a>
+    <a href="#person-files-title" onClick={e => { e.preventDefault(); document.getElementById('person-files-title')?.scrollIntoView({ block: 'start' }) }}>{t('See it in Your files')}<ArrowRight size={13} aria-hidden /></a>
   </p>
 }
 

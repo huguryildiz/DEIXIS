@@ -21,6 +21,7 @@ from typing import Any
 from deixis.documents import identity
 from deixis.domain import proxy
 from deixis.domain.canonical import sha256_hex
+from deixis.domain.reason_codes import reason
 from deixis.domain.rules import RevisionConflict
 from deixis.workflow import fulltext, small_batch
 from deixis.workflow.decisions import DecisionStore
@@ -160,11 +161,47 @@ def work_view(store: Store, research_id: str, work_id: str, head: str, proposed:
             "versions_digest": _digest(work_id, ids)}
 
 
+def _frozen_list(store: Store, research_id: str, revision: int) -> dict[str, Any] | None:
+    """The ranked list the latest completed discovery run of this revision froze, or None (an older or attached run)."""
+    row = store.conn.execute(
+        "SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'discovery'"
+        " AND status = 'completed' ORDER BY created_at DESC, id DESC LIMIT 1", (research_id, revision)).fetchone()
+    step = store.existing_step(row["id"], small_batch.LIST_KEY) if row else None
+    return step["output"] if step and step["status"] == "succeeded" else None
+
+
+def _relevance(store: Store, research_id: str, listing: dict[str, Any] | None,
+               versions: list[str]) -> dict[str, Any]:
+    """Why the work is where it is: where the search found it, its place in the frozen ranking, and what the
+    abstract stage said. Read from stored rows only; a work the list does not hold has no origin or rank."""
+    rank = origin = None
+    if listing:
+        item = next((i for i in listing["items"] if set(i["versions"]) & set(versions)), None)
+        if item:
+            rank = item["position"]
+            manifest = listing["manifest"]
+            if item["user_priority"]:
+                origin = "user"
+            elif set(item["versions"]) & set(manifest.get("chain_heads") or []) \
+                    and not set(item["versions"]) & set(manifest.get("keyword_heads") or []):
+                origin = "chain"
+            else:
+                origin = "search"
+    decisions = DecisionStore(store)
+    held = [d for d in (decisions.current(research_id, svid, "abstract") for svid in versions) if d]
+    outcomes = [reason(d["reason_code"]).outcome for d in held]
+    abstract = (None if not outcomes else "candidate" if "candidate" in outcomes
+                else "out_of_scope" if all(o == "out_of_scope" for o in outcomes) else "unresolved")
+    return {"origin": origin, "rank": rank, "ranked": len(listing["items"]) if listing else None,
+            "abstract": abstract}
+
+
 def waiting_view(store: Store, research_id: str) -> dict[str, Any]:
     """The list in reading order: each work's record, why it waits, its links (through the proxy when one is set),
     the version "Find PDF" asks for, and its versions for a confirmation."""
     found, plans, revision = _rows(store, research_id)
     address = store.setting(proxy.SETTING)
+    listing = _frozen_list(store, research_id, revision)
     rows = []
     for row in found:
         view = work_view(store, research_id, row["work_id"], row["head"])
@@ -179,7 +216,8 @@ def waiting_view(store: Store, research_id: str) -> dict[str, Any]:
             "doi": doi, "links": {"doi": proxy.link(proxy.doi_url(doi), address), "landing": proxy.link(landing, address)},
             # "Find PDF" is today's action on a record with a DOI (D4): the head's, else another version's.
             "find_pdf_source_version_id": next((s["id"] for s in sources if s["doi"]), None),
-            "versions": view["versions"], "versions_digest": view["versions_digest"]})
+            "versions": view["versions"], "versions_digest": view["versions_digest"],
+            "relevance": _relevance(store, research_id, listing, [v["source_version_id"] for v in view["versions"]])})
     return {"rows": rows, "count": len(rows), "scope_revision": revision, "has_plan": bool(plans),
             # How many works a dropped file may be attached to (`candidate_works`): with no plan yet these are the
             # works the person included, so the panel opens its drop zone on this, not on `has_plan` alone.

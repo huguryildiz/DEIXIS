@@ -452,6 +452,8 @@ export type WaitingRow = {
   decided_by: string; place: number; title: string; year: number | null; venue: string | null; authors: string[]; doi: string | null
   links: { doi: string | null; landing: string | null }; find_pdf_source_version_id: string | null
   versions: WaitingVersion[]; versions_digest: string
+  // Why the work sits where it does: where the search found it, its place in the frozen ranking, the abstract verdict.
+  relevance?: { origin: 'search' | 'chain' | 'user' | null; rank: number | null; ranked: number | null; abstract: 'candidate' | 'unresolved' | 'out_of_scope' | null }
 }
 export type WaitingView = { rows: WaitingRow[]; count: number; scope_revision: number; has_plan: boolean; attach_candidates: number; via_proxy: boolean; order: 'fulltext_plan' | 'small_batch_plan'; files: PersonFiles }
 // A file the person added, and what became of it, read from the stored decisions and steps (slice 18b, decision 9).

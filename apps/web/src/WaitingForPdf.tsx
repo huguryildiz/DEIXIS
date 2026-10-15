@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNod
 import { BookOpen, CircleCheck, CircleDashed, CircleMinus, ExternalLink, FileSearch, Info, RotateCw, RotateCcw, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, ApiError, type AttachOutcome, type PersonFile, type PersonFiles, type ResearchView, type WaitingMatch, type WaitingRow, type WaitingView, type WaitingWork } from './api'
-import { fileRestoreNote, fileRestoreTone, pageLocator, personFileStateText, personUnreadText, queueAnswerLabels, queueAnswerOfCode, versionText, versionTones, waitingReasonText } from './labels'
+import { fileRestoreNote, fileRestoreTone, pageLocator, personFileStateText, personUnreadText, queueAnswerLabels, queueAnswerOfCode, versionText, versionTones, waitingReasonText, waitingRelevanceParts } from './labels'
 import { Notice } from './Notice'
 import { UploadedTextNote } from './SemanticNotes'
 import { useToast } from './Toast'
@@ -167,6 +167,9 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
             {(byline(row) || row.venue) && <small className="source-byline">
               {byline(row) && <span>{byline(row)}</span>}
               {row.venue && <span><em>{row.venue}</em></span>}
+            </small>}
+            {row.relevance && <small className={`waiting-relevance is-${row.relevance.abstract ?? 'unread'}`} aria-label={t('Why this work is here')}>
+              {waitingRelevanceParts(row.relevance).map(part => <span key={part}>{part}</span>)}
             </small>}
           </span>
           <span className="waiting-reason">{waitingReasonText(row.reason_code)}</span>

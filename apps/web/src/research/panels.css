@@ -249,6 +249,10 @@
 .waiting-rows .pdf-ready-head{grid-area:head;min-width:0;gap:2px}
 .waiting-rows .pdf-ready-title{font-size:13.5px;line-height:1.4;color:var(--ink)}
 .waiting-rows .pdf-ready-head .source-byline{margin-top:2px}
+.waiting-relevance{display:flex;flex-wrap:wrap;gap:2px 0;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.45}
+.waiting-relevance>span{white-space:nowrap}
+.waiting-relevance>span+span::before{content:'·';margin:0 6px;color:var(--faint)}
+.waiting-relevance.is-candidate>span:first-child{color:var(--tone-include);font-weight:500}
 .waiting-reason{grid-area:reason;display:inline-flex;align-items:center;gap:7px;min-width:0;color:var(--muted);font-size:12px;line-height:1.4}
 .waiting-reason::before{content:'';flex:none;width:6px;height:6px;border-radius:999px;background:var(--tone-uncertain)}
 .waiting-rows .waiting-actions{grid-area:acts;justify-content:flex-start;gap:6px}

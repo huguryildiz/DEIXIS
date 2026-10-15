@@ -98,6 +98,11 @@ def test_the_list_holds_the_works_no_route_found_a_pdf_for_in_the_plan_s_order(t
     assert row["find_pdf_source_version_id"] == records["W2"]
     assert [v["source_version_id"] for v in row["versions"]] == [records["W2"]] and row["versions_digest"]
     assert runs_after == runs_before  # reading the list opened nothing
+    # Each row says why it is here: its place in the frozen ranking, where the search found it, the abstract verdict.
+    for waiting_row in view["rows"]:
+        rel = waiting_row["relevance"]
+        assert isinstance(rel["rank"], int) and 1 <= rel["rank"] <= rel["ranked"]
+        assert rel["origin"] in ("search", "chain", "user") and rel["abstract"] in ("candidate", "unresolved", "out_of_scope")
 def test_links_open_through_the_proxy_once_one_is_set_and_a_bad_address_is_refused(tmp_path, monkeypatch):
     app, client, rid = sw_research(tmp_path, monkeypatch)
     try:

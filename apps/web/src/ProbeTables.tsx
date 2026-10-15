@@ -15,18 +15,24 @@ export function ArmReport({ counts, probes, modelTerms }: { counts: SourceCounts
   const arms = counts.arms
   if (!arms) return null
   const confirmedAnywhere = (probes?.verified ?? 0) > 0
+  // With one search source, "no other source's search found" is always every work, and the per-arm list repeats the
+  // source and chain rows until reading adds included counts; both are left out then.
+  const several = counts.sources.length > 1
+  const byArm = several || arms.read || confirmedAnywhere
   // The "only" universe is named on every line: a source row against the other sources' searches, the chain row
   // against every search (D93).
   const found = (arm: ArmCount, chain: boolean) => [
-    arms.read ? t(chain ? '{n} included by two agreeing runs, {only} not found by any search' : '{n} included by two agreeing runs, {only} no other source’s search found', { n: count(arm.included), only: count(arm.included_only) }) : '',
-    confirmedAnywhere ? t(chain ? '{n} you confirmed, {only} not found by any search' : '{n} you confirmed, {only} no other source’s search found', { n: count(arm.verified), only: count(arm.verified_only) }) : '',
+    arms.read ? t(chain ? '{n} included by two agreeing runs, {only} not found by any search' : several ? '{n} included by two agreeing runs, {only} no other source’s search found' : '{n} included by two agreeing runs', { n: count(arm.included), only: count(arm.included_only) }) : '',
+    confirmedAnywhere ? t(chain ? '{n} you confirmed, {only} not found by any search' : several ? '{n} you confirmed, {only} no other source’s search found' : '{n} you confirmed', { n: count(arm.verified), only: count(arm.verified_only) }) : '',
   ].filter(Boolean)
   return <div className="chat-arms">
     <ul className="chat-arm-list">{counts.sources.map((source, i) => {
       const arm = arms.sources[i]
       return <li key={source.provider_id}>
         <span className="chat-arm-source"><ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)}</span>
-        <span>{t('{works} works from {rows} records, {only} no other source’s search found', { works: count(source.works), rows: count(arm?.rows ?? 0), only: count(source.only) })}</span>
+        <span>{several
+          ? t('{works} works from {rows} records, {only} no other source’s search found', { works: count(source.works), rows: count(arm?.rows ?? 0), only: count(source.only) })
+          : t('{works} works from {rows} records', { works: count(source.works), rows: count(arm?.rows ?? 0) })}</span>
         {arm && found(arm, false).map(text => <span key={text}>{text}</span>)}
         {arm?.by_origin && <span className="chat-arm-origin">{t('By query: {list}', { list: arm.by_origin.map(o => t(arms.read ? '{origin} {works} works, {included} included' : '{origin} {works} works', { origin: t(queryOriginLabels[o.origin] ?? o.origin), works: count(o.works), included: count(o.included) })).join(' · ') })}</span>}
       </li>
@@ -39,7 +45,7 @@ export function ArmReport({ counts, probes, modelTerms }: { counts: SourceCounts
         {found(arms.chain, true).map(text => <span key={text}>{text}</span>)}
       </li></ul>
     </div>}
-    <p className="chat-arm-head">{t('By arm, in the order the run searched')}</p>
+    {byArm && <><p className="chat-arm-head">{t('By arm, in the order the run searched')}</p>
     <ul className="chat-arm-list">{arms.kinds.map(kind => <li key={kind.kind}>
       <span className="chat-arm-source">{t(armKindLabels[kind.kind])}</span>
       {kind.ran ? <>
@@ -47,9 +53,9 @@ export function ArmReport({ counts, probes, modelTerms }: { counts: SourceCounts
         {arms.read && <span>{t('{n} included, {new} new', { n: count(kind.included), new: count(kind.new_included) })}</span>}
         {confirmedAnywhere && <span>{t('{n} you confirmed, {new} new', { n: count(kind.verified), new: count(kind.new_verified) })}</span>}
       </> : <span>{t('not run')}</span>}
-    </li>)}</ul>
+    </li>)}</ul></>}
     {modelTerms && <p className="chat-arm-note">{t('Terms the model proposed on the card went into the keyword queries; their works are counted there.')}</p>}
-    {!arms.read && <p className="chat-arm-note">{t('Full text not read yet: included counts come with the reading.')}</p>}
+    {byArm && !arms.read && <p className="chat-arm-note">{t('Full text not read yet: included counts come with the reading.')}</p>}
   </div>
 }
 

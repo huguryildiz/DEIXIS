@@ -397,8 +397,15 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
 /** Geometry axes a pair may not compare because the position follows content the slice must change: a §2.3 copy
  *  change that wraps differently, or a §2.2 placement above the element. The other axes are still checked (±2 px). */
 // `widths`, when given, limits the exception to those viewport widths; every other width compares all axes.
+/** The sidebar access card on every surface that draws the sidebar foot (owner request 15 Oct 2026). */
+const SIDEBAR_ACCESS_PAIRS = ['home.access', 'research.access', 'drawer.access']
+
 export type GeometryException = { id: string; rule: string; pairs: string[]; axes: Array<'x' | 'y' | 'width' | 'height'>; widths?: number[]; note: string }
 export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
+  { id: 'sidebar-access-card', rule: 'owner request 15 Oct 2026 (premium access status in the sidebar foot)', pairs: SIDEBAR_ACCESS_PAIRS, axes: ['x', 'y', 'width', 'height'],
+    note: 'The access lines sit in a bordered card that, like the background-jobs card, reaches 2px past the foot padding on each side, so it starts 2px further left and is 4px wider; the padding and the wrapped Scopus line make it taller, and since the foot is pinned to the bottom its top sits higher.' },
+  { id: 'sidebar-access-card-above', rule: 'owner request 15 Oct 2026 (premium access status in the sidebar foot)', pairs: ['home.jobs-card', 'research.jobs-card', 'drawer.jobs-card'], axes: ['y'],
+    note: 'The background-jobs card sits right above the taller access card in the bottom-pinned foot, so its top is higher by the same amount. x, width and height are compared.' },
   { id: 'evidence-grid-card', rule: 'owner request 15 Oct 2026 (premium evidence table: the grid is a card inset 12px from the panel edge, roomier cells)', pairs: ['table.wrap', 'table.row-head', 'table.cell-box'], axes: ['x', 'width'],
     note: 'The grid sits in a bordered card 12px in from the panel edge, so the wrap, the row head and the first cell start 12px further right and the wrap is 24px narrower; the source column is 210px wide instead of 190. y and height are compared.' },
   { id: 'settings-roles-y', rule: 'PLACEMENTS settings-default-note (the note under "Default models")', pairs: ['settings.roles', 'settings.role'], axes: ['y'],
@@ -588,6 +595,10 @@ export const STYLE_EXCEPTIONS: Array<{ id: string; rule: string; pairs: string[]
   { id: 'menu-heading-case', rule: '.impeccable.md §2.4 (small caps labels are sentence-case text uppercased by CSS)', pairs: ['export-menu.headings', 'scope-menu.heading', 'models-menu.heading', 'depth-menu.heading', 'scope-menu.badge', 'add-menu.badge'], properties: ['text-transform'],
     note: 'The mockup writes REPORT, EVIDENCE TABLE, SOURCES, WORKFLOWS, MODELS, DEPTH and LATER in capitals; the app writes them in sentence case and uppercases them in CSS, so the Turkish labels case-fold correctly. The rendered text is the same.' },
   { id: 'palette-focus-line', rule: 'WCAG 2.4.7 (focus visible; a11y.spec X05 needs an indicator on every focus stop)', pairs: ['palette.field'], properties: ['box-shadow'],
+  { id: 'sidebar-access-card', rule: 'owner request 15 Oct 2026 (premium access status in the sidebar foot)', pairs: SIDEBAR_ACCESS_PAIRS,
+    properties: ['background-color', 'border-top-left-radius', 'border-top-right-radius', 'border-bottom-right-radius', 'border-bottom-left-radius', 'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+      'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'line-height', 'box-shadow'],
+    note: 'The access lines sit in a card like the background-jobs card: a hairline border, a 9px radius, --raised-surface, 8px/10px padding with room for a chevron on the right; each status dot has a soft halo ring of its tone; the lines wrap at line-height 1.45.' },
     note: 'While its input has focus the palette field draws a 2px accent line along its bottom edge (inset box-shadow); the mockup\'s field has no focus indicator.' },
 ]
 

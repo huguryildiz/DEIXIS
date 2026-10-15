@@ -181,18 +181,22 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .bgcard:hover{border-color:var(--strong-line);box-shadow:var(--shadow-float)}
 .bgcard b{display:flex;align-items:center;gap:7px;font-weight:500}
 .bgcard small{overflow:hidden;color:var(--muted);font-size:11.5px;white-space:nowrap;text-overflow:ellipsis}
-.access{display:grid;gap:2px;width:100%;color:var(--muted);font-size:12px;line-height:1.5;text-align:left}
+.access{position:relative;display:grid;gap:5px;width:100%;margin:0 -2px;padding:8px 26px 8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--raised-surface);color:var(--muted);font-size:12px;line-height:1.45;text-align:left;box-shadow:0 1px 1px rgb(16 24 40 / .03);transition:border-color .15s,background-color .15s}
+.access::after{content:"";position:absolute;top:50%;right:11px;width:5px;height:5px;border-top:1.4px solid var(--faint);border-right:1.4px solid var(--faint);transform:translateY(-50%) rotate(45deg);transition:transform .15s,border-color .15s}
 .access-retry{justify-self:start;margin:-2px 0 0 14px;padding:0;color:var(--muted);font-size:12px;line-height:1.5;text-decoration:underline;text-underline-offset:2px}
 .access-retry:hover{color:var(--ink)}
-.access:hover{color:var(--ink)}
-.access-label{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.access-line{display:flex;align-items:center;gap:7px;min-width:0}
-.access-line>span:last-child{min-width:0}
-.access-dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--tone-include)}
-.access-dot[data-tone=warn]{background:var(--tone-uncertain)}
-.access-dot[data-tone=unc]{background:var(--faint)}
+.access:hover{border-color:var(--strong-line);background:var(--hover-surface);color:var(--ink)}
+.access:hover::after{border-color:var(--muted);transform:translate(2px,-50%) rotate(45deg)}
+.access-label{overflow:hidden;color:var(--muted);font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;text-overflow:ellipsis}
+.access-line{display:flex;align-items:flex-start;gap:8px;min-width:0}
+.access-line>span:last-child{min-width:0;text-wrap:pretty}
+.access-line>.access-dot{margin-top:5.5px}
+.access-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--tone-include);box-shadow:0 0 0 3px color-mix(in srgb,var(--tone-include) 16%,transparent)}
+.access-dot[data-tone=warn]{background:var(--tone-uncertain);box-shadow:0 0 0 3px color-mix(in srgb,var(--tone-uncertain) 16%,transparent)}
+.access-dot[data-tone=unc]{background:var(--faint);box-shadow:0 0 0 3px color-mix(in srgb,var(--faint) 18%,transparent)}
 /* Checking: the dot becomes the small spinner (mockup: a 9px .spin). */
-.access-dot[data-tone=checking]{width:9px;height:9px;border:1.4px solid var(--accent-line);border-top-color:var(--accent);background:none;animation:spin-turn .8s linear infinite}
+.access-line>.access-dot[data-tone=checking]{margin-top:4px}
+.access-dot[data-tone=checking]{width:9px;height:9px;box-shadow:none;border:1.4px solid var(--accent-line);border-top-color:var(--accent);background:none;animation:spin-turn .8s linear infinite}
 @media(prefers-reduced-motion:reduce){.access-dot[data-tone=checking]{animation:none}}
 .user{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px}
 .avatar{display:grid;place-items:center;flex:none;width:24px;height:24px;border-radius:50%;background:var(--accent-deep);color:#fff;font-size:10px;font-weight:600}

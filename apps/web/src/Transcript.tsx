@@ -560,7 +560,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         const perSource = !arms && counts && (counts.counted
           ? counts.sources.length > 0 && <p className="chat-provider-totals">
             {counts.sources.map(source => <span key={source.provider_id}>
-              <ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)} {t('{works} works, {only} no other source’s search found', { works: source.works, only: source.only })}
+              <ConnectionIcon id={source.provider_id} />{providerName(source.provider_id)} {counts.sources.length > 1 ? t('{works} works, {only} no other source’s search found', { works: source.works, only: source.only }) : plural(source.works, '{n} work', '{n} works')}
             </span>)}</p>
           : <p className="chat-report-line"><span>{t('Works per source were not counted for this run')}</span></p>)
         // A single provider is already named on each query row below.
@@ -656,7 +656,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     answer: { role: 'Answer', connection: answer?.model?.connection ?? scope.model_connection, model: answer?.model?.resolved_model ?? answer?.model?.requested_model ?? scope.requested_model, effort: scope.reasoning_effort },
     review: run.kind === 'review' ? (ownerReview ? { role: 'Review', connection: ownerReview.card.requested_model.connection, model: ownerReview.card.requested_model.model, effort: ownerReview.card.requested_model.reasoning_effort } : undefined) : { role: 'Reviewer', connection: answer?.review?.model?.connection ?? view.reviewer.connection ?? scope.model_connection, model: answer?.review?.model?.resolved_model ?? view.reviewer.model, effort: view.reviewer.reasoning_effort },
   }
-  const providers = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(view.scope.search_providers.map(providerName))
+  // Once the run has searched, the plan line names the sources it actually asked, not every source in scope.
+  const searchedIds = [...new Set(searches.map(s => s.provider))]
+  const providers = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format((searchedIds.length ? searchedIds : view.scope.search_providers).map(providerName))
   // Worded as what happened, so it reads apart from the run strip's status next to the tabs.
   const outcome = active ? 'active' : run.status
   const reviewState = ownerReview?.card.state ?? run.status

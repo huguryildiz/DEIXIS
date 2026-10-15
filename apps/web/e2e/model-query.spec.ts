@@ -86,7 +86,7 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
     await shot(page, 'I-model-query-approved-desktop')
   })
 
-  test('with no full text read, the search phase says so instead of included counts, and the signals are too few to judge', async () => {
+  test('with no full text read, the search phase shows no included counts, and the signals are too few to judge', async () => {
     // Slice 19: this server reads no full text, so nothing is included yet and no count stands in for it.
     const toggle = page.getByRole('button', { name: /Ran search & screening/ })
     await expect(toggle).toBeVisible({ timeout: 60_000 })
@@ -94,8 +94,9 @@ test.describe.serial('I: the model-written search query of an sw discovery run',
     const turn = page.locator('.chat-turn').filter({ has: toggle })
     await turn.locator('.chat-step-line', { hasText: /^Searched / }).click()
     const arms = turn.locator('.chat-arms').first()
-    await expect(arms).toContainText('Full text not read yet: included counts come with the reading.')
-    await expect(arms).toContainText('no other source’s search found')
+    // One search source: no "no other source" clause and no per-arm list that would repeat the source and chain rows.
+    await expect(arms).not.toContainText('Full text not read yet')
+    await expect(arms).not.toContainText('no other source’s search found')
     await expect(arms).not.toContainText('included by two agreeing runs')
     await turn.locator('.chat-step-line', { hasText: /^Screened / }).click()
     await expect(turn).toContainText('Too few to judge a signal by (fewer than 30).')

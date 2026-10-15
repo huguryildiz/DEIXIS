@@ -87,6 +87,9 @@ the report UI acceptance case a cell citation whose later edit can be observed; 
 "[report-two-citations]" adds a same-source passage citation to each scripted cell claim.
 "[lineage]" serves six development-line works; "[lineage-reject]" adds a reverse mention and proposes it only
 in a second lineage run, after a selection change makes the target eligible again (synthetic directed-cycle refusal).
+"[citemap]" serves the six development-line works with B and C also citing one outside work, W979. Its record is
+answered by an OpenAlex id lookup only once the file `citemap-describe` exists in the data directory, so discovery's
+citation chain never takes it in and the citation map's reading run is the request that describes it (D42).
 "[candidate]" drives claim breakdown and a bounded claim search; "[candidate-access]" also returns a work
 without usable text. These markers affect only candidate-task calls and the distinct candidate query term.
 """
@@ -238,6 +241,28 @@ for index, record in enumerate(LINEAGE_REJECT_WORKS):
     record['doi'] = f'https://doi.org/10.5555/l7-reject-{letter.lower()}'
     record['best_oa_location']['pdf_url'] = f'https://fixture.example/l7-reject-{letter}.pdf'
     record['referenced_works'] = [ref.replace('W971', 'W981').replace('W972', 'W982') for ref in record['referenced_works']]
+
+# "[citemap]" (D42): the base works again, B and C citing the outside work W979 as well, so the citation map lists it
+# (two citers). W979's own record answers an id lookup only after `citemap-describe` exists (see `openalex`).
+CITEMAP_MODE = False
+CITEMAP_WORKS = deepcopy(LINEAGE_WORKS)
+for record in CITEMAP_WORKS[1:3]:
+    record['referenced_works'] = [*record['referenced_works'], 'https://openalex.org/W979']
+CITEMAP_OUTSIDE = work('W979', 'SYNTHETIC outside pulse spacing model cited by two sources', 'SYNTHETIC an earlier pulse spacing model.',
+                       'publishedVersion', doi='https://doi.org/10.5555/citemap-outside')
+CITEMAP_OUTSIDE.update(publication_year=2008, authorships=[{'author': {'display_name': 'Olga Outis'}}], referenced_works=[])
+
+
+def citemap_lookup(request: httpx.Request) -> httpx.Response | None:
+    """An id lookup (`filter=openalex:W…|W…`) answered with exactly the asked records, once `citemap-describe` exists."""
+    works_filter = request.url.params.get('filter', '')
+    if request.url.host != 'api.openalex.org' or not works_filter.startswith('openalex:'):
+        return None
+    if FLIP_DIR is None or not (FLIP_DIR / 'citemap-describe').exists():
+        return None
+    asked = set(works_filter.removeprefix('openalex:').split('|'))
+    found = [w for w in [*CITEMAP_WORKS, CITEMAP_OUTSIDE] if w['id'].rsplit('/', 1)[-1] in asked]
+    return httpx.Response(200, json={'meta': {'count': len(found)}, 'results': found})
 
 # Case O (slice 22, D104): one work whose PDF is an arXiv version. Its identity (DOI, landing and OA-PDF URLs) and its
 # record's `submittedVersion` label make it eligible under decision 1's table; its file's own address and rotated
@@ -529,8 +554,9 @@ def reset_markers() -> None:
     global PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE, NO_PASSAGES_MODE, JOBS_MODE
     RATE_LIMIT_MODE = LINEAGE_MODE = LINEAGE_REJECT_MODE = False
     PARITY_MODE = OA_QUOTA_MODE = OA_QUOTA_FIRST_MODE = NO_PASSAGES_MODE = JOBS_MODE = False
-    global OA_FLIP_MODE
+    global OA_FLIP_MODE, CITEMAP_MODE
     OA_FLIP_MODE = None
+    CITEMAP_MODE = False
     PROBE_MODE = None
     PARITY_ROLES.clear()
 
@@ -590,7 +616,9 @@ def openalex(request: httpx.Request) -> httpx.Response:
         if (OA_FLIP_MODE == "quota-net") != flipped:
             return spent_budget()
         raise httpx.ConnectError("SYNTHETIC: connection refused", request=request)
-    works = (LINEAGE_REJECT_WORKS if LINEAGE_REJECT_MODE else LINEAGE_WORKS if LINEAGE_MODE else QUEUE_WORKS if QUEUE_MODE
+    if CITEMAP_MODE and (answer := citemap_lookup(request)) is not None:
+        return answer
+    works = (CITEMAP_WORKS if CITEMAP_MODE else LINEAGE_REJECT_WORKS if LINEAGE_REJECT_MODE else LINEAGE_WORKS if LINEAGE_MODE else QUEUE_WORKS if QUEUE_MODE
              else NO_PASSAGE_WORKS if NO_PASSAGES_MODE else JOBS_WORKS if JOBS_MODE else WORKS)
     return httpx.Response(200, json={"meta": {"count": len(works)}, "results": works})
 
@@ -697,6 +725,8 @@ class ScriptedCodex:
         global LINEAGE_MODE, LINEAGE_REJECT_MODE
         LINEAGE_REJECT_MODE = '[lineage-reject]' in question
         LINEAGE_MODE = '[lineage]' in question or LINEAGE_REJECT_MODE
+        global CITEMAP_MODE
+        CITEMAP_MODE = '[citemap]' in question
         global PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE, NO_PASSAGES_MODE, JOBS_MODE
         PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE = "[parity]" in question, "[oa-quota]" in question, "[oa-quota-first]" in question
         global OA_FLIP_MODE

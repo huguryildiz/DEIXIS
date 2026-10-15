@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, PencilLine, Search, Sparkles, Table2, Trash2 } from 'lucide-react'
+import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, PencilLine, Search, Sparkles, Table2, Trash2, Waypoints } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, followupApi, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
@@ -39,6 +39,7 @@ import { useReviewSurface } from './review/useReviewSurface'
 import { CitationPanel, type CitationOpen } from './research/CitationPanel'
 import { ActivityPanel } from './research/ActivityPanel'
 import { PlanPanel } from './research/PlanPanel'
+import { CitationMap } from './citemap/CitationMap'
 import { TableCard } from './research/ArtifactsTab'
 import { Rail } from './research/Rail'
 import { useRailWide } from './research/railData'
@@ -769,10 +770,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
                   <FileText size={15} aria-hidden /><span>{t('Evidence report')}{item.report_version ? ` · V${item.report_version}` : ''}</span>
                 </DropdownMenuItem>)}
             </>}
-            {hasAcademic || answer ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuSeparator />
             {hasAcademic && view.search_runs.length > 0 && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !seedSearchReady} onClick={() => { void startDiscovery() }}><Search size={15} aria-hidden /><span>{t('Search again')}</span></DropdownMenuItem>}
             {/* The Search plan panel (S23b) from anywhere: its plan step exists only once the current revision searched. */}
             {hasAcademic && <DropdownMenuItem className="research-menu-placement" onClick={() => { rowChosen.current = true; openPanel('plan', { opener: moreButton.current }) }}><PencilLine size={15} aria-hidden /><span>{t('Search plan')}</span></DropdownMenuItem>}
+            {/* The citation map (D42): the works, their reference links and the often-cited works outside the research. */}
+            <DropdownMenuItem className="research-menu-placement" onClick={() => { rowChosen.current = true; openPanel('citemap', { opener: moreButton.current }) }}><Waypoints size={15} aria-hidden /><span>{t('Source citation map')}</span></DropdownMenuItem>
             {answer && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !(included || answersWithoutInclude)} onClick={() => { void startAnswer() }}><Sparkles size={15} aria-hidden /><span>{t('Generate a new answer')}</span></DropdownMenuItem>}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" disabled={busy || active} onClick={() => { void moveToTrash() }}><Trash2 size={15} aria-hidden />{t('Move to Trash')}</DropdownMenuItem>
@@ -897,6 +900,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <div className="workspace-pane-head"><div><h2 id="sources-heading">{t('Sources and access')}</h2><p>{t('Only included sources are used when the answer is written. Undecided and excluded sources are left out.')}</p></div>
         <div className="section-actions">
           {included > 0 && <ExportLinks researchId={id} sources="included" />}
+          <Button className="source-action sources-citemap" variant="outline" onClick={e => openPanel('citemap', { opener: e.currentTarget })}><Waypoints size={16} aria-hidden />{t('Source citation map')}</Button>
           {view.scope.source_scope !== 'academic' && <>
             <div className="source-add-actions">
               <Button className="source-action" variant="outline" disabled={busy} aria-expanded={zoteroOpen} onClick={() => setZoteroOpen(open => !open)}><ConnectionIcon id="zotero" />{t('Add from Zotero')}</Button>
@@ -949,6 +953,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <ActivityPanel researchId={id} eventCursor={view.last_event_id} events={events} />
     </StackPanel>
     {/* The Search plan panel (P42, S23b; D12): the stored plan of the revision it names, edited and searched again. */}
+    {/* The citation map (D42): opened from the ⋯ menu and the Sources panel; a source's "Open source" stacks Source details on it. */}
+    <StackPanel name="citemap" title={t('Source citation map')} icon={Waypoints} className="citemap-panel-box">
+      <CitationMap researchId={id} eventCursor={view.last_event_id} run={view.runs.find(r => r.kind === 'citation_map')}
+        onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} onChanged={async () => { await load(); onChanged() }} />
+    </StackPanel>
     <StackPanel name="plan" title={t('Search plan')} icon={PencilLine}>
       <PlanPanel researchId={id} view={view} busy={busy} searchReady={seedSearchReady} answerRevision={answer ? answer.scope_revision : null}
         seeds={seedChoice} onAnnounced={runId => announcedRuns.current.add(runId)} onChanged={async () => { await load(); onChanged() }} onClose={closePanels} />

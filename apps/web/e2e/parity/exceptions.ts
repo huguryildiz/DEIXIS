@@ -136,6 +136,8 @@ export const PLACEMENTS: Placement[] = [
     container: 'Thread: one 30px heading per run ("Ran search & screening", "Ran answer generation", time, duration) above that run\'s steps; the mockup draws one list for the whole sequence', app: '.chat-turn .chat-toggle' },
   { id: 'audit-sample', rule: '§2.2 (Q1)', slice: 'S14', container: 'Funnel panel, below the stages and the wider-net notice: the flow line and its PRISMA-S report, then "Audit sample" collapsed', app: '.funnel-panel .flow-block, details.funnel-more' },
   { id: 'development-lines', rule: '§2.2 (Q1)', slice: 'S15a', container: 'Evidence table ⋯ menu, after Add development columns: "Development lines" opens its panel on the table (Back returns)', app: '.table-menu-placement' },
+  { id: 'citation-map', rule: '§2.2 (Q1) and the owner-approved citation map mockup (.local/design/citation-map-mockup, 15 Oct 2026)', slice: 'citemap-4',
+    container: 'Topbar ⋯ menu, after Search plan: "Source citation map" (a .research-menu-placement row) opens the citation map panel (D42, URL segment citemap); the Sources panel\'s actions under the table, after the included export links, hold the same entry. v24 has no citation map; its panel follows its own mockup', app: '.sources-citemap' },
   // S15a: every live table, cell and report feature stays (§0 rule 5).
   { id: 'table-live-parts', rule: '§0 rule 5 (every live feature keeps working)', slice: 'S15a',
     container: 'Evidence table: the run line, the failed-rows notice, Add rows and the table picker when there is more than one table; the ⋯ menu also holds Save as template, Remove all columns, Add rows, Add development columns and Move to Trash; the foot counts rows, columns, cells and proposals', app: '.table-panel > .table-counts' },

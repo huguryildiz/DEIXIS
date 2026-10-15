@@ -1,0 +1,139 @@
+/* The citation map panel (CitationMap.tsx), from the owner-approved mockup .local/design/citation-map-mockup: summary,
+   plan row and quota band, chips with the layout switch and search, the map with its detail side, two ranked lists and
+   the foot notes. Mockup tokens map to the editorial ones (--teal → --accent, --ok → --tone-include, --warn →
+   --tone-uncertain, --line-2 → --strong-line, --chip → --selected-surface, --edge → --strong-line); mockup --faint text is
+   --muted, and amber text on the warn tint is --warn-ink (.impeccable.md §2.1). The panel's width, not the window's,
+   decides when the detail side moves under the map. */
+.split-panel-content.citemap-panel-box{padding:22px 24px 64px;font-size:14px;line-height:1.5}
+.citemap{container:citemap/inline-size;display:grid;gap:18px;max-width:1180px;margin-inline:auto;min-width:0}
+.citemap .tnum{font-variant-numeric:tabular-nums}
+
+.citemap .cm-sum{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px}
+.citemap .cm-sum h2{margin:0;color:var(--ink);font-size:17px;font-weight:600;letter-spacing:-.1px;text-wrap:balance}
+.mk.citemap .cm-sum p{margin:0;color:var(--muted);font-size:13px}
+.citemap .cm-note{padding:10px 12px;border-radius:9px;background:var(--accent-tint);color:var(--ink-2);font-size:13px}
+.citemap .cm-empty{color:var(--muted);font-size:13px}
+
+/* The plan row (lineage's "plan, then Start"): what a reading run would ask, and its button. */
+.citemap .cm-plan{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--sidebar-surface);font-size:13px}
+.mk.citemap .cm-plan p{flex:1;min-width:0;margin:0;color:var(--ink-2)}
+.citemap .cm-plan-free{color:var(--muted)}
+.citemap .cm-banner{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:9px;background:var(--warn-surface);color:var(--warn-ink);font-size:13px}
+.citemap .cm-banner>svg{flex:none;margin-top:2px}
+.mk.citemap .cm-banner p{flex:1;margin:0;color:var(--ink-2)}
+.citemap .cm-banner b{color:var(--warn-ink);font-weight:600}
+.citemap .spin{margin-top:0}
+
+.citemap .cm-ctrl{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.citemap .chipf{display:inline-flex;align-items:center;gap:7px;padding:3px 10px 3px 9px;border:1px solid var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:12.5px;line-height:1.5;cursor:pointer}
+.citemap .chipf[aria-pressed="false"]{border-style:dashed;color:var(--muted)}
+.citemap .chipf[aria-pressed="false"] .dot{opacity:.35}
+.citemap .chipf:hover{background:var(--hover-surface)}
+.citemap .dot{display:inline-block;flex:none;width:9px;height:9px;border-radius:50%}
+.citemap .d-included{background:var(--tone-include)}
+.citemap .d-pending{background:var(--tone-uncertain)}
+.citemap .d-excluded{border:1.5px solid var(--faint);background:transparent}
+.citemap .d-outside{border:1.5px dashed var(--accent);background:transparent}
+.citemap .cm-more{display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:6px;color:var(--muted);font-size:12.5px}
+.citemap .cm-more .link{font-size:12.5px}
+.citemap .sp{flex:1}
+.citemap .seg{display:inline-flex;overflow:hidden;border:1px solid var(--strong-line);border-radius:7px}
+.citemap .seg button{padding:4px 10px;color:var(--muted);font-size:12.5px;line-height:1.5;cursor:pointer}
+.citemap .seg button[aria-pressed="true"]{background:var(--selected-surface);color:var(--ink);font-weight:500}
+.citemap .search{display:flex;align-items:center;gap:6px;min-width:0;padding:4px 9px;border:1px solid var(--strong-line);border-radius:7px;color:var(--faint)}
+.citemap .search input{width:170px;min-width:0;border:0;outline:0;background:transparent;color:var(--ink);font:inherit;font-size:13px}
+.citemap .search input::placeholder{color:var(--muted)}
+.citemap .search:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+
+/* The stage: the map, then the detail side (one column when the panel is narrow). */
+.citemap .cm-stage{display:grid;grid-template-columns:minmax(0,1fr) 320px;overflow:hidden;border:1px solid var(--line);border-radius:12px}
+.citemap .cm-mapbox{position:relative;overflow-x:auto;border-right:1px solid var(--line);background:var(--paper)}
+.citemap .cm-mapbox svg{display:block;width:100%;height:auto}
+.citemap .cm-none{padding:40px;color:var(--muted)}
+.citemap .cm-legend{position:sticky;left:0;display:flex;flex-wrap:wrap;gap:4px 14px;padding:0 14px 12px;color:var(--muted);font-size:11.5px}
+.citemap .cm-legend span{display:inline-flex;align-items:center;gap:6px}
+.citemap .cm-legend i{display:inline-block;width:20px;border-top:1.6px solid var(--accent)}
+.citemap .cm-legend i.dash{border-top-style:dashed}
+.citemap .cm-noref-key{display:inline-block;width:11px;height:11px;border:1.4px dotted var(--tone-uncertain);border-radius:50%}
+
+.citemap svg .axis text{fill:var(--muted);font-family:var(--font-sans);font-size:11px}
+.citemap svg .axis line{stroke:var(--line);stroke-width:1}
+.citemap svg .e{fill:none;stroke:var(--strong-line);stroke-width:1.1;transition:opacity .15s}
+.citemap svg .e.out{stroke:var(--accent);stroke-width:1.8}
+.citemap svg .e.in{stroke:var(--accent);stroke-width:1.6;stroke-dasharray:4 3}
+.citemap svg .e.dim{opacity:.18}
+.citemap svg .n{cursor:pointer;transition:opacity .15s}
+.citemap svg .n.dim{opacity:.22}
+.citemap svg .n circle.c{stroke:var(--paper);stroke-width:2}
+.citemap svg .n.included circle.c{fill:var(--tone-include)}
+.citemap svg .n.pending circle.c{fill:var(--tone-uncertain)}
+.citemap svg .n.excluded circle.c{fill:var(--paper);stroke:var(--faint);stroke-width:1.6}
+.citemap svg .n.outside circle.c{fill:var(--paper);stroke:var(--accent);stroke-width:1.6;stroke-dasharray:3 2.5}
+.citemap svg .n .ring{fill:none;stroke:var(--accent);stroke-width:2;opacity:0}
+.citemap svg .n.sel .ring{opacity:1}
+.citemap svg .n.hit .ring{opacity:.6;stroke-dasharray:2 2}
+.citemap svg .n .noref{fill:none;stroke:var(--tone-uncertain);stroke-width:1.4;stroke-dasharray:1.5 2.5}
+.citemap svg .n text{fill:var(--ink-2);font-family:var(--font-sans);font-size:11.5px;paint-order:stroke;stroke:var(--paper);stroke-width:3px;stroke-linejoin:round}
+.citemap svg .n.sel text{fill:var(--ink);font-weight:600}
+.citemap svg .n:focus{outline:none}
+.citemap svg .n:focus-visible .ring{opacity:1}
+.citemap svg .arrow{fill:var(--strong-line)}
+.citemap svg .arrow.a-on{fill:var(--accent)}
+
+/* The detail side: state pill, title, authors and facts, the two counts, actions, then the two lists. */
+.citemap .cm-detail{display:grid;align-content:start;gap:12px;min-width:0;max-height:560px;overflow:auto;padding:16px}
+.citemap .cm-detail>*{min-width:0}
+.citemap .cm-pill{display:inline-flex;align-items:center;gap:6px;justify-self:start;padding:1px 9px 1px 7px;border-radius:999px;background:var(--selected-surface);color:var(--ink-2);font-size:12px}
+.mk.citemap .cm-detail h3{margin:0;color:var(--ink);font-size:16px;font-weight:600;line-height:1.35;text-wrap:balance;overflow-wrap:anywhere}
+.mk.citemap .meta{margin:0;color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.mk.citemap .cm-warn{color:var(--tone-uncertain)}
+.citemap .cm-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.citemap .cm-stats div{padding:7px 10px;border:1px solid var(--line);border-radius:8px}
+.citemap .cm-stats b{display:block;color:var(--ink);font-size:18px;font-weight:600}
+.citemap .cm-stats small{color:var(--muted);font-size:12px}
+.citemap .acts .ghost{border-radius:7px;text-decoration:none}
+.citemap .acts .connection-icon{width:14px;height:14px}
+.mk.citemap .cm-lst h4{margin:4px 0;color:var(--muted);font-size:12px;font-weight:500}
+.citemap .cm-lst button{display:flex;align-items:baseline;gap:8px;width:100%;padding:5px 6px;border-radius:6px;color:var(--ink-2);font-size:12.5px;text-align:left;cursor:pointer}
+.citemap .cm-lst button:hover{background:var(--hover-surface)}
+.citemap .cm-lst button .dot{transform:translateY(1px)}
+.citemap .cm-lst button span:last-child{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mk.citemap .cm-lst p{margin:2px 6px;color:var(--muted);font-size:12.5px}
+
+/* The two ranked lists under the map. */
+.citemap .cm-cols{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+.citemap .cm-cols section{min-width:0}
+.mk.citemap .cm-cols h3{margin:0 0 4px;font-size:14px;font-weight:600}
+.mk.citemap .cm-cols .sub{margin:0 0 10px;color:var(--muted);font-size:12.5px}
+.citemap .cm-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.citemap .cm-row:first-of-type{border-top:0}
+.citemap .cm-row .k{padding:0 6px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-size:12px;white-space:nowrap}
+.citemap .cm-row .t{min-width:0}
+.citemap .cm-row .t button{display:block;max-width:100%;overflow:hidden;color:var(--ink);font-size:13px;text-align:left;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
+.citemap .cm-row .t button:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.citemap .cm-row .t small{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;color:var(--muted);font-size:12px}
+.citemap .bar{display:inline-block;height:4px;border-radius:2px;background:var(--accent-line)}
+.citemap .cm-row .ghost{padding:3px 9px;font-size:12.5px}
+.citemap .cm-row .done{display:inline-flex;align-items:center;gap:5px;color:var(--tone-include);font-size:12.5px}
+
+.citemap .cm-foot{display:grid;gap:2px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-size:12.5px}
+.mk.citemap .cm-foot p{margin:0;color:var(--muted);font-size:12.5px}
+
+.citemap :is(.chipf,.seg button,.cm-lst button,.cm-row .t button,.ghost,.btn-pri,.link):focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+@container citemap (max-width: 1000px){
+  .citemap .cm-stage{grid-template-columns:1fr}
+  .citemap .cm-mapbox{border-right:0;border-bottom:1px solid var(--line)}
+  .citemap .cm-detail{max-height:none}
+}
+@container citemap (max-width: 700px){
+  .citemap .cm-cols{grid-template-columns:1fr}
+  .citemap .search input{width:120px}
+}
+@media (max-width: 820px){
+  .split-panel-content.citemap-panel-box{padding:16px 16px 90px}
+}
+@media (prefers-reduced-motion: reduce){
+  .citemap svg .e,.citemap svg .n{transition:none}
+  .citemap .spin{animation:none}
+}

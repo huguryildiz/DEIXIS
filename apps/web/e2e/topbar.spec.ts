@@ -128,7 +128,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     const rows = (await page.getByRole('menuitem').allTextContents()).map(text => text.replace(/ \d+/, ''))
     expect(rows).toEqual(['Rename', 'ActivityRuns, status, time and model calls', 'CandidatesClaims you test against the literature',
       'Follow-upNew works after this research ran',
-      'Search again', 'Search plan', 'Generate a new answer', 'Move to Trash'])
+      'Search again', 'Search plan', 'Source citation map', 'Generate a new answer', 'Move to Trash'])
     await shot(page, 's8-research-menu')
     await page.keyboard.press('Escape')
     for (const [row, title] of [[/^Activity/, 'Activity'], [/^Candidates/, 'Candidates'], [/^Follow-up/, 'Follow-up']] as const) {

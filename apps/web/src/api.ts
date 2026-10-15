@@ -183,7 +183,7 @@ export type Step = {
     // The full-text reading plan: the works it froze.
     works?: unknown[] } | null
 }
-export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck'
+export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck' | 'citation_map'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
@@ -1031,6 +1031,22 @@ export type ReviewDetail = ReviewCard & {
 }
 export type ReviewApplyResult = { decision: ReviewDecision; revision: { id: string }; applied_matches_suggestion: boolean }
 
+// The citation map (D42, workflow/citation_map.py): a link means "the stored OpenAlex reference list of `from` holds `to`".
+export type CitationMapNode = {
+  work_id: string; source_version_id: string; openalex_ids: string[]; title: string; authors: string[]; authors_short: string
+  year: number | null; venue: string | null; doi: string | null; cited_by_count: number | null
+  state: 'included' | 'pending' | 'excluded'; references_read: boolean
+}
+export type CitationMapOutside = {
+  openalex_id: string; cited_by: string[]; in_count: number; source_version_id: string | null; title: string | null; authors: string[]
+  authors_short: string; year: number | null; venue: string | null; doi: string | null; cited_by_count: number | null; removed_from_research: boolean
+}
+export type CitationMap = {
+  nodes: CitationMapNode[]; edges: { from: string; to: string }[]; outside: CitationMapOutside[]
+  counts: { works: number; edges: number; unread_references: number; no_openalex_id: number; outside_total: number; outside_threshold: number; outside_without_metadata: number }
+}
+export type CitationMapPlan = { works_to_resolve: number; sources_to_read: number; outside_to_describe: number; requests: number; unresolvable_without_doi: number }
+
 export class ApiError extends Error {
   status: number
   // A 422 can name every fault of a request at once.
@@ -1417,6 +1433,14 @@ export const api = {
     request<TableView>(`/api/researches/${id}/tables/${tableId}/columns`, json('POST', { ...spec, expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
   addDevelopmentColumns: (id: string, tableId: string, expectedVersion: number, idempotencyKey: string) =>
     request<TableView>(`/api/researches/${id}/tables/${tableId}/lineage/columns`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
+  // The citation map (D42): the research's works, the reference links between them and the outside works they cite.
+  citationMap: (id: string) => request<CitationMap>(`/api/researches/${id}/citation-map`),
+  // What a reading run would ask OpenAlex now; no request is sent.
+  prepareCitationMap: (id: string) => request<CitationMapPlan>(`/api/researches/${id}/citation-map/prepare`, { method: 'POST' }),
+  runCitationMap: (id: string) => request<Run>(`/api/researches/${id}/citation-map/run`, { method: 'POST' }),
+  // Adds an outside work of the map as an undecided source the person added; 409 with a `code` when it cannot.
+  addOutsideWork: (id: string, openalexId: string) =>
+    request<ResearchView & { source_version_id: string; work_id: string; restored: boolean; changed_source_version_ids: string[] }>(`/api/researches/${id}/outside-works`, json('POST', { openalex_id: openalexId })),
   lineage: (id: string, tableId: string) => request<LineageView>(`/api/researches/${id}/tables/${tableId}/lineage`),
   lineageBaseline: (id: string, tableId: string) => request<LineageBaseline>(`/api/researches/${id}/tables/${tableId}/lineage/baseline`),
   lineagePlan: (id: string, tableId: string, retryFailed: boolean) => request<LineagePlan>(`/api/researches/${id}/tables/${tableId}/lineage/plan?retry_failed=${retryFailed}`),

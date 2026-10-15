@@ -149,7 +149,7 @@ def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None,
         if table and not any(claim.get("table_ref") == "TABLE_I" for claim in claims):
             out += _table(table, tr)
         if sid in ("II", "VIII") and section.get("draft") and section["draft"].get("text"):
-            out.append(ooxml.paragraph(plain(section["draft"]["text"])))
+            out.append(ooxml.paragraph(*ooxml.with_math(plain(section["draft"]["text"]))))
         first_table_paragraph = next((claim["paragraph"] for claim in claims if claim.get("table_ref") == "TABLE_I"), None)
         for number in dict.fromkeys(claim["paragraph"] for claim in claims):
             fragments = []
@@ -161,7 +161,7 @@ def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None,
                 if links:
                     fragment += " " + ", ".join(f"[{ref}]" for ref in links)
                 fragments.append(fragment)
-            out.append(ooxml.paragraph(" ".join(fragments)))
+            out.append(ooxml.paragraph(*ooxml.with_math(" ".join(fragments))))
             if table and number == first_table_paragraph:
                 out += _table(table, tr)
         if not claims and not (sid in ("II", "VIII") and (section.get("draft") or {}).get("text")):

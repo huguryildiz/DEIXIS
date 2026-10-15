@@ -76,7 +76,7 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
             out.append(ooxml.heading(2, section))
         for claim in members:
             citations = "".join(f"[{cite_label(claim, e)}]" for e in claim.get("evidence") or [])
-            parts: list[ooxml.Inline] = [claim["text"]]
+            parts: list[ooxml.Inline] = [*ooxml.with_math(claim["text"])]
             if citations:
                 parts.append(f" {citations}")
             if claim.get("support_type") == "analyst_inference":
@@ -90,10 +90,10 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
         out.append(ooxml.paragraph(t("No claim could be linked to the passages given to the model.")))
     if answer.get("unanswered_aspects"):
         out += [ooxml.heading(2, t("Not answered by the inspected passages")),
-                ooxml.bullets([item] for item in answer["unanswered_aspects"])]
+                ooxml.bullets(ooxml.with_math(item) for item in answer["unanswered_aspects"])]
     if limits:
         out += [ooxml.heading(2, t("Limits")),
-                ooxml.bullets([ooxml.Run(f"{t(item['kind'].replace('_', ' ', 1))}:", bold=True), f" {item['text']}"]
+                ooxml.bullets([ooxml.Run(f"{t(item['kind'].replace('_', ' ', 1))}:", bold=True), *ooxml.with_math(f" {item['text']}")]
                               for item in limits)]
     if refs:
         out.append(ooxml.heading(2, t("Cited passages")))

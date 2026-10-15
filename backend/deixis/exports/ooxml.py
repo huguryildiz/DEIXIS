@@ -32,6 +32,7 @@ _PKG_RELS = "http://schemas.openxmlformats.org/package/2006/relationships"
 _CT = "http://schemas.openxmlformats.org/package/2006/content-types"
 _SML = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 _DOC_REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_M = "http://schemas.openxmlformats.org/officeDocument/2006/math"
 
 
 def clean(text: object) -> str:
@@ -53,23 +54,37 @@ class Run:
     italic: bool = False
 
 
-Inline = Union[str, Run]
+@dataclass(frozen=True)
+class Math:
+    """A `$...$` (or `$$...$$`) span of LaTeX, written as a Word equation; `source` keeps the dollar signs, and is
+    written as text when the equation cannot be converted (omml.py)."""
+    source: str
 
 
-def runs(*parts: Inline) -> tuple[Run, ...]:
-    return tuple(part if isinstance(part, Run) else Run(part) for part in parts if (part.text if isinstance(part, Run) else part))
+Inline = Union[str, Run, Math]
+
+
+def runs(*parts: Inline) -> tuple[Run | Math, ...]:
+    return tuple(part if isinstance(part, (Run, Math)) else Run(part) for part in parts
+                 if (part.source if isinstance(part, Math) else part.text if isinstance(part, Run) else part))
+
+
+def with_math(text: str, *, bold: bool = False, italic: bool = False) -> tuple[Run | Math, ...]:
+    """The text as runs, each `$...$` span (found as the LaTeX export finds them) as a Math part."""
+    from deixis.workflow.report.latex_math import split_text
+    return runs(*(Math(value) if kind == "math" else Run(value, bold, italic) for kind, value in split_text(text)))
 
 
 @dataclass(frozen=True)
 class Paragraph:
     """One paragraph. `style` is one of STYLES: Title, Heading1-3, Quote, Small, Bibliography, or None for body text."""
-    runs: tuple[Run, ...]
+    runs: tuple[Run | Math, ...]
     style: str | None = None
 
 
 @dataclass(frozen=True)
 class ListBlock:
-    items: tuple[tuple[Run, ...], ...]
+    items: tuple[tuple[Run | Math, ...], ...]
     ordered: bool = False
 
 
@@ -216,10 +231,17 @@ def _run_xml(run: Run) -> str:
     return f'<w:r>{f"<w:rPr>{props}</w:rPr>" if props else ""}{"".join(pieces)}</w:r>'
 
 
+def _math_xml(math: Math) -> str:
+    from deixis.exports.omml import to_omml
+    display = math.source.startswith("$$")
+    latex = math.source[2:-2] if display else math.source[1:-1]
+    return to_omml(latex, display) or _run_xml(Run(math.source))
+
+
 def _paragraph_xml(block: Paragraph, extra_ppr: str = "", bold: bool = False) -> str:
     style = f'<w:pStyle w:val="{block.style}"/>' if block.style in STYLES else ""
     ppr = style + extra_ppr
-    body = "".join(_run_xml(Run(r.text, r.bold or bold, r.italic)) for r in block.runs)
+    body = "".join(_math_xml(r) if isinstance(r, Math) else _run_xml(Run(r.text, r.bold or bold, r.italic)) for r in block.runs)
     return f'<w:p>{f"<w:pPr>{ppr}</w:pPr>" if ppr else ""}{body}</w:p>'
 
 
@@ -306,7 +328,7 @@ def docx(blocks: Sequence[Block], *, title: str = "", landscape: bool = False) -
     section = (f'<w:sectPr><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="{width}" w:h="{height}"{orient}/>'
                f'<w:pgMar w:top="{margin}" w:right="{margin}" w:bottom="{margin}" w:left="{margin}" '
                'w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>')
-    document = _xml(f'<w:document xmlns:w="{_W}" xmlns:r="{_R}"><w:body>{"".join(body)}{section}</w:body></w:document>')
+    document = _xml(f'<w:document xmlns:w="{_W}" xmlns:r="{_R}" xmlns:m="{_M}"><w:body>{"".join(body)}{section}</w:body></w:document>')
     main = "application/vnd.openxmlformats-officedocument.wordprocessingml"
     return _zip([
         ("[Content_Types].xml", _content_types(_DEFAULTS | {"png": "image/png"}, {

@@ -24,8 +24,10 @@ from deixis.exports import answer as answer_export
 from deixis.exports import ooxml
 from deixis.exports import report as report_export
 from deixis.exports import table as table_export
+from deixis.exports.omml import to_omml
 from deixis.exports.text import SERVER_ONLY, TR, number_text, reference_text
 from deixis.workflow.report.export import export_markdown
+from deixis.workflow.report.latex_math import split_text
 from deixis.workflow.views import report_view
 from test_api_flow import app_for, attached_research, create, session, wait_run
 from test_report_api import create_table, fill_table, upload_and_include
@@ -33,6 +35,8 @@ from test_report_export import complete
 from test_report_flow import ReportAdapter
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+M = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+MATH = "⟨math⟩"  # a Word equation in docx_items, and the `$...$` span it was converted from in the Markdown
 S = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 SPECIAL = "A & B < C > D \"q\" 'a' 🧪 İstanbul ğüşöçı ĞÜŞÖÇ $\\alpha_{1} < \\beta^{2}$ \\& x"
 DOCX_PARTS = {"[Content_Types].xml", "_rels/.rels", "word/document.xml", "word/_rels/document.xml.rels",
@@ -73,7 +77,19 @@ def _p_text(p: ET.Element) -> str:
             out.append("\n")
         elif node.tag == W + "tab":
             out.append("\t")
+        elif node.tag == M + "oMath":
+            out.append(MATH)
     return "".join(out)
+
+
+def _math_marked(text: str) -> str:
+    """The text with each `$...$` span that the DOCX writes as a Word equation replaced by MATH."""
+    return "".join(MATH if kind == "math" and _converts(value) else value for kind, value in split_text(text))
+
+
+def _converts(span: str) -> bool:
+    display = span.startswith("$$")
+    return to_omml(span[2:-2] if display else span[1:-1], display) is not None
 
 
 def docx_items(data: bytes) -> list:
@@ -264,7 +280,7 @@ def _plain_markdown(markdown: str) -> list[str]:
         if not line or line == "---":
             continue
         line = re.sub(r"^(#+ |> |- )", "", line).replace("**", "")
-        lines.append(re.sub(r"(^| )_(.+?)_(?= |$)", r"\1\2", line))
+        lines.append(_math_marked(re.sub(r"(^| )_(.+?)_(?= |$)", r"\1\2", line)))
     return lines
 
 

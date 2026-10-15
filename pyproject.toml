@@ -11,6 +11,7 @@ dependencies = [
   "httpx>=0.28",
   "jsonschema>=4.23",
   "keyring>=25",
+  "latex2mathml>=3.81",
   "pymupdf>=1.26",
   "python-multipart>=0.0.20",
   "referencing>=0.35",

@@ -369,6 +369,10 @@ function QueueCard({ row, criterion, rowView, detailError, unsettled, busy, note
         {[row.year, row.place !== null && t('No. {n} in the order', { n: row.place }), row.arm === 'chain' && t('from the citation chain'), kindText(row)].filter(Boolean).map((fact, i) => <span key={i}>{fact}</span>)}
         {row.doi && <a className="source-link-chip" href={`https://doi.org/${row.doi}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" /><span>{row.doi}</span><ExternalLink size={12} aria-hidden /></a>}
       </div>
+      {context && <div className="queue-focus">
+        <span className="queue-focus-text">{context}</span>
+        {row.question?.definition && <span className="queue-focus-definition">{row.question.definition}</span>}
+      </div>}
       {conflict && <Notice tone="attention">{t('This row changed after it was shown; its current state is loaded. Your answer was not saved.')}</Notice>}
       {rowView && !answerable && !detailError && (unsettled
         ? <Notice tone="attention">{t('This row kept changing while it was read, so it cannot be answered yet.')}{' '}
@@ -412,10 +416,9 @@ function QueueCard({ row, criterion, rowView, detailError, unsettled, busy, note
             </> : <p className="queue-muted">{t('This part’s phrases do not occur in the text.')}</p>}
           </section>}
         </>}
+      <div className="queue-decide">
       <div className="lbl queue-question">
         <span className="queue-question-text">{question}</span>
-        {context && <span>{context}</span>}
-        {row.question?.definition && <span className="queue-question-definition">{row.question.definition}</span>}
         {criterion && row.kind !== 'look_again' && <span className="queue-criterion">{t('Criterion: {text}', { text: criterion })}</span>}
         <span className="queue-why">{t('Why it is here:')} {queueReasonText(row.reason_code)} <code>{row.reason_code}</code></span>
       </div>
@@ -433,6 +436,7 @@ function QueueCard({ row, criterion, rowView, detailError, unsettled, busy, note
       {note.open || note.text ? <label className="queue-note"><span>{t('Note')}<small>{t('{n} of 1000 characters', { n: note.text.length })}</small></span>
         <textarea value={note.text} maxLength={1000} rows={2} onChange={e => onNote({ text: e.target.value, open: true })} /></label>
         : <button type="button" className="queue-note-toggle" onClick={() => onNote({ text: '', open: true })}><NotebookPen size={14} aria-hidden />{t('Add a note')}</button>}
+      </div>
     </div>
   </article>
 }
@@ -441,7 +445,7 @@ function RunParts({ run, part, onOpenPart }: { run: QueueRun; part: string | und
   return <>
     <h5 className="queue-run-head">{t('Run {n}', { n: run.run_no })}<small>{run.shown_pages.length ? t('pages shown: {pages}', { pages: run.shown_pages.join(', ') }) : t('no pages shown')}</small></h5>
     {run.parts.map(p => <div key={p.part} className={`queue-part${p.part === part ? ' is-question' : ''}`}>
-      <p className="queue-part-head"><span>{p.part}</span><span className="ref-pill">{partLabelText(p.label)}</span>{p.part === part && <small className="queue-part-asked">{t('this row’s question')}</small>}</p>
+      <p className="queue-part-head"><span>{p.part}</span><span className={`ref-pill queue-part-label is-${p.label}`}>{partLabelText(p.label)}</span>{p.part === part && <small className="queue-part-asked">{t('this row’s question')}</small>}</p>
       {p.quote && <blockquote className="queue-quote">{p.quote}</blockquote>}
       {p.label === 'present' && <p className="queue-part-note">{p.quote_verified ? t('Found on the page.') : t('Not found in the text.')}
         {(p.passage_id || p.closest?.passage_id) && <button type="button" className="queue-page-link" onClick={e => onOpenPart(p, e.currentTarget)}>{p.quote_verified && p.page !== null ? pageLocator(p.page, p.rendition) : t('Open the page')}<ChevronRight size={13} aria-hidden /></button>}</p>}

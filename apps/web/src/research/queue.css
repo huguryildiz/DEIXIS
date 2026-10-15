@@ -48,36 +48,49 @@
 .qcard{min-width:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .qcard header{height:auto;justify-content:flex-start;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--muted);font-size:12px}
 .qcard header b{color:var(--tone-uncertain);font-weight:600}
-.qcard .qb{display:grid;gap:8px;padding:12px 14px;font-size:13px}
+.qcard .qb{display:grid;gap:12px;padding:14px 16px 16px;font-size:13px}
 .qcard .qb h4{margin:0;font-size:14px;font-weight:500}
 .qcard .qcard-title{color:var(--ink);font:inherit;line-height:1.4;text-align:left;cursor:pointer}
 .qcard .qcard-title:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .qcard .au{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;color:var(--muted);font-size:12.5px}
 .qcard .au .source-link-chip{margin:0}
-.qcard .lbl{display:grid;gap:4px;color:var(--muted);font-size:12px}
-.qcard .queue-question-text{color:var(--ink);font-size:13px;font-weight:500}
-.qcard .queue-question-definition{max-width:76ch;color:var(--ink-2)}
-.qcard .queue-why code{margin-left:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--muted)}
+.qcard .au{margin-top:-6px}
+/* What the reading could not settle, right under the work: the one fact the card is about. */
+.qcard .queue-focus{display:grid;gap:3px;padding:10px 12px;border:1px solid var(--warn-line);border-radius:8px;background:var(--warn-surface);color:var(--warn-ink);font-size:13px;line-height:1.5}
+.qcard .queue-focus-text{font-weight:500}
+.qcard .queue-focus-definition{max-width:76ch;font-size:12.5px}
+/* The decision: the question, the criterion and why, then the answers, set apart from the evidence by one hairline. */
+.qcard .queue-decide{display:grid;gap:10px;margin-top:2px;padding-top:14px;border-top:1px solid var(--line)}
+.qcard .lbl{display:grid;gap:4px;color:var(--muted);font-size:12px;line-height:1.5}
+.qcard .queue-question-text{color:var(--ink);font-size:14px;font-weight:600;line-height:1.4}
+.qcard .queue-criterion{max-width:76ch;color:var(--ink-2);font-size:12.5px}
+.qcard .queue-why code{margin-left:4px;padding:0 5px;border-radius:4px;background:var(--selected-surface);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--muted)}
 .qcard .queue-open-page{justify-self:start}
 /* The two reads side by side (mockup .reads): one bordered box each. */
 .qcard .queue-runs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.qcard .queue-run{min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:12.5px}
+.qcard .queue-run{min-width:0;padding:0 12px 4px;border:1px solid var(--line);border-radius:10px;background:var(--raised-surface);font-size:12.5px;overflow:hidden}
 .qcard .queue-run>b{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:2px;font-size:11.5px;font-weight:500}
-.qcard .queue-run-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;margin:0 0 2px;color:var(--ink);font-size:11.5px;font-weight:500}
-.qcard .queue-run-head small{color:var(--muted);font-size:11px;font-weight:400}
-.qcard .queue-part{padding:6px 0;border-top:1px solid var(--line)}
+.qcard .queue-run-head{display:grid;gap:1px;margin:0 -12px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink);font-size:12.5px;font-weight:600}
+.qcard .queue-run-head small{color:var(--muted);font-size:11.5px;font-weight:400;font-variant-numeric:tabular-nums}
+.qcard .queue-part{padding:10px 0;border-top:1px solid var(--line)}
 .qcard .queue-run-head+.queue-part{border-top:0}
-.qcard .queue-part-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;color:var(--ink);font-size:12.5px;font-weight:500}
-.qcard .queue-part-asked{color:var(--accent);font-size:11px;font-weight:500}
+/* The part this row asks about: a quiet accent band across the run box. */
+.qcard .queue-part.is-question{margin:0 -12px;padding:10px 12px;border-top:0;background:var(--accent-tint)}
+.qcard .queue-part.is-question+.queue-part{border-top:0}
+.qcard .queue-part-head{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;color:var(--ink);font-size:13px;font-weight:600}
+.qcard .queue-part-asked{flex-basis:100%;color:var(--accent);font-size:11.5px;font-weight:500}
+.queue-panel .queue-part-label::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--muted)}
+.queue-panel .queue-part-label.is-present::before{background:var(--tone-include)}
+.queue-panel .queue-part-label.is-unclear::before{background:var(--tone-uncertain)}
 .qcard .queue-quote{margin:4px 0;padding:0 0 0 10px;border-left:2px solid var(--strong-line);color:var(--ink);font-size:12.5px;line-height:1.5;overflow-wrap:anywhere}
 .qcard .queue-part-note{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin:0;color:var(--muted);font-size:12px}
 .qcard .queue-page-link{display:inline-flex;align-items:center;gap:2px;color:var(--accent);font-size:12px;font-weight:500;cursor:pointer}
 .qcard .queue-page-link:hover{text-decoration:underline;text-underline-offset:3px}
-.qcard .queue-rationale{margin:4px 0 0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.qcard .queue-rationale{margin:6px 0 0;color:var(--ink-2);font-size:12.5px;line-height:1.55}
 .qcard .queue-closest{display:grid;gap:8px}
 .qcard .queue-closest .notice{margin:0 0 6px}
 .qcard .queue-pair,.qcard .queue-identity{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.qcard :is(.queue-pair,.queue-identity,.queue-cues) h5{margin:0 0 4px;color:var(--ink);font-size:12px;font-weight:600}
+.qcard :is(.queue-pair,.queue-identity,.queue-cues) h5{margin:0 0 4px;color:var(--ink-2);font-size:12px;font-weight:600}
 .qcard .queue-first-page{max-height:220px;overflow:auto;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--page-surface);color:var(--page-ink);font-family:var(--font-serif);font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .qcard .queue-serif{margin:0 0 4px;color:var(--ink);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 .qcard .queue-cues ul{display:grid;gap:6px;margin:0;padding:0;list-style:none}

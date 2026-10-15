@@ -119,8 +119,25 @@ def unread_targets(store: Any, research_id: str) -> list[tuple[str, str]]:
     return sorted((v["id"], oid) for v in versions if not v["references_read"] for oid in ids[v["id"]])
 
 
+def asked_without_answer(store: Any, research_id: str) -> set[str]:
+    """Outside works an earlier run of this research asked OpenAlex to describe, in a request that succeeded, and that
+    still have no stored record: OpenAlex has no work under that id (merged or withdrawn), so asking again would spend
+    a request every time for nothing (seen live on 16 Oct: four of 38 ids came back empty twice)."""
+    asked: set[str] = set()
+    for row in store.conn.execute(
+        "SELECT p.output_json FROM run_steps p JOIN runs r ON r.id = p.run_id"
+        " JOIN run_steps d ON d.run_id = p.run_id AND d.operation_key = 'citation_map:describe' AND d.status = 'succeeded'"
+        " WHERE r.research_id = ? AND r.kind = 'citation_map' AND p.operation_key = 'citation_map:describe_plan'"
+        " AND p.status = 'succeeded'", (research_id,)
+    ):
+        asked.update(json.loads(row["output_json"] or "{}").get("ids") or [])
+    return asked
+
+
 def outside_targets(store: Any, research_id: str) -> list[str]:
-    return [work["openalex_id"] for work in citation_map.build(store, research_id)["outside"] if work["title"] is None]
+    skip = asked_without_answer(store, research_id)
+    return [work["openalex_id"] for work in citation_map.build(store, research_id)["outside"]
+            if work["title"] is None and work["openalex_id"] not in skip]
 
 
 def _batches(items: list[Any], size: int) -> list[list[Any]]:

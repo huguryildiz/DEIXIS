@@ -61,13 +61,13 @@ function toGraph(map: MapData): Graph {
 }
 
 // ---- layouts ---------------------------------------------------------------------------------------------------------
-type Layout = { pos: Map<string, { x: number; y: number }>; W: number; H: number; axis: { label: string; x: number }[]; dense: boolean }
+type Layout = { pos: Map<string, { x: number; y: number; col?: number }>; W: number; H: number; axis: { label: string; x: number }[]; dense: boolean }
 const L = 56, R = 56, T = 40, B = 70
 
 // Timeline: one column per publication year (works without a year last), stacked by how many works here cite them.
 function layoutTime(nodes: MapNode[], indeg: Map<string, number>, minW = 920, minH = 460): Layout {
   const years = [...new Set(nodes.map(n => n.year))].sort((a, b) => (a === null ? 1 : b === null ? -1 : a - b))
-  const step = years.length > 1 ? Math.max((minW - L - R) / (years.length - 1), 56) : 0
+  const step = years.length > 1 ? Math.max((minW - L - R) / (years.length - 1), 72) : 0
   const W = years.length > 1 ? L + R + step * (years.length - 1) : minW
   const columns = years.map(y => nodes.filter(n => n.year === y)
     .sort((a, b) => (indeg.get(b.key) ?? 0) - (indeg.get(a.key) ?? 0) || (a.title ?? '').localeCompare(b.title ?? '') || a.key.localeCompare(b.key)))
@@ -75,12 +75,12 @@ function layoutTime(nodes: MapNode[], indeg: Map<string, number>, minW = 920, mi
   const gap = tallest > 1 ? Math.min(82, Math.max(26, 380 / (tallest - 1))) : 82
   const H = Math.max(minH, T + B + (tallest - 1) * gap + 60)
   const mid = T + (H - T - B) / 2
-  const pos = new Map<string, { x: number; y: number }>()
+  const pos = new Map<string, { x: number; y: number; col?: number }>()
   const axis: Layout['axis'] = []
   columns.forEach((column, i) => {
     const x = years.length > 1 ? L + i * step : W / 2
     axis.push({ label: years[i] === null ? t('No year') : String(years[i]), x })
-    column.forEach((n, j) => pos.set(n.key, { x, y: mid + (j - (column.length - 1) / 2) * gap }))
+    column.forEach((n, j) => pos.set(n.key, { x, y: mid + (j - (column.length - 1) / 2) * gap, col: i }))
   })
   return { pos, W, H, axis, dense: gap < 40 }
 }
@@ -307,6 +307,7 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
       return <path key={`${s}>${d}`} className={cls} d={paths[i]} markerEnd={`url(#${markerId}${on ? 'on' : ''})`} />
     })
     const nodes = visible.map(n => {
+      // Neighbouring year columns put their labels on opposite sides, so names in one row do not run into each other.
       const p = lay.pos.get(n.key)!, rr = radius(indeg(n.key))
       let cls = `n ${n.kind}`
       if (n.key === selected) cls += ' sel'
@@ -320,7 +321,7 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
         onClick={() => select(n.key)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(n.key) } }}
         onMouseEnter={() => hoverTo(n.key)} onMouseLeave={() => hoverTo(null)}>
         <circle className="ring" r={rr + 5} />{unread && <circle className="noref" r={rr + 4} />}<circle className="c" r={rr} />
-        {label && <text y={rr + 15} textAnchor="middle">{n.short}{layout === 'net' && n.year ? ` ${n.year}` : ''}</text>}
+        {label && <text y={layout === 'time' && (p.col ?? 0) % 2 ? -(rr + 8) : rr + 15} textAnchor="middle">{n.short}{layout === 'net' && n.year ? ` ${n.year}` : ''}</text>}
         <title>{n.title ?? t('title unknown')}</title>
       </g>
     })

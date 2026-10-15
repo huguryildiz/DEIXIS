@@ -348,3 +348,17 @@ def test_a_cancel_during_the_request_survives_a_budget_answer(lib, monkeypatch):
     lib.api.quota.add("openalex")
     assert execute(lib, run)["status"] == "cancelled"
     assert refs(lib, svid) == (False, set())
+
+
+def test_an_outside_work_openalex_does_not_return_is_not_asked_again(lib):
+    provider(lib, "W40", refs=["W77", "W78"])
+    provider(lib, "W41", refs=["W77", "W78"])
+    lib.api.work("W78", refs=[], title="SYNTHETIC described work")  # W77 is unknown to OpenAlex
+    assert citation_map_run.prepare(lib.store, lib.rid)["outside_to_describe"] == 2
+    assert execute(lib, queue(lib))["status"] == "completed"
+    after = citation_map_run.prepare(lib.store, lib.rid)
+    assert after["outside_to_describe"] == 0 and after["requests"] == 0
+    sent = len(lib.api.sent("openalex"))
+    with pytest.raises(Exception):
+        citation_map_run.request_run(lib.store, lib.rid)  # nothing left to fill
+    assert len(lib.api.sent("openalex")) == sent

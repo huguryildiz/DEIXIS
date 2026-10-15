@@ -5,6 +5,10 @@ Its region is the images and vector drawings next to the caption (above it, else
 column, grown to take in the small type set around them (axis labels, legends). The picture is rendered from the PDF page;
 nothing is stored and the passage text is unchanged. A figure with no graphics next to its caption, one split across
 pages, or a caption worded differently is not found.
+
+An algorithm box is found the same way, from an "Algorithm 5 Title" caption set between two rules (the algorithm and
+algorithm2e ruled style); its region runs from the rule above the caption to the next rule below the one under it. Its
+picture carries the symbols (accents, primes, subscripts) that the text layer and Marker read as loose characters.
 """
 
 from __future__ import annotations
@@ -14,6 +18,8 @@ from pathlib import Path
 
 import pymupdf
 
+ALGORITHM = re.compile(r"^Algorithm\s+(\d{1,3})\b")
+RULE_GAP = 6  # the largest distance, in points, between an algorithm caption and the rules around it
 CAPTION = re.compile(r"^(?:Fig\.|FIG\.|Figure|FIGURE)\s*(\d{1,3})\s*(?:[.:|—–]|\s(?=[A-Z(]))")
 MIN_AREA = 900  # square points; smaller graphics are rules, bullets or logos
 GAP = 60  # the largest distance, in points, between a caption and its graphics
@@ -103,6 +109,38 @@ def find_figures(path: Path) -> list[dict]:
                 region = _grow(page, region, [c for c, _ in captions], body) & page.rect
                 seen.add(label)
                 found.append({"page": index + 1, "label": label, "bbox": [round(v, 1) for v in region]})
+    return found
+
+
+def find_algorithms(path: Path) -> list[dict]:
+    """[{"page": 1-based, "label": "algorithm-5", "bbox": [...]}] for each ruled algorithm box, in page order."""
+    found, seen = [], set()
+    with pymupdf.open(path, filetype="pdf") as doc:
+        for index in range(min(doc.page_count, MAX_PAGES)):
+            page = doc[index]
+            captions = [(pymupdf.Rect(b[:4]), m.group(1)) for b in page.get_text("blocks")
+                        if b[6] == 0 and (m := ALGORITHM.match(b[4].strip()))]
+            if not captions:
+                continue
+            try:
+                drawings = page.get_drawings()
+            except Exception:  # noqa: BLE001 - a page whose drawings cannot be read has no ruled boxes
+                continue
+            rules = [d["rect"] for d in drawings if d["rect"].height < 3 and d["rect"].width >= 60]
+            for caption, label in captions:
+                column = sorted((r for r in rules if r.x0 < caption.x1 and r.x1 > caption.x0), key=lambda r: r.y0)
+                top = [r for r in column if 0 <= caption.y0 - r.y1 <= RULE_GAP]
+                under = [r for r in column if 0 <= r.y0 - caption.y1 <= RULE_GAP]
+                if label in seen or not top or not under:
+                    continue  # running text that opens with "Algorithm 5 …" has no rules around it
+                bottom = next((r for r in column if r.y0 > under[0].y1 + 4), None)
+                if bottom is None:
+                    continue
+                # Rules are often zero-height rectangles, which Rect union skips as empty: the corners are taken directly.
+                region = pymupdf.Rect(min(top[-1].x0, bottom.x0, caption.x0), top[-1].y0,
+                                      max(top[-1].x1, bottom.x1, caption.x1), bottom.y1) & page.rect
+                seen.add(label)
+                found.append({"page": index + 1, "label": f"algorithm-{label}", "bbox": [round(v, 1) for v in region]})
     return found
 
 

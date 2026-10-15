@@ -419,8 +419,9 @@ export type AssetText = {
   passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr'; equations_to_check?: number; source_equations?: string[] }[]
   source: Passage['source']
 }
-// A figure found from its caption on a PDF page (D58); its picture is cut from the page by the server.
-export type AssetFigure = { page: number; label: string; width: number; height: number }
+// A figure found from its caption on a PDF page (D58), or a ruled algorithm box (label "algorithm-5"); its picture is cut
+// from the page by the server.
+export type AssetFigure = { page: number; label: string; kind?: 'figure' | 'algorithm'; width: number; height: number }
 export type PdfCandidate = {
   id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'europepmc' | 'web_search'; candidate_url: string; landing_url: string | null
   version_label: string | null; license: string | null; identity_status: 'doi_verified' | 'title_verified' | 'unverified' | 'mismatch'

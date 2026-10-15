@@ -93,6 +93,20 @@ function PdfTextTable({ rows }: { rows: string[] }) {
   </table></div>
 }
 
+// An algorithm box: its steps line by line as read from the PDF, beside a picture of the box cut from the page, which keeps
+// the symbols (accents, primes, subscripts) the reading spreads over loose characters.
+function AlgorithmBox({ id, caption, lines, picture, cited, markLabel }: { id: string; caption?: string; lines: string[]; picture: { url: string; width: number; height: number; page: number } | null; cited: boolean; markLabel: string }) {
+  const name = caption || t('Algorithm')
+  return <figure id={id} className={`pdf-text-figure pdf-text-algorithm${cited ? ' is-cited' : ''}`} aria-label={cited ? markLabel : undefined}>
+    {caption && <figcaption><PassageMathText text={caption} /></figcaption>}
+    <div className={`pdf-text-algorithm-body${lines.length && picture ? ' is-split' : ''}`}>
+      {lines.length > 0 && <div className="pdf-text-algorithm-lines">{lines.map((line, i) => <div key={i}><PassageMathText text={line} /></div>)}</div>}
+      {picture && <img src={picture.url} alt={name} loading="lazy" style={{ aspectRatio: `${picture.width} / ${picture.height}` }} />}
+    </div>
+    {picture && <small>{t(lines.length ? 'Picture cut from PDF page {page}. The lines beside it are the text as read and can misplace symbols; the picture shows them as printed.' : 'Picture cut from PDF page {page}.', { page: picture.page })}</small>}
+  </figure>
+}
+
 // The strip's two sentences and the mark's name, for a text opened for something other than an answer's citation (the
 // human queue). Such a text is marked exactly or not at all: a span that would widen to a formula, or that falls in a
 // title, heading, table or figure, is left unmarked rather than marked beyond what the backend found (slice 17).
@@ -192,7 +206,10 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
           const blockMarks = marks?.blocks.get(block.id)
           const inline = <InlineText text={block.text} doc={doc} selfId={block.id} marks={blockMarks} markLabel={markLabel} />
           const plainText = blockMarks ? <mark className="citation-highlight" aria-label={markLabel}>{block.text}</mark> : block.text
-          const figure = block.kind === 'figure' ? figures.find(f => f.label === block.label) : undefined
+          const figure = block.kind === 'figure' || block.kind === 'algorithm' ? figures.find(f => f.label === block.label) : undefined
+          if (block.kind === 'algorithm') return <AlgorithmBox key={block.id} id={block.id} caption={block.caption} lines={block.lines ?? []}
+            picture={figure && !suppressFigurePictures ? { url: figureUrl(researchId, assetId, figure.label), width: figure.width, height: figure.height, page: figure.page } : null}
+            cited={Boolean(blockMarks)} markLabel={markLabel} />
           return block.kind === 'figure' && suppressFigurePictures ? <figure key={block.id} id={block.id} className="pdf-text-figure">
             <figcaption>{inline}</figcaption><small>{t('Figure picture not shown: it would be cut from the current file, not the cited extraction.')}</small>
           </figure> : block.kind === 'figure' && figure ? <figure key={block.id} id={block.id} className="pdf-text-figure">

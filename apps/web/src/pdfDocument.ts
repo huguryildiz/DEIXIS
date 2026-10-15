@@ -7,6 +7,12 @@ export type Passages = AssetText['passages']
 
 const TABLE_ROW = /^\|.*\|$/
 const FIGURE_CAPTION = /^(?:Fig\.|FIG\.|Figure|FIGURE)\s*(\d{1,3})\s*(?:[.:|—–]|\s(?=[A-Z(]))/
+// An algorithm's caption on its own ("Algorithm 5 Branch-and-price2 Algorithm"); running text that opens with "Algorithm 4
+// first determines …" has a lower-case word or a sentence break and is not one.
+const ALGORITHM_CAPTION = /^Algorithm\s+(\d{1,3})(?:\s*[.:]?\s+\p{Lu}(?![^\n]*[.;]\s)[^\n]{0,150})?$/u
+// Marker sets an algorithm box as a fenced code block; a fence is never split into paragraphs or joined into one line.
+const FENCE = /(```[\s\S]*?(?:```|$))/
+const isFence = (text: string) => text.startsWith('```')
 const TABLE_CAPTION = /^(?:TABLE|Table)\s+([IVXL]+|[A-Z]?\d{1,3})\s*(?:$|[.:|—–-]|\s(?=[A-Z]))/
 // An author biography at the end of a journal paper: "Jane Q. Doe (jdoe@x.edu) received …", "John Roe (M'05–SM'16) is …".
 // Biographies follow the last reference entry, so the text layer runs them into it.
@@ -15,7 +21,7 @@ const BIOGRAPHY_START = /(?<=[.”"])\s+(?=[A-Z][\p{L}'’.-]+(?:\s[A-Z][\p{L}'�
 const REFERENCE_ENTRY = /^\[(\d{1,4})\]\s/
 const EQUATION_TAG = /\\tag\{(\d{1,3})\}|\((\d{1,3})\)\s*\$*$/g
 
-type Block = { id: string; kind: 'heading' | 'table' | 'note' | 'para' | 'figure' | 'bio' | 'title'; text: string; label?: string }
+type Block = { id: string; kind: 'heading' | 'table' | 'note' | 'para' | 'figure' | 'algorithm' | 'bio' | 'title'; text: string; label?: string; caption?: string; lines?: string[] }
 type Page = { head: Passages[number]; blocks: Block[] }
 export type Doc = { pages: Page[]; targets: Map<string, string>; references: Map<string, string>; headings: Block[] }
 
@@ -53,13 +59,22 @@ function splitHeadingLines(text: string) {
 function pageParagraphs(passages: Passages) {
   // Passages are cut at a fixed length; a cut that did not end a sentence, or one inside a reference entry, continues the paragraph.
   // Marker leaves its in-document links ("Figure [4a](#page-6-2)"); only their text is shown.
-  const text = passages.map(item => readablePassageText(item.kind, splitHeadingLines(item.text)).replace(/\[([^\]\n]{1,40})\]\(#page-\d+-\d+\)/g, '$1')).reduce((all, next) => {
+  // Line breaks inside an algorithm box (a fence, which can open in one passage and close in a later one) are kept.
+  let fenceOpen = false
+  const readable = (kind: string, text: string) => text.split('```').map((part, i) => {
+    const inside = fenceOpen ? i % 2 === 0 : i % 2 === 1
+    if (i === text.split('```').length - 1) fenceOpen = inside
+    return inside ? part : readablePassageText(kind, part)
+  }).join('```')
+  const text = passages.map(item => readable(item.kind, splitHeadingLines(item.text)).replace(/\[([^\]\n]{1,40})\]\(#page-\d+-\d+\)/g, '$1')).reduce((all, next) => {
     const last = all.slice(all.lastIndexOf('\n\n') + 1).trim()
     const continues = !/[.:?!)]$/.test(last) || (/^\[\d{1,4}\]\s/.test(last) && !/^\[\d{1,4}\]\s/.test(next))
     // A passage cut after a table row starts a new row or, when it does not open with "|", a new paragraph (a caption).
+    if (all && (all.match(/```/g)?.length ?? 0) % 2) return `${all}\n${next}`  // a passage cut inside an algorithm box
     return !all ? next : all.endsWith('|') ? `${all}${next.startsWith('|') ? '\n' : '\n\n'}${next}` : continues ? `${all} ${next}` : `${all}\n\n${next}`
   }, '')
-  return text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean).flatMap(paragraph => {
+  return text.split(FENCE).flatMap((part, i) => i % 2 ? [part.trim()] : part.split(/\n{2,}/)).map(p => p.trim()).filter(Boolean).flatMap(paragraph => {
+    if (isFence(paragraph)) return [paragraph]
     // Table rows and the text around them become separate paragraphs.
     const runs: string[][] = []
     for (const line of paragraph.split('\n')) {
@@ -68,7 +83,7 @@ function pageParagraphs(passages: Passages) {
       else runs.push([line])
     }
     return runs.map(run => run.join(TABLE_ROW.test(run[0]) ? '\n' : ' '))
-  }).flatMap(paragraph => paragraph.split(BIOGRAPHY_START).map(p => p.trim()).filter(Boolean)).map((paragraph, i, all) => {
+  }).flatMap(paragraph => isFence(paragraph) ? [paragraph] : paragraph.split(BIOGRAPHY_START).map(p => p.trim()).filter(Boolean)).map((paragraph, i, all) => {
     // A drop capital read into the heading before it: "I. INTRODUCTION S" + "MART Grid (SG) is …" → "SMART Grid (SG) is …".
     const drop = /^(.+)\s(\p{Lu})$/u.exec(paragraph)
     if (drop && SECTION_HEADING.test(drop[1]) && /^\p{Lu}{2,}/u.test(all[i + 1] ?? '')) { all[i + 1] = drop[2] + all[i + 1]; return drop[1] }
@@ -135,6 +150,19 @@ export const SUBSECTION = /^(?:[A-H]|\d+\.\d+(?:\.\d+)*)\.?\s/
 
 export const tableKey = (label: string) => `table:${label.toUpperCase()}`
 
+// The lines of an algorithm box read by Marker. Subscripts and accents come out on lines of their own ("Q˜A0\n mˆ"), so a
+// line that does not open a numbered step (or Input/Output) continues the step before it.
+const ALGORITHM_STEP = /^(?:\d{1,3}:|(?:Input|Output|Require|Ensure|Initiali[sz]ation|Data|Result)s?:)/
+export function algorithmLines(fence: string) {
+  const lines = fence.replace(/^```[^\n]*\n?|\n?```$/g, '').split('\n').map(line => line.trim()).filter(Boolean)
+  if (!lines.some(line => ALGORITHM_STEP.test(line))) return lines
+  return lines.reduce<string[]>((steps, line) => {
+    if (ALGORITHM_STEP.test(line) || !steps.length) steps.push(line)
+    else steps[steps.length - 1] += ` ${line}`
+    return steps
+  }, [])
+}
+
 export function buildDocument(passages: Passages, figures: AssetFigure[], sourceTitle: string | null, captionsOnly = false): Doc {
   const targets = new Map<string, string>(), references = new Map<string, string>(), headings: Block[] = []
   const placed = new Set<string>()
@@ -142,10 +170,29 @@ export function buildDocument(passages: Passages, figures: AssetFigure[], source
   const pages = pagesOf(passages).map((items, p) => {
     const top = p === 0 ? firstPage(pageParagraphs(items), sourceTitle) : { paragraphs: pageParagraphs(items), title: -1 }
     const blocks: Block[] = []
+    const page = items[0].physical_page
+    const fenced = new Set<number>()
     top.paragraphs.forEach((text, i) => {
       const id = `pdfx-${p}-${i}`
       if (i === top.title) {
         blocks.push({ id, kind: 'title', text })
+        return
+      }
+      if (fenced.has(i)) return
+      // An algorithm: its caption with the box Marker read after it, or a caption whose box was cut from this page.
+      const algorithm = ALGORITHM_CAPTION.exec(text)
+      const box = algorithm && !placed.has(`algorithm-${algorithm[1]}`) ? figures.find(f => f.label === `algorithm-${algorithm[1]}` && f.page === page) : undefined
+      const next = top.paragraphs[i + 1]
+      if (algorithm && !placed.has(`algorithm-${algorithm[1]}`) && (box || (next !== undefined && isFence(next)))) {
+        const label = `algorithm-${algorithm[1]}`
+        const lines = next !== undefined && isFence(next) ? (fenced.add(i + 1), algorithmLines(next)) : []
+        placed.add(label)
+        blocks.push({ id: `pdfx-${label}`, kind: 'algorithm', text: [text, ...lines].join('\n'), label, caption: text, lines })
+        return
+      }
+      if (isFence(text)) {
+        const lines = algorithmLines(text)
+        blocks.push({ id, kind: 'algorithm', text: lines.join('\n'), lines })
         return
       }
       const figure = FIGURE_CAPTION.exec(text)
@@ -180,8 +227,12 @@ export function buildDocument(passages: Passages, figures: AssetFigure[], source
       }
     })
     // A figure found on this page whose caption was not recognised in the text still shows, at the end of its page.
-    for (const figure of figures.filter(f => f.page === items[0].physical_page && !placed.has(f.label))) {
+    for (const figure of figures.filter(f => f.page === page && !placed.has(f.label))) {
       placed.add(figure.label)
+      if (figure.kind === 'algorithm') {
+        blocks.push({ id: `pdfx-${figure.label}`, kind: 'algorithm', text: '', label: figure.label, lines: [] })
+        continue
+      }
       blocks.push({ id: `pdfx-fig-${figure.label}`, kind: 'figure', text: '', label: figure.label })
       if (!targets.has(`figure:${figure.label}`)) targets.set(`figure:${figure.label}`, `pdfx-fig-${figure.label}`)
     }

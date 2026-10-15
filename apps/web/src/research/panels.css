@@ -152,6 +152,12 @@
 .pdf-text-figure{margin:1.1em 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--page-surface)}
 .pdf-text-figure img{display:block;width:100%;height:auto;max-height:560px;object-fit:contain}
 .source-sheet .pdf-text-figure figcaption{margin-top:10px;color:var(--page-ink);font-family:var(--font-sans);font-size:12.5px;line-height:1.5}
+.pdf-text-algorithm figcaption{margin:0 0 10px!important;font-weight:600}
+.pdf-text-algorithm-body{display:grid;gap:14px;align-items:start}
+.pdf-text-algorithm-body.is-split{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.source-sheet .pdf-text-algorithm-lines{font-family:var(--font-mono,ui-monospace,monospace);font-size:12px;line-height:1.55;color:var(--page-ink)}
+.pdf-text-algorithm-lines>div{padding-left:2.2em;text-indent:-2.2em;overflow-wrap:anywhere}
+.pdf-text-algorithm.is-cited{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent),transparent 80%)}
 .pdf-text-figure small{display:block;margin-top:6px;color:var(--page-muted);font-size:11px}
 .source-sheet .pdf-text-xref{padding:0;color:var(--accent);font:inherit;text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent),transparent 60%);text-underline-offset:3px;cursor:pointer}
 .source-sheet .pdf-text-xref:hover{text-decoration-color:var(--accent)}

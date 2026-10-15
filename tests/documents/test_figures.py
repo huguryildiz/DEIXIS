@@ -42,3 +42,37 @@ def test_figures_are_listed_and_rendered_through_the_api(tmp_path):
         image = client.get(f"/api/researches/{rid}/assets/{aid}/figures/1.png")
         assert image.status_code == 200 and image.headers["content-type"] == "image/png"
         assert client.get(f"/api/researches/{rid}/assets/{aid}/figures/2.png").status_code == 404
+
+
+def algorithm_pdf() -> bytes:
+    doc = pymupdf.open()
+    page = doc.new_page()
+    for y in (100, 114, 200):  # the rule above the caption, the one under it and the bottom rule
+        page.draw_line((72, y), (300, y), width=0.5)
+    page.insert_text((72, 110), "Algorithm 2 SYNTHETIC Greedy Assignment", fontsize=9)
+    page.insert_text((72, 130), "1: for all SYNTHETIC items do", fontsize=9)
+    page.insert_text((72, 190), "2: end for", fontsize=9)
+    page.insert_text((72, 260), "Algorithm 2 first sorts the SYNTHETIC items; no rules surround this sentence.", fontsize=10)
+    page.insert_text((72, 300), "Algorithm 3 SYNTHETIC caption with no ruled box", fontsize=9)
+    return doc.tobytes()
+
+
+def test_an_algorithm_box_runs_from_the_rule_above_its_caption_to_the_bottom_rule(tmp_path):
+    path = tmp_path / "alg.pdf"
+    path.write_bytes(algorithm_pdf())
+    found = figures.find_algorithms(path)
+    assert [(f["page"], f["label"]) for f in found] == [(1, "algorithm-2")]
+    x0, y0, x1, y1 = found[0]["bbox"]
+    assert x0 <= 72 and x1 >= 300 and 99 <= y0 <= 100 and 200 <= y1 <= 201
+    assert figures.render_figure(path, 1, found[0]["bbox"]).startswith(b"\x89PNG")
+
+
+def test_algorithm_boxes_are_listed_with_their_kind(tmp_path):
+    with TestClient(app_for(tmp_path)) as raw:
+        client = session(raw)
+        rid = create(client, source_scope="attached")
+        uploaded = client.post(f"/api/researches/{rid}/uploads", files={"file": ("alg.pdf", algorithm_pdf(), "application/pdf")})
+        aid = uploaded.json()["sources"][0]["access"]["assets"][0]["id"]
+        listed = client.get(f"/api/researches/{rid}/assets/{aid}/figures").json()["figures"]
+        assert [(f["label"], f["kind"]) for f in listed] == [("algorithm-2", "algorithm")]
+        assert client.get(f"/api/researches/{rid}/assets/{aid}/figures/algorithm-2.png").status_code == 200

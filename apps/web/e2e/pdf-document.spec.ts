@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buildDocument, locateAnchors, marksExactly, type Passages } from '../src/pdfDocument'
+import { algorithmLines, buildDocument, locateAnchors, marksExactly, type Passages } from '../src/pdfDocument'
 
 // The plain-text view's reading rules (D58) on SYNTHETIC page text; no browser or server is started.
 
@@ -124,4 +124,24 @@ test('a queue quote across a hyphenated line end or two blocks is marked, and on
   expect(exact('on some links, however, it raises')).toBe(true)
   expect(exact('as Fig. 2 shows')).toBe(true)   // the whole link inside the mark
   expect(exact('on others, as Fig')).toBe(false) // the link would be marked whole, wider than the quote
+})
+
+test('an algorithm box read by Marker is one block, step by step, even when a passage cut falls inside it', () => {
+  const fence = '```\nInput: SYNTHETIC Q˜A0\n mˆ , Q¯A0\n mˆ\n 1: Find the maximum Q˜A0\n mˆ > 0, where A\n 0\nmˆ\n is a feasible and\n unmarked path\n 2: if Found then\n'
+  const doc = buildDocument(pages(['SYNTHETIC text before the box.\n\nAlgorithm 5 Branch-and-price2 Algorithm\n\n' + fence,
+    ' 3: Mark the path\n11: end if\n```\n\nAlgorithm 5 first determines the SYNTHETIC part. More text.']), [], null)
+  const box = doc.pages[0].blocks.find(b => b.kind === 'algorithm')!
+  expect(box.caption).toBe('Algorithm 5 Branch-and-price2 Algorithm')
+  expect(box.lines).toEqual(['Input: SYNTHETIC Q˜A0 mˆ , Q¯A0 mˆ', '1: Find the maximum Q˜A0 mˆ > 0, where A 0 mˆ is a feasible and unmarked path',
+    '2: if Found then', '3: Mark the path', '11: end if'])
+  expect(blocks(doc).map(([kind]) => kind)).toEqual(['para', 'algorithm', 'para'])
+  expect(algorithmLines('```\nwhile x do\n  y\n```')).toEqual(['while x do', 'y'])  // unnumbered pseudocode keeps its lines
+})
+
+test('an algorithm box cut from the page is placed at its caption; running text that opens with "Algorithm 4" is not a caption', () => {
+  const box = { page: 1, label: 'algorithm-4', kind: 'algorithm' as const, width: 250, height: 160 }
+  const doc = buildDocument(pages(['Algorithm 4 first determines the SYNTHETIC part\n\nAlgorithm 4 STEP II Integer Solution Algorithm\n\nInput: garbled']), [box], null)
+  expect(blocks(doc).map(([kind]) => kind)).toEqual(['para', 'algorithm', 'para'])
+  const unplaced = buildDocument(pages(['SYNTHETIC text only.']), [box], null)
+  expect(unplaced.pages[0].blocks.map(b => [b.kind, b.label])).toEqual([['para', undefined], ['algorithm', 'algorithm-4']])
 })

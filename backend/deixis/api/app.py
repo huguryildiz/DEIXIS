@@ -2381,7 +2381,7 @@ def create_app(
             raise HTTPException(404, "File missing")
         if asset["sha256"] not in figure_cache:
             try:
-                found = await asyncio.to_thread(figures.find_figures, path)
+                found = await asyncio.to_thread(lambda: figures.find_figures(path) + figures.find_algorithms(path))
             except Exception:  # noqa: BLE001 - a PDF MuPDF cannot read has no figures to show
                 found = []
             if len(figure_cache) >= 64:
@@ -2392,7 +2392,7 @@ def create_app(
     @app.get("/api/researches/{research_id}/assets/{asset_id}/figures")
     async def get_asset_figures(research_id: str, asset_id: str, request: Request) -> dict[str, Any]:
         _, found = await asset_figures(research_id, asset_id, request)
-        return {"figures": [{"page": f["page"], "label": f["label"], "width": round(f["bbox"][2] - f["bbox"][0]),
+        return {"figures": [{"page": f["page"], "label": f["label"], "kind": "algorithm" if f["label"].startswith("algorithm-") else "figure", "width": round(f["bbox"][2] - f["bbox"][0]),
                              "height": round(f["bbox"][3] - f["bbox"][1])} for f in found]}
 
     @app.get("/api/researches/{research_id}/assets/{asset_id}/figures/{label}.png")

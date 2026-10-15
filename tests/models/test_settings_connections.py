@@ -189,6 +189,21 @@ def test_the_local_server_address_is_saved_only_on_this_computer(tmp_path, paths
         assert (cleared["ready"], cleared["base_url"]) == (False, None)
 
 
+def test_local_connections_do_not_share_the_proxy_honouring_client(tmp_path, paths, monkeypatch):
+    """Review of af41a88 (P1): in the running app (no injected client) Ollama and the local server get their own
+    client, which ignores HTTP_PROXY; remote APIs keep the shared one."""
+    monkeypatch.setenv("HTTP_PROXY", "http://proxy.example.com:3128")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    app = create_app(Settings(data_dir=tmp_path / "proxy", port=8765), start_worker=False,
+                     extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app):
+        adapters, shared = app.state.adapters, app.state.http
+        assert adapters["deepseek"]._client is shared and adapters["kimi"]._client is shared and adapters["anthropic"]._client is shared
+        for name in ("ollama", "local_server"):
+            own = adapters[name]._http()
+            assert own is not shared and own.trust_env is False and own.follow_redirects is False and not own._mounts
+
+
 def test_claude_code_runs_on_the_account_not_on_a_saved_api_key(tmp_path, monkeypatch):
     """D34: the CLI inherits the app's environment; the key saved for the Anthropic API connection is emptied for it."""
     from deixis.models.claude import ClaudeCodeAdapter

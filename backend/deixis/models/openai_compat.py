@@ -80,6 +80,26 @@ LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 BY_KEY_ENV = {c.key_env: c for c in CONNECTIONS.values() if c.key_env}
 
 
+def chat_tool_items(choice: dict[str, Any]) -> list[str]:
+    """Tool items in a chat-completions choice: `tool_calls`, the legacy `function_call`, or a finish reason naming
+    either. No tools are offered, so any of them fails the step as an isolation violation, whatever else it holds."""
+    message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+    calls = message.get("tool_calls")
+    items = [str(c.get("type") or "tool_call") if isinstance(c, dict) else "tool_call"
+             for c in (calls if isinstance(calls, list) else [calls] if calls else [])]
+    if message.get("function_call"):
+        items.append("function_call")
+    if not items and choice.get("finish_reason") in ("tool_calls", "function_call"):
+        items.append(str(choice["finish_reason"]))
+    return items
+
+
+def loopback_client() -> httpx.AsyncClient:
+    """A client for a server on this computer: no proxy from the environment (HTTP_PROXY, ALL_PROXY), which would
+    carry research text off the machine, and no redirects, which could point elsewhere."""
+    return httpx.AsyncClient(trust_env=False, follow_redirects=False)
+
+
 def loopback_url(value: str | None) -> str | None:
     """A local server's base URL, accepted only on this computer's loopback address; empty clears it (None)."""
     value = (value or "").strip().rstrip("/")
@@ -130,7 +150,7 @@ class OpenAICompatAdapter:
 
     def _http(self) -> httpx.AsyncClient:
         if self._client is None:
-            self._client = httpx.AsyncClient()
+            self._client = loopback_client() if self.spec.key_env is None else httpx.AsyncClient()
         return self._client
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
@@ -262,6 +282,9 @@ class OpenAICompatAdapter:
             "external_thread_id": data.get("id"),
             "token_usage": data.get("usage"),
         }
+        if tools := chat_tool_items(choice):
+            return ModelStepResult("isolation_violation", raw_text=content or None, tool_item_types=tools,
+                                   error=f"{spec.name} API returned a tool call", **common)
         if choice.get("finish_reason") != "stop" or not content:
             return ModelStepResult("failed", raw_text=content or None,
                                    error=f"finish reason {choice.get('finish_reason')}", **common)

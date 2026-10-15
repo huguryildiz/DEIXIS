@@ -270,6 +270,48 @@ def test_a_different_answering_model_is_reported_for_the_flow_to_reject(spec, mo
     assert (result.status, result.resolved_model) == ("completed", "another-model")  # flow.py records model_mismatch
 
 
+TOOL_CALL = [{"id": "call_1", "type": "function", "function": {"name": "read_file", "arguments": "{}"}}]
+
+
+@every_spec
+@pytest.mark.parametrize("message_extra,finish,expected", [
+    ({"tool_calls": TOOL_CALL}, "stop", ["function"]),          # a tool call next to usable content, finish "stop"
+    ({"tool_calls": TOOL_CALL}, "tool_calls", ["function"]),
+    ({"function_call": {"name": "read_file", "arguments": "{}"}}, "stop", ["function_call"]),
+    ({}, "tool_calls", ["tool_calls"]),
+])
+def test_a_tool_call_in_the_answer_is_an_isolation_violation(spec, monkeypatch, message_extra, finish, expected):
+    """Review of af41a88 (P1): no tools are offered, so a tool call fails the step, whatever content comes with it."""
+    set_key(spec, monkeypatch)
+
+    def handler(request):
+        return httpx.Response(200, json={"id": "chat-1", "model": "model-a", "choices": [
+            {"finish_reason": finish, "message": {"content": '{"claims": []}', **message_extra}}]})
+
+    result = asyncio.run(adapter(spec, handler).run_step("b", "d", "m", {}, "model-a"))
+    assert (result.status, result.tool_item_types) == ("isolation_violation", expected)
+
+
+@pytest.mark.parametrize("spec", [openai_compat.OLLAMA, openai_compat.LOCAL_SERVER], ids=["ollama", "local_server"])
+def test_a_local_connection_never_sends_through_a_proxy_from_the_environment(spec, monkeypatch):
+    """Review of af41a88 (P1): with HTTP_PROXY set and NO_PROXY empty, the default client sends loopback requests
+    through the proxy. A keyless connection's own client ignores the environment and follows no redirect."""
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "all_proxy"):
+        monkeypatch.setenv(name, "http://proxy.example.com:3128")
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    url = httpx.URL("http://127.0.0.1:8080/v1/chat/completions")
+    control = httpx.AsyncClient()
+    assert control._transport_for_url(url) is not control._transport  # the default client would use the proxy
+    client = openai_compat.OpenAICompatAdapter(spec)._http()
+    assert client.trust_env is False and client.follow_redirects is False and not client._mounts
+    assert client._transport_for_url(url) is client._transport
+    keyed = openai_compat.OpenAICompatAdapter(openai_compat.KIMI)._http()
+    assert keyed.trust_env is True  # remote APIs keep the person's proxy
+    for c in (control, client, keyed):
+        asyncio.run(c.aclose())
+
+
 def test_cancel_is_a_no_op_and_close_only_closes_an_owned_client():
     a = openai_compat.OpenAICompatAdapter(openai_compat.KIMI)
     assert asyncio.run(a.cancel()) is False

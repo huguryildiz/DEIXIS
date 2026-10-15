@@ -54,6 +54,16 @@ def test_health_keeps_chat_models_and_drops_the_rest(monkeypatch):
     assert all(m["reasoning_efforts"] == [] for m in status["models"])
 
 
+def test_health_drops_chat_models_without_strict_json_schema(monkeypatch):
+    """Review of af41a88 (P2): the adapter always sends a strict schema, so a model that cannot take one is not offered."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    listed = ["gpt-4o-2024-05-13", "gpt-4o-2024-08-06", "gpt-4o-mini", "gpt-4o-mini-2024-07-18", "o1-preview",
+              "o1-preview-2024-09-12", "o1-mini", "o1-mini-2024-09-12", "o1", "o1-2024-12-17", "o3-mini"]
+    status = asyncio.run(adapter(lambda r: httpx.Response(200, json={"data": [{"id": i} for i in listed]})).health(refresh=True))
+    assert [m["id"] for m in status["models"]] == [
+        "gpt-4o-2024-08-06", "gpt-4o-mini", "gpt-4o-mini-2024-07-18", "o1", "o1-2024-12-17", "o3-mini"]
+
+
 def test_run_step_sends_a_strict_schema_no_tools_no_storage_and_no_effort(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     sent = []

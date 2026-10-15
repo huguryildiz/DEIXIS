@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from deixis.models.adapter import ModelStepResult
+from deixis.models.openai_compat import chat_tool_items
 from deixis.domain.limits import http_limit, service_error_kind, retry_at
 
 API_URL = "https://api.deepseek.com"
@@ -132,6 +133,9 @@ class DeepSeekAdapter:
             "external_thread_id": data.get("id"),
             "token_usage": data.get("usage"),
         }
+        if tools := chat_tool_items(choice):
+            return ModelStepResult("isolation_violation", raw_text=content or None, tool_item_types=tools,
+                                   error="DeepSeek API returned a tool call", **common)
         if choice.get("finish_reason") != "stop" or not content:
             return ModelStepResult("failed", raw_text=content or None,
                                    error=f"finish reason {choice.get('finish_reason')}", **common)

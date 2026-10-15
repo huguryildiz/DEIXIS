@@ -763,10 +763,14 @@ def create_app(
             "gemini": GeminiAdapter(client=http),
             "gemini_cli": GeminiCliAdapter(home=settings.data_dir / "gemini-cli-home"),
             "deepseek": DeepSeekAdapter(client=http),
-            **{name: OpenAICompatAdapter(spec, client=http) for name, spec in COMPAT_CONNECTIONS.items()},
+            # A keyless (local) connection gets no shared client: the shared one honours HTTP_PROXY, and the adapter's
+            # own client ignores proxies (D34). A test's injected client is used as given.
+            **{name: OpenAICompatAdapter(spec, client=http if spec.key_env or http_client else None)
+               for name, spec in COMPAT_CONNECTIONS.items()},
             "anthropic": AnthropicAdapter(client=http),
             "openai": OpenAIAdapter(client=http),
-            "local_server": OpenAICompatAdapter(LOCAL_SERVER, client=http, base_url=lambda: store.setting(LOCAL_SERVER_SETTING)),
+            "local_server": OpenAICompatAdapter(LOCAL_SERVER, client=http_client,
+                                                base_url=lambda: store.setting(LOCAL_SERVER_SETTING)),
         }
         package = skill.load_skill_package()
         equations = equation_service if equation_service is not None else EquationService(

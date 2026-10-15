@@ -27,6 +27,9 @@ KEY_ENV = "OPENAI_API_KEY"
 CHAT_MODEL = re.compile(r"^(gpt-(4o|4\.\d|[5-9])|o[1-9])")
 EXCLUDED_MODEL_WORDS = ("audio", "realtime", "tts", "transcribe", "image", "search", "embedding", "moderation",
                         "instruct", "computer-use", "deep-research", "latest")
+# Chat models without strict JSON-schema output: OpenAI's structured outputs guide names gpt-4o-mini and the
+# gpt-4o-2024-08-06 snapshot as the first that take it, and o1-preview and o1-mini never did.
+NO_STRICT_SCHEMA = re.compile(r"^(gpt-4o-2024-05-13|o1-preview|o1-mini)(-|$)")
 OUTPUT_ITEMS = frozenset({"message", "reasoning"})
 
 
@@ -75,7 +78,8 @@ class OpenAIAdapter:
             status["reason"] = f"OpenAI API answered HTTP {response.status_code}: API request failed"
             return status
         ids = sorted({m["id"] for m in response.json().get("data", []) if isinstance(m, dict) and isinstance(m.get("id"), str)
-                      and CHAT_MODEL.match(m["id"]) and not any(w in m["id"] for w in EXCLUDED_MODEL_WORDS)})
+                      and CHAT_MODEL.match(m["id"]) and not NO_STRICT_SCHEMA.match(m["id"])
+                      and not any(w in m["id"] for w in EXCLUDED_MODEL_WORDS)})
         status["models"] = [{"id": i, "display_name": i, "is_default": False, "description": "",
                              "default_reasoning_effort": None, "reasoning_efforts": []} for i in ids]
         status["ready"] = True

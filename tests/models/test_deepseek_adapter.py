@@ -211,3 +211,16 @@ def test_run_step_does_not_complete_truncated_or_empty_answers(monkeypatch, fini
     assert (result.status, result.raw_text, result.error, result.resolved_model) == (
         "failed", content or None, f"finish reason {finish}", "deepseek-v4-pro",
     )
+
+
+def test_a_tool_call_next_to_content_is_an_isolation_violation(monkeypatch):
+    """Review of af41a88 (P1): the same chat-completions check as the compatible connections."""
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    calls = [{"id": "call_1", "type": "function", "function": {"name": "x", "arguments": "{}"}}]
+
+    def handler(request):
+        return httpx.Response(200, json={"id": "chat-1", "model": "deepseek-v4-pro", "choices": [
+            {"finish_reason": "stop", "message": {"content": '{"claims": []}', "tool_calls": calls}}]})
+
+    result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, "deepseek-v4-pro"))
+    assert (result.status, result.tool_item_types) == ("isolation_violation", ["function"])

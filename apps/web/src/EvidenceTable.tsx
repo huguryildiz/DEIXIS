@@ -900,7 +900,9 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
         {flags.includes('ocr_numbers_unchecked') && current && flag(t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.'))}
         {flags.includes('number_not_in_quote') && current && flag(t('A number in this value does not appear in any of its quotes. It may be a count or a conversion the model made, or a misread; open the evidence and check it.'))}
         {flags.includes('text_superseded') && flag(t('This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction.'))}
-        {flags.includes('newer_text') && flag(t('PDF text for this source was added after this value was made. A recheck reads it; the result waits as a proposal.'))}
+        {flags.includes('newer_text') && flag(t(flags.includes('newer_text_auto') ? 'PDF text for this source was added after this value was made. The table reads it again by itself when no other run is active; if the new reading cites the PDF, it becomes the value, otherwise it waits as a proposal.'
+          : flags.includes('newer_text_auto_stopped') ? 'PDF text for this source was added after this value was made. The automatic re-read did not finish; a recheck reads it, and the result waits as a proposal.'
+          : 'PDF text for this source was added after this value was made. A recheck reads it; the result waits as a proposal.'))}
 
         {rechecking && !pending && <section className="evidence-block cell-waiting" aria-labelledby="evidence-slot-title">
           <h4 className="sub" id="evidence-slot-title">{t('Pending proposal')}<span className="cell-live" role="status"><span className="cell-pulse" aria-hidden />{t('Rechecking this cell…')}</span></h4>
@@ -964,7 +966,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
 
         <details className="cell-fold"><summary>{t('History ({n})', { n: cell.revisions.length })}</summary>
         {cell.revisions.length ? <ol className="hist evidence-history">{cell.revisions.slice().reverse().map(rev => <li key={rev.id}>
-          <strong>{t(kindLabels[rev.kind])}{rev.decision ? ` · ${t(decisionLabels[rev.decision])}` : ''}{rev.output_status === 'unverified_draft' ? ` · ${t('failed validation')}` : ''}{rev.id === current?.id ? ` · ${t('current value')}` : ''}</strong>
+          <strong>{t(rev.kind === 'model_fill' && rev.based_on_revision_id ? 'Model read it again with the new PDF text' : kindLabels[rev.kind])}{rev.decision ? ` · ${t(decisionLabels[rev.decision])}` : ''}{rev.output_status === 'unverified_draft' ? ` · ${t('failed validation')}` : ''}{rev.id === current?.id ? ` · ${t('current value')}` : ''}</strong>
           {rev.state && <span className="evidence-history-value">{revisionText(column, rev)}</span>}
           <small>{revisionMeta(rev, modelText)}</small>
           {rev.id !== current?.id && rev.note && <small>{rev.note}</small>}

@@ -1,7 +1,9 @@
 """Evidence tables: columns, rows and cells with append-only revisions (P5, D37).
 
 A model or the system gives a value only to an empty cell; anything else a model returns waits as a proposal, and only
-a user's decision changes the value a cell shows. Human writes carry the cell version their screen showed, so an older
+a user's decision changes the value a cell shows. One exception (D52): when PDF text of a source arrives after a model or
+the system made a cell's value from the abstract or metadata, an automatic re-read replaces that value; a value a person
+wrote or chose keeps the rule above. Human writes carry the cell version their screen showed, so an older
 screen cannot overwrite a newer edit. Evidence links resolve to stored passages of the cell's own source version.
 """
 
@@ -36,6 +38,22 @@ SHADOWED_STATUSES = ("pdf_removed", "pdf_replaced", "text_superseded")  # cell f
 NEWER_TEXT_SQL = ("EXISTS (SELECT 1 FROM passages np JOIN source_assets na ON na.id = np.asset_id"
                   " WHERE np.source_version_id = {cell}.source_version_id AND na.removed_at IS NULL"
                   " AND np.created_at > {revision}.created_at)")
+# A current value no person wrote or chose, read from the abstract or metadata only: an automatic re-read may replace it
+# when PDF text arrives (D52). `{revision}` names the cell's current revision.
+REFRESHABLE_SQL = "{revision}.author IN ('model', 'system') AND {revision}.reading_depth IN ('abstract', 'metadata')"
+# When the newest PDF text in use for the cell's source was stored.
+NEWEST_TEXT_SQL = ("(SELECT MAX(np.created_at) FROM passages np JOIN source_assets na ON na.id = np.asset_id"
+                   " WHERE np.source_version_id = {cell}.source_version_id AND na.removed_at IS NULL)")
+# Automatic re-read runs of the cell's table that planned this cell, queued at or after its source's newest PDF text.
+AUTO_RUNS_SQL = ("SELECT ar.status FROM runs ar, json_each(ar.target_json, '$.sources') asrc WHERE ar.kind = 'table_fill'"
+                 " AND json_extract(ar.target_json, '$.table_id') = {cell}.table_id AND json_extract(ar.target_json, '$.auto_refresh') = 1"
+                 " AND json_extract(asrc.value, '$.source_version_id') = {cell}.source_version_id"
+                 " AND EXISTS (SELECT 1 FROM json_each(asrc.value, '$.column_ids') acol WHERE acol.value = {cell}.column_id)"
+                 " AND ar.created_at >= " + NEWEST_TEXT_SQL)
+# A model proposal asked for after the cell's current revision `{revision}` and not yet decided.
+WAITING_SQL = ("EXISTS (SELECT 1 FROM cell_revisions q WHERE q.cell_id = {cell}.id AND q.kind = 'model_proposal'"
+               " AND q.rowid > {revision}.rowid AND NOT EXISTS (SELECT 1 FROM cell_revisions d WHERE d.based_on_revision_id = q.id"
+               " AND d.kind IN ('accept_proposal', 'dismiss_proposal')))")
 SOURCE_ACTIVE_SQL = ("EXISTS (SELECT 1 FROM corpus_memberships m JOIN evidence_tables et ON et.research_id = m.research_id"
                      " WHERE et.id = t.table_id AND m.source_version_id = t.source_version_id AND m.removed_at IS NULL)")
 
@@ -598,8 +616,15 @@ class TableStore:
     def save_model_output(self, research_id: str, table_id: str, column_id: str, svid: str, *, column_revision: int, state: str,
                           value: Any, note: str | None, reading_depth: str, output_status: str, links: list[dict[str, Any]],
                           run_id: str, step_id: str, step_input_id: str, model_connection: str, resolved_model: str | None,
-                          scope_revision: int, cell_version_at_request: int | None, recheck: bool) -> str:
-        """A valid fill result for an empty cell becomes its value; every other model result waits as a proposal."""
+                          scope_revision: int, cell_version_at_request: int | None, recheck: bool, refresh: bool = False) -> str:
+        """A valid fill result for an empty cell becomes its value; every other model result waits as a proposal.
+
+        With `refresh` (an automatic re-read after PDF text arrived, D52) a valid result also replaces a current value a
+        model or the system made from the abstract or metadata, when the result cites PDF text still in use, the column
+        is at the revision the model answered, the cell is at the version the run planned and no proposal waits. These are
+        checked here, in the write transaction: a person who edited the cell or column, or removed the PDF, meanwhile gets
+        the result as a proposal.
+        """
         with transaction(self.conn):
             cell = self._cell(table_id, column_id, svid, create=True)
             existing = self.conn.execute(
@@ -608,21 +633,50 @@ class TableStore:
             if existing:
                 return existing["id"]  # saved before a restart; a resumed run must not add it twice
             fill = not recheck and cell["current_revision_id"] is None and output_status == "structurally_valid"
-            kind = "model_fill" if fill else "model_proposal"
+            replaced = self._refreshable(cell, cell_version_at_request, column_revision, links) if (
+                refresh and not fill and output_status == "structurally_valid" and reading_depth != "abstract") else None
+            kind = "model_fill" if fill or replaced else "model_proposal"
             revision_id = self._insert_revision(
-                cell, kind=kind, author="model", column_revision=column_revision, state=state, value_json=value, note=note,
+                cell, kind=kind, author="model", based_on_revision_id=replaced, column_revision=column_revision, state=state,
+                value_json=value, note=note,
                 reading_depth=reading_depth, output_status=output_status, cell_version_at_request=cell_version_at_request,
                 scope_revision=scope_revision, run_id=run_id, step_id=step_id, step_input_id=step_input_id,
                 model_connection=model_connection, resolved_model=resolved_model,
             )
             self._insert_links(revision_id, [{**link, "step_input_id": step_input_id} for link in links])
-            if fill:
+            if fill or replaced:
                 self._set_current(research_id, cell, revision_id, kind)
             else:
                 self._touch(table_id)
                 self.store._event(research_id, "cell_revision_saved", {"table_id": table_id, "column_id": column_id,
                                                                        "source_version_id": svid, "kind": kind})
         return revision_id
+
+    def _refreshable(self, cell: dict[str, Any], cell_version_at_request: int | None, column_revision: int,
+                     links: list[dict[str, Any]]) -> str | None:
+        """The current revision an automatic re-read may replace (D52), or None when the result must wait as a proposal."""
+        if cell["current_revision_id"] is None or cell_version_at_request != cell["version"]:
+            return None
+        column = self.conn.execute("SELECT current_revision FROM table_columns WHERE id = ? AND removed_at IS NULL",
+                                   (cell["column_id"],)).fetchone()
+        if column is None or column["current_revision"] != column_revision:
+            return None  # the column was edited (or removed) while the model answered its earlier instruction
+        cited = [dict(r) for r in self.conn.execute(
+            f"SELECT p.asset_id, a.source_version_id AS asset_source, {EVIDENCE_STATUS_SQL} AS status FROM passages p"
+            " LEFT JOIN source_assets a ON a.id = p.asset_id WHERE p.id IN (SELECT value FROM json_each(?))",
+            (dumps([link["passage_id"] for link in links]),))]
+        # The value must rest on PDF text, and every passage it cites must still be in use: a PDF removed or replaced
+        # during the call leaves the result a proposal.
+        if not any(c["asset_id"] for c in cited) or len(cited) != len({link["passage_id"] for link in links}) \
+                or any(c["status"] != "current" or (c["asset_id"] and c["asset_source"] != cell["source_version_id"]) for c in cited):
+            return None
+        current = self._revision(cell["current_revision_id"])
+        if current["author"] not in ("model", "system") or current["reading_depth"] not in ("abstract", "metadata"):
+            return None
+        latest = self._latest_proposal(cell["id"])
+        if latest and self._decision(latest["id"]) is None:
+            return None
+        return current["id"]
 
     def save_no_text(self, research_id: str, table_id: str, column_id: str, svid: str, *, column_revision: int, run_id: str,
                      step_id: str, scope_revision: int) -> str | None:
@@ -655,9 +709,12 @@ class TableStore:
         )]
 
     def fill_plan(self, research_id: str, table_id: str, column_ids: list[str] | None = None,
-                  include_stale: bool = False) -> dict[str, Any]:
+                  include_stale: bool = False, refresh: bool = False) -> dict[str, Any]:
         """The cells a fill would read: empty cells and, with include_stale, values made under an earlier column revision
         or citing passages no longer given to a model (a removed or replaced PDF, an earlier extraction).
+
+        With refresh (D52) only the cells an automatic re-read may replace: a value a model or the system made from the
+        abstract or metadata, made before PDF text of its source was stored, with no proposal waiting.
 
         Rows are taken in table order up to MAX_FILL_SOURCES sources. A source without stored text needs no model call.
         """
@@ -669,19 +726,22 @@ class TableStore:
                 f" JOIN passages p ON p.id = l.passage_id LEFT JOIN source_assets a ON a.id = p.asset_id"
                 f" WHERE l.cell_revision_id = r.id AND {EVIDENCE_STATUS_SQL} <> 'current') AS shadowed,"
                 # A proposal asked for after the current value and not yet decided: asking again would only repeat it.
-                " EXISTS (SELECT 1 FROM cell_revisions q WHERE q.cell_id = c.id AND q.kind = 'model_proposal'"
-                " AND q.rowid > r.rowid AND NOT EXISTS (SELECT 1 FROM cell_revisions d WHERE d.based_on_revision_id = q.id"
-                " AND d.kind IN ('accept_proposal', 'dismiss_proposal'))) AS waiting,"
-                f" {NEWER_TEXT_SQL.format(cell='c', revision='r')} AS newer_text"
+                f" {WAITING_SQL.format(cell='c', revision='r')} AS waiting,"
+                f" {NEWER_TEXT_SQL.format(cell='c', revision='r')} AS newer_text,"
+                f" COALESCE({REFRESHABLE_SQL.format(revision='r')}, 0) AS refreshable"
                 " FROM evidence_cells c LEFT JOIN cell_revisions r"
                 " ON r.id = c.current_revision_id WHERE c.table_id = ? AND c.source_version_id = ?", (table_id, svid)
             )}
             # Stale: made under an earlier column revision, citing a file or extraction no longer in use (D45), or made
             # before PDF text of its source was stored.
-            targets = [c["id"] for c in columns if c["id"] not in cells or cells[c["id"]]["column_revision"] is None
-                       or (include_stale and not cells[c["id"]]["waiting"]
-                           and (cells[c["id"]]["column_revision"] != c["current_revision"] or cells[c["id"]]["shadowed"]
-                                or cells[c["id"]]["newer_text"]))]
+            if refresh:
+                targets = [c["id"] for c in columns if c["id"] in cells and cells[c["id"]]["refreshable"]
+                           and cells[c["id"]]["newer_text"] and not cells[c["id"]]["waiting"]]
+            else:
+                targets = [c["id"] for c in columns if c["id"] not in cells or cells[c["id"]]["column_revision"] is None
+                           or (include_stale and not cells[c["id"]]["waiting"]
+                               and (cells[c["id"]]["column_revision"] != c["current_revision"] or cells[c["id"]]["shadowed"]
+                                    or cells[c["id"]]["newer_text"]))]
             if not targets:
                 continue
             if len(sources) == MAX_FILL_SOURCES:
@@ -699,18 +759,23 @@ class TableStore:
         return self.store.run(row["id"]) if row else None
 
     def request_fill(self, research_id: str, table_id: str, column_ids: list[str] | None, include_stale: bool,
-                     expected_version: int, idempotency_key: str | None) -> dict[str, Any]:
-        """Queue a fill of the planned cells. The plan is stored with the run, so a resumed run reads the same sources."""
+                     expected_version: int, idempotency_key: str | None, refresh: bool = False) -> dict[str, Any]:
+        """Queue a fill of the planned cells. The plan is stored with the run, so a resumed run reads the same sources.
+
+        With refresh the run is an automatic re-read after PDF text arrived (D52, `table_refresh`); its target says so.
+        """
         key = self._key(research_id, idempotency_key)
         with transaction(self.conn):
             if replayed := self._replayed_run(key, "table_fill"):
                 return replayed
             check_expected_version(expected_version, self._table(research_id, table_id)["version"])
-            plan = self.fill_plan(research_id, table_id, column_ids, include_stale)
+            plan = self.fill_plan(research_id, table_id, column_ids, include_stale, refresh=refresh)
             if not plan["sources"]:
                 raise InvalidTableInput("No cell of this table needs filling")
             target = {"table_id": table_id, "column_ids": column_ids, "include_stale": include_stale,
                       "sources": [{k: s[k] for k in ("source_version_id", "column_ids", "cell_versions")} for s in plan["sources"]]}
+            if refresh:
+                target["auto_refresh"] = True
             return self.store.create_run(research_id, "table_fill", {"max_model_calls": plan["max_model_calls"], "max_provider_requests": 0},
                                          key, target)
 
@@ -892,6 +957,14 @@ class TableStore:
         if current and self.conn.execute(f"SELECT {NEWER_TEXT_SQL.format(cell='c', revision='r')} FROM evidence_cells c"
                                          " JOIN cell_revisions r ON r.id = ? WHERE c.id = ?", (current["id"], cell["id"])).fetchone()[0]:
             flags.append("newer_text")
+            if pending is None and current["author"] in ("model", "system") and current["reading_depth"] in ("abstract", "metadata"):
+                # The table reads it again by itself (D52), unless its latest automatic re-read since the newest PDF text
+                # ended without replacing it (failed, paused, cancelled, or no answer for this cell): then a person rechecks.
+                last = self.conn.execute(
+                    f"SELECT ({AUTO_RUNS_SQL.format(cell='c')} ORDER BY ar.rowid DESC LIMIT 1) FROM evidence_cells c WHERE c.id = ?",
+                    (cell["id"],)).fetchone()[0]
+                flags.append("newer_text_auto" if last is None or last in ("queued", "running", "pause_requested")
+                             else "newer_text_auto_stopped")
         from deixis.domain.contracts import value_has_number_or_math  # contracts imports this module
         from deixis.domain.numbers import unquoted_numbers
 

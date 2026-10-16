@@ -84,6 +84,18 @@ function citedWorks(answer: Answer) {
   return new Set(answer.claims.flatMap(c => c.evidence.map(e => e.work_id))).size
 }
 
+// How deep the answer read its cited works: a work counts as full text when any passage it is cited for is PDF text,
+// else as abstract only. Shown above the answer so an abstract-based first version reads as one.
+function basisLine(answer: Answer) {
+  const full = new Map<string, boolean>()
+  for (const e of answer.claims.flatMap(c => c.evidence)) full.set(e.work_id, (full.get(e.work_id) ?? false) || e.kind !== 'abstract')
+  const n = full.size, fromFull = [...full.values()].filter(Boolean).length, fromAbstract = n - fromFull
+  if (!n) return null
+  if (!fromAbstract) return t(n === 1 ? 'The cited source was read from its full text.' : 'All {n} cited sources were read from their full text.', { n: count(n) })
+  if (!fromFull) return t(n === 1 ? 'The cited source was read from its abstract only.' : 'All {n} cited sources were read from their abstracts only.', { n: count(n) })
+  return t('Of {n} cited sources, {full} were read from their full text and {abstract} from their abstracts only.', { n: count(n), full: count(fromFull), abstract: count(fromAbstract) })
+}
+
 // versions: the question's valid reports, newest first, for the report panel's version select; latestVersion marks an
 // earlier version in the report's meta line.
 // The answer's review dialog and panel live on the research (ResearchView), so an open review stays on the answer
@@ -148,6 +160,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     </div>
   }
   const { refs, citeLabel, sections, suggestion, limits } = reportParts(answer, sources, style)
+  const basis = basisLine(answer)
   const sample = [...refs.values()].map(({ e }) => sources.find(s => s.source_version_id === e.source_version_id)).find(s => !!s?.authors.length)
   const numeric = style === 'ieee'
   const markdown = () => reportMarkdown(answer, sources, title, version, style)
@@ -189,6 +202,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {/* A stale source selection is told by the chip on the report's meta line (ReportPanel), not by a label and a box here. */}
     {((answer.applicability !== 'current' && answer.applicability !== 'stale_selection') || answer.late_revision) && <div className="section-label">{t('Source-linked answer')}{answer.applicability === 'stale_scope' ? ` · ${t('earlier question revision')}` : answer.applicability === 'stale_selection' ? ` · ${t('earlier source selection')}` : ''}</div>}
     {answer.late_revision && <p className="legacy-mini-note"><span className="support-badge">{t(LATE_REVISION_LABEL)}</span> {answer.late_revision.base_report_version !== null && t(LATE_REVISION_DETAIL, { n: answer.late_revision.upgraded_sources, v: answer.late_revision.base_report_version })}</p>}
+    {basis && <p className="legacy-mini-note answer-basis">{basis}</p>}
     {answer.applicability === 'stale_scope' && <Notice tone="attention">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</Notice>}
     {answer.source_text_changed && <Notice tone="attention">{t('A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.')}</Notice>}
     {answer.capability_notice && <Notice tone="info">{answer.capability_notice}</Notice>}
@@ -203,7 +217,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       <p className="answer-paragraph">{claims.map(claim => { const change = diff?.claims.get(claim.id); return <span className="claim" key={claim.id}>
         {change?.added ? <ins><span className="sr-only">{t('Added:')} </span><MathText text={claim.text} /></ins> : <MathText text={claim.text} />}
         {claim.evidence.map(e => {
-          const chipButton = <button key={e.passage_id} className="cite-chip" title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.text_source === 'equation_ocr' && t('equations read by Mathpix'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{citeLabel(claim, e) ?? `[${refs.get(e.passage_id)?.n}]`}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>
+          const chipButton = <button key={e.passage_id} className={`cite-chip${e.kind === 'abstract' ? ' is-abstract' : ''}`} title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.text_source === 'equation_ocr' && t('equations read by Mathpix'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{citeLabel(claim, e) ?? `[${refs.get(e.passage_id)?.n}]`}{e.kind === 'abstract' && <span className="cite-chip-origin"><BookOpenText size={10} aria-hidden /><span className="sr-only">{t('abstract')}</span></span>}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>
           return change?.addedPassages.has(e.passage_id) ? <ins key={e.passage_id} className="cite-ins"><span className="sr-only">{t('Added citation:')} </span>{chipButton}</ins> : chipButton
         })}
         {/* A passage the earlier version's claim of the same text cited and this one does not: named, not opened. */}
@@ -305,6 +319,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
         <span className="report-artifact-copy"><strong>{title}</strong>
           <span className="report-artifact-meta">{t('Report')} · V{version} · {t(answer.claims.length === 1 ? '{n} claim' : '{n} claims', { n: count(answer.claims.length) })} · {t(cited === 1 ? '{n} source' : '{n} sources', { n: count(cited) })}</span></span>
       </button>}
+    {basis && sections.length > 0 && <p className="foot-note answer-basis">{basis}</p>}
     {sections.length > 0 && <div className="prose answer-prose">{sections.slice(0, PROSE_SECTIONS).map(({ claims }, index) => <p key={index}>
       {claims.map(claim => <span className="claim" key={claim.id}><MathText text={claim.text} />
         {claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}

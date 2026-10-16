@@ -139,8 +139,9 @@ class BackgroundFetchLane:
                 "UPDATE fast_path_background_fetches SET status = ?, outcome_code = ?, finished_at = ?"
                 " WHERE run_id = ? AND work_id = ?",
                 (status, code, fast_path.timestamp(self.store.clock), run["id"], wid))
-        from deixis.workflow import late_revision
+        from deixis.workflow import late_revision, table_refresh
         late_revision.advance(self.flow, run["research_id"])
+        table_refresh.advance(self.store, run["research_id"])
 
     async def _fetch(self, run: dict[str, Any], wid: str) -> None:
         # The fetch is the run's work, started after it ended: its provider requests are stored as the run's (D31).
@@ -151,8 +152,9 @@ class BackgroundFetchLane:
             await self.flow._overlap_work(run, wid)
 
     def pick(self) -> None:
-        from deixis.workflow import late_revision
+        from deixis.workflow import late_revision, table_refresh
         late_revision.advance(self.flow)
+        table_refresh.advance(self.store)
         for key, task in list(self.tasks.items()):
             if task.done():
                 del self.tasks[key]

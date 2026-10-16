@@ -4246,6 +4246,8 @@ class ResearchFlow:
         columns = {c["column_id"]: c for c in target["columns"]}
         # Reading depth follows the passages the step was given, never the model's words; no cell gets full_text (D37).
         depth = "abstract" if all(p["locator"]["kind"] == "abstract" for p in payload["passages"]) else "selected_sections"
+        # An automatic re-read after PDF text arrived may replace a value a model or the system made (D52).
+        refresh = not recheck and run["kind"] == "table_fill" and bool((run.get("target") or {}).get("auto_refresh"))
         tables = TableStore(self.store)
         for cell in cells:
             column = columns[cell["column_id"]]
@@ -4255,7 +4257,7 @@ class ResearchFlow:
                 reading_depth=depth, output_status=status, links=contracts.cell_links(payload, cell), run_id=run["id"],
                 step_id=payload["step_id"], step_input_id=payload["step_input_id"], model_connection=session["connection"],
                 resolved_model=session["resolved_model"], scope_revision=payload["scope_revision"],
-                cell_version_at_request=cell_versions.get(column["column_id"]), recheck=recheck,
+                cell_version_at_request=cell_versions.get(column["column_id"]), recheck=recheck, refresh=refresh,
             )
         return len(cells)
 

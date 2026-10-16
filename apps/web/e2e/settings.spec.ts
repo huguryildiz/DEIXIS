@@ -800,6 +800,7 @@ test.describe.serial('S24: the Settings page', () => {
     let scopus = 'not_configured'
     let mathpix = 'off'
     let zotero = false
+    let serpapi = 'not_configured'
     let email: string | null = null
     const option = (provider: string, models: string[] = []) => ({ provider, models, available: true, reason: null })
     const semantic = (provider: string) => ({ provider, model: null, explicit: true,
@@ -808,7 +809,7 @@ test.describe.serial('S24: the Settings page', () => {
     await page.route(url => url.pathname === '/api/connections', async route => {
       const response = await route.fetch()
       const body = await response.json() as { models: Record<string, unknown>; providers: { id: string; access_mode: string }[] }
-      await route.fulfill({ response, json: { ...body, models: { ...body.models, codex }, providers: body.providers.map(p => p.id === 'scopus' ? { ...p, access_mode: scopus } : p) } })
+      await route.fulfill({ response, json: { ...body, models: { ...body.models, codex }, providers: body.providers.map(p => p.id === 'scopus' ? { ...p, access_mode: scopus } : p.id === 'serpapi' ? { ...p, access_mode: serpapi } : p) } })
     })
     await page.route(url => url.pathname === '/api/mathpix', async route => {
       const response = await route.fetch()
@@ -853,6 +854,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(row('Storage')).toContainText('PDF files are kept on this computer')
     await expect(row('Your keys')).toContainText('stored on this computer')
     await expect(row('Usage data')).toContainText('DEIXIS sends no usage data')
+    await expect(row('Usage data')).toContainText('Gemini CLI it switches their telemetry off, in their sign-in windows too')
     // A default model chosen on the Models tab, a spent-down embedding choice and a Scopus key set elsewhere show up on return.
     await models()
     await page.getByRole('combobox', { name: 'Literature model' }).selectOption({ label: 'SYNTHETIC model A' })
@@ -875,11 +877,12 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(row('Lookups by DOI')).toContainText('Unpaywall')
     await expect(row('Email address')).toContainText('and to Unpaywall with each PDF lookup')
     // Mathpix on and a Zotero web key show up under optional services on return.
-    mathpix = 'on'; zotero = true
+    mathpix = 'on'; zotero = true; serpapi = 'api_key'
     await sources()
     await general()
     await expect(row('Optional services')).toContainText('images of equation areas cut from PDFs are sent to Mathpix')
     await expect(row('Optional services')).toContainText('titles and DOIs of works are sent to zotero.org')
+    await expect(row('Optional services')).toContainText('none is found, the work’s title is sent to SerpApi')
     // Back to the built-in model: the line comes back.
     await models()
     await page.locator('.semantic-option[data-row="builtin"] input').click()

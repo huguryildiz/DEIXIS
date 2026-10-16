@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 import re
 import shlex
@@ -41,9 +42,11 @@ TOOLS = {"codex": ("codex", ["login"], "Codex CLI"), "claude": ("claude", ["auth
 # "session_confirmed": signed in, but not known to be a new sign-in. No account identity is compared.
 NO_LOGIN_COMMAND = ("gemini_cli",)
 # The telemetry switches of the same tools the model runs use (F3), set on the sign-in window too: Claude Code takes its
-# environment variables, Codex's `login` takes `-c`. The Gemini CLI window is an ordinary session in the person's own
-# Gemini settings, and no documented environment variable switches its usage statistics off, so it gets none; the
-# Copilot CLI has no documented switch.
+# environment variables, Codex's `login` takes `-c`, and the Gemini CLI window reads a small DEIXIS-written system
+# settings file named by GEMINI_CLI_SYSTEM_SETTINGS_PATH (geminicli.com/docs/reference/configuration, settings files).
+# That variable replaces a system-wide Gemini settings file for this window only; the person's own settings and sign-in
+# files are not touched. The Copilot CLI has no documented switch.
+GEMINI_SIGNIN_SETTINGS = {"privacy": {"usageStatisticsEnabled": False}, "telemetry": {"enabled": False}}
 SIGNIN_ENV = {"claude": CLAUDE_TELEMETRY_OFF}
 SIGNIN_ARGS = {"codex": [part for override in TELEMETRY_OVERRIDES for part in ("-c", override)]}
 SESSION_CONFIRMED = "Gemini CLI is signed in. DEIXIS cannot tell a new sign-in from the existing session."
@@ -230,9 +233,14 @@ class AccountSignIn:
             status_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             for stale in status_dir.glob(f"status-{tool}-*"):  # left by an attempt that never cleaned up
                 stale.unlink(missing_ok=True)
+            env = dict(SIGNIN_ENV.get(tool) or {})
+            if tool == "gemini_cli":
+                settings_file = status_dir / "gemini-system-settings.json"
+                settings_file.write_text(json.dumps(GEMINI_SIGNIN_SETTINGS), encoding="utf-8")
+                env["GEMINI_CLI_SYSTEM_SETTINGS_PATH"] = str(settings_file)
             spec = build_launch(self._platform, command.argv[0], [*command.argv[1:], *args, *SIGNIN_ARGS.get(tool, [])],
                                 self._codex_home if tool == "codex" else None,
-                                script_dir=status_dir, status_file=status, env=SIGNIN_ENV.get(tool))
+                                script_dir=status_dir, status_file=status, env=env or None)
             try:
                 reserved["handle"] = self._launcher(spec)
             except OSError as exc:

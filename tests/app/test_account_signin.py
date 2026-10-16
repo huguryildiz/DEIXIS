@@ -10,6 +10,7 @@ with these commands, or what `codex login` and `claude auth login` ask.
 
 import asyncio
 import base64
+import json
 import shlex
 import subprocess
 from pathlib import Path
@@ -177,8 +178,25 @@ def test_sign_in_windows_carry_the_telemetry_switches_where_the_tool_can_take_th
     scripts = {Path(spec[3]).name.split("-")[-1].removesuffix(".command"): Path(spec[3]).read_text() for spec in launched}
     assert " login -c analytics.enabled=false -c feedback.enabled=false\n" in scripts["codex"]
     assert "DISABLE_TELEMETRY=1 " in scripts["claude"] and "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 " in scripts["claude"]
-    for other in ("copilot", "gemini"):
-        assert "DISABLE_TELEMETRY" not in scripts[other] and "analytics" not in scripts[other]
+    assert "DISABLE_TELEMETRY" not in scripts["copilot"] and "analytics" not in scripts["copilot"]
+    assert "DISABLE_TELEMETRY" not in scripts["gemini"] and "analytics" not in scripts["gemini"]
+
+
+def test_gemini_sign_in_window_reads_a_deixis_written_system_settings_file(served):
+    # F3 review: the documented GEMINI_CLI_SYSTEM_SETTINGS_PATH names a small file with usage statistics and telemetry
+    # off; HOME and the person's own Gemini files are not touched.
+    _, client, launched, settings, _, _ = served
+    client.post("/api/accounts/gemini_cli/sign-in")
+    script = Path(launched[0][3]).read_text()
+    path = settings.codex_home.parent / "sign-in" / "gemini-system-settings.json"
+    assert f"GEMINI_CLI_SYSTEM_SETTINGS_PATH={shlex.quote(str(path))} " in script and "HOME=" not in script
+    assert json.loads(path.read_text()) == {"privacy": {"usageStatisticsEnabled": False}, "telemetry": {"enabled": False}}
+
+
+def test_gemini_sign_in_variable_is_set_in_the_windows_script_too(tmp_path):
+    win = build_launch("win32", "C:\\bin\\gemini.exe", [], None, which=lambda name: None,
+                       env={"GEMINI_CLI_SYSTEM_SETTINGS_PATH": "C:\\data\\sign-in\\gemini-system-settings.json"})
+    assert "$env:GEMINI_CLI_SYSTEM_SETTINGS_PATH = 'C:\\data\\sign-in\\gemini-system-settings.json'; " in base64.b64decode(win[5]).decode("utf-16-le")
 
 
 def test_windows_and_linux_sign_in_launches_set_the_same_variables():

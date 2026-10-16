@@ -7,7 +7,8 @@ import { connectionName } from './labels'
 // they are now. It describes flows and promises nothing the code does not enforce. What the fast path sends where:
 // OpenAlex gets the search words (Semantic Scholar too in Detailed mode); Semantic Scholar, Crossref and Scopus get DOIs
 // for abstracts and metadata; OpenAlex, Unpaywall (only with an email), CORE (only with a key) and Europe PMC get DOIs
-// to find a PDF. SerpApi is called nowhere (flow.py passes web_search=False). Nothing here was measured on the network.
+// to find a PDF. SerpApi gets a title only from the "Find PDF" action (acquire_for_source with web_search on), never
+// from a research run. Nothing here was measured on the network.
 
 const list = (names: string[]) => new Intl.ListFormat(uiLocale(), { style: 'long', type: 'conjunction' }).format(names)
 
@@ -46,13 +47,14 @@ function dataFlowRows({ defaults, connections, semantic, email, optional }: Data
     : semantic.provider === 'off' ? t('Semantic search is off. Nothing is sent.')
     : t('Stays on this computer. {server} reads it and runs here.', { server: semantic.provider === 'ollama' ? 'Ollama' : 'LM Studio' })
 
-  const extras = !optional ? null : [
+  const extras = !optional || !connections ? null : [
     ...(optional.mathpix ? [t('Mathpix is on: images of equation areas cut from PDFs are sent to Mathpix.')] : []),
+    ...(access('serpapi') ? [t('SerpApi: when you ask DEIXIS to find a PDF and none is found, the work’s title is sent to SerpApi.')] : []),
     ...(optional.zoteroWeb ? [t('A Zotero web key is saved: when you use your web library, titles and DOIs of works are sent to zotero.org to find their PDFs.')] : []),
   ]
 
   const copilot = connections?.models.copilot_cli?.installed
-  const usage = t('DEIXIS sends no usage data. When it runs Claude Code or Codex it switches their telemetry off, in their sign-in windows too. Gemini CLI runs with its telemetry and usage statistics off, but its sign-in window is an ordinary Gemini session with your own settings.')
+  const usage = t('DEIXIS sends no usage data. Whenever it runs Claude Code, Codex or Gemini CLI it switches their telemetry off, in their sign-in windows too.')
     + (copilot ? ` ${t('GitHub Copilot CLI has no documented telemetry switch for subscription use, so DEIXIS sets none.')}` : '')
 
   return [

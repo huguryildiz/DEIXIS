@@ -353,3 +353,21 @@ def test_close_disconnects_every_active_client(monkeypatch, tmp_path):
     asyncio.run(exercise())
     assert len(BlockingClient.instances) == 2
     assert all(client.disconnected for client in BlockingClient.instances)
+
+
+def test_claude_code_telemetry_is_switched_off_for_every_launch(monkeypatch, tmp_path):
+    prepare(monkeypatch)
+    probed = []
+
+    async def version(argv, timeout=None, env=None):
+        probed.append(env)
+        return tool_probe.Probe(0, "2.1.270 (Claude Code)")
+
+    monkeypatch.setattr(claude, "probe", version)
+    adapter = claude.ClaudeCodeAdapter(tmp_path)
+    asyncio.run(adapter.health(refresh=True))
+    asyncio.run(adapter.run_step("BASE", "DEVELOPER", "MESSAGE", {"type": "object"}, "opus", "max"))
+    assert len(FakeClient.options) == 2 and probed
+    for env in [o.env for o in FakeClient.options] + probed:
+        for name in ("DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"):
+            assert env[name] == "1"

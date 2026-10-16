@@ -47,6 +47,9 @@ BASE_OVERRIDES = (
     "include_apps_instructions=false",
     'history.persistence="none"',
     "notify=[]",
+    # Documented config keys (Codex config reference): analytics for this profile off, /feedback submission off.
+    "analytics.enabled=false",
+    "feedback.enabled=false",
 )
 
 

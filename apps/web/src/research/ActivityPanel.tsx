@@ -42,7 +42,7 @@ export function ActivityPanel({ researchId, eventCursor, events }: { researchId:
         <div className="tbl-wrap"><table className="activity-table">
           <thead><tr><th>{t('Run')}</th><th>{t('Status')}</th><th>{t('Took')}</th><th>{t('Model calls')}</th><th>{t('Started')}</th></tr></thead>
           <tbody>{runs.map(run => {
-            const name = run.kind === 'answer' && run.report_version ? `${t('Answer')} V${run.report_version}` : t(runKindLabels[run.kind] ?? run.kind)
+            const name = run.kind === 'answer' && run.report_version ? `${t('Answer')} V${run.report_version}${run.report_revision ? `.${run.report_revision}` : ''}` : t(runKindLabels[run.kind] ?? run.kind)
             const mode = run.mode ? MODES[run.mode] : undefined
             const detail = [mode && t('{effort} depth', { effort: t(effortLabels[mode]) }), t('question revision {n}', { n: run.scope_revision })].filter(Boolean).join(' · ')
             return <tr key={run.id}>

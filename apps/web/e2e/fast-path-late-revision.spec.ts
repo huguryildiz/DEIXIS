@@ -27,11 +27,11 @@ test.beforeAll(async () => {
   rid = records[0].id
 })
 
-type Bib = { answers: { id: string; report_version: number; claims: { evidence: { source_version_id: string }[] }[] }[]; sources: { source_version_id: string; work_id: string; title: string }[] }
+type Bib = { answers: { id: string; report_version: number; report_revision: number; claims: { evidence: { source_version_id: string }[] }[] }[]; sources: { source_version_id: string; work_id: string; title: string }[] }
 // A cited-sources export link names V1's answer and downloads the sources V1's claims cite (titles from the records).
 async function expectV1Export(href: string | null) {
   const view = await (await fetch(`${url}/api/researches/${rid}`)).json() as Bib
-  const v1 = view.answers.find(a => a.report_version === 1)!
+  const v1 = view.answers.find(a => a.report_version === 1 && !a.report_revision)!
   expect(href).toContain(`answer_id=${v1.id}`)
   const response = await fetch(new URL(href!, url))
   expect(response.status).toBe(200)
@@ -73,8 +73,8 @@ for (const width of [1440, 390]) {
     await expect(page.locator('#research-answer')).toContainText('Report · V1')
     await expect(page.locator('.answer-thread')).not.toContainText('A late full text produced answer')
     // V1's "View N cited sources" lists the works V1 cites, from its own claims, not the draft's empty flags.
-    const view = await (await fetch(`${url}/api/researches/${rid}`)).json() as { answers: { report_version: number; claims: { evidence: { source_version_id: string }[] }[] }[]; sources: { source_version_id: string; work_id: string }[] }
-    const v1 = view.answers.find(a => a.report_version === 1)!
+    const view = await (await fetch(`${url}/api/researches/${rid}`)).json() as { answers: { report_version: number; report_revision: number; claims: { evidence: { source_version_id: string }[] }[] }[]; sources: { source_version_id: string; work_id: string }[] }
+    const v1 = view.answers.find(a => a.report_version === 1 && !a.report_revision)!
     const workOf = new Map(view.sources.map(s => [s.source_version_id, s.work_id]))
     const citedWorks = new Set(v1.claims.flatMap(c => c.evidence.map(e => workOf.get(e.source_version_id))))
     expect(citedWorks.size).toBeGreaterThan(0)
@@ -113,15 +113,15 @@ for (const width of [1440, 390]) {
     await page.goto(`${url}/#/research/${rid}`)
     // The thread names the late revision in its notice (UI parity S10, R29); the card reads as any report card.
     const thread = page.locator('.answer-thread')
-    await expect(page.locator('#research-answer')).toContainText(/Report · V2 · \d+ claims? · \d+ sources?$/)
-    await expect(thread.locator('.answer-notice')).toContainText('A late full text produced answer V2. Full text for 1 source arrived after V1 was written; V2 reads it (selected pages). This happens once per answer. V1 is kept.')
-    // "Compare with V1" opens V2's report with its changes (S21); V1's own report is one version choice away.
+    await expect(page.locator('#research-answer')).toContainText(/Report · V1.1 · \d+ claims? · \d+ sources?$/)
+    await expect(thread.locator('.answer-notice')).toContainText('A late full text produced answer V1.1. Full text for 1 source arrived after V1 was written; V1.1 reads it (selected pages). This happens once per answer. V1 is kept.')
+    // "Compare with V1" opens V1.1's report with its changes (S21); V1's own report is one version choice away.
     await thread.getByRole('button', { name: 'Compare with V1' }).click()
-    await expect(page.locator('.report-document-head')).toContainText('Report · V2')
+    await expect(page.locator('.report-document-head')).toContainText('Report · V1.1')
     await reportPanel(page).getByRole('combobox', { name: 'Version' }).click()
     await page.getByRole('option', { name: 'V1', exact: true }).click()
     await expect(page.locator('.report-document-head')).toContainText('Report · V1')
-    // The old report's cited-sources links export V1's sources, not V2's.
+    // The old report's cited-sources links export V1's sources, not V1.1's.
     for (const format of ['.bib', '.ris']) await expectV1Export(await page.locator('.report-content .export-links a', { hasText: format }).getAttribute('href'))
     await page.keyboard.press('Escape')
     await expect(page.locator('.report-document-head')).toHaveCount(0)
@@ -132,21 +132,21 @@ for (const width of [1440, 390]) {
     await page.screenshot({ path: path.join(OUT, `late-pdf-${width}.png`), fullPage: true })
     const view = await (await fetch(`${url}/api/researches/${rid}`)).json()
     expect(view.answers).toHaveLength(2)
-    expect(view.answers.map((a: { report_version: number }) => a.report_version)).toEqual([2, 1])
+    expect(view.answers.map((a: { report_version: number; report_revision: number }) => [a.report_version, a.report_revision])).toEqual([[1, 1], [1, 0]])
     expect(view.answers[0].review).not.toBeNull()
   })
 }
 
-// UI parity S21 (P4): the answer diff of V2 against V1, the version its late revision revises. The fixture's scripted
+// UI parity S21 (P4): the answer diff of V1.1 against V1, the version its late revision revises. The fixture's scripted
 // answers (fixture_server.late_pdf_answer) differ in each way the diff names; every expected mark is built from the two
 // stored answers the view returns, so the test checks what the records say, not what the page draws.
-type DiffView = { answers: { id: string; report_version: number; claims: { text: string; evidence: { passage_id: string; kind: string; source_key: string | null; title: string }[] }[]; limitations: { kind: string; text: string }[] }[] }
+type DiffView = { answers: { id: string; report_version: number; report_revision: number; claims: { text: string; evidence: { passage_id: string; kind: string; source_key: string | null; title: string }[] }[]; limitations: { kind: string; text: string }[] }[] }
 for (const width of [1440, 390]) {
   test(`[late-pdf] Compare with V1: the changes box and the ins/del marks at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     const view = await (await fetch(`${url}/api/researches/${rid}`)).json() as DiffView
-    const v1 = view.answers.find(a => a.report_version === 1)!
-    const v2 = view.answers.find(a => a.report_version === 2)!
+    const v1 = view.answers.find(a => a.report_version === 1 && !a.report_revision)!
+    const v2 = view.answers.find(a => a.report_version === 1 && a.report_revision === 1)!
     const texts = (a: DiffView['answers'][number]) => a.claims.map(c => c.text)
     const added = texts(v2).filter(t => !texts(v1).includes(t))
     const removed = texts(v1).filter(t => !texts(v2).includes(t))
@@ -159,13 +159,13 @@ for (const width of [1440, 390]) {
     await page.goto(`${url}/#/research/${rid}`)
     await page.locator('.answer-thread').getByRole('button', { name: 'Compare with V1' }).click()
     const report = reportPanel(page)
-    await expect(report.locator('.report-document-head')).toContainText('Report · V2')
+    await expect(report.locator('.report-document-head')).toContainText('Report · V1.1')
     const toggle = report.locator('.split-panel-head .report-compare')
     await expect(toggle).toHaveAccessibleName('Hide changes')
     const box = report.locator('.changes')
     await expect(box.locator('> b')).toHaveText('Changes since V1')
     await expect(box.locator('> ul > li')).toHaveText([
-      `Cited from full text in V2, only from abstracts in V1: ${key}`,
+      `Cited from full text in V1.1, only from abstracts in V1: ${key}`,
       'Badge on 1 claim changed from “From abstract” to “Full text”',
       '1 claim keeps its wording but cites different passages',
       '1 claim added',
@@ -185,7 +185,7 @@ for (const width of [1440, 390]) {
     await expect(upgradedClaim.locator('del.badge-s')).toHaveText(['Removed: From abstract'])
     await expect(upgradedClaim.locator('ins.badge-s')).toHaveText(['Added: Full text'])
     await expect(content.locator('ins, del')).toHaveCount(7)
-    // The limits: V2's new one inside `ins`, V1's dropped one inside `del`.
+    // The limits: V1.1's new one inside `ins`, V1's dropped one inside `del`.
     await expect(content.locator('.plain-list ins')).toHaveText([`Added: ${v2.limitations[0].kind}: ${v2.limitations[0].text}`])
     await expect(content.locator('.plain-list del')).toHaveText([`Removed: ${v1.limitations[0].kind}: ${v1.limitations[0].text}`])
     // Not by colour alone: an addition is underlined, a removal struck through; the tints are the mockup's --ins/--del.
@@ -202,10 +202,10 @@ for (const width of [1440, 390]) {
     await expect(box).toHaveText('ChangesV1 is the first version of this report; there is no earlier version to compare it with.')
     await expect(content.locator('ins, del')).toHaveCount(0)
     await report.getByRole('combobox', { name: 'Version' }).click()
-    await page.getByRole('option', { name: 'V2', exact: true }).click()
+    await page.getByRole('option', { name: 'V1.1', exact: true }).click()
     await expect(box.locator('> b')).toHaveText('Changes since V1')
     await expect(content.locator('ins, del')).toHaveCount(7)
-    // Hide changes: no box, no marks; the report is V2's as stored.
+    // Hide changes: no box, no marks; the report is V1.1's as stored.
     await toggle.click()
     await expect(toggle).toHaveAccessibleName('Show changes')
     await expect(box).toHaveCount(0)
@@ -217,7 +217,7 @@ for (const width of [1440, 390]) {
     await page.keyboard.press('Escape')
     await expect(report).toHaveCount(0)
     await page.locator('#research-answer').click()
-    await expect(reportPanel(page).locator('.report-document-head')).toContainText('Report · V2')
+    await expect(reportPanel(page).locator('.report-document-head')).toContainText('Report · V1.1')
     await expect(reportPanel(page).locator('.changes')).toHaveCount(0)
   })
 }

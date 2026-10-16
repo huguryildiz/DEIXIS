@@ -897,6 +897,10 @@ class TableStore:
         self.store.research(research_id)
         rows = [dict(r) for r in self.conn.execute(
             "SELECT et_outer.id, et_outer.title, et_outer.version, et_outer.created_at, et_outer.updated_at,"
+            # The study table a valid answer opened (`report_pipeline.start`, keyed `{research}:study_table:answer:{answer}:table`)
+            # carries that answer's report version, so the rail numbers it as the report it belongs to (D57).
+            " (SELECT a.report_version FROM answers a WHERE et_outer.idempotency_key ="
+            "  et_outer.research_id || ':study_table:answer:' || a.id || ':table') AS answer_version,"
             f" (SELECT COUNT(*) FROM table_rows t WHERE t.table_id = et_outer.id AND t.removed_at IS NULL AND {SOURCE_ACTIVE_SQL}) AS rows,"
             " (SELECT COUNT(*) FROM table_columns c WHERE c.table_id = et_outer.id AND c.removed_at IS NULL) AS columns"
             " FROM evidence_tables et_outer WHERE et_outer.research_id = ? AND et_outer.trashed_at IS NULL ORDER BY et_outer.created_at", (research_id,)

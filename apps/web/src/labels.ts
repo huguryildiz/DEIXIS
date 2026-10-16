@@ -1,8 +1,12 @@
-import type { Evidence, FileRestoreReceipt, SeedUse, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
+import type { Answer, Evidence, FileRestoreReceipt, SeedUse, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
 export const LATE_REVISION_LABEL = 'Updated with full text'
+
+// The version an answer is shown as (D57): the person opens V1, V2 …; an update the application writes over a version
+// (a late full text, at most once per answer) keeps its number and reads V2.1. A number, so versions still sort.
+export const shownVersion = (answer: Pick<Answer, 'report_version' | 'report_revision'>) => (answer.report_version ?? 0) + (answer.report_revision ?? 0) / 10
 
 // The heading the report card shows: the question when it extends the research title, else the title.
 export const researchHeading = (view: { research: { title: string }; scope: { question: string } }) =>

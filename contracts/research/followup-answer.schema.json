@@ -15,10 +15,11 @@
     "claims",
     "citation_anchors",
     "unanswered_aspects",
-    "more_queries"
+    "more_queries",
+    "report_change_requested"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.followup_answer.v2" },
+    "schema_version": { "type": "string", "const": "deixis.followup_answer.v3" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -70,6 +71,10 @@
       "type": "array",
       "maxItems": 5,
       "items": { "$ref": "common.schema.json#/$defs/short_text" }
+    },
+    "report_change_requested": {
+      "type": "boolean",
+      "description": "true when the follow-up asks for the research's report itself to change (add, remove, extend, shorten, restructure or rewrite part of it), not only for an answer in the conversation. The application then writes a new report version that follows the request; this answer is still written. false for a question that only asks to be answered."
     },
     "more_queries": {
       "type": "array",

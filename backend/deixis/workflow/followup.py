@@ -605,6 +605,43 @@ def publish(flow: Any, run: dict[str, Any], turn: dict[str, Any], frozen_pool: d
         flow._fail(run["id"], reason, {"note": "Ask the follow-up again to answer it from the research as it is now."})
 
 
+REPORT_CHANGE_KEY = "followup:report_change"
+
+
+def report_run_key(turn_id: str) -> str:
+    return f"{REPORT_CHANGE_KEY}:{turn_id}"
+
+
+def after_turn(store: Any, run: dict[str, Any]) -> None:
+    """Queue a new report version when the turn's valid answer says the person asked for the report to change (D57).
+
+    The new answer is an answer the person started (no `trigger`), so it opens the next report version; the turn's own
+    words go to it as `user_steering`. It is not started for an earlier question revision, without an included work
+    before a search finished (the rule the answer route applies), or while another run is active: the turn then says
+    the report did not change and the person starts a new answer themselves."""
+    turn = turn_for_run(store, run["id"])
+    if turn is None or turn["status"] not in PUBLISHED or not turn["draft_json"]:
+        return
+    if json.loads(turn["draft_json"]).get("report_change_requested") is not True:
+        return
+    rid = run["research_id"]
+    reason = None
+    if turn["scope_revision"] != store.research(rid)["current_scope_revision"]:
+        reason = "scope_revised"
+    elif not store.included_works(rid) and not store.discovery_completed(rid):
+        reason = "nothing_included"
+    if reason is None:
+        scope = store.scope(rid)
+        try:
+            store.create_run(rid, "answer", fast_answer.answer_run_budget(store, rid, scope), report_run_key(turn["id"]),
+                             target={"report_request": {"turn_id": turn["id"], "text": turn["question"]}},
+                             expected_scope_revision=turn["scope_revision"])
+            return
+        except RevisionConflict:
+            reason = "run_active"
+    store._event(rid, "report_change_not_started", {"turn_id": turn["id"], "reason": reason}, run["id"])
+
+
 def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
     """One turn as the UI reads it. Claims and citations are shown only for a valid published answer; an unverified
     draft shows its issues and no claim (fail-closed). `question` is what "Search for new works on this" revises to."""
@@ -667,6 +704,21 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
     if answer is not None:
         # The validation warnings stored with the answer (math, several sources), as the answer view's `validation`.
         answer["warnings"] = (validation or {}).get("warnings", [])
+    # A turn that asked for the report to change (D57): the answer run it queued, or why none was queued.
+    report_change = None
+    if answer is not None and draft.get("report_change_requested") is True:
+        queued = store.conn.execute("SELECT id, status FROM runs WHERE idempotency_key = ?", (report_run_key(row["id"]),)).fetchone()
+        skipped = None if queued else store.conn.execute(
+            "SELECT payload_json FROM events WHERE run_id = ? AND type = 'report_change_not_started' ORDER BY id DESC LIMIT 1",
+            (row["run_id"],)).fetchone()
+        # What the run published: only a valid answer is a new report version; a draft or no-evidence answer is not.
+        written = queued and store.conn.execute(
+            "SELECT status, report_version, report_revision FROM answers WHERE run_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            (queued["id"],)).fetchone()
+        report_change = {"run_id": queued["id"] if queued else None, "run_status": queued["status"] if queued else None,
+                         "answer_status": written["status"] if written else None,
+                         "report_version": written["report_version"] if written else None,
+                         "not_started": json.loads(skipped["payload_json"])["reason"] if skipped else None}
     return {
         "id": row["id"], "research_id": row["research_id"], "scope_revision": row["scope_revision"],
         "question": row["question"], "status": row["status"], "created_at": row["created_at"],
@@ -676,7 +728,7 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
         "progress": progress,
         "run": {"id": run["id"], "status": run["status"], "stage": run["stage"], "pause_reason": run["pause_reason"],
                 "error": run["error"]},
-        "answer": answer,
+        "answer": answer, "report_change": report_change,
         "issues": validation["issues"] if row["status"] == "unverified_draft" and validation else [],
     }
 

@@ -11,6 +11,13 @@ access and scope limits are stated. The application shows a study table and the
 search method beside the answer, so the answer need not list what each source
 did.
 
+`user_steering` may hold a change the person asked for in a follow-up about the
+report itself (for example "add a comparison of the energy models" or "make the
+report shorter"). Write this version so that it does what was asked, as far as
+the supplied passages allow. It never licenses a claim the passages do not
+support: when they cannot carry the change, keep to the passages and name the
+missing part in `unanswered_aspects`.
+
 1. Write `title` as a concise descriptive title in the answer language. Aim for
    12–15 words and never exceed 15 words. Do not copy the full question, end the
    title with a question mark, or add claims that the supplied passages do not

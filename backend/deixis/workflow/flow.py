@@ -491,6 +491,13 @@ class ResearchFlow:
                           and self.store.run(run["target"]["answer_run_id"])["budget"].get("trigger") != "late_fulltext"):
                         report_pipeline.after_answer(self.store, self.store.run(run["target"]["answer_run_id"]))
                 return
+            if run["kind"] == "followup_answer":
+                # A turn that asked for the report to change opens its new version in the same write (D57).
+                from deixis.workflow import followup
+                with transaction(self.store.conn):
+                    self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
+                    followup.after_turn(self.store, run)
+                return
             # Nothing is left to pause once the last step's result has been applied. A person's file this run held
             # and did not read is `unread` from the same write (`Store.update_run`, slice 18b).
             self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
@@ -4942,7 +4949,10 @@ class ResearchFlow:
             "skill_package_hash": self.deps.package.package_hash, "skill_files": list(RUNTIME_FILES[task_type]),
             "output_schema_versions": [contracts.SCHEMA_VERSIONS[o] for o in contracts.TASK_OUTPUTS[task_type]],
             "question": {"text": question, "language_hint": language},
-            "user_steering": [scope["steering"]] if scope.get("steering") else [],
+            # A new report version a follow-up asked for (D57) is written with the person's own request as steering.
+            "user_steering": ([scope["steering"]] if scope.get("steering") else [])
+                             + ([run["target"]["report_request"]["text"][:2000]] if task_type == "grounded_answer"
+                                and (run.get("target") or {}).get("report_request") else []),
             # The providers a query may go to. A verification connector stays in the research's scope for the records
             # whose DOI is already known, and is never offered to the model as a place to search (D87).
             "capabilities": CAPABILITIES,

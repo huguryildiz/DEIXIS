@@ -294,4 +294,4 @@ def test_skill_package_hash_unchanged_by_l1():
     # new D1) removes the term-advice and term-suggestion files and rewords search-query.md and evidence-table.md;
     # UI parity S5a adds the comparison frame rule to evidence-table.md; S22a adds followup.md and its SKILL.md routing line;
     # D51 adds four report writing rules to report.md.
-    assert load_skill_package().package_hash == "sha256:70bb9b46e3907e73a863faf894191056883abcc51d4cddab13b0eed99450cd6c"
+    assert load_skill_package().package_hash == "sha256:1a1c7a981db55043200332642adbc87250c6b254c8d2bec25203efa28ef67e8e"

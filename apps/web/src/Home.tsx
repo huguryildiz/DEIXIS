@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
 import { api, ApiError, homeApi, preferencesApi, type Connections, type Effort, type EffortLimits, type IntentOutcome, type ModelOption, type ModelRole, type ResearchIntent, type ResearchSummary, type RoleModelSetting, type SeedSelection, type SourceScope, type Suggestion } from './api'
-import { connectionName, fileRestoreNote, fileRestoreTone, reasoningLabel, scopeLabels } from './labels'
+import { connectionName, fileRestoreNote, fileRestoreTone, reasoningLabel, scopeLabels, shownVersion } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroDialog, type ZoteroChoice } from './ZoteroDialog'
 import { ConnectionIcon } from './connectionIcons'
@@ -216,7 +216,7 @@ function ResumeCard({ research }: { research: ResearchSummary }) {
     let current = true
     api.research(research.id).then(view => {
       const latest = view.answers.filter(a => a.status === 'structurally_valid').sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
-      if (current) setRead({ id: research.id, version: latest?.report_version ?? null, outcome: view.intent_outcome })
+      if (current) setRead({ id: research.id, version: latest?.report_version != null ? shownVersion(latest) : null, outcome: view.intent_outcome })
     }, () => { if (current) setRead(null) })
     return () => { current = false }
   }, [research.id, key])

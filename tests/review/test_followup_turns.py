@@ -1033,3 +1033,89 @@ def test_table_values_dedupe_by_source_and_column_and_freeze_with_the_selection(
             row("c", "sv1", "Packet  delivery result", "88%"), row("d", "sv1", "Packet delivery result", "x" * 900)]
     values = followup.table_values(rows, ["a", "b", "c", "d"])
     assert [v["value"] for v in values] == ["88%", "88%", "x" * followup.MAX_VALUE_CHARS]
+
+
+def first_answer(client, rid):
+    run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
+    wait_run(client, rid, run["id"], ("completed",))
+    return [a for a in client.get(f"/api/researches/{rid}").json()["answers"] if a["status"] == "structurally_valid"]
+
+
+def test_a_follow_up_asking_for_a_report_change_opens_the_next_report_version(tmp_path):
+    # D57: the model says the turn asks for the report to change; the turn is answered as usual and a new answer run,
+    # started for the person with their words as steering, writes the next report version.
+    app = app_for(tmp_path, FakeAdapter())
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        (v1,) = first_answer(client, rid)
+        assert (v1["report_version"], v1["report_revision"]) == (1, 0)
+        request = "[report-change] Add the interference bound to the report."
+        turn = answered(client, rid, request)
+        assert turn["status"] == "answered" and turn["report_change"]["run_id"] and turn["report_change"]["not_started"] is None
+        run_id = turn["report_change"]["run_id"]
+        run = app.state.store.run(run_id)
+        assert run["kind"] == "answer" and run["budget"].get("trigger") is None
+        assert run["target"]["report_request"] == {"turn_id": turn["id"], "text": request}
+        wait_run(client, rid, run_id, ("completed",))
+        answers = [a for a in client.get(f"/api/researches/{rid}").json()["answers"] if a["status"] == "structurally_valid"]
+        assert [(a["report_version"], a["report_revision"]) for a in answers] == [(2, 0), (1, 0)]
+        done = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()["report_change"]
+        assert (done["run_status"], done["answer_status"], done["report_version"]) == ("completed", "structurally_valid", 2)
+        sent = [p for p in step_inputs(app, run_id) if p["task_type"] == "grounded_answer"]
+        assert sent and all(request in p["user_steering"] for p in sent)
+
+
+def test_a_plain_follow_up_question_leaves_the_report_alone(tmp_path):
+    app = app_for(tmp_path, FakeAdapter())
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        first_answer(client, rid)
+        turn = answered(client, rid)
+        assert turn["status"] == "answered" and turn["report_change"] is None
+        assert not app.state.store.conn.execute(
+            "SELECT 1 FROM runs WHERE research_id = ? AND idempotency_key = ?", (rid, followup.report_run_key(turn["id"]))).fetchone()
+        assert len([a for a in client.get(f"/api/researches/{rid}").json()["answers"] if a["status"] == "structurally_valid"]) == 1
+
+
+def test_a_report_change_that_cannot_start_says_why(tmp_path, monkeypatch):
+    # Another run holding the research when the turn ends: no answer run is queued and the turn says why (D57).
+    app = app_for(tmp_path, FakeAdapter())
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        first_answer(client, rid)
+        store = app.state.store
+        create_run = store.create_run
+
+        def busy(research_id, kind, *args, **kwargs):
+            if kind == "answer":
+                raise RevisionConflict("run run_OTHER is still active")
+            return create_run(research_id, kind, *args, **kwargs)
+        monkeypatch.setattr(store, "create_run", busy)
+        turn = answered(client, rid, "[report-change] Shorten the report.")
+        assert turn["status"] == "answered"
+        assert turn["report_change"] == {"run_id": None, "run_status": None, "answer_status": None, "report_version": None,
+                                         "not_started": "run_active"}
+        assert len([a for a in client.get(f"/api/researches/{rid}").json()["answers"] if a["status"] == "structurally_valid"]) == 1
+
+
+def test_a_report_change_whose_answer_is_not_valid_opens_no_version(tmp_path):
+    # The queued answer ends as an unverified draft: the run completes, no report version is written, and the turn
+    # says so from the answer the run saved, not from the run's status (D57).
+    def responder(si):
+        if si["task_type"] == "grounded_answer" and si["user_steering"]:
+            return "{not json"
+        return valid_response(si)
+    app = app_for(tmp_path, FakeAdapter(responder))
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        first_answer(client, rid)
+        turn = answered(client, rid, "[report-change] Rewrite the report around the interference bound.")
+        wait_run(client, rid, turn["report_change"]["run_id"], ("completed", "failed"))
+        done = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()["report_change"]
+        assert done["answer_status"] in (None, "unverified_draft") and done["report_version"] is None
+        assert [a["report_version"] for a in client.get(f"/api/researches/{rid}").json()["answers"]
+                if a["status"] == "structurally_valid"] == [1]

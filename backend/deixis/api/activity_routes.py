@@ -36,8 +36,8 @@ def register_activity_routes(app):
                 ended.setdefault(row["run_id"], {})[row["type"]] = row["created_at"]
         calls = dict(conn.execute(
             "SELECT run_id, COUNT(*) FROM model_sessions WHERE research_id = ? GROUP BY run_id", (research_id,)).fetchall())
-        versions = {row["run_id"]: row["report_version"] for row in conn.execute(
-            "SELECT run_id, report_version FROM answers WHERE research_id = ? AND report_version IS NOT NULL", (research_id,))}
+        versions = {row["run_id"]: (row["report_version"], row["report_revision"]) for row in conn.execute(
+            "SELECT run_id, report_version, report_revision FROM answers WHERE research_id = ? AND report_version IS NOT NULL", (research_id,))}
         rows = []
         for run in runs:
             fast = json.loads(run["budget_json"] or "{}").get("fast_path")
@@ -49,6 +49,7 @@ def register_activity_routes(app):
                 "finished_at": (ended.get(run["id"]) or {}).get(event) if event else None,
                 "model_calls": calls.get(run["id"], 0),
                 # The fast path's frozen depth ("deep" is Detailed), and the report version an answer run saved.
-                "mode": mode, "report_version": versions.get(run["id"]),
+                "mode": mode, "report_version": versions.get(run["id"], (None, None))[0],
+                "report_revision": versions.get(run["id"], (None, None))[1],
             })
         return {"research_id": research_id, "runs": rows}

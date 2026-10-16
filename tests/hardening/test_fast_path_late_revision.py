@@ -100,7 +100,9 @@ def test_append_only_revision_own_review_and_ledger(tmp_path, monkeypatch):
     assert 1 <= len(upgraded["passage_ids"]) <= 2
     assert dict(lib.store.conn.execute("SELECT * FROM answers WHERE id = ?", (lib.base["id"],)).fetchone()) == lib.base
     view = views.research_view(lib.store, lib.rid)
-    assert view["answers"][0]["report_version"] == lib.base["report_version"] + 1
+    # The update keeps the version it revises and counts up its revision (D57).
+    assert view["answers"][0]["report_version"] == lib.base["report_version"]
+    assert view["answers"][0]["report_revision"] == 1 and lib.base["report_revision"] == 0
     assert view["answers"][0]["late_revision"]["upgraded_sources"] == 1
     review = lib.store.next_queued_run()
     assert review["kind"] == "answer_review" and review["target"]["answer_id"] == row(lib)["revision_answer_id"]

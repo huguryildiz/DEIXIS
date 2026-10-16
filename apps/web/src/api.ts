@@ -525,7 +525,7 @@ export type Answer = {
   screened_after_cutoff?: ScreenedAfterCutoff[]
   id: string; run_id: string; status: 'structurally_valid' | 'unverified_draft' | 'clarification' | 'no_evidence'
   scope_revision: number; applicability: 'current' | 'stale_scope' | 'stale_selection'; answer_language: string | null; created_at: string
-  report_version: number | null; report_title: string | null
+  report_version: number | null; report_revision: number | null; report_title: string | null
   claims: Claim[]; limitations: Limitation[]; unanswered_aspects: string[]; capability_notice: string | null
   clarification: { question: string; ambiguity: string; why_it_matters: string; options: string[] } | null
   unverified_draft: { claims?: { claim_label: string; text: string }[] } | null
@@ -875,7 +875,7 @@ export type TableView = {
   recheck_estimate: { cells: number; sources: number; max_model_calls: number }
   column_suggestions: { run_id: string; step_id: string; columns: ColumnSuggestion[]; notes: string } | null
 }
-export type TableSummary = { id: string; title: string; version: number; created_at: string; updated_at: string; rows: number; columns: number; access: { pdf_available: number; abstract: number; metadata: number }; auto_columns: number
+export type TableSummary = { id: string; title: string; version: number; answer_version: number | null; created_at: string; updated_at: string; rows: number; columns: number; access: { pdf_available: number; abstract: number; metadata: number }; auto_columns: number
   report_ready: { ready: boolean; cells_left: number; cells_total: number; failed_rows: number; can_continue_with_failed: boolean; failed_cells: number; included_rows: number } }
 export type ReportSummary = { id: string; status: 'in_progress' | 'valid' | 'draft'; report_version: number | null; created_at: string }
 export type ReportLink = { link_id: string; passage_id: string | null; cell_id: string | null; source_version_id: string; ref_number: number; open_passage_id: string | null
@@ -1743,7 +1743,7 @@ export const libraryImportsApi = {
 // frozen depth ('deep' is Detailed); `report_version` the report an answer run saved.
 export type ActivityRun = {
   id: string; kind: RunKind; status: RunStatus; scope_revision: number; created_at: string
-  started_at: string | null; finished_at: string | null; model_calls: number; mode: string | null; report_version: number | null
+  started_at: string | null; finished_at: string | null; model_calls: number; mode: string | null; report_version: number | null; report_revision?: number | null
 }
 export type ActivityRuns = { research_id: string; runs: ActivityRun[] }
 
@@ -1815,6 +1815,9 @@ export type FollowupTurn = {
     claims: FollowupClaim[]; unanswered_aspects: string[]
     warnings: ValidationIssue[]  // stored validation warnings (math, several sources), as the answer's `validation.warnings`
   } | null
+  // The turn asked for the report to change (D57): the answer run it queued for the next report version, or why none was.
+  report_change: { run_id: string | null; run_status: RunStatus | null; answer_status: Answer['status'] | null; report_version: number | null
+    not_started: 'scope_revised' | 'nothing_included' | 'run_active' | null } | null
   issues: { code: string; path: string; message: string }[]
 }
 

@@ -669,7 +669,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             **late_revision.answer_view(store, a["id"]),
             "id": a["id"], "run_id": a["run_id"], "status": a["status"], "scope_revision": a["scope_revision"],
             # A report keeps the number it was saved with; later answers do not rewrite it. The title is V1's (below).
-            "report_version": a["report_version"],
+            "report_version": a["report_version"], "report_revision": a["report_revision"],
             "report_title": (draft or {}).get("title") if a["status"] == "structurally_valid" else None,
             "applicability": result_applicability(a["scope_revision"], research["current_scope_revision"],
                                                   a["selection_revision"], research["selection_revision"]),
@@ -704,7 +704,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         answers[-1]["applicability"] = late_applicability(answers[-1], answers[-1]["applicability"])
     # A research keeps one report title: every version carries the title V1 was saved with.
     first = min((a for a in answers if a["report_title"] is not None and a["report_version"] is not None),
-                key=lambda a: a["report_version"], default=None)
+                key=lambda a: (a["report_version"], a["report_revision"] or 0), default=None)
     for a in answers:
         if first and a["report_title"] is not None:
             a["report_title"] = first["report_title"]

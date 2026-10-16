@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronRight, Download, Info, Workflow } from 'lucide-react'
 import { api, prismaSUrl, type Answer, type Counts, type EffortLimits, type FlowBucket, type FlowCounts, type Overrides, type ResearchView } from './api'
 import { SCREEN_MORE_SIZE, useScreenMore, useUnscreened } from './research/unscreened'
-import { flowBoxLabels, flowBucketLabels } from './labels'
+import { flowBoxLabels, flowBucketLabels, shownVersion } from './labels'
 import { effortLabels } from './Home'
 import { useToast } from './Toast'
 import { t, uiLocale } from './i18n'
@@ -137,7 +137,7 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
   const detailed = limits?.efforts.detailed
   const given = answer?.inputs_given
   const givenWorks = given ? new Set(given.source_ids.map(id => view.sources.find(s => s.source_version_id === id)?.work_id ?? id)).size : null
-  const version = answer?.report_version
+  const version = answer?.report_version != null ? shownVersion(answer) : undefined
   const notScreened = flow?.buckets.not_screened ?? null
   const screenable = page?.screenable ?? 0
   const nextBatch = Math.min(SCREEN_MORE_SIZE, screenable)

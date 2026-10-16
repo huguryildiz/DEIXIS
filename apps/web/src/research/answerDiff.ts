@@ -1,4 +1,5 @@
 import type { Answer, Claim, Evidence, Limitation } from '../api'
+import { shownVersion } from '../labels'
 
 // The answer diff (UI parity S21, P4/F11): what differs between two stored answer versions of one research, computed in
 // the browser from the two records the view already holds. Nothing is inferred: claims are matched by their text
@@ -25,14 +26,14 @@ export function comparisonBase(shown: Answer, answers: Answer[]): ComparisonBase
     if (base.status !== 'structurally_valid' || base.report_version === null) return { kind: 'unavailable', version: late.base_report_version, reason: 'not_valid' }
     return { kind: 'ok', answer: base, version: base.report_version }
   }
-  const version = shown.report_version
-  if (version === null) return { kind: 'first' }
+  if (shown.report_version === null) return { kind: 'first' }
+  const version = shownVersion(shown)
   let base: Answer | undefined
   for (const a of answers) {
-    if (a.id === shown.id || a.status !== 'structurally_valid' || a.report_version === null || a.report_version >= version) continue
-    if (!base || a.report_version > base.report_version!) base = a
+    if (a.id === shown.id || a.status !== 'structurally_valid' || a.report_version === null || shownVersion(a) >= version) continue
+    if (!base || shownVersion(a) > shownVersion(base)) base = a
   }
-  return base ? { kind: 'ok', answer: base, version: base.report_version! } : { kind: 'first' }
+  return base ? { kind: 'ok', answer: base, version: shownVersion(base) } : { kind: 'first' }
 }
 
 type ClaimChange = {

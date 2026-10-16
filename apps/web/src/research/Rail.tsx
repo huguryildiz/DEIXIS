@@ -3,7 +3,7 @@ import { Check, ChevronDown, Clock, Copy, File, FileText, Lightbulb, ListChecks,
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, type Answer, type QueueRow, type ResearchView, type Run, type TableSummary } from '../api'
 import { collectionProgress } from '../BackgroundJobs'
-import { queueKindLabels, researchHeading, runKindLabels, tableTitle } from '../labels'
+import { LATE_REVISION_LABEL, queueKindLabels, researchHeading, runKindLabels, tableTitle } from '../labels'
 import { t, uiLocale } from '../i18n'
 import { useRailWide } from './railData'
 import { budgetAsOf, budgetFigure, useOpenAlexBudget, usageRun } from './usageData'
@@ -135,13 +135,14 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
         : <>
           {reports.length > 0 && <VersionedRow icon={MessageSquareQuote} label={reports[0].title} onOpen={onOpenReport}
             versions={reports.map(({ answer, version }) => ({ id: answer.id, tag: `V${version}`, at: answer.created_at,
-              note: answer.applicability !== 'current' || answer.late_revision_status?.status === 'published' ? t('earlier') : undefined }))} />}
+              note: [answer.late_revision && t(LATE_REVISION_LABEL), (answer.applicability !== 'current' || answer.late_revision_status?.status === 'published') && t('earlier')].filter(Boolean).join(' · ') || undefined }))} />}
           {tableGroups.map(group => {
             const [table] = group
             const label = t('Evidence table · {sources} · {columns}', {
               sources: t(table.rows === 1 ? '{n} source' : '{n} sources', { n: table.rows }), columns: t(table.columns === 1 ? '{n} column' : '{n} columns', { n: table.columns }) })
             return <VersionedRow key={table.id} icon={Table2} label={label} ariaLabel={`${label} · ${tableTitle(table.title, researchHeading(view))}`} onOpen={onOpenTable}
-              versions={group.map((item, i) => ({ id: item.id, tag: `V${group.length - i}`, at: item.created_at,
+              // A study table is numbered as the report version that opened it (D57); a table made otherwise by its order.
+              versions={group.map((item, i) => ({ id: item.id, tag: `V${item.answer_version ?? group.length - i}`, at: item.created_at,
                 note: t('{sources} · {columns}', { sources: t(item.rows === 1 ? '{n} source' : '{n} sources', { n: item.rows }), columns: t(item.columns === 1 ? '{n} column' : '{n} columns', { n: item.columns }) }) }))} />
           })}
           {view.reportRuns.length > 0 && <VersionedRow icon={FileText} label={t('Evidence report')} onOpen={onOpenEvidenceReport}

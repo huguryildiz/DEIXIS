@@ -45,7 +45,13 @@ def library_at_0014(tmp_path, monkeypatch, extra: str | None = None):
         (broken / "0015_citation_map.sql").write_text(source.replace(marker, marker + "\n" + extra))
         monkeypatch.setattr(db, "MIGRATIONS_DIR", broken)
     else:
-        monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
+        # Up to 0015 only: a later migration may change an index this test compares (0017 widens answers_report_version).
+        upto = tmp_path / "upto15"
+        upto.mkdir()
+        for path in real.glob("*.sql"):
+            if int(path.name.split("_", 1)[0]) <= 15:
+                shutil.copy(path, upto / path.name)
+        monkeypatch.setattr(db, "MIGRATIONS_DIR", upto)
     return conn
 
 

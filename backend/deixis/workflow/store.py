@@ -3515,14 +3515,28 @@ class Store:
             ).fetchone()
             if existing:
                 return existing["id"]  # saved before a restart; a resumed run must not duplicate it
-            report_version = self.conn.execute(
-                "SELECT IFNULL(MAX(report_version), 0) + 1 FROM answers WHERE research_id = ?", (research_id,)
-            ).fetchone()[0] if status == "structurally_valid" else None
+            report_version = report_revision = None
+            if status == "structurally_valid":
+                # A late full-text answer is the application's update of the version it revises (D57): it keeps that
+                # number and takes the next revision. Every other valid answer opens the next version.
+                base = self.conn.execute("SELECT report_version FROM answers WHERE id = ?",
+                                         (late["base_answer_id"],)).fetchone() if late else None
+                if base is not None and base["report_version"] is not None:
+                    report_version = base["report_version"]
+                    report_revision = self.conn.execute(
+                        "SELECT IFNULL(MAX(report_revision), 0) + 1 FROM answers WHERE research_id = ? AND report_version = ?",
+                        (research_id, report_version)).fetchone()[0]
+                else:
+                    report_version = self.conn.execute(
+                        "SELECT IFNULL(MAX(report_version), 0) + 1 FROM answers WHERE research_id = ?", (research_id,)).fetchone()[0]
+                    report_revision = 0
             self.conn.execute(
                 "INSERT INTO answers (id, research_id, run_id, step_id, step_input_id, scope_revision, selection_revision, status,"
-                " answer_language, draft_json, validation_json, report_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " answer_language, draft_json, validation_json, report_version, report_revision, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (aid, research_id, run_id, step_id, step_input_id, scope_revision, selection_revision, status,
-                 (draft or {}).get("answer_language"), dumps(draft) if draft is not None else None, dumps(validation), report_version, now()),
+                 (draft or {}).get("answer_language"), dumps(draft) if draft is not None else None, dumps(validation),
+                 report_version, report_revision, now()),
             )
             if status == "structurally_valid" and draft is not None:
                 claim_ids = {}

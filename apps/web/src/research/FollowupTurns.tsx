@@ -136,6 +136,15 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
         {chip(claim)}</span>)}</p></div>}
       {answer.unanswered_aspects.length > 0 && <div className="followup-gaps"><p>{t('Not answered by these passages')}</p>
         <ul>{answer.unanswered_aspects.map(a => <li key={a}><MathText text={a} /></li>)}</ul></div>}
+      {turn.report_change && <p className="followup-note">{turn.report_change.run_id
+        ? turn.report_change.answer_status === 'structurally_valid'
+          ? t('This asked for a change to the report; report V{n} was written for it.', { n: turn.report_change.report_version ?? '' })
+          : turn.report_change.run_status && ['queued', 'running', 'pause_requested', 'paused'].includes(turn.report_change.run_status)
+            ? t('This asked for a change to the report; a new report version is being written for it.')
+            : t('This asked for a change to the report, but no new report version could be written; the report was not changed.')
+        : t(turn.report_change.not_started === 'scope_revised' ? 'This asked for a change to the report, but the question was revised since; the report was not changed.'
+          : turn.report_change.not_started === 'nothing_included' ? 'This asked for a change to the report, but no source is included; the report was not changed.'
+          : 'This asked for a change to the report, but another run was active; the report was not changed. Ask again when it ends.')}</p>}
     </>}
     {!live && turn.status !== 'pending' && (searchable || claims.length > 0) && <div className="followup-acts">
       {searchable && <Button variant="outline" size="sm" className="answer-pill" disabled={actions.busy || actions.locked} onClick={() => actions.onSearchNew(turn)}><Search size={16} className="size-4" aria-hidden />{t('Search for new works on this')}</Button>}

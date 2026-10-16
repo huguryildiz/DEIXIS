@@ -26,6 +26,15 @@ means the table did not find one, not that the work reports none. Build
 the answer on them, check each point against a supplied passage, and cite the
 passage, never the report or the table.
 
+Set `report_change_requested` to true when the follow-up asks for the research's
+report itself to change: to add, remove, extend, shorten, restructure or rewrite
+part of it ("add a section on cost to the report", "rewrite the report around
+the full texts", "drop the third paragraph"). The application then writes a
+new report version with the person's words as its instruction. Answer the
+follow-up as usual all the same. Set it to false for a question that only asks
+to be answered ("which work reports the highest delivery ratio?"), even when
+the answer would be useful in the report.
+
 When `conversation.more_queries_allowed` is true and the passages do not answer
 the question fully, put up to three short search phrases in `more_queries`: the
 words a passage that answers the missing part would contain, in the language of

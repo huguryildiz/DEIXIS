@@ -3,7 +3,7 @@ import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, followupApi, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
-import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, researchHeading, seedSkipText, seedUseText, tableTitle } from './labels'
+import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, researchHeading, seedSkipText, seedUseText, shownVersion, tableTitle } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { TextRecoveryContext } from './TextRecoveryContext'
 import { EvidenceTab, TABLE_RUN_KINDS } from './EvidenceTable'
@@ -575,7 +575,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const showInSources = (workId: string) => { showSources('all'); setSourceFocus(workId) }
   const showAnswer = () => { panels.setWide(false); requestAnimationFrame(() => document.getElementById('research-answer')?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })) }
   // Reports are the research's artifacts: every answer that passed validation, newest first, with the number and title saved with it.
-  const reports = view.answers.filter(a => a.status === 'structurally_valid').map(a => ({ answer: a, version: a.report_version ?? 0, title: a.report_title ?? heading }))
+  const reports = view.answers.filter(a => a.status === 'structurally_valid').map(a => ({ answer: a, version: shownVersion(a), title: a.report_title ?? heading }))
   const latestEvidenceReportRun = view.runs.find(r => r.kind === 'report' && r.target?.report_id === view.reportRuns[0]?.id)
   // The latest report's panel belongs to its card in the thread; an older version's panel opens from here.
   const olderReport = reports.find(r => r.answer.id === openReportId && r.answer.id !== answer?.id)
@@ -660,9 +660,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // The Export menu's PDF row opens the report panel of the version the menu exports, then the print dialog on it.
   const printShownReport = (answerId: string) => { setOpenReportId(answerId); void printReport(answerId, toast) }
   const openCitation = (target: CitationOpen) => setPassageTarget({ passageId: target.passageId, highlightText: target.anchor, fromCitation: true, view: target.view, find: target.find })
-  const answerVersion = answer?.report_version ?? 0
+  const answerVersion = answer ? shownVersion(answer) : 0
   const answerThread: AnswerThreadContext | undefined = answer ? {
-    writing: answerRun && answer.status === 'structurally_valid' && latestVersion > 0 ? { next: latestVersion + 1, late: answer.late_revision_status?.status === 'answering' } : null,
+    writing: answerRun && answer.status === 'structurally_valid' && latestVersion > 0 ? { next: answer.late_revision_status?.status === 'answering' ? Math.floor(latestVersion) + 0.1 : Math.floor(latestVersion) + 1, late: answer.late_revision_status?.status === 'answering' } : null,
     previous: (() => { const earlier = reports.find(r => r.answer.id !== answer.id && r.answer.scope_revision === answer.scope_revision && r.version < answerVersion); return earlier ? { id: earlier.answer.id, version: earlier.version } : null })(),
     reviewPending: view.runs.some(r => r.kind === 'answer_review' && ACTIVE.has(r.status) && r.target?.answer_id === answer.id),
     included, hasTable: (tables?.length ?? 0) > 0,
@@ -746,7 +746,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <Button ref={reviseButton} variant="ghost" size="sm" className="research-topbar-action research-revise" title={t('Revise question')} disabled={active} aria-expanded={Boolean(revising)}
         onClick={() => reviseQuestion()}><PencilLine size={16} className="size-4" aria-hidden /><span className="research-topbar-label">{t('Revise question')}</span></Button>
       {!titleEditing && <>
-        <ExportMenu researchId={id} report={answer?.status === 'structurally_valid' ? { answer, title: answer.report_title ?? heading, version: answer.report_version ?? 0 } : null}
+        <ExportMenu researchId={id} report={answer?.status === 'structurally_valid' ? { answer, title: answer.report_title ?? heading, version: answerVersion } : null}
           sources={view.sources} tables={tables} included={included} cited={citedListed} prisma={Boolean(view.counts.flow)} onPrintReport={printShownReport} />
         <DropdownMenu onOpenChange={open => { if (open) rowChosen.current = false }}>
           <DropdownMenuTrigger render={<Button ref={moreButton} variant="ghost" size="icon-sm" className="research-more" aria-label={t('Research actions')} title={t('Research actions')} />}><Ellipsis size={16} aria-hidden /></DropdownMenuTrigger>
@@ -819,7 +819,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onChooseModel={(target, role, opener, review) => setChooseModel({ run: target, role, opener, review })}
         onEditPlan={hasAcademic ? opener => openPanel('plan', { opener }) : undefined}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
-        latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} review={answerReview} researchId={id} title={answer.report_title ?? heading} version={answer.report_version ?? 0} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
+        latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} review={answerReview} researchId={id} title={answer.report_title ?? heading} version={answerVersion} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
           versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} changes={answer.status === 'structurally_valid' ? reportChanges(answer) : undefined} />{tableCards}</> : null} />
       {!answer && tableCards}
       {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
@@ -927,7 +927,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <StackPanel name="pdfs" title={t('Get more full text')} icon={FileText}>
       <WaitingForPdf researchId={id} view={view} busy={busy} onChanged={async (announced?: string) => { if (announced) announcedRuns.current.add(announced); await load(); onChanged() }}
         included={<PdfReadiness researchId={id} view={view} busy={busy} act={async (action, success) => { await act(action, success) }} onUpload={chooseSourcePdf} ocrTool={ocrTool} onReadWithOcr={(source, assetId) => { void readWithOcr(source, assetId) }} />}
-        answerAction={{ label: answer ? t('Generate a new answer (V{n})', { n: latestVersion + 1 }) : t('Generate source-linked answer'), disabled: busy || active || !(included || answersWithoutInclude), onClick: () => { void startAnswer() } }}
+        answerAction={{ label: answer ? t('Generate a new answer (V{n})', { n: Math.floor(latestVersion) + 1 }) : t('Generate source-linked answer'), disabled: busy || active || !(included || answersWithoutInclude), onClick: () => { void startAnswer() } }}
         onSearchAgain={hasAcademic && seedSearchReady ? startDiscovery : null} />
     </StackPanel>
     <StackPanel name="funnel" title={t('Search funnel')} icon={Funnel}>

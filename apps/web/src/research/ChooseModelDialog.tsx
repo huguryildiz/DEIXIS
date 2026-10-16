@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { api, ApiError, researchModelApi, type ModelRole, type ResearchView, type ReviewCard, type ReviewFocus, type ReviewTargetKind, type Run } from '../api'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { connectionModels, modelKey, modelRoles, type ConnectionModel } from '../Home'
-import { connectionName, reasoningLabel } from '../labels'
+import { connectionName, reasoningLabel, shownVersion } from '../labels'
 import { ReviewRequest } from '../review/ReviewRequest'
 import '../review/review.css'
 import { exposesEffortControl } from '../modelEffort'
@@ -128,7 +128,8 @@ function ReviewAgainDialog({ target, review, view, dark, onClose, onStarted }: {
     api.review(rid, review.card.id).then(async detail => {
       const { target_kind: kind, target_id: id } = detail.snapshot
       // The version the request names is the target's as it is now, which is what a new review reads.
-      const version = kind === 'answer' ? view.answers.find(a => a.id === id)?.report_version ?? detail.snapshot.report_version ?? 0
+      const shown = kind === 'answer' ? view.answers.find(a => a.id === id) : undefined
+      const version = kind === 'answer' ? (shown?.report_version != null ? shownVersion(shown) : detail.snapshot.report_version ?? 0)
         : kind === 'candidate' ? detail.snapshot.candidate_version ?? 0
         : (await api.report(rid, id)).report_version ?? 0
       if (live) setRequest({ kind, id, version, focus: detail.focus, owner_note: detail.owner_note })

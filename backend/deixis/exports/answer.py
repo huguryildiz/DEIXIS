@@ -18,11 +18,12 @@ from deixis.exports.text import OCR_LABEL, VERDICTS, CitationStyle, Language, do
     in_text_citation, reference_text, translator
 
 
-def filename(title: str, version: int) -> str:
-    return download_name(title, f"V{version}", extension="docx", fallback="Report")
+def filename(title: str, version: int, revision: int = 0) -> str:
+    # An update the application wrote over a version (D57) is named V2.1, V2.2, so its file never takes V2's name.
+    return download_name(title, f"V{version}" + (f".{revision}" if revision else ""), extension="docx", fallback="Report")
 
 
-def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str, version: int,
+def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str, version: int | str,
            language: Language, style: CitationStyle) -> list[ooxml.Block]:
     t = translator(language)
     claims = answer.get("claims") or []

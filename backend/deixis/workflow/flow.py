@@ -3177,6 +3177,10 @@ class ResearchFlow:
                                     cutoff: Callable[[], bool] | None = None) -> None:
         """Two model runs per work, then a code decision from the pair (D85).
 
+        Under the run's read rule `split_v1` (D76, frozen in its budget and copied into the plan) the second run is shown
+        the passages the first did not see, and a part only one run saw stands on that run's verified quote. A plan
+        without the rule reads as before: the same passages twice, and both runs must agree.
+
         The plan is frozen before any call. A work is sent only when every call it still owes fits in the run's
         budget; a work at the end of the plan that no longer fits is not read and gets no decision. Both runs of
         one work may be in flight together. The decision is written on the event loop, in one short transaction,
@@ -3378,6 +3382,10 @@ class ResearchFlow:
                 "not_reached": len(readable) - len(readable[:limit]),
                 "identity_unconfirmed": len(unconfirmed), "reason": None,
                 "scope_revision": run["scope_revision"], "criterion_hash": criterion_hash}
+        # The read rule is the run's, frozen in its budget when it was queued (D76). A budget without one reads as
+        # before, whatever a later run on this scope froze; a plan already stored is reused as stored (above).
+        if run["budget"].get("read_rule"):
+            plan["read_rule"] = run["budget"]["read_rule"]
         # The plan, the codes it writes and the person's requests it takes are one write (decision 4).
         with transaction(self.store.conn):
             self._write_adjudication_codes(run, step["id"], [(read, "pdf_identity_unconfirmed") for _, read in unconfirmed])
@@ -3437,7 +3445,8 @@ class ResearchFlow:
             return None
         if step["error_code"] == "model_read_cutoff":
             return {"cutoff": True}  # D258: a resumed run does not send it again
-        passages = self._adjudication_passages(run["research_id"], scope, plan["criterion"], job.read_version)
+        passages = self._adjudication_passages(run["research_id"], scope, plan["criterion"], job.read_version,
+                                               job.run_no, plan.get("read_rule"))
         target = {"source_id": job.read_version, "criterion": plan["criterion"]["criterion"],
                   "parts": plan["criterion"]["parts"], "runs": FULLTEXT_RUNS, "run": job.run_no}
         output = await self._model_step(run, scope, job.key, "fulltext_adjudication", source_ids=[job.read_version],
@@ -3446,12 +3455,21 @@ class ResearchFlow:
         return None if output.get("invalid") else output
 
     def _adjudication_passages(self, research_id: str, scope: dict[str, Any], criterion: dict[str, Any],
-                               svid: str) -> list[dict[str, Any]]:
-        """The pages this call is shown, chosen when the call is sent and stored with its StepInput."""
+                               svid: str, run_no: int = 1, rule: str | None = None) -> list[dict[str, Any]]:
+        """The pages this call is shown, chosen when the call is sent and stored with its StepInput.
+
+        Under `split_v1` (D76) the second run gets `split_lists`' second list, and the topic order ranks every passage
+        of the version so the passages the first run left out are ranked too. Code alone picks both lists."""
         pages = [p for p in self.store.passages_for(svid) if p["kind"] == "pdf_page"]
         terms = self._topic_terms(research_id, scope)
         fts = " OR ".join(f'"{term}"' for term in terms)
-        ranked = [p["id"] for p in self.store.search_passages([svid], fts, FULLTEXT_PASSAGES_PER_CALL * 3)]
+        split = rule == adjudication.READ_RULE
+        limit = max(len(pages), 1) if split else FULLTEXT_PASSAGES_PER_CALL * 3
+        ranked = [p["id"] for p in self.store.search_passages([svid], fts, limit)]
+        if split:
+            lists = adjudication.split_lists(pages, criterion, ranked, FULLTEXT_PASSAGES_PER_CALL,
+                                             FULLTEXT_CRITERION_PASSAGES)
+            return lists["first"] if run_no == 1 else lists["second"]
         return adjudication.reading_list(pages, criterion, ranked, FULLTEXT_PASSAGES_PER_CALL,
                                          FULLTEXT_CRITERION_PASSAGES)["passages"]
 
@@ -3461,6 +3479,10 @@ class ResearchFlow:
 
         A work a person decided while its calls were out gets neither a proposal nor a decision: the steps stay
         stored, and the person's answer stands (slice 16).
+
+        Under `split_v1` (D76) a quote verifies only inside one passage its call was shown, read from that call's
+        stored input, and two calls shown different passages are combined part by part (`combine_split`); two calls
+        shown the same passages are combined as before. No decision is written unless both calls answered.
         """
         read = item["read_version"]
         if self._human_decided_fulltext(run["research_id"], item["head"], read):
@@ -3470,9 +3492,13 @@ class ResearchFlow:
         views: list[dict[str, Any] | None] = []
         last_step: str | None = None
         shown_ids: set[str] = set()
+        split = plan.get("read_rule") == adjudication.READ_RULE
+        rows_by_run: dict[int, dict[str, dict[str, Any]] | None] = {}
+        texts_by_run: dict[int, dict[str, dict[str, Any]]] = {}
         for run_no, output in enumerate(outputs, start=1):
             if not output or output.get("invalid") or not output.get("step_input_id"):
                 views.append(None)
+                rows_by_run[run_no] = None
                 continue
             payload = self.store.step_input_payload(output["step_input_id"])
             last_step = payload["step_id"]
@@ -3484,17 +3510,30 @@ class ResearchFlow:
                 shown[passage["passage_id"]] = {"physical_page": page}
                 if isinstance(page, int):
                     page_numbers.add(page)
-            stored = self.store.page_texts(read)
-            pages = {page: stored[page] for page in page_numbers if page in stored}
+            texts = ({passage["passage_id"]: {"text": passage.get("text") or "",
+                                              "physical_page": (passage.get("locator") or {}).get("physical_page")}
+                      for passage in payload["passages"]} if split else None)
+            if split:
+                pages: dict[int, str] = {}
+            else:
+                stored = self.store.page_texts(read)
+                pages = {page: stored[page] for page in page_numbers if page in stored}
             proposals = adjudication.proposals_of(parts, (output.get("result") or {}).get("parts") or [],
-                                                  shown, pages, FULLTEXT_QUOTE_MIN_CHARS)
+                                                  shown, pages, FULLTEXT_QUOTE_MIN_CHARS, texts)
+            rows_by_run[run_no] = proposals
+            texts_by_run[run_no] = texts or {}
             for name, row in proposals.items():
                 decisions.add_proposal(run["research_id"], read, "fulltext", payload["step_id"], run_no, row["label"],
                                        criterion_part=name, quote=row["quote"] or None,
                                        quote_verified=row["quote_verified"], quote_passage_id=row["passage_id"],
                                        quote_page=row["page"])
             views.append(adjudication.run_view(proposals, parts))
-        code = adjudication.combine(views[0] if views else None, views[1] if len(views) > 1 else None)
+        if split and len(texts_by_run) == len(outputs) and len({frozenset(t) for t in texts_by_run.values()}) > 1:
+            # The two calls were shown different passages: part by part, and a part one call alone saw stands on that
+            # call's verified quote (D76).
+            code = adjudication.combine_split(rows_by_run, texts_by_run, parts, FULLTEXT_QUOTE_MIN_CHARS)
+        else:
+            code = adjudication.combine(views[0] if views else None, views[1] if len(views) > 1 else None)
         # On a criterion with a comparator part, two all-negative runs exclude nothing by themselves (slice 28).
         code, comparator_note = adjudication.with_comparator(code, adjudication.comparator_part(parts))
         # Two agreeing runs on a version whose own title names a study protocol decide nothing by themselves: the
@@ -3604,7 +3643,7 @@ class ResearchFlow:
                           and head not in moved)
         not_reached = plan["not_reached"] + sum(1 for head in planned if (head not in model_heads or head in moved)
                                                 and head not in human)
-        whole_text = self._adjudication_whole_text(run_id)
+        whole_text = self._adjudication_whole_text(run_id, plan.get("read_rule"))
         summary = {"read": include + not_met + sum(unresolved.values()) - unresolved.get("pdf_identity_unconfirmed", 0),
                    "include": include, "criterion_not_met": not_met, "unresolved": unresolved,
                    "not_settled": not_settled, "not_reached": not_reached,
@@ -3615,8 +3654,24 @@ class ResearchFlow:
             summary["human_decided"] = len(human)
         self.store.finish_step(step["id"], "succeeded", output=summary)
 
-    def _adjudication_whole_text(self, run_id: str) -> int:
-        """Works whose stored call was every pdf page, and that was fewer than a full call. Exactly 12 is not whole."""
+    def _adjudication_whole_text(self, run_id: str, rule: str | None = None) -> int:
+        """Works whose stored call was every pdf page, and that was fewer than a full call. Exactly 12 is not whole.
+
+        Under `split_v1` (D76) a work is whole when its calls together were shown every pdf passage of the version.
+        Only calls that were sent and answered count: an input is stored before its send, and a send the cutoff or a
+        pause refused leaves an input whose passages the model never saw."""
+        if rule == adjudication.READ_RULE:
+            union: dict[str, set[str]] = {}
+            for row in self.store.conn.execute(
+                    "SELECT i.payload_json FROM step_inputs i JOIN run_steps s ON s.id = i.step_id"
+                    " WHERE i.run_id = ? AND i.task_type = 'fulltext_adjudication'"
+                    " AND (s.status = 'succeeded' OR s.error_code = 'invalid_model_output')", (run_id,)):
+                payload = json.loads(row["payload_json"])
+                source = (payload.get("adjudication_target") or {}).get("source_id")
+                if source:
+                    union.setdefault(source, set()).update(p["passage_id"] for p in payload.get("passages") or [])
+            return sum(1 for source, shown in union.items()
+                       if shown and shown == {p["id"] for p in self.store.passages_for(source) if p["kind"] == "pdf_page"})
         seen: set[str] = set()
         count = 0
         for row in self.store.conn.execute(

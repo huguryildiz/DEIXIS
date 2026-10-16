@@ -372,6 +372,9 @@ function QueueCard({ row, criterion, rowView, detailError, unsettled, busy, note
       {context && <div className="queue-focus">
         <span className="queue-focus-text">{context}</span>
         {row.question?.definition && <span className="queue-focus-definition">{row.question.definition}</span>}
+        {row.question?.disputed && <span className="queue-focus-definition">{typeof row.question.page === 'number'
+          ? t('Both reads saw this passage and disagreed (p. {page}).', { page: row.question.page })
+          : t('Both reads saw this passage and disagreed.')}</span>}
       </div>}
       {conflict && <Notice tone="attention">{t('This row changed after it was shown; its current state is loaded. Your answer was not saved.')}</Notice>}
       {rowView && !answerable && !detailError && (unsettled

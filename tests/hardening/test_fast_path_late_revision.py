@@ -432,3 +432,17 @@ def test_new_answer_after_late_exclusion_leaves_the_excluded_work_out(tmp_path):
     lib.store.update_run(run["id"], status="running")
     plan = fast_answer.input_plan(lib.flow, lib.store.run(run["id"]), lib.store.scope(lib.rid))
     assert not excluded & {i["work_id"] for i in plan["items"]}
+
+
+@pytest.mark.parametrize("rule", [None, "split_v1"])
+def test_a_late_read_reads_by_its_discoverys_read_rule(tmp_path, rule):
+    """D76: the late read copies its discovery's `read_rule`; a discovery queued before the rule keeps the old read."""
+    lib = prepared(tmp_path)
+    budget = lib.store.run(lib.discovery["id"])["budget"]
+    budget.pop("read_rule", None)
+    if rule:
+        budget["read_rule"] = rule
+    lib.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?", (json.dumps(budget), lib.discovery["id"]))
+    run = read_late(lib)
+    plan = lib.store.existing_step(run["id"], f"late:{lib.discovery['id']}:adjudication_plan")["output"]
+    assert run["budget"].get("read_rule") == rule and plan.get("read_rule") == rule

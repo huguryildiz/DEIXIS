@@ -203,6 +203,11 @@ def advance(flow: Any, rid: str | None = None) -> None:
                     finish(store, row, "skipped", "no_new_fulltext")
                     continue
                 budget = adjudication.read_budget(scope["effort"]) | {"max_fulltext_reads": len(works), "max_model_calls": 2 * len(works)}
+                # A late read reads by its discovery's rule; a discovery queued before the rule existed keeps the old
+                # one (D76).
+                budget.pop("read_rule", None)
+                if rule := (store.run(row["ledger_run_id"])["budget"] or {}).get("read_rule"):
+                    budget["read_rule"] = rule
                 run = store.create_run(row["research_id"], "fulltext_adjudication", budget,
                     f"fast_path:late_read:{row['ledger_run_id']}", target={"late_revision_id": row["id"],
                     "discovery_run_id": row["ledger_run_id"], "heads": [i["head"] for i in works]})

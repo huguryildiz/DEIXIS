@@ -206,20 +206,64 @@ def _token(ctx: _Context, work_id: str, svid: str, reason_code: str | None, head
     })
 
 
+def _shown_texts(store: Store, step_id: str) -> dict[str, dict[str, Any]]:
+    """Each passage a reading call was shown, by id, with the text and page its stored input carried."""
+    row = store.conn.execute("SELECT payload_json FROM step_inputs WHERE step_id = ? ORDER BY attempt DESC, rowid DESC"
+                             " LIMIT 1", (step_id,)).fetchone()
+    if row is None:
+        return {}
+    return {passage["passage_id"]: {"text": passage.get("text") or "",
+                                    "physical_page": (passage.get("locator") or {}).get("physical_page")}
+            for passage in json.loads(row[0]).get("passages") or []}
+
+
+def _split_merge(ctx: _Context, run_id: str | None,
+                 proposals: dict[str, dict[int, dict[str, Any]]]) -> dict[str, dict[str, Any]] | None:
+    """The merged parts of a `split_v1` reading whose two calls were shown different passages (D76), else None.
+
+    None keeps the both-runs rule: a reading run without the rule in its budget, and a reading whose calls were shown
+    the same passages, were decided by it (`flow._close_adjudication`)."""
+    if not run_id or (ctx.store.run(run_id)["budget"] or {}).get("read_rule") != adjudication.READ_RULE:
+        return None
+    steps = {n: row["step_id"] for runs in proposals.values() for n, row in runs.items()}
+    if len(steps) < 2:
+        return None
+    shown = {n: _shown_texts(ctx.store, step_id) for n, step_id in steps.items()}
+    if len({frozenset(texts) for texts in shown.values()}) < 2:
+        return None
+    rows = {n: {name: {"label": runs[n]["label"], "quote": runs[n]["quote"] or "",
+                       "quote_verified": bool(runs[n]["quote_verified"]), "passage_id": runs[n]["quote_passage_id"],
+                       "page": runs[n]["quote_page"]}
+                for name, runs in proposals.items() if n in runs} for n in steps}
+    return adjudication.merge_parts(rows, shown)
+
+
 def _question(ctx: _Context, kind: str, proposals: dict[str, dict[int, dict[str, Any]]],
-              reason_code: str | None = None) -> dict[str, Any] | None:
+              reason_code: str | None = None, merged: dict[str, dict[str, Any]] | None = None) -> dict[str, Any] | None:
     """The one part the row asks about: the first, in the criterion's order, the two runs did not settle.
 
-    A withheld exclusion on a comparator criterion asks about the comparator part (slice 28)."""
+    A withheld exclusion on a comparator criterion asks about the comparator part (slice 28). Under `split_v1`
+    (`merged`, D76) the part is the first one both calls saw and disagreed on, with `disputed` and that passage's
+    page, else the first core part not merged present and verified; a part one call alone found counts as settled."""
     if kind in ("confirm_pdf", "choose_version", LOOK_AGAIN) and not proposals:
         return None
     if kind == "confirm_results":
         return None
     if reason_code == "comparator_exclusion_withheld" and ctx.comparator is not None:
         return {"part": ctx.comparator, "definition": ctx.definition(ctx.comparator)}
-    for name in ctx.part_names(proposals):
-        if any(p["name"] == name and p.get("inclusion_role") == "aspect" for p in ctx.parts):
-            continue
+    core = [name for name in ctx.part_names(proposals)
+            if not any(p["name"] == name and p.get("inclusion_role") == "aspect" for p in ctx.parts)]
+    if merged is not None:
+        disputed = next((name for name in core if (merged.get(name) or {}).get("disputed")), None)
+        if disputed is not None:
+            return {"part": disputed, "definition": ctx.definition(disputed), "disputed": True,
+                    "page": merged[disputed].get("page")}
+        for name in core:
+            row = merged.get(name) or {}
+            if not (row.get("label") == "present" and row.get("quote_verified")):
+                return {"part": name, "definition": ctx.definition(name)}
+        return None
+    for name in core:
         runs = proposals.get(name, {})
         if kind == "confirm_quote":
             if any(row["label"] == "present" and not row["quote_verified"] for row in runs.values()):
@@ -287,7 +331,8 @@ def _row(ctx: _Context, work_id: str, found: dict[str, Any]) -> dict[str, Any]:
         "source_version_id": svid, "head": head, "work_id": work_id, "title": source["title"],
         "year": source["year"], "doi": source["doi"], "version_label": source["version_label"],
         "publication_type": source["publication_type"], "reason_code": found["reason_code"], "kind": kind,
-        "question": _question(ctx, kind, proposals, found["reason_code"]), "place": ctx.place().get(work_id),
+        "question": _question(ctx, kind, proposals, found["reason_code"], _split_merge(ctx, run_id, proposals)),
+        "place": ctx.place().get(work_id),
         "arm": "chain" if work_id in ctx.chained else "keyword", "stale": found["stale"],
         "decision_id": decision["id"], "row_token": _token(ctx, work_id, svid, found["reason_code"], head),
     }

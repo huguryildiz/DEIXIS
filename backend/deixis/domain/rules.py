@@ -92,6 +92,12 @@ FULLTEXT_WORK_LIMIT = {"quick": 80, "standard": 100, "detailed": 300}
 FULLTEXT_READ_LIMIT = {"quick": 40, "standard": 50, "detailed": 150}
 FULLTEXT_RUNS = 2
 FULLTEXT_PASSAGES_PER_CALL = 12
+# How the two calls of one work are given passages and how their answers are combined (D76). `split_v1`: the second
+# call is shown the passages the first did not see, so a work of up to 24 parts is read whole with the same calls and
+# tokens; a part only one call saw stands on that call's code-verified quote. The old second call saw the same 12 and
+# agreed on 97.6% of parts in the owner's library, so it added almost nothing. Frozen into each reading run's budget;
+# a run whose budget has no `read_rule` reads as before (same list twice, page check, both runs must agree).
+FULLTEXT_READ_RULE = "split_v1"
 
 # Citation chaining of an `sw` discovery run (D95, slice 15; replay in .local/archive/sw/sw-slice15-chain-replay-2026-09-23).
 # 2026-09-23: 15 code seeds; 25 seeds added no work to the plan in `quick` and `standard` (1 in one quantum `detailed`

@@ -81,7 +81,7 @@ def library(tmp_path):
 ])
 def test_the_read_budget_is_two_calls_for_each_work_the_limit_reaches(effort, calls, works_n):
     assert adjudication.read_budget(effort) == {
-        "max_model_calls": calls, "max_provider_requests": 0, "max_fulltext_reads": works_n,
+        "max_model_calls": calls, "max_provider_requests": 0, "max_fulltext_reads": works_n, "read_rule": "split_v1",
     }
 
 
@@ -646,3 +646,168 @@ def test_a_quote_found_on_another_shown_page_is_stored_with_that_page_and_its_pa
         parts, [{"part": "irrigation", "label": "present", "quote": PAGE[:60], "passage_id": "psg_SYNTHP0001"}],
         shown, pages, 12)["irrigation"]
     assert named["page"] == 1 and named["passage_id"] == "psg_SYNTHP0001"
+
+
+# ---- split_v1: the second call reads what the first did not see (D76) ---------------------------
+
+def _ids(rows):
+    return [p["id"] for p in rows]
+
+
+def _long(n, cue_every=None):
+    """`n` SYNTHETIC pages; with `cue_every`, every such page names drip irrigation (a criterion phrase)."""
+    return [passage(f"p{i:02d}", i, f"{ON} {'drip irrigation ' if cue_every and i % cue_every == 0 else ''}page {i}")
+            for i in range(1, n + 1)]
+
+
+def test_a_text_shorter_than_one_call_gives_both_calls_todays_whole_text():
+    pages = _long(8)
+    lists = adjudication.split_lists(pages, criterion(), [], per_call=12, criterion_share=8)
+    today = adjudication.reading_list(pages, criterion(), [], per_call=12, criterion_share=8)["passages"]
+    assert lists["first"] == lists["second"] == today
+
+
+def test_twenty_parts_give_the_eight_unseen_then_four_of_the_first_in_its_own_order():
+    pages = _long(20)
+    topic = [f"p{i:02d}" for i in range(20, 0, -1)]
+    lists = adjudication.split_lists(pages, criterion(), topic, per_call=12, criterion_share=8)
+    today = adjudication.reading_list(pages, criterion(), topic, per_call=12, criterion_share=8)["passages"]
+    assert lists["first"] == today
+    unseen = set(_ids(pages)) - set(_ids(today))
+    assert len(unseen) == 8 and unseen <= set(_ids(lists["second"])) and len(lists["second"]) == 12
+    # The first list's own priority is the topic order here: its four best-ranked passages fill the room.
+    assert set(_ids(lists["second"])) - unseen == {"p20", "p19", "p18", "p17"}
+    assert set(_ids(lists["first"])) | set(_ids(lists["second"])) == set(_ids(pages))
+    assert _ids(lists["second"]) == sorted(_ids(lists["second"]))
+
+
+def test_forty_parts_give_two_disjoint_lists_and_the_second_takes_the_unseen_criterion_passages_first():
+    pages = _long(40, cue_every=3)  # 13 pages name a criterion phrase; the first call takes 8 of them
+    lists = adjudication.split_lists(pages, criterion(), [], per_call=12, criterion_share=8)
+    first, second = set(_ids(lists["first"])), set(_ids(lists["second"]))
+    assert len(first) == len(second) == 12 and not first & second
+    cued = {p["id"] for p in pages if "drip irrigation" in p["text"]}
+    assert len(cued & first) == 8 and cued - first <= second
+
+
+def test_shuffled_passages_give_the_same_two_lists():
+    pages = _long(30, cue_every=4)
+    topic = [f"p{i:02d}" for i in range(30, 0, -2)]
+    built = [adjudication.split_lists(random.Random(seed).sample(pages, len(pages)), criterion(), topic,
+                                      per_call=12, criterion_share=8) for seed in (1, 2, 3)]
+    assert built[0] == built[1] == built[2]
+
+
+def _texts(*rows):
+    return {pid: {"text": text, "physical_page": page} for pid, page, text in rows}
+
+
+A = "SYNTHETIC the greenhouse tomato crop used drip irrigation every morning."
+B = "SYNTHETIC the marketable yield was weighed at the packing house each week."
+C = "SYNTHETIC the bakery rounds were driven before dawn across the town."
+
+
+def test_a_quote_from_a_part_the_call_was_not_shown_does_not_verify_on_its_page():
+    """Two parts on page 4; only the first was shown. The second part's quote does not verify (the page check would)."""
+    shown = {"a": {"physical_page": 4}}
+    records = [{"part": "irrigation", "label": "present", "quote": B[:50], "passage_id": "a"}]
+    split = adjudication.proposals_of(criterion()["parts"][:1], records, shown, {}, 12, _texts(("a", 4, A)))
+    legacy = adjudication.proposals_of(criterion()["parts"][:1], records, shown, {4: A + " " + B}, 12)
+    assert split["irrigation"]["quote_verified"] is False and legacy["irrigation"]["quote_verified"] is True
+
+
+def test_a_splice_across_an_omitted_part_does_not_verify():
+    shown = {"a": {"physical_page": 4}, "c": {"physical_page": 4}}
+    splice = A[-30:] + " " + C[:30]
+    records = [{"part": "irrigation", "label": "present", "quote": splice, "passage_id": "a"}]
+    found = adjudication.proposals_of(criterion()["parts"][:1], records, shown, {}, 12,
+                                      _texts(("a", 4, A), ("c", 4, C)))
+    assert found["irrigation"]["quote_verified"] is False and found["irrigation"]["label"] == "present"
+
+
+def test_a_quote_inside_the_second_shown_part_of_a_page_is_stored_with_that_part():
+    shown = {"a": {"physical_page": 4}, "b": {"physical_page": 4}}
+    records = [{"part": "irrigation", "label": "present", "quote": B[10:60], "passage_id": "a"}]
+    found = adjudication.proposals_of(criterion()["parts"][:1], records, shown, {}, 12,
+                                      _texts(("a", 4, A), ("b", 4, B)))
+    assert found["irrigation"] | {} == {"label": "present", "quote": B[10:60], "quote_verified": True,
+                                        "passage_id": "b", "page": 4}
+
+
+PARTS = [{"name": "irrigation", "definition": "x"}, {"name": "yield", "definition": "y"}]
+
+
+def _row(label, quote="", verified=False, pid=None, page=None):
+    return {"label": label, "quote": quote, "quote_verified": verified, "passage_id": pid, "page": page}
+
+
+# Call 1 was shown passage a (page 1) and b (page 2); call 2 was shown b and c (page 3).
+SHOWN = {1: _texts(("a", 1, A), ("b", 2, B)), 2: _texts(("b", 2, B), ("c", 3, C))}
+
+
+def test_combine_split_writes_nothing_while_either_call_is_missing():
+    rows = {"irrigation": _row("present", A, True, "a", 1), "yield": _row("present", B, True, "b", 2)}
+    assert adjudication.combine_split({1: rows, 2: None}, SHOWN, PARTS) is None
+    assert adjudication.combine_split({1: None, 2: rows}, SHOWN, PARTS) is None
+    assert adjudication.combine_split({1: rows}, SHOWN, PARTS) is None
+
+
+def test_a_part_only_in_the_second_calls_unseen_pages_includes_on_its_verified_quote():
+    first = {"irrigation": _row("present", A, True, "a", 1), "yield": _row("unclear")}
+    second = {"irrigation": _row("unclear"), "yield": _row("present", C, True, "c", 3)}
+    assert adjudication.combine_split({1: first, 2: second}, SHOWN, PARTS) == "all_parts_verified"
+
+
+def test_a_quote_in_a_passage_both_saw_with_the_other_call_unclear_is_a_disagreement():
+    first = {"irrigation": _row("present", A, True, "a", 1), "yield": _row("unclear")}
+    second = {"irrigation": _row("unclear"), "yield": _row("present", B, True, "b", 2)}
+    merged = adjudication.merge_parts({1: first, 2: second}, SHOWN)
+    assert merged["yield"] == {"label": "disputed", "quote_verified": False, "disputed": True,
+                               "passage_id": "b", "page": 2}
+    assert merged["irrigation"]["label"] == "present" and not merged["irrigation"]["disputed"]
+    assert adjudication.combine_split({1: first, 2: second}, SHOWN, PARTS) == "fulltext_runs_disagree"
+
+
+@pytest.mark.parametrize(("labels", "code"), [
+    ((("absent", "absent"), ("absent", "absent")), "criterion_absent"),
+    # Per part: absent in one call and unclear in the other is unclear, not absent (legacy read this as two verdicts).
+    ((("absent", "absent"), ("unclear", "unclear")), "fulltext_runs_agree_unresolved"),
+])
+def test_neither_call_present_is_absent_only_when_both_said_absent(labels, code):
+    first = {name: _row(label) for name, label in zip(("irrigation", "yield"), labels[0])}
+    second = {name: _row(label) for name, label in zip(("irrigation", "yield"), labels[1])}
+    assert adjudication.combine_split({1: first, 2: second}, SHOWN, PARTS) == code
+
+
+def test_a_present_part_with_an_unverified_quote_is_include_quote_unverified():
+    first = {"irrigation": _row("present", A, True, "a", 1), "yield": _row("unclear")}
+    second = {"irrigation": _row("unclear"), "yield": _row("present", "SYNTHETIC not on any page at all", False, "c")}
+    assert adjudication.combine_split({1: first, 2: second}, SHOWN, PARTS) == "include_quote_unverified"
+
+
+def test_one_part_present_and_the_other_absent_in_both_is_a_part_without_evidence():
+    first = {"irrigation": _row("present", A, True, "a", 1), "yield": _row("absent")}
+    second = {"irrigation": _row("unclear"), "yield": _row("absent")}
+    assert adjudication.combine_split({1: first, 2: second}, SHOWN, PARTS) == "part_without_evidence"
+
+
+def test_an_aspect_stays_outside_the_split_gate_and_the_wrappers_still_apply():
+    parts = [PARTS[0], {"name": "yield", "definition": "y", "inclusion_role": "aspect"}]
+    first = {"irrigation": _row("absent"), "yield": _row("unclear")}
+    second = {"irrigation": _row("absent"), "yield": _row("present", B, True, "b", 2)}
+    code = adjudication.combine_split({1: first, 2: second}, SHOWN, parts)
+    assert code == "criterion_absent"
+    assert adjudication.with_comparator(code, "irrigation")[0] == "comparator_exclusion_withheld"
+    included = adjudication.combine_split({1: {"irrigation": _row("present", A, True, "a", 1)} | {"yield": _row("absent")},
+                                           2: {"irrigation": _row("unclear"), "yield": _row("absent")}}, SHOWN, parts)
+    assert included == "all_parts_verified"
+    assert adjudication.with_title(included, "SYNTHETIC study protocol for a trial")[0] == "protocol_title"
+
+
+def test_an_unverified_quote_on_a_passage_both_saw_is_not_a_dispute():
+    """A quote that verifies nowhere is held by no passage: the part stays present and unverified, never disputed."""
+    first = {"irrigation": _row("present", A, True, "a", 1), "yield": _row("unclear")}
+    second = {"irrigation": _row("unclear"), "yield": _row("present", "SYNTHETIC not on any page at all", False, "b")}
+    merged = adjudication.merge_parts({1: first, 2: second}, SHOWN)
+    assert merged["yield"]["label"] == "present" and not merged["yield"]["disputed"]
+    assert adjudication.combine_split({1: first, 2: second}, SHOWN, PARTS) == "include_quote_unverified"

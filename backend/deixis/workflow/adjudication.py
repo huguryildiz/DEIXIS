@@ -10,6 +10,11 @@ core quote verifies and its read version's title names no study protocol; a work
 nor excluded by code, it goes to the queue (`protocol_title`, slice 26). On a criterion with a comparator part code
 never excludes: two all-negative runs go to the queue (`comparator_exclusion_withheld`, slice 28).
 Aspects record per-source contribution with the same quote checks but do not gate inclusion (D235).
+
+Read rule `split_v1` (D76, frozen in the reading run's budget): the second call is shown the passages the first did not
+see (`split_lists`), a quote verifies only inside one passage that call was shown (`verify_passages`), and a part only
+one call saw stands on that call's verified quote; a part both calls saw must still be agreed on (`merge_parts`,
+`combine_split`). A run without the rule reads as above: the same list twice, the page check, `combine`.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from deixis.domain.rules import (
     FULLTEXT_PASSAGES_PER_CALL,
     FULLTEXT_QUOTE_MIN_CHARS,
     FULLTEXT_READ_LIMIT,
+    FULLTEXT_READ_RULE,
     FULLTEXT_RUNS,
 )
 from deixis.workflow.criterion import norm
@@ -50,19 +56,22 @@ PASSAGES_PER_CALL = FULLTEXT_PASSAGES_PER_CALL
 CRITERION_PASSAGES = FULLTEXT_CRITERION_PASSAGES
 QUOTE_MIN_CHARS = FULLTEXT_QUOTE_MIN_CHARS
 RUNS = FULLTEXT_RUNS
+READ_RULE = FULLTEXT_READ_RULE
 
 
-def read_budget(effort: str) -> dict[str, int]:
+def read_budget(effort: str) -> dict[str, Any]:
     """The budget a full-text reading run is queued with.
 
     Read by the API route and by the flow's auto-queue, so a run the user starts and a run a retrieval run leaves
     behind can never be given different room. Two calls per work, and no provider request: the text is already here.
+    The read rule (D76) is frozen here with the room, so a run keeps the rule it was queued with.
     """
     limit = FULLTEXT_READ_LIMIT[effort]
     return {
         "max_model_calls": FULLTEXT_RUNS * limit,
         "max_provider_requests": 0,
         "max_fulltext_reads": limit,
+        "read_rule": READ_RULE,
     }
 
 
@@ -202,6 +211,31 @@ def reading_list(passages: list[dict[str, Any]], criterion: dict[str, Any] | Non
     return {"passages": chosen, "whole_text": False}
 
 
+def split_lists(passages: list[dict[str, Any]], criterion: dict[str, Any] | None,
+                topic_ranked: list[str], per_call: int, criterion_share: int) -> dict[str, list[dict[str, Any]]]:
+    """The two calls' passages under `split_v1` (D76). Code alone decides both, so both calls can be out together.
+
+    `first` is `reading_list`'s list, unchanged. `second` runs the same selection — criterion passages in rounds up to
+    `criterion_share`, then the topic order, then page order — over the passages `first` left out, and fills any room
+    left with `first`'s passages in the order `first` chose them. Both are returned in page order and neither exceeds
+    `per_call`. Fewer pdf passages than `per_call` gives the whole text twice, as before. `topic_ranked` must rank the
+    passages `first` left out too, or the second call falls back to page order for them.
+    """
+    pages = [p for p in passages if p.get("kind", "pdf_page") == "pdf_page"]
+    ordered = sorted(pages, key=lambda p: (_page(p), p["id"]))
+    if len(ordered) < per_call:
+        return {"first": ordered, "second": list(ordered)}
+    first = _select(ordered, criterion, topic_ranked, per_call, criterion_share)
+    seen = {p["id"] for p in first}
+    rest = [p for p in ordered if p["id"] not in seen]
+    second = _select(rest, criterion, topic_ranked, per_call, criterion_share) if rest else []
+    second += first[:per_call - len(second)]
+
+    def by_page(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return sorted(rows, key=lambda p: (_page(p), p["id"]))
+    return {"first": by_page(first), "second": by_page(second)}
+
+
 def coverage(shown_ids: set[str], passages: list[dict[str, Any]], pdf_pages: int | None) -> dict[str, Any]:
     """How much of a version's extracted PDF text a reading showed the model (audit item 3).
 
@@ -285,6 +319,28 @@ def verify(quote: str | None, pages: dict[int, str], named_page: int | None, min
     return {"verified": False, "page": None, "kind": None}
 
 
+def verify_passages(quote: str | None, texts: dict[str, dict[str, Any]], named: str | None,
+                    min_chars: int) -> dict[str, Any]:
+    """Whether `quote` is verbatim inside one passage the call was shown (`split_v1`, D76).
+
+    `texts` maps each shown passage id to `{"text", "physical_page"}` as the call's stored input carried it. Each
+    passage is searched on its own text, the named one first, then the others in the order shown; passages are never
+    joined, so a quote that runs across two parts, or splices parts around one that was not shown, does not verify.
+    `exact` and `normalized` count, as in `verify`.
+    """
+    text = (quote or "").strip()
+    if len(text) < min_chars:
+        return {"verified": False, "passage_id": None, "page": None, "kind": None}
+    order = ([named] if named in texts else []) + [pid for pid in texts if pid != named]
+    for pid in order:
+        match = locate_anchor(text, texts[pid].get("text") or "")
+        if match is not None and match.kind in ("exact", "normalized"):
+            page = texts[pid].get("physical_page")
+            return {"verified": True, "passage_id": pid, "page": page if isinstance(page, int) else None,
+                    "kind": match.kind}
+    return {"verified": False, "passage_id": None, "page": None, "kind": None}
+
+
 def verdict(labels: list[str]) -> str:
     """One run's reading of the parts: `include`, `not_met`, `partial` or `unclear`."""
     if not labels:
@@ -328,6 +384,94 @@ def combine(first: dict[str, Any] | None, second: dict[str, Any] | None) -> str 
         if first["quotes_verified"] and second["quotes_verified"]:
             return "all_parts_verified"
         return "include_quote_unverified"
+    if view == "not_met":
+        return "criterion_absent"
+    if view == "partial":
+        return "part_without_evidence"
+    return "fulltext_runs_agree_unresolved"
+
+
+def _core(parts: list[dict[str, Any]] | None, names: list[str]) -> list[str]:
+    """The part names that gate inclusion: every part but an explicit aspect, as in `run_view`."""
+    if parts is None:
+        return list(names)
+    return [part["name"] for part in parts if part.get("inclusion_role", part.get("role")) != "aspect"]
+
+
+def _seen_by(row: dict[str, Any], shown: dict[str, dict[str, Any]], min_chars: int) -> dict[str, Any] | None:
+    """The passage of `shown` that holds the quote of a `present` row, or None when that call was not shown it.
+
+    The quote is looked for in each of the other call's passages on its own (`verify_passages`). A quote that did not
+    verify is held by no passage, so it never makes a part disputed: the part stays present and unverified."""
+    if not row.get("quote_verified"):
+        return None
+    found = verify_passages(row.get("quote"), shown, row.get("passage_id"), min_chars)
+    return {"passage_id": found["passage_id"], "page": found["page"]} if found["verified"] else None
+
+
+UNCLEAR_ROW = {"label": "unclear", "quote": "", "quote_verified": False, "passage_id": None, "page": None}
+
+
+def merge_parts(rows_by_run: dict[int, dict[str, dict[str, Any]]], shown_by_run: dict[int, dict[str, dict[str, Any]]],
+                min_chars: int = QUOTE_MIN_CHARS) -> dict[str, dict[str, Any]]:
+    """One merged reading per part from the two calls of a `split_v1` reading (D76). Pure; the queue uses it too.
+
+    `rows_by_run` holds each call's proposals by part (`label`, `quote`, `quote_verified`, `passage_id`, `page`);
+    `shown_by_run` each call's shown passages by id (`text`, `physical_page`), from its stored input.
+
+    - Both `present`: present, verified only when both quotes verified.
+    - One `present`: when its quote verified and the other call was shown a passage holding it, both saw the same
+      text and disagree, so the part is `disputed` (with that passage and its page); otherwise it is present on the
+      strength of its own call's quote, verified or not.
+    - Neither: `absent` when both said absent, else `unclear`.
+    """
+    runs = sorted(rows_by_run)
+    names: list[str] = []
+    for run_no in runs:
+        names += [name for name in rows_by_run[run_no] if name not in names]
+    merged: dict[str, dict[str, Any]] = {}
+    for name in names:
+        rows = {run_no: rows_by_run[run_no].get(name) or UNCLEAR_ROW for run_no in runs}
+        present = [run_no for run_no in runs if rows[run_no]["label"] == "present"]
+        if present and len(present) == len(runs):
+            merged[name] = {"label": "present", "quote_verified": all(rows[n]["quote_verified"] for n in runs),
+                            "disputed": False}
+        elif present:
+            found, other = present[0], next(n for n in runs if n not in present)
+            shared = _seen_by(rows[found], shown_by_run.get(other) or {}, min_chars)
+            if shared is not None:
+                merged[name] = {"label": "disputed", "quote_verified": False, "disputed": True, **shared}
+            else:
+                merged[name] = {"label": "present", "quote_verified": bool(rows[found]["quote_verified"]),
+                                "disputed": False, "run_no": found}
+        else:
+            absent = all(rows[n]["label"] == "absent" for n in runs)
+            merged[name] = {"label": "absent" if absent else "unclear", "quote_verified": False, "disputed": False}
+    return merged
+
+
+def combine_split(rows_by_run: dict[int, dict[str, dict[str, Any]] | None],
+                  shown_by_run: dict[int, dict[str, dict[str, Any]]], parts: list[dict[str, Any]] | None = None,
+                  min_chars: int = QUOTE_MIN_CHARS) -> str | None:
+    """One reason code from the two calls of a `split_v1` reading whose shown passages differ (D76), or None when a
+    call did not answer.
+
+    Any disputed core part is `fulltext_runs_disagree`. Otherwise the merged core labels are read as one run is
+    (`verdict`): include with every present part verified is `all_parts_verified`, with one unverified
+    `include_quote_unverified`; `not_met` is `criterion_absent`, `partial` `part_without_evidence`, and `unclear`
+    `fulltext_runs_agree_unresolved`. Aspects stay outside the gate. `with_comparator` and `with_title` apply after.
+    """
+    if len(rows_by_run) < FULLTEXT_RUNS or any(rows is None for rows in rows_by_run.values()):
+        return None
+    merged = merge_parts({n: rows for n, rows in rows_by_run.items() if rows is not None}, shown_by_run, min_chars)
+    core = [merged.get(name, {"label": "unclear", "quote_verified": False, "disputed": False})
+            for name in _core(parts, list(merged))]
+    if any(row["disputed"] for row in core):
+        return "fulltext_runs_disagree"
+    view = verdict([row["label"] for row in core])
+    if view == "include":
+        return ("all_parts_verified" if all(row["quote_verified"] for row in core)
+                else "include_quote_unverified")
     if view == "not_met":
         return "criterion_absent"
     if view == "partial":
@@ -403,7 +547,8 @@ def with_comparator(code: str | None, part: str | None) -> tuple[str | None, str
 
 
 def proposals_of(parts: list[dict[str, Any]], records: list[dict[str, Any]], shown: dict[str, dict[str, Any]],
-                 pages: dict[int, str], min_chars: int) -> dict[str, dict[str, Any]]:
+                 pages: dict[int, str], min_chars: int,
+                 texts: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
     """One run's proposal per criterion part.
 
     A record-level defect drops that part's proposal for this run and the part is read as `unclear`: an unknown
@@ -412,6 +557,10 @@ def proposals_of(parts: list[dict[str, Any]], records: list[dict[str, Any]], sho
     the part stays `present` and `quote_verified` is false, which is what makes two agreeing include-runs
     `include_quote_unverified` rather than included. A quote verified on another shown page than the named
     passage's is stored with the passage on that page, so the passage and page of a proposal always agree.
+
+    With `texts` (`split_v1`, D76: each shown passage's own text from the call's stored input) a quote verifies only
+    inside one shown passage (`verify_passages`), never on the whole text of a shown page, and is stored with the
+    passage it was found in. `pages` is then not read.
     """
     expected = [part["name"] for part in parts]
     known = set(expected)
@@ -430,7 +579,11 @@ def proposals_of(parts: list[dict[str, Any]], records: list[dict[str, Any]], sho
         if label == "present" and (not quote or passage_id not in shown):
             dropped.add(name)
             continue
-        if label == "present":
+        if label == "present" and texts is not None:
+            checked = verify_passages(quote, texts, passage_id, min_chars)
+            found[name] = {"label": "present", "quote": quote, "quote_verified": checked["verified"],
+                           "passage_id": checked["passage_id"] or passage_id, "page": checked["page"]}
+        elif label == "present":
             named = shown[passage_id].get("physical_page")
             checked = verify(quote, pages, named if isinstance(named, int) else None, min_chars)
             if checked["page"] is not None and checked["page"] != named:

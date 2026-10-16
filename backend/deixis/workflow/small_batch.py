@@ -87,6 +87,9 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
     # The former follow-up reading allowance moves into this run, without increasing the chain's total.
     body["max_model_calls"] += reads.get("max_model_calls", 0)
     body["max_fulltext_reads"] = reads.get("max_fulltext_reads", 0)
+    if reads.get("read_rule"):
+        # The reads this run adds keep the read rule they were frozen with (D76).
+        body["read_rule"] = reads["read_rule"]
     body["inspection"] = {
         "policy": POLICY, "runner_version": 4, "batch_size": BATCH_SIZE, "minimum_processed_works": MINIMUM,
         "discovery_model_calls": budget["max_model_calls"],

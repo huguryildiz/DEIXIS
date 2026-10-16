@@ -621,7 +621,8 @@ export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wr
 export type QueueRow = {
   source_version_id: string; head: string; work_id: string; title: string; year: number | null; doi: string | null
   version_label: string | null; publication_type: string | null; reason_code: string; kind: QueueKind
-  question: { part: string; definition: string | null } | null; place: number | null; arm: 'keyword' | 'chain'
+  // `disputed` (with the shared passage's page) only when both reads of a split reading saw the part's passage and disagreed (D76).
+  question: { part: string; definition: string | null; disputed?: true; page?: number | null } | null; place: number | null; arm: 'keyword' | 'chain'
   stale: boolean; decision_id: string; row_token: string
 }
 export type QueueCounts = {

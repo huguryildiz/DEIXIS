@@ -779,10 +779,16 @@ def long_pdf(doi, pages):
                     + [f"SYNTHETIC page {n} on irrigation scheduling of a greenhouse crop." for n in range(2, pages + 1)])
 
 
+def shown_pages(call):
+    """The pages a reading call was shown. Passage ids are per-call handles in the input the model sees (D12)."""
+    return {p["locator"]["physical_page"] for p in call["passages"]}
+
+
 @pytest.mark.parametrize(("pages", "responder", "code"), [
     (1, valid_response, "all_parts_verified"),
     (15, valid_response, "all_parts_verified"),
-    (15, disagree_response, "fulltext_runs_disagree"),
+    # Fewer than 12 parts: both calls see the same passages and must still agree (D76).
+    (8, disagree_response, "fulltext_runs_disagree"),
 ])
 def test_each_reading_decision_keeps_what_its_calls_showed(tmp_path, monkeypatch, pages, responder, code):
     """Coverage is written with model-agreement and code decisions alike, and the Sources view reads it."""
@@ -798,37 +804,27 @@ def test_each_reading_decision_keeps_what_its_calls_showed(tmp_path, monkeypatch
         store = app.state.store
         read = step_output(store, reading["id"], "adjudication_plan")["works"][0]["read_version"]
         decision = DecisionStore(store).current(rid, read, "fulltext")
-        shown = [{p["passage_id"] for p in call["passages"]} for call in adj_calls(adapter, reading["id"])]
+        shown = [shown_pages(call) for call in sorted(adj_calls(adapter, reading["id"]),
+                                                       key=lambda c: c["adjudication_target"]["run"])]
         screening = next(s["screening"] for s in view["sources"] if s["source_version_id"] == records_of(store, rid)["W1"])
     finally:
         client.__exit__(None, None, None)
     coverage = json.loads(decision["read_coverage"])
     assert decision["reason_code"] == code and len(shown) == 2
-    assert coverage == {"parts_shown": min(pages, 12), "parts_total": pages, "pages_shown": min(pages, 12),
-                        "pages_with_text": pages, "pdf_pages": pages, "all_parts_shown": pages <= 12}
+    # The second call is shown the parts the first did not see (D76): up to 24 parts are read whole.
+    assert coverage == {"parts_shown": min(pages, 24), "parts_total": pages, "pages_shown": min(pages, 24),
+                        "pages_with_text": pages, "pdf_pages": pages, "all_parts_shown": pages <= 24}
     assert coverage["parts_shown"] == len(shown[0] | shown[1])
+    if pages > 12:
+        assert len(shown[0]) == len(shown[1]) == 12 and shown[0] | shown[1] == set(range(1, pages + 1))
+    else:
+        assert shown[0] == shown[1]
     assert screening["stage"] == "fulltext" and screening["read_coverage"] == coverage
 
 
 def test_coverage_is_the_union_of_both_calls_and_a_replayed_close_adds_nothing(tmp_path, monkeypatch):
-    """The two calls see different pages; a second close of the same calls, and a same-code close over a decision
-    written before coverage existed, write no new decision (the old one keeps what it had)."""
-    from deixis.workflow.flow import ResearchFlow
-
-    original = ResearchFlow._adjudication_passages
-    sent = {"n": 0}
-
-    def shifted(self, research_id, scope, criterion, svid):
-        # The second call is shown the pages the first was not, and one it was.
-        rows = original(self, research_id, scope, criterion, svid)
-        sent["n"] += 1
-        if sent["n"] % 2:
-            sent["first"] = {p["id"] for p in rows}
-            return rows
-        pages = [p for p in self.store.passages_for(svid) if p["kind"] == "pdf_page"]
-        return [p for p in pages if p["id"] not in sent["first"]] + rows[:1]
-
-    monkeypatch.setattr(ResearchFlow, "_adjudication_passages", shifted)
+    """The two calls see different pages under `split_v1` (D76); a second close of the same calls, and a same-code
+    close over a decision written before coverage existed, write no new decision (the old one keeps what it had)."""
     works = [work(1, pdf_url="https://example.org/w1.pdf")]
     fetcher = Fetcher({"https://example.org/w1.pdf": ok(long_pdf("10.1/oa.1", 15))})
     adapter = FakeAdapter(valid_response)
@@ -858,7 +854,7 @@ def test_coverage_is_the_union_of_both_calls_and_a_replayed_close_adds_nothing(t
     finally:
         client.__exit__(None, None, None)
     coverage = json.loads(decision["read_coverage"])
-    assert coverage["parts_shown"] == 15 and coverage["all_parts_shown"] and sent["n"] == 2
+    assert coverage["parts_shown"] == 15 and coverage["all_parts_shown"] and len(adj_calls(adapter)) == 2
     assert replayed == (before, decision["id"])
     assert legacy["id"] == decision["id"] and legacy["read_coverage"] is None and after == before
 
@@ -903,3 +899,209 @@ def test_an_unexpected_error_in_a_reading_run_without_an_inspection_block_fails_
     assert "inspection" not in stored["budget"]
     assert plan["works"], plan
     assert run["status"] == "failed" and stored["pause_reason"] == "internal_error"
+
+
+# ---- the second call is shown the parts the first did not see (D76) ------------------------------
+
+def split_response(shared_parts=(), unseen_parts=()):
+    """Run 1 finds nothing. Run 2 quotes, for each part index in `unseen_parts`, a page run 1 was not shown, and for
+    each in `shared_parts`, a page run 1 was shown too; any other part it calls absent. Calls are sequential
+    (concurrency 1), so run 1's pages are known when run 2 answers. SYNTHETIC."""
+    state = {}
+
+    def respond(si):
+        if si["task_type"] != "fulltext_adjudication":
+            return valid_response(si)
+        by_page = {p["locator"]["physical_page"]: p for p in si["passages"]}
+        if si["adjudication_target"]["run"] == 1:
+            state["first"] = set(by_page)
+            return absent_response(si)
+        body = json.loads(absent_response(si))
+        unseen = sorted(page for page in by_page if page not in state["first"])
+        shared = sorted(page for page in by_page if page in state["first"])
+        for index, part in enumerate(body["parts"]):
+            pick = unseen[0] if index in unseen_parts else shared[0] if index in shared_parts else None
+            if pick is not None:
+                part.update(label="present", quote=by_page[pick]["text"][:60], passage_id=by_page[pick]["passage_id"])
+        state["picked"] = {"unseen": unseen[0], "shared": shared[0]}
+        return json.dumps(body)
+
+    respond.state = state
+    return respond
+
+
+def read_split(tmp_path, monkeypatch, responder, pages=15, legacy=False):
+    if legacy:
+        # A run queued before the rule existed: its budget carries no `read_rule`.
+        original = adjudication.read_budget
+        monkeypatch.setattr(adjudication, "read_budget",
+                            lambda effort: {k: v for k, v in original(effort).items() if k != "read_rule"})
+    works = [work(1, pdf_url="https://example.org/w1.pdf")]
+    fetcher = Fetcher({"https://example.org/w1.pdf": ok(long_pdf("10.1/oa.1", pages))})
+    adapter = FakeAdapter(responder)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        wait_fetch(client, rid)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        plan = step_output(store, reading["id"], "adjudication_plan")
+        read = plan["works"][0]["read_version"]
+        found = {"rid": rid, "reading": reading, "plan": plan, "read": read,
+                 "code": fulltext_code(store, rid, read),
+                 "decision": DecisionStore(store).current(rid, read, "fulltext"),
+                 "summary": step_output(store, reading["id"], "adjudication_summary"),
+                 "calls": sorted(adj_calls(adapter, reading["id"]), key=lambda c: c["adjudication_target"]["run"]),
+                 "queue": client.get(f"/api/researches/{rid}/queue/{records_of(store, rid)['W1']}").json(),
+                 "budget": store.run(reading["id"])["budget"]}
+        steps = sorted((s for s in store.run_steps(reading["id"]) if s["kind"] == "model:fulltext_adjudication"),
+                       key=lambda s: s["operation_key"])
+        found["inputs"] = [json.loads(store.conn.execute(
+            "SELECT payload_json FROM step_inputs WHERE step_id = ? ORDER BY attempt DESC, rowid DESC LIMIT 1",
+            (s["id"],)).fetchone()[0]) for s in steps]
+        assert [s["status"] for s in steps] == ["succeeded", "succeeded"], [(s["operation_key"], s["status"]) for s in steps]
+        found["outputs"] = [json.loads(store.conn.execute("SELECT output_json FROM run_steps WHERE id = ?",
+                                                          (s["id"],)).fetchone()[0]) for s in steps]
+        found["app"] = app
+        yield found
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_a_part_only_the_second_call_saw_stands_on_its_verified_quote(tmp_path, monkeypatch):
+    """15 parts: the calls are shown 12 + 12 different lists covering all 15, coverage and whole_text count it, and
+    a part run 2 alone found on a page run 1 never saw includes the work on its verified quote. Two calls."""
+    responder = split_response(unseen_parts=(0, 1))
+    for found in read_split(tmp_path, monkeypatch, responder):
+        shown = [shown_pages(call) for call in found["calls"]]
+        coverage = json.loads(found["decision"]["read_coverage"])
+        assert found["budget"]["read_rule"] == "split_v1" and found["plan"]["read_rule"] == "split_v1"
+        assert len(found["calls"]) == 2 and shown[0] != shown[1] and shown[0] | shown[1] == set(range(1, 16))
+        assert found["inputs"][0]["passages"] != found["inputs"][1]["passages"]
+        assert coverage["parts_shown"] == 15 and coverage["all_parts_shown"]
+        assert found["summary"]["whole_text"] == 1
+        assert found["code"] == "all_parts_verified"
+        assert responder.state["picked"]["unseen"] not in shown[0]
+
+
+def test_a_part_both_calls_saw_and_disagree_on_goes_to_the_queue_as_disputed(tmp_path, monkeypatch):
+    """Part 1 found by run 2 alone on a page run 1 never saw; part 2 quoted by run 2 on a page run 1 was shown and
+    called absent: the reading disagrees, and the queue asks about part 2, marked disputed with that page."""
+    responder = split_response(unseen_parts=(0,), shared_parts=(1,))
+    for found in read_split(tmp_path, monkeypatch, responder):
+        question = found["queue"]["row"]["question"]
+        parts = [part["name"] for part in found["plan"]["criterion"]["parts"]]
+        assert found["code"] == "fulltext_runs_disagree"
+        assert question["part"] == parts[1] and question["disputed"] is True
+        assert question["page"] == responder.state["picked"]["shared"]
+
+
+def test_a_legacy_reading_disagreement_carries_no_disputed_mark(tmp_path, monkeypatch):
+    """A run whose budget has no rule sends the same list twice and closes with both runs agreeing or not (D85)."""
+    for found in read_split(tmp_path, monkeypatch, disagree_response, legacy=True):
+        shown = [shown_pages(call) for call in found["calls"]]
+        coverage = json.loads(found["decision"]["read_coverage"])
+        assert "read_rule" not in found["budget"] and "read_rule" not in found["plan"]
+        assert shown[0] == shown[1] and len(shown[0]) == 12 and coverage["parts_shown"] == 12
+        assert found["code"] == "fulltext_runs_disagree"
+        assert "disputed" not in found["queue"]["row"]["question"]
+
+
+@pytest.mark.parametrize(("legacy", "whole"), [(True, 0), (False, 1)])
+def test_a_twelve_part_work_is_whole_only_under_the_split_rule(tmp_path, monkeypatch, legacy, whole):
+    """Exactly 12 parts: one call is not the whole text under the old count, and a resumed legacy run keeps that
+    count; under `split_v1` the two calls together were shown every part."""
+    for found in read_split(tmp_path, monkeypatch, valid_response, pages=12, legacy=legacy):
+        flow = found["app"].state.worker.flow
+        assert found["summary"]["whole_text"] == whole
+        assert flow._adjudication_whole_text(found["reading"]["id"], found["plan"].get("read_rule")) == whole
+
+
+@pytest.mark.parametrize("second", [None, {"invalid": True}])
+def test_a_split_reading_writes_nothing_while_a_call_has_no_usable_answer(tmp_path, monkeypatch, second):
+    """Call 2 invalid, or missing (cut off, or not back after a pause): no decision is written from call 1 alone."""
+    for found in read_split(tmp_path, monkeypatch, split_response(unseen_parts=(0, 1))):
+        store, flow = found["app"].state.store, found["app"].state.worker.flow
+        from deixis.storage.db import now, transaction
+        with transaction(store.conn):
+            store.conn.execute("UPDATE stage_decisions SET superseded_at = ? WHERE source_version_id = ?"
+                               " AND stage = 'fulltext' AND superseded_at IS NULL", (now(), found["read"]))
+        flow._close_adjudication(store.run(found["reading"]["id"]), found["plan"]["works"][0], found["plan"],
+                                 [found["outputs"][0], second])
+        assert DecisionStore(store).current(found["rid"], found["read"], "fulltext") is None
+        # Both answers back: the same close writes the decision again.
+        flow._close_adjudication(store.run(found["reading"]["id"]), found["plan"]["works"][0], found["plan"],
+                                 found["outputs"])
+        assert fulltext_code(store, found["rid"], found["read"]) == "all_parts_verified"
+
+
+def test_a_split_reading_leaves_the_answer_its_file(tmp_path, monkeypatch):
+    """`fast_answer.read_file` still names the file a split reading read."""
+    for found in read_split(tmp_path, monkeypatch, split_response(unseen_parts=(0, 1))):
+        from deixis.workflow import fast_answer
+        store, flow = found["app"].state.store, found["app"].state.worker.flow
+        records = fast_answer.reading_records(store, found["rid"])
+        assert fast_answer.read_file(flow, found["decision"], found["read"], records) == found["plan"]["works"][0]["asset_id"]
+
+
+def test_whole_text_counts_only_calls_that_were_sent(tmp_path, monkeypatch):
+    """An input is stored before its send. A second call the cutoff refused leaves an input the model never saw; the
+    split count does not take its passages, so 15 parts read by one call are not whole."""
+    for found in read_split(tmp_path, monkeypatch, valid_response):
+        store, flow = found["app"].state.store, found["app"].state.worker.flow
+        run_id = found["reading"]["id"]
+        assert flow._adjudication_whole_text(run_id, "split_v1") == 1
+        second = next(s for s in store.run_steps(run_id) if s["kind"] == "model:fulltext_adjudication"
+                      and s["operation_key"].endswith(":2"))
+        store.conn.execute("UPDATE run_steps SET status = 'failed', error_code = 'model_read_cutoff' WHERE id = ?",
+                           (second["id"],))
+        assert flow._adjudication_whole_text(run_id, "split_v1") == 0
+
+
+@pytest.mark.parametrize("legacy", [True, False])
+def test_a_reading_paused_after_its_first_call_resumes_under_its_own_rule(tmp_path, monkeypatch, legacy):
+    """Paused after call 1 and resumed: the run keeps the rule its budget froze. A legacy run sends the same list
+    again and closes with both calls agreeing; a split run sends the other list and closes part by part."""
+    if legacy:
+        original = adjudication.read_budget
+        monkeypatch.setattr(adjudication, "read_budget",
+                            lambda effort: {k: v for k, v in original(effort).items() if k != "read_rule"})
+    seen, holder = [], {}
+
+    def before(si):
+        if si["task_type"] != "fulltext_adjudication":
+            return
+        seen.append(si["step_input_id"])
+        if len(seen) == 1:
+            holder["store"].update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
+                                       pause_reason="user_requested")
+
+    responder = disagree_response if legacy else split_response(unseen_parts=(0, 1))
+    works = [work(1, pdf_url="https://example.org/w1.pdf")]
+    fetcher = Fetcher({"https://example.org/w1.pdf": ok(long_pdf("10.1/oa.1", 15))})
+    adapter = FakeAdapter(responder, delay=0.02, before=before)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        store = holder["store"] = app.state.store
+        rid, _, _, _ = discover(client)
+        _, paused = wait_kind(client, rid, "fulltext_adjudication")
+        paused_calls = len(adj_calls(adapter))
+        client.post(f"/api/runs/{paused['id']}/resume")
+        _, reading = wait(client, rid, paused["id"])
+        plan = step_output(store, reading["id"], "adjudication_plan")
+        read = plan["works"][0]["read_version"]
+        calls = sorted(adj_calls(adapter, reading["id"]), key=lambda c: c["adjudication_target"]["run"])
+        code = fulltext_code(store, rid, read)
+        budget = store.run(reading["id"])["budget"]
+    finally:
+        client.__exit__(None, None, None)
+    shown = [shown_pages(call) for call in calls]
+    assert paused["status"] == "paused" and paused_calls == 1 and reading["status"] == "completed"
+    assert len(calls) == 2 and budget.get("read_rule") == (None if legacy else "split_v1")
+    assert plan.get("read_rule") == budget.get("read_rule")
+    if legacy:
+        assert shown[0] == shown[1] and code == "fulltext_runs_disagree"
+    else:
+        assert shown[0] != shown[1] and shown[0] | shown[1] == set(range(1, 16)) and code == "all_parts_verified"

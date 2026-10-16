@@ -6,6 +6,8 @@
 
 The owner is checking the app by eye, and the problems they find get fixed in order. P10 (the macOS package) waits until that check is done.
 
+İkinci tam metin okuması artık ilk okumanın görmediği bölümleri okuyor (D76); modelsiz tekrar oynatmada makalelerin gösterilen bölüm payı %32'den %65'e çıktı, canlı Luna kabul testi (17 Eki, aynı 16 makale) test edilebilen dört koşulu geçti: kapsam ×1,77, negatiflerde yeni dahil yok, kısa makaleler değişmedi, çağrı ve token aynı; ama ilk 12 parçanın kaçırdığı ana kanıtı yakalama amacı bu sette ölçülemedi ve dışlama zorlaştı (bir negatif kuyruğa düştü).
+
 ## Next
 
 1. The owner's visual check and the fixes it turns up.

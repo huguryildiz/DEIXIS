@@ -3137,6 +3137,8 @@ const tr: Record<string, string> = {
   'No, it does not meet the criterion': 'Hayır, ölçütü karşılamıyor',
   'Is this paper a source for the question?': 'Bu makale sorunun kaynağı olur mu?',
   'The reading could not settle the part “{part}”.': 'Okuma “{part}” parçasını karara bağlayamadı.',
+  'Both reads saw this passage and disagreed (p. {page}).': 'İki okuma da bu pasajı gördü ve farklı karar verdi (s. {page}).',
+  'Both reads saw this passage and disagreed.': 'İki okuma da bu pasajı gördü ve farklı karar verdi.',
   'Is this PDF the work named here?': 'Bu PDF burada adı geçen eser mi?',
   'The title names a study protocol. Does this paper report results for every part, rather than only planning to measure them?': 'Başlık bir çalışma protokolünü adlandırıyor. Bu makale her parça için sonuç bildiriyor mu, yoksa yalnızca ölçmeyi mi planlıyor?',
   'The versions of this work were read to opposite decisions. Which one holds?': 'Bu eserin sürümleri okunup zıt kararlara varıldı. Hangisi geçerli?',

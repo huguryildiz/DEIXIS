@@ -28,7 +28,20 @@ def test_a_global_address_is_returned(monkeypatch):
 
 MALFORMED = ["https://papers.example:99999/x.pdf", "https://papers.example:abc/x.pdf", "https://[::1/x.pdf",
              "http://[not-an-ip]/x.pdf", "http://a..b.example/x.pdf", "http://.example/x.pdf",
-             "http://" + "a" * 64 + ".example/x.pdf"]
+             "http://" + "a" * 64 + ".example/x.pdf", "https://papers.example/a\x00.pdf", "https://papers.example/a\x7f.pdf",
+             "https://papers.example/a.pdf?q=\x00", "https://\u2603.example/x.pdf", "https://xn--zz.example/x.pdf"]
+PUBLIC = "93.184.216.34"
+
+
+def resolving_public(monkeypatch, resolved=None):
+    """Every host resolves to a public address, after the IDNA encoding getaddrinfo applies to a str host (where an
+    empty or too-long label fails); no lookup leaves the machine."""
+    async def resolve(host, port):
+        host.encode("idna")
+        if resolved is not None:
+            resolved.append(host)
+        return [PUBLIC]
+    monkeypatch.setattr(fetch, "_resolve", resolve)
 
 
 def never_called(request):
@@ -36,8 +49,8 @@ def never_called(request):
 
 
 @pytest.mark.parametrize("url", MALFORMED)
-def test_a_malformed_url_is_a_blocked_url_result_not_an_exception(url):
-    # The real resolver: the empty and too-long labels fail in its IDNA encoding, before any lookup.
+def test_a_malformed_url_is_a_blocked_url_result_not_an_exception(monkeypatch, url):
+    resolving_public(monkeypatch)
     client = httpx.AsyncClient(transport=httpx.MockTransport(never_called))
     result = asyncio.run(fetch.fetch_pdf(url, client))
     assert (result.status, result.final_url) == ("blocked_url", url)
@@ -46,23 +59,40 @@ def test_a_malformed_url_is_a_blocked_url_result_not_an_exception(url):
 
 @pytest.mark.parametrize("location", MALFORMED)
 def test_a_malformed_redirect_location_is_a_blocked_url_result(monkeypatch, location):
-    resolve = fetch._resolve
-
-    async def first_host_public(host, port):
-        return ["93.184.216.34"] if host == "papers.example" else await resolve(host, port)
-
-    monkeypatch.setattr(fetch, "_resolve", first_host_public)
+    resolving_public(monkeypatch)
     sent = []
 
     def handler(request):
         sent.append(request.url)
-        return httpx.Response(302, headers={"location": location})
+        return httpx.Response(302, headers=[(b"location", location.encode())])  # the bytes a server would send
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     result = asyncio.run(fetch.fetch_pdf("https://papers.example/a.pdf", client))
-    if location in ("https://papers.example:abc/x.pdf", "https://[::1/x.pdf", "http://[not-an-ip]/x.pdf"):
-        # httpx reads the Location header itself and refuses these before `fetch` sees the response.
-        assert (result.status, result.error) == ("failed", "RemoteProtocolError")
-    else:
-        assert result.status == "blocked_url" and result.error.startswith("not a valid URL")
+    assert result.status == "blocked_url" and result.error.startswith("not a valid URL")
     assert len(sent) == 1  # the malformed hop was never requested
+
+
+def test_an_internationalized_host_is_fetched_by_its_punycode_name(monkeypatch):
+    resolved, seen = [], []
+    resolving_public(monkeypatch, resolved)
+
+    def handler(request):
+        seen.append((request.url.host, request.headers["host"], request.extensions.get("sni_hostname")))
+        return httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"%PDF-1.4 SYNTHETIC")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    result = asyncio.run(fetch.fetch_pdf("https://B\u00fccher.example/a.pdf", client))
+    assert (result.status, result.data) == ("ok", b"%PDF-1.4 SYNTHETIC")
+    assert resolved == ["xn--bcher-kva.example"]
+    assert seen == [(PUBLIC, "xn--bcher-kva.example", "xn--bcher-kva.example")]
+
+
+def test_an_unrelated_protocol_error_is_still_failed(monkeypatch):
+    resolving_public(monkeypatch)
+
+    def handler(request):
+        raise httpx.RemoteProtocolError("Server disconnected without sending a response.", request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    result = asyncio.run(fetch.fetch_pdf("https://papers.example/a.pdf", client))
+    assert (result.status, result.error) == ("failed", "RemoteProtocolError")

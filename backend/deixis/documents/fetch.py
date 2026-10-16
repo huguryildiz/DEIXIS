@@ -13,6 +13,7 @@ A host is asked one request at a time (`host_gate`): the full-text retrieval run
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ipaddress
 import os
 import socket
@@ -34,6 +35,8 @@ PDF_ACCEPT = "application/pdf, */*;q=0.1"
 # The Content-Encodings `_fetch` decodes itself, one layer at most; asked for by name so a client default cannot widen it.
 DECODED_ENCODINGS = ("gzip", "x-gzip", "deflate")
 ACCEPT_ENCODING = "gzip, deflate"
+# How httpx (0.28, `_redirect_url`) words its refusal of a redirect Location it cannot parse; no other error starts so.
+INVALID_LOCATION = "Invalid URL in location header"
 
 
 def user_agent(email: str | None = None) -> str:
@@ -86,11 +89,14 @@ async def _resolve(host: str, port: int) -> list[str]:
 async def check_public_url(url: str) -> str:
     """Return the public address to connect to; refuse if any resolved address is not public."""
     try:
-        # A URL that cannot be read (port out of range or not a number, an unclosed or non-address "[...]") raises
-        # ValueError here, and an empty or too-long host label UnicodeError (a ValueError) in getaddrinfo's IDNA step.
+        # A URL that cannot be read raises here: ValueError from urllib (port out of range or not a number, an unclosed
+        # or non-address "[...]"), InvalidURL or IDNAError (a ValueError) from httpx's own parser, which the request is
+        # built with (a control character in the path or query, a host that is not valid IDNA). An empty or too-long
+        # host label raises UnicodeError (a ValueError) later, in getaddrinfo's IDNA step.
         parts = urlsplit(url)
         port = parts.port
-    except ValueError as exc:
+        host = _ascii_host(url)
+    except (ValueError, httpx.InvalidURL) as exc:
         raise BlockedUrl(f"not a valid URL: {exc}") from exc
     if parts.scheme not in ("http", "https"):
         raise BlockedUrl(f"scheme {parts.scheme!r} not allowed")
@@ -99,7 +105,7 @@ async def check_public_url(url: str) -> str:
     if parts.username or parts.password:
         raise BlockedUrl("credentials in URL not allowed")
     try:
-        addresses = await _resolve(parts.hostname, port or (443 if parts.scheme == "https" else 80))
+        addresses = await _resolve(host, port or (443 if parts.scheme == "https" else 80))
     except socket.gaierror as exc:
         raise BlockedUrl(f"host does not resolve: {exc}") from exc
     except ValueError as exc:
@@ -144,14 +150,24 @@ def _inflater(encoding: str) -> Callable[[bytes, int], bytes]:
     return inflate
 
 
+def _ascii_host(url: str) -> str:
+    """The host as it goes on the wire: an internationalized name in its IDNA (punycode) form, as httpx encodes it.
+    httpx checks a non-ASCII name when it encodes it; an "xn--" label is checked here, by decoding it back."""
+    parsed = httpx.URL(url)
+    parsed.host  # raises IDNAError (a ValueError) for an "xn--" label that is not valid punycode
+    return parsed.raw_host.decode("ascii")
+
+
 def _pinned_request(url: str, address: str) -> tuple[str, dict[str, str], dict[str, str]]:
-    """URL addressed to the checked IP, with the original host for the Host header and TLS server name."""
+    """URL addressed to the checked IP, with the original host for the Host header and TLS server name, both in the
+    host's ASCII form (a header and the TLS server name carry no other)."""
     parts = urlsplit(url)
+    host = _ascii_host(url)
     ip_host = f"[{address}]" if ipaddress.ip_address(address).version == 6 else address
-    name = f"[{parts.hostname}]" if ":" in parts.hostname else parts.hostname
+    name = f"[{host}]" if ":" in host else host
     port = f":{parts.port}" if parts.port else ""
     pinned = urlunsplit((parts.scheme, ip_host + port, parts.path or "/", parts.query, ""))
-    extensions = {"sni_hostname": parts.hostname} if parts.scheme == "https" else {}
+    extensions = {"sni_hostname": host} if parts.scheme == "https" else {}
     return pinned, {"Host": name + port}, extensions
 
 
@@ -186,7 +202,18 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
                         headers["Accept-Encoding"] = ACCEPT_ENCODING
                         if accept is not None:
                             headers["Accept"] = accept
-                        async with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False) as response:
+                        request = client.build_request("GET", target, headers=headers, extensions=extensions)
+                        try:
+                            response = await client.send(request, stream=True, follow_redirects=False)
+                        except (httpx.RemoteProtocolError, ValueError) as exc:
+                            # httpx reads a redirect's Location itself while sending, before the response comes back:
+                            # one its parser cannot read is RemoteProtocolError("Invalid URL in location header: ..."),
+                            # an "xn--" host that is not valid punycode IDNAError (a ValueError). That hop is refused
+                            # like a malformed URL; any other protocol error keeps its own result below.
+                            if isinstance(exc, httpx.RemoteProtocolError) and not str(exc).startswith(INVALID_LOCATION):
+                                raise
+                            return FetchResult("blocked_url", final_url=current, error=f"not a valid URL: {exc}")
+                        async with contextlib.aclosing(response):
                             if response.is_redirect:
                                 location = response.headers.get("location")
                                 if not location:

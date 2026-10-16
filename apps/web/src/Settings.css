@@ -50,7 +50,13 @@
 .app .settings-page .set-roles .select{flex:none;width:200px}
 .app .settings-page .set-roles .select+.select{width:130px}
 /* On a phone the line cannot hold both selects: they wrap under the role, so the page never scrolls sideways. */
-@media(max-width:620px){.app .settings-page .set-roles>div{flex-wrap:wrap}.app .settings-page .set-roles .select,.app .settings-page .set-roles .select+.select{flex:1 1 140px;width:auto;min-width:0}}
+@media(max-width:620px){
+  .app .settings-page .set-roles>div{flex-wrap:wrap}
+  .app .settings-page .set-roles b{flex:1 0 100%;min-width:0}
+  .app .settings-page .set-roles p{flex:1 0 100%;margin-top:-8px}
+  .app .settings-page .set-roles .select{flex:2 1 170px;width:auto;min-width:0}
+  .app .settings-page .set-roles .select+.select{flex:1 1 110px}
+}
 .app .settings-page .bar{display:flex;height:6px;overflow:hidden;border-radius:3px;background:var(--selected-surface)}
 .app .settings-page .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
 .app .settings-page .set-usage p{flex:0 0 auto;min-width:0;text-align:right}
@@ -154,6 +160,12 @@
 .app .settings-page .semantic-option-body{display:grid;gap:4px;padding:0 14px 12px 63px;font-size:12.5px}
 .app .settings-page .semantic-option-body .local-tool-note,.app .settings-page .semantic-option-body .local-tool-error{font-size:12.5px}
 .app .settings-page .semantic-option-body .select{justify-self:start;height:27px}
+
+/* On a phone the status pill drops under the text instead of squeezing it into a few letters. */
+@media(max-width:620px){
+  .app .settings-page .opts label{flex-wrap:wrap}
+  .app .settings-page .opts label>span:not(.st):not(.spin):not(.connection-icon){flex:1 1 12em}
+}
 
 /* ── Institutional access (mockup `.proxy`, a flex row of the row group that wraps) ────────────────────── */
 .app .settings-page .rows>.proxy{align-items:center;gap:12px}

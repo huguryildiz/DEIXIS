@@ -9,6 +9,8 @@ import { useToast } from './Toast'
 import { t, uiLocale, type UiLanguage } from './i18n'
 import { connectionName, money, reasoningLabel } from './labels'
 import { Notice } from './Notice'
+import { isLeft } from './readLimit'
+import { useLeaving } from './useLeaving'
 import './research/kit.css'
 import './Settings.css'
 
@@ -33,8 +35,9 @@ function ProfileNameRow({ onProfile }: { onProfile: (profile: Profile) => void }
   const toast = useToast()
   useEffect(() => {
     let live = true
-    shellApi.profile().then(value => { if (live) { setStored(value); setDraft(value.name_source === 'setting' ? value.full_name : '') } }, (e: Error) => { if (live) setError(e.message) })
-    return () => { live = false }
+    const leaving = new AbortController()
+    shellApi.profile(leaving.signal).then(value => { if (live) { setStored(value); setDraft(value.name_source === 'setting' ? value.full_name : '') } }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false; leaving.abort() }
   }, [])
   const current = stored?.name_source === 'setting' ? stored.full_name : ''
   const changed = stored !== null && draft.trim() !== current
@@ -63,8 +66,9 @@ function ContactEmailRow({ onSaved }: { onSaved: () => void }) {
   const toast = useToast()
   useEffect(() => {
     let live = true
-    shellApi.contactEmail().then(value => { if (live) { setStored(value); setDraft(value.email ?? '') } }, (e: Error) => { if (live) setError(e.message) })
-    return () => { live = false }
+    const leaving = new AbortController()
+    shellApi.contactEmail(leaving.signal).then(value => { if (live) { setStored(value); setDraft(value.email ?? '') } }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false; leaving.abort() }
   }, [])
   const changed = stored !== null && draft.trim() !== (stored.email ?? '')
   const save = () => {
@@ -132,7 +136,9 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
   // there updates them too (the sections show their own read error).
   const onConnections = useCallback((result: Connections) => { setModels(connectionModels(result)); setAnyReady(Object.values(result.models).some(canRun)) }, [])
   useEffect(() => {
-    api.settings().then(setDefaults).catch((e: Error) => setError(t('The default models could not be read: {message}', { message: e.message })))
+    const leaving = new AbortController()
+    api.settings(leaving.signal).then(setDefaults).catch((e: Error) => { if (!isLeft(e)) setError(t('The default models could not be read: {message}', { message: e.message })) })
+    return () => leaving.abort()
   }, [])
 
   // `#/settings/connections` opens the page at "Model connections", `#/settings/access` at "Institutional access" (ST1);
@@ -281,8 +287,9 @@ function AboutSection() {
   const [failed, setFailed] = useState('')
   useEffect(() => {
     let live = true
-    shellApi.about().then(value => { if (live) setAbout(value) }, (e: Error) => { if (live) setFailed(e.message) })
-    return () => { live = false }
+    const leaving = new AbortController()
+    shellApi.about(leaving.signal).then(value => { if (live) setAbout(value) }, (e: Error) => { if (live) setFailed(e.message) })
+    return () => { live = false; leaving.abort() }
   }, [])
   const external = { target: '_blank', rel: 'noopener noreferrer' } as const
   return <>
@@ -428,11 +435,12 @@ function UsageThisMonth() {
   const [budget, setBudget] = useState<{ value: OpenAlexBudgetToday | null; failed: string }>({ value: null, failed: '' })
   const [loading, setLoading] = useState(true)
   const seq = useRef(0)
+  const leaving = useLeaving()
   const read = (again = true) => {
     const n = ++seq.current
     if (again) setLoading(true)
-    void Promise.allSettled([usageApi.usageThisMonth(), usageApi.openAlexBudgetToday()]).then(([u, b]) => {
-      if (n !== seq.current) return
+    void Promise.allSettled([usageApi.usageThisMonth(leaving()), usageApi.openAlexBudgetToday(leaving())]).then(([u, b]) => {
+      if (n !== seq.current || (u.status === 'rejected' && isLeft(u.reason))) return
       setMonth(u.status === 'fulfilled' ? { value: u.value, failed: '' } : old => ({ value: old.value, failed: (u.reason as Error).message }))
       setBudget(b.status === 'fulfilled' ? { value: b.value, failed: '' } : old => ({ value: old.value, failed: (b.reason as Error).message }))
       setLoading(false)
@@ -485,8 +493,9 @@ function SpendingSettings() {
   const show = (value: Spending) => { setSpending(value); setDraft(value.daily_threshold_usd === null ? '' : String(value.daily_threshold_usd)) }
   useEffect(() => {
     let live = true
-    spendApi.get().then(value => { if (live) show(value) }, (e: Error) => { if (live) setError(e.message) })
-    return () => { live = false }
+    const leaving = new AbortController()
+    spendApi.get(leaving.signal).then(value => { if (live) show(value) }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false; leaving.abort() }
   }, [])
   const amount = draft.trim() === '' ? null : Number(draft.replace(',', '.'))
   const valid = amount === null || (Number.isFinite(amount) && amount > 0 && amount <= 100000)
@@ -544,11 +553,16 @@ function ResearchPreferences() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [limits, setLimits] = useState<EffortLimits | null>(null)
-  useEffect(() => { api.effortLimits().then(setLimits, () => setLimits(null)) }, [])
+  useEffect(() => {
+    const leaving = new AbortController()
+    api.effortLimits(leaving.signal).then(setLimits, e => { if (!isLeft(e)) setLimits(null) })
+    return () => leaving.abort()
+  }, [])
   useEffect(() => {
     let live = true
-    preferencesApi.get().then(p => { if (live) setPrefs(p) }, (e: Error) => { if (live) setError(t('Research settings could not be read: {message}', { message: e.message })) })
-    return () => { live = false }
+    const leaving = new AbortController()
+    preferencesApi.get(leaving.signal).then(p => { if (live) setPrefs(p) }, (e: Error) => { if (live) setError(t('Research settings could not be read: {message}', { message: e.message })) })
+    return () => { live = false; leaving.abort() }
   }, [])
   const change = (next: PreferenceChange) => {
     setBusy(true); setError('')

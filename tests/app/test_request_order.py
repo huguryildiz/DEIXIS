@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 
-def test_a_late_older_answer_never_covers_a_newer_one():
+def test_a_late_older_answer_never_covers_a_newer_one_and_a_released_ticket_holds_nothing_back():
     root = Path(__file__).resolve().parents[2]
     script = r"""
 const fs = require('fs'), ts = require('typescript'), assert = require('assert');
@@ -46,6 +46,24 @@ assert(!order.settle('gemini', early));
 order = createRequestOrder();
 const g = order.start('gemini'), o = order.start('openai');
 assert(order.settle('gemini', g) && order.settle('openai', o));
+
+// a read that was cancelled or timed out never answered (E25): its ticket stops holding back an older request still pending
+order = createRequestOrder();
+const older = order.start('gemini');
+const hung = order.start('gemini');
+order.release(hung);
+assert(order.settle('gemini', older));
+order = createRequestOrder();
+const olderCheck = order.start('gemini');
+const hungRead = order.start();
+order.release(hungRead);
+assert(order.settle('gemini', olderCheck));
+// a released ticket does not stand in for a newer one: a ticket started after it still wins
+order = createRequestOrder();
+const a = order.start('gemini'), b = order.start('gemini'), c = order.start('gemini');
+order.release(b);
+assert(!order.settle('gemini', a));
+assert(order.settle('gemini', c));
 """
     result = subprocess.run(["node", "-e", script], cwd=root / "apps/web", capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

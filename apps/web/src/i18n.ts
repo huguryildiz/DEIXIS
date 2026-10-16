@@ -4662,6 +4662,7 @@ const tr: Record<string, string> = {
   '{role} model changed from {from} to {to} for this research. Later steps of that role use it; the stopped step is a {stopped} step, so Retry still sends it to the {stopped} model.': '{role} modeli bu araştırma için {from} modelinden {to} modeline değişti. O rolün sonraki adımları onu kullanır; duran adım bir {stopped} adımı olduğundan Yeniden dene onu yine {stopped} modeline gönderir.',
   'No unscreened works left to list.': 'Listelenecek taranmamış eser kalmadı.',
   // UI parity S24: the Settings page (one column, institutional access facts, usage, language, connection sheet).
+  'DEIXIS did not answer in time. Try again.': 'DEIXIS zamanında yanıt vermedi. Yeniden deneyin.',
   'Connections could not be read: {message}': 'Bağlantılar okunamadı: {message}',
   'The default models could not be read: {message}': 'Varsayılan modeller okunamadı: {message}',
   'Defaults apply to new researches. Each research keeps the models it was created with.': 'Varsayılanlar yeni araştırmalara uygulanır. Her araştırma oluşturulduğu modelleri korur.',

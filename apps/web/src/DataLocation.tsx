@@ -25,8 +25,9 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
   const [confirm, setConfirm] = useState<{ path: string; hasLibrary: boolean; sync: string | null; unchecked: boolean } | null>(null)
   useEffect(() => {
     let live = true
-    dataLocationApi.get().then(v => { if (live) setView(v) }, (e: Error) => { if (live) setError(e.message) })
-    return () => { live = false }
+    const leaving = new AbortController()
+    dataLocationApi.get(leaving.signal).then(v => { if (live) setView(v) }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false; leaving.abort() }
   }, [])
 
   const blocked = !view ? '' : view.set_outside_app ? t('This location is set outside the app.')

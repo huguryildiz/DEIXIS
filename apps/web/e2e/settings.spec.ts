@@ -139,7 +139,7 @@ test.describe.serial('S24: the Settings page', () => {
     // Arrow keys move between tabs.
     await page.keyboard.press('ArrowRight')
     await expect(page.getByRole('tab', { name: 'Usage' })).toBeFocused()
-    await expect(shown).toHaveText(['Usage this month'])
+    await expect(shown).toHaveText(['Usage this month', 'Estimated spending'])
     await page.keyboard.press('ArrowRight')
     await expect(shown).toHaveText(['Profile', 'This computer', 'Language', 'Appearance', 'Research', 'Where your data goes', 'About'])
     await expect(page.locator('.data-location')).toBeVisible()
@@ -893,6 +893,56 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.getByText('Semantic search setting saved.')).toHaveCount(0)
     await shot(page, 'F3-where-your-data-goes')
     await page.unrouteAll({ behavior: 'ignoreErrors' })
+
+  test('leaving Settings cancels its reads; a read that never answers ends with "did not answer"; a save started before leaving still completes (E25)', async ({ context }) => {
+    // A hung read: the page clock jumps past the 20 s limit, and the section says so instead of waiting for ever.
+    const slow = await context.newPage()
+    await slow.clock.install()
+    await slow.route('**/api/about', () => { /* never answered */ })
+    await slow.goto(server.url('#/settings/general'))
+    await expect(slow.getByText('Checking…').first()).toBeVisible()
+    await slow.clock.runFor(21_000)
+    await expect(slow.getByText('About could not be read: DEIXIS did not answer in time. Try again.')).toBeVisible()
+    await slow.close()
+
+    // Leaving the page aborts the reads still waiting; the read that was cancelled shows nothing.
+    const leave = await context.newPage()
+    const aborted: string[] = []
+    leave.on('requestfailed', request => { if (request.failure()?.errorText === 'net::ERR_ABORTED') aborted.push(new URL(request.url()).pathname) })
+    await leave.route('**/api/connections', () => { /* never answered */ })
+    await leave.route('**/api/usage**', () => { /* never answered */ })
+    await leave.goto(server.url('#/settings'))
+    await leave.waitForRequest(request => new URL(request.url()).pathname === '/api/connections')
+    await leave.goto(server.url('#/'))
+    await expect(leave.locator('.settings-page')).toHaveCount(0)
+    await expect.poll(() => aborted).toEqual(expect.arrayContaining(['/api/connections']))
+
+    // A save started on the Settings page is not a read: leaving does not cancel it, and the server keeps it.
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const failed: string[] = []
+    leave.on('requestfailed', request => { if (request.method() === 'PUT') failed.push(request.url()) })
+    await leave.unrouteAll({ behavior: 'ignoreErrors' })
+    await leave.route(url => url.pathname === '/api/profile', async route => {
+      if (route.request().method() !== 'PUT') return route.continue()
+      await gate
+      return route.continue()
+    })
+    await leave.goto(server.url('#/settings/general'))
+    await leave.reload()
+    await leave.getByLabel('Name', { exact: true }).fill('SYNTHETIC leaving')
+    const saved = leave.waitForRequest(request => request.method() === 'PUT' && new URL(request.url()).pathname === '/api/profile')
+    await leave.locator('.set-profile').getByRole('button', { name: 'Save' }).first().click()
+    await saved
+    await leave.goto(server.url('#/'))
+    await expect(leave.locator('.settings-page')).toHaveCount(0)
+    release()
+    const profile = () => leave.request.get(server.url('api/profile')).then(response => response.json())
+    await expect.poll(async () => (await profile()).full_name).toBe('SYNTHETIC leaving')
+    expect(failed).toEqual([])
+    const token = (await (await leave.request.get(server.url('api/session'))).json()).csrf_token as string
+    await leave.request.put(server.url('api/profile'), { data: { full_name: null }, headers: { 'x-deixis-csrf': token } })
+    await leave.close()
   })
 
   test('phone: one column of cards, no horizontal scroll', async () => {

@@ -1,5 +1,6 @@
 // Client for the local DEIXIS API. Types mirror backend/deixis/workflow/views.py.
 import { t } from './i18n'
+import { CHECK_LIMIT_MS, READ_LIMIT_MS, limited } from './readLimit'
 
 export type RunStatus = 'queued' | 'running' | 'pause_requested' | 'paused' | 'completed' | 'failed' | 'cancelled'
 export type SourceScope = 'academic' | 'attached' | 'attached_and_academic'
@@ -1116,6 +1117,11 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   return response.json() as Promise<T>
 }
 
+// A Settings read: cancelled when `leaving` fires, ended with a "did not answer" error after `ms` (E25). Writes use `request`
+// and are never cancelled.
+const read = <T,>(path: string, leaving?: AbortSignal, ms = READ_LIMIT_MS) =>
+  limited(signal => request<T>(path, { signal }), leaving, ms, () => new ApiError(0, t('DEIXIS did not answer in time. Try again.'), [], null, 'read_timed_out'))
+
 const json = (method: string, body: unknown, extra: Record<string, string> = {}): RequestInit =>
   ({ method, headers: { 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) })
 
@@ -1254,7 +1260,7 @@ export const api = {
     review_mode: ReviewMode; review_connection: string | null; review_model: string | null; review_reasoning_effort: string | null
     intent?: ResearchIntent  // default 'report'; 'papers' with source_scope 'attached' is refused (422)
   }) => request<ResearchView>('/api/researches', json('POST', body)),
-  settings: () => request<Record<ModelRole, RoleModelSetting>>('/api/settings'),
+  settings: (leaving?: AbortSignal) => read<Record<ModelRole, RoleModelSetting>>('/api/settings', leaving),
   saveModelDefault: (role: ModelRole, setting: RoleModelSetting) =>
     request<Partial<Record<ModelRole, RoleModelSetting>>>(`/api/settings/${role}`, json('PUT', setting)),
   zoteroCollections: (source: ZoteroSource) => request<{ source: ZoteroSource; collections: ZoteroCollection[] }>(`/api/zotero/collections?source=${source}`),
@@ -1366,7 +1372,7 @@ export const api = {
     request<AuditResult>(`/api/researches/${id}/audit/${sourceId}/decision`, json('POST', { decision, note: null, audit_token: auditToken })),
   undoAuditDecision: (id: string, sourceId: string, auditToken: string) =>
     request<AuditResult>(`/api/researches/${id}/audit/${sourceId}/undo`, json('POST', { audit_token: auditToken })),
-  effortLimits: () => request<EffortLimits>('/api/effort-limits'),
+  effortLimits: (leaving?: AbortSignal) => read<EffortLimits>('/api/effort-limits', leaving),
   activityRuns: (id: string) => request<ActivityRuns>(`/api/researches/${encodeURIComponent(id)}/activity-runs`),
   reviseScope: (id: string, question: string, expectedVersion: number, keyTerms?: string | null) =>
     request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion, key_terms: keyTerms ?? null })),
@@ -1377,13 +1383,13 @@ export const api = {
   assetText: (id: string, assetId: string, extractionId?: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text${extractionId ? `?extraction_id=${encodeURIComponent(extractionId)}` : ''}`),
   assetFigures: (id: string, assetId: string) => request<{ figures: AssetFigure[] }>(`/api/researches/${id}/assets/${assetId}/figures`),
   events: (id: string, after = 0) => request<ActivityEvent[]>(`/api/researches/${id}/events?after=${after}`),
-  connections: (refresh = false) => request<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`),
-  modelConnection: (connection: string, refresh = false) => request<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}${refresh ? '?refresh=true' : ''}`),
+  connections: (refresh = false, leaving?: AbortSignal) => read<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`, leaving, CHECK_LIMIT_MS),
+  modelConnection: (connection: string, refresh = false, leaving?: AbortSignal) => read<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}${refresh ? '?refresh=true' : ''}`, leaving, CHECK_LIMIT_MS),
   // The local server's address (D34): loopback only, '' clears it; answers with the connection's fresh health.
   showHiddenModel: (connection: string, model: string) => request<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}/hidden-models/show`, json('POST', { model })),
   saveLocalServer: (baseUrl: string) => request<ModelHealth>('/api/connections/local_server', json('PUT', { base_url: baseUrl })),
   institutionalAccess: () => request<InstitutionalAccess>('/api/institutional-access'),
-  credentials: () => request<Credentials>('/api/credentials'),
+  credentials: (leaving?: AbortSignal) => read<Credentials>('/api/credentials', leaving),
   saveCredential: (env: string, value: string) => request<{ key: KeyEntry; test: KeyTest | null }>(`/api/credentials/${env}`, json('PUT', { value })),
   setFileStore: (enabled: boolean) => request<Credentials>('/api/credentials/file-store', json('PUT', { enabled })),
   removeCredential: (env: string) => request<{ key: KeyEntry }>(`/api/credentials/${env}`, { method: 'DELETE' }),
@@ -1391,32 +1397,32 @@ export const api = {
   credentialInUse: (env: string) => request<{ env: string; running_researches: number }>(`/api/credentials/${env}/in-use`),
   testCredential: (env: string) => request<KeyTest>(`/api/credentials/${env}/test`, { method: 'POST' }),
   testProvider: (id: string) => request<ProviderTest>(`/api/providers/${encodeURIComponent(id)}/test`, { method: 'POST' }),
-  equationReader: () => request<EquationReader>('/api/equation-reader'),
+  equationReader: (leaving?: AbortSignal) => read<EquationReader>('/api/equation-reader', leaving),
   installEquationReader: () => request<{ job: EquationReader['job'] }>('/api/equation-reader/install', { method: 'POST' }),
   cancelEquationReaderInstall: () => request<{ job: EquationReader['job'] }>('/api/equation-reader/cancel', { method: 'POST' }),
   removeEquationReader: () => request<EquationReader>('/api/equation-reader', { method: 'DELETE' }),
   rereadEquations: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/equations`, { method: 'POST' }),
-  mathpix: () => request<Mathpix>('/api/mathpix'),
+  mathpix: (leaving?: AbortSignal) => read<Mathpix>('/api/mathpix', leaving),
   saveMathpixSettings: (change: { switch?: 'on' | 'off'; monthly_budget?: number }) => request<Mathpix>('/api/mathpix', json('PUT', change)),
   mathpixEstimate: () => request<{ pdfs: number; upper_bound: number; crops: number }>('/api/mathpix/estimate'),
   saveMathpixPair: (appId: string, appKey: string) => request<{ mathpix: Mathpix; test: MathpixTest }>('/api/credentials/mathpix', json('PUT', { app_id: appId, app_key: appKey })),
   testMathpixPair: () => request<MathpixTest>('/api/credentials/mathpix/test', { method: 'POST' }),
   removeMathpixPair: () => request<{ mathpix: Mathpix }>('/api/credentials/mathpix', { method: 'DELETE' }),
-  ocr: () => request<OcrTool>('/api/ocr'),
+  ocr: (leaving?: AbortSignal) => read<OcrTool>('/api/ocr', leaving),
   installOcr: () => request<{ job: OcrJob }>('/api/ocr/install', { method: 'POST' }),
-  pdfReader: () => request<PdfReader>('/api/pdf-reader'),
-  toolUpdate: (tool: ToolUpdate['tool']) => request<ToolUpdate>(`/api/tool-updates/${tool}`),
+  pdfReader: (leaving?: AbortSignal) => read<PdfReader>('/api/pdf-reader', leaving),
+  toolUpdate: (tool: ToolUpdate['tool'], leaving?: AbortSignal) => read<ToolUpdate>(`/api/tool-updates/${tool}`, leaving),
   // Starts a pdf_ocr run that reads the PDF's pages without text with the local Tesseract (D51).
   readWithOcr: (id: string, sourceId: string, assetId: string) =>
     request<Run>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/ocr`, { method: 'POST' }),
-  localTools: (refresh = false) => request<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`),
+  localTools: (refresh = false, leaving?: AbortSignal) => read<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`, leaving, CHECK_LIMIT_MS),
   installLocalTool: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/install`, { method: 'POST' }),
   updateLocalTool: (id: 'ollama' | 'lm_studio') => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/update`, { method: 'POST' }),
   pullOllamaModel: (model: string) => request<{ job: LocalTool['pull'] }>('/api/local-tools/ollama/pull', json('POST', { model })),
   cancelOllamaPull: () => request<{ job: LocalTool['pull'] }>('/api/local-tools/ollama/pull/cancel', { method: 'POST' }),
-  localToolSuggested: (tool: 'ollama' | 'lm_studio') => request<{ models: NonNullable<LocalTool['suggested']>; source: 'catalog' | 'fixed'; memory_gb: number | null }>(`/api/local-tools/${tool}/suggested`),
-  localToolUpdates: (tool: 'ollama' | 'lm_studio') => request<OllamaUpdates>(`/api/local-tools/${tool}/updates`),
+  localToolSuggested: (tool: 'ollama' | 'lm_studio', leaving?: AbortSignal) => read<{ models: NonNullable<LocalTool['suggested']>; source: 'catalog' | 'fixed'; memory_gb: number | null }>(`/api/local-tools/${tool}/suggested`, leaving),
+  localToolUpdates: (tool: 'ollama' | 'lm_studio', leaving?: AbortSignal) => read<OllamaUpdates>(`/api/local-tools/${tool}/updates`, leaving),
   pullLmStudioModel: (model: string) => request<{ job: LocalTool['pull'] }>('/api/local-tools/lm_studio/pull', json('POST', { model })),
   startLmStudioServer: () => request<{ started: boolean }>('/api/local-tools/lm_studio/start-server', { method: 'POST' }),
   deleteOllamaModel: (model: string) => request<{ deleted: string }>('/api/local-tools/ollama/delete', json('POST', { model })),
@@ -1424,10 +1430,10 @@ export const api = {
   startAccountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`, { method: 'POST' }),
   accountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`),
   cancelAccountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in/cancel`, { method: 'POST' }),
-  semanticSearch: () => request<SemanticSearch>('/api/semantic-search'),
+  semanticSearch: (leaving?: AbortSignal) => read<SemanticSearch>('/api/semantic-search', leaving),
   saveSemanticSearch: (provider: SemanticSearchProvider, model: string | null) =>
     request<SemanticSearch>('/api/semantic-search', json('PUT', { provider, model })),
-  builtinEmbedding: () => request<BuiltinEmbedding>('/api/semantic-search/builtin'),
+  builtinEmbedding: (leaving?: AbortSignal) => read<BuiltinEmbedding>('/api/semantic-search/builtin', leaving),
   installBuiltinEmbedding: () => request<{ job: BuiltinEmbeddingJob }>('/api/semantic-search/builtin/install', { method: 'POST' }),
   checkBuiltinEmbedding: () => request<BuiltinEmbedding>('/api/semantic-search/builtin/check', { method: 'POST' }),
   cancelBuiltinEmbedding: () => request<{ job: BuiltinEmbeddingJob }>('/api/semantic-search/builtin/cancel', { method: 'POST' }),
@@ -1592,14 +1598,14 @@ export type About = {
   notices_available: boolean; os: string; arch: string; report_url: string
 }
 export const shellApi = {
-  profile: () => request<Profile>('/api/profile'),
+  profile: (leaving?: AbortSignal) => read<Profile>('/api/profile', leaving),
   saveProfileName: (full_name: string | null) => request<Profile>('/api/profile', json('PUT', { full_name })),
   proxySettings: () => request<ProxySettings>('/api/institution-proxy/settings'),
   saveProxyLabel: (label: string | null) => request<ProxySettings>('/api/institution-proxy/label', json('PUT', { label })),
   testProxy: () => request<ProxySettings>('/api/institution-proxy/test', { method: 'POST' }),
-  contactEmail: () => request<ContactEmailSetting>('/api/contact-email'),
+  contactEmail: (leaving?: AbortSignal) => read<ContactEmailSetting>('/api/contact-email', leaving),
   saveContactEmail: (email: string | null) => request<ContactEmailSetting>('/api/contact-email', json('PUT', { email })),
-  about: () => request<About>('/api/about'),
+  about: (leaving?: AbortSignal) => read<About>('/api/about', leaving),
 }
 
 // Usage reads (api/usage_routes.py): model calls counted from stored sessions by Settings role, and OpenAlex's budget
@@ -1626,9 +1632,9 @@ export type OpenAlexBudgetToday = {
 }
 
 export const usageApi = {
-  usageThisMonth: () => request<Usage>('/api/usage?period=month'),
+  usageThisMonth: (leaving?: AbortSignal) => read<Usage>('/api/usage?period=month', leaving),
   usageOfRun: (runId: string) => request<Usage>(`/api/usage?period=run&run_id=${encodeURIComponent(runId)}`),
-  openAlexBudgetToday: () => request<OpenAlexBudgetToday>('/api/openalex/budget-today'),
+  openAlexBudgetToday: (leaving?: AbortSignal) => read<OpenAlexBudgetToday>('/api/openalex/budget-today', leaving),
 }
 
 // Home endpoints (api/home_routes.py, S5a). A research's intent is what it produces: a drafted report, the papers only,
@@ -1931,7 +1937,7 @@ export type DataLocation = {
   leftovers: { path: string; size_bytes: number }[]  // old folders a move left on disk (Windows); deleted only on request
 }
 export const dataLocationApi = {
-  get: () => request<DataLocation>('/api/settings/data-location'),
+  get: (leaving?: AbortSignal) => read<DataLocation>('/api/settings/data-location', leaving),
   check: (path: string) => request<{ path: string; has_library: boolean; sync_service: string | null; network_unchecked: boolean }>('/api/settings/data-location', json('POST', { path, check: true })),
   change: (path: string) => request<DataLocation>('/api/settings/data-location', json('POST', { path })),
   choose: () => request<{ path: string | null }>('/api/settings/data-location/choose', { method: 'POST' }),
@@ -1948,7 +1954,7 @@ export type Preferences = {
 }
 export type PreferenceChange = Partial<Pick<Preferences, 'default_effort' | 'fulltext_fetch' | 'arxiv_source' | 'model_concurrency'>>
 export const preferencesApi = {
-  get: () => request<Preferences>('/api/settings/preferences'),
+  get: (leaving?: AbortSignal) => read<Preferences>('/api/settings/preferences', leaving),
   set: (change: PreferenceChange) => request<Preferences>('/api/settings/preferences', json('PUT', change)),
 }
 
@@ -1971,7 +1977,7 @@ export type SpendEstimate = {
   assumptions: { chars_per_token: number; reasoning_tokens: Record<string, number>; reasoning_default: number }
 }
 export const spendApi = {
-  get: () => request<Spending>('/api/settings/spending'),
+  get: (leaving?: AbortSignal) => read<Spending>('/api/settings/spending', leaving),
   setThreshold: (usd: number | null) => request<Spending>('/api/settings/spending', json('PUT', { daily_threshold_usd: usd })),
   estimate: (body: { effort: Effort; literature: SpendRoleChoice | null; answer: SpendRoleChoice | null; reviewer: SpendRoleChoice | null }) =>
     request<SpendEstimate>('/api/spend/estimate', json('POST', body)),

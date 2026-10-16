@@ -13,6 +13,8 @@ import { ConnectionIcon } from './connectionIcons'
 import { writeClipboard } from './clipboard'
 import { Notice } from './Notice'
 import { createRequestOrder } from './requestOrder'
+import { gaveNoAnswer, isLeft } from './readLimit'
+import { useLeaving } from './useLeaving'
 
 const providerNames: Record<string, string> = {
   semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', pubmed: 'PubMed', openalex: 'OpenAlex', scopus: 'Scopus', ieee_xplore: 'IEEE Xplore', core: 'CORE', serpapi: 'SerpApi',
@@ -673,8 +675,9 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
   const checkedAfter = `${pull?.finished_at ?? ''}|${job?.finished_at ?? ''}`
   useEffect(() => {
     let live = true
-    api.localToolUpdates(tool.id === 'lm_studio' ? 'lm_studio' : 'ollama').then(u => { if (live) setUpdates(u) }, () => { if (live) setUpdates(null) })
-    return () => { live = false }
+    const leaving = new AbortController()
+    api.localToolUpdates(tool.id === 'lm_studio' ? 'lm_studio' : 'ollama', leaving.signal).then(u => { if (live) setUpdates(u) }, () => { if (live) setUpdates(null) })
+    return () => { live = false; leaving.abort() }
   }, [checkedAfter, tool.id])
   const lms = tool.id === 'lm_studio'
   const product = lms ? 'LM Studio' : 'Ollama'
@@ -682,8 +685,9 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
   const [catalog, setCatalog] = useState<{ models: NonNullable<LocalTool['suggested']>; source: 'catalog' | 'fixed' } | null>(null)
   useEffect(() => {
     let live = true
-    api.localToolSuggested(lms ? 'lm_studio' : 'ollama').then(c => { if (live) setCatalog(c) }, () => { if (live) setCatalog(null) })
-    return () => { live = false }
+    const leaving = new AbortController()
+    api.localToolSuggested(lms ? 'lm_studio' : 'ollama', leaving.signal).then(c => { if (live) setCatalog(c) }, () => { if (live) setCatalog(null) })
+    return () => { live = false; leaving.abort() }
   }, [lms])
   const installed = tool.models ?? []
   // Ollama names carry a tag (":latest" when none is given); LM Studio lists a catalog model by its own key or file name.
@@ -810,8 +814,9 @@ function useToolUpdate(tool: ToolUpdate['tool'], key: unknown = null) {
   const [result, setResult] = useState<ToolUpdate | null>(null)
   useEffect(() => {
     let live = true
-    api.toolUpdate(tool).then(r => { if (live) setResult(r) }, () => { if (live) setResult(null) })
-    return () => { live = false }
+    const leaving = new AbortController()
+    api.toolUpdate(tool, leaving.signal).then(r => { if (live) setResult(r) }, () => { if (live) setResult(null) })
+    return () => { live = false; leaving.abort() }
   }, [tool, key])
   return result?.error || !result?.latest ? null : result
 }
@@ -1117,11 +1122,13 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const seq = useRef({ connections: 0, tools: 0, semantic: 0, semanticVersion: 0, saving: false })
   // The all-connections read and each single-connection check order their answers per connection through one counter (E7).
   const order = useRef(createRequestOrder())
+  // Reads are cancelled when the page is left and end with "did not answer" when they take too long; saves and other writes are not (E25).
+  const leaving = useLeaving()
 
   const load = useCallback((refresh: boolean) => {
     const n = ++seq.current.connections
     const ticket = order.current.start()
-    return api.connections(refresh).then(result => {
+    return api.connections(refresh, leaving()).then(result => {
       if (n !== seq.current.connections) return
       // A connection checked on its own after this read began keeps that newer answer.
       const taken = new Set(Object.keys(result.models).filter(id => order.current.settle(id, ticket)))
@@ -1135,29 +1142,32 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
         if (running.length) setSignInRuns(current => ({ ...Object.fromEntries(running), ...current }))
       }
     })
-      .catch((e: Error) => { if (n === seq.current.connections) setError(t('Connections could not be read: {message}', { message: e.message })) })
-  }, [])
-  const loadCredentials = useCallback(() => { api.credentials().then(setCredentials).catch((e: Error) => setError(t('Stored keys could not be read: {message}', { message: e.message }))) }, [])
+      .catch((e: Error) => {
+        if (gaveNoAnswer(e)) order.current.release(ticket)
+        if (n === seq.current.connections && !isLeft(e)) setError(t('Connections could not be read: {message}', { message: e.message }))
+      })
+  }, [leaving])
+  const loadCredentials = useCallback(() => { api.credentials(leaving()).then(setCredentials).catch((e: Error) => { if (!isLeft(e)) setError(t('Stored keys could not be read: {message}', { message: e.message })) }) }, [leaving])
   // A read that a check asked for (`strict`) rejects when it fails, so the check is reported as not run, never as a fresh
   // result over the old state. It resolves false when a later read replaced it (the check then shows no time either).
   const loadTools = useCallback((refresh: boolean, strict = false): Promise<boolean> => {
     const n = ++seq.current.tools
-    return api.localTools(refresh).then(result => { if (n !== seq.current.tools) return false; setTools(result); setToolsError(''); return true })
-      .catch((e: Error) => { if (n === seq.current.tools) setToolsError(e.message); if (strict) throw e; return false })
-  }, [])
-  const loadReader = useCallback((strict = false): Promise<boolean> => api.equationReader().then(result => { setReader(result); return true })
-    .catch((e: Error) => { setToolsError(e.message); if (strict) throw e; return false }), [])
-  const loadMathpix = useCallback((strict = false): Promise<boolean> => api.mathpix().then(result => { setMathpix(result); return true })
-    .catch((e: Error) => { setToolsError(e.message); if (strict) throw e; return false }), [])
-  const loadOcr = useCallback((strict = false): Promise<boolean> => api.ocr().then(result => { setOcrTool(result); return true })
-    .catch((e: Error) => { setToolsError(e.message); if (strict) throw e; return false }), [])
+    return api.localTools(refresh, leaving()).then(result => { if (n !== seq.current.tools) return false; setTools(result); setToolsError(''); return true })
+      .catch((e: Error) => { if (n === seq.current.tools && !isLeft(e)) setToolsError(e.message); if (strict) throw e; return false })
+  }, [leaving])
+  const loadReader = useCallback((strict = false): Promise<boolean> => api.equationReader(leaving()).then(result => { setReader(result); return true })
+    .catch((e: Error) => { if (!isLeft(e)) setToolsError(e.message); if (strict) throw e; return false }), [leaving])
+  const loadMathpix = useCallback((strict = false): Promise<boolean> => api.mathpix(leaving()).then(result => { setMathpix(result); return true })
+    .catch((e: Error) => { if (!isLeft(e)) setToolsError(e.message); if (strict) throw e; return false }), [leaving])
+  const loadOcr = useCallback((strict = false): Promise<boolean> => api.ocr(leaving()).then(result => { setOcrTool(result); return true })
+    .catch((e: Error) => { if (!isLeft(e)) setToolsError(e.message); if (strict) throw e; return false }), [leaving])
   const loadSemantic = useCallback((strict = false): Promise<boolean> => {
     const n = ++seq.current.semantic, version = seq.current.semanticVersion, duringSave = seq.current.saving
     const current = () => n === seq.current.semantic && version === seq.current.semanticVersion && !duringSave
-    return api.semanticSearch().then(result => { if (!current()) return false; setSemantic(result); setSemError(''); return true })
-      .catch((e: Error) => { if (current()) setSemError(e.message); if (strict) throw e; return false })
-  }, [])
-  const loadBuiltin = useCallback(() => api.builtinEmbedding().then(setBuiltin).catch((e: Error) => setSemError(e.message)), [])
+    return api.semanticSearch(leaving()).then(result => { if (!current()) return false; setSemantic(result); setSemError(''); return true })
+      .catch((e: Error) => { if (current() && !isLeft(e)) setSemError(e.message); if (strict) throw e; return false })
+  }, [leaving])
+  const loadBuiltin = useCallback(() => api.builtinEmbedding(leaving()).then(setBuiltin).catch((e: Error) => { if (!isLeft(e)) setSemError(e.message) }), [leaving])
   useEffect(() => { void load(false) }, [load])
   useEffect(() => { loadCredentials() }, [loadCredentials])
   useEffect(() => { void loadTools(false) }, [loadTools])
@@ -1181,7 +1191,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     const timer = window.setInterval(() => { void loadOcr() }, 1500)
     return () => window.clearInterval(timer)
   }, [ocrTool, loadOcr])
-  useEffect(() => { api.pdfReader().then(setPdfReader, (e: Error) => setToolsError(e.message)) }, [])
+  useEffect(() => { api.pdfReader(leaving()).then(setPdfReader, (e: Error) => { if (!isLeft(e)) setToolsError(e.message) }) }, [leaving])
   useEffect(() => {
     if (reader?.job?.status !== 'running' && !reader?.reading) return
     const timer = window.setInterval(() => { void loadReader() }, reader?.job?.status === 'running' ? 2000 : 10000)
@@ -1198,10 +1208,10 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   // A check of one connection: its answer is shown only if no later request for that connection started before it came back.
   const readModel = useCallback((id: string) => {
     const n = order.current.start(id)
-    return api.modelConnection(id, true).then(result => {
+    return api.modelConnection(id, true, leaving()).then(result => {
       if (order.current.settle(id, n)) setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
-    })
-  }, [])
+    }, (e: Error) => { if (gaveNoAnswer(e)) order.current.release(n); throw e })
+  }, [leaving])
   const reloadAfterKeyChange = useCallback(() => { loadCredentials(); void load(true); void loadSemantic() }, [loadCredentials, load, loadSemantic])
   // A model key change also re-checks that one connection on its own: the full refresh waits on every connection
   // (about 12 s with the CLIs), and until then the card would still show the state before the change.

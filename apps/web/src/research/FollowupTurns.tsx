@@ -6,7 +6,7 @@ import { MathText } from '../MathText'
 import { useToast } from '../Toast'
 import { t } from '../i18n'
 import { writeClipboard } from '../clipboard'
-import { followupClaim } from './followupData'
+import { followupClaim, splitQuotes } from './followupData'
 
 // Follow-up questions in the thread (mockup `turnHtml()`, R31, UI parity S22b). Each turn is one stored `followup_answer`
 // run (D11): the "Question" bubble, its two step lines, then the short answer with its citation chips. Everything shown is
@@ -97,8 +97,10 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
   }
   const userPaused = turn.run.status === 'paused' && turn.run.pause_reason === 'user_requested'
   const searchable = actions.canSearch && !turn.stale_scope && ['not_answered', 'partly_answered', 'no_passages'].includes(turn.status)
+  const asked = splitQuotes(turn.question)
   return <section className="followup-turn">
-    <div className="followup-q"><b><MessageSquare size={16} aria-hidden />{t('Question')}</b> <span>{turn.question}</span></div>
+    <div className="followup-q">{asked.quotes.map((quote, i) => <blockquote className="followup-quote" key={i}>{quote}</blockquote>)}
+      <b><MessageSquare size={16} aria-hidden />{t('Question')}</b> <span>{asked.text}</span></div>
     <ol className="followup-steps">{steps(turn).map(line => <StepLine key={line.text} state={line.state} icon={line.icon}>{line.text}</StepLine>)}</ol>
     {turn.stale_scope && <p className="followup-note">{t('Asked under revision {n} of the question.', { n: turn.scope_revision })}</p>}
     {turn.status === 'pending' && !live && <div className={`chat-note notice followup-notice ${turn.run.status === 'paused' ? (userPaused ? 'is-warning' : 'is-error') : turn.run.status === 'failed' ? 'is-error' : 'is-neutral'}`}>

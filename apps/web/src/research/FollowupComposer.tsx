@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUp, Plus, type LucideIcon } from 'lucide-react'
+import { ArrowUp, Plus, X, type LucideIcon } from 'lucide-react'
 import { useToast } from '../Toast'
 import { t } from '../i18n'
+import { withQuotes } from './followupData'
 
 // The sticky follow-up composer at the foot of the thread (mockup `.foot-compose` / `.mini`, R30, UI parity S22b). It asks
 // one follow-up question, answered only from the passages this research already holds (D11); it starts no search. "+"
@@ -12,7 +13,10 @@ import { t } from '../i18n'
 
 export type FollowupFill = { text: string; request: number }
 
-export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon, depthLabel, fill, onSend, onAddPdfs }: {
+// The server's limit on a follow-up question (`followup.MAX_QUESTION_CHARS`), quotes included.
+const MAX_CHARS = 2000
+
+export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon, depthLabel, fill, quote, onSend, onAddPdfs }: {
   // Why a question cannot be sent now (a run of this research is active), or null.
   disabledReason: string | null
   sending: boolean
@@ -20,6 +24,8 @@ export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon
   depthLabel: string
   // Text another control puts in the box ("Next steps" row): each new request replaces the draft and focuses the box.
   fill: FollowupFill | null
+  // Text chosen in the thread with "Add to chat": each new request adds it as a quote chip above the box and focuses the box.
+  quote: FollowupFill | null
   onSend: (question: string, idempotencyKey: string) => Promise<boolean>
   onAddPdfs: (opener: HTMLElement) => void
 }) {
@@ -35,6 +41,13 @@ export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon
     setFilled(fill)
     if (fill) setDraft(fill.text)
   }
+  const [quotes, setQuotes] = useState<string[]>([])
+  const [quoted, setQuoted] = useState(quote)
+  if (quoted !== quote) {
+    setQuoted(quote)
+    if (quote && !quotes.includes(quote.text)) setQuotes([...quotes, quote.text])
+  }
+  useEffect(() => { if (quote) field.current?.focus() }, [quote])
   useEffect(() => {
     if (!fill) return
     const node = field.current
@@ -57,15 +70,23 @@ export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon
     const question = draft.trim()
     if (!question) { toast('warning', t('Type a follow-up question first')); field.current?.focus(); return }
     if (disabledReason) { toast('warning', disabledReason); return }
-    if (key.current?.text !== question) key.current = { text: question, key: crypto.randomUUID() }
-    if (await onSend(question, key.current.key)) {
+    const sent = quotes
+    const text = withQuotes(sent, question)
+    if (text.length > MAX_CHARS) { toast('warning', t('The question and its quotes are too long; remove a quote or shorten the question.')); return }
+    if (key.current?.text !== text) key.current = { text, key: crypto.randomUUID() }
+    if (await onSend(text, key.current.key)) {
       key.current = null
       setDraft(current => (current.trim() === question ? '' : current))
+      setQuotes(current => current.filter(q => !sent.includes(q)))
     }
   }
 
   return <div className="followup-compose" ref={box}>
     <div className="followup-composer">
+      {quotes.length > 0 && <ul className="followup-quotes" aria-label={t('Quoted text')}>{quotes.map(q => <li className="followup-quote-chip" key={q}>
+        <span title={q}>{q}</span>
+        <button type="button" aria-label={t('Remove quote')} onClick={() => { setQuotes(list => list.filter(item => item !== q)); field.current?.focus() }}><X size={14} aria-hidden /></button>
+      </li>)}</ul>}
       <textarea ref={field} aria-label={t('Follow-up question')} placeholder={t('Ask about the passages this research has read')} value={draft} maxLength={2000}
         onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send() } }} />
       <div className="followup-composer-row">

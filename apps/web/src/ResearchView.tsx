@@ -52,8 +52,9 @@ import { SplitPanel, StackPanel } from './research/SplitPanel'
 import { PanelStackContext, panelFromSegment, usePanelStack, usePhone, URL_PANELS } from './research/usePanelStack'
 import { RESEARCH_PANEL_EVENT, type ResearchPanelRequest } from './Shortcuts'
 import { FollowupComposer, type FollowupFill } from './research/FollowupComposer'
+import { AddToChat } from './research/AddToChat'
 import { FollowupTurnView } from './research/FollowupTurns'
-import { followupClaim, followupClaimId, useFollowupTurns } from './research/followupData'
+import { followupClaim, followupClaimId, splitQuotes, useFollowupTurns } from './research/followupData'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 // Rechecks a person starts from the table; short enough to start and end between two reads of the research.
@@ -174,6 +175,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const followups = useFollowupTurns(id, lastEventId ?? 0)
   const [asking, setAsking] = useState(false)
   const [followupFill, setFollowupFill] = useState<FollowupFill | null>(null)
+  const [followupQuote, setFollowupQuote] = useState<FollowupFill | null>(null)
+  const [threadCol, setThreadCol] = useState<HTMLDivElement | null>(null)
   const followupChanged = useCallback(async () => { await load(); onChanged() }, [load, onChanged])
   useEffect(() => {
     let live = true
@@ -787,7 +790,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
 
     <div className={`research-split${panel ? ' has-panel' : ''}${panel && panels.wide ? ' is-wide' : ''}`}>
     {/* The thread scrolls on its own; the artifacts rail sits beside it while no panel is open. */}
-    <div className="research-thread-col" inert={Boolean(phone && panel)}>
+    <div className="research-thread-col" ref={setThreadCol} inert={Boolean(phone && panel)}>
     <div className="research-thread-grid">
     <div className="research-body thread-inner">
     {earlierRevision > 0 && <EarlierRevision key={earlierRevision} researchId={id} revision={earlierRevision} intent={view.research.intent} answer={earlierReport} onOpenReport={setOpenReportId} />}
@@ -866,10 +869,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         actions={{ busy: busy || asking, locked: anyActive, canSearch: hasAcademic, citing: citeClaimId, onCite: claim => setCiteClaimId(claim.id),
           // Resume hands focus to the run's chip in the topbar, as a resumed run of the thread does (controlRun).
           onControl: (runId, action) => { const target = view.runs.find(r => r.id === runId); if (target) controlRun(target, action); else void act(() => api.controlRun(runId, action)) },
-          onAskAgain: question => { void askFollowup(question, crypto.randomUUID()) }, onSearchNew: turn => { void searchNewWorks(turn.question) } }} />)}</div>}
+          onAskAgain: question => { void askFollowup(question, crypto.randomUUID()) }, onSearchNew: turn => { void searchNewWorks(splitQuotes(turn.question).text) } }} />)}</div>}
       <FollowupComposer disabledReason={anyActive ? t('Wait for the current run to finish before asking a follow-up.') : null} sending={asking}
-        depthIcon={EffortIcon} depthLabel={t(effortLabels[view.scope.effort])} fill={followupFill} onSend={askFollowup}
+        depthIcon={EffortIcon} depthLabel={t(effortLabels[view.scope.effort])} fill={followupFill} quote={followupQuote} onSend={askFollowup}
         onAddPdfs={opener => openPanel('pdfs', { opener })} />
+      <AddToChat root={threadCol} disabled={Boolean(phone && panel)} onAdd={text => setFollowupQuote(previous => ({ text, request: (previous?.request ?? 0) + 1 }))} />
       </div>
     {/* The answer's PDF suggestions attach through the same picker as the Sources panel. */}
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />

@@ -349,12 +349,30 @@ def _write_leftovers(records: list[dict]) -> None:
     os.replace(temporary, target)
 
 
+def _scan_error(exc: OSError) -> None:
+    raise exc
+
+
+def _scan(root: Path) -> tuple[dict[str, Path], list[Path]]:
+    """Every file and symlink under `root` by path relative to its parent, and every real folder (the root's own included).
+    Any error reading a folder is raised: a scan that skipped a folder would let it be deleted unread."""
+    if not (root.is_dir() and not root.is_symlink()):
+        return {root.name: root}, []
+    files, dirs = {}, [root]
+    for folder, subfolders, names in os.walk(root, onerror=_scan_error):
+        for name in names:
+            files[os.path.relpath(os.path.join(folder, name), root.parent).replace(os.sep, "/")] = Path(folder, name)
+        for name in subfolders:
+            path = Path(folder, name)
+            if path.is_symlink():  # os.walk lists a link to a folder with the folders and does not enter it
+                files[os.path.relpath(path, root.parent).replace(os.sep, "/")] = path
+            else:
+                dirs.append(path)
+    return files, dirs
+
+
 def _files(root: Path) -> dict[str, Path]:
-    """Every file (and symlink) under `root`, by path relative to it."""
-    if root.is_dir() and not root.is_symlink():
-        return {os.path.relpath(os.path.join(folder, name), root.parent).replace(os.sep, "/"): Path(folder, name)
-                for folder, _, names in os.walk(root) for name in names}
-    return {root.name: root}
+    return _scan(root)[0]
 
 
 def _digest(path: Path) -> str:
@@ -390,8 +408,12 @@ def leftovers() -> list[dict]:
 
 
 def delete_leftover(path: str, current: Path) -> str | None:
-    """Delete the old copies recorded for the folder `path`, only when its folder is not in use and every file still has the
-    sha256 of the copy made at move time. Returns the reason they stay, or None when they are deleted. Run it in a thread."""
+    """Delete the old copies recorded for the folder `path`, only when its folder is not in use and a file still has the
+    sha256 of the copy made at move time. Returns the reason something stays, or None when everything is deleted. Run it in a thread.
+
+    Nothing is deleted unless the whole recorded set reads and matches (any error, added file or different file keeps
+    everything). Then only the recorded files are unlinked, one by one, each hashed again just before it goes; a file that
+    changed meanwhile stays. Folders are removed with `os.rmdir`, bottom-up, so one that still holds anything stays."""
     record = next((r for r in read_leftovers() if r["path"] == path), None)
     if record is None:
         return "That folder is not in the list of old copies."
@@ -402,20 +424,49 @@ def delete_leftover(path: str, current: Path) -> str | None:
     digests = record.get("digests", {})
     try:
         with library_lock.exclusive(old):
-            found = {rel: file for name in names if (old / name).exists() or (old / name).is_symlink() for rel, file in _files(old / name).items()}
+            found, dirs = {}, []
+            for name in names:
+                if (old / name).exists() or (old / name).is_symlink():
+                    more_files, more_dirs = _scan(old / name)
+                    found |= more_files
+                    dirs += more_dirs
             if extra := next((rel for rel in found if rel not in digests), None):
                 return f"{extra} was added to the old copy after the move."
             if changed := next((rel for rel, file in found.items() if _digest(file) != digests[rel]), None):
                 return f"{changed} in the old copy is not the same as the copy that was moved."
-            for name in names:
-                if (old / name).exists() or (old / name).is_symlink():
-                    _remove(old / name)
+            kept = []
+            for rel, file in found.items():
+                try:
+                    if _digest(file) != digests[rel]:  # changed since it was checked: not ours to delete
+                        kept.append(rel)
+                        continue
+                    file.unlink()
+                except OSError:
+                    kept.append(rel)
+            for folder in sorted(dirs, key=lambda d: len(d.parts), reverse=True):
+                try:
+                    os.rmdir(folder)
+                except OSError:
+                    pass
+            left = [n for n in names if (old / n).exists() or (old / n).is_symlink()]
+            try:
+                remaining = [rel for n in left for rel in _files(old / n)]
+            except OSError:
+                remaining = list(kept)
     except library_lock.Busy:
         return "Another DEIXIS, a tool install or an equation reading is using that folder."
     except OSError as exc:
-        return f"The old copy could not be read or deleted ({type(exc).__name__}: {exc})."
-    _write_leftovers([r for r in read_leftovers() if r["path"] != path])
-    return None
+        return f"The old copy could not be read completely ({type(exc).__name__}: {exc}), so nothing was deleted."
+    others = [r for r in read_leftovers() if r["path"] != path]
+    if not left:
+        _write_leftovers(others)
+        return None
+    # What stays is written back: the names still on disk and the digests of the recorded files among them.
+    record |= {"names": left, "digests": {rel: d for rel, d in digests.items() if rel in kept},
+               "size_bytes": sum(_size(str(old / n)) for n in left)}
+    _write_leftovers(others + [record])
+    more = f" and {len(remaining) - 3} more" if len(remaining) > 3 else ""
+    return f"These files changed or were added after the move, so they stay: {', '.join(remaining[:3])}{more}. The rest was deleted."
 
 
 def _fsync_tree(path: Path) -> None:

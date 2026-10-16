@@ -918,6 +918,7 @@ def test_the_old_copy_is_deleted_on_request_when_every_digest_matches(default, t
     new = windows_move(default, tmp_path, monkeypatch)
     assert data_location.leftovers() == [{"path": str(default), "size_bytes": data_location.read_leftovers()[0]["size_bytes"]}]
     assert data_location.delete_leftover(str(default), new) is None
+    assert not (default / "papers").exists()  # no empty folder is left behind
     assert sorted(p.name for p in default.iterdir()) == ["library.lock", "location.json", "worker.lock"]
     assert data_location.read_leftovers() == []
     assert (new / "library.sqlite").read_text() == "old" and (new / "papers" / "sub" / "b.pdf").exists()
@@ -933,6 +934,58 @@ def test_a_same_size_file_with_other_content_keeps_the_old_copy(default, tmp_pat
     (default / "library.sqlite").write_text("old")
     (default / "papers" / "extra.pdf").write_bytes(b"added later")
     assert "added" in data_location.delete_leftover(str(default), new) and (default / "papers" / "a.pdf").exists()
+
+
+def test_a_file_added_while_the_old_copy_is_hashed_survives(default, tmp_path, monkeypatch):
+    new = windows_move(default, tmp_path, monkeypatch)
+    real, seen = data_location._digest, []
+
+    def digest_then_add(path):
+        if not seen:
+            (default / "papers" / "late.pdf").write_bytes(b"made by another program")
+        seen.append(path)
+        return real(path)
+
+    monkeypatch.setattr(data_location, "_digest", digest_then_add)
+    reason = data_location.delete_leftover(str(default), new)
+    assert reason and "late.pdf" in reason
+    assert (default / "papers" / "late.pdf").read_bytes() == b"made by another program"
+    assert not (default / "library.sqlite").exists() and not (default / "papers" / "a.pdf").exists()  # the verified files went
+    assert not (default / "papers" / "sub").exists()  # an emptied folder goes, bottom-up
+    (record,) = data_location.read_leftovers()
+    assert record["names"] == ["papers"] and record["digests"] == {} and [r["path"] for r in data_location.leftovers()] == [str(default)]
+
+
+def test_a_file_changed_between_its_hash_and_its_delete_survives(default, tmp_path, monkeypatch):
+    new = windows_move(default, tmp_path, monkeypatch)
+    real, calls = data_location._digest, {}
+
+    def change_before_the_second_look(path):
+        calls[path] = calls.get(path, 0) + 1
+        if path.name == "a.pdf" and calls[path] == 2:
+            path.write_bytes(b"%PDF edited by another program")
+        return real(path)
+
+    monkeypatch.setattr(data_location, "_digest", change_before_the_second_look)
+    reason = data_location.delete_leftover(str(default), new)
+    assert reason and "papers/a.pdf" in reason
+    assert (default / "papers" / "a.pdf").read_bytes() == b"%PDF edited by another program"
+    assert not (default / "library.sqlite").exists() and not (default / "papers" / "sub").exists()
+    (record,) = data_location.read_leftovers()
+    assert list(record["digests"]) == ["papers/a.pdf"] and record["names"] == ["papers"]
+
+
+def test_a_folder_that_cannot_be_read_keeps_everything(default, tmp_path, monkeypatch):
+    new = windows_move(default, tmp_path, monkeypatch)
+    locked = default / "papers" / "sub"
+    locked.chmod(0o000)
+    try:
+        reason = data_location.delete_leftover(str(default), new)
+    finally:
+        locked.chmod(0o755)
+    assert reason and "could not be read completely" in reason and "nothing was deleted" in reason
+    assert (default / "library.sqlite").exists() and (default / "papers" / "a.pdf").exists() and (default / "papers" / "sub" / "b.pdf").exists()
+    assert len(data_location.read_leftovers()) == 1
 
 
 def test_a_busy_old_folder_keeps_the_old_copy(default, tmp_path, monkeypatch, holder):

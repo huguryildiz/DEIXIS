@@ -109,9 +109,9 @@ class Settings:
 
     @property
     def web_dist(self) -> Path:
-        from deixis.paths import REPO_ROOT
+        from deixis.paths import RESOURCE_ROOT
 
-        return REPO_ROOT / "apps" / "web" / "dist"
+        return RESOURCE_ROOT / "apps" / "web" / "dist"
 
     @property
     def lock_path(self) -> Path:
@@ -142,11 +142,13 @@ def load_dotenv(path: Path) -> set[str]:
 
 
 def load_settings() -> Settings:
-    from deixis.paths import REPO_ROOT
+    from deixis.paths import RESOURCE_ROOT, is_frozen
 
     from deixis import credentials
 
-    credentials.mark_dotenv(load_dotenv(REPO_ROOT / ".env"), REPO_ROOT / ".env")
+    # Only a run from the repository reads `.env` (A2): a packaged app never reads or writes its install folder.
+    if not is_frozen():
+        credentials.mark_dotenv(load_dotenv(RESOURCE_ROOT / ".env"), RESOURCE_ROOT / ".env")
     credentials.move_dotenv_keys_to_keychain()
     credentials.load_into_environment()
     if "DEIXIS_SEARCH_WORKFLOW" in os.environ:

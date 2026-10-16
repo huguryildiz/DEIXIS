@@ -73,9 +73,9 @@ def no_repository_dotenv(monkeypatch):
     those stay in the worker's environment for every later test (an OPENALEX_API_KEY turned a later keyless OpenAlex 401
     into a keyed one). Tests never read that file; a test that needs a `.env` writes its own."""
     from deixis import config
-    from deixis.paths import REPO_ROOT
+    from deixis.paths import RESOURCE_ROOT
 
-    real, repository = config.load_dotenv, (REPO_ROOT / ".env").resolve()
+    real, repository = config.load_dotenv, (RESOURCE_ROOT / ".env").resolve()
     monkeypatch.setattr(config, "load_dotenv", lambda path: set() if Path(path).resolve() == repository else real(path))
 
 

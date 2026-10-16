@@ -27,6 +27,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
+from deixis.paths import is_frozen
 from deixis.providers import query_compiler, registry
 from deixis.storage.db import now
 from deixis.workflow import flow_counts as flow_rules
@@ -54,17 +55,31 @@ THROUGH = {"biorxiv": "openalex"}
 REGISTRY_WORDS = ("clinicaltrials", "ictrp", "registry", "trials")
 
 
-def _root() -> Path:
-    return Path(__file__).resolve().parents[3]
+PACKAGE_DIR = Path(__file__).resolve().parents[1]
+# Written by `package_manifest.write_build_identity` when a packaged build is made; absent in the repository.
+BUILD_IDENTITY = PACKAGE_DIR / "build_identity.json"
 
 
 def _pin(path: Path, fact: str) -> dict[str, Any]:
-    """A code fact's origin, with the digest of the file as the running code loaded it."""
+    """A code fact's origin. From the repository: the digest of the file as the running code loaded it
+    (`source_sha256`). A frozen build keeps its code in an archive, not as `.py` files, so the digest the build recorded
+    is carried as `build_sha256` instead, never as `sha256`; without that record only the version is known (A1)."""
     try:
-        source = str(path.resolve().relative_to(_root()))
+        source = "backend/deixis/" + path.resolve().relative_to(PACKAGE_DIR).with_suffix(".py").as_posix()
     except ValueError:
         source = str(path)
-    return {"path": path, "source": source, "fact": fact, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    if not is_frozen():
+        try:
+            return {"path": path, "source": source, "fact": fact, "identity": "source_sha256",
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "build_sha256": None}
+        except OSError:
+            pass
+    try:
+        built = json.loads(BUILD_IDENTITY.read_text(encoding="utf-8"))["files"].get(source)
+    except (OSError, ValueError, KeyError, AttributeError):
+        built = None
+    return {"path": path, "source": source, "fact": fact, "identity": "build_sha256" if built else "version",
+            "sha256": None, "build_sha256": built}
 
 
 # Pinned when this module is imported: the source of the code that is running, not of whatever is on disk later.
@@ -80,13 +95,17 @@ def code_version() -> str:
 
 
 def _code_source(key: str, **extra: Any) -> dict[str, Any]:
+    """`verified`: the file on disk still has the pinned digest; None when there is no source digest to check."""
     pinned = CODE_SOURCES[key]
-    try:
-        on_disk = hashlib.sha256(Path(pinned["path"]).read_bytes()).hexdigest()
-    except OSError:
-        on_disk = None
-    return {"code_version": code_version(), "source": pinned["source"], "sha256": pinned["sha256"],
-            "verified": on_disk == pinned["sha256"], "fact": pinned["fact"], **extra}
+    verified = None
+    if pinned["identity"] == "source_sha256":
+        try:
+            verified = hashlib.sha256(Path(pinned["path"]).read_bytes()).hexdigest() == pinned["sha256"]
+        except OSError:
+            verified = False
+    return {"code_version": code_version(), "source": pinned["source"], "identity": pinned["identity"],
+            "sha256": pinned["sha256"], "build_sha256": pinned["build_sha256"], "verified": verified,
+            "fact": pinned["fact"], **extra}
 
 
 # ---- reading the stored rows -----------------------------------------------------------------------------------------
@@ -234,7 +253,7 @@ def _planned_queries(store: Store, research_id: str, revision: int, latest: dict
 def _item(number: int, status: str, text: str, values: dict[str, Any] | None = None, trace: list[str] | None = None,
           aggregates: list[dict[str, Any]] | None = None, code_source: dict[str, Any] | None = None) -> dict[str, Any]:
     assert status in STATUSES
-    if code_source is not None and not code_source["verified"]:
+    if code_source is not None and code_source["verified"] is False:
         text += (" The code origin of this fact is not verified: the source file changed after the running code "
                  "was loaded.")
     return {"number": number, "name": NAMES[number], "status": status, "text": text, "values": values or {},
@@ -544,8 +563,11 @@ def markdown(data: dict[str, Any]) -> str:
             lines += [f"- {a['table']} where {a['filter']}: {a['count']}" for a in item["aggregates"]] + [""]
         if item["code_source"]:
             source = item["code_source"]
-            lines += [f"Code origin: {source['source']} (sha256 {source['sha256']}, "
-                      f"{'verified' if source['verified'] else 'not verified'}), fact `{source['fact']}`.", ""]
+            digest = (f"sha256 {source['sha256']}, {'verified' if source['verified'] else 'not verified'}"
+                      if source["identity"] == "source_sha256" else
+                      f"build sha256 {source['build_sha256']}, recorded when the package was built"
+                      if source["identity"] == "build_sha256" else "no file digest; identified by the code version")
+            lines += [f"Code origin: {source['source']} ({digest}), fact `{source['fact']}`.", ""]
         if item["trace"]:
             lines += ["Stored rows: " + ", ".join(f"`{entry}`" for entry in item["trace"]), ""]
     lines += ["## Search table", "",

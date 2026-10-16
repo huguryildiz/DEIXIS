@@ -6,6 +6,9 @@ startup and its line deleted (D19); only when no keychain is available, or the m
 that file. Otherwise a key saved in Settings is stored in the system keychain (macOS Keychain, Windows Credential Locker,
 Secret Service) under the service `DEIXIS`. Either way it is put into the process environment, where connectors already
 read their keys at call time. Key values are never logged or returned by the API.
+
+Only a run from the repository reads or writes `.env` (A2). A packaged app never touches its install folder: it keeps keys
+in the keychain (and, once A6 lands, in that item's session store when no keychain is available).
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from keyring.errors import KeyringError, PasswordDeleteError
 from deixis.models.anthropic_api import API_URL as ANTHROPIC_API_URL, KEY_ENV as ANTHROPIC_KEY_ENV, headers as anthropic_headers
 from deixis.models.gemini import API_URL as GEMINI_API_URL
 from deixis.models.openai_compat import BY_KEY_ENV as COMPAT_BY_KEY_ENV
+from deixis.paths import is_frozen
 from deixis.storage.db import now
 from deixis.domain.limits import service_error_kind, http_limit, retry_at
 
@@ -98,6 +102,8 @@ def mark_dotenv(names: set[str], path: Path) -> None:
 
 def _rewrite_dotenv(env: str, value: str | None) -> None:
     """Replace the key's line in `.env` (or drop it when value is None), keeping every other line and the file mode."""
+    if is_frozen():
+        raise RuntimeError("a packaged app does not write .env")
     assert dotenv_path is not None
     pattern = re.compile(rf"^\s*{re.escape(env)}\s*=")
     lines = dotenv_path.read_text(encoding="utf-8").splitlines(keepends=True) if dotenv_path.exists() else []

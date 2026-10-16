@@ -23,3 +23,4 @@ DEIXIS/
 - Links in `decisions.md` and `STATUS.md` that point into `.local/` resolve only on the owner's machine.
 - The decision entries before the clean start (old D1 to D261) are in Git history; `docs/decisions.md` at commit `26c8214` is the last full copy.
 - Runtime data (database, PDFs, provider payloads, Codex home) lives in the app-data directory, never in the repository.
+- Every non-Python file the app reads at run time is listed in `backend/deixis/package_manifest.py`; a packaged build copies exactly those (P10d uses it as PyInstaller `datas`). A new data file read from disk goes on that list.

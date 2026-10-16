@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -233,6 +234,7 @@ def test_code_facts_carry_their_pinned_source_and_a_changed_file_is_not_verified
         assert found["status"] == "not_performed" and found["trace"] == []
         source = found["code_source"]
         assert source["verified"] is True and re.fullmatch(r"[0-9a-f]{64}", source["sha256"])
+        assert source["identity"] == "source_sha256" and source["build_sha256"] is None
         assert source["code_version"].startswith("deixis/") and source["source"].startswith("backend/deixis/")
     assert item(data, 3)["code_source"]["fact"] == "no_registry_connector"
     # A module loaded from a file that changed on disk afterwards: its code origin is no longer shown as verified.
@@ -242,6 +244,37 @@ def test_code_facts_carry_their_pinned_source_and_a_changed_file_is_not_verified
     copy.write_text("SYNTHETIC = 2\n")
     three = item(lib.export(), 3)
     assert three["code_source"]["verified"] is False and "not verified" in three["text"]
+
+
+def test_a_frozen_build_reports_the_build_digest_as_such_and_never_as_a_source_sha256(store, tmp_path, monkeypatch):
+    """A1: a packaged app has no `.py` files to hash; the digest written at build time is labelled `build_sha256`."""
+    import hashlib
+    import sys
+
+    from deixis import package_manifest
+    from deixis.paths import RESOURCE_ROOT
+    from deixis.providers import registry
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(prisma_s, "BUILD_IDENTITY", package_manifest.write_build_identity(RESOURCE_ROOT, tmp_path))
+    monkeypatch.setitem(prisma_s.CODE_SOURCES, "registry", prisma_s._pin(Path(registry.__file__), "no_registry_connector"))
+    lib = Search(store, "irrigation")
+    searched(lib)
+    data = lib.export()
+    three = item(data, 3)
+    source = three["code_source"]
+    expected = hashlib.sha256((RESOURCE_ROOT / "backend/deixis/providers/registry.py").read_bytes()).hexdigest()
+    assert (source["identity"], source["build_sha256"], source["sha256"], source["verified"]) == (
+        "build_sha256", expected, None, None)
+    assert source["source"] == "backend/deixis/providers/registry.py" and "not verified" not in three["text"]
+    assert f"build sha256 {expected}, recorded when the package was built" in prisma_s.markdown(data)
+    # Without the build record only the code version identifies the code.
+    monkeypatch.setattr(prisma_s, "BUILD_IDENTITY", tmp_path / "absent.json")
+    monkeypatch.setitem(prisma_s.CODE_SOURCES, "registry", prisma_s._pin(Path(registry.__file__), "no_registry_connector"))
+    data = lib.export()
+    source = item(data, 3)["code_source"]
+    assert (source["identity"], source["build_sha256"], source["sha256"], source["verified"]) == ("version", None, None, None)
+    assert "no file digest; identified by the code version" in prisma_s.markdown(data)
 
 
 def test_the_markdown_opens_with_the_statement_and_says_not_performed_and_not_recorded_apart(store, monkeypatch):

@@ -1421,7 +1421,7 @@ class Store:
                     (*encoded.values(), session_id),
                 )
                 if "status" in fields or "token_usage_json" in fields:
-                    spend.record_session(self.conn, session_id, spend.day_of(self.clock), request_sent)
+                    spend.record_session(self.conn, session_id, request_sent)
         return accepted
 
     def model_session(self, step_input_id: str) -> dict[str, Any]:

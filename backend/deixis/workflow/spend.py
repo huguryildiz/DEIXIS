@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -127,20 +128,29 @@ def day_of(clock: Any) -> str:
     return clock.now().astimezone().date().isoformat()
 
 
-def record_session(conn: sqlite3.Connection, session_id: str, day: str, sent: bool | None) -> None:
-    """Write (or rewrite) the session's ledger row from the session as stored. Call inside the transaction that stores the
-    session's result. A call on a connection that does not bill per call, or one that never left, leaves no row."""
+def sent_day(started_at: str) -> str:
+    """The local calendar day a call was sent, from its session's start time (stored in UTC). The machine's own time zone
+    decides where the day ends, the same as `day_of`; a call finished or recovered after midnight is still booked on the
+    day it was sent."""
+    return datetime.fromisoformat(started_at).astimezone().date().isoformat()
+
+
+def record_session(conn: sqlite3.Connection, session_id: str, sent: bool | None) -> None:
+    """Write (or rewrite) the session's ledger row from the session as stored, booked on the day it was sent. Call inside
+    the transaction that stores the session's result. A call on a connection that does not bill per call, or one that
+    never left, leaves no row."""
     session = conn.execute(
-        "SELECT connection, requested_model, resolved_model, status, raw_output, token_usage_json, step_input_id"
+        "SELECT connection, requested_model, resolved_model, status, raw_output, token_usage_json, step_input_id, started_at"
         " FROM model_sessions WHERE id = ?", (session_id,)).fetchone()
     if session is None or session["connection"] not in API_KEY_CONNECTIONS:
         return
     if sent is False:
         conn.execute("DELETE FROM spend_ledger WHERE session_id = ?", (session_id,))
         return
+    # The model that answered is the one billed: when it has no listed price the call is unpriced, never priced as the
+    # model that was asked for.
     model = session["resolved_model"] or session["requested_model"]
-    prices = price_for(session["connection"], model) or (
-        price_for(session["connection"], session["requested_model"]) if session["requested_model"] else None)
+    prices = price_for(session["connection"], model)
     usage = json.loads(session["token_usage_json"]) if session["token_usage_json"] else None
     tokens, cost, basis = usage_tokens(usage), None, "unpriced"
     if isinstance(usage, dict) and isinstance(usage.get("cost"), (int, float)) and not isinstance(usage["cost"], bool) \
@@ -162,7 +172,7 @@ def record_session(conn: sqlite3.Connection, session_id: str, day: str, sent: bo
         " ON CONFLICT(session_id) DO UPDATE SET model = excluded.model, input_tokens = excluded.input_tokens,"
         " cached_input_tokens = excluded.cached_input_tokens, output_tokens = excluded.output_tokens,"
         " cost_usd = excluded.cost_usd, basis = excluded.basis",
-        (session_id, day, session["connection"], model, tokens["input"] if tokens else None,
+        (session_id, sent_day(session["started_at"]), session["connection"], model, tokens["input"] if tokens else None,
          tokens["cached_input"] if tokens else None, tokens["output"] if tokens else None, cost, basis, now()))
 
 

@@ -158,6 +158,37 @@ def test_a_call_out_when_the_process_stopped_counts_as_spent(tmp_path):
         assert row["session_id"] == sid and row["basis"] == "estimated_from_text" and row["cost_usd"] > 0
 
 
+def test_a_resolved_model_with_no_price_does_not_borrow_the_requested_models_price(tmp_path):
+    app = served(tmp_path, PaidAdapter())
+    with TestClient(app):
+        store = app.state.store
+        _, sid = make_session(store)  # requested deepseek-flash, which is priced
+        store.finish_model_session(sid, status="completed", raw_output="x", resolved_model="unlisted-model",
+                                   token_usage_json=CALL_USAGE, request_sent=True)
+        row = ledger(app)[0]
+        assert row["model"] == "unlisted-model" and row["cost_usd"] is None and row["basis"] == "unpriced"
+
+
+def test_a_call_is_booked_on_the_day_it_was_sent_not_the_day_it_finished_or_was_recovered(tmp_path):
+    from datetime import datetime
+    app = served(tmp_path, PaidAdapter())
+    with TestClient(app):
+        store = app.state.store
+        sent_at = "2026-01-02T23:30:00.000+00:00"
+        sent_day = datetime.fromisoformat(sent_at).astimezone().date().isoformat()  # the machine's local day
+        assert sent_day != spend.day_of(store.clock)
+        _, finished = make_session(store)
+        _, recovered = make_session(store)
+        for sid in (finished, recovered):
+            store.conn.execute("UPDATE model_sessions SET started_at = ? WHERE id = ?", (sent_at, sid))
+        store.conn.commit()
+        store.finish_model_session(finished, status="completed", raw_output="x", token_usage_json=CALL_USAGE, request_sent=True)
+        app.state.worker.recover()  # the second session was still out
+        days = {r["session_id"]: r["day"] for r in ledger(app)}
+        assert days == {finished: sent_day, recovered: sent_day}
+        assert spend.day_total(store.conn, spend.day_of(store.clock))["estimated_usd"] == 0
+
+
 def test_deleting_a_research_does_not_lower_the_days_total(tmp_path):
     app = served(tmp_path, PaidAdapter())
     with TestClient(app) as raw:

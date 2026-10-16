@@ -511,10 +511,12 @@ function SpendingSettings() {
         <b><label htmlFor="spend-threshold">{t('Stop at an estimated amount per day')}</label></b>
         <p>{t('Off by default. A research pauses before its next paid call once today’s estimate reaches this amount.')}
           {error && <span className="key-form-error" role="alert"> {error}</span>}</p>
-        <input id="spend-threshold" className="field" type="text" inputMode="decimal" value={draft} disabled={spending === null || busy} placeholder={t('Off')} aria-invalid={!valid}
-          onChange={e => { setDraft(e.target.value); setError('') }} />
-        <button type="submit" className="ghost" disabled={busy || !changed || !valid}>{t(busy ? 'Saving…' : 'Save')}</button>
-        {spending?.daily_threshold_usd != null && <button type="button" className="ghost" disabled={busy} onClick={() => save(null)}>{t('Turn off')}</button>}
+        <span className="set-spend-actions">
+          <input id="spend-threshold" className="field" type="text" inputMode="decimal" value={draft} disabled={spending === null || busy} placeholder={t('Off')} aria-invalid={!valid}
+            onChange={e => { setDraft(e.target.value); setError('') }} />
+          <button type="submit" className="ghost" disabled={busy || !changed || !valid}>{t(busy ? 'Saving…' : 'Save')}</button>
+          {spending?.daily_threshold_usd != null && <button type="button" className="ghost" disabled={busy} onClick={() => save(null)}>{t('Turn off')}</button>}
+        </span>
         {!valid && <Notice tone="attention">{t('Enter an amount in US dollars, for example 5.')}</Notice>}
       </form>
     </div>

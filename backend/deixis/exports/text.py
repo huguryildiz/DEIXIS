@@ -204,6 +204,22 @@ def _year(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def in_text_citation(style: CitationStyle, source: dict[str, Any], locator: str | None = None) -> str | None:
+    """citations.tsx inTextCitation: APA "Zeng et al., 2022", Chicago "Zeng et al. 2022", MLA "Zeng et al.", without
+    the parentheses; None in IEEE (cited by number) and for a source without authors."""
+    authors = source.get("authors") or []
+    if style == "ieee" or not authors:
+        return None
+    families = [_name(full)[0] for full in authors]
+    who = (families[0] if len(families) == 1
+           else f"{families[0]} {'&' if style == 'apa' else 'and'} {families[1]}" if len(families) == 2
+           else f"{families[0]}, {families[1]}, and {families[2]}" if style == "chicago" and len(families) == 3
+           else f"{families[0]} et al.")
+    year = source.get("year") if source.get("year") is not None else "n.d."
+    head = f"{who}, {year}" if style == "apa" else f"{who} {year}" if style == "chicago" else who
+    return f"{head}, {locator}" if locator else head
+
+
 def reference_text(style: CitationStyle, source: dict[str, Any]) -> str:
     """The plain-text reference the browser writes into the report download, in the chosen style."""
     names = [_name(full) for full in source.get("authors") or []]

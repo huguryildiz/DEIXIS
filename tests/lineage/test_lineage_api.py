@@ -222,6 +222,9 @@ def test_non_live_and_same_work_endpoints_are_422(api):
 def test_evidence_created_by_the_post_route_protects_the_pdf(api):
     response = api.client.post(f"/api/researches/{api.rid}/uploads", files={"file": ("synthetic.pdf", make_pdf(["SYNTHETIC route evidence"]), "application/pdf")})
     assert response.status_code == 201, response.text
+    # The upload route looks up the PDF's own record once (D37); that setup request is not a lineage call.
+    assert len(api.seen) == 1 and "search.semantic=SYNTHETIC+route+evidence" in api.seen[0]
+    api.seen.clear()
     asset = api.conn.execute("SELECT * FROM source_assets WHERE original_filename = 'synthetic.pdf' ORDER BY rowid DESC").fetchone()
     # Resolve the upload by its real extraction passage, avoiding synthetic paths.
     later = asset["source_version_id"]

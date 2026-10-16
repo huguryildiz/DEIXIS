@@ -713,7 +713,7 @@ def api(tmp_path):
         tid = tables.create_table(rid, "SYNTHETIC API table", None, None, None)
         tables.add_development_columns(rid, tid, 1, None)
         yield SimpleNamespace(client=client, app=app, store=store, tables=tables, rid=rid, tid=tid, sid=sid,
-                              url=f"/api/researches/{rid}/tables/{tid}/lineage", adapter=adapter)
+                              url=f"/api/researches/{rid}/tables/{tid}/lineage", adapter=adapter, seen=seen)
     assert seen == [] and adapter.messages == []
 
 

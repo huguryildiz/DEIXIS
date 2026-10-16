@@ -707,6 +707,7 @@ EMPTY_BECAUSE = {
     "passage_embeddings": "needs an embedding model; none is configured",
     "pdf_candidates": "written when a PDF fetch is refused and another open copy is looked up; the fake fetcher never refuses",
     "pdf_discovery_runs": "same lookup as pdf_candidates",
+    "pdf_skips": "written when a person chooses 'Continue without PDF' for a waiting work, which this flow does not",
     "person_pdf_requests": "written by the 'read it yourself' person-reading flow, not exercised here",
     "record_flags": "written by record lookups (workflow/lookups.py), not run here",
     "record_links": "written by record linking (workflow/links.py), not run here",

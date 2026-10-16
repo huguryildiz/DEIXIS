@@ -15,7 +15,7 @@ from typing import Any
 
 from deixis.exports import ooxml
 from deixis.exports.text import OCR_LABEL, VERDICTS, CitationStyle, Language, download_name, locator_text, page_locator, \
-    reference_text, translator
+    in_text_citation, reference_text, translator
 
 
 def filename(title: str, version: int) -> str:
@@ -36,17 +36,24 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
             if evidence.get("anchor_text") and evidence["anchor_text"] not in quotes:
                 quotes.append(evidence["anchor_text"])
 
-    # IEEE cites by the passage's number, as the browser does (UI parity S10, R25); the other styles by the source key.
-    def cite_label(claim: dict[str, Any], evidence: dict[str, Any]) -> str:
-        if not evidence.get("source_key") or style == "ieee":
-            return str(refs[evidence["passage_id"]][0])
+    # As reportMarkdown.ts: IEEE cites by the passage's number in brackets (UI parity S10, R25); the other styles in
+    # parentheses, in the style's own author-date form, else by the source key, else by the number in brackets.
+    def citation(claim: dict[str, Any], evidence: dict[str, Any]) -> str:
+        number = f"[{refs[evidence['passage_id']][0]}]"
+        if style == "ieee":
+            return number
         repeated = sum(e["source_version_id"] == evidence["source_version_id"] for e in claim["evidence"]) > 1
-        if not repeated:
-            return evidence["source_key"]
-        place = (t("abstract") if evidence.get("kind") == "abstract"
-                 else page_locator(t, evidence["physical_page"], evidence.get("rendition")) if evidence.get("physical_page")
-                 else t("section"))
-        return f"{evidence['source_key']}, {place}"
+        place = None if not repeated else (
+            t("abstract") if evidence.get("kind") == "abstract"
+            else page_locator(t, evidence["physical_page"], evidence.get("rendition")) if evidence.get("physical_page")
+            else t("section"))
+        source = next((s for s in sources if s["source_version_id"] == evidence["source_version_id"]), None)
+        styled = in_text_citation(style, source, place) if source else None
+        if styled:
+            return f"({styled})"
+        if not evidence.get("source_key"):
+            return number
+        return f"({evidence['source_key']}, {place})" if place else f"({evidence['source_key']})"
 
     sections: list[tuple[str | None, list[dict[str, Any]]]] = []
     for claim in claims:
@@ -75,7 +82,7 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
         if section:
             out.append(ooxml.heading(2, section))
         for claim in members:
-            citations = "".join(f"[{cite_label(claim, e)}]" for e in claim.get("evidence") or [])
+            citations = "".join(citation(claim, e) for e in claim.get("evidence") or [])
             parts: list[ooxml.Inline] = [*ooxml.with_math(claim["text"])]
             if citations:
                 parts.append(f" {citations}")

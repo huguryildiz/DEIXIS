@@ -13,7 +13,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from deixis.models.cli_process import reap, spawn_options, stop_group
+from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
 
 PROBE_TIMEOUT = 5.0
 OUTPUT_LIMIT = 64 * 1024
@@ -46,6 +46,7 @@ async def probe(argv: Sequence[str], timeout: float | None = None, env: Mapping[
                                                     **spawn_options())
     except (OSError, ValueError) as exc:
         return Probe(stderr=str(exc), error="failed")
+    track(proc)
     try:
         async with asyncio.timeout(timeout or PROBE_TIMEOUT):
             out, err = await asyncio.gather(_bounded(proc.stdout), _bounded(proc.stderr))
@@ -53,7 +54,7 @@ async def probe(argv: Sequence[str], timeout: float | None = None, env: Mapping[
     except TimeoutError:
         return Probe(error="not_responding")
     finally:
-        stop_group(proc)
+        await stop_group_async(proc)
         # What a killed tool left in its pipes is read and dropped, so the pipes close before the loop does.
         try:
             await asyncio.wait_for(asyncio.gather(_bounded(proc.stdout), _bounded(proc.stderr)), 1)

@@ -27,7 +27,7 @@ from typing import Any
 import httpx
 
 from deixis.storage.db import now
-from deixis.tool_probe import probe_blocking
+from deixis.tool_probe import Probe, probe, probe_blocking
 
 CACHE_SECONDS = 30
 CATALOG_SECONDS = 24 * 60 * 60
@@ -135,8 +135,11 @@ class ToolError(Exception):
 
 
 def _command_output(argv: list[str], timeout: float | None = None) -> str | None:
+    return _version_line(probe_blocking(argv, timeout))
+
+
+def _version_line(done: Probe) -> str | None:
     """The line of a tool's output that names its version; None when it fails or does not answer (A3b, E16)."""
-    done = probe_blocking(argv, timeout)
     lines = [line.strip() for line in (done.stdout or done.stderr).strip().splitlines()]
     if not done.ok or not lines:
         return None
@@ -234,13 +237,16 @@ class LocalTools:
     async def _detect(self, tool: Tool) -> dict[str, Any]:
         path = shutil.which(tool.binary)
         app = tool.app if tool.app and Path(tool.app).exists() else None
-        version = await asyncio.to_thread(_command_output, [path, "--version"]) if path else None
+        probed = await probe([path, "--version"]) if path else None
+        version = _version_line(probed) if probed else None
         manager = shutil.which(tool.install[0])
         models = await self._server_models(tool) if tool.kind == "server" else None
         status: dict[str, Any] = {
             # A server that answers counts as installed even when its binary is not on PATH.
             "id": tool.id, "name": tool.name, "kind": tool.kind, "installed": bool(path or app or models is not None),
             "version": version or (_app_version(app) if app else None), "path": path or app, "role": tool.role,
+            # A CLI that did not answer its version probe in time (A3b); the card says so instead of showing no version.
+            "reason_code": "not_responding" if probed and probed.error == "not_responding" else None,
             "install": {"command": " ".join(tool.install), "available": bool(manager),
                         "unavailable_reason": None if manager else f"{tool.install[0]} was not found on this computer's PATH",
                         "url": tool.url},

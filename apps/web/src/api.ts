@@ -738,6 +738,7 @@ export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cance
 export type LocalTool = {
   id: 'claude_code' | 'codex' | 'copilot_cli' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'
   installed: boolean; version: string | null; path: string | null; role: 'runs_steps' | 'detected' | 'imports'
+  reason_code?: 'not_responding' | null  // the CLI did not answer its version check in time
   running?: boolean; endpoint?: string; models?: LocalToolModel[]; local_api?: boolean; web_configured?: boolean
   install: LocalToolInstall; job: LocalToolJob
   app_installed?: boolean  // Ollama on macOS: whether Ollama.app is in /Applications

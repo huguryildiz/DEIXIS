@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from deixis.models.adapter import CODEX_ENV_ALLOWLIST, ModelStepResult
-from deixis.models.cli_process import reap, spawn_options, stop_group
+from deixis.models.cli_process import reap, spawn_options, stop_group, track
 from deixis.domain.limits import safe_error, service_error_kind
 from deixis.tool_probe import probe
 
@@ -106,6 +106,7 @@ class CopilotCliAdapter:
             *cmd, "--acp", "--disable-builtin-mcps", "--no-custom-instructions", "--no-auto-update",
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
             cwd=self.workspace, env=env, **spawn_options())
+        track(proc)
         assert proc.stdin and proc.stdout
 
         async def call(rid: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -195,6 +196,7 @@ class CopilotCliAdapter:
                                                         **spawn_options())
         except OSError as exc:
             return ModelStepResult("unavailable", error=safe_error(str(exc))[:300], delivery_class="before_send")
+        track(proc)
         self._active.add(proc)
         try:
             out, err = await asyncio.wait_for(proc.communicate(prompt.encode()), self.turn_timeout)

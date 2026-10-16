@@ -6,12 +6,14 @@ import threading
 import time
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from deixis import tool_probe
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents import ocr
+from deixis.models import cli_process
 from deixis.models.adapter import CodexAdapter
 from fakes import FakeAdapter
 
@@ -29,19 +31,79 @@ def test_a_tool_that_never_answers_is_killed_and_reported_not_responding(tmp_pat
     pid_file = tmp_path / "pid"
     tool = script(tmp_path / "hang", f"#!/bin/sh\nsleep 600 &\necho $! > {pid_file}\nwait\n")
     started = time.monotonic()
-    result = asyncio.run(tool_probe.probe([str(tool), "--version"], timeout=0.5))
-    assert time.monotonic() - started < 3
+    result = asyncio.run(tool_probe.probe([str(tool), "--version"], timeout=1.5))
+    assert time.monotonic() - started < 4
     assert (result.error, result.ok, result.returncode) == ("not_responding", False, None)
     # The child it started went with it: the whole process group is killed, not only the launcher.
-    child = int(pid_file.read_text())
+    assert gone(int(pid_file.read_text()))
+
+
+def gone(pid):
     for _ in range(50):
         try:
-            os.kill(child, 0)
+            os.kill(pid, 0)
         except ProcessLookupError:
-            break
+            return True
         time.sleep(0.05)
-    else:
-        raise AssertionError("the probe left the tool's child running")
+    return False
+
+
+def test_a_launcher_that_exits_at_once_still_has_its_child_killed(tmp_path):
+    """npm-style launcher: it starts the real tool, which does not hold the pipes, and exits with the version."""
+    pid_file = tmp_path / "pid"
+    tool = script(tmp_path / "launcher", f"#!/bin/sh\nsleep 600 >/dev/null 2>&1 &\necho $! > {pid_file}\necho 1.2.3\n")
+    result = asyncio.run(tool_probe.probe([str(tool), "--version"], timeout=3))
+    assert result.ok and result.stdout.strip() == "1.2.3"
+    assert gone(int(pid_file.read_text()))
+
+
+class FakeProc:
+    pid, returncode = 4242, None
+
+    def kill(self):
+        self.returncode = -9
+
+
+def test_windows_taskkill_fallback_runs_off_the_event_loop(monkeypatch):
+    """Without a job object, Windows cleanup is a taskkill child process; it must not hold up the loop."""
+    monkeypatch.setattr(cli_process, "WINDOWS", True)
+    ran = []
+    monkeypatch.setattr(cli_process.subprocess, "run", lambda argv, **kw: (ran.append(argv), time.sleep(1)))
+
+    async def main():
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.05)
+                ticks += 1
+
+        task = asyncio.create_task(ticker())
+        await cli_process.stop_group_async(FakeProc())
+        task.cancel()
+        return ticks
+
+    assert asyncio.run(main()) >= 10  # the loop kept running for the second taskkill took
+    assert ran == [["taskkill", "/T", "/F", "/PID", "4242"]]
+
+
+def test_windows_job_kills_the_children_of_a_launcher_that_already_exited(monkeypatch):
+    monkeypatch.setattr(cli_process, "WINDOWS", True)
+    calls = []
+
+    class Kernel:
+        def __getattr__(self, name):
+            return lambda *args: calls.append((name, *args)) or {"CreateJobObjectW": 7, "OpenProcess": 9}.get(name, 1)
+
+    monkeypatch.setattr(cli_process, "_kernel32", Kernel)
+    monkeypatch.setattr(cli_process.subprocess, "run", lambda *a, **k: pytest.fail("taskkill was used despite the job"))
+    proc = FakeProc()
+    cli_process.track(proc)
+    assert ("AssignProcessToJobObject", 7, 9) in calls
+    proc.returncode = 0  # the launcher is gone; what it started is still in the job
+    asyncio.run(cli_process.stop_group_async(proc))
+    assert calls[-1] == ("TerminateJobObject", 7, 1)
 
 
 def test_output_is_decoded_with_replacement_and_bounded(tmp_path):
@@ -88,11 +150,13 @@ def test_a_hung_codex_does_not_hold_up_the_api_or_the_other_connections(tmp_path
     assert connections["models"]["fake"]["ready"] is True  # the other connection's check is not hidden
 
 
-def test_tesseract_with_undecodable_output_still_reports(tmp_path, monkeypatch):
+def test_tesseract_is_asked_twice_at_once_and_undecodable_output_still_reports(tmp_path, monkeypatch):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    script(bin_dir / "tesseract", b"#!/bin/sh\nif [ \"$1\" = --version ]; then printf 'tesseract 5.5.2 \\376\\375\\n'; "
+    script(bin_dir / "tesseract", b"#!/bin/sh\nsleep 1\nif [ \"$1\" = --version ]; then printf 'tesseract 5.5.2 \\376\\375\\n'; "
                                   b"else printf 'List of available languages (2):\\neng\\ntur \\377\\n'; fi\n")
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
+    started = time.monotonic()
     status = ocr.tesseract_status(("eng",))
+    assert time.monotonic() - started < 1.8  # both questions are asked side by side, each taking 1 s
     assert (status["available"], status["version"], status["languages"]) == (True, "5.5.2", ["eng"])

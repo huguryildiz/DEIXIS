@@ -15,7 +15,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import credentials, local_tools
+from deixis import credentials, local_tools, tool_probe
 from deixis.api.app import create_app
 from deixis.config import Settings
 from fakes import FakeAdapter
@@ -377,9 +377,17 @@ def test_saved_keys_are_loaded_at_startup_over_the_shell_key(monkeypatch, memory
     assert os.environ["IEEE_API_KEY"] == "ieee-from-env" and credentials.status("IEEE_API_KEY")["source"] == "environment"
 
 
+def versions(answer):
+    """A stand-in for the version probe: `answer(argv)` is the printed version, or None for a tool that fails."""
+    async def probe(argv, timeout=None, env=None):
+        line = answer(argv)
+        return tool_probe.Probe(0, line) if line else tool_probe.Probe(1)
+    return probe
+
+
 def test_local_tools_report_clis_running_servers_and_embedding_models(client, paths, monkeypatch):
     paths.update(claude="/SYNTHETIC/bin/claude", npm="/SYNTHETIC/bin/npm")
-    monkeypatch.setattr(local_tools, "_command_output", lambda argv: "2.1.270 (Claude Code)" if argv[0].endswith("claude") else None)
+    monkeypatch.setattr(local_tools, "probe", versions(lambda argv: "2.1.270 (Claude Code)" if argv[0].endswith("claude") else None))
     data = client.get("/api/local-tools?refresh=true").json()
     tools = {t["id"]: t for t in data["tools"]}
     assert data["machine"]["memory_gb"] == 32
@@ -413,7 +421,7 @@ NEW_CLIS = {
 
 def test_other_llm_clis_are_detected_only_with_a_fixed_install_command(client, paths, monkeypatch):
     paths.update(qwen="/SYNTHETIC/bin/qwen", aider="/SYNTHETIC/bin/aider", uv="/SYNTHETIC/bin/uv")
-    monkeypatch.setattr(local_tools, "_command_output", lambda argv: "9.9.9" if argv[0].endswith(("qwen", "aider")) else None)
+    monkeypatch.setattr(local_tools, "probe", versions(lambda argv: "9.9.9" if argv[0].endswith(("qwen", "aider")) else None))
     tools = {t["id"]: t for t in client.get("/api/local-tools?refresh=true").json()["tools"]}
     for tool_id, (binary, command) in NEW_CLIS.items():
         tool = tools[tool_id]
@@ -509,20 +517,22 @@ def test_version_is_the_output_line_that_names_one(tmp_path):
 
 
 def test_one_broken_cli_does_not_hide_the_others_in_the_inventory(client, paths, tmp_path, monkeypatch):
-    """E16/A3b: undecodable version bytes and a CLI that never answers each affect only their own card."""
-    from deixis import tool_probe
-    monkeypatch.setattr(tool_probe, "PROBE_TIMEOUT", 1.0)
+    """E16/A3b: undecodable version bytes and a CLI that never answers each affect only their own card; the probes run
+    side by side, so two tools that take 1.5 s each cost about 1.5 s, not 3."""
+    monkeypatch.setattr(tool_probe, "PROBE_TIMEOUT", 2.0)
     for name, body in {"qwen": b"#!/bin/sh\nprintf 'qwen S\\374r\\374m 1.4.0 \\376\\375\\n'\n",
-                       "aider": b"#!/bin/sh\nsleep 600\n", "amp": b"#!/bin/sh\necho 0.9.1\n"}.items():
+                       "aider": b"#!/bin/sh\nsleep 600\n", "amp": b"#!/bin/sh\nsleep 1.5\necho 0.9.1\n",
+                       "cline": b"#!/bin/sh\nsleep 1.5\necho 2.0.0\n"}.items():
         (tmp_path / name).write_bytes(body)
         (tmp_path / name).chmod(0o755)
         paths[name] = str(tmp_path / name)
     started = time.monotonic()
     tools = {t["id"]: t for t in client.get("/api/local-tools?refresh=true").json()["tools"]}
-    assert time.monotonic() - started < 4  # the probes run side by side, each bounded
-    assert tools["qwen_code"]["installed"] and tools["qwen_code"]["version"] == "qwen S�r�m 1.4.0 ��"
-    assert (tools["aider"]["installed"], tools["aider"]["version"]) == (True, None)
-    assert tools["amp"]["version"] == "0.9.1"
+    assert time.monotonic() - started < 2.9  # one after another the two slow tools alone take 3 s, the hung one 2 s more
+    assert tools["qwen_code"]["installed"] and tools["qwen_code"]["version"] == "qwen S\ufffdr\ufffdm 1.4.0 \ufffd\ufffd"
+    assert (tools["aider"]["installed"], tools["aider"]["version"], tools["aider"]["reason_code"]) == (True, None, "not_responding")
+    assert (tools["amp"]["version"], tools["cline"]["version"]) == ("0.9.1", "2.0.0")
+    assert tools["amp"]["reason_code"] is None and tools["qwen_code"]["reason_code"] is None
 
 
 def test_the_ollama_card_downloads_only_the_fixed_embedding_model_and_reports_progress(tmp_path, paths):

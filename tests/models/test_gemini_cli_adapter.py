@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from deixis import tool_probe
 from deixis.models import gemini_cli
 from deixis.models.gemini_cli import CliRun, GeminiCliAdapter
 
@@ -67,6 +68,22 @@ def creds(tmp_path):
 @pytest.fixture(autouse=True)
 def cli_on_path(monkeypatch):
     monkeypatch.setattr(gemini_cli.shutil, "which", lambda name: "/usr/local/bin/gemini" if name == "gemini" else None)
+
+
+@pytest.fixture(autouse=True)
+def version_probe(monkeypatch):
+    """`gemini --version` goes through the bounded tool probe (A3b), not the fake runner; this stands in for it."""
+    class Asked(list):
+        answer = tool_probe.Probe(0, "0.60.0\n")
+
+    asked = Asked()
+
+    async def probe(argv, timeout=None, env=None):
+        asked.append((argv, timeout))
+        return asked.answer
+
+    monkeypatch.setattr(tool_probe, "probe", probe)
+    return asked
 
 
 def adapter(tmp_path, creds, fake):
@@ -172,33 +189,34 @@ def test_no_sign_in_file_sends_nothing(tmp_path):
     assert (result.status, result.error_kind) == ("unavailable", "auth_failed") and fake.calls == []
 
 
-def test_health_ready_after_an_empty_probe(tmp_path, creds):
-    fake = FakeCli(CliRun(0, "0.60.0\n", ""), CliRun(42, "", "No input provided via stdin. Input can be provided by piping"))
+def test_health_ready_after_an_empty_probe(tmp_path, creds, version_probe):
+    fake = FakeCli(CliRun(42, "", "No input provided via stdin. Input can be provided by piping"))
     status = asyncio.run(adapter(tmp_path, creds, fake).health(refresh=True))
     assert (status["ready"], status["signed_in"], status["cli_version"], status["catalogue"]) == (True, True, "0.60.0", "fixed")
-    assert fake.calls[1]["argv"] == ["/usr/local/bin/gemini", "-o", "stream-json", "-e", "none", "-p", ""]
-    assert fake.calls[1]["stdin"] == ""  # no prompt: the probe never reaches a model request
+    assert version_probe == [(["/usr/local/bin/gemini", "--version"], 60)]  # the CLI's own longer limit
+    assert fake.calls[0]["argv"] == ["/usr/local/bin/gemini", "-o", "stream-json", "-e", "none", "-p", ""]
+    assert fake.calls[0]["stdin"] == ""  # no prompt: the probe never reaches a model request
     assert "gemini-2.5-pro" in [m["id"] for m in status["models"]]
     assert all(m["reasoning_efforts"] == [] for m in status["models"])
     assert "isolation" not in status  # nothing observed, so nothing claimed
 
 
 def test_health_reports_an_ineligible_account(tmp_path, creds):
-    fake = FakeCli(CliRun(0, "0.60.0\n", ""), CliRun(42, "", INELIGIBLE + "\nNo input provided via stdin."))
+    fake = FakeCli(CliRun(42, "", INELIGIBLE + "\nNo input provided via stdin."))
     status = asyncio.run(adapter(tmp_path, creds, fake).health(refresh=True))
     assert (status["ready"], status["signed_in"], status["reason_code"]) == (False, True, "auth_failed")
     assert "UNSUPPORTED_CLIENT" in status["reason"]
 
 
-def test_health_not_signed_in(tmp_path):
-    fake = FakeCli(CliRun(0, "0.60.0\n", ""))
+def test_health_not_signed_in(tmp_path, version_probe):
+    fake = FakeCli()
     status = asyncio.run(GeminiCliAdapter(home=tmp_path, runner=fake, credentials=tmp_path / "none.json").health(refresh=True))
     assert (status["ready"], status["signed_in"], status["reason_code"]) == (False, False, "auth_failed")
-    assert len(fake.calls) == 1  # only --version
+    assert len(version_probe) == 1 and fake.calls == []  # only --version
 
 
 def test_health_auth_error_with_a_sign_in_file(tmp_path, creds):
-    fake = FakeCli(CliRun(0, "0.60.0\n", ""), CliRun(41, "", "FatalAuthenticationError: Manual authorization is required"))
+    fake = FakeCli(CliRun(41, "", "FatalAuthenticationError: Manual authorization is required"))
     status = asyncio.run(adapter(tmp_path, creds, fake).health(refresh=True))
     assert (status["ready"], status["signed_in"]) == (False, False)
 
@@ -213,17 +231,10 @@ def test_user_credentials_follow_the_users_gemini_home(tmp_path):
     assert gemini_cli.user_credentials({"GEMINI_CLI_HOME": str(tmp_path)}) == tmp_path / ".gemini" / "oauth_creds.json"
 
 
-def test_a_slow_version_does_not_fail_the_check(tmp_path, creds):
+def test_a_slow_version_does_not_fail_the_check(tmp_path, creds, version_probe):
     """15 Oct: `gemini --version` took over 20 s; the version is shown only, so the check goes on to the sign-in."""
-
-    class SlowVersion(FakeCli):
-        async def __call__(self, argv, env, cwd, stdin, timeout):
-            if "--version" in argv:
-                self.calls.append({"argv": argv})
-                raise TimeoutError
-            return await super().__call__(argv, env, cwd, stdin, timeout)
-
-    fake = SlowVersion(CliRun(42, "", INELIGIBLE + "\nNo input provided via stdin."))
+    version_probe.answer = tool_probe.Probe(error="not_responding")
+    fake = FakeCli(CliRun(42, "", INELIGIBLE + "\nNo input provided via stdin."))
     status = asyncio.run(adapter(tmp_path, creds, fake).health(refresh=True))
     assert status["cli_version"] is None and "UNSUPPORTED_CLIENT" in status["reason"]
 

@@ -277,6 +277,7 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
       {tool.role === 'detected' && <><dt>{t('Role')}</dt><dd>{t('Detected only; it does not run steps')}</dd></>}
       {tool.role === 'imports' && <><dt>{t('Role')}</dt><dd>{t('Imports a collection into a research, read-only')}</dd></>}
     </dl>}
+    {tool.reason_code === 'not_responding' && <p className="local-tool-note is-callout">{t('Not responding: it did not answer its version check within 5 seconds.')}</p>}
     {tool.kind === 'cli' && tool.role === 'detected' && <p className="local-tool-note">{t('DEIXIS only checks whether this tool is installed; it never uses it for research.')}</p>}
     {tool.kind === 'server' && tool.installed && (tool.running
       ? <>

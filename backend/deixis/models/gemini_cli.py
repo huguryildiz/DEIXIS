@@ -33,8 +33,9 @@ from pathlib import Path
 from typing import Any
 
 from deixis.models.adapter import ModelStepResult
-from deixis.models.cli_process import reap, spawn_options, stop_group
+from deixis.models.cli_process import reap, spawn_options, stop_group, track
 from deixis.domain.limits import limit_kind, safe_error, service_error_kind
+from deixis import tool_probe
 
 CLI = "gemini"
 # Concrete ids from Gemini CLI 0.60's VALID_GEMINI_MODELS (internal, Gemma and custom-tools variants left out).
@@ -169,6 +170,7 @@ async def run_cli(argv: list[str], env: Mapping[str, str], cwd: Path, stdin: str
     proc = await asyncio.create_subprocess_exec(*argv, cwd=str(cwd), env=dict(env), stdin=asyncio.subprocess.PIPE,
                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                                                 **spawn_options())
+    track(proc)
     if active is not None:
         active.add(proc)
     try:
@@ -227,12 +229,14 @@ class GeminiCliAdapter:
             status["reason"] = "Gemini CLI not found"
             return status
         async with self._lock:
-            # The version is shown only; a slow start (over 20 s measured on 15 Oct) must not fail the check.
+            # The version is shown only; a slow start (over 20 s measured on 15 Oct) must not fail the check. The probe
+            # keeps that longer limit but is bounded in output like every tool probe (A3b).
+            home = prepare_home(self.home, "")
             try:
-                version = await self._run([cli, "--version"], "", "", 60)
-                status["cli_version"] = version.stdout.strip() or None
-            except (OSError, TimeoutError):
-                status["cli_version"] = None
+                version = await tool_probe.probe([cli, "--version"], 60, cli_environment(home, self.credentials()))
+            finally:
+                shutil.rmtree(home, ignore_errors=True)
+            status["cli_version"] = version.stdout.strip() or None
             if not self.credentials().is_file():
                 status.update(signed_in=False, reason_code="auth_failed", reason="Not signed in to Gemini CLI")
                 return status

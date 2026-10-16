@@ -2395,6 +2395,7 @@ const tr: Record<string, string> = {
   'Gemini CLI cannot list its models, so this list is fixed in DEIXIS. A step that another model answers is stopped.': 'Gemini CLI modellerini listeleyemez; bu yüzden bu liste DEIXIS’te sabittir. Başka bir modelin yanıtladığı adım durdurulur.',
   'Uses the Google account you are signed in with in Gemini CLI. DEIXIS keeps no password or token of its own.': 'Gemini CLI’da oturum açtığınız Google hesabını kullanır. DEIXIS kendine ait parola veya belirteç tutmaz.',
   'DEIXIS talks to {name} directly with your key. This connection has not been tested with the real {name} service yet.': 'DEIXIS, anahtarınızla doğrudan {name} hizmetine bağlanır. Bu bağlantı gerçek {name} hizmetiyle henüz denenmedi.',
+  'Not responding: it did not answer its version check within 5 seconds.': 'Yanıt vermiyor: sürüm denetimine 5 saniye içinde cevap vermedi.',
   'Detected only; it does not run steps': 'Yalnızca algılanır; adımları çalıştırmaz',
   'Imports a collection into a research, read-only': 'Bir koleksiyonu araştırmaya salt okunur aktarır',
   'Not answering. Open Zotero and close any dialog it shows, then turn on Settings → Advanced → “Allow other applications on this computer to communicate with Zotero”.': 'Cevap vermiyor. Zotero’yu açın ve açık bir pencere varsa kapatın; sonra Ayarlar → Gelişmiş → “Bu bilgisayardaki diğer uygulamaların Zotero ile iletişim kurmasına izin ver” seçeneğini açın.',

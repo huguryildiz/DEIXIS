@@ -10,6 +10,7 @@ wrong in places, and letters of a language without installed data are misread. "
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -22,7 +23,7 @@ from pathlib import Path
 import pymupdf
 
 from deixis.documents import pdf
-from deixis.tool_probe import probe_blocking
+from deixis.tool_probe import Probe, probe
 
 LANGUAGES = ("eng", "tur")
 DPI = 300
@@ -40,12 +41,16 @@ class OcrPage:
     printed_label: str | None = None
 
 
+async def _ask_tesseract() -> list[Probe]:
+    return await asyncio.gather(probe(["tesseract", "--version"]), probe(["tesseract", "--list-langs"]))
+
+
 def tesseract_status(langs=LANGUAGES) -> dict:
-    """Whether Tesseract is installed, its version, and which of `langs` have data."""
+    """Whether Tesseract is installed, its version, and which of `langs` have data. Call it off the event loop."""
     missing = {"available": False, "version": None, "languages": [], "missing_languages": list(langs)}
     if shutil.which("tesseract") is None:
         return missing | {"reason": "Tesseract is not installed. Install it in Settings → On this computer → OCR."}
-    version, listed = probe_blocking(["tesseract", "--version"]), probe_blocking(["tesseract", "--list-langs"])
+    version, listed = asyncio.run(_ask_tesseract())
     if failed := next((p for p in (version, listed) if p.error), None):
         problem = "it did not answer in time" if failed.error == "not_responding" else failed.stderr
         return missing | {"reason": f"Tesseract could not be run: {problem}"}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUpRight, Ban, BadgeCheck, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, FileUp, HardDrive, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, PenLine, Plus, RefreshCw, RotateCw, Save, ScanText, Server, ShieldCheck, Sigma, Trash2, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -298,6 +298,9 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
   </form>
 }
 
+// A path that may break after its separators (Windows paths use backslashes).
+const wrapPath = (path: string) => path.split(/([\\/])/).map((part, i) => <span key={i}>{part}<wbr /></span>)
+
 // A refused install that names the missing program by code reads in the person's language; any other refusal keeps its own line.
 const installError = (e: Error, tool: LocalTool) => e instanceof ApiError ? toolActionError(e, tool.install.manager) : e.message
 
@@ -335,11 +338,15 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
     {chip && <span className={`status-chip ${tool.installed ? '' : 'is-configured'}`}>{t(tool.installed ? 'Installed' : 'Not installed')}</span>}
     {tool.installed && <dl className="local-tool-facts">
       {tool.version && <><dt>{t('Version')}</dt><dd>{tool.version}</dd></>}
-      {tool.path && <><dt>{t('Path')}</dt><dd className="local-tool-path">{tool.path.split('/').map((part, i) => <span key={i}>{i > 0 && '/'}{part}<wbr /></span>)}</dd></>}
+      {tool.path && <><dt>{t('Path')}</dt><dd className="local-tool-path">{wrapPath(tool.path)}</dd></>}
+      {tool.other_copies?.map(copy => <Fragment key={copy}><dt>{t('Also found')}</dt><dd className="local-tool-path">{wrapPath(copy)}</dd></Fragment>)}
       {tool.role === 'detected' && <><dt>{t('Role')}</dt><dd>{t('Detected only; it does not run steps')}</dd></>}
       {tool.role === 'imports' && <><dt>{t('Role')}</dt><dd>{t('Imports a collection into a research, read-only')}</dd></>}
     </dl>}
     {tool.reason_code === 'not_responding' && <p className="local-tool-note is-callout">{t('Not responding: it did not answer its version check within 5 seconds.')}</p>}
+    {tool.reason_code === 'not_runnable' && <p className="local-tool-note is-callout">{t('Found, but it did not run: its version check failed. Reinstall it, or remove the broken copy.')}</p>}
+    {tool.reason_code === 'unsupported_install' && <p className="local-tool-note is-callout">{t('This copy is installed in a way DEIXIS cannot start on Windows. Install it again with its official Windows installer.')}</p>}
+    {tool.installed && (tool.other_copies?.length ?? 0) > 0 && <p className="local-tool-note">{t('More than one copy is installed. DEIXIS uses the one shown under Path.')}</p>}
     {tool.kind === 'cli' && tool.role === 'detected' && <p className="local-tool-note">{t('DEIXIS only checks whether this tool is installed; it never uses it for research.')}</p>}
     {tool.kind === 'server' && tool.installed && (tool.running
       ? <>
@@ -870,25 +877,30 @@ function OcrToolDetails({ tool, onChanged }: { tool: OcrTool; onChanged: () => P
   const canUpdate = ready && !running && update?.update_available && tool.can_install
   return <div className="local-tool-details-panel tool-panel">
     <p className="tool-lead">{t('Tesseract reads scanned PDF pages that have no selectable text when you choose Read with OCR on a source.')}</p>
-    <ToolTraits items={[[<Laptop key="l" />, 'Runs on this computer'], [<ShieldCheck key="s" />, 'No file leaves it'], [<FileLock key="f" />, 'The PDF is not changed']]} />
+    <ToolTraits items={[...(tool.bundled ? [[<Package key="p" />, 'Comes with DEIXIS'] as [ReactNode, string]] : []), [<Laptop key="l" />, 'Runs on this computer'], [<ShieldCheck key="s" />, 'No file leaves it'], [<FileLock key="f" />, 'The PDF is not changed']]} />
     {running
       ? <InstallProgress label={t(phase)} />
+      : !ready && tool.bundled ? <p className="local-tool-note is-callout">{t('Tesseract comes with DEIXIS but could not be run. Reinstall DEIXIS.')}</p>
       : !ready && (tool.can_install
         ? <section className="tool-install">
           <ScanText aria-hidden />
           <div><b>{t('Installed with Homebrew')}</b><span>{t('DEIXIS runs the install command for you.')}</span></div>
           <Button size="sm" onClick={install} disabled={busy}>{t('Install')}</Button>
         </section>
-        : <p className="local-tool-note">{t('Installing Tesseract needs Homebrew.')} <a href="https://brew.sh" target="_blank" rel="noopener noreferrer">brew.sh</a></p>)}
+        : tool.install_manager === 'brew'
+          ? <p className="local-tool-note">{t('Installing Tesseract needs Homebrew.')} <a href={tool.install_url} target="_blank" rel="noopener noreferrer">brew.sh</a></p>
+          : <p className="local-tool-note">{t('Tesseract is installed from its download page. Install it there, then open this panel again.')}<br /><a href={tool.install_url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
     {job?.status === 'failed' && <>
       <p className="local-tool-error">{t('Install failed.')}</p>
       {job.output && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{job.output}</pre></details>}
     </>}
     <ToolCaveat>{t('Text read by OCR is labelled wherever it is quoted. In a test on four scanned articles, 0.2–1.5% of characters were misread and equations were unusable, so check numbers and equations against the page.')}</ToolCaveat>
-    {tool.version && <ToolFacts foot={canUpdate
-      ? <div className="tool-facts-foot is-update"><span><Info aria-hidden />{t('Version {latest} is available.', { latest: update.latest ?? '' })}</span><Button size="sm" onClick={install} disabled={busy}>{t('Update')}</Button></div>
+    {tool.version && <ToolFacts foot={tool.bundled
+      ? <p className="tool-facts-foot is-ok" role="status"><CircleCheck aria-hidden />{t('Updated together with DEIXIS.')}</p>
+      : canUpdate ? <div className="tool-facts-foot is-update"><span><Info aria-hidden />{t('Version {latest} is available.', { latest: update.latest ?? '' })}</span><Button size="sm" onClick={install} disabled={busy}>{t('Update')}</Button></div>
       : upToDate ? <p className="tool-facts-foot is-ok" role="status"><CircleCheck aria-hidden />{t('Up to date.')}</p> : null}>
       <dt>{t('Version')}</dt><dd>{tool.version}</dd>
+      {tool.path && <><dt>{t('Path')}</dt><dd className="local-tool-path">{wrapPath(tool.path)}</dd></>}
       {tool.languages.length > 0 && <><dt>{t('Languages')}</dt><dd>{ocrLanguagesText(tool.languages)}</dd></>}
       {tool.missing_languages.length > 0 && <><dt>{t('Missing')}</dt><dd>{ocrLanguagesText(tool.missing_languages)}</dd></>}
     </ToolFacts>}
@@ -1513,6 +1525,13 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
           {accountId !== 'gemini_cli' && check(t('Instruction files used'), model.isolation ? String(model.isolation.instruction_sources) : t('not checked'))}
           {accountId !== 'gemini_cli' && check(t('Add-ons with tools'), model.isolation ? (model.isolation.live_mcp_servers.join(', ') || t('none')) : t('not checked'))}
         </div>
+        {tool?.installed && tool.path && <dl className="local-tool-facts">
+          <dt>{t('Path')}</dt><dd className="local-tool-path">{wrapPath(tool.path)}</dd>
+          {tool.other_copies?.map(copy => <Fragment key={copy}><dt>{t('Also found')}</dt><dd className="local-tool-path">{wrapPath(copy)}</dd></Fragment>)}
+        </dl>}
+        {tool?.reason_code === 'not_runnable' && <p className="local-tool-note is-callout">{t('Found, but it did not run: its version check failed. Reinstall it, or remove the broken copy.')}</p>}
+        {tool?.reason_code === 'unsupported_install' && <p className="local-tool-note is-callout">{t('This copy is installed in a way DEIXIS cannot start on Windows. Install it again with its official Windows installer.')}</p>}
+        {tool?.installed && (tool.other_copies?.length ?? 0) > 0 && <p className="foot-note">{t('More than one copy is installed. DEIXIS uses the one shown under Path.')}</p>}
         {model.catalogue === 'fixed' && <p className="foot-note">{t('Gemini CLI cannot list its models, so this list is fixed in DEIXIS. A step that another model answers is stopped.')}</p>}
         <ModelCatalogue model={model} />
       </details>}

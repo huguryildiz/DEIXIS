@@ -118,6 +118,14 @@ def tools_only_on_path(monkeypatch):
     monkeypatch.setattr(tool_paths, "known_places", nothing)
     monkeypatch.setattr(tool_paths, "_shell_path", [])
 
+    # The same for the places an installer puts an app (B1): only the tool's own `app` field counts (None in most tests),
+    # never the Applications, Program Files or Flatpak folders of the computer running the tests.
+    from deixis import local_tools
+
+    only_app = lambda tool: [Path(tool.app)] if tool.app else []  # noqa: E731
+    only_app.real = local_tools.app_locations
+    monkeypatch.setattr(local_tools, "app_locations", only_app)
+
 
 @pytest.fixture(autouse=True)
 def fake_tools_see_their_switches(monkeypatch):

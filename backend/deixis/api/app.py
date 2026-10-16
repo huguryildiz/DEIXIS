@@ -27,7 +27,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_valida
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from deixis import account_signin, credentials, key_verification, local_tools, log_redaction
-from deixis.tool_paths import find_tool
+from deixis.tool_paths import find_tool, is_bundled
 from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
@@ -2618,11 +2618,16 @@ def create_app(
     async def ocr_status() -> dict[str, Any]:
         """The local Tesseract: installed or not, its version, the languages it can read, and its install job (D51)."""
         status = await asyncio.to_thread(ocr.tesseract_status)
-        return status | {"can_install": await asyncio.to_thread(tool_updates.brew) is not None, "job": tesseract_installer.job}
+        # A Tesseract that comes with the app is never installed or updated through Homebrew (B1); a computer without
+        # Homebrew is sent to the page its OS installs Tesseract from.
+        brew = None if status.get("bundled") else await asyncio.to_thread(tool_updates.brew)
+        return status | {"can_install": brew is not None, **tool_updates.tesseract_source(), "job": tesseract_installer.job}
 
     @app.post("/api/ocr/install", status_code=202)
     async def install_ocr() -> dict[str, Any]:
         """Install or update Tesseract and its language data with Homebrew; the panel polls `/api/ocr` for the step."""
+        if is_bundled(await asyncio.to_thread(find_tool, "tesseract")):
+            raise HTTPException(409, "Tesseract comes with DEIXIS and is updated with it")
         try:
             return {"job": tesseract_installer.start(await asyncio.to_thread(tool_updates.brew))}
         except RuntimeError as exc:

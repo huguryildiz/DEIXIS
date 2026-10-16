@@ -1,7 +1,10 @@
 """Command-line tools and local model servers on this computer (D29).
 
-Detection reads the PATH, app bundles, `--version` output and the model servers' loopback endpoints. An install runs
-the one package-manager command fixed for that tool id, never a command taken from a request. Codex, Claude Code,
+Detection reads the PATH, the places each OS's installer puts an app (`app_locations`), `--version` output and the model
+servers' loopback endpoints. A tool is reported with the copy chosen (`path`), whether that copy ran (`runnable`) and
+the other copies found (`other_copies`) (E15). An install runs the one package-manager command fixed for that tool id,
+never a command taken from a request, and only where that package manager belongs: without one the card links to the
+tool's download page (B1). Codex, Claude Code,
 GitHub Copilot CLI (D24) and Gemini CLI (D23) run research steps; the other CLIs are detected only (found is not supported), and a local server's embedding models can rank answer passages. Zotero
 is the one reference manager: its local API is where a collection import reads from (D16).
 """
@@ -30,7 +33,7 @@ import httpx
 from deixis.child_env import NODE_TLS, UV_TLS, child_env
 from deixis.job_failure import failure_line
 from deixis.storage.db import now
-from deixis.tool_paths import find_tool
+from deixis.tool_paths import command_for, find_tool, find_tools
 from deixis.tool_probe import Probe, probe, probe_blocking
 
 CACHE_SECONDS = 30
@@ -145,8 +148,92 @@ class ToolError(Exception):
 
 
 def manager_missing(name: str) -> str:
-    """The reason code for an installer program that is not on this computer."""
-    return "uv_missing" if name == "uv" else "manager_missing"
+    """The reason code for an installer program that is not on this computer. Homebrew is the way to install things only
+    on macOS, so without it elsewhere the card sends the person to the download page (B1)."""
+    if name == "uv":
+        return "uv_missing"
+    return "download_page" if name == "brew" and sys.platform != "darwin" else "manager_missing"
+
+
+def install_argv(tool: Tool) -> tuple[str, ...] | None:
+    """The package-manager command that installs the tool on this OS, or None when there is none to run and the card
+    links to the download page instead. Homebrew casks are macOS apps; Homebrew is not a Windows tool."""
+    if tool.install[0] == "brew" and (sys.platform == "win32" or ("--cask" in tool.install and sys.platform != "darwin")):
+        return None
+    return tool.install
+
+
+# Where each OS puts the apps (B1); a file or folder here that exists counts as installed even when its folder is not on PATH.
+# macOS: the app bundle in /Applications (`Tool.app`) or, for a person without admin rights, in ~/Applications.
+# Windows: Ollama's OllamaSetup.exe and LM Studio's installer install for the current user only, under
+# %LOCALAPPDATA%\Programs (Ollama's Windows documentation names that folder); Zotero's installer defaults to Program Files.
+# Each entry is the variable of the root folder and the parts below it; both Program Files folders are tried.
+WINDOWS_APPS = {
+    "ollama": (("LOCALAPPDATA", ("Programs", "Ollama", "ollama.exe")), ("ProgramFiles", ("Ollama", "ollama.exe"))),
+    "lm_studio": (("LOCALAPPDATA", ("Programs", "LM Studio", "LM Studio.exe")), ("ProgramFiles", ("LM Studio", "LM Studio.exe"))),
+    "zotero": (("ProgramFiles", ("Zotero", "zotero.exe")), ("ProgramFiles(x86)", ("Zotero", "zotero.exe")),
+               ("LOCALAPPDATA", ("Zotero", "zotero.exe"))),
+}
+# Linux: Ollama's install script puts the binary in /usr/local/bin (a distribution package in /usr/bin, the snap in
+# /snap/bin); Zotero's download is unpacked to /opt/zotero by its own instructions, a distribution package puts it in
+# /usr/bin, and its Flatpak (org.zotero.Zotero on Flathub) leaves a launcher in the Flatpak exports folder, per user or
+# for the system; LM Studio ships as an AppImage, which AppImageLauncher keeps in ~/Applications.
+# Tests point SYSTEM_ROOT at a fake root.
+SYSTEM_ROOT = Path("/")
+LINUX_BINARIES = {"ollama": ("ollama",), "zotero": ("zotero",)}
+LINUX_EXTRA = {"ollama": (("snap", "bin", "ollama"),), "zotero": (("opt", "zotero", "zotero"),)}
+FLATPAK_LAUNCHERS = {"zotero": "org.zotero.Zotero"}
+
+
+def app_locations(tool: Tool) -> list[Path]:
+    """The places this OS's installer puts the tool's app or program, in the order they are looked at."""
+    home = Path.home()
+    found: list[Path] = []
+    if tool.id == "lm_studio":  # the `lms` command LM Studio sets up for itself, on every OS
+        found.append(home / ".lmstudio" / "bin" / ("lms.exe" if sys.platform == "win32" else "lms"))
+    if sys.platform == "darwin":
+        if tool.app:
+            found += [Path(tool.app), home / "Applications" / Path(tool.app).name]
+    elif sys.platform == "win32":
+        for variable, parts in WINDOWS_APPS.get(tool.id, ()):
+            if root := os.environ.get(variable):
+                found.append(Path(root).joinpath(*parts))
+    else:
+        bins = [SYSTEM_ROOT / "usr" / "local" / "bin", SYSTEM_ROOT / "usr" / "bin", home / ".local" / "bin"]
+        found += [folder / name for name in LINUX_BINARIES.get(tool.id, ()) for folder in bins]
+        found += [SYSTEM_ROOT.joinpath(*parts) for parts in LINUX_EXTRA.get(tool.id, ())]
+        if launcher := FLATPAK_LAUNCHERS.get(tool.id):
+            found += [home / ".local" / "share" / "flatpak" / "exports" / "bin" / launcher,
+                      SYSTEM_ROOT / "var" / "lib" / "flatpak" / "exports" / "bin" / launcher]
+        if tool.id == "lm_studio":
+            try:
+                found += sorted((home / "Applications").glob("LM-Studio*.AppImage"))
+            except OSError:
+                pass
+    return found
+
+
+def _usable(path: Path) -> bool:
+    """Whether `path` is the thing an installer leaves: an .app bundle on macOS, an AppImage file (which a download may
+    leave without its executable bit), otherwise a regular file that can be run. A folder named ollama.exe is not Ollama."""
+    if sys.platform == "darwin" and path.suffix.lower() == ".app":
+        return path.is_dir()
+    if not path.is_file():
+        return False
+    return path.suffix.lower() == ".appimage" or sys.platform == "win32" or os.access(path, os.X_OK)
+
+
+def installed_app(tool: Tool) -> Path | None:
+    """The first of the tool's `app_locations` that is really there."""
+    return next((p for p in app_locations(tool) if _usable(p)), None)
+
+
+def other_copies(tool: Tool, chosen: str | None, on_path: list[str]) -> list[str]:
+    """Copies of the tool's command besides the one chosen (E15): those `find_tools` lists and the command files of its
+    `app_locations` (a user and a system install of Ollama), each real file once."""
+    found = [*on_path, *(str(p) for p in app_locations(tool) if p.is_file() and p.stem.lower() == tool.binary and _usable(p))]
+    seen = {os.path.realpath(chosen)} if chosen else set()
+    return [c for c in found if not (os.path.realpath(c) in seen or seen.add(os.path.realpath(c)))]
 
 
 def _command_output(argv: list[str], timeout: float | None = None) -> str | None:
@@ -260,21 +347,32 @@ class LocalTools:
 
     async def _detect(self, tool: Tool) -> dict[str, Any]:
         path = await asyncio.to_thread(find_tool, tool.binary)
-        app = tool.app if tool.app and Path(tool.app).exists() else None
-        probed = await probe([path, "--version"], env=child_env(tool=path)) if path else None
+        located = installed_app(tool)
+        app = str(located) if located else None
+        if path is None and located and located.is_file() and located.stem.lower() == tool.binary:
+            path = app  # the command itself, found where its installer puts it though that folder is not on PATH
+        # Started the way the model adapters start it: on Windows a `.cmd` launcher is never run, its native program or node is.
+        command = await asyncio.to_thread(command_for, tool.binary, path) if path else None
+        probed = await probe([*command.argv, "--version"], env=child_env(tool=path)) if command and command.argv else None
         version = _version_line(probed) if probed else None
-        manager = await asyncio.to_thread(find_tool, tool.install[0])
+        # The other copies of the command on this computer (E15); the first one found is the one used and shown.
+        others = other_copies(tool, path, await asyncio.to_thread(find_tools, tool.binary) if path else [])
+        argv = install_argv(tool)
+        manager = await asyncio.to_thread(find_tool, argv[0]) if argv else None
         models = await self._server_models(tool) if tool.kind == "server" else None
         status: dict[str, Any] = {
             # A server that answers counts as installed even when its binary is not on PATH.
             "id": tool.id, "name": tool.name, "kind": tool.kind, "installed": bool(path or app or models is not None),
             "version": version or (_app_version(app) if app else None), "path": path or app, "role": tool.role,
-            # A CLI that did not answer its version probe in time (A3b); the card says so instead of showing no version.
-            "reason_code": "not_responding" if probed and probed.error == "not_responding" else None,
-            # `unavailable_reason` is a code (`uv_missing`, `manager_missing`); `manager` names the program the install needs.
-            "install": {"command": " ".join(tool.install), "available": bool(manager),
-                        "unavailable_reason": None if manager else manager_missing(tool.install[0]), "manager": tool.install[0],
-                        "url": tool.url},
+            # The chosen copy answered its version check (None: nothing was run). No version is required anywhere in DEIXIS,
+            # so "ran" is the whole test; a copy that did not run, or did not answer in time (A3b), says so on its card.
+            "runnable": False if command and command.problem else None if probed is None else probed.ok, "other_copies": others,
+            "reason_code": "unsupported_install" if command and command.problem  # an install type DEIXIS cannot start (A4)
+            else "not_responding" if probed and probed.error == "not_responding" else "not_runnable" if probed and not probed.ok else None,
+            # `unavailable_reason` is a code (`uv_missing`, `manager_missing`, `download_page`); `manager` names the program the install needs.
+            "install": {"command": " ".join(argv) if argv else None, "available": bool(manager),
+                        "unavailable_reason": None if manager else manager_missing(argv[0]) if argv else "download_page",
+                        "manager": argv[0] if argv else None, "url": tool.url},
         }
         if tool.kind == "server":
             status |={"endpoint": tool.endpoint, "running": models is not None, "models": models or []}
@@ -362,11 +460,14 @@ class LocalTools:
                                self._install_mac_app, reserved)
         if current["installed"]:
             raise ToolError(409, f"{tool.name} is already installed")
-        manager = await asyncio.to_thread(find_tool, tool.install[0])
+        install = install_argv(tool)
+        if install is None:
+            raise ToolError(422, f"{tool.name} has no install command here; download it from {tool.url}", "download_page")
+        manager = await asyncio.to_thread(find_tool, install[0])
         if not manager:
-            raise ToolError(422, f"{tool.install[0]} was not found on this computer", manager_missing(tool.install[0]))
-        job = {"status": "running", "command": " ".join(tool.install), "started_at": now(), "finished_at": None, "output": ""}
-        argv = [manager, *tool.install[1:]]
+            raise ToolError(422, f"{install[0]} was not found on this computer", manager_missing(install[0]))
+        job = {"status": "running", "command": " ".join(install), "started_at": now(), "finished_at": None, "output": ""}
+        argv = [manager, *install[1:]]
         return self._start(tool_id, job, lambda tool_id, job: self._run(tool_id, job, argv), reserved)
 
     async def update(self, tool_id: str) -> dict[str, Any]:

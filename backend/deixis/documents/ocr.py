@@ -24,7 +24,7 @@ import pymupdf
 
 from deixis.child_env import child_env
 from deixis.documents import pdf
-from deixis.tool_paths import find_tool
+from deixis.tool_paths import find_tool, is_bundled
 from deixis.tool_probe import Probe, probe
 
 log = logging.getLogger(__name__)
@@ -61,10 +61,12 @@ REASONS = {
 
 def tesseract_status(langs=LANGUAGES) -> dict:
     """Whether Tesseract is installed, its version, and which of `langs` have data. `reason` is a code from `REASONS`, or
-    None. Call it off the event loop."""
-    missing = {"available": False, "version": None, "languages": [], "missing_languages": list(langs)}
+    None. `path` is the copy chosen; `bundled` says it is the one that comes with the packaged app (B1), which is updated
+    with DEIXIS and not by Homebrew. Call it off the event loop."""
+    missing = {"available": False, "version": None, "languages": [], "missing_languages": list(langs), "path": None, "bundled": False}
     if (tesseract := find_tool("tesseract")) is None:
         return missing | {"reason": "tesseract_missing"}
+    missing |= {"path": tesseract, "bundled": is_bundled(tesseract)}
     version, listed = asyncio.run(_ask_tesseract(tesseract))
     if failed := next((p for p in (version, listed) if p.error), None):
         if failed.error != "not_responding":
@@ -74,8 +76,8 @@ def tesseract_status(langs=LANGUAGES) -> dict:
     installed = set(listed.stdout.split()[1:] if listed.returncode == 0 else [])  # the first line is a header
     languages = [lang for lang in langs if lang in installed]
     absent = [lang for lang in langs if lang not in installed]
-    return {"available": bool(match and languages), "version": match.group(1) if match else None, "languages": languages,
-            "missing_languages": absent, "reason": "tesseract_languages_missing" if absent else None}
+    return missing | {"available": bool(match and languages), "version": match.group(1) if match else None, "languages": languages,
+                      "missing_languages": absent, "reason": "tesseract_languages_missing" if absent else None}
 
 
 def read_page(path: Path, page: int, langs, timeout: float = TIMEOUT_SECONDS, max_memory: int = MAX_MEMORY_BYTES) -> OcrPage:

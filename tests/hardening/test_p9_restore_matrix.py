@@ -675,6 +675,11 @@ def rich_library(tmp_path: Path):
         table = table_with_edit(client, rid)
         assert client.post("/api/table-templates", json={"research_id": rid, "table_id": table, "name": "SYNTHETIC packets"}).status_code == 201
         gone = upload(client, rid, "gone.pdf", "SYNTHETIC a report taken out of this research.")["source_version_id"]
+        quiet, deadline = 0, time.time() + 15  # the answer review is queued a moment after the answer finishes
+        while quiet < 3 and time.time() < deadline:
+            runs = client.get(f"/api/researches/{rid}").json()["runs"]
+            quiet = quiet + 1 if all(r["status"] in ("completed", "failed", "paused", "cancelled") for r in runs) else 0
+            time.sleep(0.1)
         assert client.request("DELETE", f"/api/researches/{rid}/sources", json={"source_version_ids": [gone], "note": "SYNTHETIC off topic"}).status_code == 200
         search_found_again(store, rid, gone)
         other = create(client, source_scope="attached")

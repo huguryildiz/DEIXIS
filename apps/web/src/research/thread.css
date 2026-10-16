@@ -374,6 +374,9 @@
 .answer-prose p{margin:0 0 12px}
 .answer-prose p:last-child{margin-bottom:0}
 .answer-prose .claim+.claim::before{content:' '}
+.answer-more{margin:10px 0 0}
+.answer-more .link{padding:0;border:0;background:none;color:var(--accent);font:inherit;font-weight:500;cursor:pointer}
+.answer-more .link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 .legacy-research .answer-prose p.claim{margin:0 0 12px}
 .legacy-research .answer-prose p.claim:last-child{margin-bottom:0}
 .cite-chip.thread-cite{display:inline;margin:0 2px;padding:1px 5px;vertical-align:1px}

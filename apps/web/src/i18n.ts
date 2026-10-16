@@ -1967,6 +1967,8 @@ const tr: Record<string, string> = {
   '{n} sources are included. Generate an answer when your selection is ready.': '{n} kaynak dahil. Seçiminiz hazır olduğunda yanıt üretin.',
   'No sources yet.': 'Henüz kaynak yok.',
   'Generate a new answer': 'Yeni yanıt üret',
+  'Read 1 more section in the report': 'Kalan 1 bölümü raporda okuyun',
+  'Read {n} more sections in the report': 'Kalan {n} bölümü raporda okuyun',
   'Generate source-linked answer': 'Kaynağa bağlı yanıt üret',
   'Search again': 'Yeniden ara',
   'Search providers': 'Sağlayıcılarda ara',

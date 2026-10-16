@@ -326,6 +326,9 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
         {claim.evidence_basis === 'abstract' && <span className="support-badge">{t('From abstract')}</span>}
         {chip(claim)}</span>)}
     </p>)}</div>}
+    {/* The sections past the thread's two stay in the report; say so, or a formula or result in them looks missing. */}
+    {sections.length > PROSE_SECTIONS && <p className="foot-note answer-more"><button type="button" className="link" onClick={() => onReportOpenChange(true)}>
+      {t(sections.length - PROSE_SECTIONS === 1 ? 'Read 1 more section in the report' : 'Read {n} more sections in the report', { n: count(sections.length - PROSE_SECTIONS) })}</button></p>}
     {answer.start_snapshot !== undefined && <MethodBox key={answer.id} researchId={researchId} answer={answer} reviewPending={ctx.reviewPending} onShowFunnel={opener => ctx.onPanel('funnel', opener)} />}
     <div className="answer-acts">
       {cited > 0 && <Button variant="outline" size="sm" className="answer-pill" onClick={e => ctx.onShowSources('cited', e.currentTarget)}><BookOpen size={15} aria-hidden />{t(cited === 1 ? 'View {n} cited source' : 'View {n} cited sources', { n: count(cited) })}</Button>}

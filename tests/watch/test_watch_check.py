@@ -133,6 +133,20 @@ def test_mixed_provider_failure_and_quota_later_units(tmp_path):
         assert card["provider_status"]["query:2"]["status"] == "quota_deferred"
 
 
+def test_watch_quota_is_stored_and_a_stored_reset_sends_nothing(api):
+    """A watch's OpenAlex budget refusal joins `openalex_budget_runs`; while that reset is ahead, no OpenAlex page is sent."""
+    api.state.handler = lambda request: httpx.Response(429, json={"error": {"code": "insufficient_quota"}},
+        headers={"x-ratelimit-remaining-usd": "0", "x-ratelimit-reset": "3600"})
+    first = create(api); turn(api)
+    row = api.conn.execute("SELECT run_id, refused FROM openalex_budget_runs").fetchone()
+    assert tuple(row) == (first["run_id"], 1) and api.store.openalex_budget_reset() > db.now()
+    sent = len(api.sent)
+    api.state.handler = None
+    second = now_check(api, first["watch_id"]); turn(api)
+    assert len(api.sent) == sent
+    assert read(api, second)["provider_status"]["query:0"]["status"] == "quota_deferred"
+
+
 @pytest.mark.parametrize("returned,cap,overshoot", [(2950,3000,0), (105,100,5)])
 def test_records_full_page_deferred_without_shrinking_and_overshoot(api, monkeypatch, returned, cap, overshoot):
     monkeypatch.setattr(policy, "WATCH_MAX_RECORDS", cap)

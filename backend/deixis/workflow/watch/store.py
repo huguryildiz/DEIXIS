@@ -427,9 +427,12 @@ class WatchStore:
             return {"replayed": False, "item_id": item_id}
 
     def record_read(self, check, unit, page, step, outcome, records, returned, dropped, connector,
-                    payload_path, payload_digest, file_digest, refusal=None, finish=True):
+                    payload_path, payload_digest, file_digest, refusal=None, finish=True, with_read=None):
+        """`with_read` is a write that commits or rolls back with this read (the shared OpenAlex budget record)."""
         dates = [r["publication_date"] for r in records if r["publication_date"]]
         with transaction(self.conn):
+            if with_read:
+                with_read()
             self.conn.execute("INSERT INTO watch_reads (id,check_id,research_id,step_id,unit_key,page_number,provider,"
                 "status,error_code,request_description,http_status,error_kind,returned_count,dropped_count,next_cursor,"
                 "oldest_publication_date,newest_publication_date,records_json,connector_json,raw_payload_path,"
@@ -618,6 +621,11 @@ class WatchStore:
                     counts["records_read"] += len(records)
                     for record in records:
                         self._announce(check, units[row["unit_key"]], record, counts)
+            # A later record of this check can merge two of its announcements: count what survived, not what was made.
+            survivors = self.conn.execute("SELECT kind,count(*) FROM watch_items WHERE check_id=? AND status!='merged'"
+                                          " GROUP BY kind", (check["id"],)).fetchall()
+            survivors = dict(survivors)
+            counts.update(new=survivors.get("new_record", 0), notices=survivors.get("notice", 0))
             baseline = json.loads(watch["baseline_json"])
             for unit in config["units"]:
                 key = unit["unit_key"]

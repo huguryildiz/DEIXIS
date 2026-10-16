@@ -74,6 +74,27 @@ def test_review_methodology_reports_corpus_counts_and_provider_dates_without_a_m
     ).fetchone()[0]).get("model_calls", 0) == 0
 
 
+def test_review_methodology_reads_the_fast_path_abstract_screening_inputs_beside_the_old_screening_one(lib):
+    store, reports, report_id, research_id = lib
+    run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = 'discovery'", (research_id,)).fetchone()[0]
+    for run_no in (0, 1):  # the fast path sends each SYNTHETIC batch twice; the sentence names its model once
+        step = store.step(run_id, f"abstract_screening:0:{run_no}", "model:abstract_screening")
+        store.insert_step_input(
+            step["id"], research_id, run_id, 0,
+            {"step_input_id": new_id("sti"), "task_type": "abstract_screening", "scope_revision": 1,
+             "skill_package_hash": "sha256:synthetic", "capabilities": {"supported_tasks": ["grounded_answer"]},
+             "budget": {"max_model_calls": 4}, "candidates": [{"candidate_id": "c1"}],
+             "model": {"connection": "fake", "requested_model": "fake-literature"}},
+            "base", "developer", "message", {},
+        )
+
+    write_review_methodology(store, reports, report_id, research_id, SNAPSHOT)
+
+    text = reports.section(report_id, "II")["draft"]["text"]
+    assert ("screening used fake-screening, fake-literature with screening capability; max_model_calls=4, "
+            "recorded screening input; max_model_calls=4.") in text
+
+
 @pytest.mark.parametrize("language", ["en", "tr"])
 def test_limitations_core_counts_saved_valid_claims_and_distinct_truncation(lib, language):
     store, reports, report_id, _ = lib

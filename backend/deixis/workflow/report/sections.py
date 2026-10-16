@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from deixis.domain import contracts, wording
 from deixis.domain.rules import RevisionConflict
+from deixis.storage.db import transaction
 from deixis.workflow.equations import equation_fallback_field
 from deixis.workflow.flow import OptionalStepFailed, RunStopped
 from deixis.workflow.report import assembly, gaps, review_methodology, selection
@@ -162,12 +163,40 @@ def _pause_detail(reports: ReportStore, report_id: str, section_ids: list[str],
     return {"sections": section_ids, "reasons": reasons}
 
 
+def _gap_rows(draft: dict[str, Any], gap_candidates: list[dict[str, Any]], step_input_id: str) -> list[dict[str, Any]]:
+    candidate_ids = {candidate["gap_id"] for candidate in gap_candidates}
+    # This three-field provenance shape is decided in P6 slice 1 P2, not in the plan.
+    return [gap | {"provenance": {"origin": "code" if gap["gap_id"] in candidate_ids else "model",
+                                  "section_id": "VI", "step_input_id": step_input_id}}
+            for gap in draft.get("gaps") or []]
+
+
+def _restore_vi_gaps(flow: ResearchFlow, reports: ReportStore, report_id: str, frozen_plan: dict[str, Any],
+                     snapshot: dict[str, Any], section: dict[str, Any]) -> None:
+    """Write the gaps of a VI saved valid before its gaps were (a save split by a crash before the two were joined).
+
+    Only when the report holds no gap row at all; rows that exist are never touched. They are rebuilt from the stored
+    validated draft and its step's input, with the provenance the normal path writes.
+    """
+    draft = section["draft"] or {}
+    step_input_id = (flow.store.step_output(section["step_id"]) or {}).get("step_input_id") if section["step_id"] else None
+    if not draft.get("gaps") or step_input_id is None:
+        return
+    candidates = gaps.generate_corpus_absence_candidates(snapshot, frozen_plan.get("axes", []))
+    with transaction(reports.conn):
+        if reports.conn.execute("SELECT 1 FROM report_gaps WHERE report_id = ? LIMIT 1", (report_id,)).fetchone():
+            return
+        reports.save_gaps(report_id, _gap_rows(draft, candidates, step_input_id))
+
+
 async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, Any], reports: ReportStore,
                        report_id: str, frozen_plan: dict[str, Any], snapshot: dict[str, Any],
                        section_id: str) -> str:
     section_key = reports.create_section(report_id, section_id, ORDINALS[section_id])
     section = reports.section(report_id, section_id)
     if section["status"] == "valid":
+        if section_id == "VI":
+            _restore_vi_gaps(flow, reports, report_id, frozen_plan, snapshot, section)
         return "valid"
     prior_summaries = _prior_summaries(flow, reports, report_id, snapshot)
     evidence = selection.select_evidence(flow.store, snapshot, section_id, frozen_plan, prior_summaries)
@@ -246,20 +275,16 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
     invalid = not validation.ok
     status = "failed" if invalid else "valid"
     reports.save_claims(section_key, draft["claims"], _citation_links(payload, draft))
-    reports.save_section_draft(
-        section_key, step["id"], status, draft,
-        {"ok": not invalid, "issues": issues, "truncated": evidence["truncated"],
-         **({"numbers": numbers} if numbers is not None else {})}, _word_count(draft),
-    )
-    if section_id == "VI" and not invalid:
-        candidate_ids = {candidate["gap_id"] for candidate in gap_candidates}
-        persisted = []
-        for gap in draft["gaps"]:
-            # This three-field provenance shape is decided in P6 slice 1 P2, not in the plan.
-            provenance = {"origin": "code" if gap["gap_id"] in candidate_ids else "model",
-                          "section_id": "VI", "step_input_id": output["step_input_id"]}
-            persisted.append(gap | {"provenance": provenance})
-        reports.save_gaps(report_id, persisted)
+    persisted = _gap_rows(draft, gap_candidates, output["step_input_id"]) if section_id == "VI" and not invalid else []
+    # A valid VI and its gaps are saved together: a resumed run skips a valid section, so it would never write them.
+    with transaction(reports.conn):
+        reports.save_section_draft(
+            section_key, step["id"], status, draft,
+            {"ok": not invalid, "issues": issues, "truncated": evidence["truncated"],
+             **({"numbers": numbers} if numbers is not None else {})}, _word_count(draft),
+        )
+        if persisted:
+            reports.save_gaps(report_id, persisted)
     return status
 
 

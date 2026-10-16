@@ -956,26 +956,69 @@ def create_app(
         try:
             yield
         finally:
-            scheduler_stop.set()
-            if scheduler_task:
-                await scheduler_task
-            if task:
-                await worker.stop()
-                if not app.state.owner:
-                    task.cancel()
+            # Every step runs even when an earlier one fails. Ownership goes last and only after all of them succeeded:
+            # a waiting instance takes over on release, so nothing may still be writing. After a failure the lock is
+            # kept; the process exit closes its descriptor, which releases it (not inherited by child processes).
+            import logging
+            failures: list[tuple[str, Exception]] = []
+
+            async def stop_scheduler() -> None:
+                scheduler_stop.set()
+                if scheduler_task:
+                    await scheduler_task
+
+            async def stop_worker() -> None:
+                if task:
+                    await worker.stop()
+                    if not app.state.owner:
+                        task.cancel()  # a takeover still waiting for the lock; its own cancellation is expected
+                    # Shielded: cancelling shutdown must not cancel the worker mid-write. The worker is drained either
+                    # way, and a cancellation of shutdown itself (its `cancelling()` count rose) is raised afterwards.
+                    current = asyncio.current_task()
+                    pending = current.cancelling() if current else 0
+                    while not task.done():
+                        try:
+                            await asyncio.shield(task)
+                        except asyncio.CancelledError:
+                            pass  # told apart below: the worker task ended cancelled, or shutdown was cancelled
+                        except Exception:  # noqa: BLE001 - the worker's own failure, read from the task below
+                            pass
+                    failed = None if task.cancelled() else task.exception()
+                    if current and current.cancelling() > pending:
+                        raise asyncio.CancelledError("shutdown cancelled while the worker drained") from failed
+                    if failed:
+                        raise failed
+
+            async def close_client(client: httpx.AsyncClient) -> None:
+                if http_client is None:
+                    await client.aclose()
+
+            async def close_library() -> None:
+                conn.close()
+
+            steps = [("watch scheduler", stop_scheduler), ("worker", stop_worker), ("equations", equations.stop),
+                     ("built-in embedding", builtin.stop), ("http client", lambda: close_client(http)),
+                     ("local http client", lambda: close_client(local_http)),
+                     *((f"adapter {name}", adapter.close) for name, adapter in adapter_map.items()),
+                     ("library", close_library)]
+            cancelled: asyncio.CancelledError | None = None
+            for name, step in steps:
                 try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+                    await step()
+                except asyncio.CancelledError as exc:
+                    # A cancelled step is incomplete too; the rest still run and the cancellation is raised at the end.
+                    logging.getLogger(__name__).warning("Shutdown step cancelled: %s", name)
+                    failures.append((name, exc))
+                    cancelled = cancelled or exc
+                except Exception as exc:  # noqa: BLE001 - the remaining steps still run; raised below
+                    logging.getLogger(__name__).exception("Shutdown step failed: %s", name)
+                    failures.append((name, exc))
+            if cancelled:
+                raise cancelled
+            if failures:
+                raise RuntimeError("Shutdown incomplete, worker ownership kept until the process exits: "
+                                   + ", ".join(name for name, _ in failures)) from failures[0][1]
             worker.release()
-            await equations.stop()
-            await builtin.stop()
-            if http_client is None:
-                await http.aclose()
-                await local_http.aclose()
-            for adapter in adapter_map.values():
-                await adapter.close()
-            conn.close()
 
     app = FastAPI(title="DEIXIS local API", version="0.1.0", lifespan=lifespan)
 

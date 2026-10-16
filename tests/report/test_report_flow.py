@@ -378,6 +378,63 @@ def test_report_crash_after_saved_result_reuses_it_on_resume(tmp_path, monkeypat
     assert len(_claims(store, reports, report_id, "IV")) == 1
 
 
+def test_report_crash_while_saving_vi_gaps_leaves_vi_unsaved_and_resume_writes_its_gaps(tmp_path, monkeypatch):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    original = ReportStore.save_gaps
+
+    def crash(self, report_id, gaps):
+        raise SystemExit("SYNTHETIC crash while saving VI gaps")
+
+    monkeypatch.setattr(ReportStore, "save_gaps", crash)
+    with pytest.raises(SystemExit):
+        asyncio.run(run_report(flow, run, scope))
+    # A valid VI without its gaps would be skipped on resume, so its gaps would never be written.
+    assert reports.section(report_id, "VI")["status"] == "running"
+    assert store.step(run["id"], "report_section:VI", "model:report_section")["status"] == "succeeded"
+    Worker(store, flow, tmp_path / "lock").recover()
+    monkeypatch.setattr(ReportStore, "save_gaps", original)
+    _resume_report(flow, store, run, scope)
+    assert reports.report(report_id)["status"] == "valid"
+    assert _section_calls(adapter)["VI"] == 1
+    assert store.conn.execute("SELECT 1 FROM report_gaps WHERE report_id = ? AND gap_id = 'gap9'",
+                              (report_id,)).fetchone()
+
+
+def test_resume_restores_the_gaps_of_a_vi_saved_valid_without_them_before_the_joint_save(tmp_path, monkeypatch):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    original_gaps, original_claims = ReportStore.save_gaps, ReportStore.save_claims
+
+    def crash_at_vii(self, section_key, claims, links):
+        if store.conn.execute("SELECT section_id FROM report_sections WHERE id = ?", (section_key,)).fetchone()[0] == "VII":
+            raise SystemExit("SYNTHETIC crash before VII claims")
+        return original_claims(self, section_key, claims, links)
+
+    # The state a split save left before the fix: VI valid with gaps in its draft, no report_gaps row.
+    monkeypatch.setattr(ReportStore, "save_gaps", lambda self, report_id, gaps: None)
+    monkeypatch.setattr(ReportStore, "save_claims", crash_at_vii)
+    with pytest.raises(SystemExit):
+        asyncio.run(run_report(flow, run, scope))
+    vi = reports.section(report_id, "VI")
+    assert vi["status"] == "valid" and [gap["gap_id"] for gap in vi["draft"]["gaps"]] == ["gap9"]
+    assert not store.conn.execute("SELECT 1 FROM report_gaps WHERE report_id = ?", (report_id,)).fetchone()
+    Worker(store, flow, tmp_path / "lock").recover()
+    monkeypatch.setattr(ReportStore, "save_gaps", original_gaps)
+    monkeypatch.setattr(ReportStore, "save_claims", original_claims)
+    _resume_report(flow, store, run, scope)
+    assert reports.report(report_id)["status"] == "valid"
+    assert _section_calls(adapter)["VI"] == 1
+    provenance = json.loads(store.conn.execute(
+        "SELECT provenance_json FROM report_gaps WHERE report_id = ? AND gap_id = 'gap9'", (report_id,),
+    ).fetchone()[0])
+    vi_input_id = store.step(run["id"], "report_section:VI", "model:report_section")["output"]["step_input_id"]
+    assert provenance == {"origin": "model", "section_id": "VI", "step_input_id": vi_input_id}
+    # Rows that exist are never rewritten by a later resume.
+    store.conn.execute("UPDATE report_gaps SET text = 'SYNTHETIC kept text' WHERE report_id = ?", (report_id,))
+    asyncio.run(run_report(flow, store.run(run["id"]), scope))
+    assert store.conn.execute("SELECT text FROM report_gaps WHERE report_id = ?", (report_id,)).fetchone()[0] \
+        == "SYNTHETIC kept text"
+
+
 def test_report_cancel_during_section_keeps_late_result_unapplied(tmp_path):
     flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
 

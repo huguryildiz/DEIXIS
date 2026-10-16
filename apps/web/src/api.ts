@@ -13,7 +13,7 @@ export type LineageDecision = 'link' | 'no_relation' | 'insufficient_evidence' |
 export type LineageEdgeState = 'present' | 'absent_in_read_list' | 'unresolved' | 'not_read'
 export type LineageReason = 'not_run' | 'no_pdf_text' | 'no_candidate' | 'no_relation' | 'insufficient_evidence'
   | 'rejected' | 'not_sent_budget' | 'step_failed' | 'human_removed' | 'cross_relation_only' | 'stale_only'
-export type LineageStaleReason = 'evidence_not_current' | 'scope_changed' | 'node_changed' | 'passage_changed'
+export type LineageStaleReason = 'evidence_not_current' | 'scope_changed' | 'node_changed' | 'passage_changed' | 'same_work'
 export type LineageCurrency = { current: boolean | null; stale_reasons: LineageStaleReason[]; unchecked: string[] }
 export type LineageNode = {
   source_version_id: string; work_id: string; source_key: string | null; title: string; year: number | null

@@ -156,7 +156,7 @@ async def build_vocabulary(extraction: Extraction, count: Callable[[str], Awaita
             continue
         for word in words_of[term["phrase"]]:
             if word not in word_counts:
-                word_counts[word] = await probe(word)
+                word_counts[word] = await probe(quoted(word))  # a word with punctuation is a literal, never syntax
 
     for term in terms:
         if term["dropped"]:

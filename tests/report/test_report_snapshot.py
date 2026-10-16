@@ -116,6 +116,21 @@ def test_snapshot_counts_unique_works_separately_from_included_sources(lib):
     assert corpus["included"] == 1
 
 
+def test_snapshot_counts_fast_path_abstract_screening_and_legacy_screening_once_per_candidate(lib):
+    store, _, _, research_id, _, _, table_id, _ = lib
+    run = store.create_run(research_id, "discovery", {}, None)
+    # Two runs of one SYNTHETIC abstract batch (the fast path sends each batch twice), and an old `screening` step.
+    for key, task_type, ids in (("abstract_screening:0:0", "abstract_screening", ["c1", "c2"]),
+                                ("abstract_screening:0:1", "abstract_screening", ["c1", "c2"]),
+                                ("screening", "screening", ["c2", "c3"])):
+        step = store.step(run["id"], key, f"model:{task_type}")
+        store.insert_step_input(step["id"], research_id, run["id"], 0,
+                                {"step_input_id": new_id("sti"), "task_type": task_type, "scope_revision": 1,
+                                 "skill_package_hash": "sha256:0", "candidates": [{"candidate_id": i} for i in ids]},
+                                "base", "developer", "message", {})
+    assert build_snapshot(store, research_id, table_id)["corpus"]["screened"] == 3
+
+
 def test_snapshot_freezes_cell_revision_value_and_stored_evidence_after_later_edit(lib):
     store, reports, tables, research_id, source_id, passage_id, table_id, column_id = lib
     first_revision = _fill(lib)

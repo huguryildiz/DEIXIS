@@ -430,7 +430,8 @@ def current_passage_ids(store: Store, to: str) -> set[str]:
 def stale_link_reasons(store: Store, table_id: str) -> dict[str, tuple[str, tuple[str, ...]]]:
     """L5 active-link policy: evidence currency, then model scope and nodes.
 
-    Mention-only changes and selection revisions do not make an active link stale.
+    Mention-only changes and selection revisions do not make an active link stale. A link whose two ends were later
+    joined into one work is stale too: the decision stays in history, out of the current graph.
     """
     with transaction(store.conn):
         snapshot = build_snapshot(store, table_id)
@@ -442,6 +443,8 @@ def stale_link_reasons(store: Store, table_id: str) -> dict[str, tuple[str, tupl
             evidence = lineage.evidence(revision["id"])
             current = current_passage_ids(store, link["to_source_version_id"])
             reasons = ["evidence_not_current"] if any(e["passage_id"] not in current for e in evidence) else []
+            if lineage._work(link["from_source_version_id"]) == lineage._work(link["to_source_version_id"]):
+                reasons.append("same_work")
             if revision["author"] == "model":
                 inputs = json.loads(revision["inputs_json"] or "{}").get("inputs", {})
                 reasons.extend(scope_node_reasons(store, table_id, revision["scope_revision"], snapshot.scope_revision,

@@ -18,7 +18,7 @@ from deixis.models import prompt
 from deixis.providers.common import SearchOutcome
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
-from deixis.workflow.candidates import run as candidates, terms
+from deixis.workflow.candidates import hits as candidates_hits, run as candidates, terms
 from deixis.workflow.candidates.store import CandidateStore
 from deixis.workflow.views import research_view
 from deixis.workflow.worker import Worker
@@ -429,6 +429,36 @@ def test_manual_resume_resends_an_unknown_model_step_once_with_existing_counter(
     assert resume(lib, run)["status"] == "completed"
     assert lib.store.run(run["id"])["usage"]["model_calls"] == 3
     assert len(lib.requests) == 1
+
+
+def test_a_plan_stored_between_two_joins_is_recorded_on_resume(lib, monkeypatch):
+    # A5-1: the plan merges on today's works; a join after the stored plan must not make the resume refuse it.
+    lib.provider(records=[provider_record(f"SYNTHETIC-{n}") for n in "abc"])
+    run = queue_kill(lib)
+    def join(keep, drop):
+        work = lambda svid: lib.conn.execute("SELECT work_id FROM source_versions WHERE id = ?", (svid,)).fetchone()[0]
+        with db.transaction(lib.conn):
+            lib.store._join_works(work(keep), work(drop))
+    original_merge, original_record = candidates_hits.merge_and_cut, lib.flow._candidate_record
+    def merge(per_query, keep):
+        a, b, _ = per_query[0]
+        join(a["source_version_id"], b["source_version_id"])
+        return original_merge(lib.candidate_store.query_records(search(lib, run)["id"]), keep)
+    def record(run_, key, output):
+        original_record(run_, key, output)
+        if key == "kill_search_plan":
+            lib.store.update_run(run["id"], status="pause_requested")
+    monkeypatch.setattr(candidates_hits, "merge_and_cut", merge)
+    monkeypatch.setattr(lib.flow, "_candidate_record", record)
+    assert execute(lib, run)["status"] == "paused"
+    plan = lib.store.existing_step(run["id"], "kill_search_plan")["output"]["merged"]
+    assert (plan["found"], plan["kept_count"], plan["duplicates"]) == (3, 2, 1)
+    a, _, c = (h["source_version_id"] for h in lib.candidate_store.query_records(search(lib, run)["id"])[0])
+    join(a, c)
+    monkeypatch.setattr(candidates_hits, "merge_and_cut", original_merge)
+    assert resume(lib, run)["status"] == "completed"
+    assert [h["source_version_id"] for h in lib.candidate_store.hits(search(lib, run)["id"])] == [
+        h["source_version_id"] for h in plan["kept"]]
 
 
 @pytest.mark.parametrize("change", ["text", "gone"])

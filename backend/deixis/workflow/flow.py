@@ -4828,12 +4828,18 @@ class ResearchFlow:
         async def send(request):
             return await self.deps.http.send(request, follow_redirects=False)
 
+        def note_openalex_budget(rate_limit, skipped):
+            with transaction(self.store.conn):
+                self.store.note_openalex_budget(run["research_id"], run["id"], acquisition.budget_reset_at(rate_limit),
+                                                skipped=skipped)
+
         callbacks = Callbacks(gate=gate, run=lambda: self.store.run(run["id"]),
             add_usage=lambda key, amount: self.store.add_usage(run["id"], key, amount),
             step=lambda key, kind: self.store.step(run["id"], key, kind),
             existing_step=lambda key: self.store.existing_step(run["id"], key),
             start_step=self.store.start_step, send=send, host_gate=fetch_module.host_gate,
-            headers=self.deps.http.headers)
+            headers=self.deps.http.headers, openalex_budget=lambda: self._openalex_budget_of(run["id"]),
+            note_openalex_budget=note_openalex_budget)
         await watch_run(watches, check, callbacks, self.deps.settings)
 
     # ---- owner-requested review ---------------------------------------------------------

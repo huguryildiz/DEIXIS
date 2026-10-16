@@ -354,6 +354,63 @@ def test_record_query_replay_uses_persisted_order_without_upsert_and_checks_reco
     assert state(lib) == before
 
 
+def join(lib, keep, drop):
+    with db.transaction(lib.conn):
+        lib.store._join_works(keep["work_id"], drop["work_id"])
+
+
+def three_queries(lib):
+    s = start(lib)
+    return s, [query(lib, s, [provider_record(f"SYNTHETIC-{n}")], position=n)[0] for n in (1, 2, 3)]
+
+
+def test_works_joined_after_their_queries_merge_as_one_hit(lib):
+    # A5-1: query records kept the query-time work, so two records of one joined work took two assessment slots.
+    s, (a, b, _) = three_queries(lib)
+    join(lib, a, b)
+    merged = merge_and_cut(lib.candidate_store.query_records(s["id"]))
+    assert (merged["found"], merged["kept_count"], merged["duplicates"]) == (3, 2, 1)
+    assert b["source_version_id"] not in {h["source_version_id"] for h in merged["kept"]}
+    lib.candidate_store.record_hits(s["id"], merged, {h["source_version_id"]: "abstract" for h in merged["kept"]})
+    assert lib.candidate_store.kill_search(s["id"])["duplicates"] == 1
+    stored = lib.conn.execute("SELECT work_id FROM kill_search_query_records WHERE kill_search_id = ? AND position = 2",
+                              (s["id"],)).fetchone()[0]
+    assert stored == b["work_id"]  # the query-time identity stays as it was recorded
+
+
+def test_forged_merges_are_refused_without_a_stored_plan(lib):
+    s, records = three_queries(lib)
+    plan = merge_and_cut(lib.candidate_store.query_records(s["id"]))
+    k = plan["kept"]
+    elsewhere = query(lib, start(lib), [provider_record("SYNTHETIC-other")])[0]
+    depths = {r["source_version_id"]: "abstract" for r in records}
+    for forged in (plan | {"kept": k[:1], "kept_count": 1, "duplicates": 2},  # three distinct works as one hit
+                   plan | {"kept": k[:2] + [k[2] | {"work_id": elsewhere["work_id"]}]},  # another work's identity
+                   plan | {"duplicates": 1}):
+        with pytest.raises(InvalidCandidateInput, match="Merge differs"):
+            lib.candidate_store.record_hits(s["id"], forged, depths)
+    lib.candidate_store.record_hits(s["id"], plan, depths)
+
+
+def test_a_stored_plan_step_is_the_only_merge_accepted(lib):
+    # The stored plan was made between two joins: it matches neither query-time nor today's identities.
+    s, (a, b, c) = three_queries(lib)
+    join(lib, a, b)
+    plan = merge_and_cut(lib.candidate_store.query_records(s["id"]))
+    step = lib.store.step(s["run_id"], "kill_search_plan", "kill_search_plan")
+    lib.store.start_step(step["id"])
+    lib.store.finish_step(step["id"], "succeeded", output={"merged": plan, "hits": []})
+    join(lib, a, c)
+    today = merge_and_cut(lib.candidate_store.query_records(s["id"]))
+    depths = {r["source_version_id"]: "abstract" for r in (a, b, c)}
+    assert today != plan
+    for forged in (today, plan | {"duplicates": 0}):
+        with pytest.raises(InvalidCandidateInput, match="Merge differs"):
+            lib.candidate_store.record_hits(s["id"], forged, depths)
+    lib.candidate_store.record_hits(s["id"], plan, depths)
+    assert lib.candidate_store.kill_search(s["id"])["kept"] == 2
+
+
 def test_failed_unknown_queries_cannot_have_records_and_merge_cannot_be_repeated_even_when_empty(lib):
     s = start(lib)
     for status in ("failed", "outcome_unknown"):

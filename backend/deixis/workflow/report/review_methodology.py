@@ -7,6 +7,7 @@ from typing import Any
 
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.chaining import request_outcomes
+from deixis.workflow.report.snapshot import SCREENING_TASKS
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.store import Store
 
@@ -266,7 +267,7 @@ def _search_provenance(store: Store, research_id: str, scope_revision: int) -> t
 def _screening_provenance(store: Store, research_id: str, scope_revision: int) -> tuple[str, str]:
     payloads = [json.loads(row["payload_json"]) for row in store.conn.execute(
         "SELECT payload_json FROM step_inputs WHERE research_id = ? AND scope_revision = ?"
-        " AND task_type = 'screening' ORDER BY created_at, id", (research_id, scope_revision),
+        " AND task_type IN (?, ?) ORDER BY created_at, id", (research_id, scope_revision, *SCREENING_TASKS),
     )]
     models, criteria = [], []
     for payload in payloads:

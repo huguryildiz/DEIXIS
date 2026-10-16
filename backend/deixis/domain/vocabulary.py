@@ -78,6 +78,12 @@ def detect_language(question: str, language_hint: str | None) -> str:
     return "other" if share == 0 and len(words) >= LONG_QUESTION_WORDS else "en"
 
 
+# What a provider reads as an operator, in any case: quotes, brackets, field colons, |, ~, ^, backslash, wildcards, a
+# +/- opening a word, and the words AND/OR/NOT/ANDNOT. A hyphen inside a word, digits, dots, slashes and apostrophes
+# are ordinary science text and pass. Looser than the model-term rule (D92) in domain/contracts.py, which stays as is.
+USER_TERM_SYNTAX = re.compile(r'["“”()\[\]{}*?:|~^\\]|(?<!\S)[+-]|\b(?:and|or|not|andnot)\b', re.IGNORECASE)
+
+
 def parse_key_terms(key_terms: str) -> Extraction:
     """The user's own English terms: semicolon between blocks, comma between synonyms of one block.
 
@@ -100,9 +106,14 @@ def parse_key_terms(key_terms: str) -> Extraction:
                 raise ValueError(f"More than {MAX_KEY_TERM_GROUPS} blocks; use 'claim:' or 'not:' for the side lists")
             position = BLOCK_NAMES[len(positions)]
             positions.append(position)
-        terms = [" ".join(t.split()).lower() for t in text.split(",")]
+        terms = [" ".join(t.split()) for t in text.split(",")]
         if not any(terms) or not all(terms):
             raise ValueError(f"An empty term in the key-term group {group.strip()!r}")
+        for term in terms:  # checked before lowercasing, so a bare AND is seen; no operator reaches a probe or a query
+            if USER_TERM_SYNTAX.search(term):
+                raise ValueError(f"The key term {term!r} holds query syntax (a quote, bracket, colon, | ~ ^ \\, a leading "
+                                 "+ or -, or the word AND/OR/NOT)")
+        terms = [term.lower() for term in terms]
         phrases += [Phrase(term, position, "key_terms") for term in terms]
     return _extraction("en", phrases, "user")
 

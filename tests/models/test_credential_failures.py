@@ -90,7 +90,7 @@ def test_every_cause_code_has_a_sentence_and_one_the_page_words():
 
 @pytest.mark.parametrize("error", [OSError(28, "No space left on device"), PermissionError(13, "Permission denied")])
 def test_a_key_file_that_cannot_be_written_is_not_a_dotenv_or_an_exception(error, no_keychain, client, monkeypatch, caplog):  # noqa: F811
-    def refuse():
+    def refuse(keys=None):
         raise error
 
     with caplog.at_level("WARNING", logger="deixis.keys.credentials"):

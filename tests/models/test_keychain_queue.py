@@ -201,6 +201,53 @@ def test_a_delete_that_finishes_late_removes_the_key_from_the_app(gate, fast, cl
     assert not entry(client)["configured"] and not os.environ.get(KEY) and gate.items == {}
 
 
+class DenyingDeleteKeyring(GateKeyring):
+    """What keyring 25.7.0's macOS backend does with a refused, locked or cancelled delete: every keychain error becomes a
+    PasswordDeleteError, the same type as for an item that is not there. The item stays."""
+
+    def delete_password(self, service, username):
+        if (service, username) not in self.items:
+            raise PasswordDeleteError(username)
+        try:
+            raise OSError("User canceled the operation. (-128)")
+        except OSError as cause:
+            raise PasswordDeleteError("Can't delete password in keychain") from cause
+
+
+def test_a_refused_delete_is_not_taken_for_an_absent_key(client):
+    backend = DenyingDeleteKeyring()
+    keyring.set_keyring(backend)
+    assert client.put(f"/api/credentials/{KEY}", json={"value": V1}).status_code == 200
+    refused = client.delete(f"/api/credentials/{KEY}")
+    assert refused.status_code == 503 and refused.json()["code"] == "keychain_denied"
+    assert backend.items[("DEIXIS", KEY)] == V1 and os.environ[KEY] == V1 and entry(client)["configured"]
+    del backend.items[("DEIXIS", KEY)]  # gone from the keychain by other means: the next removal finds nothing and succeeds
+    assert client.delete(f"/api/credentials/{KEY}").status_code == 200 and not os.environ.get(KEY)
+
+
+def test_a_second_save_while_the_first_waits_on_the_keychain_is_refused_and_the_shell_key_comes_back(gate, monkeypatch):
+    monkeypatch.setenv(KEY, "shell-source-key-value")
+    gate.close_for, _ = {"set"}, gate.gate.clear()
+
+    async def two_saves():
+        first = asyncio.get_running_loop().create_task(credentials.save_async(KEY, V1))
+        while not gate.entered.is_set():
+            await asyncio.sleep(0.01)
+        with pytest.raises(credentials.KeychainBusy):
+            await credentials.save_async(KEY, V2)
+        with pytest.raises(credentials.KeychainBusy):
+            await credentials.delete_async(KEY)
+        gate.gate.set()
+        await first
+
+    asyncio.run(two_saves())
+    assert os.environ[KEY] == V1 and credentials._shell_values == {KEY: "shell-source-key-value"}
+    gate.close_for.clear()
+    credentials.save(KEY, V2)  # once the first has finished, the next change goes in and keeps the shell key as it was
+    credentials.delete(KEY)
+    assert os.environ[KEY] == "shell-source-key-value"
+
+
 def test_every_keychain_call_runs_on_one_thread_in_turn(gate, client):
     """Finding the backend, asking its priority, and reading, writing and deleting a key: all on the one worker thread."""
     seen = {}
@@ -469,6 +516,23 @@ def test_a_key_file_that_is_repaired_is_read_before_the_next_change(no_keychain,
         assert c.get("/api/credentials").json()["keychain"]["file_error"] is False
     finally:
         c.__exit__(None, None, None)
+
+
+def test_a_key_the_file_could_not_take_is_not_saved_by_a_later_change(no_keychain, client, tmp_path, monkeypatch):
+    path = tmp_path / "data" / credentials.FILE_STORE
+    assert client.put("/api/credentials/file-store", json={"enabled": True}).status_code == 200
+    assert client.put(f"/api/credentials/{KEY}", json={"value": V1}).status_code == 200
+
+    def full(keys=None):
+        raise OSError(28, "No space left on device")
+
+    with monkeypatch.context() as refusing:
+        refusing.setattr(credentials, "_write_file_store", full)
+        assert client.put(f"/api/credentials/{KEY}", json={"value": V2}).json()["code"] == "file_write_failed"
+        assert client.delete(f"/api/credentials/{KEY}").json()["code"] == "file_write_failed"
+    assert credentials._session == {KEY: V1} and os.environ[KEY] == V1
+    assert client.put("/api/credentials/S2_API_KEY", json={"value": "s2-source-good-key"}).status_code == 200
+    assert json.loads(path.read_text())["keys"] == {KEY: V1, "S2_API_KEY": "s2-source-good-key"}  # neither V2 nor a removal
 
 
 # ---- E5: what a failed Secret Service connection means (keyring 25.7.0 wraps it in RuntimeError) -------------------------

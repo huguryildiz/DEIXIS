@@ -23,6 +23,7 @@ export const rejectionLabels: Record<string, string> = {
 export const staleLabels: Record<LineageStaleReason, string> = {
   evidence_not_current: 'a cited passage is no longer current', scope_changed: "the question's scope changed",
   node_changed: 'a development cell changed', passage_changed: 'a passage changed',
+  same_work: 'the two versions belong to the same work',
 }
 export const outcomeLabels: Record<LineageStepOutcome['kind'], string> = {
   failed_pair: 'the model call for this pair failed', unsent_pair: 'not sent: the call budget or message size did not allow it',

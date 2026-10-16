@@ -8,6 +8,10 @@ from typing import Any
 from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore
 
+# The step inputs a report counts as screening: the fast path's `abstract_screening`, and the old `screening` step a
+# research made before it. A record both read counts once.
+SCREENING_TASKS = ("screening", "abstract_screening")
+
 
 def included_table_rows(store: Store, research_id: str, table_id: str) -> list[str]:
     """Use the same active-row and included-source boundary for snapshots and later comparisons."""
@@ -148,8 +152,8 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
     screened = store.conn.execute(
         "SELECT COUNT(DISTINCT json_extract(candidate.value, '$.candidate_id')) FROM step_inputs i,"
         " json_each(i.payload_json, '$.candidates') candidate"
-        " WHERE i.research_id = ? AND i.scope_revision = ? AND i.task_type = 'screening'",
-        (research_id, revision),
+        " WHERE i.research_id = ? AND i.scope_revision = ? AND i.task_type IN (?, ?)",
+        (research_id, revision, *SCREENING_TASKS),
     ).fetchone()[0]
     result = {
         "table_revision": table["version"],

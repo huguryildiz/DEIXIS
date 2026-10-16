@@ -88,6 +88,17 @@ def test_exact_doi_merges_seen_rows_keeps_item_and_dismissal(api):
     assert len(api.watches.items(api.rid, None)) == 2 and not api.watches.items(api.rid)
 
 
+def test_new_count_follows_announcements_merged_later_in_the_same_check(api):
+    api.state.payload = page()
+    first = create(api); turn(api)
+    second = now_check(api, first["watch_id"])
+    inject(api, second, [record("openalex", "A", doi="10.1000/join"),
+                         record("openalex", "B", identifiers={"pmid": "123"}),
+                         record("openalex", "C", doi="10.1000/join", identifiers={"pmid": "123"})])
+    assert len(api.watches.items(api.rid)) == 1
+    assert read(api, second)["counts"]["new"] == 1
+
+
 def test_arxiv_versions_and_named_publication_stay_separate_with_relations(api):
     first = create(api)
     v1 = record("arxiv", "2301.00001v1", doi="10.48550/arxiv.2301.00001", merge_by_doi=False)

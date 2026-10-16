@@ -43,6 +43,11 @@ def test_what_cannot_be_converted_is_refused(latex):
     assert to_omml(latex) is None
 
 
+@pytest.mark.parametrize("latex", [r"\cancel{x}+y=y", r"\bcancel{x}", r"\xcancel{x}", r"\sout{x}", r"\boxed{x}"])
+def test_a_strike_or_box_is_refused_not_flattened_to_plain_text(latex):
+    assert to_omml(latex) is None
+
+
 def test_a_docx_paragraph_writes_equations_and_keeps_refused_math_as_text():
     data = ooxml.docx([ooxml.paragraph(*ooxml.with_math(r"SYNTHETIC $p_{ij}=e^{-\alpha L}$ and $\badcommand{x}$ end"))])
     document = ET.fromstring(zipfile.ZipFile(io.BytesIO(data)).read("word/document.xml"))

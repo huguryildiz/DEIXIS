@@ -33,6 +33,10 @@ class Callbacks:
     headers: object = None
     clock: object = None
     sleep: object = asyncio.sleep
+    # The stored OpenAlex daily budget (`openalex_budget_runs`), shared with the other OpenAlex paths: one returns the
+    # budget (`.exhausted`), the other records a refusal from its rate-limit headers inside the read's transaction.
+    openalex_budget: object = None
+    note_openalex_budget: object = None
 
     def __post_init__(self):
         if self.clock is None:
@@ -63,12 +67,12 @@ async def no_gate():
     yield
 
 
-def observations(config, rows):
+def observations(config, rows, quota=()):
     observed = {"units": {}, "partial_reasons": [], "rolled_over": config["rolled_over"],
                 "rolled_over_units": config["rolled_over_units"],
                 "skipped_units": config["skipped_units"]}
     statuses = {}
-    quota = set()
+    quota = set(quota)
     deferred = None
     for unit in config["units"]:
         key, provider = unit["unit_key"], unit["provider_id"]
@@ -136,6 +140,9 @@ async def run(watches, check, callbacks, settings):
         prior = [r for r in rows if r["unit_key"] == unit["unit_key"]]
         quota.update(r["provider"] for r in rows if r["error_kind"] == "quota_exhausted")
         if unit["provider_id"] in quota:
+            continue
+        if unit["provider_id"] == "openalex" and callbacks.openalex_budget and callbacks.openalex_budget().exhausted:
+            quota.add("openalex")
             continue
         if any(r["status"] not in ("completed", "zero_results") for r in prior):
             if prior[-1]["status"] in ("deferred_budget", "deferred_deadline"):
@@ -207,11 +214,15 @@ async def run(watches, check, callbacks, settings):
                 (settings.payloads_dir / payload_path).write_bytes(encoded)
                 payload_digest = canonical.sha256_hex(outcome.raw_payload)
                 file_digest = hashlib.sha256(encoded).hexdigest()
+            budget_note = None
+            if outcome.error_kind == "quota_exhausted" and unit["provider_id"] == "openalex" and callbacks.note_openalex_budget:
+                def budget_note(outcome=outcome):
+                    callbacks.note_openalex_budget(outcome.rate_limit, outcome.http_status is None)
             watches.record_read(check, unit, page, step, outcome, records,
                 dispatched.returned_count if dispatched else len(records), dispatched.dropped_records if dispatched else 0,
                 dispatched.connector | {"sort_sent": ("publication_date:desc" if unit["date_sorted"] else unit.get("sort"))
                     if transport.sent else None} if dispatched else None,
-                payload_path, payload_digest, file_digest, transport.reason)
+                payload_path, payload_digest, file_digest, transport.reason, with_read=budget_note)
             if transport.reason:
                 if transport.reason not in ("deferred_budget", "deferred_deadline"):
                     return
@@ -224,5 +235,5 @@ async def run(watches, check, callbacks, settings):
             cursor = outcome.next_cursor
             if page < page_limit and unit["page_gap"]:
                 await callbacks.sleep(unit["page_gap"])
-    observed, statuses = observations(config, watches.reads(check))
+    observed, statuses = observations(config, watches.reads(check), quota)
     watches.complete_check(check, observed, statuses)

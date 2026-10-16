@@ -297,3 +297,17 @@ def test_run_states_through_pause_resume_cancel_recovery_and_worker_error(api):
     second = now_check(api, command["watch_id"])
     control(api, second, "cancel")
     assert read(api, second)["state"] == "cancelled"
+
+
+def test_quota_read_and_openalex_budget_record_commit_together(api, monkeypatch):
+    # A crash while the shared budget is written must not leave a quota read the budget never heard of.
+    api.state.handler = lambda request: httpx.Response(429, json={"error": {"code": "insufficient_quota"}},
+        headers={"x-ratelimit-remaining-usd": "0"})
+    command = create(api)
+    def crash(*args, **kwargs):
+        raise Crash("SYNTHETIC interruption while the OpenAlex budget is recorded")
+    monkeypatch.setattr(type(api.store), "note_openalex_budget", crash)
+    with pytest.raises(Crash): turn(api)
+    assert not api.watches.reads(api.watches.check(api.rid, command["check_id"]))
+    assert api.conn.execute("SELECT count(*) FROM openalex_budget_runs").fetchone()[0] == 0
+    assert api.store.existing_step(command["run_id"], "watch:0:page:1")["status"] == "running"

@@ -634,3 +634,18 @@ def test_first_five_shown_and_all_returned(lib):
 def test_baseline_makes_no_model_or_search_call(lib):
     field(lib)
     assert lib.adapter.calls == [] and lib.seen == []
+
+
+def test_link_whose_ends_later_join_one_work_leaves_the_current_graph(lib):
+    # A3-1: the same-work check ran only when the link was written; a later join of the two works made it stale silently.
+    added = human_add(lib)
+    assert len(links(read(lib))) == 1
+    work = lambda letter: lib.conn.execute("SELECT work_id FROM source_versions WHERE id = ?", (lib.ids[letter],)).fetchone()[0]
+    with db.transaction(lib.conn):
+        lib.store._join_works(work("a"), work("b"))
+    link_id = lib.lineage.link(lib.tid, lib.ids["a"], lib.ids["b"])["id"]
+    assert stale_link_reasons(lib.store, lib.tid) == {link_id: (added, ("same_work",))}
+    value = read(lib)
+    assert links(value) == [] and value["counts"]["current_links"] == 0
+    assert [l["link_id"] for l in value["history"]["stale"] + value["history"]["out_of_scope"]] == [link_id]
+    assert lib.lineage._current(lib.lineage.link(lib.tid, lib.ids["a"], lib.ids["b"]))["id"] == added

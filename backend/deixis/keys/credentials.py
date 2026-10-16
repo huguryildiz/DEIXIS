@@ -107,6 +107,7 @@ dotenv_path: Path | None = None
 _session: dict[str, str] = {}  # keys kept in memory when no keychain backend exists (A6); also what the file store holds
 _data_dir: Path | None = None  # where the file store lives
 _settling: dict[str, asyncio.Task[None]] = {}  # keys whose last keychain call timed out and is still unfinished (E5)
+_changing: set[str] = set()  # keys with a save or removal from the API in progress; a second change to one is refused
 _found_cache: "_Found | None" = None  # what the last backend discovery found; a discovery that failed is not kept
 _failed_at: float | None = None  # when the last discovery found the keychain unreachable; the next one looks again, at most every RETRY_AFTER
 _keys_pending = False  # start-up could not reach the keychain, so no saved key was read; they are read when it is found
@@ -464,13 +465,13 @@ def file_store_enabled() -> bool:
     return _data_dir is not None and (_data_dir / FILE_STORE).is_file()
 
 
-def _write_file_store() -> None:
+def _write_file_store(keys: dict[str, str] | None = None) -> None:
     assert _data_dir is not None
     _data_dir.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=_data_dir, prefix=".keys.")  # created 0600
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump({"keys": _session}, handle)
+            json.dump({"keys": _session if keys is None else keys}, handle)
         os.chmod(tmp, 0o600)
         os.replace(tmp, _data_dir / FILE_STORE)
     except BaseException:
@@ -542,21 +543,25 @@ def _keychain_delete(env: str) -> None:
     try:
         keyring.delete_password(SERVICE, env)
     except PasswordDeleteError:
-        pass  # already absent from the keychain
+        # Backends raise this for an absent item and also for a refused, locked or cancelled delete (macOS turns every
+        # keychain error into it): the item is taken as gone only when a read finds none, otherwise the delete failed.
+        if keyring.get_password(SERVICE, env) is not None:
+            raise
 
 
 def _session_set(env: str, value: str) -> None:
+    """The file is written first: a change it cannot hold never reaches memory, where a later write would save it."""
     _guard_file_store()
-    _session[env] = value
     if file_store_enabled():
-        _write_file_store()
+        _write_file_store({**_session, env: value})
+    _session[env] = value
 
 
 def _session_delete(env: str) -> None:
     _guard_file_store()
-    _session.pop(env, None)
     if file_store_enabled():
-        _write_file_store()
+        _write_file_store({k: v for k, v in _session.items() if k != env})
+    _session.pop(env, None)
 
 
 async def _io(env: str, keychain_fn: Any, session_fn: Any, *args: Any) -> Any:
@@ -770,7 +775,7 @@ async def check_save(env: str) -> None:
 def _prepare_save(env: str, value: str) -> str | None:
     if not MANAGED_KEYS[env].pair and not key_verification.is_valid_key(value):
         raise ValueError("not a valid key")  # the routes refuse these first; this keeps one out of the environment for good
-    if env in _settling:
+    if env in _settling or env in _changing:
         raise KeychainBusy()
     _refuse_shell_key(env)
     return status(env)["source"]
@@ -800,17 +805,29 @@ def save(env: str, value: str) -> None:
     _finish_save(env, value, source)
 
 
+@contextlib.contextmanager
+def _change(env: str) -> Any:
+    """While a change from the API awaits its store, another change to the same key is refused (`KeychainBusy`): the source
+    each one read before awaiting stays true, so a second save never records the first saved key as the shell's."""
+    _changing.add(env)
+    try:
+        yield
+    finally:
+        _changing.discard(env)
+
+
 async def save_async(env: str, value: str) -> None:
     """`save` for the API: the keychain call goes through the queue with a time limit (E5)."""
     source = _prepare_save(env, value)
     if source == "dotenv":
         return _save_dotenv(env, value)
-    await _io(env, _keychain_set, _session_set, env, value)
-    _finish_save(env, value, source)
+    with _change(env):
+        await _io(env, _keychain_set, _session_set, env, value)
+        _finish_save(env, value, source)
 
 
 def _prepare_delete(env: str) -> str | None:
-    if env in _settling:
+    if env in _settling or env in _changing:
         raise KeychainBusy()
     source = status(env)["source"]
     _broken.discard(env)
@@ -841,8 +858,9 @@ def delete(env: str) -> None:
 async def delete_async(env: str) -> None:
     if _prepare_delete(env) == "dotenv":
         return
-    await _io(env, _keychain_delete, _session_delete, env)
-    _finish_delete(env)
+    with _change(env):
+        await _io(env, _keychain_delete, _session_delete, env)
+        _finish_delete(env)
 
 
 # One short request per scholarly source, sent the way its adapter sends the key. Each source answers a made-up key

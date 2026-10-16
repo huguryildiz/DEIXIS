@@ -106,6 +106,23 @@ def test_malformed_key_terms_are_refused(key_terms):
         vocabulary.parse_key_terms(key_terms)
 
 
+@pytest.mark.parametrize("key_terms", ['alpha" | "beta; routing', "alpha | beta; routing", "alpha (beta); routing",
+                                       "alpha; title:routing", "claim: a*; routing", "AND; routing", "alpha, or; routing",
+                                       "alpha And beta; routing", "alpha; routing not beta", "+alpha; routing",
+                                       "alpha; -routing", "alpha~2; routing", "alpha^2; routing", "alpha\\beta; routing"])
+def test_key_terms_with_query_syntax_are_refused(key_terms):
+    with pytest.raises(ValueError, match="query syntax"):
+        vocabulary.parse_key_terms(key_terms)
+    with pytest.raises(ValueError, match="query syntax"):
+        vocabulary.extract("Une question", "fr", key_terms)
+
+
+def test_ordinary_scientific_punctuation_in_key_terms_passes():
+    extraction = vocabulary.parse_key_terms("multi-hop QA, 5G/6G networks; Bob's e.g. 3.5 dB gain, C++ kernels")
+    assert extraction.blocks["setting"] == ["multi-hop qa", "5g/6g networks"]
+    assert extraction.blocks["task"] == ["bob's e.g. 3.5 db gain", "c++ kernels"]
+
+
 def phrases(question):
     return [(p.text, p.position) for p in vocabulary._phrases(question)]
 
@@ -248,6 +265,13 @@ def built_for(question, counts=None, default=0, key_terms=None, language_hint=No
     asked, count = counter(counts, default)
     extraction = vocabulary.extract(question, language_hint, key_terms)
     return asked, asyncio.run(build_vocabulary(extraction, count))
+
+
+def test_a_punctuated_key_term_word_is_probed_as_a_quoted_literal_never_bare():
+    asked, built = built_for("Une question", key_terms="C++ kernels; routing", default=5, language_hint="fr")
+    assert '"c++"' in asked and "c++" not in asked
+    assert all(probe["query"] != "c++" for probe in built["probes"])
+    assert built["terms"][0]["root"] in ("c++", "kernels")
 
 
 def test_a_phrase_no_record_holds_is_dropped_and_the_root_is_the_least_frequent_word():

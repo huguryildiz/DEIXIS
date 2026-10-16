@@ -411,10 +411,13 @@ class CandidateStore:
         return self._rows("SELECT * FROM kill_search_queries WHERE kill_search_id = ? ORDER BY position", (kill_search_id,))
 
     def _query_records(self, kill_search_id, position) -> list[dict]:
-        return self._rows("SELECT provider, source_version_id, work_id FROM kill_search_query_records"
-                          " WHERE kill_search_id = ? AND position = ? ORDER BY rank", (kill_search_id, position))
+        # A record keeps the work it had at query time; a later join of two works shows through the current version row.
+        return self._rows("SELECT r.provider, r.source_version_id, v.work_id FROM kill_search_query_records r"
+                          " JOIN source_versions v ON v.id = r.source_version_id"
+                          " WHERE r.kill_search_id = ? AND r.position = ? ORDER BY r.rank", (kill_search_id, position))
 
     def query_records(self, kill_search_id) -> list[list[dict]]:
+        """Each succeeded query's records with today's work identity, so works joined since the query merge as one hit."""
         return [self._query_records(kill_search_id, q["position"]) for q in self.queries(kill_search_id)
                 if q["status"] == "succeeded"]
 
@@ -461,11 +464,16 @@ class CandidateStore:
             self._nonterminal(search)
             if search["hits_recorded"]:
                 raise RevisionConflict("Hits have already been recorded")
-            # Persisted query records are the authority for counts and merged identities.
-            try:
-                expected = merge_and_cut(self.query_records(kill_search_id), keep=merged["kept_count"])
-            except (KeyError, TypeError, ValueError) as exc:
-                raise InvalidCandidateInput("Invalid merged records") from exc
+            # A stored plan step is the authority: it is never re-run, and works joined since it was made do not
+            # change it. Without one, the persisted query records under today's work identities are.
+            plan = self.store.existing_step(search["run_id"], "kill_search_plan")
+            if plan and plan["status"] == "succeeded":
+                expected = (plan["output"] or {}).get("merged")
+            else:
+                try:
+                    expected = merge_and_cut(self.query_records(kill_search_id), keep=merged["kept_count"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise InvalidCandidateInput("Invalid merged records") from exc
             if merged != expected:
                 raise InvalidCandidateInput("Merge differs from the persisted query records")
             for record in merged["kept"]:

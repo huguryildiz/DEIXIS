@@ -97,7 +97,8 @@ def _row(children: list[ET.Element]) -> str:
 def _node(element: ET.Element) -> str:
     kind = _tag(element)
     children = list(element)
-    if kind in ("math", "mrow", "mstyle", "mpadded", "semantics", "menclose"):
+    # menclose (\cancel, \boxed, \sout) is no plain group: losing the strike or box changes the meaning, so it is refused.
+    if kind in ("math", "mrow", "mstyle", "mpadded", "semantics"):
         return _row(children)
     if kind == "mi":
         text = _text(element)

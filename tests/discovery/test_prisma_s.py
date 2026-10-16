@@ -319,8 +319,7 @@ def test_effort_limits_come_from_the_fast_path_modes_and_follow_a_changed_mode(t
     app, client = quiet_app(tmp_path, monkeypatch)
     try:
         first = client.get("/api/effort-limits").json()
-        bases, _, *rest = fast_path.MODES["quick"]
-        monkeypatch.setitem(fast_path.MODES, "quick", (bases, 123, *rest))
+        monkeypatch.setitem(fast_path.MODES, "quick", fast_path.MODES["quick"]._replace(read_top=123))
         changed = client.get("/api/effort-limits").json()
     finally:
         client.__exit__(None, None, None)

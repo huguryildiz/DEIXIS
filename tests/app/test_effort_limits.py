@@ -20,7 +20,7 @@ import pytest
 from deixis.config import Settings
 from deixis.domain.rules import PROVIDER_WAIT, SW_READ_LIMIT
 from deixis.providers import common, lookup
-from deixis.workflow import fast_path, flow, protocol
+from deixis.workflow import fast_path, flow, protocol, search_page
 from fakes import FakeAdapter, valid_response
 from test_lookup_flow import Sources, app_for as lookup_app_for, decision_of, records_of, step_output
 from test_lookup_flow import client_of as lookup_client_of, discover as lookup_discover, work as lookup_work
@@ -88,12 +88,12 @@ def test_the_keyword_cap_is_this_research_s_effort(library, tmp_path, effort, ca
 def test_the_page_request_allowance_shrinks_with_the_effort():
     """The allowance is derived from the effort's own read limit and its own waiting, and from nothing else."""
     query = {"provider_id": "openalex"}
-    allowances = {effort: flow.page_allowance(query, effort, {}) for effort in SW_READ_LIMIT}
+    allowances = {effort: search_page.page_allowance(query, effort, {}) for effort in SW_READ_LIMIT}
     # openalex serves 100 records a page (200 before OpenAlex deprecated it): quick reads 4 pages at 1 + 0 + 2 requests
     # each, standard 10 at 1 + 1 + 2, detailed 10 at 1 + 2 + 2. The allowance is the query's own (D89); a retry action
     # adds what it adds to the run.
     assert allowances == {"quick": 4 * 3, "standard": 10 * 4, "detailed": 10 * 5}
-    assert flow.page_allowance(query, "quick", {"retry_provider_requests": 2}) == 4 * 3 + 2
+    assert search_page.page_allowance(query, "quick", {"retry_provider_requests": 2}) == 4 * 3 + 2
     assert allowances["quick"] < allowances["standard"] < allowances["detailed"]
 
 

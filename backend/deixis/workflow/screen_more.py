@@ -364,9 +364,6 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None
         flow._fail(run_id, "discovery_vocabulary_missing")
     approved = approval["output"]["approved"]
     vocabulary = search_query_rules.settled(approved["vocabulary"], approved["queries"])
-    # The discovery's expansion terms, frozen into this run under the key the abstract stage reads them from.
-    expansion = (store.existing_step(target["discovery_run_id"], "vocabulary_expansion") or {}).get("output") or {}
-    small_batch.save_code(flow, run, "vocabulary_expansion", "code:vocabulary_expansion", lambda: expansion)
     heads = target["heads"]
     # Every batch close publishes its decisions and the selection-revision move in one transaction.
     flow._abstract_close_hooks[run_id] = lambda: mark_answer(store, run)

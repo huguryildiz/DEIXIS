@@ -1,8 +1,8 @@
-"""The terms a research searched with, and the (empty) second-round blocks a discovery run records (SW2.4).
+"""The terms a research searched with (SW2.4).
 
-The fast path searches one frozen plan and writes an empty `vocabulary_expansion` step (`fast_search.execute`); the
-second round of phrases tried against the field by their record counts was removed in the clean start (slice 3a).
-What stays is shared by the ranking, the lookups and the protocol: which terms a query searched with and in which form.
+The second round of phrases tried against the field by their record counts was removed in the clean start (slice 3a);
+runs written before this change still hold an empty `vocabulary_expansion` step, which nothing reads. What stays is
+shared by the ranking, the lookups and the protocol: which terms a query searched with and in which form.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import Any
 
 from deixis.workflow.vocabulary import GATE_BLOCKS
 
-SETTING_BLOCK, TASK_BLOCK = GATE_BLOCKS
+_, TASK_BLOCK = GATE_BLOCKS
 
 
 def queried_terms(vocabulary: dict[str, Any], block: str | None = None) -> list[dict[str, Any]]:
@@ -35,18 +35,8 @@ def queried_form(term: dict[str, Any]) -> str:
     return term["root"] if term["in_query"] == "root" else term["phrase"]
 
 
-def expansion_blocks(expansion: dict[str, Any] | None,
-                     queries: list[dict[str, Any]] | None = None) -> dict[str, list[str]]:
-    """The second round's searched phrases by block, as the stored `vocabulary_expansion` step names them; a fast-path
-    run searches no second round, so both blocks are empty."""
-    searched = (expansion or {}).get("searched") or {}
-    return {SETTING_BLOCK: list(searched.get(SETTING_BLOCK) or []), TASK_BLOCK: list(searched.get(TASK_BLOCK) or [])}
-
-
 # ---- what each term brought in ---------------------------------------------------------
-def term_rows(terms: list[dict[str, Any]], expansion: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def term_rows(terms: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Every phrase that entered a query of this research, with the form it entered as."""
-    rows = [{"phrase": term["phrase"], "form": queried_form(term), "origin": term["origin"], "block": term["block"]}
+    return [{"phrase": term["phrase"], "form": queried_form(term), "origin": term["origin"], "block": term["block"]}
             for term in terms if not term["dropped"]]
-    return rows + [{"phrase": phrase, "form": phrase, "origin": "data", "block": block}
-                   for block, phrases in expansion_blocks(expansion).items() for phrase in phrases]

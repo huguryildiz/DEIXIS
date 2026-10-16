@@ -9,6 +9,11 @@ from deixis.documents import embeddings, local_embedding
 from deixis.storage.db import transaction
 from deixis.workflow import english_question, fast_path
 
+# The longest `drain` waits without looking at a pause, a newer revision or the cutoff; the queue and the chain wake it
+# sooner when their work ends.
+DRAIN_CHECK_SECONDS = 0.25
+EMBED_BATCH = 64  # rows read from the queue at a time when no embedder names its own batch
+
 
 class Consumer:
     def __init__(self, flow, run, scope):
@@ -16,6 +21,7 @@ class Consumer:
         self.task = None
         self.warmup = None
         self.wake = asyncio.Event()
+        self.idle = asyncio.Event()  # set while `consume` waits with no pending row
         self.stopping = False
         self.cutoff = None
         self.error = None
@@ -70,7 +76,7 @@ class Consumer:
         return self.store.conn.execute(
             "SELECT * FROM fast_path_embedding_queue WHERE run_id = ? AND status = 'pending'"
             " ORDER BY class, request_index, position LIMIT ?",
-            (self.run["id"], self.embedder.batch if self.embedder else 64)).fetchall()
+            (self.run["id"], self.embedder.batch if self.embedder else EMBED_BATCH)).fetchall()
 
     def should_stop(self):
         chain = self.flow._fast_chains.get(self.run["id"])
@@ -89,7 +95,9 @@ class Consumer:
                 pending = self.pending()
                 if not pending:
                     self.wake.clear()
+                    self.idle.set()
                     await self.wake.wait()
+                    self.idle.clear()
                     continue
                 if self.query_vector is None:
                     await self._query()
@@ -137,6 +145,33 @@ class Consumer:
             # Let a batch finish; never leave a reply unread on the shared runner.
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def _wait_for_work(self, chain):
+        """Wait until the queue is empty or its consumer ended, and every chain writer is done, or the run must stop.
+
+        Wakes on a writer or the consumer finishing and on the consumer going idle; the pause, revision and cutoff
+        checks run at most every `DRAIN_CHECK_SECONDS` in between."""
+        while not self.should_stop():
+            self.flow._checkpoint(self.run["id"], self.run["scope_revision"])
+            waits = [w for w in chain.writers if not w.done()] if chain and not chain.done() else []
+            consuming = self.task is not None and not self.task.done()
+            if consuming and self.idle.is_set():
+                if self.pending():
+                    # Rows came in after the consumer last looked; it has been woken and takes them next.
+                    await asyncio.sleep(0)
+                    continue
+                consuming = False
+            if consuming:
+                waits.append(self.task)
+            if not waits:
+                return
+            idle = asyncio.create_task(self.idle.wait()) if consuming else None
+            try:
+                await asyncio.wait(waits + ([idle] if idle else []), timeout=DRAIN_CHECK_SECONDS,
+                                   return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                if idle:
+                    idle.cancel()
+
     async def drain(self, pool):
         if self.closed:
             return
@@ -144,11 +179,7 @@ class Consumer:
         self.cutoff = deadline - timedelta(milliseconds=self.run["budget"]["fast_path"]["arrival_margin_ms"]) if deadline else None
         self.notify()
         chain = self.flow._fast_chains.get(self.run["id"])
-        while ((self.pending() and self.task and not self.task.done()) or (chain and not chain.done())) and not self.should_stop():
-            if chain:
-                self.cutoff = chain.cutoff()
-            self.flow._checkpoint(self.run["id"], self.run["scope_revision"])
-            await asyncio.sleep(0.01)
+        await self._wait_for_work(chain)
         if chain:
             await chain.stop()
             chain.close_open("cutoff")

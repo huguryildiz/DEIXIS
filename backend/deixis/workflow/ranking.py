@@ -427,35 +427,22 @@ def verified_seeds(store: Any, research_id: str, scope: dict[str, Any]) -> list[
     return seeds + sorted(chosen - set(seeds))
 
 
-def query_vocabulary(scope: dict[str, Any], vocabulary: dict[str, Any],
-                     expansion_terms: list[str] | dict[str, list[str]]) -> tuple[set[str], dict[str, list[str]]]:
-    """The words BM25 reads and the block forms the block signal reads: the question and every queried term.
-
-    `expansion_terms` is the second round's searched phrases by block (`expansion_blocks`); a plain list is read
-    as task terms, as the second round's accepted phrases were before 13g's review.
-    """
-    from deixis.workflow.expansion import SETTING_BLOCK, TASK_BLOCK, queried_form, searched_terms, term_rows
+def query_vocabulary(scope: dict[str, Any], vocabulary: dict[str, Any]) -> tuple[set[str], dict[str, list[str]]]:
+    """The words BM25 reads and the block forms the block signal reads: the question and every queried term."""
+    from deixis.workflow.expansion import queried_form, searched_terms, term_rows
     from deixis.workflow.search_query import code_terms
     from deixis.workflow.vocabulary import GATE_BLOCKS
-
-    added = (expansion_terms if isinstance(expansion_terms, dict)
-             else {SETTING_BLOCK: [], TASK_BLOCK: list(expansion_terms)})
 
     query_words = set(words(scope["question"]))
     # The code's query searched beside a model-written one counts as queried here: its records are in the pool (D92).
     searched = vocabulary["terms"] + code_terms(vocabulary)
-    for row in term_rows(searched, {"searched": added}):
+    for row in term_rows(searched):
         query_words |= set(words(row["phrase"])) | set(words(row["form"]))
     # An outcome term is not searched but does order: the question's own are in its words already, one the user added
     # at the approval is not, and the card tells the user it orders the records.
     for phrase in vocabulary.get("outcome_terms") or []:
         query_words |= set(words(phrase))
     blocks = {block: [queried_form(term) for term in searched_terms(vocabulary, block)] for block in GATE_BLOCKS}
-    # The second round's phrases rank in the block they were searched in: setting synonyms with the setting, task
-    # additions with the task (D90; review of 13g, 2026-09-23). Accepted phrases no query kept are not here.
-    for block, phrases in added.items():
-        if block in blocks:
-            blocks[block] = blocks[block] + [p for p in phrases if p not in blocks[block]]
     return query_words, blocks
 
 
@@ -548,8 +535,7 @@ def rank_rows(ranked: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                 expansion_terms: list[str] | dict[str, list[str]], embedding_model: str | None = None,
-                 off_reason: str | None = None) -> dict[str, Any]:
+                 embedding_model: str | None = None, off_reason: str | None = None) -> dict[str, Any]:
     """Rank this revision's records and store every rank; returns the step output.
 
     The pool is the work heads the search offered, the records slice 05 holds back from screening included: they are
@@ -558,7 +544,7 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     """
     research_id, revision = run["research_id"], run["scope_revision"]
     versions, _, pool = pool_rows(store, research_id, revision)
-    query_words, blocks = query_vocabulary(scope, vocabulary, expansion_terms)
+    query_words, blocks = query_vocabulary(scope, vocabulary)
     in_pool = {row["id"]: row for row in pool}
 
     verified = seed_rows(store, run, scope, versions, in_pool)

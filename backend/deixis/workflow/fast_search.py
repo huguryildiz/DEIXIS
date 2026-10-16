@@ -12,8 +12,13 @@ from deixis.providers.common import FIRST_PAGE, SearchOutcome
 from deixis.providers.registry import CONNECTORS, reading
 from deixis.storage.db import now, transaction
 from deixis.providers import openalex, query_compiler
-from deixis.workflow import english_question, fast_path, seed_match, user_plan
+from deixis.workflow import english_question, fast_path, search_page, seed_match, user_plan
+from deixis.workflow.search_page import Page
 from deixis.workflow.expansion import queried_form
+
+# At Detailed depth one Semantic Scholar bulk request reads up to this many records, taken off the keyword cap.
+S2_RESERVED_RECORDS = 500
+KEYWORD_PAGE_SIZE = 100  # records one OpenAlex keyword page asks for
 
 
 def seed_query(question, envelope):
@@ -54,15 +59,21 @@ def seed_key(spec):
     return f"search:fast:semantic:seed:{spec['index']}"
 
 
-def plan_version(store, run):
-    """The `fast_path_search` version this run's protocol froze: 1 when it froze none or no protocol is frozen yet."""
+def frozen_body(store, run):
+    """The protocol body this run froze, or None when its protocol step has not succeeded or names no record."""
     step = store.existing_step(run["id"], "protocol")
     if step is None or step["status"] != "succeeded" or not step["output"]:
-        return 1
+        return None
     row = store.conn.execute(
         "SELECT body_json FROM protocol_records WHERE research_id = ? AND protocol_revision = ?",
         (run["research_id"], step["output"]["protocol_revision"])).fetchone()
-    return ((json.loads(row[0]).get("fast_path_search") or {}).get("version", 1)) if row else 1
+    return json.loads(row[0]) if row else None
+
+
+def plan_version(store, run):
+    """The `fast_path_search` version this run's protocol froze: 1 when it froze none or no protocol is frozen yet."""
+    body = frozen_body(store, run)
+    return (body.get("fast_path_search") or {}).get("version", 1) if body else 1
 
 
 def graph_rule(store, run):
@@ -95,10 +106,10 @@ def build_plan(store, run, scope, queries, seed_context=None):
             "query_text": openalex.semantic_text(sentence[0]) if sentence else None, "limit": policy["semantic_top"],
             "query_origin": sentence[1] if sentence else english_question.MISSING,
             **({"seed_text": seed} if seed else {}), **({"seed_parts": parts} if seed_context else {})},
-            "keywords": keyword, "keyword_cap": policy["keyword_record_cap"] - (500 if deep else 0),
-            "page_size": 100, "order": "page_then_query", "s2_bulk": s2 if deep else None,
+            "keywords": keyword, "keyword_cap": policy["keyword_record_cap"] - (S2_RESERVED_RECORDS if deep else 0),
+            "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query", "s2_bulk": s2 if deep else None,
             "s2_bulk_index": s2_index,
-            "s2_reserved": 500 if deep else 0,
+            "s2_reserved": S2_RESERVED_RECORDS if deep else 0,
             "dropped": [{"index": i, "query": q,
                          "reason": user_plan.EXCLUDED if q["provider_id"] in excluded else "openalex_only"}
                         for i, q in enumerate(queries) if q["provider_id"] != "openalex" and i != s2_index],
@@ -161,22 +172,24 @@ def plan_words(vocabulary, plan):
 def frozen_words(store, run_id):
     """The plan words this run's frozen protocol recorded (`plan_words`), or None for a run that froze none or whose
     plan was frozen before the record existed."""
-    step = store.existing_step(run_id, "protocol")
-    if step is None or step["status"] != "succeeded" or not step["output"]:
-        return None
-    run = store.run(run_id)
-    row = store.conn.execute(
-        "SELECT body_json FROM protocol_records WHERE research_id = ? AND protocol_revision = ?",
-        (run["research_id"], step["output"]["protocol_revision"])).fetchone()
-    return ((json.loads(row[0]).get("fast_path_search") or {}).get("words")) if row else None
+    body = frozen_body(store, store.run(run_id))
+    return (body.get("fast_path_search") or {}).get("words") if body else None
 
 
 def stored_plan(store, run):
-    step = store.existing_step(run["id"], "protocol")
-    row = store.conn.execute(
-        "SELECT body_json FROM protocol_records WHERE research_id = ? AND protocol_revision = ?",
-        (run["research_id"], step["output"]["protocol_revision"])).fetchone()
-    return json.loads(row[0])["fast_path_search"]
+    body = frozen_body(store, run)
+    if body is None:
+        raise LookupError(f"run {run['id']}: no frozen protocol holds a fast-path search plan")
+    return body["fast_path_search"]
+
+
+def cancel_step(store, run_id, key, kind, reason, statuses=("pending",)):
+    """Finish the step at `key` as cancelled with `reason` as its stop reason, when its status is one of `statuses`
+    (any status when None); it sent no request and brought no record."""
+    step = store.step(run_id, key, kind)
+    if statuses is None or step["status"] in statuses:
+        store.finish_step(step["id"], "cancelled", error_code=reason, output={"stop_reason": reason, "result_count": 0})
+    return step
 
 
 def close_queries(flow, run, specs, reason):
@@ -206,15 +219,10 @@ def close_queries(flow, run, specs, reason):
                     (reason, unread, row["srid"]))
                 flow.store.set_step_output(row["id"], output | {"stop_reason": reason})
             else:
-                step = flow.store.step(run["id"], key, "provider_search:openalex")
-                if step["status"] in ("pending", "running"):
-                    flow.store.finish_step(step["id"], "cancelled", error_code=reason,
-                                           output={"stop_reason": reason, "result_count": 0})
+                cancel_step(flow.store, run["id"], key, "provider_search:openalex", reason, ("pending", "running"))
 
 
 async def execute(flow, run, scope, plan, retry_failed):
-    from deixis.workflow.flow import Page, page_allowance
-
     store, run_id = flow.store, run["id"]
     effort = scope["effort"]
     failure = None
@@ -222,27 +230,21 @@ async def execute(flow, run, scope, plan, retry_failed):
     # the identical round-robin schedule rather than deriving order from timestamps.
     request_index = 0
     s2_task = None
-    expansion = store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")
-    if expansion["status"] != "succeeded":
-        store.finish_step(expansion["id"], "succeeded", output={"queries": [], "expansion": {"searched": {}},
-                                                               "skipped": "fast_path_frozen_plan"})
 
     def stopped():
         return flow._stop_requested(run_id, run["scope_revision"]) or fast_path.past_deadline(store, run, "search")
 
     excluded = plan.get("excluded_providers") or []
 
-    async def send_page(query, key, number, cursor, before, total, limit, klass, index, terminal=None, after=None):
+    async def send_page(query, key, *, limit, klass, index, number=0, cursor=FIRST_PAGE, before=0, total=None,
+                        terminal=None, after=None):
         nonlocal failure
         if query["provider_id"] in excluded:
             # The frozen plan leaves this provider out (S23a): no request, whatever planned it.
-            step = store.step(run_id, key, f"provider_search:{query['provider_id']}")
-            if step["status"] == "pending":
-                store.finish_step(step["id"], "cancelled", error_code=user_plan.EXCLUDED,
-                                  output={"stop_reason": user_plan.EXCLUDED, "result_count": 0})
+            step = cancel_step(store, run_id, key, f"provider_search:{query['provider_id']}", user_plan.EXCLUDED)
             return store.step_output(step["id"]), 0
         connector = reading(query)
-        allowance = page_allowance(query, effort, run["budget"])
+        allowance = search_page.page_allowance(query, effort, run["budget"])
         page = Page(number, cursor, before, total, plan["keyword_cap"] if klass == 1 else limit,
                     PROVIDER_WAIT[effort], key.split(":page:")[0], allowance)
         step = store.existing_step(run_id, key)
@@ -327,16 +329,12 @@ async def execute(flow, run, scope, plan, retry_failed):
 
     sem = plan["semantic"]
     if sem["query_text"] is None:
-        step = store.step(run_id, "search:fast:semantic", "provider_search:openalex")
-        if step["status"] == "pending":
-            store.finish_step(step["id"], "cancelled", error_code=english_question.MISSING,
-                              output={"stop_reason": english_question.MISSING, "result_count": 0})
+        cancel_step(store, run_id, "search:fast:semantic", "provider_search:openalex", english_question.MISSING)
     else:
-        result, _ = await send_page(sem, "search:fast:semantic", 0, FIRST_PAGE, 0, None, sem["limit"], 0, 0, "single_page")
+        result, _ = await send_page(sem, "search:fast:semantic", limit=sem["limit"], klass=0, index=0,
+                                    terminal="single_page")
         if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
-            step = store.step(run_id, "search:fast:semantic", "provider_search:openalex")
-            store.finish_step(step["id"], "cancelled", error_code="deadline",
-                              output={"stop_reason": "deadline", "result_count": 0})
+            cancel_step(store, run_id, "search:fast:semantic", "provider_search:openalex", "deadline", None)
         consumer = flow._fast_consumers.get(run_id)
         if consumer:
             consumer.notify()
@@ -351,15 +349,13 @@ async def execute(flow, run, scope, plan, retry_failed):
     # admission and candidate order follow seed order.
     async def seed_request(spec, index, previous):
         key = seed_key(spec)
-        result, _ = await send_page(spec, key, 0, FIRST_PAGE, 0, None, spec["limit"], 0, index, "single_page",
+        result, _ = await send_page(spec, key, limit=spec["limit"], klass=0, index=index, terminal="single_page",
                                     after=previous)
-        if previous is not None:
-            await previous
         if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
-            step = store.step(run_id, key, "provider_search:openalex")
-            if step["status"] in ("pending", "running"):
-                store.finish_step(step["id"], "cancelled", error_code="deadline",
-                                  output={"stop_reason": "deadline", "result_count": 0})
+            # No reply, so `send_page` never waited for the seed before this one: wait here, before writing.
+            if previous is not None:
+                await previous
+            cancel_step(store, run_id, key, "provider_search:openalex", "deadline", ("pending", "running"))
         consumer = flow._fast_consumers.get(run_id)
         if consumer:
             consumer.notify()
@@ -381,18 +377,13 @@ async def execute(flow, run, scope, plan, retry_failed):
 
     async def s2_page():
         if plan["s2_bulk"] is not None:
-            result, _ = await send_page(plan["s2_bulk"], "search:fast:s2_bulk", 0, FIRST_PAGE,
-                                        0, None, 500, 1, 1, "single_page")
+            result, _ = await send_page(plan["s2_bulk"], "search:fast:s2_bulk", limit=plan["s2_reserved"], klass=1,
+                                        index=1, terminal="single_page")
             if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
-                step = store.step(run_id, "search:fast:s2_bulk", "provider_search:semantic_scholar")
-                store.finish_step(step["id"], "cancelled", error_code="deadline",
-                                  output={"stop_reason": "deadline", "result_count": 0})
+                cancel_step(store, run_id, "search:fast:s2_bulk", "provider_search:semantic_scholar", "deadline", None)
         elif plan["s2_reserved"]:
-            step = store.step(run_id, "search:fast:s2_bulk", "provider_search:semantic_scholar")
             reason = user_plan.EXCLUDED if "semantic_scholar" in excluded else "not_planned"
-            if step["status"] == "pending":
-                store.finish_step(step["id"], "cancelled", error_code=reason,
-                                  output={"stop_reason": reason, "result_count": 0})
+            cancel_step(store, run_id, "search:fast:s2_bulk", "provider_search:semantic_scholar", reason)
 
     # Finish the independent S2 slot before admitting keyword pages (request 1).
     # Its transport overlaps the first keyword page; writes keep admission order.
@@ -423,8 +414,9 @@ async def execute(flow, run, scope, plan, retry_failed):
                 if old_admission:
                     limit = old_admission["limit"]
                 terminal = "record_cap" if slots + limit >= plan["keyword_cap"] else None
-                result, reserved = await send_page(spec["query"], key, state["number"], state["cursor"],
-                    state["before"], state["total"], limit, 1, request_index, terminal)
+                result, reserved = await send_page(spec["query"], key, number=state["number"], cursor=state["cursor"],
+                                                   before=state["before"], total=state["total"], limit=limit, klass=1,
+                                                   index=request_index, terminal=terminal)
                 if result is None:
                     flow._checkpoint(run_id, run["scope_revision"])
                     close_queries(flow, run, specs, "deadline")
@@ -447,8 +439,4 @@ async def execute(flow, run, scope, plan, retry_failed):
     finally:
         if s2_task and not s2_task.done():
             await s2_task
-    expansion = store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")
-    if expansion["status"] != "succeeded":
-        store.finish_step(expansion["id"], "succeeded", output={"queries": [], "expansion": {"searched": {}},
-                                                               "skipped": "fast_path_frozen_plan"})
     return failure

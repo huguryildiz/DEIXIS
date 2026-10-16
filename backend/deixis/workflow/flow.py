@@ -32,7 +32,6 @@ from deixis.domain import canonical, contracts, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
                                  FULLTEXT_RUNS, MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES,
-                                 PROVIDER_WAIT, SW_READ_LIMIT,
                                  after_invalid_output, effective_reviewer, schema_repairs, step_model)
 from deixis.domain.rules import RevisionConflict
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
@@ -41,9 +40,10 @@ from deixis.models import prompt, unusable
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
 from deixis.providers import openalex, query_compiler, facade, contract
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, send_blocked
-from deixis.providers.registry import CONNECTORS, Connector, endpoint_options, reading, search_providers
+from deixis.providers.registry import CONNECTORS, Connector, endpoint_options, search_providers
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.concurrency import ModelCallLimiter
+from deixis.workflow.search_page import Page
 from deixis.workflow import abstract_stage
 from deixis.workflow import small_batch
 from deixis.workflow import fast_path
@@ -54,7 +54,6 @@ from deixis.workflow import chaining
 from deixis.workflow import criterion as criterion_rules
 from deixis.workflow import criterion_passages
 from deixis.workflow import english_question
-from deixis.workflow import expansion as expansion_rules
 from deixis.workflow import flow_counts
 from deixis.workflow import fulltext
 from deixis.workflow import lookups
@@ -232,38 +231,6 @@ class OptionalStepFailed(Exception):
     def __init__(self, reason: str, detail: Any = None):
         super().__init__(reason)
         self.reason, self.detail = reason, detail
-
-
-@dataclass(frozen=True)
-class Page:
-    """One page of an sw query's read; each gets its own step, search run and stored payload (slice 04c)."""
-
-    number: int              # 0 for the first page
-    cursor: str              # FIRST_PAGE or the previous page's next_cursor
-    read_before: int         # records this query read on earlier pages
-    known_total: int | None  # the provider total an earlier page reported
-    read_limit: int          # records this effort reads per query (D88)
-    rate_limit_retries: int  # times this effort waits out a 429 on this page (D88); 0 ends the read instead
-    query_key: str           # the query's first step key, which its own request count is kept under (D89)
-    allowance: int           # requests this query may send in this run (`page_allowance`, D89)
-
-
-def page_allowance(query: dict[str, Any], effort: str, budget: dict[str, Any]) -> int:
-    """Requests one sw query may send, derived before its read starts from the query and the run alone (D89).
-
-    The query is allowed the pages its provider needs to reach the read limit (or its own reachable depth), and every
-    page the bounded retries it may need: a retry is counted as a request. What a retry action adds to the run
-    (`retry_provider_requests`, one per failed search it retries) is added to every query's share alike, so the page
-    it sends again has room. Nothing here reads another query's count, so the share does not depend on which host
-    answered first. Both figures are this research's effort (D88): a lighter effort reads fewer records per query
-    and waits out fewer 429s.
-    """
-    read_limit = SW_READ_LIMIT[effort]
-    connector = reading(query)  # the endpoint the query names pages its own way (D93)
-    per_page = connector.requests_per_search * (1 + PROVIDER_WAIT[effort]) + MAX_TRANSIENT_NETWORK_RETRIES
-    pages = 1 if connector.paging == "single_page" else math.ceil(
-        min(read_limit, connector.max_reachable or read_limit) / connector.max_results)
-    return pages * per_page + budget.get("retry_provider_requests", 0)
 
 
 @dataclass
@@ -651,7 +618,6 @@ class ResearchFlow:
         pool = [c for c in self.store.candidates(rid, revision)
                 if c["origin"] != "user" and c["source_version_id"] in heads]
         # Rank the full pool before deciding which abstracts to read.
-        self._enter_clock_stage(run, "ranking")
         await self._fast_consumers[run_id].drain(pool)
         await self._source_similarity(run, scope, pool)
         await self._ranking(run, scope, vocabulary)
@@ -1389,10 +1355,8 @@ class ResearchFlow:
         if step["status"] == "succeeded":
             return decisions.ranking_order(step["id"])
         self.store.start_step(step["id"])
-        stored = self.store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")["output"] or {}
-        terms = expansion_rules.expansion_blocks(stored.get("expansion"), stored.get("queries"))
         model, off_reason = self._ranking_embedding(run, scope)
-        output = ranking_rules.rank_records(self.store, run, scope, vocabulary, terms, model, off_reason)
+        output = ranking_rules.rank_records(self.store, run, scope, vocabulary, model, off_reason)
         similarity = (self.store.existing_step(run_id, "source_similarity") or {}).get("output") or {}
         if model and "from_store" in similarity:
             # How many of the similarities the ranking read were stored before this run, and how many it embedded (D103).
@@ -1668,9 +1632,7 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         decisions = DecisionStore(self.store)
         stale_key = decisions.staleness_key(rid)
-        stored = self.store.step(run_id, "vocabulary_expansion", "code:vocabulary_expansion")["output"] or {}
-        terms = list((stored.get("expansion") or {}).get("terms") or [])
-        _, blocks = ranking_rules.query_vocabulary(scope, vocabulary, terms)
+        _, blocks = ranking_rules.query_vocabulary(scope, vocabulary)
         # One read of the whole research, as the ranking does: asking per record cost a second on 2,000 candidates
         # on the thread the API answers from (slice 05 and 07 reviews).
         versions = ranking_rules._versions(self.store, rid)
@@ -1843,9 +1805,7 @@ class ResearchFlow:
 
     def _chain_forms(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str, list[str]]:
         """The two gate blocks' forms the chain's filter reads: the blocks the keyword ranking ranked with."""
-        stored = self.store.step(run["id"], "vocabulary_expansion", "code:vocabulary_expansion")["output"] or {}
-        terms = expansion_rules.expansion_blocks(stored.get("expansion"), stored.get("queries"))
-        _, blocks = ranking_rules.query_vocabulary(scope, vocabulary, terms)
+        _, blocks = ranking_rules.query_vocabulary(scope, vocabulary)
         return ranking_rules.block_forms({block: blocks.get(block) or [] for block in vocabulary_rules.GATE_BLOCKS})
 
     def _record_chain(self, run: dict[str, Any], step: dict[str, Any], key: str, direction: str,

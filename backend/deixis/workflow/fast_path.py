@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 from deixis.domain import canonical
 from deixis.storage.db import new_id, transaction
@@ -12,11 +12,31 @@ from deixis.storage.db import new_id, transaction
 POLICY = "fast_path_v1"
 RUNNER_VERSION = 2
 STAGES = ("plan", "search", "ranking", "read", "answer")
+
+
+class Mode(NamedTuple):
+    """One research depth's numbers, frozen into a run's budget by `freeze_budget`."""
+    stage_seconds: tuple[int, int, int, int, int]  # soft deadline of each of STAGES, in order
+    read_top: int  # N: the top of the ranking a run reads
+    fulltext_works: int  # K: the most works a run reads in full text
+    keyword_record_cap: int
+    chain_seeds: int
+    backward_requests: int
+    forward_requests: int
+
+
 MODES = {
-    "quick": ((30, 30, 30, 60, 30), 25, 10, 450, 10, 2, 2),
-    "standard": ((30, 45, 60, 120, 45), 50, 20, 1000, 20, 4, 8),
-    "detailed": ((45, 90, 120, 270, 75), 100, 40, 2000, 30, 8, 16),
+    "quick": Mode((30, 30, 30, 60, 30), read_top=25, fulltext_works=10, keyword_record_cap=450, chain_seeds=10,
+                  backward_requests=2, forward_requests=2),
+    "standard": Mode((30, 45, 60, 120, 45), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=20,
+                     backward_requests=4, forward_requests=8),
+    "detailed": Mode((45, 90, 120, 270, 75), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=30,
+                     backward_requests=8, forward_requests=16),
 }
+
+
+class LedgerMismatch(RuntimeError):
+    """The stored fast-path ledger or stage intervals contradict the run being written."""
 
 
 class Clock(Protocol):
@@ -47,7 +67,8 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
     call still has its own limit (openai_compat.LOCAL_TURN_TIMEOUT)."""
-    bases, n, k, cap, seeds, backward, forward = MODES[effort]
+    mode = MODES[effort]
+    bases = mode.stage_seconds
     policy = {
         "policy": POLICY, "runner_version": RUNNER_VERSION, "enforcement": ["search", "ranking", "read", "answer"],
         "enforced_stages": ["search", "ranking", "read", "answer"], "background_fetch_slots": 4,
@@ -55,9 +76,9 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "late_revision": {"mode": "auto", "max_revisions": 1},
         "mode": "deep" if effort == "detailed" else effort,
         "stage_base_ms": dict(zip(STAGES, (s * 1000 for s in bases))), "total_ms": sum(bases) * 1000,
-        "N": n, "K": k, "keyword_record_cap": cap, "semantic_top": 50,
-        "chain_seeds": seeds, "backward_requests": backward, "backward_page_size": 50,
-        "forward_requests": forward, "forward_page_size": 25,
+        "N": mode.read_top, "K": mode.fulltext_works, "keyword_record_cap": mode.keyword_record_cap, "semantic_top": 50,
+        "chain_seeds": mode.chain_seeds, "backward_requests": mode.backward_requests, "backward_page_size": 50,
+        "forward_requests": mode.forward_requests, "forward_page_size": 25,
         "chain_in_flight": 5, "chain_rule": "fast_chain_v1",
         "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
@@ -86,8 +107,9 @@ def effort_limits() -> dict[str, Any]:
     stages' soft deadlines rather than a promise of how long a run takes; `papers` is N, the top of the ranking a run
     reads; `fulltext` is K, the most works a run reads in their full text (selected pages, UI parity S14's funnel).
     """
-    return {"efforts": {effort: {"minutes": round(sum(bases) / 60), "papers": n, "fulltext": k}
-                        for effort, (bases, n, k, *_) in MODES.items()}}
+    return {"efforts": {effort: {"minutes": round(sum(mode.stage_seconds) / 60), "papers": mode.read_top,
+                                 "fulltext": mode.fulltext_works}
+                        for effort, mode in MODES.items()}}
 
 
 def enabled(budget: dict[str, Any]) -> bool:
@@ -165,8 +187,10 @@ def create_run(store: Any, run: dict[str, Any]) -> None:
             (run["id"], run["research_id"], run["scope_revision"], POLICY, policy["policy_hash"], policy["mode"], run["created_at"]))
     elif run["kind"] == "answer":
         ledger = store.conn.execute("SELECT * FROM fast_path_ledgers WHERE ledger_run_id = ?", (policy["ledger_run_id"],)).fetchone()
-        assert ledger is not None and (ledger["research_id"], ledger["scope_revision"], ledger["policy_hash"]) == (
-            run["research_id"], run["scope_revision"], policy["policy_hash"])
+        if ledger is None or (ledger["research_id"], ledger["scope_revision"], ledger["policy_hash"]) != (
+                run["research_id"], run["scope_revision"], policy["policy_hash"]):
+            raise LedgerMismatch(f"answer run {run['id']}: discovery ledger {policy['ledger_run_id']} is missing or"
+                                 " belongs to another research, revision or policy")
         # The role is fixed by the same transaction that queues the answer, rather than by a preceding API read.
         policy["role"] = ("late_revision" if run["budget"].get("late_revision_id")
                           else "rerun" if ledger["answer_run_id"] else "first")
@@ -206,11 +230,12 @@ def enter_stage(store: Any, run: dict[str, Any], stage: str) -> str | None:
             return None
         seq = STAGES.index(stage) + 1 if stage in STAGES else 0
         if seq:
-            assert not conn.execute(
-                "SELECT 1 FROM fast_path_intervals i JOIN fast_path_stages s"
-                " ON s.ledger_run_id = i.ledger_run_id AND s.stage = i.stage"
-                " WHERE i.ledger_run_id = ? AND i.closed_at IS NULL AND s.seq > 0 AND s.seq < ?",
-                (ledger_id, seq)).fetchone(), "previous stage still has an open interval"
+            if conn.execute(
+                    "SELECT 1 FROM fast_path_intervals i JOIN fast_path_stages s"
+                    " ON s.ledger_run_id = i.ledger_run_id AND s.stage = i.stage"
+                    " WHERE i.ledger_run_id = ? AND i.closed_at IS NULL AND s.seq > 0 AND s.seq < ?",
+                    (ledger_id, seq)).fetchone():
+                raise LedgerMismatch(f"run {run['id']}: cannot enter {stage}, a previous stage still has an open interval")
         if row is None and stage != "answer_rerun":
             policy = store.run(ledger_id)["budget"]["fast_path"]
             for ordinal, earlier in enumerate(STAGES[:max(0, seq - 1)], 1):

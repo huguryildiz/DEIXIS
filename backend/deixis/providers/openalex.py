@@ -39,6 +39,7 @@ SEMANTIC_PACER = StartPacer(1.5)
 # Basic Multilingual Plane (a PDF's math italic 𝑆, say) counts twice (measured 11 Oct 2026: 1,500 characters holding three
 # such letters were refused as 1,503), so `semantic_text` cuts by that count.
 SEMANTIC_MAX_CHARS = 1500
+SEMANTIC_MAX_PER_PAGE = 50  # the most results one `search.semantic` request returns (OpenAlex Help, read 2026-10-09)
 
 
 def semantic_text(text: str, limit: int = SEMANTIC_MAX_CHARS) -> str:
@@ -135,6 +136,21 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
     )
 
 
+def _credentials(params: dict[str, Any], api_key: str | None, mailto: str | None) -> tuple[dict[str, str], str]:
+    """Add the contact address to `params` (in place, where the caller's order puts it) and return the request's
+    headers and access mode: a key goes in a Bearer header, never in the URL or the description."""
+    if mailto:
+        params["mailto"] = mailto
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    return headers, "api_key" if api_key else "keyless"
+
+
+async def _get(client: httpx.AsyncClient, params: dict[str, Any], headers: dict[str, str], description: str,
+               access_mode: str, api_key: str | None, rate_headers: tuple[str, ...] = RATE_LIMIT_HEADERS, **kwargs):
+    """One GET of `/works` through `send`, with the key passed for redaction."""
+    return await send(client, WORKS_URL, params, headers, description, access_mode, rate_headers, (api_key,), **kwargs)
+
+
 async def search_works(
     client: httpx.AsyncClient,
     query: str,
@@ -163,19 +179,16 @@ async def search_works(
         params["sort"] = sort
     if works_filter:
         params["filter"] = works_filter
-    if contact_email:
-        params["mailto"] = contact_email
+    headers, access_mode = _credentials(params, api_key, contact_email)
     if cursor is not None:
         # Cursor paging: `*` asks for the first page and every answer carries the cursor of the next one.
         params["cursor"] = cursor
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    access_mode = "api_key" if api_key else "keyless"
     description = (f"GET {WORKS_URL} {SEARCH_PARAM}={query!r}" + (f" filter={works_filter}" if works_filter else "")
                    + f" per_page={per_page}" + (f" cursor={cursor}" if cursor is not None else "")
                    + f" access={access_mode}")
     description += (f" sort={sort}" if sort else "") + (" select+publication_date" if publication_date else "")
-    response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
-                                   (api_key,), max_rate_limit_retries=max_rate_limit_retries)
+    response, outcome = await _get(client, params, headers, description, access_mode, api_key,
+                                   max_rate_limit_retries=max_rate_limit_retries)
     return _works_page(response, outcome, cursor)
 
 
@@ -190,14 +203,11 @@ async def search_semantic(client, query, per_page, api_key=None, contact_email=N
     """
     select = SELECT + "".join(f",{field}" for field, asked in
                              ((REFERENCE_COUNT_FIELD, reference_count), (REFERENCES_FIELD, references)) if asked)
-    params = {"search.semantic": semantic_text(query), "per_page": min(per_page, 50), "select": select}
-    if contact_email:
-        params["mailto"] = contact_email
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    access = "api_key" if api_key else "keyless"
+    params = {"search.semantic": semantic_text(query), "per_page": min(per_page, SEMANTIC_MAX_PER_PAGE), "select": select}
+    headers, access = _credentials(params, api_key, contact_email)
     description = f"GET {WORKS_URL} search.semantic={semantic_text(query)!r} per_page={params['per_page']} access={access}"
-    response, outcome = await send(client, WORKS_URL, params, headers, description, access,
-                                   RATE_LIMIT_HEADERS + ("x-ratelimit-credits-used",), (api_key,),
+    response, outcome = await _get(client, params, headers, description, access, api_key,
+                                   RATE_LIMIT_HEADERS + ("x-ratelimit-credits-used",),
                                    max_rate_limit_retries=max_rate_limit_retries, start_pacer=SEMANTIC_PACER)
     return _works_page(response, outcome, None)
 
@@ -245,14 +255,11 @@ async def citing_works(client: httpx.AsyncClient, work_id: str, cursor: str, per
         params["select"] += ",publication_date"
     if sort:
         params["sort"] = sort
-    if contact_email:
-        params["mailto"] = contact_email
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    access_mode = "api_key" if api_key else "keyless"
+    headers, access_mode = _credentials(params, api_key, contact_email)
     description = f"GET {WORKS_URL} filter={works_filter} per_page={per_page} cursor={cursor} access={access_mode}"
     description += (f" sort={sort}" if sort else "") + (" select+publication_date" if publication_date else "")
-    response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
-                                   (api_key,), max_rate_limit_retries=max_rate_limit_retries)
+    response, outcome = await _get(client, params, headers, description, access_mode, api_key,
+                                   max_rate_limit_retries=max_rate_limit_retries)
     return _works_page(response, outcome, cursor)
 
 
@@ -275,14 +282,11 @@ async def works_by_ids(client: httpx.AsyncClient, ids: list[str], api_key: str |
         raise ValueError(f"works_by_ids takes 1 to {MAX_IDS_PER_REQUEST} identifiers, not {len(ids)}")
     works_filter = "openalex:" + "|".join(ids)
     params: dict[str, Any] = {"filter": works_filter, "per_page": len(ids), "select": CHAIN_SELECT}
-    if contact_email:
-        params["mailto"] = contact_email
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    access_mode = "api_key" if api_key else "keyless"
+    headers, access_mode = _credentials(params, api_key, contact_email)
     description = (f"GET {WORKS_URL} filter=openalex:{ids[0]}|… ({len(ids)} ids) per_page={len(ids)}"
                    f" access={access_mode}")
-    response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
-                                   (api_key,), max_rate_limit_retries=max_rate_limit_retries)
+    response, outcome = await _get(client, params, headers, description, access_mode, api_key,
+                                   max_rate_limit_retries=max_rate_limit_retries)
     return _works_page(response, outcome, None)
 
 
@@ -299,13 +303,10 @@ async def works_by_dois(client: httpx.AsyncClient, dois: list[str], api_key: str
     if not len(dois) <= per_page <= MAX_IDS_PER_REQUEST:
         raise ValueError("works_by_dois reads one page of at most 100 records")
     params: dict[str, Any] = {"filter": "doi:" + "|".join(dois), "per_page": per_page, "select": CHAIN_SELECT}
-    if contact_email:
-        params["mailto"] = contact_email
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    access_mode = "api_key" if api_key else "keyless"
+    headers, access_mode = _credentials(params, api_key, contact_email)
     description = f"GET {WORKS_URL} filter=doi:{'|'.join(dois)} per_page={per_page} access={access_mode}"
-    response, outcome = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS,
-                                   (api_key,), max_rate_limit_retries=max_rate_limit_retries)
+    response, outcome = await _get(client, params, headers, description, access_mode, api_key,
+                                   max_rate_limit_retries=max_rate_limit_retries)
     return _works_page(response, outcome, None)
 
 
@@ -318,13 +319,10 @@ async def count_works(client: httpx.AsyncClient, query: str, *, api_key: str | N
     stop a discovery run (D18). `None` means the count is unknown, never that it is zero.
     """
     params: dict[str, Any] = {SEARCH_PARAM: query, "per_page": COUNT_PER_PAGE, "select": COUNT_SELECT}
-    if mailto:
-        params["mailto"] = mailto
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    access_mode = "api_key" if api_key else "keyless"
+    headers, access_mode = _credentials(params, api_key, mailto)
     description = (f"GET {WORKS_URL} {SEARCH_PARAM}={query!r} per_page={COUNT_PER_PAGE} select={COUNT_SELECT}"
                    f" access={access_mode}")
-    response, _ = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,))
+    response, _ = await _get(client, params, headers, description, access_mode, api_key)
     if response is None:
         return None
     try:
@@ -343,12 +341,9 @@ async def field_distribution(client: httpx.AsyncClient, query: str, *, api_key: 
     distribution is unknown; nothing is retried here beyond `send`'s bounded 429 retries.
     """
     params: dict[str, Any] = {SEARCH_PARAM: query, "group_by": FIELD_GROUP}
-    if mailto:
-        params["mailto"] = mailto
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    access_mode = "api_key" if api_key else "keyless"
+    headers, access_mode = _credentials(params, api_key, mailto)
     description = f"GET {WORKS_URL} {SEARCH_PARAM}={query!r} group_by={FIELD_GROUP} access={access_mode}"
-    response, _ = await send(client, WORKS_URL, params, headers, description, access_mode, RATE_LIMIT_HEADERS, (api_key,))
+    response, _ = await _get(client, params, headers, description, access_mode, api_key)
     if response is None:
         return None
     try:

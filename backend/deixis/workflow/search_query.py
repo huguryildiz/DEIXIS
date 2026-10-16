@@ -246,8 +246,3 @@ def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int
         if provider in code and (provider not in model or code[provider]["query_text"] != model[provider]["query_text"]):
             ordered.append(code[provider])
     return ordered[:limit]
-
-
-def model_queries(queries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The first round's queries the model's terms wrote; all of them for a vocabulary with no origin marks."""
-    return [query for query in queries if query.get("origin", "model") == "model"]

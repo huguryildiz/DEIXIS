@@ -104,7 +104,7 @@ def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path):
     assert len(rows(lib)) == 452
     assert [r['request_index'] for r in rows(lib)[::100]][:2] == [0, 1]
     assert plan['dropped'][0]['reason'] == 'openalex_only'
-    assert lib.store.existing_step(lib.run['id'], 'vocabulary_expansion')['output']['queries'] == []
+    assert lib.store.existing_step(lib.run['id'], 'vocabulary_expansion') is None
     searches = [dict(r) for r in lib.conn.execute('SELECT * FROM search_runs ORDER BY rowid')]
     assert searches[-1]['stop_reason'] == 'record_cap'
     assert searches[-2]['stop_reason'] == 'record_cap'

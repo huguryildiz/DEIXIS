@@ -24,7 +24,7 @@ from test_provider_records import record
 from deixis.providers import common, contract, facade, lookup, registry
 from deixis.domain import canonical
 from deixis.workflow import flow as flow_module, lookups
-from deixis.workflow.flow import Page
+from deixis.workflow.search_page import Page
 
 
 @pytest.fixture(autouse=True)

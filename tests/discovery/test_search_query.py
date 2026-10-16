@@ -173,7 +173,6 @@ def test_the_first_round_pairs_the_two_queries_per_provider_within_the_limit():
     assert [(q["provider_id"], q["origin"]) for q in queries] == [
         ("openalex", "model"), ("openalex", "code"), ("semantic_scholar", "model")]
     assert queries[0]["query_text"] == '"rail freight" AND (timetable OR "integer programming")'
-    assert search_query.model_queries(queries) == [queries[0], queries[2]]
 
 
 def test_a_code_query_identical_to_the_model_query_is_not_sent_twice_and_one_switched_off_is_not_sent():

@@ -77,8 +77,7 @@ def test_hung_read_call_is_cut_and_the_answer_still_publishes(tmp_path, monkeypa
                 await asyncio.sleep(60)
             return await super().run_step(base, developer, message, output_schema, requested_model, reasoning_effort)
 
-    bases, *rest = fast_path.MODES["quick"]
-    monkeypatch.setitem(fast_path.MODES, "quick", ((1, 1, 1, 3, 30), *rest))
+    monkeypatch.setitem(fast_path.MODES, "quick", fast_path.MODES["quick"]._replace(stage_seconds=(1, 1, 1, 3, 30)))
     freeze = fast_path.freeze_budget
     def short_drain(*args, **kwargs):
         policy = freeze(*args, **kwargs)

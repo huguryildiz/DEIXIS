@@ -17,6 +17,8 @@ from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import transaction
 from deixis.workflow import chaining, fast_path, fast_search, ranking, seed_match, small_batch
 
+RETRY_BACKOFF_SECONDS = 1.5  # wait before resending a request that never left, times the attempt number
+
 
 def work_id(value):
     value = str(value).rsplit("/", 1)[-1]
@@ -191,7 +193,7 @@ class Round:
             versions, by_work, pool = ranking.pool_rows(self.store, self.run["research_id"], self.run["scope_revision"])
             model, reason = self.flow._ranking_embedding(self.run, self.scope)
             scores = fast_path.ranking_similarities(self.store, self.run, model) if model else {}
-            query, blocks = ranking.query_vocabulary(self.scope, self.vocabulary, {})
+            query, blocks = ranking.query_vocabulary(self.scope, self.vocabulary)
             verified = ranking.seed_rows(self.store, self.run, self.scope, versions, {})
             ranked = ranking.rank_pool(pool, verified, query, blocks, model, scores, reason,
                                        ranking.joint_terms(self.store, self.scope, self.vocabulary),
@@ -269,7 +271,7 @@ class Round:
                         self.store._note_openalex_budget(self.run["research_id"], self.run["id"], reset, skipped=False)
                 if outcome.delivery_class == "before_send" and attempts < MAX_TRANSIENT_NETWORK_RETRIES:
                     attempts += 1
-                    await asyncio.sleep(1.5 * attempts)
+                    await asyncio.sleep(RETRY_BACKOFF_SECONDS * attempts)
                     continue
                 break
             arrived = self.store.clock.now()

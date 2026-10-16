@@ -245,7 +245,7 @@ def leaf_rules(rule):
 @pytest.fixture(scope="module")
 def collected_cases():
     listing = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider", "-n", "0", "-m", "process or not process"],
-                             cwd=str(REPO), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, env=dict(__import__("os").environ, PYTHONPATH="backend:."))
+                             cwd=str(REPO), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, env={k: v for k, v in dict(__import__("os").environ, PYTHONPATH="backend:.").items() if k != "DEIXIS_TEST_SHARD"})  # every test, not one CI shard
     assert listing.returncode == 0, listing.stdout[-2000:]
     collected = []
     for line in listing.stdout.splitlines():

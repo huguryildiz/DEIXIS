@@ -221,12 +221,35 @@ def pytest_collection_modifyitems(config, items):
         if slow_items:
             config.hook.pytest_deselected(items=slow_items)
             items[:] = [item for item in items if not item.get_closest_marker("slow")]
-    if "process" in marker:
+    if "process" not in marker:
+        skipped = [item for item in items if item.get_closest_marker("process")]
+        if skipped:
+            config.hook.pytest_deselected(items=skipped)
+            items[:] = [item for item in items if item not in skipped]
+    keep_shard(config, items, slow)
+
+
+def keep_shard(config, items, slow):
+    """DEIXIS_TEST_SHARD=i/n keeps the i-th of n parts (from 0), so CI runs the full suite on n machines at once.
+
+    Whole modules go to the lightest part, heaviest first, weighing a slow test as 1 and any other as 0.02; every machine
+    collects the same tests and so makes the same split."""
+    shard = os.environ.get("DEIXIS_TEST_SHARD")
+    if not shard:
         return
-    skipped = [item for item in items if item.get_closest_marker("process")]
-    if skipped:
-        config.hook.pytest_deselected(items=skipped)
-        items[:] = [item for item in items if item not in skipped]
+    index, count = (int(part) for part in shard.split("/"))
+    weights: dict[str, float] = {}
+    for item in items:
+        module = item.nodeid.split("::")[0]
+        weights[module] = weights.get(module, 0.0) + (1.0 if item.nodeid in slow else 0.02)
+    loads, owner = [0.0] * count, {}
+    for module in sorted(weights, key=lambda m: (-weights[m], m)):
+        lightest = loads.index(min(loads))
+        owner[module], loads[lightest] = lightest, loads[lightest] + weights[module]
+    other = [item for item in items if owner[item.nodeid.split("::")[0]] != index]
+    if other:
+        config.hook.pytest_deselected(items=other)
+        items[:] = [item for item in items if owner[item.nodeid.split("::")[0]] == index]
 
 
 @pytest.fixture(autouse=True)

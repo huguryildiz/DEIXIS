@@ -44,7 +44,7 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 
 - Port 8765 may be the owner's real library: don't restart it while a run is active; test on another port with a temp `DEIXIS_DATA_DIR`.
 - The worktree may hold someone else's changes; don't stage or revert them. No destructive git.
-- Testing: after a change run `pytest --testmon tests`; it does not see edits to schemas, methods, SQL or fixtures, so after those run the files that read them. Don't run the full suite locally before a push: the `tests` workflow runs it on GitHub; check its result and fix a red run first.
+- Testing: after a change run `pytest --testmon tests`; it does not see edits to schemas, methods, SQL or fixtures, so after those run the files that read them. Don't run the full suite locally before a push: the `ci` workflow runs it on GitHub in four parallel parts; check its result and fix a red run first.
 - Tests are model-free (`FakeAdapter`, mocked `httpx`, fake fetcher via `create_app`); a new test folder goes into `pythonpath` in `pyproject.toml`. Passing tests show workflow behavior, not model quality.
 - Decisions go in [docs/decisions.md](docs/decisions.md), newest on top. Plans and design notes go in the ignored `.local/`.
 - Report what changed, which checks ran and passed, what was skipped or left unverified, and whether anything was pushed.

@@ -1,5 +1,6 @@
-# Runs the quick test suite and the web build on every push to main. Informational only: no branch rule requires it,
-# so a red run never blocks a push. macOS arm64, the only platform the app supports.
+# Runs the full test suite (slow tests included), split over four machines, and the web build on every push to main, so
+# the developer's Mac only runs `pytest --testmon tests`. Informational only: no branch rule requires it, so a red run
+# never blocks a push. macOS arm64, the only platform the app supports.
 name: ci
 
 on:
@@ -13,8 +14,13 @@ concurrency:
 
 jobs:
   backend:
+    name: backend (${{ matrix.shard }}/4)
     runs-on: macos-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -28,9 +34,10 @@ jobs:
       - run: npm ci
         working-directory: apps/web  # some backend tests run the web TypeScript through node and need its typescript
       - run: uv sync --frozen
-      - run: uv run --no-sync pytest -n 3
+      - run: uv run --no-sync pytest -n 3 -m "slow or not slow"
         env:
           PYTHONPATH: backend
+          DEIXIS_TEST_SHARD: ${{ matrix.shard }}/4  # tests/conftest.py keeps this machine's part
 
   web:
     runs-on: macos-latest

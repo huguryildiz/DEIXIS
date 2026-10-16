@@ -188,7 +188,7 @@ def test_gemini_and_copilot_adapters_start_node_or_the_native_exe(windows, tmp_p
         seen.append(argv)
         return gemini_cli.CliRun(0, "", "")
 
-    connection = gemini_cli.GeminiCliAdapter(tmp_path / "g", runner=runner)
+    connection = gemini_cli.GeminiCliAdapter(tmp_path / "g", runner=runner, credentials=touch(tmp_path / "creds.json", "{}"))
     asyncio.run(connection.run_step("B", "D", "M", {}, "gemini-x"))
     assert seen[0][:2] == [str(tmp_path / "npm/node.exe"), str(tmp_path / "npm/node_modules/@google/gemini-cli/bundle/gemini.js")]
     assert seen[0][2:4] == ["-m", "gemini-x"] and no_batch(seen[0])

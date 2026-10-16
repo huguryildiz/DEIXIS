@@ -20,6 +20,13 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+        working-directory: apps/web  # some backend tests run the web TypeScript through node and need its typescript
       - run: uv sync --frozen
       - run: uv run --no-sync pytest -n 3
         env:

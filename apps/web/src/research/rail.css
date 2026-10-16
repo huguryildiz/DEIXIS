@@ -46,6 +46,3 @@
 .rail-versions [data-slot=dropdown-menu-item] b{font-weight:500;color:var(--ink)}
 .rail-versions [data-slot=dropdown-menu-item] span{overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}
 .rail-versions [data-slot=dropdown-menu-item] svg{color:var(--accent)}
-/* The study table a running answer opens when it ends: a muted, unclickable row until the table exists. */
-.rail .box>.li.pending{display:flex;align-items:flex-start;gap:8px;margin:0 -6px;padding:6px;color:var(--muted);font-size:13px;line-height:1.35;cursor:default}
-.rail .box>.li.pending>svg{flex:none;margin-top:1px}

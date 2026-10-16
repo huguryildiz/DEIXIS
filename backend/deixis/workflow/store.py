@@ -134,6 +134,11 @@ def is_published(source: dict[str, Any]) -> bool:
 # The history reason a new head writes when it takes over another version's selection. It is reserved: a person's own
 # reason may not be this text (the API refuses it), so the probe set can tell the copy from a real edit (slice 19).
 COPIED_SELECTION_REASON = "taken from another version of the same work"
+# The events a question revision may have after it was opened and still be withdrawn (D67): a person's selection and
+# decisions, a title they wrote, and the built-in model's English sentence. The title run's own events are allowed by run.
+WITHDRAWABLE_EVENTS = frozenset({"scope_revised", "seed_selected", "selection_changed", "stage_decision_recorded",
+                                 "stage_decision_undone", "research_title_edited", "english_question_saved",
+                                 "scope_revision_withdrawn"})
 
 class NotFound(Exception):
     pass
@@ -622,20 +627,16 @@ class Store:
                 "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?",
                 (research_id, research["current_scope_revision"]),
             ).fetchone())
-            revision = research["current_scope_revision"] + 1
+            parent = research["current_scope_revision"]
             current_question = current["question"]
-            current.update(revision=revision, question=question.strip(), steering=steering, created_at=now())
+            current.update(question=question.strip(), steering=steering, created_at=now())
             if key_terms is not None and "key_terms" in current:
                 current["key_terms"] = key_terms
             # A person's search plan belongs to the revision it was saved with; a new question does not inherit it.
             current.pop("user_plan_json", None)
             if current.get("seed_mode") == "uploaded_seed":
                 current["seed_snapshot_json"] = None
-            names = ", ".join(current)
-            placeholders = ", ".join("?" for _ in current)
-            self.conn.execute(
-                f"INSERT INTO scope_revisions ({names}) VALUES ({placeholders})", tuple(current.values())
-            )
+            revision = self._open_revision(research, current)
             self.conn.execute(
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, title = ?, updated_at = ? WHERE id = ?",
                 (revision, question.strip().splitlines()[0][:160], now(), research_id),
@@ -647,7 +648,7 @@ class Store:
                     "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
                     " SELECT research_id, ?, text, origin, ? FROM scope_english_questions"
                     " WHERE research_id = ? AND scope_revision = ?",
-                    (revision, now(), research_id, revision - 1))
+                    (revision, now(), research_id, parent))
             self._event(research_id, "scope_revised", {"scope_revision": revision})
         return revision
 
@@ -664,20 +665,129 @@ class Store:
             current = dict(self.conn.execute(
                 "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?",
                 (research_id, research["current_scope_revision"])).fetchone())
-            revision = research["current_scope_revision"] + 1
-            current.update(revision=revision, created_at=now(), user_plan_json=dumps(plan))
-            self.conn.execute(
-                f"INSERT INTO scope_revisions ({', '.join(current)}) VALUES ({', '.join('?' for _ in current)})",
-                tuple(current.values()))
+            parent = research["current_scope_revision"]
+            current.update(created_at=now(), user_plan_json=dumps(plan))
+            revision = self._open_revision(research, current)
             self.conn.execute(
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, updated_at = ? WHERE id = ?",
                 (revision, now(), research_id))
             self.conn.execute(
                 "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
                 " SELECT research_id, ?, text, origin, ? FROM scope_english_questions"
-                " WHERE research_id = ? AND scope_revision = ?", (revision, now(), research_id, revision - 1))
+                " WHERE research_id = ? AND scope_revision = ?", (revision, now(), research_id, parent))
             self._event(research_id, "scope_revised", {"scope_revision": revision, "user_plan": True})
         return revision
+
+    def _open_revision(self, research: dict[str, Any], row: dict[str, Any]) -> int:
+        """Insert `row`, a copy of the current revision with its changes, as the next question revision; returns its
+        number. The number is the highest one plus one, so a withdrawn revision's number is never used again; the row
+        names the revision it was opened from and keeps the research title it replaced (D67). The caller moves the
+        research to it and writes its event, in the same transaction."""
+        revision = self.conn.execute("SELECT MAX(revision) FROM scope_revisions WHERE research_id = ?",
+                                     (research["id"],)).fetchone()[0] + 1
+        row.update(revision=revision, parent_revision=research["current_scope_revision"], title_before=research["title"],
+                   withdrawn_at=None)
+        self.conn.execute(f"INSERT INTO scope_revisions ({', '.join(row)}) VALUES ({', '.join('?' for _ in row)})",
+                          tuple(row.values()))
+        return revision
+
+    def _revision_tables(self) -> list[str]:
+        """The tables whose rows carry a research and the question revision they were made under; read once, since
+        migrations run before a store is used."""
+        if getattr(self, "_revision_table_names", None) is None:
+            names = [r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
+            self._revision_table_names = [t for t in names if {"research_id", "scope_revision"} <= {
+                c[1] for c in self.conn.execute(f"PRAGMA table_info({t})")}]
+        return self._revision_table_names
+
+    def withdrawal(self, research_id: str) -> dict[str, Any]:
+        """Whether the current question revision can be withdrawn (D67), and if not, why: the first reason found.
+
+        A revision can be withdrawn while it is the current one, was opened from another, no run of the research is
+        active or paused, and nothing was made under it but a completed research-title run (with its step inputs), the
+        English sentence copied with it, and a person's selection decisions. Anything else (a search, an answer, a
+        follow-up, a model's decision, a table or link edit, a requested file, a watch) means work was done under the
+        question, and it stays."""
+        research = self.research(research_id)
+        revision = research["current_scope_revision"]
+        row = self.conn.execute("SELECT parent_revision, title_before FROM scope_revisions WHERE research_id = ? AND revision = ?",
+                                (research_id, revision)).fetchone()
+        base = {"revision": revision, "parent_revision": row["parent_revision"], "restores_title": row["title_before"] is not None}
+        if row["parent_revision"] is None:
+            return base | {"allowed": False, "reason": "first_revision"}
+        if self.conn.execute("SELECT 1 FROM runs WHERE research_id = ? AND status IN (?, ?, ?, 'paused') LIMIT 1",
+                             (research_id, *ACTIVE_RUN_STATUSES)).fetchone():
+            return base | {"allowed": False, "reason": "run_active"}
+        title_runs = [r[0] for r in self.conn.execute(
+            "SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'research_title' AND status = 'completed'",
+            (research_id, revision))]
+        marks = ",".join("?" * len(title_runs))
+        checks = [
+            ("runs", "SELECT 1 FROM runs WHERE research_id = ? AND scope_revision = ?"
+                     f" AND id NOT IN ({marks}) LIMIT 1", title_runs),
+            ("step_inputs", "SELECT 1 FROM step_inputs WHERE research_id = ? AND scope_revision = ?"
+                            f" AND (run_id IS NULL OR run_id NOT IN ({marks})) LIMIT 1", title_runs),
+            ("stage_decisions", "SELECT 1 FROM stage_decisions WHERE research_id = ? AND scope_revision = ?"
+                                " AND decided_by != 'human' LIMIT 1", []),
+            ("cell_revisions", "SELECT 1 FROM cell_revisions r JOIN evidence_cells c ON c.id = r.cell_id"
+                               " JOIN evidence_tables t ON t.id = c.table_id WHERE t.research_id = ? AND r.scope_revision = ? LIMIT 1", []),
+            ("lineage_link_revisions", "SELECT 1 FROM lineage_link_revisions r JOIN lineage_links l ON l.id = r.link_id"
+                                       " JOIN evidence_tables t ON t.id = l.table_id WHERE t.research_id = ? AND r.scope_revision = ? LIMIT 1", []),
+        ]
+        checked = {name for name, _, _ in checks} | {"scope_english_questions"}
+        for table in self._revision_tables():
+            if table not in checked:
+                checks.append((table, f"SELECT 1 FROM {table} WHERE research_id = ? AND scope_revision = ? LIMIT 1", []))
+        for table, sql, extra in checks:
+            if self.conn.execute(sql, (research_id, revision, *extra)).fetchone():
+                return base | {"allowed": False, "reason": f"made_under:{table}"}
+        # A person's edits that name no revision (a table, a column, a cell, a note, a file) show in the research's
+        # events: after the revision was opened, only the title run's events and a person's selection, decision, title
+        # and English-sentence events leave it unused.
+        # A later revision that was itself withdrawn was unused too (D67): its title run and its withdrawal are not work.
+        unused_runs = set(title_runs) | {r[0] for r in self.conn.execute(
+            "SELECT r.id FROM runs r JOIN scope_revisions s ON s.research_id = r.research_id AND s.revision = r.scope_revision"
+            " WHERE r.research_id = ? AND r.kind = 'research_title' AND r.status = 'completed' AND s.withdrawn_at IS NOT NULL",
+            (research_id,))}
+        for kind, run_id in self.conn.execute("SELECT type, run_id FROM events WHERE research_id = ? AND rowid > ?"
+                                              " ORDER BY rowid", (research_id, self._opened_at(research_id, revision))):
+            if run_id not in unused_runs and kind not in WITHDRAWABLE_EVENTS:
+                return base | {"allowed": False, "reason": f"done_after:{kind}"}
+        return base | {"allowed": True, "reason": None}
+
+    def _opened_at(self, research_id: str, revision: int) -> int:
+        """The rowid of the event that opened this question revision; 0 when none was written."""
+        return self.conn.execute(
+            "SELECT MAX(rowid) FROM events WHERE research_id = ? AND type IN ('scope_revised', 'seed_selected')"
+            " AND json_extract(payload_json, '$.scope_revision') = ?", (research_id, revision)).fetchone()[0] or 0
+
+    def withdraw_revision(self, research_id: str, expected_version: int, revision: int) -> int:
+        """Withdraw the current question revision and go back to the one it was opened from (D67); returns that number.
+
+        Nothing is deleted: the revision stays as history with `withdrawn_at`, and the research title it replaced comes
+        back when it was kept and the person has not renamed the research since. Refused (RevisionConflict) when `revision` is not the current one or `withdrawal` says no."""
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            if research["current_scope_revision"] != revision:
+                raise RevisionConflict("Only the current question revision can be withdrawn")
+            check = self.withdrawal(research_id)
+            if not check["allowed"]:
+                raise RevisionConflict(f"This question revision cannot be withdrawn ({check['reason']})")
+            title = self.conn.execute("SELECT title_before FROM scope_revisions WHERE research_id = ? AND revision = ?",
+                                      (research_id, revision)).fetchone()[0]
+            # A title the person wrote after the revision was opened is theirs and stays (events in written order).
+            if self.conn.execute("SELECT 1 FROM events WHERE research_id = ? AND type = 'research_title_edited'"
+                                 " AND rowid > ? LIMIT 1", (research_id, self._opened_at(research_id, revision))).fetchone():
+                title = None
+            self.conn.execute("UPDATE scope_revisions SET withdrawn_at = ? WHERE research_id = ? AND revision = ?",
+                              (now(), research_id, revision))
+            self.conn.execute(
+                "UPDATE researches SET current_scope_revision = ?, title = COALESCE(?, title), version = version + 1,"
+                " updated_at = ? WHERE id = ?", (check["parent_revision"], title, now(), research_id))
+            self._event(research_id, "scope_revision_withdrawn",
+                        {"scope_revision": revision, "back_to": check["parent_revision"]})
+        return check["parent_revision"]
 
     # ---- the built-in model's English sentence (slice 21) ---------------------------------------------
     def english_question(self, research_id: str, scope_revision: int) -> dict[str, Any] | None:
@@ -887,17 +997,12 @@ class Store:
             if scope["seed_mode"] == "uploaded_seed" and current == snapshot:
                 return scope["revision"]
             check_expected_version(expected_version, research["version"])
-            revision = scope["revision"] + 1
             row = dict(self.conn.execute(
                 "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?", (research_id, scope["revision"])
             ).fetchone())
-            row.update(revision=revision, seed_mode="uploaded_seed", seed_snapshot_json=dumps(snapshot), created_at=now())
+            row.update(seed_mode="uploaded_seed", seed_snapshot_json=dumps(snapshot), created_at=now())
             row.pop("user_plan_json", None)  # other seeds are a new plan; a person's saved plan is not carried over
-            columns = list(row)
-            self.conn.execute(
-                f"INSERT INTO scope_revisions ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
-                tuple(row.values()),
-            )
+            revision = self._open_revision(research, row)
             self.conn.execute(
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, updated_at = ? WHERE id = ?",
                 (revision, now(), research_id),

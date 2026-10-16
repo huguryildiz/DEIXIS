@@ -257,8 +257,8 @@ export const SURFACES: Surface[] = [
   { id: 'watch-panel', mock: "setScenario('ok'); openPanel('watch', null, false)", app: '#/research/{cand}/watch', ready: '[data-split-panel] .followup-watch' },
   // S23b: the Search plan panel (P42) of the [parity] research, opened fresh; ready once its buttons are drawn.
   { id: 'plan-panel', mock: "setScenario('ok'); openPanel('plan', null, false)", app: '#/research/{research}/plan', ready: '[data-split-panel] .plan-panel .rowbtns .btn-teal' },
-  // S22b: a follow-up turn in the thread (R31). The mockup's own "rounds" turn (its passages do not answer, so it offers
-  // "Search for new works on this"), finished at once: its timers are not started. The app's [parity] research holds one
+  // S22b: a follow-up turn in the thread (R31). The mockup's own "rounds" turn (its passages do not answer; its "Search
+  // for new works on this" is an excluded control, D67), finished at once: its timers are not started. The app's [parity] research holds one
   // SYNTHETIC follow-up the fixture's model answers `not_answered` ("[fu-not]").
   { id: 'followup-turn', mock: "setScenario('ok'); { const later = window.setTimeout; window.setTimeout = () => 0; addTurn('rounds'); window.setTimeout = later } st.turns[0].state = 'done'; render()",
     app: '#/research/{research}', ready: '.followup-turn .followup-prose' },
@@ -840,8 +840,6 @@ export const PAIRS: Pair[] = [
     text: false, states: [], status: 'active' },
   { id: 'followup-turn.prose', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .prose', app: '.followup-turn .followup-prose', checks: ['content', 'type'], status: 'active' },
   { id: 'followup-turn.acts', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .acts', app: '.followup-turn .followup-acts', checks: ['content'], status: 'active' },
-  { id: 'followup-turn.search', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .acts .ghost', app: '.followup-turn .followup-acts .answer-pill', checks: ['chrome', 'type', 'colour', 'icon'],
-    icon: { mock: 'search', app: 'search' }, text: true, states: [], status: 'active' },
   { id: 'followup-turn.copy', surface: 'followup-turn', mock: '.thread-inner > .follow ~ .acts .ib', app: '.followup-turn .followup-acts .answer-ib', checks: ['chrome', 'icon'],
     icon: { mock: 'copy', app: 'copy' }, states: [], status: 'active' },
   // S6: the Zotero dialog of Home (H17). The dialog's and the footer's height and y depend on the rows and on how the

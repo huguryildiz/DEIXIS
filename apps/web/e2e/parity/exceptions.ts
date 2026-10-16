@@ -99,6 +99,7 @@ export const EXCLUDED_MOCK_CONTROLS: Array<{ id: string; rule: string; selector:
   { id: 'mockup-toast', rule: '§0 rule 2 (the state switcher announces itself in a toast)', selector: '.toast:not([data-parity])' },
   { id: 'not-in-mockup-rows', rule: '§0 rule 2 ("N more works … are not shown in this mockup")', selector: '.more-row' },
   { id: 'edit-plan-too-broad', rule: 'S23b (never a link to nothing: a too-broad or empty-vocabulary stop ends before its plan is frozen, so the Search plan panel would hold no plan of it; the rewrite field is the way on, R21)', selector: '.notice [data-panel="plan"]' },
+  { id: 'followup-search-new-works', rule: 'D67 (a follow-up opens no question revision: its "Search for new works on this" saved the turn\'s text as the research question in one click, and the works read under the earlier question then went unused; a new question is saved from the question\'s own revise form)', selector: '.acts button.ghost[data-msg^="New search queued"]' },
   { id: 'semantic-builtin-note', rule: 'COPY_CHANGES semantic-builtin (73e448b, owner request: shorter Settings explanations; the built-in row has no note, its panel says what is installed once it is)', selector: '.rows.opts > label:has(input[value="builtin"]) small' },
 ]
 
@@ -127,6 +128,8 @@ export const PLACEMENTS: Placement[] = [
     container: 'Answer thread notices: "This answer was produced for revision N …" (stale scope) and the status line "Full text that arrived later is being read; an updated version may follow."', app: '.answer-thread .answer-notice, .answer-late-pending' },
   { id: 'sources-cited-tab', rule: '§0 rule 5 (the answer\'s "View N cited sources" opens the Sources panel on its cited works)', slice: 'S10',
     container: 'Sources panel filter strip: "Cited in answer" first, then Included, Passed abstract, Undecided, Excluded, Not read (S27) and All, where the mockup has it', app: null },
+  { id: 'revise-effect', rule: '§2.2 (Q1, D67: saving a revision makes a new question that every later search, answer and follow-up runs under)', slice: 'D67', container: 'Revise question form, under the fields and above the buttons: what saving makes and that an unused revision can be undone', app: '.chat-question.is-editing .revise-effect' },
+  { id: 'revision-undo', rule: '§2.2 (Q1, D67: a revision nothing was done under can be withdrawn)', slice: 'D67', container: 'Question bubble, after "· revision N": "Undo revision N", shown while the backend allows the withdrawal and no run is active', app: '.research-revision-undo' },
   { id: 'english-question', rule: '§2.2 (Q1)', slice: 'S9', container: 'Plan step detail, row "English question for the semantic search" (the Search plan panel also shows it since S23b)', app: '.chat-step-detail .step-row' },
   { id: 'seed-pdfs-block', rule: '§2.2 (Q1, D3)', slice: 'S9', container: 'Plan step detail, "PDFs guiding the search" with each PDF\'s use (read only; the choice of PDFs is in the Search plan panel since S23b, see seed-choice-stale)', app: '.chat-step-detail .step-seeds' },
   { id: 'prisma-s-export', rule: '§2.2 (Q1)', slice: 'S8', container: 'Export menu, SOURCES group: rows MD and JSON "PRISMA-S search report" after BIB and RIS', app: '.export-placement' },
@@ -363,7 +366,6 @@ export const COPY_CHANGES: Array<{ id: string; rule: string; mock: string; app: 
   { id: 'followup-never-on', rule: '§2.3 (a follow-up that was never enabled is not "turned off")', mock: 'This follow-up is turned off.', app: 'This follow-up is not on. (never enabled) / This follow-up is turned off. (disabled)' },
   { id: 'followup-placeholder', rule: '§2.3 (a follow-up is answered from the passages the research holds; sending it does not revise the question or add PDFs, D11)', mock: 'Ask about anything you see, revise the question, or add PDFs', app: 'Ask about the passages this research has read' },
   { id: 'followup-depth-label', rule: '§2.3 (a follow-up has no depth of its own: it reads at most the passage limit of the research\'s depth)', mock: 'the composer\'s depth menu button (Quick / Standard / Detailed)', app: 'the research\'s depth as a label, with "A follow-up reads at most the passage limit of this research\'s depth." as its title' },
-  { id: 'followup-search-saved', rule: '§2.3 ("Search for new works on this" saves a question revision; no search is queued until the person starts one, D11)', mock: 'New search queued as revision N', app: 'Saved as revision N of the question. No search has started; start it with Search again. (Search providers before a first search)' },
   { id: 'followup-next-step-row', rule: '§2.3 / §0 rule 1 (the row\'s question is the answer\'s first stored unanswered aspect; it is put in the composer and sent by the person)', mock: 'Find works that report lifetime in rounds or hours for a fixed k (asked at once)', app: 'the first unanswered aspect of the shown answer, put in the follow-up composer' },
   { id: 'followup-live-step', rule: '§2.3 (no count before the selection is stored)', mock: 'Looked in the 48 passages from this research (spinning while live)', app: 'Looking in the passages from this research (no count) until the selection is stored; then Looked in the N passages, N = the call\'s allowlist' },
   { id: 'followup-old-scope', rule: '§2.3 (the lock reason names why Check now waits)', mock: '(no reason line under an old-scope follow-up)', app: 'the stored rebind reason under the notice, and "Checks wait until you rebind this follow-up to the current question."' },
@@ -432,6 +434,8 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
   { id: 's3-rows-y', rule: '§0 rule 1 (recent rows are data)',
     pairs: ['palette.headings', 'palette.goto-rows', 'palette.goto-keys'], axes: ['y'],
     note: 'The headings and Go to rows after the recent research rows move up; x, width and height are compared.' },
+  { id: 'followup-copy-first', rule: 'EXCLUDED_MOCK_CONTROLS followup-search-new-works (D67)', pairs: ['followup-turn.copy'], axes: ['x'],
+    note: 'The mockup\'s "Search for new works on this" sits before the copy button; without it the copy button is the first in the row. y, width and height are compared.' },
   { id: 'followup-question-width', rule: '§0 rule 1 (the question is the person\'s, from the records)', pairs: ['followup-turn.question'], axes: ['x', 'width'], widths: [1280],
     note: 'The Question bubble sits at the right and is as wide as its question, which is the fixture\'s, not the mockup\'s example (at 390 both fill the row and are compared); its type and colour are compared.' },
   { id: 'followup-acts-y', rule: 'PLACEMENTS followup-turn-states; §0 rule 1 (the answer\'s claims and aspects are stored data)', pairs: ['followup-turn.search', 'followup-turn.copy'], axes: ['y'],

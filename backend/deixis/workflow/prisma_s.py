@@ -413,7 +413,9 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
     items.append(_item(11, "not_recorded", "Adapting a search from earlier work is not recorded in DEIXIS."))
 
     # 12 — updates.
-    earlier = revision - 1
+    # The question revisions before this one that were not withdrawn (D67).
+    earlier = conn.execute("SELECT COUNT(*) FROM scope_revisions WHERE research_id = ? AND revision < ?"
+                           " AND withdrawn_at IS NULL", (research_id, revision)).fetchone()[0]
     runs_text = [{"run_id": run["id"], "created_at": run["created_at"]} for run in discovery]
     if len(discovery) > 1:
         status, text = "reported", f"{len(discovery)} discovery runs searched this question revision."

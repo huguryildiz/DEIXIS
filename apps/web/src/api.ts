@@ -130,6 +130,7 @@ export type SeedSelection = { source_version_ids: string[] } | { all_eligible: t
 
 export type Scope = {
   research_id: string; revision: number; question: string; language_hint: string | null; source_scope: SourceScope
+  parent_revision: number | null  // the revision this one was opened from; null for the first (D67)
   seed_mode: 'question_only' | 'uploaded_seed'; seed_status: 'question_only' | 'missing' | 'ready' | 'stale'
   // The current revision's search finished; an sw research may then answer with no included work (SW22).
   discovery_completed?: boolean
@@ -661,9 +662,12 @@ export type QueueAnswerResult = {
   row: QueueRow | null; decision: QueueDecision | null; undo_token: string
   selection: { source_version_id: string; state: Source['selection']['state']; origin: Source['selection']['origin']; version: number } | null
 }
+export type RevisionWithdrawal = { revision: number; parent_revision: number | null; restores_title: boolean; allowed: boolean; reason: string | null }
 export type ResearchView = {
   research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string
-    intent: ResearchIntent; comparison_frame: string | null }  // the frame follows the current question (compare only)
+    intent: ResearchIntent; comparison_frame: string | null  // the frame follows the current question (compare only)
+    // Whether the current question revision can still be withdrawn, and the number the next one takes (D67).
+    revision_withdrawal: RevisionWithdrawal; next_scope_revision: number }
   // A table/compare discovery of the current question that wrote no table, and why; null otherwise (S5a).
   intent_outcome: IntentOutcome | null
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
@@ -1377,6 +1381,9 @@ export const api = {
   activityRuns: (id: string) => request<ActivityRuns>(`/api/researches/${encodeURIComponent(id)}/activity-runs`),
   reviseScope: (id: string, question: string, expectedVersion: number, keyTerms?: string | null) =>
     request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion, key_terms: keyTerms ?? null })),
+  // Withdraw the current question revision while nothing was made under it; the research goes back to the one before (D67).
+  withdrawScope: (id: string, revision: number, expectedVersion: number) =>
+    request<ResearchView>(`/api/researches/${id}/scope/withdraw`, json('POST', { revision, expected_version: expectedVersion })),
   skipEquations: (runId: string) => request<Run>(`/api/runs/${runId}/skip-equations`, { method: 'POST' }),
   // After the model could not write the query: search with the code's query alone (D92).
   chooseCodeQuery: (runId: string) => request<Run>(`/api/runs/${runId}/search-query-choice`, { method: 'POST' }),
@@ -1828,7 +1835,7 @@ export type ScreenedAfterCutoff = {
 // this research already holds; no search is started. `status` stays 'pending' until the answer is published with its
 // links; the run's own status says whether it is still working, paused or stopped. Claims and citations come only with
 // a valid answer: an 'unverified_draft' carries its `issues` and no claim. `no_passages` means the research held no
-// passage to give and no model was asked. "Search for new works on this" is a new scope revision with `question`.
+// passage to give and no model was asked. A new question is a scope revision the person opens from the question's own form (D67).
 // A person's selection change, or a removed or replaced file, while the turn is unpublished fails its run with
 // `followup_selection_changed` / `followup_sources_changed`; the turn stays pending and is asked again.
 export type FollowupTurnStatus = 'pending' | 'answered' | 'partly_answered' | 'not_answered' | 'no_passages' | 'unverified_draft'

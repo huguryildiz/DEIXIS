@@ -457,3 +457,16 @@ def test_the_model_proposal_leaves_out_abstract_decisions_made_under_an_earlier_
         shown = flow_counts.machine_screening(ctx, lib.work_of(svid))
         assert (shown["stage"], shown["outcome"], shown["stale"], shown["passed_abstract"]) == (None, None, True, False)
     assert ctx.outcome(lib.work_of(kept))["outcome"] == "candidate"  # the selection rules still read the old decision
+
+
+def test_a_question_revision_withdrawn_in_the_same_millisecond_as_a_persons_answer_is_time_unknown(store):
+    """Events and decisions are different tables: a withdrawal (D67) at the person's moment leaves the key unknown."""
+    lib = Probe(store)
+    published = lib.published("10.9999/synth.withdraw")
+    code(lib, published, "criterion_absent")
+    decision = person(lib, published, "human_include")
+    store._event(lib.rid, "scope_revision_withdrawn", {"scope_revision": 2, "back_to": 1})
+    store.conn.execute("UPDATE events SET created_at = ? WHERE rowid = (SELECT MAX(rowid) FROM events)",
+                       (decision["created_at"],))
+    entry = classes(lib)[lib.work_of(published)]
+    assert (entry["path"], entry["class"], entry["machine"]) == ("queue", "time_unknown", None)

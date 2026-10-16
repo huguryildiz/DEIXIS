@@ -60,7 +60,7 @@ type PlanView = {
   queries_preview: boolean; providers: Provider[]
 }
 type View = {
-  research: { version: number; current_scope_revision: number }
+  research: { version: number; current_scope_revision: number; next_scope_revision: number }
   scope: { seed_status: string; seeds: { source_version_id: string; title: string }[] }
   runs: Array<{ id: string; kind: string; status: string; scope_revision: number }>
 }
@@ -396,5 +396,20 @@ test.describe.serial('S23b: the Search plan panel', () => {
     expect(await opened.evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
     await shot(page, 's23b-plan-panel-390')
     await page.setViewportSize({ width: 1280, height: 900 })
+  })
+
+  test('after a withdrawn revision the panel names the next free number, not the current one plus one (D67)', async () => {
+    await settled(api, rid, ['discovery', 'answer'])
+    const before = await viewOf(api, rid)
+    const revised = await post(api, `/api/researches/${rid}/scope`, { question: 'SYNTHETIC write the report from the full texts', expected_version: before.research.version, key_terms: null })
+    expect(revised.ok(), await revised.text()).toBe(true)
+    const opened = (await revised.json()) as View
+    const withdrawn = await post(api, `/api/researches/${rid}/scope/withdraw`, { expected_version: opened.research.version, revision: opened.research.current_scope_revision })
+    expect(withdrawn.ok(), await withdrawn.text()).toBe(true)
+    const after = (await withdrawn.json()) as View
+    expect(after.research.current_scope_revision).toBe(before.research.current_scope_revision)
+    expect(after.research.next_scope_revision).toBe(before.research.current_scope_revision + 2)
+    await visit(page, `${research()}/plan`)
+    await expect(planPanel(page).locator('.plan-panel > p').first()).toContainText(`saving makes revision ${after.research.next_scope_revision}`)
   })
 })

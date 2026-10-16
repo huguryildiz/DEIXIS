@@ -524,6 +524,11 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     # The frame of a `compare` research follows its current question; its column suggestions get the frame of the
     # revision they run under (UI parity S5a).
     research["comparison_frame"] = intent_rules.frame_for(research, scope)
+    # Whether the current question revision can still be withdrawn, and why not (D67).
+    research["revision_withdrawal"] = store.withdrawal(research_id)
+    # The number the next question revision takes: a withdrawn revision's number is not used again (D67).
+    research["next_scope_revision"] = conn.execute("SELECT MAX(revision) FROM scope_revisions WHERE research_id = ?",
+                                                   (research_id,)).fetchone()[0] + 1
     # One queue context: the facts and every work's outcome, read once for all four (slice 19).
     ctx = queue_context(store, research_id)
     probe = probe_rules.probe_set(ctx)

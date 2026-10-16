@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { t } from '../i18n'
 
-// The question bubble turned into the revise form (mockup `.q.edit`, R7): the question, the English key terms, Cancel
-// and "Save revision N+1". Saving creates a new question revision; sources and earlier answers are kept.
+// The question bubble turned into the revise form (mockup `.q.edit`, R7): the question, the English key terms, what
+// saving does, Cancel and "Save revision N". Saving creates a new question revision; sources and earlier answers are
+// kept. N is the next free number: a withdrawn revision's number is not used again (D67).
 // `conflict` names a newer revision saved elsewhere while the form was open: the draft stays, and Save waits until the
 // person bases the draft on that revision.
 export function RevisionForm({ question, keyTerms, nextRevision, focus, focusRequest, conflict, disabled, onSubmit, onCancel, onRebase }: {
@@ -27,6 +28,7 @@ export function RevisionForm({ question, keyTerms, nextRevision, focus, focusReq
     </div>}
     <label>{t('Question')}<textarea id="revise-question" ref={questionField} rows={4} value={text} dir="auto" onChange={e => setText(e.target.value)} /></label>
     <label>{t('English key terms (optional)')}<input id="revise-key-terms" ref={termsField} value={terms} onChange={e => setTerms(e.target.value)} maxLength={500} dir="auto" aria-describedby="revise-key-terms-hint" /></label>
+    <p className="revise-effect">{t('Saving makes this revision {n} of the research question and names the research after it. No search starts. A work read under the current question is not used by an answer until a search under the new question reads it again. While nothing has been searched, answered or read under it, you can undo it.', { n: nextRevision })}</p>
     <small id="revise-key-terms-hint">{t('Blocks are separated by “;”, synonyms of one block by “,”; a group written “claim:” is the assertion under test and one written “not:” keeps records out.')}</small>
     <div className="chat-question-buttons">
       <Button type="button" variant="ghost" size="sm" className="research-topbar-action" onClick={onCancel}>{t('Cancel')}</Button>

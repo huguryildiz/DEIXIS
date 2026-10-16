@@ -9,7 +9,7 @@ import { panel } from './panels'
 // UI parity S22b: follow-up questions in the thread (R30 composer, R31 turns; D11). A question is sent from the sticky
 // composer (⌘/Ctrl + Enter), its two step lines follow the stored run, the published answer cites the passages the call was
 // given, a paused turn resumes from its notice, an invalid output shows as an unverified draft, a turn the passages do not
-// answer says so, and "Search for new works on this" saves a new question revision without starting a search. Every
+// answer says so and offers no question revision of its own (D67). Every
 // expected value is read from the stored turn or research, never by position.
 //
 // Every record is SYNTHETIC and the model is the fixture's script ([fu-hold], [fu-not], [fu-invalid] in the follow-up
@@ -262,7 +262,7 @@ test.describe.serial('S22b: follow-up questions in the thread', () => {
     await page.unroute(`**/api/researches/${rid}`)
   })
 
-  test('a turn the passages do not answer says so; "Search for new works on this" saves a revision and starts no search', async () => {
+  test('a turn the passages do not answer says so and opens no question revision', async () => {
     const question = '[fu-not] Which SYNTHETIC studies report schedules in hours?'
     await visit(page, research())
     await ask(page, question)
@@ -271,18 +271,11 @@ test.describe.serial('S22b: follow-up questions in the thread', () => {
     const stored = await turnFor(api, rid, question)
     expect(stored?.answer?.outcome).toBe('not_answered')
     await expect(turn.locator('.followup-gaps li')).toHaveText(stored!.answer!.unanswered_aspects)
-    const before = await viewOf(api, rid)
-    await turn.getByRole('button', { name: 'Search for new works on this' }).click()
-    const after = before.research.current_scope_revision + 1
-    await expect(page.locator('.toast', { hasText: `Saved as revision ${after} of the question. No search has started` })).toBeVisible()
-    const view = await viewOf(api, rid)
-    expect(view.research.current_scope_revision).toBe(after)
-    expect(view.scope.question).toBe(question)
-    expect(view.runs.filter(r => r.kind === 'discovery').length).toBe(before.runs.filter(r => r.kind === 'discovery').length)
-    expect(view.runs.some(r => ACTIVE.has(r.status))).toBe(false)
-    // The turn now belongs to the earlier revision and no longer offers the search.
-    await expect(turn.locator('.followup-note')).toContainText(`Asked under revision ${stored!.scope_revision} of the question.`)
+    // No button turns the follow-up into the research question (D67); the question stays the research's own.
     await expect(turn.getByRole('button', { name: 'Search for new works on this' })).toHaveCount(0)
+    const view = await viewOf(api, rid)
+    expect(view.research.current_scope_revision).toBe(stored!.scope_revision)
+    expect(view.scope.question).not.toBe(question)
     await shot(page, 's22b-not-answered')
   })
 

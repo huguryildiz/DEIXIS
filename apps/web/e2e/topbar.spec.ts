@@ -316,10 +316,35 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     }).toEqual([4, null])
   })
 
-  test('a revision saved in another window while the form is open keeps the draft and blocks Save until the draft is based on it', async () => {
+  test('a revision nothing was done under can be undone; the research goes back and the next revision skips its number (D67)', async () => {
     await page.goto(`${server.url()}/#/research/${rid}`)
     const before = await viewOf(api, rid)
     const revision = before.research.current_scope_revision
+    const next = before.research.next_scope_revision
+    const revise = topbar(page).getByRole('button', { name: 'Revise question' })
+    await revise.click()
+    const form = page.getByRole('form', { name: 'Revise question' })
+    await expect(form.locator('.revise-effect')).toContainText(`revision ${next} of the research question`)
+    await form.getByRole('textbox', { name: 'Question', exact: true }).fill('SYNTHETIC write the report from the full texts')
+    await form.getByRole('button', { name: `Save revision ${next}` }).click()
+    await expect(page.locator('.toast')).toContainText('Question revised.')
+    const undo = page.getByRole('button', { name: `Undo revision ${next}` })
+    await expect(undo).toBeVisible()
+    await shot(page, 'd67-undo-revision')
+    await undo.click()
+    await expect(page.locator('.toast', { hasText: `Revision ${next} withdrawn.` })).toBeVisible()
+    await expect.poll(async () => (await viewOf(api, rid)).research.current_scope_revision).toBe(revision)
+    const after = await viewOf(api, rid)
+    expect(after.scope.question).toBe(before.scope.question)
+    expect(after.research.next_scope_revision).toBe(next + 1)
+    await expect(undo).toHaveCount(0)
+  })
+
+  test('a revision saved in another window while the form is open keeps the draft and blocks Save until the draft is based on it', async () => {
+    await page.goto(`${server.url()}/#/research/${rid}`)
+    const before = await viewOf(api, rid)
+    // A withdrawn revision's number is not used again (D67): the next one takes the next free number.
+    const next = before.research.next_scope_revision
     await topbar(page).getByRole('button', { name: 'Revise question' }).click()
     const form = page.getByRole('form', { name: 'Revise question' })
     const question = form.getByRole('textbox', { name: 'Question', exact: true })
@@ -329,14 +354,14 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     const other = 'SYNTHETIC question saved in the other window?'
     expect((await post(api, `/api/researches/${rid}/scope`, { question: other, expected_version: before.research.version, key_terms: null })).ok()).toBe(true)
     const conflict = form.getByRole('alert')
-    await expect(conflict).toContainText(`Revision ${revision + 1} of this question was saved in another window while you edited.`)
+    await expect(conflict).toContainText(`Revision ${next} of this question was saved in another window while you edited.`)
     await expect(conflict).toContainText(other)
     await expect(question).toHaveValue(draft)
-    const save = form.getByRole('button', { name: `Save revision ${revision + 2}` })
+    const save = form.getByRole('button', { name: `Save revision ${next + 1}` })
     await expect(save).toBeDisabled()
     // A submit that bypasses the disabled button is refused too.
     await form.evaluate(f => (f as HTMLFormElement).requestSubmit())
-    expect((await viewOf(api, rid)).research.current_scope_revision).toBe(revision + 1)
+    expect((await viewOf(api, rid)).research.current_scope_revision).toBe(next)
     await shot(page, 's8-revise-conflict')
     // Asking for the form again only moves focus: the draft and the conflict stay, Save stays blocked.
     await form.getByLabel('English key terms (optional)').focus()
@@ -345,7 +370,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await expect(conflict).toBeVisible()
     await expect(question).toHaveValue(draft)
     await expect(save).toBeDisabled()
-    await conflict.getByRole('button', { name: `Base my draft on revision ${revision + 1}` }).click()
+    await conflict.getByRole('button', { name: `Base my draft on revision ${next}` }).click()
     await expect(conflict).toHaveCount(0)
     await expect(question).toBeFocused()
     await expect(question).toHaveValue(draft)
@@ -353,7 +378,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     await expect(form).toHaveCount(0)
     await expect(page.locator('.chat-question')).toContainText(draft)
     const after = await viewOf(api, rid)
-    expect(after.research.current_scope_revision).toBe(revision + 2)
+    expect(after.research.current_scope_revision).toBe(next + 1)
   })
 
   test('a revision this page has not received yet is refused by the backend (409) and the draft stays', async () => {

@@ -9,7 +9,8 @@ negative as `excluded`. Each is compared with the machine's view of the work **a
 - a list edit writes no decision, so the moment is the `created_at` of the `selection_history` row that set the
   current selection (a selection a new head copied from another version is followed to that version's row; a later
   edit of another version is not this moment). Decisions and selection history are different tables and their row
-  ids cannot be compared: a decision written in the same millisecond makes the class `time_unknown`.
+  ids cannot be compared: a decision written in the same millisecond makes the class `time_unknown`. So does a question
+  revision opened or withdrawn in the same millisecond as the moment, whichever path (D67).
 
 The machine view is every version's stage decisions as they stood then, the person's rows left out, resolved by
 `work_outcome` without the person-file exception and judged stale under the key of that moment. A decision reached
@@ -44,6 +45,13 @@ def _key_at(ctx: Any, ts: str) -> tuple[int | None, str | None]:
     if row is None:
         return None, None
     revision = row[0]
+    # A withdrawn revision sent the research back to the one it was opened from (D67): when the last revision event at
+    # `ts`, in written order, is a withdrawal, it names the revision current then.
+    last = conn.execute("SELECT type, json_extract(payload_json, '$.back_to') FROM events WHERE research_id = ?"
+                        " AND type IN ('scope_revised', 'seed_selected', 'scope_revision_withdrawn') AND created_at <= ?"
+                        " ORDER BY rowid DESC LIMIT 1", (ctx.rid, ts)).fetchone()
+    if last is not None and last[0] == "scope_revision_withdrawn":
+        revision = last[1]
     protocol = conn.execute(
         "SELECT body_json FROM protocol_records WHERE research_id = ? AND scope_revision = ? AND created_at <= ?"
         " ORDER BY protocol_revision DESC LIMIT 1", (ctx.rid, revision, ts)).fetchone()
@@ -52,6 +60,14 @@ def _key_at(ctx: Any, ts: str) -> tuple[int | None, str | None]:
     body = json.loads(protocol[0])
     criterion = {field: body.get(field) for field in CRITERION_FIELDS}
     return revision, None if all(value is None for value in criterion.values()) else sha256_hex(criterion)
+
+
+def _revision_moved_at(ctx: Any, ts: str) -> bool:
+    """Whether a question revision was opened or withdrawn in the same millisecond as `ts`: events and decisions are
+    different tables, so which came first is not known and the key of that moment is not either (D67)."""
+    return ctx.store.conn.execute(
+        "SELECT 1 FROM events WHERE research_id = ? AND type IN ('scope_revised', 'seed_selected', 'scope_revision_withdrawn')"
+        " AND created_at = ? LIMIT 1", (ctx.rid, ts)).fetchone() is not None
 
 
 def _history(ctx: Any, work_id: str) -> list[dict[str, Any]]:
@@ -156,11 +172,14 @@ def classify(ctx: Any, probe: dict[str, Any]) -> dict[str, dict[str, Any]]:
             first = same[at]
             moment = (first["created_at"], first["row_order"])
             before = [row for row in history if (row["created_at"], row["row_order"]) < moment]
+            if _revision_moved_at(ctx, first["created_at"]):
+                found[work_id] = {"path": path, "class": "time_unknown", "person": person, "machine": None, "direction": None}
+                continue
             found[work_id] = {"path": path, **_class(_machine(ctx, work_id, before, first["created_at"]), person)}
             continue
         setting = _setting_row(selection_rows.get(work_id, []), head)
         ts = setting["created_at"] if setting else None
-        if ts is None or any(row["created_at"] == ts for row in history):
+        if ts is None or any(row["created_at"] == ts for row in history) or _revision_moved_at(ctx, ts):
             found[work_id] = {"path": "list", "class": "time_unknown", "person": person, "machine": None,
                               "direction": None}
             continue

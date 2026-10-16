@@ -55,7 +55,7 @@ import { RESEARCH_PANEL_EVENT, type ResearchPanelRequest } from './Shortcuts'
 import { FollowupComposer, type FollowupFill } from './research/FollowupComposer'
 import { AddToChat } from './research/AddToChat'
 import { FollowupTurnView } from './research/FollowupTurns'
-import { followupClaim, followupClaimId, splitQuotes, useFollowupTurns } from './research/followupData'
+import { followupClaim, followupClaimId, useFollowupTurns } from './research/followupData'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 // Rechecks a person starts from the table; short enough to start and end between two reads of the research.
@@ -612,9 +612,20 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const saveRevision = async (text: string, terms: string | null) => {
     if (!revising || revising.revision !== view.research.current_scope_revision) return
     setSavingRevision(true)
-    const saved = await act(() => api.reviseScope(id, text, view.research.version, terms), t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'))
+    let opened: ResearchView | null = null
+    const saved = await act(async () => { opened = await api.reviseScope(id, text, view.research.version, terms) })
     setSavingRevision(false)
-    if (saved) endRevise()
+    if (saved && opened) {
+      endRevise()
+      const research = (opened as ResearchView).research
+      toast('success', t('Question revised. Earlier answers stay visible and are marked as belonging to the previous revision.'),
+        research.revision_withdrawal.allowed ? { label: t('Undo'), run: () => { void withdrawRevision(research.current_scope_revision, research.version) } } : undefined)
+    }
+  }
+  // Withdraw the current question revision (D67): allowed while nothing but its title run and a person's selection
+  // decisions was made under it; the research goes back to the revision it was opened from and nothing is deleted.
+  const withdrawRevision = async (revision: number, version: number) => {
+    await act(() => api.withdrawScope(id, revision, version), t('Revision {n} withdrawn. The research is back on the question before it.', { n: revision }))
   }
   const controlRun = (target: Run, action: 'pause' | 'resume' | 'cancel') => {
     const origin = document.activeElement
@@ -636,15 +647,6 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       else toast('error', t('The follow-up question was not sent: {error}', { error: errorText(e) }))
       return false
     } finally { setAsking(false) }
-  }
-  // "Search for new works on this" (R31, D13): saves the turn's question as the next question revision, only on this click. The
-  // revision's English key terms are cleared, since they described the earlier question. No search starts here; the
-  // message names the revision the server saved and says how to start its search.
-  const searchNewWorks = async (question: string) => {
-    let saved: ResearchView | null = null
-    if (await act(async () => { saved = await api.reviseScope(id, question, view.research.version, '') }) && saved) {
-      toast('success', t(view.search_runs.length ? 'Saved as revision {n} of the question. No search has started; start it with Search again.' : 'Saved as revision {n} of the question. No search has started; start it with Search providers.', { n: (saved as ResearchView).research.current_scope_revision }))
-    }
   }
   // The latest answer in the thread (S10): the run writing its next version, the earlier version of the same question
   // revision, a claim review still running, and the panels its pills and Next steps rows open.
@@ -719,7 +721,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // "Writing a new version" only once a valid report version exists; a clarification or an unverified draft is not one.
   const hasAnswer = reports.some(r => r.answer.run_id !== run?.id && r.answer.report_version !== null)
   // The earlier question revision and the report written for it (R12).
-  const earlierRevision = view.research.current_scope_revision - 1
+  const earlierRevision = view.scope.parent_revision ?? 0
   const earlierReport = reports.find(r => r.answer.scope_revision === earlierRevision) ?? null
   // The ⋯ menu (R9): Rename, Activity, Candidates and Follow-up as drawn, Search again and Generate a new answer (§2.2),
   // then Move to Trash. From 1100px the rail opens the Sources, queue, PDF and table panels; under 1100px (no rail) the
@@ -799,13 +801,16 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <div className="research-body thread-inner">
     {earlierRevision > 0 && <EarlierRevision key={earlierRevision} researchId={id} revision={earlierRevision} intent={view.research.intent} answer={earlierReport} onOpenReport={setOpenReportId} />}
     {revising
-      ? <RevisionForm question={view.scope.question} keyTerms={view.scope.key_terms ?? ''} nextRevision={view.research.current_scope_revision + 1} focus={revising.focus} focusRequest={revising.ask}
+      ? <RevisionForm question={view.scope.question} keyTerms={view.scope.key_terms ?? ''} nextRevision={view.research.next_scope_revision} focus={revising.focus} focusRequest={revising.ask}
         conflict={reviseConflict} onRebase={() => setRevising(form => (form ? { ...form, revision: view.research.current_scope_revision } : form))}
         disabled={busy || active} onSubmit={(text, terms) => { void saveRevision(text, terms) }} onCancel={endRevise} />
       : <QuestionBubble question={view.scope.question} sourceScope={view.scope.source_scope} intent={view.research.intent} createdAt={view.scope.created_at} revision={view.research.current_scope_revision} />}
     {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the panel that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
       <span className="research-revision">{t('Research')} · {t('revision {n}', { n: view.research.current_scope_revision })}</span>
+      {view.research.revision_withdrawal.allowed && !active && <button type="button" className="research-revision-undo" disabled={busy}
+        title={t('Nothing was searched, answered or read under this revision yet; going back to revision {n} uses the readings made under it again.', { n: view.research.revision_withdrawal.parent_revision ?? 0 })}
+        onClick={() => { void withdrawRevision(view.research.current_scope_revision, view.research.version) }}>{t('Undo revision {n}', { n: view.research.current_scope_revision })}</button>}
       {/* A count is shown once it has something to say; a row of zeroes while the run works is noise, not a boundary. */}
       {([['unique', 'Unique works', 'all'], ['included', 'Included', 'included'], ['inspected', 'Given to the model', 'all'], ['cited', 'Cited', null]] as const)
         .map(([key, label, filter]) => [key, label, filter, key === 'cited' ? citedCount : view.counts[key]] as const)
@@ -870,10 +875,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       {/* Follow-up questions and their answers, oldest first (R31), then the sticky composer (R30). */}
       {followups.error && <Notice tone="error">{t('Could not load the follow-up questions: {error}', { error: followups.error })}</Notice>}
       {followups.turns.length > 0 && <div className="followup-turns">{followups.turns.map(turn => <FollowupTurnView key={turn.id} turn={turn} sources={view.sources}
-        actions={{ busy: busy || asking, locked: anyActive, canSearch: hasAcademic, citing: citeClaimId, onCite: claim => setCiteClaimId(claim.id),
+        actions={{ busy: busy || asking, locked: anyActive, citing: citeClaimId, onCite: claim => setCiteClaimId(claim.id),
           // Resume hands focus to the run's chip in the topbar, as a resumed run of the thread does (controlRun).
           onControl: (runId, action) => { const target = view.runs.find(r => r.id === runId); if (target) controlRun(target, action); else void act(() => api.controlRun(runId, action)) },
-          onAskAgain: question => { void askFollowup(question, crypto.randomUUID()) }, onSearchNew: turn => { void searchNewWorks(splitQuotes(turn.question).text) } }} />)}</div>}
+          onAskAgain: question => { void askFollowup(question, crypto.randomUUID()) } }} />)}</div>}
       <FollowupComposer disabledReason={anyActive ? t('Wait for the current run to finish before asking a follow-up.') : null} sending={asking}
         depthIcon={EffortIcon} depthLabel={t(effortLabels[view.scope.effort])} fill={followupFill} quote={followupQuote} onSend={askFollowup}
         onAddPdfs={opener => openPanel('pdfs', { opener })} />

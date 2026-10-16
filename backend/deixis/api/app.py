@@ -364,6 +364,11 @@ class ScopeRevision(BaseModel):
     key_terms: str | None = Field(default=None, max_length=500)  # left out, the revision keeps the previous terms
 
 
+class ScopeWithdrawal(BaseModel):
+    expected_version: int
+    revision: int
+
+
 class ResearchTitleChange(BaseModel):
     title: str = Field(min_length=1, max_length=160)
     expected_version: int
@@ -1750,6 +1755,13 @@ def create_app(
     async def revise_scope(research_id: str, body: ScopeRevision, request: Request) -> dict[str, Any]:
         store = store_of(request)
         store.revise_scope(research_id, body.expected_version, body.question, body.steering, body.key_terms)
+        return research_view(store, research_id)
+
+    @app.post("/api/researches/{research_id}/scope/withdraw")
+    async def withdraw_scope(research_id: str, body: ScopeWithdrawal, request: Request) -> dict[str, Any]:
+        """Withdraw the current question revision while nothing was made under it (D67); 409 with the reason otherwise."""
+        store = store_of(request)
+        store.withdraw_revision(research_id, body.expected_version, body.revision)
         return research_view(store, research_id)
 
     @app.put("/api/researches/{research_id}/english-question")

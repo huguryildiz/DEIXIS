@@ -220,7 +220,8 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
   if (!loaded) return <div className="plan-panel mk pad"><p role="status">{t('Loading the search plan…')}</p></div>
 
   const plan = loaded.plan
-  const nextRevision = loaded.scope_revision + 1
+  // A withdrawn revision's number is not used again (D67): the backend says which number saving makes.
+  const nextRevision = view.research.next_scope_revision
   const from = loaded.based_on?.scope_revision
   const origin = !plan ? t('No search of this question has frozen a plan yet; it shows here once the first search has planned.')
     : loaded.origin === 'model' ? t('The fast path wrote this plan from your question and ran it without asking.')

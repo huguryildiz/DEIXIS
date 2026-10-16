@@ -11,8 +11,8 @@ import { followupClaim, splitQuotes } from './followupData'
 // Follow-up questions in the thread (mockup `turnHtml()`, R31, UI parity S22b). Each turn is one stored `followup_answer`
 // run (D11): the "Question" bubble, its two step lines, then the short answer with its citation chips. Everything shown is
 // the stored turn: the step lines read the turn's stored step rows (`progress`) and, once published, the passages the call
-// was given (`passages_given`, its allowlist); nothing is estimated. A follow-up starts no search; "Search for new works on
-// this" saves a new question revision only when pressed. An unverified draft shows its issues and no claim; a turn the
+// was given (`passages_given`, its allowlist); nothing is estimated. A follow-up starts no search and opens no question
+// revision (D67: the turn's "Search for new works on this" was removed). An unverified draft shows its issues and no claim; a turn the
 // passages do not answer says so.
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
@@ -63,12 +63,10 @@ export type FollowupTurnActions = {
   busy: boolean
   // A run of this research is active: a new question, a resume or a new revision waits for it (one active run).
   locked: boolean
-  canSearch: boolean
   citing: string | null
   onCite: (claim: Claim, opener: HTMLElement) => void
   onControl: (runId: string, action: 'resume' | 'cancel') => void
   onAskAgain: (question: string) => void
-  onSearchNew: (turn: FollowupTurn) => void
 }
 
 export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTurn; sources: Source[]; actions: FollowupTurnActions }) {
@@ -96,7 +94,6 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
     catch { toast('error', t('Could not copy to the clipboard.')) }
   }
   const userPaused = turn.run.status === 'paused' && turn.run.pause_reason === 'user_requested'
-  const searchable = actions.canSearch && !turn.stale_scope && ['not_answered', 'partly_answered', 'no_passages'].includes(turn.status)
   const asked = splitQuotes(turn.question)
   return <section className="followup-turn">
     <div className="followup-q">{asked.quotes.map((quote, i) => <blockquote className="followup-quote" key={i}><MathText text={quote} /></blockquote>)}
@@ -148,8 +145,7 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
           : turn.report_change.not_started === 'nothing_included' ? 'This asked for a change to the report, but no source is included; the report was not changed.'
           : 'This asked for a change to the report, but another run was active; the report was not changed. Ask again when it ends.')}</p>}
     </>}
-    {!live && turn.status !== 'pending' && (searchable || claims.length > 0) && <div className="followup-acts">
-      {searchable && <Button variant="outline" size="sm" className="answer-pill" disabled={actions.busy || actions.locked} onClick={() => actions.onSearchNew(turn)}><Search size={16} className="size-4" aria-hidden />{t('Search for new works on this')}</Button>}
+    {!live && turn.status !== 'pending' && claims.length > 0 && <div className="followup-acts">
       {claims.length > 0 && <Button variant="ghost" size="icon-sm" className="answer-ib" aria-label={t('Copy follow-up answer')} title={t('Copy follow-up answer')} onClick={() => { void copy() }}><Copy size={16} aria-hidden /></Button>}
     </div>}
   </section>

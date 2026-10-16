@@ -15,7 +15,7 @@ from deixis.workflow.worker import Worker
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, RunInProgress
 from test_fast_path_clock import library, stage, answer_run, historical_read_policy
 from test_small_batch_flow import app_for, client_of
-from test_fetch_overlap_flow import discover
+from test_fetch_overlap_flow import discover, wait
 from fakes import FakeAdapter, valid_response
 
 
@@ -420,6 +420,90 @@ def test_slot_refill_is_order_independent_permanent_and_resumable(library, monke
         assert "w0" not in fetched and "w2" not in fetched
 
 
+def stubbed_read(lib, monkeypatch, works, settle):
+    """Run `fast_read.execute` over SYNTHETIC `works` with the abstract stage, fetch and reading stubbed; return the
+    closure."""
+    flow = ResearchFlow(SimpleNamespace(store=lib.store))
+    items = [{"work_id": w["work_id"], "head": w["head"], "versions": [], "user_priority": False,
+              "position": n + 1} for n, w in enumerate(works)]
+    listing = {"items": items, "manifest_hash": "synthetic", "order_hash": "synthetic",
+               "manifest": {"versions": {}}, "order": [w["head"] for w in works]}
+    lib.run["budget"]["inspection"].update(fetch_limit=10, read_limit=10)
+    monkeypatch.setattr(flow, "_fulltext_works", lambda rid: works)
+    monkeypatch.setattr(lib.store, "work_heads", lambda rid: {w["work_id"]: w["head"] for w in works})
+    monkeypatch.setattr(small_batch, "unchanged_heads", lambda store, rid, listing, items: [i["head"] for i in items])
+    monkeypatch.setattr(flow, "_abstract_code_stage", lambda *args, batch_key, **kwargs: small_batch.save_code(
+        flow, lib.run, f"{batch_key}:abstract_stage", "code:abstract_stage", lambda: {"batches": [], "runs": 2}))
+    async def nothing(*args, **kwargs):
+        return None
+    monkeypatch.setattr(flow, "_abstract_stage", nothing)
+    monkeypatch.setattr(flow, "_fulltext_adjudication", nothing)
+    monkeypatch.setattr(flow, "_overlap_work", settle)
+
+    async def check():
+        fast_path.enter_stage(lib.store, lib.run, "read")
+        await asyncio.wait_for(fast_read.execute(flow, lib.run, {}, {}, listing), 5)
+    asyncio.run(check())
+    return lib.store.existing_step(lib.run["id"], "small_batch:v1:synthetic:fast:close")["output"]
+
+
+def test_claimed_works_over_k_say_why(library, monkeypatch):
+    """D60: a person who includes a work during the read gives it a slot while the K works already claimed keep
+    theirs; the closure says why it selected more than K."""
+    lib = library
+    works = [candidate(0, "both_blocks_missing")] + [candidate(n) for n in range(1, 25)]
+    by_id = {w["work_id"]: w for w in works}
+
+    async def settle(run, wid):
+        step = lib.store.existing_step(run["id"], f"fulltext_work:{wid}")
+        lib.store.finish_step(step["id"], "succeeded", output={"code": "not_read_yet", "asset_id": f"a{wid}",
+                                                               "claim": step["output"]["claim"]})
+        by_id[wid]["versions"][0].update(has_text=True)
+        works[0]["selection"] = {"origin": "user", "state": "included"}  # the person includes w0 meanwhile
+    close = stubbed_read(lib, monkeypatch, works, settle)
+    assert close["k_selected"] == len(close["selected_work_ids"]) == 11 and "w0" in close["selected_work_ids"]
+    assert close["k_over_reason"] == "claimed_works_kept" and close["k_short_reason"] is None
+
+
+def test_identity_failure_from_an_earlier_run_releases_the_slot(library, monkeypatch):
+    """D60: a work whose PDF an earlier run found unconfirmed is not read again (its decision is fresh), so it does
+    not hold one of this run's K slots either."""
+    lib = library
+    works = [candidate(n) for n in range(25)]
+    works[0]["versions"][0].update(has_text=True, fulltext={"reason_code": "pdf_identity_unconfirmed",
+                                                            "decided_by": "code", "stale": False})
+    by_id = {w["work_id"]: w for w in works}
+
+    async def settle(run, wid):
+        step = lib.store.existing_step(run["id"], f"fulltext_work:{wid}")
+        lib.store.finish_step(step["id"], "succeeded", output={"code": "not_read_yet", "asset_id": f"a{wid}",
+                                                               "claim": step["output"]["claim"]})
+        by_id[wid]["versions"][0].update(has_text=True)
+    close = stubbed_read(lib, monkeypatch, works, settle)
+    assert close["identity_unconfirmed"] == ["w0"]
+    assert close["selected_work_ids"] == [f"w{n}" for n in range(1, 11)]
+
+
+def test_identity_failure_on_another_version_releases_the_slot(library, monkeypatch):
+    """D60: the earlier run's identity failure sits on a second version while the head says `no_fulltext`; the
+    reading skips the work all the same, so it does not hold a slot."""
+    lib = library
+    works = [candidate(n) for n in range(25)]
+    works[0]["versions"][0].update(fulltext={"reason_code": "no_fulltext", "decided_by": "code", "stale": False})
+    works[0]["versions"].append({"id": "h0b", "has_text": True, "abstract": None,
+                                 "fulltext": {"reason_code": "pdf_identity_unconfirmed", "decided_by": "code", "stale": False}})
+    by_id = {w["work_id"]: w for w in works}
+
+    async def settle(run, wid):
+        step = lib.store.existing_step(run["id"], f"fulltext_work:{wid}")
+        lib.store.finish_step(step["id"], "succeeded", output={"code": "not_read_yet", "asset_id": f"a{wid}",
+                                                               "claim": step["output"]["claim"]})
+        by_id[wid]["versions"][0].update(has_text=True)
+    close = stubbed_read(lib, monkeypatch, works, settle)
+    assert close["identity_unconfirmed"] == ["w0"]
+    assert "w0" not in close["selected_work_ids"] and close["k_selected"] == 10
+
+
 def stage_of(store, run_id, name):
     return dict(store.conn.execute("SELECT * FROM fast_path_stages WHERE ledger_run_id = ? AND stage = ?",
                                    (run_id, name)).fetchone())
@@ -592,6 +676,144 @@ def test_work_without_text_gives_its_slot_to_the_next_work(tmp_path, monkeypatch
         assert len(fetcher.calls) == 10
         assert close["fulltext_adjudicated_before_cutoff"] < 10
         assert "attempted_without_text" not in close
+
+
+def test_unconfirmed_pdf_gives_its_slot_to_the_next_work(tmp_path, monkeypatch):
+    """D60: a PDF the reading cannot confirm as the work's own (no DOI or title on its first page) is decided
+    `pdf_identity_unconfirmed` without a model call; it releases its K slot like a work without text, so K works are
+    still read and `k_selected` counts only them."""
+    from helpers import make_pdf
+    from test_fulltext_flow import ok
+    app, fetcher = app_for(tmp_path, monkeypatch, 40, pdf=True)
+    for n in range(0, 40, 3):
+        fetcher.answers[f"https://example.org/w{n}.pdf"] = ok(make_pdf(["SYNTHETIC cover page of another report."]))
+    with client_of(app) as client:
+        _, run_id, _, run = discover(client)
+        assert run["status"] == "completed", run
+        close = run["fast_path"]["read"]["cutoff"]
+        plans = [s["output"] for s in small_batch.steps(app.state.store, run_id) if s["kind"] == "code:adjudication_plan"]
+    assert close["identity_unconfirmed"] and sum(p["identity_unconfirmed"] for p in plans) == len(close["identity_unconfirmed"])
+    assert not set(close["identity_unconfirmed"]) & set(close["selected_work_ids"])
+    assert close["fulltext_adjudicated_before_cutoff"] == close["k_selected"] == len(close["selected_work_ids"]) == 10
+    assert close["k_short_reason"] is None and close["k_over_reason"] is None
+
+
+def test_closure_counts_say_who_screened_and_why_works_were_not(tmp_path, monkeypatch):
+    """D60: the closure tells model-screened works from code-decided ones, and works the model-call budget left
+    unscreened from works the deadline cut; a work a person decided meanwhile is neither."""
+    from deixis.workflow.decisions import DecisionStore
+    original = ResearchFlow._abstract_stage
+    decided = {}
+    def one_batch(self, run, scope, vocabulary, order, **kwargs):
+        # Room for one batch read twice, fixed on the first entry.
+        decided.setdefault("limit", self.store.run(run["id"])["usage"].get("model_calls", 0) + 2)
+        run["budget"] = run["budget"] | {"max_model_calls": decided["limit"]}
+        if "svid" not in decided:
+            # A person decides one record of a batch the budget will not reach; the read pauses for the changed
+            # selection and is resumed.
+            batches = self.store.existing_step(run["id"], f"{kwargs['batch_key']}:abstract_stage")["output"]["batches"]
+            decided["svid"] = batches[1][0]
+            DecisionStore(self.store).record(run["research_id"], decided["svid"], "human_criterion_not_met")
+        return original(self, run, scope, vocabulary, order, **kwargs)
+    monkeypatch.setattr(ResearchFlow, "_abstract_stage", one_batch)
+    app, _ = app_for(tmp_path, monkeypatch, 30, model_works=True, fetch="off", reading="off")
+    with client_of(app) as client:
+        rid, run_id, _, run = discover(client)
+        assert (run["status"], run["pause_reason"]) == ("paused", "selection_changed")
+        client.post(f"/api/runs/{run_id}/resume")
+        _, run = wait(client, rid, run_id)
+        assert run["status"] == "completed", run
+        close = run["fast_path"]["read"]["cutoff"]
+        stage = next(s["output"] for s in small_batch.steps(app.state.store, run_id)
+                     if s["operation_key"].endswith(":fast:abstract_stage"))
+        person = app.state.store.source(decided["svid"])["work_id"]
+    later = sum(len(batch) for batch in stage["batches"][1:]) - 1
+    assert later and len(close["not_screened_model_budget"]) == len(close["not_screened_at_cutoff"]) == later
+    assert person not in close["not_screened_at_cutoff"] and close["person_decided_count"] == 1
+    assert sum(item["cutoff"] == "not_screened_model_budget" for item in close["items"]) == later
+    assert not any(item["cutoff"] == "not_screened_at_cutoff" for item in close["items"])
+    assert close["model_screened_count"] == len(stage["batches"][0])
+    assert close["screened_count"] == sum(close[name] for name in (
+        "person_decided_count", "model_screened_count", "model_output_invalid_count", "no_abstract_count",
+        "code_decided_count", "undecided_count"))
+
+
+def test_budget_split_reads_the_frozen_batches_from_the_stop():
+    """D60: a record a person had decided when the budget stopped, whose decision was taken back before the closure,
+    is still a budget skip, not a deadline cut."""
+    batches = [["s0", "s1"], ["s2", "s3"]]
+    work_of = {f"s{n}": f"w{n}" for n in range(4)}
+    stop = {"from_batch": 1, "source_version_ids": ["s2"]}
+    assert fast_read.budget_skipped(batches, [stop], work_of, {"w2", "w3"}) == {"w2", "w3"}
+    assert fast_read.budget_skipped(batches, [stop], work_of, {"w1", "w2"}) == {"w2"}
+    assert fast_read.budget_skipped(batches, [], work_of, {"w2", "w3"}) == set()
+    # A later stop at an earlier batch widens the budget's part.
+    assert fast_read.budget_skipped(batches, [stop, {"from_batch": 0}], work_of, {"w1", "w2"}) == {"w1", "w2"}
+
+
+def test_a_decision_taken_back_before_the_stop_adds_an_earlier_stop(library, monkeypatch):
+    """D60: a batch a person's decision kept out when the budget stopped, sent for after the decision is taken back,
+    fails the budget on the restart and adds its own stop; a later batch both of whose answers are stored is still
+    read back and closed, not written unread."""
+    from deixis.workflow.flow import _Held, budget_stops
+    lib = library
+    async def run_now(key, call):
+        return await call()
+    flow = ResearchFlow(SimpleNamespace(store=lib.store, limiter=SimpleNamespace(limit=1, run=run_now)))
+    batches = [["s0"], ["s1"], ["s2"]]
+    human, closed, written = {"s0"}, [], []
+    key = "small_batch:v1:synthetic:fast"
+    prefix = f"{key}:abstract_screening"
+    for run_no in (1, 2):  # batch 1 was answered by both runs before the budget ran out
+        lib.store.finish_step(lib.store.step(lib.run["id"], f"{prefix}:1:{run_no}", "model:abstract_screening")["id"],
+                              "succeeded", output={})
+    monkeypatch.setattr(lib.store, "candidates", lambda rid: [{"source_version_id": svid} for b in batches for svid in b])
+    monkeypatch.setattr(flow, "_human_decided_records", lambda rid, svids: human & set(svids))
+    monkeypatch.setattr(flow, "_write_abstract_codes", lambda run, step_id, codes: written.extend(codes))
+    monkeypatch.setattr(flow, "_sent_to_every_run", lambda run_id, prefix, number, runs, rows: rows)
+    monkeypatch.setattr(flow, "_close_abstract_batch", lambda run, number, *args: closed.append(number))
+    async def call(*args, **kwargs):
+        return {}
+    monkeypatch.setattr(flow, "_abstract_call", call)
+    lib.run["budget"]["max_model_calls"] = 0
+    for _ in range(2):
+        closed.clear()
+        written.clear()
+        flow._held[lib.run["id"]] = _Held(lib.run["scope_revision"])
+        asyncio.run(flow._abstract_stage(lib.run, {}, {}, [], batch_key=key, frozen_plan={"batches": batches, "runs": 2}))
+        human.clear()  # the person takes the decision back before the restart
+    stops = budget_stops(lib.store, lib.run["id"], prefix)
+    assert sorted(stop["from_batch"] for stop in stops) == [0, 2]
+    assert closed == [1] and written == [("s0", "abstract_not_read"), ("s2", "abstract_not_read")]
+    assert fast_read.budget_skipped(batches, stops, {f"s{n}": f"w{n}" for n in range(3)}, {"w0", "w2"}) == {"w0", "w2"}
+
+
+def test_budget_skipped_records_are_stored_without_human_decided_ones(library, monkeypatch):
+    """D60: the records the model-call budget left unread are stored in their own step, so a restarted read closes
+    with the same split; a record a person decided is not among them."""
+    from deixis.workflow.flow import _Held
+    lib = library
+    flow = ResearchFlow(SimpleNamespace(store=lib.store, limiter=SimpleNamespace(limit=1)))
+    batches = [["s0", "s1"], ["s2", "s3"]]
+    monkeypatch.setattr(lib.store, "candidates", lambda rid: [{"source_version_id": svid} for b in batches for svid in b])
+    monkeypatch.setattr(flow, "_human_decided_records", lambda rid, svids: {"s3"} & set(svids))
+    monkeypatch.setattr(flow, "_write_abstract_codes", lambda run, step_id, codes: None)
+    lib.run["budget"]["max_model_calls"] = 0
+    flow._held[lib.run["id"]] = _Held(lib.run["scope_revision"])
+    key = "small_batch:v1:synthetic:fast"
+    asyncio.run(flow._abstract_stage(lib.run, {}, {}, [], batch_key=key, frozen_plan={"batches": batches, "runs": 2}))
+    step = lib.store.existing_step(lib.run["id"], f"{key}:abstract_screening:budget_short:0")
+    assert step["status"] == "succeeded"
+    assert step["output"] == {"from_batch": 0, "source_version_ids": ["s0", "s1", "s2"]}
+    # A restart with room in the budget again does not send the batches the stored stop left unread.
+    lib.run["budget"]["max_model_calls"] = 100
+    sent = []
+    async def call(*args, **kwargs):
+        sent.append(args)
+    monkeypatch.setattr(flow, "_abstract_call", call)
+    flow._held[lib.run["id"]] = _Held(lib.run["scope_revision"])
+    asyncio.run(flow._abstract_stage(lib.run, {}, {}, [], batch_key=key, frozen_plan={"batches": batches, "runs": 2}))
+    assert not sent
 
 
 def test_refill_is_bounded_by_the_screened_window(tmp_path, monkeypatch):

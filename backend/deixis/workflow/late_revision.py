@@ -101,10 +101,13 @@ def schedule(flow: Any, run: dict[str, Any]) -> None:
         return
     selected = set(closure["selected_work_ids"])
     base_items = {i["work_id"]: i for i in plan["output"]["items"]}
+    # A work admitted to a full-text slot from the abstract stage's unresolved route has no abstract to answer from,
+    # so it was never in the base answer; its text arriving after the cutoff is read like a candidate's (D60).
+    waiting = ("no_text_at_cutoff", fast_answer.UNRESOLVED_WITHOUT_FULLTEXT)
     candidates = [copy.deepcopy(base_items.get(i["work_id"], i)) for i in cutoff["output"]["items"]
                   if i["work_id"] in selected and not i["fulltext_decision_id"]
-                  and i["route"] == "abstract" and i["reason"] in (None, "no_text_at_cutoff")
-                  and (i["work_id"] in base_items or i["reason"] == "no_text_at_cutoff")]
+                  and i["route"] == "abstract" and i["reason"] in (None, *waiting)
+                  and (i["work_id"] in base_items or i["reason"] in waiting)]
     if not candidates:
         return
     ts = fast_path.timestamp(store.clock)

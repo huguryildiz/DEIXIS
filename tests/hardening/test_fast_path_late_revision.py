@@ -15,7 +15,7 @@ from test_fast_path_answer import setup, cutoff, answer_run, user
 from test_criterion_passage_flow import body_with, TOPIC_PAGE, page_source
 
 
-def prepared(tmp_path, *, old=False, no_evidence=False, pdfs=1):
+def prepared(tmp_path, *, old=False, no_evidence=False, pdfs=1, last_code="runs_agree_candidate"):
     lib = setup(tmp_path, pdf=True)
     for n in range(1, pdfs):
         svid = page_source(lib.store, lib.rid, f"late-{n}", [TOPIC_PAGE] * 3, "SYNTHETIC exercise improves fatigue.", included=False)
@@ -30,7 +30,8 @@ def prepared(tmp_path, *, old=False, no_evidence=False, pdfs=1):
     scope = lib.store.scope(lib.rid)
     lib.store.freeze_protocol(lib.rid, 1, body_with(scope["question"], []))
     for svid in lib.sources:
-        DecisionStore(lib.store).record(lib.rid, svid, "runs_agree_candidate", renew_stale=True)
+        code = last_code if svid == lib.sources[-1] else "runs_agree_candidate"
+        DecisionStore(lib.store).record(lib.rid, svid, code, renew_stale=True)
         lib.store.conn.execute("UPDATE selections SET origin = 'code_rule' WHERE research_id = ? AND source_version_id = ?", (lib.rid, svid))
     if old:
         lib.discovery["budget"]["fast_path"].pop("late_revision")
@@ -113,6 +114,29 @@ def test_append_only_revision_own_review_and_ledger(tmp_path, monkeypatch):
         late_revision.advance(lib.flow)
     assert lib.store.conn.execute("SELECT COUNT(*) FROM fast_path_late_revisions").fetchone()[0] == 1
     assert lib.store.conn.execute("SELECT COUNT(*) FROM runs WHERE kind = 'answer'").fetchone()[0] == 2
+
+
+@pytest.mark.parametrize("code", ["abstract_not_found", "runs_agree_unresolved"])
+def test_unresolved_route_work_with_late_text_is_read_and_answered(tmp_path, code):
+    """D60: a work the abstract stage sent to its full text (no abstract, or both runs unsure) that held a K slot and
+    had no reading at the cutoff waits for its text; the late read reads it and the revision answers from it."""
+    lib = prepared(tmp_path, last_code=code)
+    late_work = lib.store.source(lib.sources[-1])["work_id"]
+    frozen = {i["work_id"]: i for i in lib.store.existing_step(lib.discovery["id"], fast_answer.CUTOFF)["output"]["items"]}
+    assert frozen[late_work]["reason"] == fast_answer.UNRESOLVED_WITHOUT_FULLTEXT
+    base_input = fast_answer.input_plan(lib.flow, lib.base_run, lib.store.scope(lib.rid))
+    assert late_work not in {i["work_id"] for i in base_input["items"]}
+    assert [i["work_id"] for i in json.loads(row(lib)["works_json"])] == [late_work]
+    read_late(lib)
+    late_revision.advance(lib.flow, lib.rid)
+    revision = lib.store.run(row(lib)["answer_run_id"])
+    lib.store.update_run(revision["id"], status="running")
+    asyncio.run(lib.flow.execute(revision["id"]))
+    assert row(lib)["status"] == "published"
+    plan = lib.store.existing_step(revision["id"], late_revision.REVISION_INPUT)["output"]
+    assert plan["upgraded"] == [late_work]
+    upgraded = next(i for i in plan["items"] if i["work_id"] == late_work)
+    assert upgraded["route"] == "fulltext" and len(upgraded["passage_ids"]) == 1
 
 
 def test_old_frozen_policy_keeps_answer_view_and_runs(tmp_path):

@@ -306,6 +306,15 @@ class _Held:
     closed: dict[str, set[int]] = field(default_factory=dict)  # abstract batches closed in this process, by key prefix
 
 
+def budget_stops(store: Any, run_id: str, prefix: str) -> list[dict[str, Any]]:
+    """The stored stops of a fast read's abstract stage, one per batch the model-call budget first failed at (D60).
+    A batch a person's decision kept out the first time can fail on a restart, so a stop is added, never replaced."""
+    key = f"{prefix}:budget_short:"
+    return [json.loads(row["output_json"]) for row in store.conn.execute(
+        "SELECT operation_key, output_json FROM run_steps WHERE run_id = ? AND kind = 'code:abstract_budget_short'"
+        " AND status = 'succeeded'", (run_id,)) if row["operation_key"].startswith(key)]
+
+
 @dataclass
 class FlowDeps:
     settings: Settings
@@ -1451,6 +1460,12 @@ class ResearchFlow:
                     if s["kind"] == "model:abstract_screening"
                     and (s["status"] == "succeeded" or s["error_code"] in ("invalid_model_output", "model_read_cutoff"))}
 
+        # A fast read whose budget already stopped short keeps that stop on a restart: the batches it left unread
+        # are not sent later, so the closure's split between budget and deadline does not move (D60).
+        budget_key = f"{prefix}:budget_short"
+        stops = budget_stops(self.store, run_id, prefix) if run_id in self._held else []
+        stop_at = min((stop["from_batch"] for stop in stops), default=None)
+
         def jobs() -> Iterator[_AbstractJob]:
             """The (batch, run) calls in plan order, up to the batch the budget no longer holds whole.
 
@@ -1459,25 +1474,41 @@ class ResearchFlow:
             not sent at all. No decision of this batch is written for a record that left it.
             """
             nonlocal submitted
+
+            def owed_of(number: int) -> list[int]:
+                # A call whose step is already stored is read back and costs nothing, so a resumed run charges the
+                # budget only for the calls it still has to make; counting the stored ones too left paid-for
+                # answers unused and later batches unread while the budget still held them.
+                return [run_no for run_no in range(1, runs + 1) if f"{prefix}:{number}:{run_no}" not in answered]
+
+            budget_out = False
             for number, planned in enumerate(batches):
                 decided = self._human_decided_records(run["research_id"], planned)
                 batch = [svid for svid in planned if svid not in decided]
                 if not batch:
                     continue
-                # A call whose step is already stored is read back and costs nothing, so a resumed run charges the
-                # budget only for the calls it still has to make; counting the stored ones too left paid-for
-                # answers unused and later batches unread while the budget still held them.
-                owed = [run_no for run_no in range(1, runs + 1)
-                        if f"{prefix}:{number}:{run_no}" not in answered]
+                owed = owed_of(number)
                 if owed and cutoff is not None and cutoff():
                     return
-                if owed and not self._reserve_model_pair(run,
-                        [f"{prefix}:{number}:{n}" for n in owed], submitted, spent_before):
-                    # The budget stopped short of this batch. Its records are unread, which is a state the workflow
-                    # already has, so the run finishes rather than pausing on something a later run will pick up.
-                    unread.extend(svid for later in batches[number:] for svid in later
-                                  if svid not in self._human_decided_records(run["research_id"], later))
-                    return
+                if owed and (budget_out or (stop_at is not None and number >= stop_at) or not self._reserve_model_pair(
+                        run, [f"{prefix}:{number}:{n}" for n in owed], submitted, spent_before)):
+                    if budget_out:
+                        continue
+                    budget_out = True
+                    # The budget stopped short of this batch. Its records and those of every later batch still owing
+                    # a call are unread, which is a state the workflow already has, so the run finishes rather than
+                    # pausing on something a later run will pick up. A later batch both of whose answers are stored
+                    # is still read back below (D60).
+                    skipped = [svid for later_number, later in enumerate(batches[number:], number) if owed_of(later_number)
+                               for svid in later if svid not in self._human_decided_records(run["research_id"], later)]
+                    unread.extend(skipped)
+                    if run_id in self._held:
+                        # The fast read's closure tells these from the deadline's cut, after a restart too (D60).
+                        step = self.store.step(run_id, f"{budget_key}:{number}", "code:abstract_budget_short")
+                        if step["status"] != "succeeded":
+                            self.store.finish_step(step["id"], "succeeded",
+                                                   output={"from_batch": number, "source_version_ids": skipped})
+                    continue
                 rows_of[number] = [by_svid[svid] for svid in batch if svid in by_svid]
                 for run_no in range(1, runs + 1):
                     submitted += run_no in owed

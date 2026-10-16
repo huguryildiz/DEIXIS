@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import timedelta
 from typing import Any
 
 from deixis.domain.reason_codes import reason
 from deixis.storage.db import transaction
-from deixis.workflow import background_fetch, fast_path, fulltext, small_batch
+from deixis.workflow import abstract_stage, adjudication, background_fetch, fast_path, fulltext, small_batch
 
 log = logging.getLogger("deixis.fast_read")
 
@@ -40,6 +41,60 @@ def without_text(policy: dict[str, Any], claims: dict[str, Any]) -> set[str]:
         return set()
     return {wid for wid, claim in claims.items() if claim["status"] in ("succeeded", "failed")
             and (claim.get("output") or {}).get("code") != fulltext.settled_code({"has_text": True})}
+
+
+def identity_unconfirmed(store: Any, policy: dict[str, Any], run_id: str, key: str,
+                         baseline: dict[str, Any]) -> set[str]:
+    """Works whose PDF is not confirmed as the work's own (`pdf_identity_unconfirmed`, no model call); empty for
+    policies frozen before slot refill (D60).
+
+    Read from each work's frozen reading plan in this run, and from the baseline for a work an earlier run already
+    decided so (its reading plan here skips it), so the release is as permanent as `without_text`'s: the work gives
+    its slot to the next eligible work and is not counted as read.
+    """
+    if not policy.get("slot_refill"):
+        return set()
+    prefix, suffix = f"{key}:read:", ":adjudication_plan"
+    return set(baseline.get("identity_unconfirmed", [])) | {
+        row["operation_key"][len(prefix):-len(suffix)] for row in store.conn.execute(
+            "SELECT operation_key, output_json FROM run_steps WHERE run_id = ? AND kind = 'code:adjudication_plan'"
+            " AND status = 'succeeded' AND operation_key LIKE ?", (run_id, f"{prefix}%{suffix}"))
+        if (json.loads(row["output_json"] or "{}")).get("identity_unconfirmed")}
+
+
+def budget_skipped(batches: list[list[str]], stops: list[dict[str, Any]], work_of: dict[str, str],
+                   unread: set[str]) -> set[str]:
+    """The unscreened works the model-call budget left, not the deadline (D60): every work of the batches from the
+    earliest stored stop on that the closure still counts unscreened. Read from the frozen batches, not a stop's own
+    record list, so a person's decision taken back after a stop does not turn its work into a deadline cut."""
+    if not stops:
+        return set()
+    start = min(stop["from_batch"] for stop in stops)
+    return {work_of[svid] for batch in batches[start:] for svid in batch if svid in work_of} & unread
+
+
+def screening_counts(works: list[dict[str, Any]], window: set[str]) -> dict[str, int]:
+    """What decided each screened work of the read window (D60), so the six counts add up to `screened_count`: a
+    person (their selection, or their decision at either stage, `person_decided_count`), both model runs (`model_screened_count`),
+    an invalid model answer (`model_output_invalid_count`), a missing abstract (`no_abstract_count`), a code rule
+    (`code_decided_count`), or nothing yet (`undecided_count`: no abstract decision, or `abstract_not_read`)."""
+    counts = dict.fromkeys(("person_decided_count", "model_screened_count", "model_output_invalid_count",
+                            "no_abstract_count", "code_decided_count", "undecided_count"), 0)
+    seen = {work["work_id"]: work for work in works}
+    for wid in window:
+        work = seen.get(wid)
+        decision = fulltext.abstract_outcome(work) if work else None
+        code = decision["reason_code"] if decision else None
+        selection = (work or {}).get("selection") or {}
+        person = bool(work) and (selection.get("origin") == "user" or fulltext.decided_by_human(work, "abstract")
+                                 or fulltext.decided_by_human(work, "fulltext"))
+        counts["person_decided_count" if person else
+               "undecided_count" if code in (None, "abstract_not_read") else
+               "model_screened_count" if code in abstract_stage.MODEL_CODES else
+               "model_output_invalid_count" if code == "abstract_not_proposed" else
+               "no_abstract_count" if code in ("no_abstract", "abstract_not_found") else
+               "code_decided_count"] += 1
+    return counts
 
 
 def _stop_asked(store: Any, run: dict[str, Any]) -> bool:
@@ -121,8 +176,16 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 if (decision and not decision.get("stale") and reason(decision["reason_code"]).outcome == "criterion_not_met"
                         and not (selection.get("origin") == "user" and selection.get("state") == "included")):
                     excluded.append(work["work_id"])
+            # An identity failure an earlier run decided keeps its work out of the slots (D60) when the reading would
+            # skip the work for it: no other fresh reading on any version, and no person's file waiting to be read.
+            unconfirmed = sorted(work["work_id"] for work in works if adjudication.person_version(work) is None
+                                 and {row["reason_code"] for version in work["versions"]
+                                      if (row := version.get("fulltext")) and not row.get("stale")
+                                      and row["reason_code"] in adjudication.FRESH_MODEL_CODES}
+                                 == {"pdf_identity_unconfirmed"})
             return fulltext.baseline_of(works, scope_revision=run["scope_revision"], limit=policy["K"],
-                                       fulltext_excluded=sorted(excluded))
+                                       fulltext_excluded=sorted(excluded),
+                                       **({"identity_unconfirmed": unconfirmed} if policy.get("slot_refill") else {}))
         baseline = small_batch.save_code(flow, run, f"{key}:baseline", "code:small_batch_baseline", baseline_snapshot)
         prefix = f"{key}:abstract_screening"
 
@@ -146,7 +209,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 break
             works = corpus()
             claims = flow._claims(run_id)
-            released = without_text(policy, claims)
+            released = without_text(policy, claims) | identity_unconfirmed(store, policy, run_id, key, baseline)
             safe = selected(works, order, policy["K"], pending(), baseline, released)
             background_wids = {row["work_id"] for row in store.conn.execute(
                 "SELECT work_id FROM fast_path_background_fetches WHERE run_id = ?"
@@ -189,13 +252,23 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         await asyncio.gather(model, *reads.values())
         flow._checkpoint(run_id, run["scope_revision"])
         works = corpus()
-        unread = {wid for n, batch in enumerate(abstract_plan["batches"])
-                  if n not in held.closed.get(prefix, set()) for wid in store.work_ids(batch).values()}
+        # A record a person decided is not sent to the model (`_abstract_stage`), so it is not counted unscreened (D60).
+        open_batches = [batch for n, batch in enumerate(abstract_plan["batches"]) if n not in held.closed.get(prefix, set())]
+        decided = flow._human_decided_records(rid, [svid for batch in open_batches for svid in batch])
+        unread = {wid for batch in open_batches for svid, wid in store.work_ids(batch).items() if svid not in decided}
         claims = flow._claims(run_id)
         empty = without_text(policy, claims)
-        final = selected(works, order, policy["K"], set(), baseline, empty)
+        unconfirmed = identity_unconfirmed(store, policy, run_id, key, baseline) - empty
+        released = empty | unconfirmed
+        final = selected(works, order, policy["K"], set(), baseline, released)
         # Paid-for claims cannot lose a slot after their full-text result arrives.
-        final = list(dict.fromkeys([wid for wid in plan["work_ids"] if wid in claims and wid not in empty] + final))
+        final = list(dict.fromkeys([wid for wid in plan["work_ids"] if wid in claims and wid not in released] + final))
+        # A release is why K is short only when, without it, the released work would have held one of the K slots.
+        short_of_text = bool(set(selected(works, order, policy["K"], set(), baseline)) & released)
+        from deixis.workflow.flow import budget_stops
+        budget_cut = budget_skipped(abstract_plan["batches"], budget_stops(store, run_id, prefix),
+                                    {svid: wid for batch in abstract_plan["batches"]
+                                     for svid, wid in store.work_ids(batch).items()}, unread)
         items = {item["work_id"]: item for item in plan["items"]}
         by_work = {work["work_id"]: work for work in works}
         late = {wid: ("in_flight" if wid in fetches and not fetches[wid].done() else "not_started")
@@ -217,26 +290,39 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         def close() -> dict[str, Any]:
             states = small_batch.progress_view(listing, small_batch.steps(store, run_id), works)["items"]
             closed_items = []
+            screened = {item["work_id"] for item in items.values()
+                        if item["head"] in order and item["work_id"] not in unread}
             for state in states:
                 wid = state["work_id"]
                 if wid not in items:
                     continue
                 if state["head"] not in order:
                     state = small_batch.work_state(items[wid], None)
-                closed_items.append(state | {"cutoff": "not_screened_at_cutoff" if wid in unread else
+                closed_items.append(state | {"cutoff": "not_screened_model_budget" if wid in budget_cut else
+                    "not_screened_at_cutoff" if wid in unread else
                     {"fulltext_after_cutoff": late[wid]} if wid in late else None})
             for wid, origin in late.items():
                 background_fetch.enqueue(store, run, items[wid], origin)
             output = {"batch_hash": plan["hash"], "items": closed_items, "N": policy["N"], "K": policy["K"],
                 "deadline_at": deadline.isoformat() if deadline else None,
                 "read_cutoff_at": cutoff_at or fast_path.timestamp(store.clock), "k_selected": len(final),
-                "selected_work_ids": final, "not_screened_at_cutoff": sorted(unread),
-                **({"attempted_without_text": sorted(empty)} if policy.get("slot_refill") else {}),
-                "screened_count": sum(item["head"] in order and item["work_id"] not in unread for item in closed_items),
+                "selected_work_ids": final,
+                # Every window work the read closed on unscreened, whether the deadline or the model-call budget cut
+                # it; `not_screened_model_budget` is the budget's part (D60).
+                "not_screened_at_cutoff": sorted(unread), "not_screened_model_budget": sorted(budget_cut),
+                **({"attempted_without_text": sorted(empty), "identity_unconfirmed": sorted(unconfirmed)}
+                   if policy.get("slot_refill") else {}),
+                # Window works not left unscreened, whatever decided them; the four counts below say what did (D60).
+                "screened_count": len(screened),
+                **screening_counts(works, screened),
                 "fulltext_adjudicated_before_cutoff": sum(item["fulltext_adjudicated"] for item in closed_items),
                 "fulltext_after_cutoff": late,
-                "k_short_reason": ("not_screened_at_cutoff" if unread else "screened_out")
-                    if len(final) < policy["K"] else None}
+                "k_short_reason": ("not_screened_at_cutoff" if unread - budget_cut else
+                                   "not_screened_model_budget" if budget_cut else
+                                   "fulltext_unavailable" if short_of_text else "screened_out")
+                    if len(final) < policy["K"] else None,
+                # Works already claimed keep their slot when a later decision admits another work ahead of them.
+                "k_over_reason": "claimed_works_kept" if len(final) > policy["K"] else None}
             store._event(rid, "read_cutoff", output, run_id)
             if fast_path.enforces(run["budget"], "answer"):
                 from deixis.workflow import fast_answer

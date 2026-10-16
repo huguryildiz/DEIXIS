@@ -6,14 +6,17 @@ import json
 from collections import Counter
 from typing import Any
 
+from deixis.domain.reason_codes import reason as reason_code
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
-from deixis.workflow import english_question, fast_path, formula_passages, small_batch, criterion_passages
+from deixis.workflow import english_question, fast_path, formula_passages, fulltext, small_batch, criterion_passages
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import MAX_PASSAGES_PER_SOURCE, fuse_rankings
 
 CUTOFF = "fast_path:v1:cutoff"
 INPUT = "fast_path:v1:answer_input"
 VERSION_FIELDS = ("work_id", "title", "abstract", "doi", "version_label", "year")
+# A screened work whose abstract stage left it to its full text, and no reading of that text by the cutoff (D60).
+UNRESOLVED_WITHOUT_FULLTEXT = "unresolved_without_fulltext"
 
 
 def human_choice(human: dict[str, Any]) -> dict[str, Any]:
@@ -181,7 +184,13 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
         elif outcome.get("outcome") in ("criterion_not_met", "out_of_scope"):
             reason = outcome["outcome"]
         elif route == "abstract" and abstract is None:
-            reason = "not_screened_at_cutoff"
+            # A work the abstract stage screened and routed to its full text (`abstract_not_found`,
+            # `runs_agree_unresolved`) whose text was not read by the cutoff is not an unscreened work: it waits for
+            # its full text, which the late read may still bring (D60).
+            routed = any(d["stage"] == "abstract" and d["source_version_id"] == svid and d["outcome"] == "unresolved"
+                         and reason_code(d["reason_code"]).next_step == "fulltext_fetch" for d in fresh)
+            unread_text = not full or full["reason_code"] in fulltext.OWNED_CODES
+            reason = UNRESOLVED_WITHOUT_FULLTEXT if routed and unread_text else "not_screened_at_cutoff"
         passages = pools.get(svid, [])
         abstract_ids = [p["id"] for p in passages if p["kind"] == "abstract"][:1]
         full_ids = [p["id"] for p in passages if p["kind"] == "pdf_page" and p["asset_id"] == asset] if asset else []

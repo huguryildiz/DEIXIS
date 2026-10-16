@@ -131,7 +131,7 @@ def test_settings_turn_off_tools_mcp_extensions_and_context(tmp_path, creds):
         assert settings["context"]["fileName"] == "DEIXIS-NO-CONTEXT-FILE.md"
         assert settings["context"]["includeDirectoryTree"] is False and settings["context"]["memoryBoundaryMarkers"] == []
         assert settings["security"]["auth"]["selectedType"] == "oauth-personal"
-        assert settings["privacy"]["usageStatisticsEnabled"] is False
+        assert settings["privacy"]["usageStatisticsEnabled"] is False and settings["telemetry"]["enabled"] is False
 
 
 @pytest.mark.parametrize("stdout", [

@@ -253,7 +253,7 @@ function SetupCard({ connections, reasons, proxy }: { connections: Connections; 
   const settings = () => { window.location.hash = '/settings/connections' }
   const num = (n: number, ok: boolean) => <span className={`num ${ok ? 'ok' : ''}`} aria-hidden>{ok ? <Check /> : n}</span>
   return <section className="home-setup" aria-labelledby="home-setup-title">
-    <h2 id="home-setup-title"><span>{t('Set up DEIXIS')}</span><small>{t('Three things before the first question. Nothing leaves this computer except the searches and the model calls you set up.')}</small></h2>
+    <h2 id="home-setup-title"><span>{t('Set up DEIXIS')}</span><small>{t('Three things before the first question. What is sent where is listed in Settings › General › Where your data goes.')}</small></h2>
     <div className="home-setup-row">{num(1, false)}<p>{t('Answer and literature models')}<small>{t('Not connected. Use a Codex CLI or Claude Code account, an API key, or a local model in Ollama or LM Studio.')}{builtinOffered && ` ${t('Semantic search also has a built-in model that needs no key.')}`}</small>{reasons && <small className="home-setup-reason">{reasons}</small>}</p>
       <button type="button" className="setup-connect" onClick={settings}>{t('Connect')}</button></div>
     <div className="home-setup-row">{num(2, sourcesReady)}<p>{t('Scholarly sources')}<small>{t('OpenAlex and Crossref work without a key. Configured · not tested live.')}</small></p>

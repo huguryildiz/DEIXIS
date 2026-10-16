@@ -4,6 +4,7 @@ import { api, preferencesApi, shellApi, spendApi, usageApi, type About, type Con
 import { canRun, connectionModels, modelKey, type ConnectionModel } from './Home'
 import { defaultEffort, exposesEffortControl } from './modelEffort'
 import { ConnectionsTab } from './Connections'
+import { DataFlowsSection } from './DataFlows'
 import { useToast } from './Toast'
 import { t, uiLocale, type UiLanguage } from './i18n'
 import { connectionName, money, reasoningLabel } from './labels'
@@ -54,7 +55,7 @@ function ProfileNameRow({ onProfile }: { onProfile: (profile: Profile) => void }
 }
 
 /** The contact email (F15): sent as `mailto` with OpenAlex and Crossref requests; the setting wins over DEIXIS_CONTACT_EMAIL. */
-function ContactEmailRow() {
+function ContactEmailRow({ onSaved }: { onSaved: () => void }) {
   const [stored, setStored] = useState<ContactEmailSetting | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -69,7 +70,7 @@ function ContactEmailRow() {
   const save = () => {
     setBusy(true); setError('')
     shellApi.saveContactEmail(draft.trim() || null).then(value => {
-      setStored(value); setDraft(value.email ?? '')
+      setStored(value); setDraft(value.email ?? ''); onSaved()
       toast('success', t(value.email ? 'Contact email saved.' : 'Contact email removed.'))
     }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
   }
@@ -123,6 +124,7 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
   const [defaults, setDefaults] = useState<Record<ModelRole, RoleModelSetting> | null>(null)
   const [savingRole, setSavingRole] = useState<ModelRole | null>(null)
   const [error, setError] = useState('')
+  const [emailSaves, setEmailSaves] = useState(0)
   const [tab, setTab] = useState<SettingsTab>(section ? SECTION_TAB[section] : 'models')
   const tabRefs = useRef<Partial<Record<SettingsTab, HTMLButtonElement | null>>>({})
 
@@ -231,7 +233,7 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
     <h2 id="profile" tabIndex={-1} data-panel="general">{t('Profile')}</h2>
     <div className="rows set-profile" data-panel="general">
       <ProfileNameRow onProfile={onProfile} />
-      <ContactEmailRow />
+      <ContactEmailRow onSaved={() => setEmailSaves(n => n + 1)} />
     </div>
 
     <ConnectionsTab dark={dark} access={<InstitutionalAccessBlock access={access} />} defaults={defaultsBlock} onConnections={onConnections} openProvider={section === 'openalex' ? 'openalex' : undefined} />
@@ -263,6 +265,8 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
     </div>
 
     <ResearchPreferences />
+
+    <DataFlowsSection defaults={defaults} active={tab === 'general'} refresh={emailSaves} />
 
     <AboutSection />
 

@@ -63,7 +63,8 @@ def native_binary(found: Path) -> str | None:
 def copilot_environment(home: Path, source: Mapping[str, str] | None = None) -> dict[str, str]:
     """The variables Copilot needs to run and reach the network. GITHUB_TOKEN, GH_TOKEN and COPILOT_GITHUB_TOKEN are
     left out on purpose: Copilot would use them before the signed-in account, and GITHUB_TOKEN was the GitHub Models key
-    of another connection (D22)."""
+    of another connection (D22). No telemetry switch is set: the Copilot CLI documentation we could read names none
+    (only an administrator's OpenTelemetry export setting), and an undocumented one is not invented (F3)."""
     source = os.environ if source is None else source
     env = {k: v for k, v in source.items() if k in CODEX_ENV_ALLOWLIST or k.startswith("LC_")}
     env.update(COPILOT_HOME=str(home), COPILOT_AUTO_UPDATE="false", NO_COLOR="1",

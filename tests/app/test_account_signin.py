@@ -10,6 +10,7 @@ with these commands, or what `codex login` and `claude auth login` ask.
 
 import asyncio
 import base64
+import json
 import shlex
 import subprocess
 from pathlib import Path
@@ -162,10 +163,48 @@ def test_codex_launch_waits_then_succeeds_only_after_the_command_exits_0_and_hea
 def test_claude_launch_runs_auth_login_and_succeeds(served):
     app, client, launched, _, _, tools = served
     client.post("/api/accounts/claude/sign-in")
-    assert "\n/usr/local/bin/claude auth login\n" in Path(launched[0][3]).read_text()
+    assert ("\nDISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 "
+            "/usr/local/bin/claude auth login\n") in Path(launched[0][3]).read_text()
     tools["claude"].signed_in = True
     finish(app, "claude")
     assert client.get("/api/accounts/claude/sign-in").json()["state"] == "succeeded"
+
+
+def test_sign_in_windows_carry_the_telemetry_switches_where_the_tool_can_take_them(served):
+    # F3: Codex's `login` takes -c, Claude Code takes its environment variables; Gemini CLI and Copilot CLI get none.
+    _, client, launched, _, _, _ = served
+    for tool in ("codex", "claude", "copilot_cli", "gemini_cli"):
+        client.post(f"/api/accounts/{tool}/sign-in")
+    scripts = {Path(spec[3]).name.split("-")[-1].removesuffix(".command"): Path(spec[3]).read_text() for spec in launched}
+    assert " login -c analytics.enabled=false -c feedback.enabled=false\n" in scripts["codex"]
+    assert "DISABLE_TELEMETRY=1 " in scripts["claude"] and "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 " in scripts["claude"]
+    assert "DISABLE_TELEMETRY" not in scripts["copilot"] and "analytics" not in scripts["copilot"]
+    assert "DISABLE_TELEMETRY" not in scripts["gemini"] and "analytics" not in scripts["gemini"]
+
+
+def test_gemini_sign_in_window_reads_a_deixis_written_system_settings_file(served):
+    # F3 review: the documented GEMINI_CLI_SYSTEM_SETTINGS_PATH names a small file with usage statistics and telemetry
+    # off; HOME and the person's own Gemini files are not touched.
+    _, client, launched, settings, _, _ = served
+    client.post("/api/accounts/gemini_cli/sign-in")
+    script = Path(launched[0][3]).read_text()
+    path = settings.codex_home.parent / "sign-in" / "gemini-system-settings.json"
+    assert f"GEMINI_CLI_SYSTEM_SETTINGS_PATH={shlex.quote(str(path))} " in script and "HOME=" not in script
+    assert json.loads(path.read_text()) == {"privacy": {"usageStatisticsEnabled": False}, "telemetry": {"enabled": False}}
+
+
+def test_gemini_sign_in_variable_is_set_in_the_windows_script_too(tmp_path):
+    win = build_launch("win32", "C:\\bin\\gemini.exe", [], None, which=lambda name: None,
+                       env={"GEMINI_CLI_SYSTEM_SETTINGS_PATH": "C:\\data\\sign-in\\gemini-system-settings.json"})
+    assert "$env:GEMINI_CLI_SYSTEM_SETTINGS_PATH = 'C:\\data\\sign-in\\gemini-system-settings.json'; " in base64.b64decode(win[5]).decode("utf-16-le")
+
+
+def test_windows_and_linux_sign_in_launches_set_the_same_variables():
+    env = {"DISABLE_TELEMETRY": "1"}
+    win = build_launch("win32", "C:\\bin\\claude.exe", ["auth", "login"], None, which=lambda name: None, env=env)
+    assert "$env:DISABLE_TELEMETRY = '1'; & 'C:\\bin\\claude.exe' 'auth' 'login'" in base64.b64decode(win[5]).decode("utf-16-le")
+    linux = build_launch("linux", "/bin/claude", ["auth", "login"], None, {"xterm": "/usr/bin/xterm"}.get, env=env)
+    assert "DISABLE_TELEMETRY=1 /bin/claude auth login" in linux[-1]
 
 
 def test_an_old_session_and_a_terminal_closed_at_once_is_not_a_success(served):

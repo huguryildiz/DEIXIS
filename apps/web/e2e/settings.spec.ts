@@ -141,7 +141,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.getByRole('tab', { name: 'Usage' })).toBeFocused()
     await expect(shown).toHaveText(['Usage this month'])
     await page.keyboard.press('ArrowRight')
-    await expect(shown).toHaveText(['Profile', 'This computer', 'Language', 'Appearance', 'Research', 'About'])
+    await expect(shown).toHaveText(['Profile', 'This computer', 'Language', 'Appearance', 'Research', 'Where your data goes', 'About'])
     await expect(page.locator('.data-location')).toBeVisible()
     await page.reload()
     await expect(page.getByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true')
@@ -788,6 +788,111 @@ test.describe.serial('S24: the Settings page', () => {
     await sheet.locator('input[type=file]').setInputFiles(file)
     await expect(result).toContainText('SYNTHETIC-settings.bib: 2 entries read. 0 saved to the Library, 2 were already there.')
     await sheet.getByRole('button', { name: 'Close' }).click()
+  })
+
+  test('Where your data goes follows the model, embedding, source and email settings (F3)', async () => {
+    // SYNTHETIC settings held in the test: no default model, built-in embedding, no Scopus key, no email.
+    const efforts = [{ id: 'low', description: '' }]
+    const codex = { connection: 'codex', ready: true, reason: null, installed: true, signed_in: true, models: [{ id: 'syn-model-a', display_name: 'SYNTHETIC model A', is_default: true, reasoning_efforts: efforts }] }
+    const defaults: Record<string, unknown> = {
+      literature: { model_connection: 'codex', model: null, reasoning_effort: null }, answer: { model_connection: 'codex', model: null, reasoning_effort: null },
+      reviewer: { model_connection: 'codex', model: null, reasoning_effort: null } }
+    let scopus = 'not_configured'
+    let mathpix = 'off'
+    let zotero = false
+    let serpapi = 'not_configured'
+    let email: string | null = null
+    const option = (provider: string, models: string[] = []) => ({ provider, models, available: true, reason: null })
+    const semantic = (provider: string) => ({ provider, model: null, explicit: true,
+      options: [option('builtin'), option('openai', ['text-embedding-3-small']), option('gemini'), option('ollama'), option('lm_studio'), option('off')] })
+    let provider = 'builtin'
+    await page.route(url => url.pathname === '/api/connections', async route => {
+      const response = await route.fetch()
+      const body = await response.json() as { models: Record<string, unknown>; providers: { id: string; access_mode: string }[] }
+      await route.fulfill({ response, json: { ...body, models: { ...body.models, codex }, providers: body.providers.map(p => p.id === 'scopus' ? { ...p, access_mode: scopus } : p.id === 'serpapi' ? { ...p, access_mode: serpapi } : p) } })
+    })
+    await page.route(url => url.pathname === '/api/mathpix', async route => {
+      const response = await route.fetch()
+      const body = await response.json() as { pair: Record<string, unknown> }
+      await route.fulfill({ response, json: { ...body, switch: mathpix, pair: { ...body.pair, configured: true } } })
+    })
+    await page.route(url => url.pathname === '/api/credentials', async route => {
+      const response = await route.fetch()
+      const body = await response.json() as { keys: { env: string }[] }
+      await route.fulfill({ response, json: { ...body, keys: body.keys.map(k => k.env === 'ZOTERO_API_KEY' ? { ...k, configured: zotero } : k) } })
+    })
+    await page.route(url => url.pathname === '/api/settings', route => route.fulfill({ json: defaults }))
+    await page.route(url => /^\/api\/settings\/(literature|answer|reviewer)$/.test(url.pathname), route => {
+      const role = new URL(route.request().url()).pathname.split('/').pop()!
+      defaults[role] = route.request().postDataJSON()
+      return route.fulfill({ json: { [role]: defaults[role] } })
+    })
+    await page.route(url => url.pathname === '/api/semantic-search', route => {
+      if (route.request().method() === 'PUT') provider = (route.request().postDataJSON() as { provider: string }).provider
+      return route.fulfill({ json: semantic(provider) })
+    })
+    await page.route(url => url.pathname === '/api/contact-email', route => {
+      if (route.request().method() === 'PUT') email = (route.request().postDataJSON() as { email: string | null }).email
+      return route.fulfill({ json: { email, environment_set: false, source: email ? 'setting' : null } })
+    })
+    await page.goto(server.url('#/settings'))
+    await page.reload()
+    const row = (heading: string) => page.locator('.set-flows > div').filter({ has: page.locator('b', { hasText: new RegExp(`^${heading}$`) }) })
+    const general = () => page.getByRole('tab', { name: 'General' }).click()
+    const models = () => page.getByRole('tab', { name: 'Models' }).click()
+    const sources = () => page.getByRole('tab', { name: 'Sources' }).click()
+    await general()
+    await expect(page.getByRole('heading', { name: 'Where your data goes' })).toBeVisible()
+    await expect(row('Model calls')).toContainText('No default model is chosen yet')
+    await expect(row('Search queries')).toContainText('Words from your question are sent to OpenAlex')
+    await expect(row('Lookups by DOI')).toContainText('OpenAlex, Semantic Scholar, Crossref, and Europe PMC,')
+    await expect(row('Lookups by DOI')).not.toContainText(/Scopus|Unpaywall|CORE/)
+    await expect(row('PDF downloads')).toContainText('publisher, repository or preprint server')
+    await expect(page.locator('.set-flows')).not.toContainText('Optional services')
+    await expect(row('Email address')).toContainText('No email address is set, so none is sent.')
+    await expect(row('Semantic search')).toContainText('Not sent anywhere.')
+    await expect(row('Storage')).toContainText('PDF files are kept on this computer')
+    await expect(row('Your keys')).toContainText('stored on this computer')
+    await expect(row('Usage data')).toContainText('DEIXIS sends no usage data')
+    await expect(row('Usage data')).toContainText('Gemini CLI it switches their telemetry off, in their sign-in windows too')
+    // A default model chosen on the Models tab, a spent-down embedding choice and a Scopus key set elsewhere show up on return.
+    await models()
+    await page.getByRole('combobox', { name: 'Literature model' }).selectOption({ label: 'SYNTHETIC model A' })
+    await expect(page.getByText('Default literature model: syn-model-a')).toBeVisible()
+    await page.locator('.semantic-option[data-row="openai"] input').click()
+    await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+    scopus = 'api_key'
+    await sources()
+    await general()
+    await expect(row('Model calls')).toContainText('Default models now: Codex.')
+    await expect(row('Model calls')).toContainText('unless that server forwards them elsewhere')
+    await expect(row('Semantic search')).toContainText('Titles, abstracts and passage text are sent to OpenAI.')
+    await expect(row('Semantic search')).not.toContainText('Not sent anywhere')
+    await expect(row('Lookups by DOI')).toContainText('Scopus')
+    await expect(row('Lookups by DOI')).not.toContainText('Unpaywall')
+    // The email saved on this tab changes its line at once.
+    await page.getByLabel('Email', { exact: true }).fill('someone@example.org')
+    await page.locator('form', { has: page.locator('#contact-email') }).getByRole('button', { name: 'Save' }).click()
+    await expect(row('Email address')).toContainText('Your email address (someone@example.org) is sent to OpenAlex and Crossref')
+    await expect(row('Lookups by DOI')).toContainText('Unpaywall')
+    await expect(row('Email address')).toContainText('and to Unpaywall with each PDF lookup')
+    // Mathpix on and a Zotero web key show up under optional services on return.
+    mathpix = 'on'; zotero = true; serpapi = 'api_key'
+    await sources()
+    await general()
+    await expect(row('Optional services')).toContainText('images of equation areas cut from PDFs are sent to Mathpix')
+    await expect(row('Optional services')).toContainText('titles and DOIs of works are sent to zotero.org')
+    await expect(row('Optional services')).toContainText('none is found, the work’s title is sent to SerpApi')
+    // Back to the built-in model: the line comes back.
+    await models()
+    await page.locator('.semantic-option[data-row="builtin"] input').click()
+    await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+    await general()
+    await expect(row('Semantic search')).toContainText('Not sent anywhere.')
+    await page.getByRole('heading', { name: 'Where your data goes' }).evaluate(el => el.scrollIntoView({ block: 'start' }))
+    await expect(page.getByText('Semantic search setting saved.')).toHaveCount(0)
+    await shot(page, 'F3-where-your-data-goes')
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
   test('phone: one column of cards, no horizontal scroll', async () => {

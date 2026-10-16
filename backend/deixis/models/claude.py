@@ -39,6 +39,12 @@ def _model_matches(actual: str | None, expected: str) -> bool:
     return actual is not None and re.sub(r"\[[^\[\]]+\]$", "", actual) == re.sub(r"\[[^\[\]]+\]$", "", expected)
 
 
+# Claude Code's own telemetry, error reporting and other nonessential traffic, switched off with the variables its
+# documentation lists (code.claude.com/docs/en/env-vars: DISABLE_TELEMETRY, DISABLE_ERROR_REPORTING and
+# CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, which also covers auto-updates and /feedback). Any non-empty value turns them on (F3).
+TELEMETRY_OFF = {"DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+
+
 class ClaudeCodeAdapter:
     connection = "claude"
     enforces_schema = True
@@ -75,6 +81,7 @@ class ClaudeCodeAdapter:
                 # An npm-installed CLI is a node script: node's folder must be on PATH when DEIXIS started with a short one.
                 "PATH": child_path(cli),
                 **NODE_TLS,  # an npm-installed CLI trusts the system certificates (F1)
+                **TELEMETRY_OFF,
             },
         }
         options.update(overrides)
@@ -102,7 +109,7 @@ class ClaudeCodeAdapter:
             status["reason_code"], status["reason"] = "unsupported_install", found.problem
             return status
         cli = found.argv[0]
-        version = await probe([cli, "--version"], env={**os.environ, "PATH": child_path(cli)})
+        version = await probe([cli, "--version"], env={**os.environ, "PATH": child_path(cli), **TELEMETRY_OFF})
         if version.error == "not_responding":
             status["reason_code"] = "timeout"
             status["reason"] = "Claude Code CLI is not responding"
